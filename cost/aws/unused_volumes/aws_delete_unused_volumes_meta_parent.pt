@@ -8,7 +8,7 @@ tenancy "single"
 default_frequency "15 minutes"
 info(
   provider: "AWS",
-  version: "6.1", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "7.1", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "false"
 )
 
@@ -56,84 +56,76 @@ parameter "param_policy_schedule" do
 end
 
 ## Child Policy Parameters
-parameter "param_allowed_regions_allow_or_deny" do
-  type "string"
-  label "Allow/Deny Regions"
-  description "Allow or Deny entered regions. See the README for more details"
-  allowed_values "Allow", "Deny"
-  default "Allow"
-end
-
-parameter "param_allowed_regions" do
-  type "list"
-  label "Regions"
-  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
-  description "A list of allowed or denied regions. See the README for more details"
-end
-
-parameter "param_exclude_tags" do
-  type "list"
-  category "User Inputs"
-  label "Exclude Tags"
-  description "A list of tags used to excluded volumes from the incident."
-  default []
-end
-
-parameter "param_unattached_days" do
+parameter "param_unused_days" do
   type "number"
+  category "Policy Settings"
   label "Unused Days"
-  description "The number of days a volume has been unused. The days should be greater than zero"
+  description "The number of days a volume has been unused."
   default 30
   min_value 1
 end
 
-parameter "param_take_snapshot" do
-  type "string"
-  label "Create Final Snapshot"
-  description "Boolean for whether or not to take a final snapshot before deleting."
-  allowed_values "Yes", "No"
-  default "Yes"
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation."
+  min_value 0
+  default 0
 end
 
-parameter "param_automatic_action" do
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details"
+  default "Allow"
+  allowed_values "Allow", "Deny"
+end
+
+parameter "param_regions_list" do
   type "list"
-  label "Automatic Actions"
-  description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Delete Volumes"]
+  category "Filters"
+  label "Allow/Deny Regions List"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  description "A list of allowed or denied regions. See the README for more details"
   default []
-end
-
-parameter "param_flexera_org_id_for_optima" do
-  type "string"
-  label "Flexera One Org ID for Optima"
-  description "The Flexera One org ID for Optima queries used to determine estimated costs, by default the current org is used"
-  default "current"
-  allowed_pattern /^(current|[0-9]+)$/
 end
 
 parameter "param_include_status" do
   type "string"
+  category "Filters"
   label "Volume Status"
   description "Whether the policy should only check unattached volumes, attached volumes, or both."
   default "Unattached Volumes"
   allowed_values "Unattached Volumes", "Attached Volumes", "All Volumes"
 end
 
-parameter "param_log_to_cm_audit_entries" do
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags (Key:Value)"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:*"
+  allowed_pattern /(^$)|[\w]*\:.*/
+  default []
+end
+
+parameter "param_take_snapshot" do
   type "string"
-  label "Log to CM Audit Entries"
-  description "Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left set to No on Flexera EU"
-  default "No"
+  category "Actions"
+  label "Create Final Snapshot"
+  description "Whether or not to take a final snapshot before deleting a volume."
+  default "Yes"
   allowed_values "Yes", "No"
 end
 
-parameter "param_api_wait" do
-  type "number"
-  label "CloudWatch API Wait Time"
-  description "Amount of time to wait between CloudWatch API requests to avoid throttling (seconds)"
-  default 5
-  min_value 1
-  max_value 60
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  default []
+  allowed_values ["Delete Volumes"]
 end
 
 ###############################################################################
@@ -149,7 +141,7 @@ end
 
 credentials "auth_flexera" do
   schemes "oauth2"
-  label "flexera"
+  label "Flexera"
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
@@ -779,31 +771,37 @@ policy "policy_scheduled_report" do
     export do
       resource_level true
       field "accountID" do
-        label "Account Id"
+        label "Account ID"
       end
       field "accountName" do
         label "Account Name"
       end
-      field "region" do
-        label "Region"
-      end
       field "resourceID" do
-        label "Resource Id"
-      end
-      field "resourceType" do
-        label "Resource Type"
+        label "Resource ID"
       end
       field "resourceName" do
         label "Resource Name"
       end
-      field "state" do
-        label "Status"
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "age" do
+        label "Age (Days)"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "region" do
+        label "Region"
       end
       field "size" do
-        label "Size"
+        label "Size (GB)"
       end
-      field "tags" do
-        label "Tags"
+      field "state" do
+        label "Status"
       end
       field "savings" do
         label "Estimated Monthly Savings"
@@ -812,16 +810,13 @@ policy "policy_scheduled_report" do
         label "Savings Currency"
       end
       field "lookbackPeriod" do
-        label "Lookback Period"
-      end
-      field "age" do
-        label "Age"
-      end
-      field "id" do
-        label "ID"
+        label "Lookback Period (Days)"
       end
       field "service" do
         label "Service"
+      end
+      field "id" do
+        label "ID"
       end
     end
   end

@@ -8,7 +8,7 @@ tenancy "single"
 default_frequency "15 minutes"
 info(
   provider: "AWS",
-  version: "6.2", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "7.1", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "false"
 )
 
@@ -56,68 +56,93 @@ parameter "param_policy_schedule" do
 end
 
 ## Child Policy Parameters
-parameter "param_allowed_regions_allow_or_deny" do
-  type "string"
-  label "Allow/Deny Regions"
-  description "Allow or Deny entered regions. See the README for more details"
-  allowed_values "Allow", "Deny"
-  default "Allow"
-end
-
-parameter "param_allowed_regions" do
-  type "list"
-  label "Regions"
-  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
-  description "A list of allowed or denied regions. See the README for more details"
-  default []
-end
-
-parameter "snapshot_age" do
+parameter "param_snapshot_age" do
   type "number"
-  label "Snapshot age"
+  category "Policy Settings"
+  label "Snapshot Age Threshold"
   default 30
-  description "The number of days since the snapshot was created."
+  description "The number of days since the snapshot was created to consider a snapshot old."
   min_value 1
 end
 
-parameter "param_deregister_image" do
+parameter "param_snapshot_include_ami" do
   type "string"
-  label "Deregister Image"
-  description "If Yes, the snapshot will be deleted along with the images, and if No the snapshot will not be considered for deletion."
+  category "Policy Settings"
+  label "Include Snapshots with AMI"
+  description "Whether or not to produce recommendations for snapshots with an associated registered AMI (Amazon Machine Image)."
   allowed_values "Yes", "No"
   default "No"
 end
 
-parameter "param_exclude_tags" do
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation."
+  min_value 0
+  default 0
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
   type "list"
-  category "User Inputs"
-  label "Exclude Tags"
-  description "List of tags that a snapshot can have to exclude it from the list."
+  category "Filters"
+  label "Allow/Deny Regions List"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+parameter "param_exclusion_services" do
+  type "list"
+  category "Filters"
+  label "Exclusion Service Types"
+  description "Exclude the selected services. If left blank, all services will be analyzed."
+  allowed_values ["EC2", "RDS"]
+  default []
+end
+
+parameter "param_exclusion_description" do
+  type "list"
+  category "Filters"
+  label "Exclusion EC2 Snapshot Description"
+  description "Exclude EC2 snapshots with the provided descriptions. If left blank, all EC2 snapshots will be analyzed. This setting has no effect on RDS snapshots."
+  default []
+end
+
+parameter "param_exclusion_types" do
+  type "list"
+  category "Filters"
+  label "Exclusion RDS Snapshot Types"
+  description "Exclude the selected RDS snapshot types. If left blank, all types will be analyzed. This setting has no effect on EC2 snapshots."
+  allowed_values ["Manual", "Automated", "Shared", "Public", "AWS Backup"]
+  default []
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags (Key:Value)"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:*"
+  allowed_pattern /(^$)|[\w]*\:.*/
   default []
 end
 
 parameter "param_automatic_action" do
   type "list"
+  category "Actions"
   label "Automatic Actions"
-  description "When this value is set, this policy will automatically take the selected action(s)"
+  description "When this value is set, this policy will automatically take the selected action."
   allowed_values ["Delete Snapshots"]
   default []
-end
-
-parameter "param_flexera_org_id_for_optima" do
-  type "string"
-  label "Flexera One Org ID for Optima"
-  description "The Flexera One org ID for Optima queries used to determine estimated costs, by default the current org is used"
-  default "current"
-  allowed_pattern /^(current|[0-9]+)$/
-end
-
-parameter "param_log_to_cm_audit_entries" do
-  type "string"
-  label "Log to CM Audit Entries"
-  description "Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left set to No on Flexera EU"
-  default "No"
-  allowed_values "Yes", "No"
 end
 
 ###############################################################################
@@ -133,7 +158,7 @@ end
 
 credentials "auth_flexera" do
   schemes "oauth2"
-  label "flexera"
+  label "Flexera"
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
@@ -738,8 +763,8 @@ script "js_ds_snapshots_cost_mapping_combined_incidents", type: "javascript" do
   result = []
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
-    // If the incident summary contains "rows containing AWS old snapshot data" then include it in the filter result
-    if (s.indexOf("rows containing AWS old snapshot data") > -1) {
+    // If the incident summary contains "AWS Old Snapshots Found" then include it in the filter result
+    if (s.indexOf("AWS Old Snapshots Found") > -1) {
       _.each(incident["violation_data"], function(violation) {
         result.push(violation);
       });
@@ -755,9 +780,9 @@ end
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
-    # Consolidated incident for rows containing AWS old snapshot data
+    # Consolidated incident for AWS Old Snapshots Found
   validate $ds_snapshots_cost_mapping_combined_incidents do
-    summary_template "Consolidated Incident: {{ len data }} rows containing AWS old snapshot data"
+    summary_template "Consolidated Incident: {{ len data }} AWS Old Snapshots Found"
     escalate $esc_email
     check eq(size(data), 0)
     export do
@@ -768,17 +793,38 @@ policy "policy_scheduled_report" do
       field "accountName" do
         label "Account Name"
       end
-      field "region" do
-        label "Region"
-      end
-      field "age" do
-        label "Days Old"
-      end
-      field "size" do
-        label "Size"
-      end
       field "resourceID" do
         label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "age" do
+        label "Age (Days)"
+      end
+      field "size" do
+        label "Size (GB)"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "parentType" do
+        label "Parent Resource Type"
+      end
+      field "parentId" do
+        label "Parent Resource ID"
+      end
+      field "snapshotType" do
+        label "Snapshot Type"
+      end
+      field "description" do
+        label "Description"
       end
       field "resourceName" do
         label "Resource Name"
@@ -789,11 +835,8 @@ policy "policy_scheduled_report" do
       field "imageId" do
         label "AMI"
       end
-      field "dbClusterId" do
-        label "RDS DB Cluster ID"
-      end
-      field "dbInstanceId" do
-        label "RDS DB Instance ID"
+      field "region" do
+        label "Region"
       end
       field "savings" do
         label "Estimated Monthly Savings"
@@ -801,14 +844,14 @@ policy "policy_scheduled_report" do
       field "savingsCurrency" do
         label "Savings Currency"
       end
-      field "tags" do
-        label "Tags"
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "lookbackPeriod" do
+        label "Snapshot Age Threshold (Days)"
       end
       field "id" do
         label "ID"
-      end
-      field "service" do
-        label "Service"
       end
     end
   end

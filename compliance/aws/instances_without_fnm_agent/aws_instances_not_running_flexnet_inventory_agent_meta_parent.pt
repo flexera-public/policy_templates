@@ -1,14 +1,14 @@
-name "AWS Rightsize Compute Instances Meta Parent"
+name "AWS EC2 Instances not running FlexNet Inventory Agent Meta Parent"
 rs_pt_ver 20180301
 type "policy"
-short_description "Applies and manages \"child\" [AWS Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_compute_instances) Policies."
+short_description "Applies and manages \"child\" [AWS EC2 Instances not running FlexNet Inventory Agent](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/instances_without_fnm_agent) Policies."
 severity "low"
 category "Cost"
 tenancy "single"
 default_frequency "15 minutes"
 info(
   provider: "AWS",
-  version: "3.4", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "4.1", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "false"
 )
 
@@ -56,7 +56,7 @@ parameter "param_policy_schedule" do
 end
 
 ## Child Policy Parameters
-parameter "param_021_allowed_regions_allow_or_deny" do
+parameter "param_allowed_regions_allow_or_deny" do
   type "string"
   label "Allow/Deny Regions"
   description "Allow or Deny entered regions. See the README for more details"
@@ -64,98 +64,32 @@ parameter "param_021_allowed_regions_allow_or_deny" do
   default "Allow"
 end
 
-parameter "param_02_allowed_regions" do
+parameter "param_allowed_regions" do
   type "list"
   label "Regions"
   allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   description "A list of allowed or denied regions. See the README for more details"
-  default []
 end
 
-parameter "param_03_idle_threshold_cpu_value" do
-  type "number"
-  label "Idle Instance CPU Threshold (%)"
-  description "The CPU threshold at which to consider an instance to be 'idle' and therefore be flagged for termination. Set to -1 to ignore CPU utilization"
-  default 5
-  min_value -1
-  max_value 100
-end
-
-parameter "param_04_idle_threshold_mem_value" do
-  type "number"
-  label "Idle Instance Memory Threshold (%)"
-  description "The Memory threshold at which to consider an instance to be 'idle' and therefore be flagged for termination. Set to -1 to ignore memory utilization"
-  default 5
-  min_value -1
-  max_value 100
-end
-
-parameter "param_05_underutil_threshold_cpu_value" do
-  type "number"
-  label "Underutilized Instance CPU Threshold (%)" # 'Inefficient' or 'Underutilized' as correct terminology?
-  description "The CPU threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing. Set to -1 to ignore CPU utilization"
-  default 40
-  min_value -1
-  max_value 100
-end
-
-parameter "param_06_underutil_threshold_mem_value" do
-  type "number"
-  label "Underutilized Instance Memory Threshold (%)"
-  description "The Memory threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing. Set to -1 to ignore memory utilization"
-  default 40
-  min_value -1
-  max_value 100
-end
-
-parameter "param_07_check_both" do
+parameter "param_fnms_host" do
   type "string"
-  label "Idle/Utilized for both CPU/Memory or either"
-  description "Set whether an instance should be considered idle and/or underutilized only if both CPU and memory are under the thresholds or if either CPU or memory are under. Note: this parameter is only valid when at least one Memory Utilization threshold and one CPU Utilization threshold is NOT set to -1"
-  default "Either CPU or Memory"
-  allowed_values "Both CPU and Memory", "Either CPU or Memory"
+  label "FlexNet Manager host"
+  description "Flexera One FlexNet Manager host"
+  allowed_values "slo.app.flexera.com", "slo.app.flexera.eu", "slo.app.flexera.au", "slo-uat.app.flexera.com", "slo-uat.app.flexera.eu", "slo-uat.app.flexera.au"
+  # No default value because parameter is required
 end
 
-parameter "param_08_threshold_statistic" do
+parameter "param_report_id" do
   type "string"
-  label "Threshold Statistic"
-  description "Statistic to use for the metric threshold"
-  default "Average"
-  allowed_values "Average", "p99", "p95", "p90"
+  label "FNMS Report ID"
+  description "FlexNet manager Custom View ID."
 end
 
-parameter "param_09_exclusion_tag_key" do
-  category "User Inputs"
-  label "Exclusion Tag Key:Value"
-  description "Cloud native tag to ignore instances that you don't want to consider for downsizing or termination. Format: Key:Value"
-  type "string"
-  allowed_pattern /(^$)|([\w]?)+\:([\w]?)+/
-  default ""
-end
-
-parameter "param_10_api_wait" do
-  type "number"
-  label "CloudWatch API Wait Time"
-  description "Amount of time to wait between CloudWatch API requests to avoid throttling (seconds)"
-  default 5
-  min_value 1
-  max_value 60
-end
-
-parameter "param_11_automatic_action" do
+parameter "param_exclude_tags" do
   type "list"
-  label "Automatic Actions"
-  description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Terminate Instances"]
+  label "Tags to ignore"
+  description "List of tags that will exclude EC2 instance from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'"
   default []
-end
-
-parameter "param_12_log_to_cm_audit_entries" do
-  type "string"
-  label "Log to CM Audit Entries"
-  description "Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left set to No on Flexera EU"
-  default "No"
-  allowed_values "Yes", "No"
 end
 
 ###############################################################################
@@ -164,7 +98,7 @@ end
 credentials "auth_aws" do
   schemes "aws","aws_sts"
   label "AWS"
-  description "Select the AWS Credential from the list"
+  description "Select the AWS Credential from the list."
   tags "provider=aws"
   aws_account_number $param_aws_account_number
 end
@@ -172,7 +106,7 @@ end
 credentials "auth_flexera" do
   schemes "oauth2"
   label "flexera"
-  description "Select Flexera One OAuth2 credentials"
+  description "Select Flexera One OAuth2 credentials."
   tags "provider=flexera"
 end
 
@@ -267,7 +201,7 @@ datasource "ds_child_policy_information" do
   result do
     encoding "json"
     # Select the published policy that is published by "support@flexera.com" and matches the name of the child policy template
-    collect jq(response, '.items[] | select(.name == "AWS Rightsize Compute Instances" and .created_by.email == "support@flexera.com")' ) do
+    collect jq(response, '.items[] | select(.name == "AWS EC2 Instances not running FlexNet Inventory Agent" and .created_by.email == "support@flexera.com")' ) do
       field "name", jmes_path(col_item, "name")
       field "href", jmes_path(col_item, "href")
       field "short_description", jmes_path(col_item, "short_description")
@@ -765,40 +699,19 @@ datasource "ds_child_incident_details" do
   end
 end
 
-datasource "ds_underutilized_instances_combined_incidents" do
-  run_script $js_ds_underutilized_instances_combined_incidents, $ds_child_incident_details
+datasource "ds_formatted_instances_combined_incidents" do
+  run_script $js_ds_formatted_instances_combined_incidents, $ds_child_incident_details
 end
 
-script "js_ds_underutilized_instances_combined_incidents", type: "javascript" do
+script "js_ds_formatted_instances_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-EOS
   result = []
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
-    // If the incident summary contains "AWS underutilized compute instances found" then include it in the filter result
-    if (s.indexOf("AWS underutilized compute instances found") > -1) {
-      _.each(incident["violation_data"], function(violation) {
-        result.push(violation);
-      });
-    }
-  });
-EOS
-end
-
-datasource "ds_idle_instances_combined_incidents" do
-  run_script $js_ds_idle_instances_combined_incidents, $ds_child_incident_details
-end
-
-script "js_ds_idle_instances_combined_incidents", type: "javascript" do
-  parameters "ds_child_incident_details"
-  result "result"
-  code <<-EOS
-  result = []
-  _.each(ds_child_incident_details, function(incident) {
-    s = incident["summary"];
-    // If the incident summary contains "AWS idle compute instances found" then include it in the filter result
-    if (s.indexOf("AWS idle compute instances found") > -1) {
+    // If the incident summary contains "instances missing in FlexNet Manager" then include it in the filter result
+    if (s.indexOf("instances missing in FlexNet Manager") > -1) {
       _.each(incident["violation_data"], function(violation) {
         result.push(violation);
       });
@@ -814,221 +727,27 @@ end
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
-    # Consolidated incident for AWS underutilized compute instances found
-  validate $ds_underutilized_instances_combined_incidents do
-    summary_template "Consolidated Incident: {{ len data }} AWS underutilized compute instances found"
+    # Consolidated incident for instances missing in FlexNet Manager
+  validate $ds_formatted_instances_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} instances missing in FlexNet Manager"
     escalate $esc_email
     check eq(size(data), 0)
     export do
       resource_level true
-      field "accountID" do
-        label "Account ID"
+      field "id" do
+        label "Instance Id"
       end
-      field "accountName" do
-        label "Account Name"
-      end
-      field "resourceID" do
-        label "Resource ID"
-      end
-      field "resourceType" do
-        # label "Resource Type"
-        label "Instance Size"
-      end
-      field "resourceName" do
-        label "Resource Name"
-      end
-      # field "vmSize" do
-      #   label "Instance Size"
-      # end
-      field "newResourceType" do
-        label "Recommended Instance Size"
+      field "instance_type" do
+        label "Instance Type"
       end
       field "region" do
         label "Region"
       end
-      field "platform" do
-        label "Platform"
-      end
-      field "hostname" do
-        label "Hostname"
-      end
-      field "savings" do
-        label "Estimated Monthly Savings"
-      end
-      field "savingsCurrency" do
-        label "Savings Currency"
-      end
-      field "privateDnsName" do
-        label "Private DNS Name"
-      end
-      field "launchTime" do
-        label "Launch Time"
-      end
-      field "cpuMaximum" do
-        label "CPU Maximum %"
-      end
-      field "cpuMinimum" do
-        label "CPU Minimum %"
-      end
-      field "cpuAverage" do
-        label "CPU Average %"
-      end
-      field "cpuP99" do
-        label "CPU p99"
-      end
-      field "cpuP95" do
-        label "CPU p95"
-      end
-      field "cpuP90" do
-        label "CPU p90"
-      end
-      field "memMaximum" do
-        label "Memory Maximum %"
-      end
-      field "memMinimum" do
-        label "Memory Minimum %"
-      end
-      field "memAverage" do
-        label "Memory Average %"
-      end
-      field "memP99" do
-        label "Memory p99"
-      end
-      field "memP95" do
-        label "Memory p95"
-      end
-      field "memP90" do
-        label "Memory p90"
+      field "instance_state" do
+        label "State"
       end
       field "tags" do
         label "Tags"
-      end
-      field "lookbackPeriod" do
-        label "Lookback Period"
-      end
-      field "service" do
-        label "Service"
-      end
-      field "id" do
-        label "ID"
-      end
-      field "threshold" do
-        label "CPU Threshold"
-      end
-      field "memoryThreshold" do
-        label "Memory Threshold"
-      end
-      field "thresholdType" do
-        label "Threshold Type"
-      end
-    end
-  end
-
-  # Consolidated incident for AWS idle compute instances found
-  validate $ds_idle_instances_combined_incidents do
-    summary_template "Consolidated Incident: {{ len data }} AWS idle compute instances found"
-    escalate $esc_email
-    check eq(size(data), 0)
-    export do
-      resource_level true
-      field "accountID" do
-        label "Account ID"
-      end
-      field "accountName" do
-        label "Account Name"
-      end
-      field "resourceID" do
-        label "Resource ID"
-      end
-      field "resourceType" do
-        label "Resource Type"
-      end
-      field "resourceName" do
-        label "Resource Name"
-      end
-      field "vmSize" do
-        label "Instance Size"
-      end
-      field "newResourceType" do
-        label "Recommended Instance Size"
-      end
-      field "region" do
-        label "Region"
-      end
-      field "platform" do
-        label "Platform"
-      end
-      field "hostname" do
-        label "Hostname"
-      end
-      field "savings" do
-        label "Estimated Monthly Savings"
-      end
-      field "savingsCurrency" do
-        label "Savings Currency"
-      end
-      field "privateDnsName" do
-        label "Private DNS Name"
-      end
-      field "launchTime" do
-        label "Launch Time"
-      end
-      field "cpuMaximum" do
-        label "CPU Maximum %"
-      end
-      field "cpuMinimum" do
-        label "CPU Minimum %"
-      end
-      field "cpuAverage" do
-        label "CPU Average %"
-      end
-      field "cpuP99" do
-        label "CPU p99"
-      end
-      field "cpuP95" do
-        label "CPU p95"
-      end
-      field "cpuP90" do
-        label "CPU p90"
-      end
-      field "memMaximum" do
-        label "Memory Maximum %"
-      end
-      field "memMinimum" do
-        label "Memory Minimum %"
-      end
-      field "memAverage" do
-        label "Memory Average %"
-      end
-      field "memP99" do
-        label "Memory p99"
-      end
-      field "memP95" do
-        label "Memory p95"
-      end
-      field "memP90" do
-        label "Memory p90"
-      end
-      field "tags" do
-        label "Tags"
-      end
-      field "lookbackPeriod" do
-        label "Lookback Period"
-      end
-      field "service" do
-        label "Service"
-      end
-      field "id" do
-        label "ID"
-      end
-      field "threshold" do
-        label "CPU Threshold"
-      end
-      field "memoryThreshold" do
-        label "Memory Threshold"
-      end
-      field "thresholdType" do
-        label "Threshold Type"
       end
     end
   end

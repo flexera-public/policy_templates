@@ -25,19 +25,34 @@ parameter "param_combined_incident_email" do
   default []
 end
 
+parameter "param_dimension_filter_includes" do
+  type "list"
+  label "Dimension Include Filters"
+  description <<-EOS
+  Filters [`dimension_name=dimension_value` pairs] to determine which Azure Subscriptions returned by the Flexera Bill Analysis API to **INCLUDE** and be applied to.
+  During each run this policy will select Azure Subscriptions who match **all** the filters defined and apply a child policy for each.
+  If no include filters are provided, then all Azure Subscriptions are included by default.
+  Most of the dimensions in Flexera can be used [default dimensions, custom tag dimensions, rule-based dimensions].  Full list of available dimensions documented in the [Bill Analysis API Docs](https://reference.rightscale.com/bill_analysis/).
+  EOS
+end
+
+parameter "param_dimension_filter_excludes" do
+  type "list"
+  label "Dimension Exclude Filters"
+  description <<-EOS
+  Filters [`dimension_name=dimension_value` pairs] to determine which Azure Subscriptions returned by  the Flexera Bill Analysis API to **EXCLUDE** and *not* have policy applied to.
+  During each run this policy will select Azure Subscriptions who match **all** the filters defined here and excludes them from results.
+  Can be used to exclude specific Azure Subscriptions [`vendor_account=123456789012`]
+  Most of the dimensions in Flexera can be used [default dimensions, custom tag dimensions, rule-based dimensions].  Full list of available dimensions documented in the [Bill Analysis API Docs](https://reference.rightscale.com/bill_analysis/).
+  EOS
+end
+
 parameter "param_policy_schedule" do
   type "string"
   label "Child Policy Schedule"
   description "The interval at which the child policy checks for conditions and generates incidents."
   default "daily"
   allowed_values "daily", "weekly", "monthly"
-end
-
-parameter "param_subscription_list" do
-  label "Subscription List"
-  type "list"
-  description "Subscription List to create the child policy, if empty, all subscriptions will be used"
-  default []
 end
 
 ## Child Policy Parameters
@@ -92,8 +107,8 @@ script "js_child_policy_options", type: "javascript" do
   code <<-EOS
   // Filter Options that are not appropriate for Child Policy
   var options = _.map(ds_self_policy_information.options, function(option){
-    // param_combined_incident_email, param_policy_schedule, param_subscription_list are exclusion to Meta Parent Policy Parameters
-    if (!_.contains(["param_combined_incident_email", "param_policy_schedule", "param_subscription_list"], option.name)) {
+    // param_combined_incident_email, param_dimension_filter_includes, param_dimension_filter_excludes", param_policy_schedule are exclusion to Meta Parent Policy Parameters
+    if (!_.contains(["param_combined_incident_email", "param_dimension_filter_includes", "param_dimension_filter_excludes", "param_policy_schedule"], option.name)) {
       return { "name": option.name, "value": option.value };
     }
   });
@@ -103,43 +118,6 @@ script "js_child_policy_options", type: "javascript" do
     "value": []
   });
   EOS
-end
-
-datasource "ds_subscriptions" do
-  request do
-    auth $auth_azure
-    pagination $pagination_azure
-    host $param_azure_endpoint
-    path "/subscriptions/"
-    query "api-version","2020-01-01"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "value[*]") do
-      field "subscriptionID", jmes_path(col_item, "subscriptionId")
-      field "subscriptionName", jmes_path(col_item, "displayName")
-      field "state", jmes_path(col_item, "state")
-    end
-  end
-end
-
-datasource "ds_filtered_subscriptions" do
-  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_list
-end
-
-script "js_filtered_subscriptions", type: "javascript" do
-  parameters "ds_subscriptions", "param_subscription_list"
-  result "result"
-  code <<-EOS
-  if (param_subscription_list.length > 0) {
-    result = _.filter(ds_subscriptions, function(sub) {
-      return _.contains(param_subscription_list, sub['subscriptionID']) || _.contains(param_subscription_list, sub['subscriptionName'])
-    })
-  } else {
-    result = ds_subscriptions
-  }
-EOS
 end
 
 datasource "ds_child_policy_options_map" do
@@ -195,6 +173,119 @@ datasource "ds_child_policy_information" do
       field "short_description", jmes_path(col_item, "short_description")
     end
   end
+end
+
+datasource "ds_get_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    # Select the Billing Centers that have "parent_id" undefined or "" (i.e. top-level Billing Centers)
+    collect jq(response, '.[] | select(.parent_id == null)' ) do
+      field "href", jq(col_item,".href")
+      field "id", jq(col_item,".id")
+      field "name", jq(col_item,".name")
+      field "parent_id", jq(col_item,".parent_id")
+    end
+  end
+end
+
+# Get the Azure subscriptions
+datasource "ds_get_azure_subscriptions" do
+  request do
+    run_script $js_make_billing_center_request, rs_org_id, rs_optima_host, $ds_get_billing_centers, $param_dimension_filter_includes, $param_dimension_filter_excludes
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"rows[*]") do
+      field "subscriptionID", jmes_path(col_item,"dimensions.vendor_account")
+      field "subscriptionName", jmes_path(col_item,"dimensions.vendor_account_name")
+    end
+  end
+end
+
+script "js_make_billing_center_request", type: "javascript" do
+  parameters "rs_org_id", "rs_optima_host", "billing_centers_unformatted", "param_dimension_filter_includes", "param_dimension_filter_excludes"
+  result "request"
+  code <<-EOS
+
+  billing_centers_formatted = []
+
+  for (x=0; x< billing_centers_unformatted.length; x++) {
+    billing_centers_formatted.push(billing_centers_unformatted[x]["id"])
+  }
+
+  finish = new Date()
+  finishFormatted = finish.toJSON().split("T")[0]
+  start = new Date()
+  start.setDate(start.getDate() - 30)
+  startFormatted = start.toJSON().split("T")[0]
+
+  // Default dimensions and filter expressions required for meta parent policy
+  var dimensions = ["vendor_account", "vendor_account_name"];
+  var filter_expressions = [
+    { dimension: "vendor", type: "equal", value: "Azure" }
+  ]
+
+  // Append to default dimensions and filter expressions using parent policy params
+  _.each(param_dimension_filter_includes, function (v) {
+    // split key=value string
+    var split = v.split("=");
+    var k = split[0];
+    var v = split[1];
+    // append to lists
+    dimensions.push(k);
+    filter_expressions.push({ dimension: k, type: "equal", value: v });
+  });
+
+  // Append to filter expressions using exclude policy params
+  _.each(param_dimension_filter_excludes, function (v) {
+    // split key=value string
+    var split = v.split("=");
+    var k = split[0];
+    var v = split[1];
+    // append to lists
+    dimensions.push(k);
+    filter_expressions.push({ "type": "not", "expression": { "dimension": k, "type": "equal", "value": v } });
+  });
+
+  // Produces a duplicate-free version of the array
+  dimensions = _.uniq(dimensions);
+
+  var body = {
+    "dimensions": dimensions,
+    "granularity":"day",
+    "start_at": startFormatted,
+    "end_at": finishFormatted,
+    "metrics":["cost_amortized_unblended_adj"],
+    "billing_center_ids": billing_centers_formatted,
+    "filter":
+    {
+      "type": "and",
+      "expressions": filter_expressions
+    },
+    "summarized": true
+  }
+  var request = {
+    auth:  'auth_flexera',
+    host:  rs_optima_host,
+    scheme: 'https',
+    verb: 'POST',
+    path:  "/bill-analysis/orgs/"+ rs_org_id + "/costs/aggregated",
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+    body: JSON.stringify(body)
+  }
+  EOS
 end
 
 # Get Child policies
@@ -336,7 +427,7 @@ script "js_format_existing_policies", type: "javascript" do
 end
 
 datasource "ds_take_in_parameters" do
-  run_script $js_take_in_parameters, $ds_filtered_subscriptions, $ds_format_self, first($ds_child_policy_information), $ds_format_existing_policies, $ds_child_policy_options, $ds_child_policy_options_map, $param_policy_schedule, policy_id, f1_app_host, rs_org_id, rs_project_id
+  run_script $js_take_in_parameters, $ds_get_azure_subscriptions, $ds_format_self, first($ds_child_policy_information), $ds_format_existing_policies, $ds_child_policy_options, $ds_child_policy_options_map, $param_policy_schedule, policy_id, f1_app_host, rs_org_id, rs_project_id
 end
 
 # hardcode template href with id from catalog
@@ -349,10 +440,9 @@ end
 # param_exclude_tags and param_allowed_regions are arrays. I'm doing an update on the order changing but the values remaining the same.
 # If we only want to do an update on the values changing we could sort before doing the equality check.
 script "js_take_in_parameters", type: "javascript" do
-  parameters "ds_filtered_subscriptions", "ds_format_self", "ds_child_policy_information", "ds_format_existing_policies", "ds_child_policy_options", "ds_child_policy_options_map", "param_policy_schedule", "meta_parent_policy_id", "f1_app_host", "rs_org_id", "rs_project_id"
+  parameters "ds_get_azure_subscriptions", "ds_format_self", "ds_child_policy_information", "ds_format_existing_policies", "ds_child_policy_options", "ds_child_policy_options_map", "param_policy_schedule", "meta_parent_policy_id", "f1_app_host", "rs_org_id", "rs_project_id"
   result "grid_and_cwf"
   code <<-EOS
-
   max_actions = 50;
 
   grid_and_cwf={grid:[], to_create:[], to_update:[], to_delete:[], parent_policy:ds_format_self};
@@ -390,8 +480,8 @@ script "js_take_in_parameters", type: "javascript" do
     }
   }
 
-  for (x=0; x<ds_filtered_subscriptions.length; x++) {
-    cur = ds_filtered_subscriptions[x];
+  for (x=0; x<ds_get_azure_subscriptions.length; x++) {
+    cur = ds_get_azure_subscriptions[x];
     cur_subscriptionID = cur.subscriptionID;
 
     // Name and description do not vary between create or updates so defining them here
