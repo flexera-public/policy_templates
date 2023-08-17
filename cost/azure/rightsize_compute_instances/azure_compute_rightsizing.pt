@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "3.1",
+  version: "3.2",
   provider: "Azure",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -441,10 +441,31 @@ script "js_azure_sku_memory", type: "javascript" do
 EOS
 end
 
-datasource "ds_azure_instances_metrics" do
+datasource "ds_azure_instances_metrics_cpu" do
   iterate $ds_azure_instances_filtered
   request do
-    run_script $js_azure_instances_metrics, val(iter_item, "resourceId"), $param_azure_endpoint, $param_stats_lookback
+    run_script $js_azure_instances_metrics, val(iter_item, "resourceId"), $param_azure_endpoint, $param_stats_lookback, "Percentage CPU"
+  end
+  result do
+    encoding "json"
+    field "value", val(response, "value")
+    field "resourceName", val(iter_item, "name")
+    field "resourceGroup", val(iter_item, "resourceGroup")
+    field "resourceId", val(iter_item, "resourceId")
+    field "resourceKind", val(iter_item, "resourceKind")
+    field "region", val(iter_item, "region")
+    field "tags", val(iter_item, "tags")
+    field "osType", val(iter_item, "osType")
+    field "resourceType", val(iter_item, "resourceType")
+    field "subscriptionId",val(iter_item, "subscriptionId")
+    field "subscriptionName",val(iter_item, "subscriptionName")
+  end
+end
+
+datasource "ds_azure_instances_metrics_mem" do
+  iterate $ds_azure_instances_filtered
+  request do
+    run_script $js_azure_instances_metrics, val(iter_item, "resourceId"), $param_azure_endpoint, $param_stats_lookback, "Available Memory Bytes"
   end
   result do
     encoding "json"
@@ -463,7 +484,7 @@ datasource "ds_azure_instances_metrics" do
 end
 
 script "js_azure_instances_metrics", type: "javascript" do
-  parameters "resourceId", "param_azure_endpoint", "param_stats_lookback"
+  parameters "resourceId", "param_azure_endpoint", "param_stats_lookback", "metricname"
   result "request"
   code <<-EOS
   end_date = new Date()
@@ -490,7 +511,7 @@ script "js_azure_instances_metrics", type: "javascript" do
       "api-version": "2018-01-01",
       "timespan": timespan,
       "interval": "P1D",
-      "metricnames": "Percentage CPU,Available Memory Bytes",
+      "metricnames": metricname,
       "aggregation": "average,maximum,minimum"
     },
     headers: {
@@ -503,27 +524,22 @@ EOS
 end
 
 datasource "ds_azure_instances_metrics_organized" do
-  run_script $js_azure_instances_metrics_organized, $ds_azure_instances_metrics, $ds_azure_sku_memory
+  run_script $js_azure_instances_metrics_organized, $ds_azure_instances_metrics_cpu, $ds_azure_instances_metrics_mem, $ds_azure_sku_memory
 end
 
 script "js_azure_instances_metrics_organized", type: "javascript" do
-  parameters "ds_azure_instances_metrics", "ds_azure_sku_memory"
+  parameters "ds_azure_instances_metrics_cpu", "ds_azure_instances_metrics_mem", "ds_azure_sku_memory"
   result "result"
   code <<-EOS
-  result = []
+  resources = {}
 
-  _.each(ds_azure_instances_metrics, function(vm) {
+  _.each(ds_azure_instances_metrics_cpu, function(vm) {
     cpu_stats = null
-    mem_stats = null
 
     _.each(vm['value'], function(stat) {
       if (stat["timeseries"][0] != undefined) {
         if (stat['name']['value'] == "Percentage CPU") {
           cpu_stats = stat["timeseries"][0]["data"]
-        }
-
-        if (stat['name']['value'] == "Available Memory Bytes") {
-          mem_stats = stat["timeseries"][0]["data"]
         }
       }
     })
@@ -558,6 +574,50 @@ script "js_azure_instances_metrics_organized", type: "javascript" do
     if (cpu_min_count != 0) { cpu_min = cpu_min / cpu_min_count }
     if (cpu_max_count != 0) { cpu_max = cpu_max / cpu_max_count }
     if (cpu_avg_count != 0) { cpu_avg = cpu_avg / cpu_avg_count }
+
+    vm_tags = []
+
+    if (typeof(vm['tags']) == 'object') {
+      _.each(Object.keys(vm['tags']), function(key) {
+        vm_tags.push(key + '=' + vm['tags'][key])
+      })
+    }
+
+    resources[vm['resourceId']] = {
+      resourceName: vm['resourceName'],
+      resourceGroup: vm['resourceGroup'],
+      resourceId: vm['resourceId'],
+      resourceKind: vm['resourceKind'],
+      region: vm['region'],
+      osType: vm['osType'],
+      resourceType: vm['resourceType'],
+      subscriptionId: vm['subscriptionId'],
+      subscriptionName: vm['subscriptionName'],
+      tags: vm_tags.join(', '),
+      cpu_minimum: parseFloat(cpu_min.toFixed(2)),
+      cpu_maximum: parseFloat(cpu_max.toFixed(2)),
+      cpu_average: parseFloat(cpu_avg.toFixed(2)),
+      mem_minimum: null,
+      mem_maximum: null,
+      mem_average: null,
+      service: "Microsoft.Compute",
+      underutil_message: "",
+      idle_message: "",
+      underutil_total_savings: "",
+      idle_total_savings: ""
+    }
+  })
+
+  _.each(ds_azure_instances_metrics_mem, function(vm) {
+    mem_stats = null
+
+    _.each(vm['value'], function(stat) {
+      if (stat["timeseries"][0] != undefined) {
+        if (stat['name']['value'] == "Available Memory Bytes") {
+          mem_stats = stat["timeseries"][0]["data"]
+        }
+      }
+    })
 
     // Default to 0 in case there are no stats because instance is not powered on
     mem_min = 0
@@ -596,37 +656,15 @@ script "js_azure_instances_metrics_organized", type: "javascript" do
     if (mem_max_count != 0) { mem_max = mem_max / mem_max_count * 100 }
     if (mem_avg_count != 0) { mem_avg = mem_avg / mem_avg_count * 100 }
 
-    vm_tags = []
+    resources[vm['resourceId']]['mem_minimum'] = parseFloat(mem_min.toFixed(2))
+    resources[vm['resourceId']]['mem_maximum'] = parseFloat(mem_max.toFixed(2))
+    resources[vm['resourceId']]['mem_average'] = parseFloat(mem_avg.toFixed(2))
+  })
 
-    if (typeof(vm['tags']) == 'object') {
-      _.each(Object.keys(vm['tags']), function(key) {
-        vm_tags.push(key + '=' + vm['tags'][key])
-      })
-    }
+  result = []
 
-    result.push({
-      resourceName: vm['resourceName'],
-      resourceGroup: vm['resourceGroup'],
-      resourceId: vm['resourceId'],
-      resourceKind: vm['resourceKind'],
-      region: vm['region'],
-      osType: vm['osType'],
-      resourceType: vm['resourceType'],
-      subscriptionId: vm['subscriptionId'],
-      subscriptionName: vm['subscriptionName'],
-      tags: vm_tags.join(', '),
-      cpu_minimum: parseFloat(cpu_min.toFixed(2)),
-      cpu_maximum: parseFloat(cpu_max.toFixed(2)),
-      cpu_average: parseFloat(cpu_avg.toFixed(2)),
-      mem_minimum: parseFloat(mem_min.toFixed(2)),
-      mem_maximum: parseFloat(mem_max.toFixed(2)),
-      mem_average: parseFloat(mem_avg.toFixed(2)),
-      service: "Microsoft.Compute",
-      underutil_message: "",
-      idle_message: "",
-      underutil_total_savings: "",
-      idle_total_savings: ""
-    })
+  _.each(Object.keys(resources), function(key) {
+    result.push(resources[key])
   })
 EOS
 end

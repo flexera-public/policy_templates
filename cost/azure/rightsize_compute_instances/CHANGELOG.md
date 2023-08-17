@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2
+
+- Fixed API issue that would sometimes cause the policy to fail when retrieving metrics
+
 ## v3.1
 
 - Added support for meta policies
