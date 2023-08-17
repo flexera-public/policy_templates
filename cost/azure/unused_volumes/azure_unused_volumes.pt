@@ -21,7 +21,7 @@ info(
 parameter "param_email" do
   type "list"
   category "Policy Settings"
-  label "Email addresses"
+  label "Email Addresses"
   description "A list of email addresses to notify."
   default []
 end
@@ -35,14 +35,13 @@ parameter "param_azure_endpoint" do
   default "management.azure.com"
 end
 
-parameter "param_unused_days" do
+parameter "param_minimum_age" do
   type "number"
   category "Policy Settings"
-  label "Days Unused"
-  description "The number of days a volume needs to have no activity to be considered unused. This value cannot be set above 90 due to Azure only storing 90 days of log data. If this value is set to 0, all unattached volumes will be considered unused."
-  default 30
+  label "Minimum Age (Days)"
+  description "The minimum age, in days, since a volume was created to produce recommendations for it. Set to 0 to ignore age entirely."
+  default 0
   min_value 0
-  max_value 90
 end
 
 parameter "param_subscriptions_allow_or_deny" do
@@ -83,12 +82,12 @@ parameter "param_exclusion_tags" do
   type "list"
   category "Filters"
   label "Exclusion Tags (Key:Value)"
-  description "Cloud native tags to ignore instances that you don't want to produce recommendations for. Format: Key:Value"
-  allowed_pattern /(^$)|([\w]?)+\:([\w]?)+/
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:*"
+  allowed_pattern /(^$)|[\w]*\:.*/
   default []
 end
 
-parameter "param_create_snapshot" do
+parameter "param_take_snapshot" do
   type "string"
   category "Actions"
   label "Create Final Snapshot"
@@ -101,7 +100,7 @@ parameter "param_automatic_action" do
   category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action."
-  allowed_values ["Delete Unused Volumes"]
+  allowed_values ["Delete Volumes"]
   default []
 end
 
@@ -332,6 +331,7 @@ script "js_azure_disks_tag_filtered", type: "javascript" do
       if (typeof(disk['tags']) == 'object') {
         _.each(Object.keys(disk['tags']), function(key) {
           disk_tags.push([key, ":", disk['tags'][key]].join(''))
+          disk_tags.push([key, ":*"].join(''))
         })
       }
 
@@ -375,115 +375,35 @@ script "js_azure_disks_region_filtered", type: "javascript" do
 EOS
 end
 
-# Pull log activity per disk instead of per subscription.
-# This is because pulling data via subscription actually takes longer due to pagination
-# and the large number of irrelevant log entries due to Azure's limited filtering options.
-datasource "ds_azure_logs" do
-  iterate $ds_azure_disks_region_filtered
-  request do
-    run_script $js_azure_logs, val(iter_item, "subscriptionID"), val(iter_item, "id"), $param_azure_endpoint
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "value[*]") do
-      field "eventTimestamp", jmes_path(col_item, "eventTimestamp")
-      field "operationName", jmes_path(col_item, "operationName.localizedValue")
-      field "resourceID", jmes_path(col_item, "resourceId")
-    end
-  end
-end
-
-script "js_azure_logs", type: "javascript" do
-  parameters "subscriptionID", "disk_id", "param_azure_endpoint"
-  result "request"
-  code <<-EOS
-  end_date = new Date()
-  end_date = end_date.toISOString()
-
-  start_date = new Date()
-  start_date.setDate(start_date.getDate() - 90)
-  start_date = start_date.toISOString()
-
-  filter = [
-    "eventTimestamp ge '", start_date, "' and ",
-    "eventTimestamp le '", end_date, "' and ",
-    "eventChannels eq 'Admin, Operation' and ",
-    "resourceId eq '", disk_id, "'"
-  ].join('')
-
-  var request = {
-    host: param_azure_endpoint,
-    path: "/subscriptions/" + subscriptionID + "/providers/microsoft.insights/eventtypes/management/values",
-    verb: "GET",
-    // Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-    ignore_status: [400, 403, 404],
-    auth: "auth_azure",
-    pagination: "pagination_azure",
-    query_params: {
-      'api-version': '2015-04-01',
-      '$filter': filter
-      '$select': 'operationName,properties,eventTimestamp,resourceId'
-    }
-  }
-EOS
-end
 
 datasource "ds_unused_volumes" do
-  run_script $js_unused_volumes, $ds_azure_disks_region_filtered, $ds_azure_logs, $param_unused_days
+  run_script $js_unused_volumes, $ds_azure_disks_region_filtered, $param_minimum_age
 end
 
 script "js_unused_volumes", type: "javascript" do
-  parameters "ds_azure_disks_region_filtered", "ds_azure_logs", "param_unused_days"
+  parameters "ds_azure_disks_region_filtered", "param_minimum_age"
   result "result"
   code <<-EOS
   result = []
 
-  // List of operations to ignore because they don't indicate activity
-  ignore_operations = ["New recommendation is available"]
-
-  filtered_logs = _.reject(ds_azure_logs, function(item) {
-    return _.contains(ignore_operations, item['operationName']) || item['eventTimestamp'] == null
+  unattached_disks = _.filter(ds_azure_disks_region_filtered, function(disk) {
+    return disk['state'] == "Unattached"
   })
 
-  disk_logs = {}
+  _.each(unattached_disks, function(disk) {
+    tags = []
 
-  _.each(filtered_logs, function(item) {
-    id = item['resourceID'].toLowerCase()
-    if (disk_logs[id] == undefined) { disk_logs[id] = [] }
-    disk_logs[id].push(item)
-  })
-
-  _.each(ds_azure_disks_region_filtered, function(disk) {
-    id = disk['id'].toLowerCase()
-    createdTime = new Date(disk['timeCreated'])
-    lastEvent = null
-
-    if (disk_logs[id] != undefined) {
-      _.each(disk_logs[id], function(entry) {
-        event_time = new Date(entry['eventTimestamp'])
-
-        if (lastEvent == null || event_time > lastEvent) {
-          lastEvent = event_time
-        }
+    if (typeof(disk['tags']) == 'object') {
+      _.each(Object.keys(disk['tags']), function(key) {
+        tags.push([key, "=", disk['tags'][key]].join(''))
       })
     }
 
-    expectedDate = new Date()
-    expectedDate.setDate(expectedDate.getDate() - parseInt(param_unused_days))
+    today = new Date()
+    created = new Date(disk['timeCreated'])
+    age = Math.round((today - created) / 1000 / 60 / 60 / 24)
 
-    if (lastEvent == null || expectedDate >= lastEvent || param_unused_days == 0) {
-      tags = []
-
-      if (typeof(disk['tags']) == 'object') {
-        _.each(Object.keys(disk['tags']), function(key) {
-          tags.push([key, "=", disk['tags'][key]].join(''))
-        })
-      }
-
-      if (lastEvent != null) {
-        lastEvent = lastEvent.toISOString()
-      }
-
+    if (param_minimum_age == 0 || age >= param_minimum_age) {
       result.push({
         id: disk['id'],
         resourceName: disk['resourceName'],
@@ -493,8 +413,8 @@ script "js_unused_volumes", type: "javascript" do
         tags: tags.join(', '),
         state: disk['state'],
         size: disk['size'],
-        timeCreated: new Date(disk['timeCreated']).toISOString(),
-        lastEvent: lastEvent,
+        age: age,
+        timeCreated: created.toISOString(),
         subscriptionID: disk['subscriptionID'],
         subscriptionName: disk['subscriptionName'],
         service: "Microsoft.Compute",
@@ -603,11 +523,11 @@ EOS
 end
 
 datasource "ds_volume_cost_mapping" do
-  run_script $js_volume_cost_mapping, $ds_azure_disks_region_filtered, $ds_unused_volumes, $ds_volume_costs_grouped, $ds_applied_policy, $ds_currency, $param_unused_days, $param_create_snapshot
+  run_script $js_volume_cost_mapping, $ds_azure_disks_region_filtered, $ds_unused_volumes, $ds_volume_costs_grouped, $ds_applied_policy, $ds_currency, $param_minimum_age, $param_take_snapshot
 end
 
 script "js_volume_cost_mapping", type:"javascript" do
-  parameters "ds_azure_disks_region_filtered", "ds_unused_volumes", "ds_volume_costs_grouped", "ds_applied_policy", "ds_currency", "param_unused_days", "param_create_snapshot"
+  parameters "ds_azure_disks_region_filtered", "ds_unused_volumes", "ds_volume_costs_grouped", "ds_applied_policy", "ds_currency", "param_minimum_age", "param_take_snapshot"
   result "result"
   code <<-'EOS'
   // Function for formatting currency numbers later
@@ -661,12 +581,12 @@ script "js_volume_cost_mapping", type:"javascript" do
       state: disk['state'],
       size: disk['size'],
       tags: disk['tags'],
+      age: disk['age'],
       timeCreated: disk['timeCreated'],
-      lastEvent: disk['lastEvent'],
       savings: parseFloat(savings.toFixed(3)),
       savingsCurrency: ds_currency['symbol'],
       recommendationDetails: recommendationDetails,
-      lookbackPeriod: param_unused_days,
+      lookbackPeriod: param_minimum_age,
       // These are to avoid errors when we hash_exclude these fields
       total_savings: '',
       message: '',
@@ -685,26 +605,24 @@ script "js_volume_cost_mapping", type:"javascript" do
     ") are unused and are recommended for deletion. "
   ].join('')
 
-  if (param_unused_days != 0) {
+  if (param_minimum_age != 0) {
     day_message = "day"
-    if (total_unused_disks.length > 1) { day_message += "s" }
+    if (param_minimum_age.length > 1) { day_message += "s" }
 
     idle_message = [
-      "An unattached volume is considered unused if it has not been attached to an instance ",
-      "for at least ", param_unused_days, " ", day_message, ".\n\n"
+      "An unattached volume is considered unused if it is not attached to an instance ",
+      "and is at least ", param_minimum_age, " ", day_message, " old.\n\n"
     ].join('')
   } else {
-    idle_message = "A volume is considered unused if it is not attached to an instance regardless of how long it's been unattached for.\n\n"
+    idle_message = "A volume is considered unused if it is not attached to an instance regardless of how old it is.\n\n"
   }
 
-  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
 
   savings_message = [
     ds_currency['symbol'], ' ',
     formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['separator'])
   ].join('')
-
-  age_disclaimer = "The Days Unattached field will be empty for any volumes that have been unattached for over 90 days due to Azure only retaining 90 days of log data."
 
   // Sort by descending order of savings value
   result = _.sortBy(result, function(item) { return item['savings'] * -1 })
@@ -720,7 +638,7 @@ script "js_volume_cost_mapping", type:"javascript" do
   })
 
   result[0]['total_savings'] = savings_message
-  result[0]['message'] = findings + idle_message + disclaimer + age_disclaimer
+  result[0]['message'] = findings + idle_message + disclaimer
   result[0]['policy_name'] = ds_applied_policy['name']
 EOS
 end
@@ -754,26 +672,29 @@ policy "pol_azure_unattached_volumes" do
       field "resourceName" do
         label "Resource Name"
       end
-      field "resourceType" do
-        label "Resource Type"
+      field "tags" do
+        label "Tags"
+      end
+      field "age" do
+        label "Age (Days)"
+      end
+      field "timeCreated" do
+        label "Created At"
       end
       field "recommendationDetails" do
         label "Recommendation"
+      end
+      field "resourceType" do
+        label "Resource Type"
       end
       field "region" do
         label "Region"
       end
       field "size" do
-        label "Disk Size in GB"
+        label "Disk Size (GB)"
       end
-      field "timeCreated" do
-        label "Created At"
-      end
-      field "lastEvent" do
-        label "Most Recent Event"
-      end
-      field "tags" do
-        label "Tags"
+      field "state" do
+        label "State"
       end
       field "savings" do
         label "Estimated Monthly Savings"
@@ -781,11 +702,11 @@ policy "pol_azure_unattached_volumes" do
       field "savingsCurrency" do
         label "Savings Currency"
       end
-      field "service" do
-        label "Service"
-      end
       field "lookbackPeriod" do
         label "Lookback Period"
+      end
+      field "service" do
+        label "Service"
       end
       field "resourceID" do
         label "Resource ID"
@@ -810,17 +731,17 @@ escalation "esc_email" do
 end
 
 escalation "esc_delete_volumes" do
-  automatic contains($param_automatic_action, "Delete Unused Volumes")
-  label "Delete unused volumes"
-  description "Delete the unused volumes"
-  run "delete_unused_volumes", data, $param_create_snapshot, rs_optima_host
+  automatic contains($param_automatic_action, "Delete Volumes")
+  label "Delete Volumes"
+  description "Approval to terminate all selected instances"
+  run "delete_volumes", data, $param_take_snapshot, rs_optima_host
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define delete_unused_volumes($data, $param_create_snapshot, $$rs_optima_host) return $all_responses do
+define delete_volumes($data, $param_take_snapshot, $$rs_optima_host) return $all_responses do
   # Change "No" to "Yes" to enable CWF debug logging
   $log_to_cm_audit_entries == "No"
 
@@ -830,7 +751,7 @@ define delete_unused_volumes($data, $param_create_snapshot, $$rs_optima_host) re
   foreach $item in $data do
     sub on_error: skip do
       call sys_log("In for item =",to_s($item))
-      if $param_create_snapshot == "true"
+      if $param_take_snapshot == "true"
         call create_snapshot($item) retrieve $status_code
         if to_s($status_code)=="202"
           call delete_unattached_disk($item['id'])
