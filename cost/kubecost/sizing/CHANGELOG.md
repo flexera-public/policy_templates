@@ -2,7 +2,7 @@
 
 ## v0.3
 
-- A new parameter for requesting recommendations "per cluster" or "overall" was added, if "per cluster" mode is configured, policy will discover clusters, iterate the clusters and request recommendations for each one. Previously, policy requested these recommendations in "overall" mode.
+- Added `Scope` parameter to allow user to gather recommendations per cluster or across the entire account. Previously, the recommendations were always requested overall the account.
 
 ## v0.2
 

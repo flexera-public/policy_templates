@@ -13,7 +13,7 @@ Kubecost request sizing recommendations policy provides Kubecost recommendations
 
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 - *Kubecost Host or IP address* - The host or IP Address where your Kubecost runs
-- *Recommendations request method* - The method used to request savings recommendations: "overall" or per "cluster"
+- *Scope* - The scope used to request savings recommendations: "overall" or "per cluster"
 - *Monthly Savings Threshold* - Specify the minimum estimated monthly savings that should result in a recommendation
   - Default: 5
   - Minimum value: 1
