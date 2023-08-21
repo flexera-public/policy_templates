@@ -1,18 +1,8 @@
 # Changelog
 
-## v6.0
+## v5.1
 
-- Several parameters altered to be more descriptive and human-readable
-- Removed deprecated "Log to CM Audit Entries" parameter
-- Added ability to only report recommendations that meet a minimum savings threshold
-- Added ability to include attached volumes in the incident and to action on them
-- Added ability to filter resources by multiple tag key:value pairs
-- Added additional context to incident description
-- Normalized incident export to be consistent with other policies
-- Added human-readable recommendation to incident export
-- Added additional fields to incident export to facilitate scraping for dashboards
-- Policy no longer raises new escalations if savings data changed but nothing else has
-- Streamlined code for better readability and faster execution
+- Corrected issue with policy not retrieving cost data on orgs using newer Azure bill connections
 
 ## v5.0
 
