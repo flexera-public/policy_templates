@@ -1,5 +1,10 @@
 # Changelog
 
+## v6.2
+
+- Corrected issue where attached IP addresses were being included in the incident
+- Added logic to ensure policy still completes even if the Flexera currency conversion API is unresponsive
+
 ## v6.1
 
 - Added ability to filter resources by tag key alone without regard for tag value
