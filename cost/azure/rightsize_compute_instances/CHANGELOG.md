@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2
+
+- Corrected issue with policy not retrieving cost data on orgs using newer Azure bill connections
+
 ## v3.1
 
 - Added support for meta policies
