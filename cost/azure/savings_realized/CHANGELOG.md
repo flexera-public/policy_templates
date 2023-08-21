@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.3
+
+- Corrected issue with policy not retrieving cost data on orgs using newer Azure bill connections
+
 ## v3.2
 
 - Updated indentation for chart url so it renders corrrectly in the policy incident email
