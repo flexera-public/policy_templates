@@ -45,3 +45,4 @@ Kubecost request sizing recommendations policy provides Kubecost recommendations
 ## Cost
 
 This Policy Template does not launch any instances, and so does not incur any cloud costs.
+
