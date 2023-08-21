@@ -523,8 +523,8 @@ These templates can generate savings estimates for your environment.
   - [AWS IAM Ensure Access Keys Are Rotated](./security/aws/iam_rotate_access_keys)
   - [AWS IAM Ensure Credentials Unused For >45 days Are Disabled](./security/aws/iam_disable_45_day_creds)
   - [AWS IAM Ensure MFA Enabled For IAM Users](./security/aws/iam_mfa_enabled_for_iam_users)
-  - [AWS IAM Ensure One Active Key Per IAM User](./security/aws/iam_users_perms_via_groups_only)
   - [AWS IAM Ensure One Active Key Per IAM User](./security/aws/iam_one_active_key_per_user)
+  - [AWS IAM Ensure One Active Key Per IAM User](./security/aws/iam_users_perms_via_groups_only)
   - [AWS IAM Report Attached Admin IAM Policies](./security/aws/iam_no_admin_iam_policies_attached)
   - [AWS IAM Report Expired SSL/TLS Certificates](./security/aws/iam_expired_ssl_certs)
   - [AWS IAM Report Insufficient Password Policy](./security/aws/iam_min_password_length)
@@ -637,120 +637,120 @@ These templates can generate savings estimates for your environment.
 :total_count: 242
 :optimization_count: 43
 :categories:
-  Compliance: 33
-  Security: 74
-  SaaS Management: 13
   Cost: 99
+  SaaS Management: 13
+  Compliance: 33
   Operational: 23
+  Security: 74
 :providers:
-  GitHub: 7
-  AWS: 77
-  GCE: 8
-  Google: 12
   Flexera Optima: 26
-  Flexera Cloud Management: 3
+  Microsoft: 1
+  Okta: 1
+  Flexera SaaS Manager: 9
   Flexera: 6
+  ServiceNow: 1
+  Flexera Cloud Management: 3
+  Google: 12
+  GCP: 1
+  GCE: 8
+  AWS: 77
+  Kubecost: 2
+  Oracle: 1
+  Azure: 77
+  Azure China: 1
+  '': 1
   Flexera ITAM: 5
   Flexera FNMS: 1
-  Azure: 77
-  Microsoft: 1
-  Flexera SaaS Manager: 9
-  ServiceNow: 1
-  Okta: 1
-  GCP: 1
-  Oracle: 1
-  '': 1
-  Kubecost: 2
-  Azure China: 1
+  GitHub: 7
   Flexera RISC: 2
 :services:
   '': 63
-  ECS: 1
-  EC2: 13
-  IAM: 19
-  Org: 1
-  Compute: 36
-  Identity: 1
-  Policy: 1
-  S3: 9
-  CloudTrail: 7
-  ELB: 4
-  RDS: 6
-  KMS: 1
-  DBS: 1
-  EBS: 3
-  Config: 1
-  VPC: 1
-  Storage: 20
-  Storage Accounts: 2
-  Security: 3
-  SQL: 15
-  PostgreSQL: 4
-  Network Security Group: 2
-  MySQL: 2
-  App Service: 1
-  compute: 1
   Office 365: 1
   All: 3
+  SQL: 15
+  Compute: 36
+  Storage: 20
+  RDS: 6
+  EC2: 13
+  ELB: 4
+  EBS: 3
   Cost Explorer: 1
-  Common Bill Ingestion: 1
+  S3: 9
   Kubernetes: 2
+  Common Bill Ingestion: 1
   Usage Discount: 7
-  Blob Store: 1
+  Storage Accounts: 2
   N/A: 1
-  Tags: 2
+  Blob Store: 1
+  ECS: 1
+  Org: 1
+  IAM: 19
+  Policy: 1
+  Identity: 1
   Lambda: 1
-  CCO: 1
+  Tags: 2
   FNMS: 1
   AKS: 2
+  CCO: 1
+  CloudTrail: 7
+  VPC: 1
+  Config: 1
+  DBS: 1
+  KMS: 1
+  compute: 1
+  MySQL: 2
+  Network Security Group: 2
+  PostgreSQL: 4
+  App Service: 1
+  Security: 3
 :policy_sets:
   '': 85
-  Untagged resources: 1
-  Instances not running FlexNet Inventory Agent: 2
-  Long Stopped Instances: 3
-  Disallowed Regions: 2
+  N/A: 3
+  Unused Database Services: 3
+  Rightsize Compute Instances: 6
+  Idle Compute Instances: 4
+  Old Snapshots: 3
+  Schedule Instance: 3
+  Committed Use Discount: 1
+  Unused Volumes: 6
+  Native Recommendations: 1
+  Unused IP Addresses: 3
+  Reserved Instances: 3
+  Rightsize Database Services: 1
+  Object Store Optimization: 3
+  Inefficient Disk Usage: 1
+  Inefficient Instance Usage: 2
+  GP3 Volumes: 1
+  Savings Plan Utilization: 1
+  Savings Plans: 2
+  RightSize Database Services: 2
+  Forecasting: 4
+  Rightsize Containers: 1
+  Rightsize Clusters: 1
+  Common Bill Ingestion: 1
+  Allocate VMs: 3
+  Rightsize Volumes: 2
+  Rightsize Database Instances: 3
+  Reserved Instance: 2
+  Lifecycle Management: 1
+  Common Bill Ingest: 1
   Unlabeled Resources: 1
+  Long Stopped Instances: 3
+  Instances not running FlexNet Inventory Agent: 2
+  Untagged resources: 1
+  Disallowed Regions: 2
   ITAM: 4
   Untagged Resources: 1
-  CIS: 61
+  Schedule Flexera ITAM Report: 1
+  Long Running Instances: 3
+  Tag Cardinality: 2
+  Schedule Report: 1
+  Database Services: 1
   Public Database Access: 2
+  CIS: 61
   AWS Config: 1
   Open Buckets: 2
   Storage Security: 1
-  N/A: 3
-  Forecasting: 4
-  Inefficient Instance Usage: 2
-  Unused IP Addresses: 3
-  Rightsize Compute Instances: 6
-  GP3 Volumes: 1
-  Reserved Instances: 3
-  Inefficient Disk Usage: 1
-  Schedule Instance: 3
-  Unused Database Services: 3
-  Unused Volumes: 6
-  Object Store Optimization: 3
-  RightSize Database Services: 2
-  Savings Plans: 2
-  Savings Plan Utilization: 1
-  Idle Compute Instances: 4
-  Old Snapshots: 3
-  Rightsize Database Services: 1
-  Native Recommendations: 1
-  Committed Use Discount: 1
-  Common Bill Ingestion: 1
-  Rightsize Containers: 1
-  Rightsize Clusters: 1
-  Reserved Instance: 2
-  Allocate VMs: 3
-  Rightsize Database Instances: 3
-  Rightsize Volumes: 2
-  Lifecycle Management: 1
-  Common Bill Ingest: 1
-  Tag Cardinality: 2
-  Long Running Instances: 3
-  Schedule Flexera ITAM Report: 1
-  Schedule Report: 1
-  Database Services: 1
 -->
 <!-- End Policy Template Stats -->
 
