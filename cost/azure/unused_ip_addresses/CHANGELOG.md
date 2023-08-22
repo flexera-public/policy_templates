@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.1
+
+- Corrected issue with policy not retrieving cost data on orgs using newer Azure bill connections
+
 ## v6.0
 
 - Several parameters altered to be more descriptive and human-readable
