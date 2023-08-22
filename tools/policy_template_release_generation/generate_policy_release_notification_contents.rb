@@ -32,7 +32,7 @@ puts "Base branch #{base_branch}"
 # puts "These are the Added Files: #{added_files}"
 # puts "These are the Modified Files: #{modified_files}"
 # changed_files = (added_files + modified_files).uniq
-changed_files = `git diff-tree --no-commit-id --name-only -r #{base_branch}..#{head_branch}`.split("\n")
+changed_files = `git diff --name-only #{base_branch} #{head_branch}`.split("\n")
 puts "These are the Modified Files: #{changed_files}"
 
 
