@@ -27,11 +27,14 @@ puts "Base branch #{base_branch}"
 #added_files = `git diff --name-only --diff-filter=A HEAD@{1} HEAD`.split("\n")
 #modified_files = `git diff --name-only --diff-filter=M HEAD@{1} HEAD`.split("\n")
 
-added_files = `git diff --name-only #{base_branch} #{head_branch} --diff-filter=A`.split("\n")
-modified_files = `git diff --name-only #{base_branch} #{head_branch} --diff-filter=M`.split("\n")
-puts "These are the Added Files: #{added_files}"
-puts "These are the Modified Files: #{modified_files}"
-changed_files = (added_files + modified_files).uniq
+# added_files = `git diff --name-only #{base_branch}..#{head_branch} --diff-filter=A`.split("\n")
+# modified_files = `git diff --name-only #{base_branch}..#{head_branch} --diff-filter=M`.split("\n")
+# puts "These are the Added Files: #{added_files}"
+# puts "These are the Modified Files: #{modified_files}"
+# changed_files = (added_files + modified_files).uniq
+changed_files = `git diff-tree --no-commit-id --name-only -r #{base_branch}..#{head_branch}`.split("\n")
+puts "These are the Modified Files: #{changed_files}"
+
 
 # Initialize arrays to store Changelog objects and Policy Template objects
 changelogs = []
