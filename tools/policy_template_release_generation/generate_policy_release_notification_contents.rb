@@ -36,13 +36,13 @@ changed_files = (added_files + modified_files).uniq
 changelogs = []
 policy_templates = []
 
-# Process Changelog files
-changelog_files.each do |changelog_file|
-  changelog_content = File.read(changelog_file)
-  version = changelog_content.match(/^##\s*v([\d.]+)/)&.captures&.first
-  changes = changelog_content.scan(/^- (.+)/).flatten
-  changelogs << Changelog.new(version, changes) if version && !changes.empty?
-end
+# # Process Changelog files
+# changelog_files.each do |changelog_file|
+#   changelog_content = File.read(changelog_file)
+#   version = changelog_content.match(/^##\s*v([\d.]+)/)&.captures&.first
+#   changes = changelog_content.scan(/^- (.+)/).flatten
+#   changelogs << Changelog.new(version, changes) if version && !changes.empty?
+# end
 
 puts "This is the list of Changelogs"
 
