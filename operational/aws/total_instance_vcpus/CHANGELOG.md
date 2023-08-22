@@ -3,6 +3,7 @@
 ## v3.2
 
 - Some changes (TEST)
+- Some more changes (TEST)
 
 ## v3.1
 

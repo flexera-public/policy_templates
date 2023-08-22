@@ -1,7 +1,8 @@
 class Changelog
   attr_accessor :version, :changes
 
-  def initialize(version, changes)
+  def initialize(name, version, changes)
+    @name = name
     @version = version
     @changes = changes
   end
@@ -37,18 +38,29 @@ puts "These are the Modified Files: #{changed_files}"
 
 
 # Initialize arrays to store Changelog objects and Policy Template objects
-changelogs = []
+cumulative_changelogs = []
 policy_templates = []
 
-# # Process Changelog files
-# changelog_files.each do |changelog_file|
-#   changelog_content = File.read(changelog_file)
-#   version = changelog_content.match(/^##\s*v([\d.]+)/)&.captures&.first
-#   changes = changelog_content.scan(/^- (.+)/).flatten
-#   changelogs << Changelog.new(version, changes) if version && !changes.empty?
-# end
+# Process Changelog files
+changed_files.each do |file|
+  next unless file.match?(/CHANGELOG\.md$/)
 
-puts "This is the list of Changelogs"
+  changelog_content = File.read(file)
+  version = changelog_content.match(/^##\s*v([\d.]+)/)&.captures&.first
+  changes = []
+
+  if version && !changelog_content.empty?
+    # Caputre cahnges for the most recent version only
+    latest_version_changes = changelog_content.scan(/^##\s*v#{version}[\s\S]*?(?=(?:^##\s*v\d+)|\z)/m)
+    latest_version_changes.each do |version_changes|
+      changes.concat(version_changes.scan(/^- (.+)/).flatten)
+    end
+
+    cumulative_changelogs << Changelog.new(file, version, changes) if version && !changes.empty?
+  end
+end
+
+puts "This is the list of Changelogs: #{cumulative_changelogs}"
 
 # # Process Policy Template files
 # policy_template_files.each do |pt_file|
