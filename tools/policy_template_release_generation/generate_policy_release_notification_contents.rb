@@ -1,8 +1,8 @@
 class Changelog
-  attr_accessor :version, :changes
+  attr_accessor :path, :version, :changes
 
-  def initialize(name, version, changes)
-    @name = name
+  def initialize(path, version, changes)
+    @path = path
     @version = version
     @changes = changes
   end
@@ -27,57 +27,55 @@ puts "Base branch #{base_branch}"
 #`ENV['DANGER_GITHUB_PR_BASE_SA'] + '...' + 'ENV['DANGER_GITHUB_PR_HEAD_SHA']
 #added_files = `git diff --name-only --diff-filter=A HEAD@{1} HEAD`.split("\n")
 #modified_files = `git diff --name-only --diff-filter=M HEAD@{1} HEAD`.split("\n")
-
-# added_files = `git diff --name-only #{base_branch}..#{head_branch} --diff-filter=A`.split("\n")
-# modified_files = `git diff --name-only #{base_branch}..#{head_branch} --diff-filter=M`.split("\n")
-# puts "These are the Added Files: #{added_files}"
-# puts "These are the Modified Files: #{modified_files}"
 # changed_files = (added_files + modified_files).uniq
+
 changed_files = `git diff --name-only #{base_branch} #{head_branch}`.split("\n")
 puts "These are the Modified Files: #{changed_files}"
 
 
 # Initialize arrays to store Changelog objects and Policy Template objects
-cumulative_changelogs = []
+changelogs = []
 policy_templates = []
 
 # Process Changelog files
 changed_files.each do |file|
-  next unless file.match?(/CHANGELOG\.md$/)
+  next unless file.match?(/CHANGELOG\.md$/) || file.match?(/\.pt$/) #Consider pulling README
 
-  changelog_content = File.read(file)
-  version = changelog_content.match(/^##\s*v([\d.]+)/)&.captures&.first
-  changes = []
+  if file.match?(/CHANGELOG\.md$/) 
+    changelog_content = File.read(file)
+    version = changelog_content.match(/^##\s*v([\d.]+)/)&.captures&.first
+    changes = []
 
-  if version && !changelog_content.empty?
-    # Caputre cahnges for the most recent version only
-    latest_version_changes = changelog_content.scan(/^##\s*v#{version}[\s\S]*?(?=(?:^##\s*v\d+)|\z)/m)
-    latest_version_changes.each do |version_changes|
-      changes.concat(version_changes.scan(/^- (.+)/).flatten)
+    if version && !changelog_content.empty?
+      # Caputre changes for the most recent version only
+      latest_version_changes = changelog_content.scan(/^##\s*v#{version}[\s\S]*?(?=(?:^##\s*v\d+)|\z)/m)
+      latest_version_changes.each do |version_changes|
+        changes.concat(version_changes.scan(/^- (.+)/).flatten)
+      end
+
+      changelogs << Changelog.new(file, version, changes) if version && !changes.empty?
     end
-
-    cumulative_changelogs << Changelog.new(file, version, changes) if version && !changes.empty?
+  else
+    # Capture policy template names
+    pt_content = File.read(file)
+    name = pt_content.match(/name "([^"]+)"/)&.captures&.first
+    policy_templates << PolicyTemplate.new(name, file) if name
   end
 end
 
-puts "This is the list of Changelogs: #{cumulative_changelogs}"
+puts "This is the list of Changelogs: #{changelogs}"
+puts "This is the list of Policy Templates: #{policy_templates}"
 
-# # Process Policy Template files
-# policy_template_files.each do |pt_file|
-#   pt_content = File.read(pt_file)
-#   name = pt_content.match(/name "([^"]+)"/)&.captures&.first
-#   policy_templates << PolicyTemplate.new(name, pt_file) if name
-# end
-
-# # Match Changelog entries with Policy Templates based on paths
-# changelogs.each do |changelog|
-#   matching_template = policy_templates.find { |template| changelog.path.include?(template.name.downcase) }
-#   if matching_template
-#     puts "Changelog for Policy Template '#{matching_template.name}':"
-#     puts changelog.changes
-#     puts "Policy Template File Path: #{matching_template.path}"
-#     puts "\n"
-#   else
-#     puts "No matching Policy Template found for Changelog Version #{changelog.version}"
-#   end
-# end
+# Match Changelog entries with Policy Templates based on paths
+changelogs.each do |changelog|
+  matching_template = policy_templates.find { |template| changelog.path.include?(File.dirname(template.path)) }
+  if matching_template
+    puts "Changelog for Policy Template '#{matching_template.name}':"
+    puts "Updated Template Version '#{changelog.version}'"
+    puts changelog.changes
+    puts "Policy Template File Path: #{matching_template.path}"
+    puts "\n"
+  else
+    puts "No matching Policy Template found for Changelog Version #{changelog.version}"
+  end
+end
