@@ -19,6 +19,7 @@ end
 # Manually set branches here (for now)
 base_branch = 'master'
 head_branch = 'POL-847-policy-automated-updates-on-releases'
+puts "Base branch #{base_branch}"
 
 # Get a list of added and modified files
 
