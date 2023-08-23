@@ -18,7 +18,7 @@ class PolicyTemplate
 end
 
 # Manually set branches here (for now)
-base_branch = 'master'
+base_branch = 'origin/master'
 head_branch = 'POL-847-policy-automated-updates-on-releases'
 puts "Base branch #{base_branch}"
 
