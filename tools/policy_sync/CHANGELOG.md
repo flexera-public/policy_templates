@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## v1.17
+
+- Changed the source of active policy list from S3 to GitHub
+
 ## v1.16
 
 - Added additional checking if policy long description or policy version are not defined
