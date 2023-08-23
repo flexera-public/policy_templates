@@ -75,6 +75,9 @@ changelogs.each do |changelog|
     puts changelog.changes
     puts "Policy Template File Path: #{matching_template.path}"
     puts "\n"
+
+    # # Store Changelog content in Step Output
+    # puts "::set-output name=changelog_content::#{changelog.changes.join}"
   else
     puts "No matching Policy Template found for Changelog Version #{changelog.version}"
   end
