@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.3
+
+- Added conditional logic to only use currency conversion API when needed
+
 ## v6.2
 
 - Corrected issue where attached IP addresses were being included in the incident
