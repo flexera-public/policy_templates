@@ -1,0 +1,63 @@
+name: Publish gems
+
+on:
+  workflow_dispatch:
+
+jobs:
+  draft_release:
+    runs-on: ubuntu-latest
+    outputs:
+      tag_name: ${{ steps.release-drafter.outputs.tag_name }}
+    steps:
+      # Get next version
+      - uses: release-drafter/release-drafter@v5
+        id: release-drafter
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish_release:
+    runs-on: ubuntu-latest
+    environment: prod
+    needs: draft_release
+    steps:
+      # Create version string from tag (v1.0.0 -> 1.0.0)
+      - name: Create version string
+        run: |
+          export TAG_NAME=${{ needs.draft_release.outputs.tag_name }}
+          echo "VERSION=${TAG_NAME:1}" >> $GITHUB_ENV
+
+      # Publish rubygems
+      - uses: actions/checkout@v2
+      - run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+      - name: Setup rubygems credentials
+        run: |
+          mkdir -p ~/.gem
+          cat << EOF > ~/.gem/credentials
+          ---
+          :rubygems_api_key: ${RUBYGEMS_API_KEY}
+          EOF
+
+          chmod 0600 ~/.gem/credentials
+        env:
+          RUBYGEMS_API_KEY: ${{ secrets.RUBYGEMS_API_KEY }}
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: 3
+          bundler-cache: true
+      - name: Release rubygems
+        run: |
+          bundle config unset --local deployment
+          bundle exec bump set $VERSION
+          bundle install
+          bundle exec rake release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Publish github releases
+      - uses: release-drafter/release-drafter@v5
+        with:
+          publish: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
