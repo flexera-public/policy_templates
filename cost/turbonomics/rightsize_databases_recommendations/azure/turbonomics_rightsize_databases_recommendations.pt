@@ -6,7 +6,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "0.3",
+  version: "0.4",
   source: "Turbonomic",
   service: "Usage Discount",
   provider: "Azure",
@@ -173,8 +173,6 @@ script "js_filtered_turbonomic_recommendations", type: "javascript" do
   code <<-EOS
     instances = []
     monthlySavings = 0.0
-    oneDay = 1000 * 60 * 60 * 24
-    nowDay = new Date(Date.now())
 
     function formatNumber(number, separator) {
         numString = number.toString()
@@ -270,10 +268,62 @@ script "js_only_recommendations", type: "javascript" do
   EOS
 end
 
+datasource "ds_only_uuids" do
+  run_script $js_only_uuids, $ds_filtered_recommendations
+end
+
+script "js_only_uuids", type: "javascript" do
+  parameters "arg"
+  result "results"
+  code <<-EOS
+    results  = []
+    _.each(arg, function (db) {
+      if (db.className == "Database") {
+        results.push(db.uuid)
+      }
+    })
+  EOS
+end
+
+datasource "ds_get_pricing_model" do
+  request do
+    run_script $js_get_pricing_model, $param_turbonomic_endpoint, $param_auth_cookie, $ds_only_uuids
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "uuid", jmes_path(col_item, "uuid")
+      field "pricingModel", jmes_path(col_item, "aspects.dbAspect.pricingModel")
+    end
+  end
+end
+
+script "js_get_pricing_model", type: "javascript" do
+  result "request"
+  parameters "turbonomic_endpoint", "auth_cookie", "ds_only_uuids"
+  code <<-EOS
+    body_fields = {"criteriaList":[], "logicalOperator":"AND", "className":"Database", "environmentType":"CLOUD", "scope":ds_only_uuids}
+
+    request = {
+      verb: "POST",
+      host: turbonomic_endpoint,
+      path: "/api/v3/search/",
+      body_fields: body_fields,
+      headers: {
+        "Content-Type": "application/json",
+        "Cookie": auth_cookie
+      },
+      "query_params": {
+        "aspect_names": "dbAspect"
+      }
+    }
+  EOS
+end
+
 datasource "ds_get_projected_statistics" do
   iterate $ds_filtered_recommendations
   request do
-    run_script $js_get_projected_statistics, iter_item, $param_turbonomic_endpoint, $param_auth_cookie
+    run_script $js_get_projected_statistics, iter_item, $param_turbonomic_endpoint, $param_auth_cookie, $ds_get_pricing_model
   end
   result do
     encoding "json"
@@ -293,7 +343,7 @@ end
 datasource "ds_get_current_statistics" do
   iterate $ds_filtered_recommendations
   request do
-    run_script $js_get_projected_statistics, iter_item, $param_turbonomic_endpoint, $param_auth_cookie
+    run_script $js_get_projected_statistics, iter_item, $param_turbonomic_endpoint, $param_auth_cookie, $ds_get_pricing_model
   end
   result do
     encoding "json"
@@ -311,19 +361,25 @@ datasource "ds_get_current_statistics" do
 end
 
 script "js_get_projected_statistics", type: "javascript" do
-  parameters "instance", "turbonomic_endpoint", "auth_cookie"
+  parameters "instance", "turbonomic_endpoint", "auth_cookie", "ds_get_pricing_model"
   result "request"
   code <<-EOS
     nineHours = 1000 * 60 * 60 * 9
     nowDay = new Date(Date.now())
     pastDay = new Date(Date.now() + nineHours)
     body_fields = {}
-    if (_.contains(instance.pricingModel, "DTU")){
-      body_fields = {"statistics":[{"name":"DTU","groupBy":["key","percentile"]},{"name":"StorageAmount","groupBy":["key"]}],"startDate":nowDay.getTime(),"endDate":pastDay.getTime()}
-    }
-    if (_.contains(instance.pricingModel, "StorageAmount")){
-      body_fields = {"statistics":[{"name":"VCPU","groupBy":["key","percentile"]},{"name":"VMem","groupBy":["key","percentile"]},{"name":"StorageAccess","groupBy":["key","percentile"]},{"name":"IOThroughput","groupBy":["key","percentile"]},{"name":"StorageAmount","groupBy":["key"]}],"startDate":nowDay.getTime(),"endDate":pastDay.getTime()}
-    }
+
+    _.each(ds_get_pricing_model, function (db, index) {
+      if (db.uuid === instance.uuid) {
+        if (db.pricingModel === "DTU"){
+          body_fields = {"statistics":[{"name":"DTU","groupBy":["key","percentile"]},{"name":"StorageAmount","groupBy":["key"]}],"startDate":nowDay.getTime(),"endDate":pastDay.getTime()}
+        }
+
+        if (db.pricingModel === "vCore"){
+          body_fields = {"statistics":[{"name":"VCPU","groupBy":["key","percentile"]},{"name":"VMem","groupBy":["key","percentile"]},{"name":"StorageAccess","groupBy":["key","percentile"]},{"name":"IOThroughput","groupBy":["key","percentile"]},{"name":"StorageAmount","groupBy":["key"]}],"startDate":nowDay.getTime(),"endDate":pastDay.getTime()}
+        }
+      }
+    })
 
     if (instance.className == "DatabaseServer"){
       body_fields = {"statistics":[{"name":"VCPU","groupBy":["key","percentile"]},{"name":"VMem","groupBy":["key","percentile"]},{"name":"IOThroughput","groupBy":["key","percentile"]},{"name":"DBCacheHitRate","groupBy":["key","percentile"]},{"name":"VStorage","groupBy":["key"]},{"name":"StorageAccess","groupBy":["key","percentile"]},{"name":"StorageAmount","groupBy":["key"]},{"name":"Connection","groupBy":["key"]}],"startDate":nowDay.getTime(),"endDate":pastDay.getTime()}
@@ -343,12 +399,12 @@ script "js_get_projected_statistics", type: "javascript" do
 end
 
 datasource "ds_combined_data" do
-  run_script $js_combined_data, $ds_filtered_turbonomic_recommendations, $ds_get_projected_statistics, $ds_get_current_statistics
+  run_script $js_combined_data, $ds_filtered_turbonomic_recommendations, $ds_get_projected_statistics, $ds_get_current_statistics, $ds_get_pricing_model
 end
 
 script "js_combined_data", type: "javascript" do
   result "result"
-  parameters "ds_get_turbonomic_recommendations", "ds_get_projected_statistics", "ds_get_current_statistics"
+  parameters "ds_get_turbonomic_recommendations", "ds_get_projected_statistics", "ds_get_current_statistics", "ds_get_pricing_model"
   code <<-EOS
     _.each(ds_get_projected_statistics, function (projectedStatistic, ii) {
       _.each(ds_get_turbonomic_recommendations.instances, function (db, index) {
@@ -357,30 +413,37 @@ script "js_combined_data", type: "javascript" do
             db.newSizeUtil = ((projectedStatistic.size[1]*100)/projectedStatistic.size[0]).toFixed(2)
             db.size = (ds_get_current_statistics[index].size[0]/1024)
             db.sizeUtil = ((ds_get_current_statistics[index].size[1]*100)/ds_get_current_statistics[index].size[0]).toFixed(2)
-            if (_.contains(db.pricingModel, "DTU")){
-              db.newDtu = projectedStatistic.dtu[0]
-              db.newDtuUtil = ((projectedStatistic.dtu[1]*100)/projectedStatistic.dtu[0]).toFixed(2)
-              db.dtu = ds_get_current_statistics[index].dtu[0]
-              db.dtuUtil = ((ds_get_current_statistics[index].dtu[1]*100)/ds_get_current_statistics[index].dtu[0]).toFixed(2)
-            }
-            if (_.contains(db.pricingModel, "StorageAmount")){
-              db.newIops = projectedStatistic.iops[0]
-              db.newIopsP95 = ((projectedStatistic.iops[1]*100)/projectedStatistic.iops[0]).toFixed(2)
-              db.newMem = (projectedStatistic.vmem[0]/1048576).toFixed(2)
-              db.newMemP95 = ((projectedStatistic.vmem[1]*100)/projectedStatistic.vmem[0]).toFixed(2)
-              db.newCpu = (projectedStatistic.vcpu[0]/1000).toFixed(2)
-              db.newCpuP95 = ((projectedStatistic.vcpu[1]*100)/projectedStatistic.vcpu[0]).toFixed(2)
-              db.newThroughput = (projectedStatistic.iOThroughput[0]*0.000125).toFixed(2)
-              db.newThroughputP95 = ((projectedStatistic.iOThroughput[1]*100)/projectedStatistic.iOThroughput[0]).toFixed(2)
-              db.iops = ds_get_current_statistics[index].iops[0]
-              db.iopsP95 = ((ds_get_current_statistics[index].iops[1]*100)/ds_get_current_statistics[index].iops[0]).toFixed(2)
-              db.mem = (ds_get_current_statistics[index].vmem[0]/1048576).toFixed(2)
-              db.memP95 = ((ds_get_current_statistics[index].vmem[1]*100)/ds_get_current_statistics[index].vmem[0]).toFixed(2)
-              db.cpu = (ds_get_current_statistics[index].vcpu[0]/1000).toFixed(2)
-              db.cpuP95 = ((ds_get_current_statistics[index].vcpu[1]*100)/ds_get_current_statistics[index].vcpu[0]).toFixed(2)
-              db.throughput = (ds_get_current_statistics[index].iOThroughput[0]*0.000125).toFixed(2)
-              db.throughputP95 = ((ds_get_current_statistics[index].iOThroughput[1]*100)/ds_get_current_statistics[index].iOThroughput[0]).toFixed(2)
-            }
+
+            _.each(ds_get_pricing_model, function (dbs) {
+              if (dbs.uuid === db.uuid) {
+                if (dbs.pricingModel === "DTU" && db.className === "Database"){
+                  db.newDtu = projectedStatistic.dtu[0]
+                  db.newDtuUtil = ((projectedStatistic.dtu[1]*100)/projectedStatistic.dtu[0]).toFixed(2)
+                  db.dtu = ds_get_current_statistics[index].dtu[0]
+                  db.dtuUtil = ((ds_get_current_statistics[index].dtu[1]*100)/ds_get_current_statistics[index].dtu[0]).toFixed(2)
+                }
+
+                if (dbs.pricingModel === "vCore" && db.className === "Database"){
+                  db.newIops = projectedStatistic.iops[0]
+                  db.newIopsP95 = ((projectedStatistic.iops[1]*100)/projectedStatistic.iops[0]).toFixed(2)
+                  db.newMem = (projectedStatistic.vmem[0]/1048576).toFixed(2)
+                  db.newMemP95 = ((projectedStatistic.vmem[1]*100)/projectedStatistic.vmem[0]).toFixed(2)
+                  db.newCpu = (projectedStatistic.vcpu[0]/1000).toFixed(2)
+                  db.newCpuP95 = ((projectedStatistic.vcpu[1]*100)/projectedStatistic.vcpu[0]).toFixed(2)
+                  db.newThroughput = (projectedStatistic.iOThroughput[0]*0.000125).toFixed(2)
+                  db.newThroughputP95 = ((projectedStatistic.iOThroughput[1]*100)/projectedStatistic.iOThroughput[0]).toFixed(2)
+                  db.iops = ds_get_current_statistics[index].iops[0]
+                  db.iopsP95 = ((ds_get_current_statistics[index].iops[1]*100)/ds_get_current_statistics[index].iops[0]).toFixed(2)
+                  db.mem = (ds_get_current_statistics[index].vmem[0]/1048576).toFixed(2)
+                  db.memP95 = ((ds_get_current_statistics[index].vmem[1]*100)/ds_get_current_statistics[index].vmem[0]).toFixed(2)
+                  db.cpu = (ds_get_current_statistics[index].vcpu[0]/1000).toFixed(2)
+                  db.cpuP95 = ((ds_get_current_statistics[index].vcpu[1]*100)/ds_get_current_statistics[index].vcpu[0]).toFixed(2)
+                  db.throughput = (ds_get_current_statistics[index].iOThroughput[0]*0.000125).toFixed(2)
+                  db.throughputP95 = ((ds_get_current_statistics[index].iOThroughput[1]*100)/ds_get_current_statistics[index].iOThroughput[0]).toFixed(2)
+                }
+              }
+            })
+
             if (db.className == "DatabaseServer") {
               if (projectedStatistic.connection == null) {
                 db.connections = ""
