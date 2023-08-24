@@ -3,6 +3,9 @@
 ## v0.4
 
 - Renamed `Created Time` incident field to `Recommendation Created Time`.
+- Added `RI Coverage` incident field.
+- Added `New RI Coverage` incident field.
+- Added `Vm Age` incident field.
 - Added `System Details URL` incident field.
 - Added `IOPs Capacity` incident field.
 - Added `IOPs Utilization (%)` incident field.

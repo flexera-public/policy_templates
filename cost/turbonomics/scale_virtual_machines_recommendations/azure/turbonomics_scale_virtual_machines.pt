@@ -220,6 +220,8 @@ script "js_filtered_turbonomics_recommendations", type: "javascript" do
   code <<-EOS
     instances = []
     monthlySavings = 0.0
+    oneDay = 1000 * 60 * 60 * 24
+    nowDay = new Date(Date.now())
     function formatNumber(number, separator){
     var numString =number.toString()
     var values=numString.split(".")
@@ -240,11 +242,29 @@ script "js_filtered_turbonomics_recommendations", type: "javascript" do
     Object.keys(ds_get_action_details.uuids).forEach(function(uuid) {
       _.each(ds_get_turbonomics_recommendations, function(vm, index){
         if (vm.uuid === uuid) {
+          riCoverageBefore = 0.0
+          riCoverageAfter = 0.0
           ds_get_turbonomics_recommendations[index].uptime = Math.round(ds_get_action_details.uuids[uuid].entityUptime.uptimePercentage*100)/100
-          console.log(index)
-          console.log(ds_get_action_details.uuids[uuid].riCoverageBefore)
-          console.log(ds_get_action_details.uuids[uuid].riCoverageAfter)
-
+          if (typeof ds_get_action_details.uuids[uuid].riCoverageBefore.value != "undefined" && ds_get_action_details.uuids[uuid].riCoverageBefore.value != null) {
+            if (typeof ds_get_action_details.uuids[uuid].riCoverageBefore.capacity != "undefined" && ds_get_action_details.uuids[uuid].riCoverageBefore.capacity != null) {
+              if (typeof ds_get_action_details.uuids[uuid].riCoverageBefore.capacity.avg != "undefined" && ds_get_action_details.uuids[uuid].riCoverageBefore.capacity.avg != null) {
+                riCoverageBefore = ds_get_action_details.uuids[uuid].riCoverageBefore.value*100/ds_get_action_details.uuids[uuid].riCoverageBefore.capacity.avg
+              }
+            }
+          }
+          if (typeof ds_get_action_details.uuids[uuid].riCoverageAfter.value != "undefined" && ds_get_action_details.uuids[uuid].riCoverageAfter.value != null) {
+            if (typeof ds_get_action_details.uuids[uuid].riCoverageAfter.capacity != "undefined" && ds_get_action_details.uuids[uuid].riCoverageAfter.capacity != null) {
+              if (typeof ds_get_action_details.uuids[uuid].riCoverageAfter.capacity.avg != "undefined" && ds_get_action_details.uuids[uuid].riCoverageAfter.capacity.avg != null) {
+                riCoverageAfter = ds_get_action_details.uuids[uuid].riCoverageAfter.value*100/ds_get_action_details.uuids[uuid].riCoverageAfter.capacity.avg
+              }
+            }
+          }
+          ds_get_turbonomics_recommendations[index].riCoverageBefore = riCoverageBefore.toFixed(2)
+          ds_get_turbonomics_recommendations[index].riCoverageAfter = riCoverageAfter.toFixed(2)
+          ds_get_turbonomics_recommendations[index].vmAge = Math.round(ds_get_action_details.uuids[uuid].entityUptime.totalDurationInMilliseconds / oneDay)
+          if (ds_get_turbonomics_recommendations[index].vmAge == 30){
+            ds_get_turbonomics_recommendations[index].vmAge = ds_get_turbonomics_recommendations[index].vmAge + "+"
+          }
         }
       })
     })
@@ -462,6 +482,9 @@ policy "pol_turbonomics_scale_vms" do
       field "uptime" do
         label "Virtual Machine Uptime Percentage"
       end
+      field "vmAge" do
+        label "VM Age (Days)"
+      end
       field "currentResourceType" do
         label "Current Compute Tier"
         path "resourceType"
@@ -486,6 +509,12 @@ policy "pol_turbonomics_scale_vms" do
       end
       field "createdTime" do
         label "Recommendation Created Time"
+      end
+      field "riCoverageBefore" do
+        label "RI Coverage"
+      end
+      field "riCoverageAfter" do
+        label "New RI Coverage"
       end
       field "url" do
         label "System Details URL"
