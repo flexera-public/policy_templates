@@ -97,5 +97,7 @@ changelogs.each do |changelog|
   end
 end
 
-#Output Notification Content as a JSON string
-puts notification_content_array.to_json
+# Output Notification Content as a JSON string
+# puts notification_content_array.to_json
+notification_content_string = JSON.generate(notification_content_array)
+puts notification_content_string
