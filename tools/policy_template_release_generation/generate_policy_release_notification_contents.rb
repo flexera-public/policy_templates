@@ -78,15 +78,17 @@ changelogs.each do |changelog|
 
     notification_content_json = {
       activityTitle: matching_template.name,
-      activitySubtitle: "Version: #{changelog.version}",
       facts: [{
-        name: "Updates",
-        value: changelog.changes.map { |change| change.gsub('`', '\u0060')}.join('\\n')
+        name: "Template Version",
+        value: changelog.version
+      },
+      {
+        name: "Policy Updates",
+        #value: changelog.changes.map { |change| change.gsub('`', '\u0060')}.join('\\n')
+        value: "<ul><li>#{changelog.changes.map { |change| change.gsub('`', '\u0060')}.join('</li><li>')}</li></ul>"
       }]
     }
 
-    #notification_content_string = JSON.generate(notification_content_json).gsub('"', '\\"')
-    #puts "Notification Object as String: #{notification_content_string}"
     all_notification_content_array << notification_content_json
   end
 end
