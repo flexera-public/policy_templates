@@ -85,17 +85,13 @@ changelogs.each do |changelog|
       }]
     }
 
-    #puts "Notification Object: #{notification_content_json}"
-
-    notification_content_string = JSON.generate(notification_content_json).gsub('"', '\\"')
+    #notification_content_string = JSON.generate(notification_content_json).gsub('"', '\\"')
     #puts "Notification Object as String: #{notification_content_string}"
-
-
-    all_notification_content_array << notification_content_string
+    all_notification_content_array << notification_content_json
   end
 end
 
 # Output Notification Content as a JSON string
 # puts notification_content_array.to_json
-all_notification_content = all_notification_content_array.join(',')
+all_notification_content = JSON.generate(all_notification_content_array).gsub('"', '\\"')
 puts all_notification_content
