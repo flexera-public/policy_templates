@@ -85,8 +85,8 @@ changelogs.each do |changelog|
       }]
     }
 
-    puts "Notification Array: #{notification_content_array}"
-    puts "Notifcation Object: #{notification_content_json}"
+    #puts "Notification Array: #{notification_content_array}"
+    #puts "Notifcation Object: #{notification_content_json}"
 
     notification_content_array << notification_content_json
 
@@ -98,4 +98,4 @@ changelogs.each do |changelog|
 end
 
 #Output Notification Content as a JSON string
-puts notification_content_array
+puts notification_content_array.to_json
