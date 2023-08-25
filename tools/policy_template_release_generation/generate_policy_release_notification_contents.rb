@@ -84,7 +84,7 @@ changelogs.each do |changelog|
 
 
     notification_content_json = {
-      activityTitle: "<h2>#{matching_template.name}</h2>",
+      activityTitle: "<h2 style='font-size: 18px;'>#{matching_template.name}</h2>",
       facts: [{
         name: "Template Version",
         value: changelog.version
