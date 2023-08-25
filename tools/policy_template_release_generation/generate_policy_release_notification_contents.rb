@@ -99,5 +99,5 @@ end
 
 # Output Notification Content as a JSON string
 # puts notification_content_array.to_json
-notification_content_string = JSON.generate(notification_content_array)
+notification_content_string = JSON.generate(notification_content_array).gsub('"', '\\"')
 puts notification_content_string
