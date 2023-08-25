@@ -81,7 +81,7 @@ changelogs.each do |changelog|
       activitySubtitle: "Version: #{changelog.version}",
       facts: [{
         name: "Updates",
-        value: changelog.changes.map { |change| change.gsub('`', '\u0060')}.join('\n')
+        value: changelog.changes.map { |change| change.gsub('`', '\u0060')}.join('\\n')
       }]
     }
 
