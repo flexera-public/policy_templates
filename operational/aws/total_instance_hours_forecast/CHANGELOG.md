@@ -2,7 +2,7 @@
 
 ## v3.3
 
-- Another test change
+- Another test change with `formatting`
 
 ## v3.2
 

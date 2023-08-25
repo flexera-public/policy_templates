@@ -68,7 +68,7 @@ end
 # puts "This is the list of Policy Templates: #{policy_templates}"
 
 # Create Notification Content Array
-notification_content_array = []
+all_notification_content_array = []
 
 # Match Changelog entries with Policy Templates based on paths
 # and then push Changelog contents to Notification Content Array defined above
@@ -81,23 +81,21 @@ changelogs.each do |changelog|
       activitySubtitle: "Version: #{changelog.version}",
       facts: [{
         name: "Updates",
-        value: changelog.changes.join
+        value: changelog.changes.map { |change| change.gsub('`', '\u0060')}.join('\n')
       }]
     }
 
-    #puts "Notification Array: #{notification_content_array}"
-    #puts "Notifcation Object: #{notification_content_json}"
+    puts "Notification Object: #{notification_content_json}"
 
-    notification_content_array << notification_content_json
+    notification_content_string = JSON.generate(notification_content_json).gsub('"', '\\"')
+    puts "Notification Object as String: #{notification_content_string}"
 
-    # # Store Changelog content in Step Output
-    # puts "::set-output name=changelog_content::#{changelog.changes.join}"
-  # else
-  #   puts "No matching Policy Template found for Changelog Version #{changelog.version}"
+
+    all_notification_content_array << notification_content_string
   end
 end
 
 # Output Notification Content as a JSON string
 # puts notification_content_array.to_json
-notification_content_string = JSON.generate(notification_content_array).gsub('"', '\\"').gsub('`', '\\`')
-puts notification_content_string
+all_notification_content = all_notification_content_array.join(',')
+# puts all_notification_content
