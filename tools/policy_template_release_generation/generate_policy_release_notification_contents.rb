@@ -40,7 +40,7 @@ policy_templates = []
 
 # Process Changelog files
 changed_files.each do |file|
-  next unless file.match?(/CHANGELOG\.md$/) || file.match?(/\.pt$/) #Consider pulling README
+  next unless file.match?(/CHANGELOG\.md$/) || file.match?(/\.pt$/) #Consider pulling README as well
 
   if file.match?(/CHANGELOG\.md$/) 
     changelog_content = File.read(file)
@@ -48,7 +48,7 @@ changed_files.each do |file|
     changes = []
 
     if version && !changelog_content.empty?
-      # Caputre changes for the most recent version only
+      # Capture changes for the most recent version only
       latest_version_changes = changelog_content.scan(/^##\s*v#{version}[\s\S]*?(?=(?:^##\s*v\d+)|\z)/m)
       latest_version_changes.each do |version_changes|
         changes.concat(version_changes.scan(/^- (.+)/).flatten)
@@ -64,9 +64,6 @@ changed_files.each do |file|
   end
 end
 
-# puts "This is the list of Changelogs: #{changelogs}"
-# puts "This is the list of Policy Templates: #{policy_templates}"
-
 # Create Notification Content Array
 all_notification_content_array = []
 
@@ -75,6 +72,16 @@ all_notification_content_array = []
 changelogs.each do |changelog|
   matching_template = policy_templates.find { |template| changelog.path.include?(File.dirname(template.path)) }
   if matching_template
+
+    # Format HTML for Notification API call
+    # Replace backticks around words with HTML code tags
+    formatted_changes = changelog.changes.map do |change|
+      change.gsub(/`([^`]+)`/, '<code>\1</code>')
+    end
+
+    # formatted_changes_html = "<li>#{changelog.changes.map { |change| change.gsub('`', '\u0060')}.join('</li><li>')}</li>"
+    formatted_changes_html = formatted_changes.map { |change| "<li>#{change}</li>"}.join('')
+
 
     notification_content_json = {
       activityTitle: matching_template.name,
@@ -85,7 +92,7 @@ changelogs.each do |changelog|
       {
         name: "Policy Updates",
         #value: changelog.changes.map { |change| change.gsub('`', '\u0060')}.join('\\n')
-        value: "<ul><li>#{changelog.changes.map { |change| change.gsub('`', '\u0060')}.join('</li><li>')}</li></ul>"
+        value: "<ul>#{formatted_changes_html}</ul>"
       }]
     }
 
