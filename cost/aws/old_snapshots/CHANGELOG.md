@@ -1,5 +1,9 @@
 # Changelog
 
+## v7.2
+
+- Fixed issue related to tag key/values not being populated
+
 ## v7.1
 
 - Added ability to filter resources by tag key alone without regard for tag value
