@@ -27,7 +27,8 @@ puts "Previous Master Commit: #{previous_master_commit}"
 
 # Get a list of added and modified files
 #changed_files = `git diff --name-only #{base_branch} #{head_branch}`.split("\n")
-changed_files = `git diff --name-only origin/master~1..origin/master`.split("\n")
+#changed_files = `git diff --name-only origin/master~1..origin/master`.split("\n")
+changed_files = `git diff --name-only #{previous_master_commit} origin/master`.split("\n")
 
 # Initialize arrays to store Changelog objects and Policy Template objects
 changelogs = []
