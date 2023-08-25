@@ -98,4 +98,4 @@ changelogs.each do |changelog|
 end
 
 #Output Notification Content as a JSON string
-puts changelog_json_array.to_json
+puts notification_content_array.to_json
