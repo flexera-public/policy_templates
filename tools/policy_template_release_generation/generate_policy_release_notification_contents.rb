@@ -24,15 +24,8 @@ base_branch = 'origin/master'
 head_branch = 'POL-847-policy-automated-updates-on-releases'
 
 # Get a list of added and modified files
-
-#`ENV['DANGER_GITHUB_PR_BASE_SA'] + '...' + 'ENV['DANGER_GITHUB_PR_HEAD_SHA']
-#added_files = `git diff --name-only --diff-filter=A HEAD@{1} HEAD`.split("\n")
-#modified_files = `git diff --name-only --diff-filter=M HEAD@{1} HEAD`.split("\n")
-# changed_files = (added_files + modified_files).uniq
-
-changed_files = `git diff --name-only #{base_branch} #{head_branch}`.split("\n")
-# puts "These are the Modified Files: #{changed_files}"
-
+#changed_files = `git diff --name-only #{base_branch} #{head_branch}`.split("\n")
+changed_files = `git diff --name-only origin/master~1..origin/master`.split("\n")
 
 # Initialize arrays to store Changelog objects and Policy Template objects
 changelogs = []
@@ -91,7 +84,6 @@ changelogs.each do |changelog|
       },
       {
         name: "Policy Updates",
-        #value: changelog.changes.map { |change| change.gsub('`', '\u0060')}.join('\\n')
         value: "<ul>#{formatted_changes_html}</ul>"
       }]
     }
@@ -100,7 +92,6 @@ changelogs.each do |changelog|
   end
 end
 
-# Output Notification Content as a JSON string
-# puts notification_content_array.to_json
+# Output Notification Content as a JSON string to be used directly in YAML workflow file
 all_notification_content = JSON.generate(all_notification_content_array).gsub('"', '\\"')
 puts all_notification_content
