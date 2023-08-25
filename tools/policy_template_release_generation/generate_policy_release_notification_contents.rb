@@ -23,7 +23,7 @@ end
 # base_branch = 'origin/master'
 # head_branch = 'POL-847-policy-automated-updates-on-releases'
 previous_master_commit = `git rev-parse origin/master@{1}`.strip
-puts "Previous Master Commit: #{previous_master_commit}"
+#puts "Previous Master Commit: #{previous_master_commit}"
 
 # Get a list of added and modified files
 #changed_files = `git diff --name-only #{base_branch} #{head_branch}`.split("\n")
