@@ -1,3 +1,5 @@
+require 'json'
+
 class Changelog
   attr_accessor :path, :version, :changes
 
@@ -73,27 +75,25 @@ notification_content_array = []
 changelogs.each do |changelog|
   matching_template = policy_templates.find { |template| changelog.path.include?(File.dirname(template.path)) }
   if matching_template
-    # puts "Changelog for Policy Template '#{matching_template.name}':"
-    # puts "Updated Template Version '#{changelog.version}'"
-    # puts changelog.changes
-    # puts "Policy Template File Path: #{matching_template.path}"
-    # puts "\n"
 
     notification_content_json = {
       activityTitle: matching_template.name,
       activitySubtitle: "Version: #{changelog.version}",
       facts: [{
         name: "Updates",
-        value: changelog.changes
+        value: changelog.changes.join
       }]
     }
+
+    puts "Notification Array: #{notification_content_array}"
+    puts "Notifcation Object: #{notification_content_json}"
 
     notification_content_array << notification_content_json
 
     # # Store Changelog content in Step Output
     # puts "::set-output name=changelog_content::#{changelog.changes.join}"
-  else
-    puts "No matching Policy Template found for Changelog Version #{changelog.version}"
+  # else
+  #   puts "No matching Policy Template found for Changelog Version #{changelog.version}"
   end
 end
 
