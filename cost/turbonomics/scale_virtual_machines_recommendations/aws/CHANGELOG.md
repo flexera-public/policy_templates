@@ -13,12 +13,12 @@
 - Added `New Memory (GB)` incident field.
 - Added `Memory P95 Utilization (%)` incident field.
 - Added `New Memory P95 Utilization (%)` incident field.
-- Added `Storage Throughput (MB/s)` incident field.
-- Added `New Storage Throughput (MB/s)` incident field.
+- Added `Storage Throughput Capacity (MB/s)` incident field.
+- Added `New Storage Throughput Capacity (MB/s)` incident field.
 - Added `Storage Throughput P95 Utilization (%)` incident field.
 - Added `New Storage Throughput P95 Utilization (%)` incident field.
-- Added `Net Throughput (MB/s)` incident field.
-- Added `New Net Throughput (MB/s)` incident field.
+- Added `Net Throughput Capacity (MB/s)` incident field.
+- Added `New Net Throughput Capacity (MB/s)` incident field.
 - Added `Net Throughput P95 Utilization (%)` incident field.
 - Added `New Net Throughput P95 Utilization (%)` incident field.
 - Added `System Details URL` incident field.
