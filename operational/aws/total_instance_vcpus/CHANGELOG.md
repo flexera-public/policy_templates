@@ -1,10 +1,5 @@
 # Changelog
 
-## v3.2
-
-- Some changes (TEST)
-- Some more changes (TEST)
-
 ## v3.1
 
 - Updated indentation for chart url so it renders corrrectly in the policy incident email
