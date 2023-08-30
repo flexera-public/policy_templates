@@ -75,7 +75,6 @@ These templates can generate savings estimates for your environment.
 - [Google Idle VM Recommender](./cost/google/idle_vm_recommendations)
 - [Turbonomic Allocate Virtual Machine Recommendations Google](./cost/turbonomics/allocate_virtual_machines_recommendations/gcp)
 - [Turbonomic Delete Unattached Volumes Recommendations Google](./cost/turbonomics/delete_unattached_volumes/gcp)
-- [Turbonomic Rightsize Databases Recommendations Google](./cost/turbonomics/rightsize_databases_recommendations/gcp)
 - [Turbonomic Rightsize Virtual Machines Recommendations Google](./cost/turbonomics/scale_virtual_machines_recommendations/gcp)
 
 #### Kubecost
@@ -364,10 +363,6 @@ These templates can generate savings estimates for your environment.
   - [Google Recommender Policy](./cost/google/recommender)
   - [Turbonomic Delete Unattached Volumes Recommendations Google](./cost/turbonomics/delete_unattached_volumes/gcp)
 
-- Usage Discount
-
-  - [Turbonomic Rightsize Databases Recommendations Google](./cost/turbonomics/rightsize_databases_recommendations/gcp)
-
 #### Kubecost
 
 - Kubernetes
@@ -634,10 +629,10 @@ These templates can generate savings estimates for your environment.
 <!-- Begin Policy Template Stats -->
 <!--
 ---
-:total_count: 242
-:optimization_count: 43
+:total_count: 241
+:optimization_count: 42
 :categories:
-  Cost: 99
+  Cost: 98
   SaaS Management: 13
   Compliance: 33
   Operational: 23
@@ -650,7 +645,7 @@ These templates can generate savings estimates for your environment.
   Flexera: 6
   ServiceNow: 1
   Flexera Cloud Management: 3
-  Google: 12
+  Google: 11
   GCP: 1
   GCE: 8
   AWS: 77
@@ -678,7 +673,7 @@ These templates can generate savings estimates for your environment.
   S3: 9
   Kubernetes: 2
   Common Bill Ingestion: 1
-  Usage Discount: 7
+  Usage Discount: 6
   Storage Accounts: 2
   N/A: 1
   Blob Store: 1
@@ -730,7 +725,7 @@ These templates can generate savings estimates for your environment.
   Common Bill Ingestion: 1
   Allocate VMs: 3
   Rightsize Volumes: 2
-  Rightsize Database Instances: 3
+  Rightsize Database Instances: 2
   Reserved Instance: 2
   Lifecycle Management: 1
   Common Bill Ingest: 1
