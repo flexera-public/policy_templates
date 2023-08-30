@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.2
+
+- Corrected issue with policy, tags were being sent in an unsupported format
+
 ## v5.1
 
 - Corrected issue with policy not retrieving cost data on orgs using newer Azure bill connections
