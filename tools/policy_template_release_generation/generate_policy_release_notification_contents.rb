@@ -38,7 +38,6 @@ changed_files.each do |file|
 
   if file.match?(/CHANGELOG\.md$/) 
     changelog_content = File.read(file)
-    puts "This is the Changelog File Content : #{changelog_content}"
     version = changelog_content.match(/^##\s*v([\d.]+)/)&.captures&.first
     changes = []
 
