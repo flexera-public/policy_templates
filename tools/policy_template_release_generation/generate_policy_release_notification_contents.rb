@@ -19,10 +19,6 @@ class PolicyTemplate
   end
 end
 
-# Manually set branches here (for now)
-previous_master_commit = `git rev-parse origin/master~1`
-#puts "Previous Master Commit: #{previous_master_commit}"
-
 # Get a list of added and modified files
 added_files = `git diff --name-only --diff-filter=A origin/master~1..origin/master`.split("\n")
 modified_files = `git diff --name-only --diff-filter=M origin/master~1..origin/master`.split("\n")
@@ -42,6 +38,7 @@ changed_files.each do |file|
 
   if file.match?(/CHANGELOG\.md$/) 
     changelog_content = File.read(file)
+    puts "This is the Changelog File Content : #{changelog_content}"
     version = changelog_content.match(/^##\s*v([\d.]+)/)&.captures&.first
     changes = []
 
