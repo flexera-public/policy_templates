@@ -1,4 +1,4 @@
-# AWS Unused RDS Policy
+# AWS Unused RDS Instances
 
 ## What it does
 
