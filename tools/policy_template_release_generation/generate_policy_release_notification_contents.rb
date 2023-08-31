@@ -69,9 +69,7 @@ changelogs.each do |changelog|
       change.gsub(/`([^`]+)`/, '<code>\1</code>')
     end
 
-    # formatted_changes_html = "<li>#{changelog.changes.map { |change| change.gsub('`', '\u0060')}.join('</li><li>')}</li>"
     formatted_changes_html = formatted_changes.map { |change| "<li>#{change}</li>"}.join('')
-
 
     notification_content_json = {
       activityTitle: "<h2 style='font-size: 18px;'>#{matching_template.name}</h2>",
