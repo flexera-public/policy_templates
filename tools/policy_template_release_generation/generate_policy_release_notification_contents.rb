@@ -24,10 +24,6 @@ added_files = `git diff --name-only --diff-filter=A origin/master~1..origin/mast
 modified_files = `git diff --name-only --diff-filter=M origin/master~1..origin/master`.split("\n")
 changed_files = (added_files + modified_files).uniq
 
-# added_files = `git diff --name-only --diff-filter=A HEAD@{1} HEAD`.split("\n")
-# modified_files = `git diff --name-only --diff-filter=M HEAD@{1} HEAD`.split("\n")
-# changed_files = (added_files + modified_files).uniq
-
 # Initialize arrays to store Changelog objects and Policy Template objects
 changelogs = []
 policy_templates = []
