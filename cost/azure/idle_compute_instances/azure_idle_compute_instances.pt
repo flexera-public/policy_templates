@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "5.1",
+  version: "5.2",
   provider: "Azure",
   service: "Compute",
   policy_set: "Idle Compute Instances",
@@ -268,8 +268,12 @@ datasource "ds_top_level_billing_centers" do
   run_script $js_top_level_bc, $ds_billing_centers
 end
 
+datasource "ds_azure_instances_performance_parsed" do
+  run_script $js_parse_instance_tags, $ds_azure_instance_performance
+end
+
 datasource "ds_combineddata" do
-  run_script $js_combineddata, $param_cpu_average_percentage, $ds_azure_instance_performance
+  run_script $js_combineddata, $param_cpu_average_percentage, $ds_azure_instances_performance_parsed
 end
 
 datasource "ds_instance_cost_mapping" do
@@ -399,6 +403,24 @@ script "js_filter_instances", type: "javascript" do
   }
 EOF
 end
+
+#This is to create an array of tag names per instance based on its tags
+script "js_parse_instance_tags", type: "javascript" do
+  parameters "ds_azure_instance_performance"
+  result "results"
+  code <<-EOS
+    var results = []
+    _.each(ds_azure_instance_performance, function(result){
+      var tagsArray = []
+      for (var tag in result.tags) {
+        tagsArray.push(tag + "=" + result.tags[tag])
+      }
+      result['tags'] = tagsArray;
+      results.push(result)
+    })
+  EOS
+  end
+
 
 #This is to get the average cpu over time for the machine and return the dataset of machines with issues
 script "js_combineddata", type: "javascript" do
