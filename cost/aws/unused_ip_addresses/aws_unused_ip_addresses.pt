@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "6.1",
+  version: "6.2",
   provider: "AWS",
   service: "EC2",
   policy_set: "Unused IP Addresses",
@@ -271,6 +271,8 @@ datasource "ds_currency_conversion" do
     query "from", "USD"
     query "to", val($ds_currency_target, 'code')
     query "amount", "1"
+    # Ignore currency conversion if API has issues
+    ignore_status [400, 404, 502]
   end
   result do
     encoding "json"
@@ -292,15 +294,17 @@ script "js_currency", type:"javascript" do
   result = ds_currency_target
   result['exchange_rate'] = 1
 
-  currency_code = ds_currency_target['code']
-  current_month = parseInt(new Date().toISOString().split('-')[1])
+  if (ds_currency_conversion['to'] != undefined) {
+    currency_code = ds_currency_target['code']
+    current_month = parseInt(new Date().toISOString().split('-')[1])
 
-  conversion_block = _.find(ds_currency_conversion['to'][currency_code], function(item) {
-    return item['month'] == current_month
-  })
+    conversion_block = _.find(ds_currency_conversion['to'][currency_code], function(item) {
+      return item['month'] == current_month
+    })
 
-  if (conversion_block != undefined) {
-    result['exchange_rate'] = conversion_block['monthlyAverage']
+    if (conversion_block != undefined) {
+      result['exchange_rate'] = conversion_block['monthlyAverage']
+    }
   }
 EOS
 end
@@ -420,7 +424,10 @@ script "js_unattached_ips", type: "javascript" do
   result "result"
   code <<-EOS
   result = _.filter(ds_ip_addresses_filtered, function(ip) {
-    return ip["instanceID"] == "" || ip["instanceID"] == null || ip["instanceID"] == undefined
+    no_instance = ip["instanceID"] == "" || ip["instanceID"] == null || ip["instanceID"] == undefined
+    no_association = ip["associationID"] == "" || ip["associationID"] == null || ip["associationID"] == undefined
+
+    return no_instance && no_association
   })
 EOS
 end
@@ -588,11 +595,11 @@ end
 
 # Combine IP information with cost data and prepare final datasource for incident
 datasource "ds_ip_cost_mapping" do
-  run_script $js_ip_cost_mapping, $ds_unused_ips, $ds_ip_addresses_filtered, $ds_ip_address_prices_grouped, $ds_aws_account, $ds_currency, $ds_applied_policy, $param_days_unattached
+  run_script $js_ip_cost_mapping, $ds_unused_ips, $ds_ip_addresses_filtered, $ds_ip_address_prices_grouped, $ds_aws_account, $ds_currency, $ds_currency_conversion, $ds_applied_policy, $param_days_unattached
 end
 
 script "js_ip_cost_mapping", type:"javascript" do
-  parameters "ds_unused_ips", "ds_ip_addresses_filtered", "ds_ip_address_prices_grouped", "ds_aws_account", "ds_currency", "ds_applied_policy", "param_days_unattached"
+  parameters "ds_unused_ips", "ds_ip_addresses_filtered", "ds_ip_address_prices_grouped", "ds_aws_account", "ds_currency", "ds_currency_conversion", "ds_applied_policy", "param_days_unattached"
   result "result"
   code <<-'EOS'
   // Function for formatting currency numbers later
@@ -674,7 +681,7 @@ script "js_ip_cost_mapping", type:"javascript" do
     savings_disclaimer += "List prices were converted from USD using current exchange rates. "
   }
 
-  age_disclaimer = "The Days Unattached field will be empty for any IP addresses that have been unattached for over 90 days due to CloudTrail only retaining 90 days of log data."
+  age_disclaimer = "The Days Unattached field will be empty for any IP addresses that have been unattached for over 90 days due to CloudTrail only retaining 90 days of log data.\n\n"
 
   total_ips = ds_ip_addresses_filtered.length.toString()
   total_unused_ips = ds_unused_ips.length.toString()
@@ -714,6 +721,12 @@ script "js_ip_cost_mapping", type:"javascript" do
     formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['t_separator'])
   ].join('')
 
+  api_disclaimer = ""
+
+  if (ds_currency_conversion['to'] == undefined && ds_currency['code'] != 'USD') {
+    api_disclaimer = "Savings values are in USD due to a malfunction with Flexera's internal currency conversion API. Please contact Flexera support to report this issue."
+  }
+
   // Sort by descending order of savings value
   result = _.sortBy(result, function(item) { return item['savings'] * -1 })
 
@@ -729,7 +742,7 @@ script "js_ip_cost_mapping", type:"javascript" do
   })
 
   result[0]['total_savings'] = savings_message
-  result[0]['message'] = findings + idle_message + disclaimer + savings_disclaimer + age_disclaimer
+  result[0]['message'] = findings + idle_message + disclaimer + savings_disclaimer + age_disclaimer + api_disclaimer
   result[0]['policy_name'] = ds_applied_policy['name']
 EOS
 end
