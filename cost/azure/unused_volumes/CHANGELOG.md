@@ -4,7 +4,7 @@
 
 - Several parameters altered to be more descriptive and human-readable
 - Removed deprecated "Log to CM Audit Entries" parameter
-- Removed ability to filter by how long a policy was detached because this functionality is not supported by Azure
+- Removed ability to filter by how long a policy was detached; see README for more details
 - Added ability to filter by volume age
 - Added ability to only report recommendations that meet a minimum savings threshold
 - Added ability to filter resources by multiple tag key:value pairs
