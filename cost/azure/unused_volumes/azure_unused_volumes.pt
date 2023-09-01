@@ -434,10 +434,22 @@ script "js_unused_volumes", type: "javascript" do
 EOS
 end
 
+datasource "ds_unused_volumes_subscriptions" do
+  run_script $js_unused_volumes_subscriptions, $ds_unused_volumes
+end
+
+script "js_unused_volumes_subscriptions", type: "javascript" do
+  parameters "ds_unused_volumes"
+  result "result"
+  code <<-EOS
+  result = _.compact(_.uniq(_.pluck(ds_unused_volumes, 'subscriptionID')))
+EOS
+end
+
 datasource "ds_volume_costs" do
-  iterate $ds_azure_subscriptions_filtered
+  iterate $ds_unused_volumes_subscriptions
   request do
-    run_script $js_volume_costs, val(iter_item, "id"), $ds_top_level_bcs, rs_org_id, rs_optima_host
+    run_script $js_volume_costs, iter_item, $ds_top_level_bcs, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -582,7 +594,6 @@ script "js_volume_cost_mapping", type:"javascript" do
 
     recommendationDetails = [
       "Delete unused volume ", disk["resourceName"], " ",
-      "(", disk['id'], ")",
       "in Azure Subscription ", disk["subscriptionName"],
       " (", disk["subscriptionID"], ")"
     ].join('')
@@ -723,17 +734,17 @@ policy "pol_azure_unattached_volumes" do
       field "savingsCurrency" do
         label "Savings Currency"
       end
-      field "lookbackPeriod" do
-        label "Lookback Period"
-      end
       field "service" do
         label "Service"
       end
       field "resourceID" do
         label "Resource ID"
       end
+      field "lookbackPeriod" do
+        label "Lookback Period"
+      end
       field "id" do
-        label "Disk Id"
+        label "ID"
         path "resourceID"
       end
     end
