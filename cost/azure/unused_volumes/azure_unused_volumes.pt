@@ -35,11 +35,20 @@ parameter "param_azure_endpoint" do
   default "management.azure.com"
 end
 
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation"
+  min_value 0
+  default 0
+end
+
 parameter "param_minimum_age" do
   type "number"
   category "Policy Settings"
   label "Minimum Age (Days)"
-  description "The minimum age, in days, since a volume was created to produce recommendations for it. Set to 0 to ignore age entirely."
+  description "The minimum age, in days, since a volume was created to produce recommendations for it. Set to 0 to ignore age entirely and report all unattached volumes."
   default 0
   min_value 0
 end
@@ -91,7 +100,7 @@ parameter "param_take_snapshot" do
   type "string"
   category "Actions"
   label "Create Final Snapshot"
-  description "Whether or not to take a final snapshot before deleting"
+  description "Whether or not to take a final snapshot before deleting an unused volume."
   allowed_values "true", "false"
 end
 
@@ -375,7 +384,6 @@ script "js_azure_disks_region_filtered", type: "javascript" do
 EOS
 end
 
-
 datasource "ds_unused_volumes" do
   run_script $js_unused_volumes, $ds_azure_disks_region_filtered, $param_minimum_age
 end
@@ -533,11 +541,11 @@ EOS
 end
 
 datasource "ds_volume_cost_mapping" do
-  run_script $js_volume_cost_mapping, $ds_azure_disks_region_filtered, $ds_unused_volumes, $ds_volume_costs_grouped, $ds_applied_policy, $ds_currency, $param_minimum_age, $param_take_snapshot
+  run_script $js_volume_cost_mapping, $ds_azure_disks_region_filtered, $ds_unused_volumes, $ds_volume_costs_grouped, $ds_applied_policy, $ds_currency, $param_minimum_age, $param_take_snapshot, $param_min_savings
 end
 
 script "js_volume_cost_mapping", type:"javascript" do
-  parameters "ds_azure_disks_region_filtered", "ds_unused_volumes", "ds_volume_costs_grouped", "ds_applied_policy", "ds_currency", "param_minimum_age", "param_take_snapshot"
+  parameters "ds_azure_disks_region_filtered", "ds_unused_volumes", "ds_volume_costs_grouped", "ds_applied_policy", "ds_currency", "param_minimum_age", "param_take_snapshot", "param_min_savings"
   result "result"
   code <<-'EOS'
   // Function for formatting currency numbers later
@@ -579,29 +587,31 @@ script "js_volume_cost_mapping", type:"javascript" do
       " (", disk["subscriptionID"], ")"
     ].join('')
 
-    result.push({
-      accountID: disk['subscriptionID'],
-      accountName: disk['subscriptionName'],
-      resourceID: disk['id'],
-      resourceName: disk['resourceName'],
-      resourceGroup: disk['resourceGroup'],
-      resourceType: disk['resourceType'],
-      region: disk['region'],
-      service: disk['service'],
-      state: disk['state'],
-      size: disk['size'],
-      tags: disk['tags'],
-      age: disk['age'],
-      timeCreated: disk['timeCreated'],
-      savings: parseFloat(savings.toFixed(3)),
-      savingsCurrency: ds_currency['symbol'],
-      recommendationDetails: recommendationDetails,
-      lookbackPeriod: param_minimum_age,
-      // These are to avoid errors when we hash_exclude these fields
-      total_savings: '',
-      message: '',
-      policy_name: ''
-    })
+    if (savings >= param_min_savings) {
+      result.push({
+        accountID: disk['subscriptionID'],
+        accountName: disk['subscriptionName'],
+        resourceID: disk['id'],
+        resourceName: disk['resourceName'],
+        resourceGroup: disk['resourceGroup'],
+        resourceType: disk['resourceType'],
+        region: disk['region'],
+        service: disk['service'],
+        state: disk['state'],
+        size: disk['size'],
+        tags: disk['tags'],
+        age: disk['age'],
+        timeCreated: disk['timeCreated'],
+        savings: parseFloat(savings.toFixed(3)),
+        savingsCurrency: ds_currency['symbol'],
+        recommendationDetails: recommendationDetails,
+        lookbackPeriod: param_minimum_age,
+        // These are to avoid errors when we hash_exclude these fields
+        total_savings: '',
+        message: '',
+        policy_name: ''
+      })
+    }
   })
 
   // Message for incident output
@@ -668,6 +678,7 @@ policy "pol_azure_unattached_volumes" do
     escalate $esc_email
     escalate $esc_delete_volumes
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    hash_exclude "savings", "savingsCurrency", "age", "size"
     export do
       resource_level true
       field "accountID" do
