@@ -88,5 +88,6 @@ changelogs.each do |changelog|
 end
 
 # Output Notification Content as a JSON string to be used directly in YAML workflow file
-all_notification_content = JSON.generate(all_notification_content_array).gsub('"', '\\"')
+puts "Array: #{all_notification_content_array}"
+all_notification_content = JSON.generate(all_notification_content_array).gsub('"', '\\"').gsub('\\\"', '\\\\\\\\\\"')
 puts all_notification_content
