@@ -2,7 +2,7 @@
 
 ## v0.2
 
-- Renamed `Created Time` incident field to `Recommendation Created Time`.
+- Added `System Details Url` incident field.
 - Added `RI Coverage` incident field.
 - Added `RI Utilization` incident field.
 
