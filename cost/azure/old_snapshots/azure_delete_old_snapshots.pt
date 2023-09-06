@@ -34,15 +34,6 @@ parameter "param_azure_endpoint" do
   default "management.azure.com"
 end
 
-parameter "param_snapshot_age" do
-  type "number"
-  category "Policy Settings"
-  label "Snapshot Age Threshold"
-  default 30
-  description "The number of days since the snapshot was created to consider a snapshot old."
-  min_value 1
-end
-
 parameter "param_min_savings" do
   type "number"
   category "Policy Settings"
@@ -50,6 +41,15 @@ parameter "param_min_savings" do
   description "Minimum potential savings required to generate a recommendation."
   min_value 0
   default 0
+end
+
+parameter "param_snapshot_age" do
+  type "number"
+  category "Policy Settings"
+  label "Snapshot Age Threshold"
+  description "The number of days since the snapshot was created to consider a snapshot old."
+  min_value 1
+  default 30
 end
 
 parameter "param_subscriptions_allow_or_deny" do
@@ -418,21 +418,33 @@ script "js_azure_old_snapshots", type: "javascript" do
 EOS
 end
 
-datasource "ds_snapshot_costs" do
-  iterate $ds_azure_subscriptions_filtered
+datasource "ds_azure_old_snapshots_subscriptions" do
+  run_script $js_azure_old_snapshots_subscriptions, $ds_azure_old_snapshots
+end
+
+script "js_azure_old_snapshots_subscriptions", type: "javascript" do
+  parameters "ds_azure_old_snapshots"
+  result "result"
+  code <<-EOS
+  result = _.compact(_.uniq(_.pluck(ds_azure_old_snapshots, 'subscriptionID')))
+EOS
+end
+
+datasource "ds_azure_snapshot_costs" do
+  iterate $ds_azure_old_snapshots_subscriptions
   request do
-    run_script $js_snapshot_costs, val(iter_item, "id"), $ds_top_level_bcs, rs_org_id, rs_optima_host
+    run_script $js_azure_snapshot_costs, iter_item, $ds_top_level_bcs, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
-    collect jmes_path(response,"rows[*]") do
+    collect jmes_path(response, "rows[*]") do
       field "resourceID", jmes_path(col_item, "dimensions.resource_id")
       field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
     end
   end
 end
 
-script "js_snapshot_costs", type:"javascript" do
+script "js_azure_snapshot_costs", type:"javascript" do
   parameters "subscription_id", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
@@ -493,12 +505,12 @@ script "js_snapshot_costs", type:"javascript" do
 EOS
 end
 
-datasource "ds_snapshot_costs_grouped" do
-  run_script $js_snapshot_costs_grouped, $ds_snapshot_costs
+datasource "ds_azure_snapshot_costs_grouped" do
+  run_script $js_azure_snapshot_costs_grouped, $ds_azure_snapshot_costs
 end
 
-script "js_snapshot_costs_grouped", type: "javascript" do
-  parameters "ds_snapshot_costs"
+script "js_azure_snapshot_costs_grouped", type: "javascript" do
+  parameters "ds_azure_snapshot_costs"
   result "result"
   code <<-EOS
   // Multiple a single day's cost by the average number of days in a month.
@@ -508,7 +520,7 @@ script "js_snapshot_costs_grouped", type: "javascript" do
   // Group cost data by resourceId for later use
   result = {}
 
-  _.each(ds_snapshot_costs, function(item) {
+  _.each(ds_azure_snapshot_costs, function(item) {
     id = item['resourceID'].toLowerCase()
 
     if (result[id] == undefined) { result[id] = 0.0 }
@@ -517,12 +529,12 @@ script "js_snapshot_costs_grouped", type: "javascript" do
 EOS
 end
 
-datasource "ds_snapshots_cost_mapping" do
-  run_script $js_snapshots_cost_mapping, $ds_azure_old_snapshots, $ds_azure_snapshots_region_filtered, $ds_snapshot_costs_grouped, $ds_applied_policy, $ds_currency, $param_min_savings, $param_snapshot_age
+datasource "ds_azure_snapshots_incident" do
+  run_script $js_azure_snapshots_incident, $ds_azure_old_snapshots, $ds_azure_snapshots_region_filtered, $ds_azure_snapshot_costs_grouped, $ds_applied_policy, $ds_currency, $param_min_savings, $param_snapshot_age
 end
 
-script "js_snapshots_cost_mapping", type:"javascript" do
-  parameters "ds_azure_old_snapshots", "ds_azure_snapshots_region_filtered", "ds_snapshot_costs_grouped", "ds_applied_policy", "ds_currency", "param_min_savings", "param_snapshot_age"
+script "js_azure_snapshots_incident", type:"javascript" do
+  parameters "ds_azure_old_snapshots", "ds_azure_snapshots_region_filtered", "ds_azure_snapshot_costs_grouped", "ds_applied_policy", "ds_currency", "param_min_savings", "param_snapshot_age"
   result "result"
   code <<-'EOS'
   // Function for formatting currency numbers later
@@ -549,7 +561,7 @@ script "js_snapshots_cost_mapping", type:"javascript" do
   total_savings = 0.0
 
   _.each(ds_azure_old_snapshots, function(snapshot) {
-    savings = ds_snapshot_costs_grouped[snapshot['resourceID'].toLowerCase()]
+    savings = ds_azure_snapshot_costs_grouped[snapshot['resourceID'].toLowerCase()]
 
     if (savings == null || savings == undefined) {
       savings = 0.0
@@ -634,8 +646,8 @@ end
 # Policy
 ###############################################################################
 
-policy "pol_old_snapshots" do
-  validate_each $ds_snapshots_cost_mapping do
+policy "pol_azure_old_snapshots" do
+  validate_each $ds_azure_snapshots_incident do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Old Snapshots Found"
     detail_template <<-'EOS'
     **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
