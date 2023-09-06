@@ -14,6 +14,10 @@
 - Policy no longer raises new escalations if snapshot age or savings data changed but nothing else has
 - Streamlined code for better readability and faster execution
 
+## v5.1
+
+- Corrected issue with policy not retrieving cost data on orgs using newer Azure bill connections
+
 ## v5.0
 
 - Renamed Subscription List parameter for consistency and accuracy
