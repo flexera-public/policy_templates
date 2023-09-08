@@ -6,6 +6,7 @@
 - Removed deprecated "Log to CM Audit Entries" parameter
 - Added ability to filter resources by multiple tag key:value pairs
 - Added several fields to incident export to provide additional context
+- Added additional context to incident description
 - Normalized incident export to be consistent with other policies
 - Policy no longer raises new escalations for the same resource if incidental metadata has changed
 - Streamlined code for better readability and faster execution
