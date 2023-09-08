@@ -34,6 +34,15 @@ parameter "param_azure_endpoint" do
   default "management.azure.com"
 end
 
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation"
+  min_value 0
+  default 0
+end
+
 parameter "param_subscriptions_allow_or_deny" do
   type "string"
   category "Filters"
@@ -447,11 +456,11 @@ datasource "ds_azure_sql_resize_map" do
 end
 
 datasource "ds_merged_metrics" do
-  run_script $js_merged_metrics, $ds_azure_sql_database_metrics, $ds_azure_sql_resize_map, $param_stats_underutil_threshold_cpu_value
+  run_script $js_merged_metrics, $ds_azure_sql_database_metrics, $ds_azure_sql_resize_map, $param_stats_underutil_threshold_cpu_value, $param_stats_lookback
 end
 
 script "js_merged_metrics", type: "javascript" do
-  parameters "ds_azure_sql_database_metrics", "ds_azure_sql_resize_map", "param_stats_underutil_threshold_cpu_value"
+  parameters "ds_azure_sql_database_metrics", "ds_azure_sql_resize_map", "param_stats_underutil_threshold_cpu_value", "param_stats_lookback"
   result "result"
   code <<-EOS
   result = []
@@ -467,7 +476,9 @@ script "js_merged_metrics", type: "javascript" do
       tags: db['tags'],
       resourceGroup: db['resourceGroup'],
       subscriptionId: db['subscriptionId'],
-      subscriptionName: db['subscriptionName']
+      subscriptionName: db['subscriptionName'],
+      lookbackPeriod: param_stats_lookback,
+      threshold: param_stats_underutil_threshold_cpu_value
     }
 
     connection_metrics = null
@@ -541,7 +552,6 @@ script "js_merged_metrics", type: "javascript" do
   })
 EOS
 end
-
 
 datasource "ds_cost_subscriptions" do
   run_script $js_cost_subscriptions, $ds_merged_metrics
@@ -661,12 +671,102 @@ script "js_sql_costs_grouped", type: "javascript" do
 EOS
 end
 
+datasource "ds_unused_sql_incident" do
+  run_script $js_unused_sql_incident, $ds_merged_metrics, $ds_sql_costs_grouped, $ds_currency, $param_min_savings
+end
+
+script "js_unused_sql_incident", type: "javascript" do
+  parameters "ds_merged_metrics", "ds_sql_costs_grouped", "ds_currency", "param_min_savings"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  unused_instances = _.filter(ds_merged_metrics, function(item) {
+    return item['recommendationType'] == 'Delete'
+  })
+
+  _.each(unused_instances, function(db) {
+    savings = ds_sql_costs_grouped[db['id'].toLowerCase()]
+
+    if (savings != null && savings != undefined) {
+      savings = parseFloat(savings.toFixed(3))
+    }
+
+    if (savings >= param_min_savings || param_min_savings == 0) {
+      result.push({
+        id: db['id'],
+        region: db['region'],
+        resourceName: db['name'],
+        kind: db['kind'],
+        type: db['type'],
+        sku: db['sku'],
+        tags: db['tags'],
+        resourceGroup: db['resourceGroup'],
+        accountID: db['subscriptionId'],
+        accountName: db['subscriptionName'],
+        recommendationType: db['recommendationType'],
+        recommendationDetails: db['recommendationDetails'],
+        lookbackPeriod: db['lookbackPeriod'],
+        savings: savings,
+        savingsCurrency: ds_currency['symbol']
+      })
+    }
+  })
+EOS
+end
+
+datasource "ds_rightsize_sql_incident" do
+  run_script $js_rightsize_sql_incident, $ds_merged_metrics, $ds_sql_costs_grouped, $ds_currency, $param_min_savings
+end
+
+script "js_rightsize_sql_incident", type: "javascript" do
+  parameters "ds_merged_metrics", "ds_sql_costs_grouped", "ds_currency", "param_min_savings"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  unused_instances = _.filter(ds_merged_metrics, function(item) {
+    return item['recommendationType'] == 'Downsize'
+  })
+
+  _.each(unused_instances, function(db) {
+    savings = ds_sql_costs_grouped[db['id'].toLowerCase()]
+
+    if (savings != null && savings != undefined) {
+      savings = parseFloat(savings.toFixed(3))
+    }
+
+    if (savings >= param_min_savings || param_min_savings == 0) {
+      result.push({
+        id: db['id'],
+        region: db['region'],
+        resourceName: db['name'],
+        kind: db['kind'],
+        type: db['type'],
+        sku: db['sku'],
+        tags: db['tags'],
+        resourceGroup: db['resourceGroup'],
+        accountID: db['subscriptionId'],
+        accountName: db['subscriptionName'],
+        recommendationType: db['recommendationType'],
+        recommendationDetails: db['recommendationDetails'],
+        newResourceType: db['newResourceType'],
+        cpuAverage: db['cpu_average'],
+        lookbackPeriod: db['lookbackPeriod'],
+        savings: savings,
+        savingsCurrency: ds_currency['symbol']
+      })
+    }
+  })
+EOS
+end
+
 ###############################################################################
 # Policy
 ###############################################################################
 
-policy 'policy_azure_db_utilization' do
-  validate $ds_merged_metrics do
+policy "pol_azure_unused_sql" do
+  validate_each $ds_unused_sql_incident do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Found {{ len data }} Azure Rightsize SQL single Database"
     detail_template <<-EOS
       ### Thresholds for Consideration
