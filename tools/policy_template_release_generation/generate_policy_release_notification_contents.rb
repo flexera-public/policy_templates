@@ -63,6 +63,10 @@ changelogs.each do |changelog|
   matching_template = policy_templates.find { |template| changelog.path.include?(File.dirname(template.path)) }
   if matching_template
 
+    # Capture directory path to create GitHub README URL
+    dir_path = File.dirname(matching_template.path)
+    readme_path = "https://github.com/flexera-public/policy_templates/tree/master/" + dir_path
+
     # Format HTML for Notification API call
     # Replace backticks around words with HTML code tags
     formatted_changes = changelog.changes.map do |change|
@@ -72,7 +76,7 @@ changelogs.each do |changelog|
     formatted_changes_html = formatted_changes.map { |change| "<li>#{change}</li>"}.join('')
 
     notification_content_json = {
-      activityTitle: "<h2 style='font-size: 18px;'>#{matching_template.name}</h2>",
+      activityTitle: "<h2 style='font-size: 18px;'><a href='#{readme_path}'>#{matching_template.name}</h2>",
       facts: [{
         name: "Template Version",
         value: changelog.version
@@ -89,4 +93,9 @@ end
 
 # Output Notification Content as a JSON string to be used directly in YAML workflow file
 all_notification_content = JSON.generate(all_notification_content_array).gsub('"', '\\"').gsub('\\\"', '\\\\\\\\\\"')
-puts all_notification_content
+puts "::set-output name=notification_content::#{all_notification_content}"
+
+# Output GitHub Commit URL to be used directly in YAML workflow file
+previous_commit_id = `git rev-parse origin/master^`
+commit_path = "https://github.com/flexera-public/policy_templates/commit/" + previous_commit_id
+puts "::set-output name=commit_url::#{commit_path}"
