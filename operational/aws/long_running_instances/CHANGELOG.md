@@ -1,5 +1,16 @@
 # Changelog
 
+## v4.0
+
+- Several parameters altered to be more descriptive and human-readable
+- Removed deprecated "Log to CM Audit Entries" parameter
+- Added ability to filter resources by multiple tag key:value pairs
+- Added several fields to incident export to provide additional context
+- Normalized incident export to be consistent with other policies
+- Policy no longer raises new escalations for the same resource if incidental metadata has changed
+- Streamlined code for better readability and faster execution
+- Added logic required for "Meta Policy" use-cases
+
 ## v3.0
 
 - Added parameter to enable Allow or Deny filtering by user entered regions
