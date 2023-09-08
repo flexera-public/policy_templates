@@ -11,6 +11,7 @@
 - Policy no longer raises new escalations for the same resource if incidental metadata has changed
 - Streamlined code for better readability and faster execution
 - Added logic required for "Meta Policy" use-cases
+- Policy now requires a valid Flexera credential to facilitate "Meta Policy" use-cases
 
 ## v3.0
 
