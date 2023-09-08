@@ -570,13 +570,19 @@ EOS
 end
 
 datasource "ds_instance_costs_grouped" do
-  run_script $js_instance_costs_grouped, $ds_instance_costs
+  run_script $js_instance_costs_grouped, $ds_instance_costs, $ds_billing_centers
 end
 
 script "js_instance_costs_grouped", type: "javascript" do
-  parameters "ds_instance_costs"
+  parameters "ds_instance_costs", "ds_billing_centers"
   result "result"
   code <<-EOS
+  bc_object = {}
+
+  _.each(ds_billing_centers, function(bc) {
+    bc_object[bc['id']] = bc['name']
+  })
+
   // Multiple a single day's cost by the average number of days in a month.
   // The 0.25 is to account for leap years for extra precision.
   cost_multiplier = 365.25 / 12
@@ -591,7 +597,7 @@ script "js_instance_costs_grouped", type: "javascript" do
 
     result[id]['cost'] += item['cost'] * cost_multiplier
     result[id]['operating_system'] = item['operating_system']
-    result[id]['billing_center_id'] = item['billing_center_id']
+    result[id]['billing_center'] = bc_object[item['billing_center_id']]
     result[id]['purchase_option'] = item['purchase_option']
     result[id]['service'] = item['service']
   })
@@ -641,7 +647,7 @@ script "js_long_running_instances_incident", type: "javascript" do
     if (ds_instance_costs_grouped[id] != undefined) {
       instance['cost'] = ds_instance_costs_grouped[id]['cost']
       instance['operating_system'] = ds_instance_costs_grouped[id]['operating_system']
-      instance['billing_center'] = ds_instance_costs_grouped[id]['billing_center_id']
+      instance['billing_center'] = ds_instance_costs_grouped[id]['billing_center']
       instance['purchase_option'] = ds_instance_costs_grouped[id]['purchase_option']
       instance['service'] = ds_instance_costs_grouped[id]['service']
     }
