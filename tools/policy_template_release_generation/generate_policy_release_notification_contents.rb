@@ -96,6 +96,6 @@ all_notification_content = JSON.generate(all_notification_content_array).gsub('"
 puts "::set-output name=notification_content::#{all_notification_content}"
 
 # Output GitHub Commit URL to be used directly in YAML workflow file
-previous_commit_id = `git rev-parse origin/master^`
-commit_path = "https://github.com/flexera-public/policy_templates/commit/" + previous_commit_id
+commit_id = `git rev-parse origin/master`
+commit_path = "https://github.com/flexera-public/policy_templates/commit/" + commit_id
 puts "::set-output name=commit_url::#{commit_path}"
