@@ -73,7 +73,7 @@ parameter "param_automatic_action" do
   type "string"
   category "Actions"
   label "Automatic Actions"
-  description "When this value is set, this policy will automatically take the selected action(s)"
+  description "This policy will automatically take the selected action"
   default "No Automatic Actions"
   allowed_values "No Automatic Actions", "Stop Instances", "Terminate Instances"
 end
@@ -132,7 +132,6 @@ datasource "ds_applied_policy" do
     header "Api-Version", "1.0"
   end
 end
-
 
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
@@ -600,13 +599,13 @@ EOS
 end
 
 datasource "ds_long_running_instances_incident" do
-  run_script $js_long_running_instances_incident, $ds_long_running_instances, $ds_instance_costs_grouped, $ds_applied_policy, $param_minimum_age
+  run_script $js_long_running_instances_incident, $ds_instances, $ds_long_running_instances, $ds_instance_costs_grouped, $ds_applied_policy, $ds_currency, $param_minimum_age
 end
 
 script "js_long_running_instances_incident", type: "javascript" do
-  parameters "ds_long_running_instances", "ds_instance_costs_grouped", "ds_applied_policy", "ds_currency", "param_minimum_age"
+  parameters "ds_instances", "ds_long_running_instances", "ds_instance_costs_grouped", "ds_applied_policy", "ds_currency", "param_minimum_age"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = []
 
   _.each(ds_long_running_instances_incident, function(item) {
@@ -631,9 +630,10 @@ script "js_long_running_instances_incident", type: "javascript" do
       lookbackPeriod: param_minimum_age,
       cost: "",
       operating_system: "",
-      billing_center_id: "",
+      billing_center: "",
       purchase_option: "",
-      service: ""
+      service: "",
+      message: ""
     }
 
     id = instance['id'].toLowerCase()
@@ -648,6 +648,38 @@ script "js_long_running_instances_incident", type: "javascript" do
 
     result.push(instance)
   })
+
+  day_noun = "day"
+  if (param_minimum_age > 1) { day_noun = "days" }
+
+  instances_total = ds_instances.length.toString()
+  long_instances_total = result.length.toString()
+  long_instances_percentage = (long_instances_total / instances_total * 100).toFixed(2).toString() + '%'
+
+  findings = [
+    "Out of ", instances_total, " instances analyzed, ",
+    long_instances_total, " (", long_instances_percentage,
+    ") have been running for longer than ", param_minimum_age,
+    " ", day_noun, ".\n\n"
+  ].join('')
+
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+
+  result = _.sortBy(result, function(item) { return item['cost'] * -1 })
+
+  // Add a dummy entry to ensure that the policy's check statement executes at least once
+  result.push({
+    resourceID: "",      resourceName: "",     region: "",
+    imageId: "",         ipAddress: "",        ipv6Address: "",
+    resourceType: "",    platform: "",         privateDnsName: "",
+    hostname: "",        launchTime: "",       age: "",
+    tags: "",            accountID: "",        accountName: "",
+    policy_name: "",     costCurrency: "",     lookbackPeriod: "",
+    cost: "",            operating_system: "", billing_center: "",
+    purchase_option: "", service: ""
+  })
+
+  result[0]['message'] = findings + disclaimer
 EOS
 end
 
@@ -658,11 +690,14 @@ end
 policy "pol_utilization" do
   validate_each $ds_long_running_instances_incident do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Long Running Instances Found"
+    detail_template <<-'EOS'
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
     escalate $esc_email
     escalate $esc_stop_instances
     escalate $esc_terminate_instances
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
-    hash_exclude "tags", "cost", "costCurrency", "resourceName", "age", "billing_center", "hostname", "ipAddress", "ipv6Address"
+    hash_exclude "tags", "cost", "costCurrency", "resourceName", "age", "billing_center", "hostname", "ipAddress", "ipv6Address", "lookbackPeriod", "policy_name", "message"
     export do
       resource_level true
       field "accountID" do
@@ -775,8 +810,13 @@ define stop_instances($data) return $all_responses do
   call sys_log(join([$syslog_subject, "Identified Instances"]), to_s($data))
 
   foreach $instance in $data do
-    call stop_instance($instance) retrieve $stop_response
-    $all_responses << $stop_response
+    call get_instance_state($instance) retrieve $state_response, $initial_state
+    $all_responses << $state_response
+
+    if $initial_state != "stopping" && $initial_state != "stopped" && $initial_state != "terminated"
+      call stop_instance($instance) retrieve $stop_response
+      $all_responses << $stop_response
+    end
   end
 end
 
