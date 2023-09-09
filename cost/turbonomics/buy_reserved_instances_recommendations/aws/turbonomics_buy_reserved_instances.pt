@@ -80,6 +80,7 @@ datasource "ds_get_turbonomic_recommendations" do
       field "savings", jmes_path(col_item, "stats[0].value")
       field "savingsCurrency", jmes_path(col_item, "stats[0].units")
       field "uuid", jmes_path(col_item, "uuid")
+      field "coupons", jmes_path(col_item, "reservedInstance.coupons")
     end
   end
 end
@@ -203,7 +204,7 @@ script "js_filtered_turbonomic_recommendations", type: "javascript" do
     Object.keys(ds_get_action_details.uuids).forEach(function(uuid) {
       _.each(ds_get_turbonomic_recommendations, function(ri, index){
         if (ri.uuid === uuid) {
-          ds_get_turbonomic_recommendations[index].riCoverage = ds_get_action_details.uuids[uuid].estimatedRICoverage.toFixed(2)
+          ds_get_turbonomic_recommendations[index].riCoverage = Number(ds_get_action_details.uuids[uuid].estimatedRICoverage).toFixed(2)
         }
       })
     })
@@ -234,6 +235,11 @@ script "js_filtered_turbonomic_recommendations", type: "javascript" do
                     ri.effectiveCost = Number(ri.effectiveCost * 730 * ri.termValue * 12 * ri.numberOfInstances).toFixed(2)
                     ri.recurringCost = Number(ri.recurringCost * 730 * ri.numberOfInstances).toFixed(2)
                     monthlySavings = monthlySavings + ri.savings
+                    if (typeof ri.coupons.value != "undefined" && ri.coupons.value != null) {
+                      if (typeof ri.coupons.capacity.avg != "undefined" && ri.coupons.capacity.avg != null) {
+                        ri.riUtilization = Number(ri.coupons.value * 100 / ri.coupons.capacity.avg).toFixed(2)
+                      }
+                    }
                     ri.url = "https://" + param_turbonomic_host + "/app/index.html#/view/main/action/" + ri.uuid
                     instances.push(ri)
                 }
@@ -340,6 +346,9 @@ EOS
       end
       field "sizeFlexible" do
         label "Size Flexible"
+      end
+      field "riUtilization" do
+        label "RI Utilization"
       end
       field "riCoverage" do
         label "RI Coverage"
