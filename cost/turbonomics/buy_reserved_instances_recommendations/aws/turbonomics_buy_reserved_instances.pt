@@ -6,7 +6,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "0.1",
+  version: "0.2",
   provider: "AWS",
   source: "Turbonomic",
   service: "Usage Discount",
@@ -79,6 +79,7 @@ datasource "ds_get_turbonomic_recommendations" do
       field "sizeFlexible", jmes_path(col_item, "reservedInstance.sizeFlexible")
       field "savings", jmes_path(col_item, "stats[0].value")
       field "savingsCurrency", jmes_path(col_item, "stats[0].units")
+      field "urlUUID", jmes_path(col_item, "uuid")
     end
   end
 end
@@ -99,7 +100,7 @@ datasource "ds_get_business_units" do
 end
 
 datasource "ds_filtered_turbonomic_recommendations" do
-  run_script $js_filtered_turbonomic_recommendations, $ds_get_turbonomic_recommendations, $ds_get_business_units
+  run_script $js_filtered_turbonomic_recommendations, $ds_get_turbonomic_recommendations, $ds_get_business_units, $param_turbonomic_host
 end
 
 ###############################################################################
@@ -160,7 +161,7 @@ end
 
 script "js_filtered_turbonomic_recommendations", type: "javascript" do
   result "result"
-  parameters "ds_get_turbonomic_recommendations", "ds_get_business_units"
+  parameters "ds_get_turbonomic_recommendations", "ds_get_business_units", "param_turbonomic_host"
   code <<-EOS
     instances = []
     monthlySavings = 0.0
@@ -217,6 +218,7 @@ script "js_filtered_turbonomic_recommendations", type: "javascript" do
                     ri.effectiveCost = Number(ri.effectiveCost * 730 * ri.termValue * 12 * ri.numberOfInstances).toFixed(2)
                     ri.recurringCost = Number(ri.recurringCost * 730 * ri.numberOfInstances).toFixed(2)
                     monthlySavings = monthlySavings + ri.savings
+                    ri.url = "https://" + param_turbonomic_host + "/app/index.html#/view/main/action/" + ri.urlUUID
                     instances.push(ri)
                 }
             }
@@ -298,6 +300,9 @@ EOS
       end
       field "sizeFlexible" do
         label "Size Flexible"
+      end
+      field "url" do
+        label "System Details URL"
       end
     end
     escalate $esc_email
