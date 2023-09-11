@@ -1,16 +1,17 @@
 name "Azure Rightsize SQL Databases"
 rs_pt_ver 20180301
 type "policy"
-short_description "Check for Inefficient Azure SQL single database services that are inside or outside the CPU threshold for the last 30 days and resizes them after approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_sql_instances/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Checks for SQL database instances that have inefficient utilization for the last 30 days and downsizes or deletes them after approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_sql_instances/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
-severity "low"
 category "Cost"
-default_frequency "daily"
+severity "low"
+default_frequency "weekly"
 info(
   version: "4.0",
   provider: "Azure",
   service: "SQL",
-  policy_set: "RightSize Database Services"
+  policy_set: "Rightsize Database Instances",
+  recommendation_type: "Usage Reduction"
 )
 
 ###############################################################################
@@ -86,12 +87,21 @@ parameter "param_exclusion_tags" do
   default []
 end
 
+parameter "param_unused_or_underutilized" do
+  type "string"
+  category "Filters"
+  label "Report Unused or Underutilized"
+  description "Whether to report on unused instances, underutilized instances, or both."
+  allowed_values "Unused & Underutilized", "Unused", "Underutilized"
+  default "Unused & Underutilized"
+end
+
 parameter "param_stats_underutil_threshold_cpu_value" do
   type "number"
   category "Statistics"
   label "Underutilized Instance CPU Threshold (%)"
-  description "The CPU threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing. Set to -1 to ignore CPU utilization and only report unused instances"
-  min_value -1
+  description "The CPU threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing."
+  min_value 0
   max_value 100
   default 60
 end
@@ -108,9 +118,11 @@ end
 
 parameter "param_automatic_action" do
   type "list"
+  category "Actions"
   label "Automatic Actions"
-  description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Resize Instances"]
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Downsize Underutilized Instances", "Delete Unused Instances"]
+  default []
 end
 
 ###############################################################################
@@ -456,11 +468,11 @@ datasource "ds_azure_sql_resize_map" do
 end
 
 datasource "ds_merged_metrics" do
-  run_script $js_merged_metrics, $ds_azure_sql_database_metrics, $ds_azure_sql_resize_map, $param_stats_underutil_threshold_cpu_value, $param_stats_lookback
+  run_script $js_merged_metrics, $ds_azure_sql_database_metrics, $ds_azure_sql_resize_map, $ds_applied_policy, $param_stats_underutil_threshold_cpu_value, $param_stats_lookback, $param_unused_or_underutilized
 end
 
 script "js_merged_metrics", type: "javascript" do
-  parameters "ds_azure_sql_database_metrics", "ds_azure_sql_resize_map", "param_stats_underutil_threshold_cpu_value", "param_stats_lookback"
+  parameters "ds_azure_sql_database_metrics", "ds_azure_sql_resize_map", "ds_applied_policy", "param_stats_underutil_threshold_cpu_value", "param_stats_lookback", "param_unused_or_underutilized"
   result "result"
   code <<-EOS
   result = []
@@ -478,7 +490,8 @@ script "js_merged_metrics", type: "javascript" do
       subscriptionId: db['subscriptionId'],
       subscriptionName: db['subscriptionName'],
       lookbackPeriod: param_stats_lookback,
-      threshold: param_stats_underutil_threshold_cpu_value
+      threshold: param_stats_underutil_threshold_cpu_value,
+      policy_name: ds_applied_policy['name']
     }
 
     connection_metrics = null
@@ -494,22 +507,20 @@ script "js_merged_metrics", type: "javascript" do
       }
     })
 
-    if (connection_metrics != null) {
+    if (connection_metrics != null && param_unused_or_underutilized != "Underutilized") {
       if (connection_metrics.length == 0) {
         instance['recommendationType'] = 'Delete'
         instance['newResourceType'] = 'Delete'
 
-        recommendationDetails = [
+        instance["recommendationDetails"] = [
           "Delete Azure SQL database ", instance["name"], " ",
           "in Azure Subscription ", instance["subscriptionName"], " ",
           "(", instance["subscriptionId"], ")"
-        ]
-
-        instance["recommendationDetails"] = recommendationDetails.join('')
+        ].join('')
       }
     }
 
-    if (cpu_metrics != null && instance['recommendationType'] != 'Delete' && param_stats_underutil_threshold_cpu_value != -1) {
+    if (cpu_metrics != null && instance['recommendationType'] != 'Delete' && param_unused_or_underutilized != "Unused") {
       if (cpu_metrics.length > 0) {
         averages = _.pluck(cpu_metrics, 'average')
         cpu_average = null
@@ -530,15 +541,13 @@ script "js_merged_metrics", type: "javascript" do
               if (typeof(ds_azure_sql_resize_map[tier][type]['down']) == 'string') {
                 instance['newResourceType'] = ds_azure_sql_resize_map[tier][type]['down']
 
-                recommendationDetails = [
+                instance["recommendationDetails"] = [
                   "Downsize Azure SQL database ", instance["name"], " ",
                   "in Azure Subscription ", instance["subscriptionName"], " ",
                   "(", instance["subscriptionId"], ") ",
                   "from ", instance['sku']['capacity'], " capacity ",
                   "to ", instance["newResourceType"], " capacity"
-                ]
-
-                instance["recommendationDetails"] = recommendationDetails.join('')
+                ].join('')
               }
             }
           }
@@ -671,78 +680,59 @@ script "js_sql_costs_grouped", type: "javascript" do
 EOS
 end
 
-datasource "ds_unused_sql_incident" do
-  run_script $js_unused_sql_incident, $ds_merged_metrics, $ds_sql_costs_grouped, $ds_currency, $param_min_savings
+datasource "ds_downsize_sql_incident" do
+  run_script $js_downsize_sql_incident, $ds_merged_metrics, $ds_azure_sql_databases_region_filtered, $ds_sql_costs_grouped, $ds_currency, $param_min_savings, $param_stats_lookback, $param_stats_underutil_threshold_cpu_value, $param_unused_or_underutilized
 end
 
-script "js_unused_sql_incident", type: "javascript" do
-  parameters "ds_merged_metrics", "ds_sql_costs_grouped", "ds_currency", "param_min_savings"
+script "js_downsize_sql_incident", type: "javascript" do
+  parameters "ds_merged_metrics", "ds_azure_sql_databases_region_filtered", "ds_sql_costs_grouped", "ds_currency", "param_min_savings", "param_stats_lookback", "param_stats_underutil_threshold_cpu_value", "param_unused_or_underutilized"
   result "result"
   code <<-'EOS'
-  result = []
+  // Function for formatting currency numbers later
+  function formatNumber(number, separator) {
+    var numString = number.toString()
+    var values = numString.split(".")
+    var formatted_number = ''
 
-  unused_instances = _.filter(ds_merged_metrics, function(item) {
-    return item['recommendationType'] == 'Delete'
-  })
-
-  _.each(unused_instances, function(db) {
-    savings = ds_sql_costs_grouped[db['id'].toLowerCase()]
-
-    if (savings != null && savings != undefined) {
-      savings = parseFloat(savings.toFixed(3))
+    while (values[0].length > 3) {
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      formatted_number = separator + chunk + formatted_number
     }
 
-    if (savings >= param_min_savings || param_min_savings == 0) {
-      result.push({
-        id: db['id'],
-        region: db['region'],
-        resourceName: db['name'],
-        kind: db['kind'],
-        type: db['type'],
-        sku: db['sku'],
-        tags: db['tags'],
-        resourceGroup: db['resourceGroup'],
-        accountID: db['subscriptionId'],
-        accountName: db['subscriptionName'],
-        recommendationType: db['recommendationType'],
-        recommendationDetails: db['recommendationDetails'],
-        lookbackPeriod: db['lookbackPeriod'],
-        savings: savings,
-        savingsCurrency: ds_currency['symbol']
-      })
-    }
-  })
-EOS
-end
+    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
 
-datasource "ds_rightsize_sql_incident" do
-  run_script $js_rightsize_sql_incident, $ds_merged_metrics, $ds_sql_costs_grouped, $ds_currency, $param_min_savings
-end
+    if (values[1] == undefined) { return formatted_number }
 
-script "js_rightsize_sql_incident", type: "javascript" do
-  parameters "ds_merged_metrics", "ds_sql_costs_grouped", "ds_currency", "param_min_savings"
-  result "result"
-  code <<-'EOS'
+    return formatted_number + "." + values[1]
+  }
+
   result = []
 
-  unused_instances = _.filter(ds_merged_metrics, function(item) {
+  downsize_instances = _.filter(ds_merged_metrics, function(item) {
     return item['recommendationType'] == 'Downsize'
   })
 
-  _.each(unused_instances, function(db) {
-    savings = ds_sql_costs_grouped[db['id'].toLowerCase()]
+  total_savings = 0.0
 
-    if (savings != null && savings != undefined) {
-      savings = parseFloat(savings.toFixed(3))
+  _.each(downsize_instances, function(db) {
+    id = db['id'].toLowerCase()
+    savings = 0.0
+
+    if (ds_sql_costs_grouped[id] != null && ds_sql_costs_grouped[id] != undefined) {
+      cost = ds_sql_costs_grouped[id]
+      savings = cost - (cost / db['sku']['capacity'] * db['newResourceType'])
     }
 
     if (savings >= param_min_savings || param_min_savings == 0) {
+      total_savings += savings
+
       result.push({
         id: db['id'],
         region: db['region'],
         resourceName: db['name'],
-        kind: db['kind'],
-        type: db['type'],
+        resourceKind: db['kind'],
+        resourceType: db['type'],
         sku: db['sku'],
         tags: db['tags'],
         resourceGroup: db['resourceGroup'],
@@ -751,13 +741,181 @@ script "js_rightsize_sql_incident", type: "javascript" do
         recommendationType: db['recommendationType'],
         recommendationDetails: db['recommendationDetails'],
         newResourceType: db['newResourceType'],
-        cpuAverage: db['cpu_average'],
+        cpuAverage: parseFloat(db['cpu_average'].toFixed(2)),
         lookbackPeriod: db['lookbackPeriod'],
-        savings: savings,
-        savingsCurrency: ds_currency['symbol']
+        threshold: db['threshold'],
+        policy_name: db['policy_name'],
+        savings: parseFloat(savings.toFixed(3)),
+        savingsCurrency: ds_currency['symbol'],
+        service: "Microsoft.Sql",
+        platform: "Azure SQL Database",
+        total_savings: "",
+        message: ""
       })
     }
   })
+
+  result = _.sortBy(result, function(item) { return item['savings'] * -1 })
+
+  // Message for incident output
+  total_dbs = ds_azure_sql_databases_region_filtered.length.toString()
+  total_underutilized_dbs = result.length.toString()
+  underutilized_dbs_percentage = (total_underutilized_dbs / total_dbs * 100).toFixed(2).toString() + '%'
+
+  findings = [
+    "Out of ", total_dbs , " Azure SQL Databases analyzed, ",
+    total_underutilized_dbs, " (", underutilized_dbs_percentage,
+    ") are underutilized and recommended for downsizing. "
+  ].join('')
+
+  day_message = "day"
+  if (param_stats_lookback.length > 1) { day_message += "s" }
+
+  if (param_unused_or_underutilized == 'Underutilized') {
+    context_message = [
+      "An Azure SQL Database is considered underutilized if it has an average CPU usage below ",
+      param_stats_underutil_threshold_cpu_value, "% for last ", param_stats_lookback, " ", day_message,
+      ", regardless of whether it has had any connections to it in that same time period."
+    ].join('')
+  } else {
+    context_message = [
+      "An Azure SQL Database is considered underutilized if it has had at least one connection to it ",
+      "in the last ", param_stats_lookback, " ", day_message, " but has an average CPU usage below ",
+      param_stats_underutil_threshold_cpu_value, "% for that same time period.\n\n"
+    ].join('')
+  }
+
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
+
+  savings_message = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['separator'])
+
+  // Dummy entry to ensure validation runs at least once
+  result.push({
+    id: "",                 region: "",                resourceName: "",
+    resourceKind: "",       resourceType: "",          sku: "",
+    tags: "",               resourceGroup: "",         accountID: "",
+    accountName: "",        recommendationType: "",    recommendationDetails: "",
+    newResourceType: "",    cpuAverage: "",            lookbackPeriod: "",
+    threshold: "",          policy_name: "",           savings: "",
+    savingsCurrency: "",    service: "",               platform: "",
+    total_savings: "",      message: ""
+  })
+
+  result[0]['total_savings'] = savings_message
+  result[0]['message'] = findings + context_message + disclaimer
+EOS
+end
+
+datasource "ds_unused_sql_incident" do
+  run_script $js_unused_sql_incident, $ds_merged_metrics, $ds_azure_sql_databases_region_filtered, $ds_sql_costs_grouped, $ds_currency, $param_min_savings, $param_stats_lookback
+end
+
+script "js_unused_sql_incident", type: "javascript" do
+  parameters "ds_merged_metrics", "ds_azure_sql_databases_region_filtered", "ds_sql_costs_grouped", "ds_currency", "param_min_savings", "param_stats_lookback"
+  result "result"
+  code <<-'EOS'
+  // Function for formatting currency numbers later
+  function formatNumber(number, separator) {
+    var numString = number.toString()
+    var values = numString.split(".")
+    var formatted_number = ''
+
+    while (values[0].length > 3) {
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      formatted_number = separator + chunk + formatted_number
+    }
+
+    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
+
+    if (values[1] == undefined) { return formatted_number }
+
+    return formatted_number + "." + values[1]
+  }
+
+  result = []
+
+  unused_instances = _.filter(ds_merged_metrics, function(item) {
+    return item['recommendationType'] == 'Delete'
+  })
+
+  total_savings = 0.0
+
+  _.each(unused_instances, function(db) {
+    id = db['id'].toLowerCase()
+    savings = 0.0
+
+    if (ds_sql_costs_grouped[id] != null && ds_sql_costs_grouped[id] != undefined) {
+      savings = ds_sql_costs_grouped[id]
+    }
+
+    if (savings >= param_min_savings || param_min_savings == 0) {
+      total_savings += savings
+
+      result.push({
+        id: db['id'],
+        region: db['region'],
+        resourceName: db['name'],
+        resourceKind: db['kind'],
+        resourceType: db['type'],
+        sku: db['sku'],
+        tags: db['tags'],
+        resourceGroup: db['resourceGroup'],
+        accountID: db['subscriptionId'],
+        accountName: db['subscriptionName'],
+        recommendationType: db['recommendationType'],
+        recommendationDetails: db['recommendationDetails'],
+        lookbackPeriod: db['lookbackPeriod'],
+        threshold: db['threshold'],
+        policy_name: db['policy_name'],
+        savings: parseFloat(savings.toFixed(3)),
+        savingsCurrency: ds_currency['symbol'],
+        service: "Microsoft.Sql",
+        platform: "Azure SQL Database",
+        total_savings: "",
+        message: ""
+      })
+    }
+  })
+
+  result = _.sortBy(result, function(item) { return item['savings'] * -1 })
+
+  // Message for incident output
+  total_dbs = ds_azure_sql_databases_region_filtered.length.toString()
+  total_unused_dbs = result.length.toString()
+  unused_dbs_percentage = (total_unused_dbs / total_dbs * 100).toFixed(2).toString() + '%'
+
+  findings = [
+    "Out of ", total_dbs , " Azure SQL Databases analyzed, ",
+    total_unused_dbs, " (", unused_dbs_percentage,
+    ") are unused and recommended for deletion. "
+  ].join('')
+
+  day_message = "day"
+  if (param_stats_lookback.length > 1) { day_message += "s" }
+
+  context_message = [
+    "An Azure SQL Database is considered unused if it has not had any connections ",
+    "for at least ", param_stats_lookback, " ", day_message, ".\n\n"
+  ].join('')
+
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
+
+  savings_message = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['separator'])
+
+  // Dummy entry to ensure validation runs at least once
+  result.push({
+    id: "",                region: "",                resourceName: "",
+    resourceKind: "",      resourceType: "",          sku: "",
+    tags: "",              resourceGroup: "",         accountID: "",
+    accountName: "",       recommendationType: "",    recommendationDetails: "",
+    lookbackPeriod: "",    threshold: "",             policy_name: "",
+    savings: "",           savingsCurrency: "",       service: "",
+    platform: "",          total_savings: "",         message: ""
+  })
+
+  result[0]['total_savings'] = savings_message
+  result[0]['message'] = findings + context_message + disclaimer
 EOS
 end
 
@@ -765,53 +923,45 @@ end
 # Policy
 ###############################################################################
 
-policy "pol_azure_unused_sql" do
-  validate_each $ds_unused_sql_incident do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Found {{ len data }} Azure Rightsize SQL single Database"
-    detail_template <<-EOS
-      ### Thresholds for Consideration
-      - Upsize Average CPU% threshold   : {{ parameters.param_stats_cpu_avg_upsize }}
-      - Downsize Average CPU% threshold : {{ parameters.param_stats_underutil_threshold_cpu_value }}
+policy "pol_azure_sql_utilization" do
+  validate_each $ds_downsize_sql_incident do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Underutilized SQL Databases Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
     EOS
-    escalate $email_report
-    escalate $esc_update_rightsize_sql_databases_approval
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
-    check logic_or($ds_parent_policy_terminated, eq(size(data),0))
+    check logic_or($ds_parent_policy_terminated, ne(val(item, "recommendationType"), "Downsize"))
+    escalate $esc_email
+    escalate $esc_downsize_instances
+    hash_exclude "savings", "savingsCurrency", "tags", "cpuAverage", "policy_name", "total_savings", "message"
     export do
       resource_level true
       field "accountID" do
         label "Subscription ID"
-        path "subscriptionId"
       end
       field "accountName" do
         label "Subscription Name"
-        path "subscriptionName"
-      end
-      field "region" do
-        label "Location"
-        path "location"
-      end
-      field "resourceName" do
-        label "Name"
-        path "name"
       end
       field "resourceGroup" do
         label "Resource Group"
-        path "resource_group"
       end
-      field "kind" do
-        label "Kind"
+      field "resourceName" do
+        label "Resource Name"
       end
-      field "type" do
-        label "Type"
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
       end
       field "skuCapacity" do
         label "Current Capacity"
         path "sku.capacity"
       end
       field "newResourceType" do
-        label "Recommended Resource Type"
-        path "recommended_capacity"
+        label "Recommended Capacity"
       end
       field "skuName" do
         label "SKU - Name"
@@ -821,24 +971,111 @@ policy "pol_azure_unused_sql" do
         label "SKU - Tier"
         path "sku.tier"
       end
-      field "cpuAverage" do
-        label "CPU Average %"
-        path "average_cpu"
-      end
-      field "recommendation" do
-        label "Recommendation"
-      end
-      field "id" do
-        label "Id"
-      end
       field "resourceType" do
         label "Resource Type"
+      end
+      field "resourceKind" do
+        label "Resource Kind"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "cpuAverage" do
+        label "CPU Average %"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "platform" do
+        label "Platform"
+      end
+      field "id" do
+        label "Resource ID"
+      end
+      field "threshold" do
+        label "CPU Threshold"
       end
       field "lookbackPeriod" do
         label "Lookback Period"
       end
-      field "threshold" do
-        label "Threshold"
+    end
+  end
+  validate_each $ds_unused_sql_incident do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Unused SQL Databases Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
+    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
+    check logic_or($ds_parent_policy_terminated, ne(val(item, "recommendationType"), "Delete"))
+    escalate $esc_email
+    escalate $esc_delete_instances
+    hash_exclude "savings", "savingsCurrency", "tags", "policy_name", "total_savings", "message"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Subscription ID"
+      end
+      field "accountName" do
+        label "Subscription Name"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "resourceType" do
+        label "Type"
+      end
+      field "resourceKind" do
+        label "Kind"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "skuName" do
+        label "SKU - Name"
+        path "sku.name"
+      end
+      field "skuTier" do
+        label "SKU - Tier"
+        path "sku.tier"
+      end
+      field "skuCapacity" do
+        label "SKU - Capacity"
+        path "sku.capacity"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "platform" do
+        label "Platform"
+      end
+      field "id" do
+        label "Resource ID"
+      end
+      field "lookbackPeriod" do
+        label "Lookback Period"
       end
     end
   end
@@ -848,58 +1085,100 @@ end
 # Escalations
 ###############################################################################
 
-escalation "email_report" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
-  description "Sends incident email"
+  description "Send incident email"
   email $param_email
 end
 
-escalation "esc_update_rightsize_sql_databases_approval" do
-  automatic contains($param_automatic_action, "Resize Instances")
-  label "Resize Database"
-  description "Resized selected  SQL database"
-  run "update_rightsize_sql_databases", data, $param_azure_endpoint, rs_optima_host
+escalation "esc_downsize_instances" do
+  automatic contains($param_automatic_action, "Downsize Underutilized Instances")
+  label "Downsize Underutilized Instances"
+  description "Approval to downsize all selected underutilized instances"
+  run "downsize_instances", data, $param_azure_endpoint, rs_optima_host
+end
+
+escalation "esc_delete_instances" do
+  automatic contains($param_automatic_action, "Delete Unused Instances")
+  label "Delete Unused Instances"
+  description "Approval to delete all selected unused instances"
+  run "delete_instances", data, $param_azure_endpoint, rs_optima_host
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define update_rightsize_sql_databases($data, $param_azure_endpoint, $$rs_optima_host) return $all_responses do
+define downsize_instances($data, $param_azure_endpoint, $$rs_optima_host) return $all_responses do
   # Change "No" to "Yes" to enable CWF debug logging
   $log_to_cm_audit_entries = "No"
 
   $$debug = $log_to_cm_audit_entries == "Yes"
 
+  $$errors = []
   $all_responses = []
+
   foreach $item in $data do
-    if $item["recommended_capacity"] != "n/a"
-      sub on_error: skip do
-        $response = http_request(
-          auth: $$auth_azure,
-          verb: "patch",
-          host: $param_azure_endpoint,
-          https: true,
-          href: $item["id"],
-          query_strings: {
-            "api-version": "2017-10-01-preview"
-          },
-          headers: {
-            "cache-control": "no-cache",
-            "content-type": "application/json"
-          },
-          body: {
-            "sku": {
-              "name": $item["skuName"],
-              "tier": $item["skuTier"],
-              "capacity": $item["recommended_capacity"]
-            }
+    sub on_error: skip do
+      $response = http_request(
+        verb: "PATCH",
+        auth: $$auth_azure,
+        host: $param_azure_endpoint,
+        https: true,
+        href: $item["id"],
+        query_strings: {
+          "api-version": "2017-10-01-preview"
+        },
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json"
+        },
+        body: {
+          "sku": {
+            "name": $item["skuName"],
+            "tier": $item["skuTier"],
+            "capacity": $item["newResourceType"]
           }
-        )
-        call sys_log('Update RightSize Azure SQL Databases: ',to_s($response))
-        $all_responses << $response
-      end
+        }
+      )
+
+      call sys_log('Downsize Azure SQL Databases: ', to_s($response))
+
+      $all_responses << $response
+    end
+  end
+end
+
+define delete_instances($data, $param_azure_endpoint, $$rs_optima_host) return $all_responses do
+  # Change "No" to "Yes" to enable CWF debug logging
+  $log_to_cm_audit_entries = "No"
+
+  $$debug = $log_to_cm_audit_entries == "Yes"
+
+  $$errors = []
+  $all_responses = []
+
+  foreach $item in $data do
+    sub on_error: skip do
+      $response = http_request(
+        verb: "DELETE",
+        host: $param_azure_endpoint,
+        auth: $$auth_azure,
+        https: true,
+        href: $item["id"],
+        query_strings: {
+          "api-version": "2017-10-01-preview"
+        },
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json"
+        }
+      )
+
+      call sys_log('Deleted Azure SQL Databases: ', to_s($response))
+
+      $all_responses << $response
     end
   end
 end
@@ -958,7 +1237,6 @@ datasource "ds_get_policy" do
     field "id", jmes_path(response, "id")
   end
 end
-
 
 datasource "ds_parent_policy_terminated" do
   run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
