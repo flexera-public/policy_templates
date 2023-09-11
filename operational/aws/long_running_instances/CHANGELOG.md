@@ -10,8 +10,8 @@
 - Normalized incident export to be consistent with other policies
 - Policy no longer raises new escalations for the same resource if incidental metadata has changed
 - Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera credential
 - Added logic required for "Meta Policy" use-cases
-- Policy now requires a valid Flexera credential to facilitate "Meta Policy" use-cases
 
 ## v3.0
 
