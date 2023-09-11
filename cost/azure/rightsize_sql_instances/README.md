@@ -12,6 +12,15 @@ This policy checks all the Azure SQL single database instances in Azure Subscrip
 - The policy identifies all instances that have had connections but have average CPU usage below the user-specified threshold over a user-specified number of days and provides the relevant recommendation.
 - The recommendation provided for underutilized instances is a downsize action. These instances can be downsized in an automated manner or after approval.
 
+### Policy savings details
+
+The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the resource is deleted or downsized. Optima is used to retrieve and calculate the estimated savings.
+
+- For unused instances, savings is the cost of the resource for a full day (3 days ago) multiplied by 30.44 (the average number of days in a month) or 0 if no cost information for the resource was found in Optima.
+- For underutilized resources, the above value is divided by the current capacity of the instance, multiplied by the recommended capacity of the instance, and then subtracted from the current cost of the instance.
+
+The savings is displayed in the Estimated Monthly Savings column. The incident message detail includes the sum of each resource *Estimated Monthly Savings* as *Potential Monthly Savings*.
+
 ## Input Parameters
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
