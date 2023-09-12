@@ -2,7 +2,40 @@
 
 ## What it does
 
-This Policy finds Azure snapshots older than the specified days and deletes them.
+This Policy finds Azure snapshots older than the specified number of days and raises an incident with a list of said snapshots. Optionally, it will delete them.
+
+## Functional Details
+
+The policy makes use of the Azure Resource Manager API to obtain a list of snapshots and their ages in order to produce a list of recommendations.
+
+### Policy savings details
+
+The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the resource is terminated. Optima is used to retrieve and calculate the estimated savings which is the cost of the resource for a full day (3 days ago) multiplied by 30.44 (the average number of days in a month), or 0 if no cost information for the resource was found in Optima. The savings is displayed in the Estimated Monthly Savings column. The incident message detail includes the sum of each resource *Estimated Monthly Savings* as *Potential Monthly Savings*.
+
+## Input Parameters
+
+This policy has the following input parameters required when launching the policy.
+
+- *Email addresses* - A list of email addresses to notify
+- *Azure Endpoint* - Azure Endpoint to access resources
+- *Snapshot Age Threshold* - The number of days since the snapshot was created to consider a snapshot old.
+- *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation.
+- *Allow/Deny Subscriptions* - Allow or Deny entered Subscriptions to filter results.
+- *Allow/Deny Subscriptions List* - A list of allowed or denied Subscription IDs/names. Leave blank to check all Subscriptions.
+- *Allow/Deny Regions* - Allow or Deny entered regions to filter results.
+- *Allow/Deny Regions List* - A list of allowed or denied regions. Leave blank to check all Subscriptions.
+- *Exclusion Tags (Key:Value)* - Cloud native tags to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:\* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:\*
+- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
+
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example if a user selects the "Delete Snapshots" action while applying the policy, all the snapshots that didn't satisfy the policy condition will be deleted.
+
+## Policy Actions
+
+The following policy actions are taken on any resources found to be out of compliance.
+
+- Send an email report
+- Delete old snapshots after an approval
 
 ## Prerequisites
 
@@ -18,32 +51,6 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   - `billing_center_viewer`
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
-
-## Functional Details
-
-The policy includes the estimated savings. The estimated savings is recognized if the resource is terminated. Optima is used to receive the estimated savings which is the product of the most recent full day's cost of the resource * 30. The savings is displayed in the Estimated Monthly Savings column. If the resource can not be found in Optima the value is 0.0. The incident message detail includes the sum of each resource Estimated Monthly Savings as Total Estimated Monthly Savings.
-If the user is missing the minimum required role of `billing_center_viewer` or if there is not enough data received from Optima to calculate savings, an appropriate message is displayed in the incident detail message along with the estimated monthly savings column value as 0.0 in the incident table.
-
-## Input Parameters
-
-This policy has the following input parameters required when launching the policy.
-
-- *Email addresses* - A list of email addresses to notify
-- *Azure Endpoint* - Azure Endpoint to access resources
-- *Subscription Allowed List* - Allowed Subscriptions, if empty, all subscriptions will be checked
-- *Snapshot age* - The number of days since the snapshot was created.
-- *Exclusion Tags* - list of tags that a snapshot can have to exclude it from the list.
-- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
-
-Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
-For example if a user selects the "Delete Snapshots" action while applying the policy, all the snapshots that didn't satisfy the policy condition will be deleted.
-
-## Policy Actions
-
-The following policy actions are taken on any resources found to be out of compliance.
-
-- Send an email report
-- Delete old snapshots after an approval
 
 ## Supported Clouds
 
