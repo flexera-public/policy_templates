@@ -338,16 +338,30 @@ datasource "ds_azure_sql_databases" do
   end
 end
 
+datasource "ds_azure_sql_databases_system_filtered" do
+  run_script $js_azure_sql_databases_system_filtered, $ds_azure_sql_databases
+end
+
+script "js_azure_sql_databases_system_filtered", type: "javascript" do
+  parameters "ds_azure_sql_databases"
+  result "result"
+  code <<-EOS
+  result = _.reject(ds_azure_sql_databases, function(db) {
+    return db['sku']['name'] == 'System'
+  })
+EOS
+end
+
 datasource "ds_azure_sql_databases_tag_filtered" do
-  run_script $js_azure_sql_databases_tag_filtered, $ds_azure_sql_databases, $param_exclusion_tags
+  run_script $js_azure_sql_databases_tag_filtered, $ds_azure_sql_databases_system_filtered, $param_exclusion_tags
 end
 
 script "js_azure_sql_databases_tag_filtered", type: "javascript" do
-  parameters "ds_azure_sql_databases", "param_exclusion_tags"
+  parameters "ds_azure_sql_databases_system_filtered", "param_exclusion_tags"
   result "result"
   code <<-EOS
   if (param_exclusion_tags.length > 0) {
-    result = _.reject(ds_azure_sql_databases, function(db) {
+    result = _.reject(ds_azure_sql_databases_system_filtered, function(db) {
       db_tags = []
 
       if (typeof(db['tags']) == 'object') {
@@ -368,7 +382,7 @@ script "js_azure_sql_databases_tag_filtered", type: "javascript" do
       return exclude_db
     })
   } else {
-    result = ds_azure_sql_databases
+    result = ds_azure_sql_databases_system_filtered
   }
 EOS
 end
@@ -418,6 +432,7 @@ datasource "ds_azure_sql_database_metrics" do
   end
 end
 
+# https://learn.microsoft.com/en-us/azure/azure-monitor/reference/supported-metrics/microsoft-sql-servers-databases-metrics
 script "js_azure_sql_database_metrics", type: "javascript" do
   parameters "resource_id", "param_azure_endpoint", "param_stats_lookback"
   result "request"
@@ -478,6 +493,14 @@ script "js_merged_metrics", type: "javascript" do
   result = []
 
   _.each(ds_azure_sql_database_metrics, function(db) {
+    db_tags = []
+
+    if (typeof(db['tags']) == 'object') {
+      _.each(Object.keys(db['tags']), function(key) {
+        db_tags.push([key, "=", db['tags'][key]].join(''))
+      })
+    }
+
     instance = {
       id: db['id'],
       region: db['region'],
@@ -485,7 +508,7 @@ script "js_merged_metrics", type: "javascript" do
       kind: db['kind'],
       type: db['type'],
       sku: db['sku'],
-      tags: db['tags'],
+      tags: db_tags.join(', '),
       resourceGroup: db['resourceGroup'],
       subscriptionId: db['subscriptionId'],
       subscriptionName: db['subscriptionName'],
@@ -508,7 +531,13 @@ script "js_merged_metrics", type: "javascript" do
     })
 
     if (connection_metrics != null && param_unused_or_underutilized != "Underutilized") {
-      if (connection_metrics.length == 0) {
+      total_connections = 0
+
+      _.each(connection_metrics, function(metric) {
+        if (typeof(metric['count']) == 'number') { total_connections += metric['count'] }
+      })
+
+      if (total_connections == 0) {
         instance['recommendationType'] = 'Delete'
         instance['newResourceType'] = 'Delete'
 
@@ -523,13 +552,13 @@ script "js_merged_metrics", type: "javascript" do
     if (cpu_metrics != null && instance['recommendationType'] != 'Delete' && param_unused_or_underutilized != "Unused") {
       if (cpu_metrics.length > 0) {
         averages = _.pluck(cpu_metrics, 'average')
-        cpu_average = null
+        cpu_average = 0
 
         if (averages.length > 0) {
           cpu_average = _.reduce(averages, function(memo, num) { return memo + num }, 0) / averages.length
         }
 
-        if (cpu_average != null && cpu_average <= param_stats_underutil_threshold_cpu_value) {
+        if (cpu_average <= param_stats_underutil_threshold_cpu_value) {
           instance['cpu_average'] = cpu_average
           instance['recommendationType'] = 'Downsize'
 
@@ -762,20 +791,26 @@ script "js_downsize_sql_incident", type: "javascript" do
   total_underutilized_dbs = result.length.toString()
   underutilized_dbs_percentage = (total_underutilized_dbs / total_dbs * 100).toFixed(2).toString() + '%'
 
+  db_message = "Database"
+  db_verb = "is"
+
+  if (total_dbs > 1) { db_message += "s" }
+  if (total_underutilized_dbs > 1) { db_verb = "are" }
+
   findings = [
-    "Out of ", total_dbs , " Azure SQL Databases analyzed, ",
+    "Out of ", total_dbs , " Azure SQL ", db_message, " analyzed, ",
     total_underutilized_dbs, " (", underutilized_dbs_percentage,
-    ") are underutilized and recommended for downsizing. "
+    ") ", db_verb, " underutilized and recommended for downsizing. "
   ].join('')
 
   day_message = "day"
-  if (param_stats_lookback.length > 1) { day_message += "s" }
+  if (param_stats_lookback > 1) { day_message += "s" }
 
   if (param_unused_or_underutilized == 'Underutilized') {
     context_message = [
       "An Azure SQL Database is considered underutilized if it has an average CPU usage below ",
-      param_stats_underutil_threshold_cpu_value, "% for last ", param_stats_lookback, " ", day_message,
-      ", regardless of whether it has had any connections to it in that same time period."
+      param_stats_underutil_threshold_cpu_value, "% for the last ", param_stats_lookback, " ", day_message,
+      ", regardless of whether it has had any connections to it in that same time period.\n\n"
     ].join('')
   } else {
     context_message = [
@@ -885,14 +920,20 @@ script "js_unused_sql_incident", type: "javascript" do
   total_unused_dbs = result.length.toString()
   unused_dbs_percentage = (total_unused_dbs / total_dbs * 100).toFixed(2).toString() + '%'
 
+  db_message = "Database"
+  db_verb = "is"
+
+  if (total_dbs > 1) { db_message += "s" }
+  if (total_unused_dbs > 1) { db_verb = "are" }
+
   findings = [
-    "Out of ", total_dbs , " Azure SQL Databases analyzed, ",
+    "Out of ", total_dbs , " Azure SQL ", db_message, " analyzed, ",
     total_unused_dbs, " (", unused_dbs_percentage,
-    ") are unused and recommended for deletion. "
+    ") ", db_verb, " unused and recommended for deletion. "
   ].join('')
 
   day_message = "day"
-  if (param_stats_lookback.length > 1) { day_message += "s" }
+  if (param_stats_lookback > 1) { day_message += "s" }
 
   context_message = [
     "An Azure SQL Database is considered unused if it has not had any connections ",
@@ -1096,23 +1137,23 @@ escalation "esc_downsize_instances" do
   automatic contains($param_automatic_action, "Downsize Underutilized Instances")
   label "Downsize Underutilized Instances"
   description "Approval to downsize all selected underutilized instances"
-  run "downsize_instances", data, $param_azure_endpoint, rs_optima_host
+  run "downsize_instances", data, $param_azure_endpoint
 end
 
 escalation "esc_delete_instances" do
   automatic contains($param_automatic_action, "Delete Unused Instances")
   label "Delete Unused Instances"
   description "Approval to delete all selected unused instances"
-  run "delete_instances", data, $param_azure_endpoint, rs_optima_host
+  run "delete_instances", data, $param_azure_endpoint
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define downsize_instances($data, $param_azure_endpoint, $$rs_optima_host) return $all_responses do
+define downsize_instances($data, $param_azure_endpoint) return $all_responses do
   # Change "No" to "Yes" to enable CWF debug logging
-  $log_to_cm_audit_entries = "No"
+  $log_to_cm_audit_entries = "Yes"
 
   $$debug = $log_to_cm_audit_entries == "Yes"
 
@@ -1150,9 +1191,9 @@ define downsize_instances($data, $param_azure_endpoint, $$rs_optima_host) return
   end
 end
 
-define delete_instances($data, $param_azure_endpoint, $$rs_optima_host) return $all_responses do
+define delete_instances($data, $param_azure_endpoint) return $all_responses do
   # Change "No" to "Yes" to enable CWF debug logging
-  $log_to_cm_audit_entries = "No"
+  $log_to_cm_audit_entries = "Yes"
 
   $$debug = $log_to_cm_audit_entries == "Yes"
 
@@ -1184,37 +1225,16 @@ define delete_instances($data, $param_azure_endpoint, $$rs_optima_host) return $
 end
 
 define sys_log($subject, $detail) do
-  # Create empty errors array if doesn't already exist
-  if !$$errors
-    $$errors = []
-  end
-  # Check if debug is enabled
   if $$debug
-    # Append to global $$errors
-    # This is the suggested way to capture errors
-    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
-    # If Flexera NAM Zone, create audit_entries [to be deprecated]
-    # This is the legacy method for capturing errors and only supported on Flexera NAM
-    if $$rs_optima_host == "api.optima.flexeraeng.com"
-      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
-      $task_label = "Creating audit entry for " + $subject
-      sub task_label: $task, on_error: skip_error_and_append($task) do
-        rs_cm.audit_entries.create(
-          notify: "None",
-          audit_entry: {
-            auditee_href: @@account,
-            summary: $subject,
-            detail: $detail
-          }
-        )
-      end # End sub on_error
-    end # End if rs_optima_host
-  end # End if debug is enabled
-end
-
-define skip_error_and_append($subject) do
-  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
-  $_error_behavior = "skip"
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: $subject,
+        detail: $detail
+      }
+    )
+  end
 end
 
 ###############################################################################
