@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "6.0",
+  version: "6.1",
   provider: "Azure",
   service: "Storage",
   policy_set: "Unused Volumes",
@@ -102,6 +102,7 @@ parameter "param_take_snapshot" do
   label "Create Final Snapshot"
   description "Whether or not to take a final snapshot before deleting an unused volume."
   allowed_values "true", "false"
+  default "true"
 end
 
 parameter "param_automatic_action" do
@@ -774,35 +775,44 @@ end
 ###############################################################################
 
 define delete_volumes($data, $param_take_snapshot, $$rs_optima_host) return $all_responses do
-  # Change "No" to "Yes" to enable CWF debug logging
-  $log_to_cm_audit_entries == "No"
-
-  $$debug = $log_to_cm_audit_entries == "Yes"
   $status_code=''
-  $all_responses = []
+  $$all_responses = []
   foreach $item in $data do
     sub on_error: skip do
-      call sys_log("In for item =",to_s($item))
       if $param_take_snapshot == "true"
-        call create_snapshot($item) retrieve $status_code
-        if to_s($status_code)=="202"
+        call create_snapshot($item) retrieve $response
+        # We don't expect to get anything other than Succeeded, but just in case before deleting disk lets check
+        if $response["body"]["properties"]["provisioningState"] == "Succeeded"
           call delete_unattached_disk($item['id'])
         else
-          call sys_log("Azure create snapshot error statusCode: ",to_s($status_code))
         end
       else
         call delete_unattached_disk($item['id'])
       end
     end
   end
+  # If we encountered any errors, use `raise` to mark the CWF process as errored
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
 end
 
-define create_snapshot($item) return $status_code do
+define capture_error($error_string) do
+  # Check that errors global exists
+  if !$$errors
+    # If not, create it as an array[]
+    $$errors = []
+  end
+  # Append the error string to the array
+  $$errors << $error_string
+end
+
+define create_snapshot($item) return $response do
   $response={}
   $syslog_subject = "Azure create snapshot API response: "
-  call sys_log($syslog_subject,to_s($item))
   $snapshotName=split($item['id'], "Microsoft.Compute")
-  $snapshotName=join([$snapshotName[0], "Microsoft.Compute", "/snapshots/", $item['name'], "Snapshot"])
+  $snapshotName=join([$snapshotName[0], "Microsoft.Compute", "/snapshots/", $item['resourceName'], "Snapshot"])
+
   $response = http_request(
     auth: $$auth_azure,
     verb: "put",
@@ -810,52 +820,39 @@ define create_snapshot($item) return $status_code do
     https: true,
     href: $snapshotName,
     query_strings: {
-      "api-version": "2019-07-01"
+      "api-version": "2021-12-01"
     },
-    headers:{
+    headers: {
       "content-type": "application/json"
     },
     body: {
+      "location": $item["region"],
+      "name": $item['resourceName']+"Snapshot",
       "properties": {
         "creationData": {
           "createOption": "Copy",
-          "sourceUri": $item["id"]
+          "sourceResourceId": $item["id"]
         }
-      },
-      "region": $item["region"]
+      }
     }
   )
-  call sys_log("Create Snapshot response",to_s($response))
-  $status_code = $response["code"]
-  call sys_log("status_code",to_s($status_code))
-  if $status_code == 202
-    $snapshotstatus=$response["body"]["properties"]["provisioningState"]
-    if $snapshotstatus == "Updating"
-      $expected_status = "Succeeded"
-      while $expected_status !~ $snapshotstatus do
-        call sys_log("In while snapshotstatus",to_s($disksnapshot_status))
-        call get_disksnapshot($snapshotName) retrieve $status
-        $disksnapshot_status = $status
-        call sys_log("disksnapshot_status",to_s($disksnapshot_status))
-        if $disksnapshot_status == "Creating"
-          $disksnapshot_status="Updating"
-        end
-        if $disksnapshot_status == "Succeeded"
-          call sys_log("disksnapshot_status in if","")
-          $snapshotstatus= "Succeeded"
-        elsif  $disksnapshot_status !~ "Updating"
-          call sys_log("disksnapshot_status in elsif","")
-          $snapshotstatus= "Succeeded"
-          $status_code = 400
-          call sys_log($syslog_subject, join(["Failed to create snapshot for following disk: ", to_s($item['name'])]))
-        end
-      end
+  $$all_responses << to_json({"req":"PUT management.azure.com" + $snapshotName,"resp": $response})
+  task_label('Checking for expected response code for  Snapshot Create Request Successful')
+  if $response["code"] != 202 && $response["code"] != 200
+    call capture_error('Unexpected response creating snapshot: '+to_json($response))
+  else
+    task_label('Create Snapshot Request Successful: '+$snapshotName)
+    while $response["body"]["properties"]["provisioningState"] != "Succeeded" do
+      task_label('Create Snapshot Status: '+$response["body"]["properties"]["provisioningState"])+' '+$snapshotName
+      call get_disksnapshot($snapshotName) retrieve $response
+      sleep(1)
     end
+    task_label('Create Snapshot Successful: '+$snapshotName)
   end
 end
 
-define get_disksnapshot($snapshotId) return $status do
-  $snapshot_response = http_request(
+define get_disksnapshot($snapshotId) return $response do
+  $response = http_request(
     auth: $$auth_azure,
     https: true,
     verb: "get",
@@ -865,14 +862,11 @@ define get_disksnapshot($snapshotId) return $status do
       "api-version": "2019-07-01"
     }
   )
-  call sys_log("Get Snapshot Details ",to_s($snapshot_response))
-  call sys_log("Get Snapshot status ",to_s($snapshot_response["body"]["properties"]["provisioningState"]))
-  $status = to_s($snapshot_response["body"]["properties"]["provisioningState"])
+  $$all_responses << to_json({"req":"GET management.azure.com" + $snapshotId,"resp": $response})
 end
 
 define delete_unattached_disk($disk_id) do
-  $response={}
-  $syslog_subject = "Azure delete unattached disk API response: "
+  task_label('Delete Disk starting: '+$disk_id)
   $response = http_request(
     auth: $$auth_azure,
     verb: "delete",
@@ -883,70 +877,28 @@ define delete_unattached_disk($disk_id) do
       "api-version": "2019-07-01"
     }
   )
-  call sys_log($syslog_subject,to_s($response))
-  $delete_status = $response["code"]
-  if $delete_status != 202
+  $$all_responses << to_json({"req":"DELETE management.azure.com"+$disk_id,"resp": $response})
+  task_label('Delete Disk response: '+to_json($response["body"]))
+  if $response["code"] != 202
     $error_code = $response["body"]["error"]["code"]
-    call tagdisk_error($disk_id,$error_code)
+    task_label('Delete Disk unexpected response: '+$disk_id+' '+to_json($response))
+    # call tagdisk_error($disk_id,$error_code)
+    call capture_error('Delete Disk unexpected response: '+$disk_id+' '+to_json($response))
+  else
+    # 202 Response means the delete was accepted
+
+    # explicitly reset response["code"]... it should be 202 though from check above so this is not needed
+    $response = { "code": 0 }
+    # wait until disk is deleted
+    # TODO: add retry limit with backoff timer
+    # we expect a 404 response when the disk is deleted
+    while $response["code"] != 404 do
+      task_label('Current Disk Status: '+$disk_id+' '+to_json($response))
+      call get_disksnapshot($disk_id) retrieve $response
+      sleep(1)
+    end
+    task_label('Delete Disk successful: '+$disk_id)
   end
-end
-
-define tagdisk_error($disk_id,$error_code) do
-  $response={}
-  $syslog_subject = "Azure tag a disk API response: "
-  $response = http_request(
-    auth: $$auth_azure,
-    verb: "patch",
-    host: "management.azure.com",
-    https: true,
-    href: $disk_id,
-    query_strings: {
-      "api-version": "2019-07-01"
-    },
-    headers: {
-      "content-type": "application/json"
-    },
-    body: {
-      "tags": {
-        "DeleteDiskError" :$error_code
-      }
-    }
-  )
-  call sys_log(join([$syslog_subject, "Response"]),to_s($response))
-end
-
-define sys_log($subject, $detail) do
-  # Create empty errors array if doesn't already exist
-  if !$$errors
-    $$errors = []
-  end
-  # Check if debug is enabled
-  if $$debug
-    # Append to global $$errors
-    # This is the suggested way to capture errors
-    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
-    # If Flexera NAM Zone, create audit_entries [to be deprecated]
-    # This is the legacy method for capturing errors and only supported on Flexera NAM
-    if $$rs_optima_host == "api.optima.flexeraeng.com"
-      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
-      $task_label = "Creating audit entry for " + $subject
-      sub task_label: $task, on_error: skip_error_and_append($task) do
-        rs_cm.audit_entries.create(
-          notify: "None",
-          audit_entry: {
-            auditee_href: @@account,
-            summary: $subject,
-            detail: $detail
-          }
-        )
-      end # End sub on_error
-    end # End if rs_optima_host
-  end # End if debug is enabled
-end
-
-define skip_error_and_append($subject) do
-  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
-  $_error_behavior = "skip"
 end
 
 ###############################################################################
