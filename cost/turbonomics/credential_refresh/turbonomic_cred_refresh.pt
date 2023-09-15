@@ -6,7 +6,7 @@ severity "low"
 category "Operational"
 default_frequency "hourly"
 info(
-  version: "0.2",
+  version: "0.3",
   provider: "",
   service: "",
   policy_set: "",
@@ -59,6 +59,8 @@ datasource "ds_applied_policies" do
     encoding "json"
     collect jq(response, ".items[]") do
       field "id", val(col_item, "id")
+      field "policy_aggregate_id", val(col_item, "policy_aggregate_id")
+      field "org_id", jq(col_item, ".project.org_id")
       field "name", val(col_item, "name")
       field "info_source", jq(col_item, ".info.source")
     end
@@ -90,6 +92,8 @@ datasource "ds_turbo_policies_with_next_start" do
     encoding "json"
     collect jq(response, ".") do
       field "id", val(iter_item, "id")
+      field "policy_aggregate_id", val(iter_item, "policy_aggregate_id")
+      field "org_id", val(iter_item, "org_id")
       field "info_source", val(iter_item, "info_source")
       field "name", val(iter_item, "name")
       field "time", val(iter_item, "time")
@@ -240,8 +244,13 @@ define update_cookie($turbo_policies, $param_turbonomic_username, $param_turbono
       end
       if $found
         # If the applied policy has the auth_cookie or param_auth_cookie parameter, we'll update with a fresh value
+        if $policy["policy_aggregate_id"] != null
+          $url = "https://" + $gov_host + "/api/governance/orgs/" + $policy["org_id"] + "/policy_aggregates/" + $policy["policy_aggregate_id"]
+        else
+          $url = "https://" + $gov_host + "/api/governance/projects/" + $proj_id + "/applied_policies/" + $policy["id"]
+        end
         $response = http_patch(
-          url: "https://" + $gov_host + "/api/governance/projects/" + $proj_id + "/applied_policies/" + $policy["id"],
+          url: $url,
           headers: {
             "Api-Version": "1.0"
           },
@@ -250,7 +259,9 @@ define update_cookie($turbo_policies, $param_turbonomic_username, $param_turbono
             options: $modified
           }
         )
-        if $response["code"] != 204
+        # Policy Aggregate Service returns 202 on successful update and
+        # Applied Policy Service returns 204 on successful update
+        if $response["code"] != 204 && $response["code"] != 202
           raise "Unexpected response code from policy template update: " + $response["code"] + " body: " + to_s($response["body"])
         end
       end
