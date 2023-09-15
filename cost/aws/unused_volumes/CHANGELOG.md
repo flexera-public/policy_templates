@@ -1,5 +1,24 @@
 # Changelog
 
+## v7.1
+
+- Added ability to filter resources by tag key alone without regard for tag value
+- Fixed issue with correctly reading tags from volumes
+
+## v7.0
+
+- Several parameters altered to be more descriptive and human-readable
+- Removed deprecated "Log to CM Audit Entries" parameter
+- Added ability to only report recommendations that meet a minimum savings threshold
+- Added ability to include attached volumes in the incident and to action on them
+- Added ability to filter resources by multiple tag key:value pairs
+- Added additional context to incident description
+- Normalized incident export to be consistent with other policies
+- Added human-readable recommendation to incident export
+- Added additional fields to incident export to facilitate scraping for dashboards
+- Policy no longer raises new escalations if savings data changed but nothing else has
+- Streamlined code for better readability and faster execution
+
 ## v6.1
 
 - Added `Resource Name` incident field

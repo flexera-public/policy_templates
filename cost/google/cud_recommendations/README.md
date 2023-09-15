@@ -32,11 +32,22 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
 
 Provider tag value to match this policy: `gce`
 
+Required APIs to have enabled in the provider:
+
+- Resource Manager API
+- Recommender API
+
 Required permissions in the provider:
 
-- The `resourcemanager.projects.get` permission
-- The `roles/recommender.billingAccountCudViewer` role
-- The `roles/recommender.projectCudViewer` role
+- resourcemanager.projects.get
+- billing.resourceCosts.get*
+- billing.accounts.getSpendingInformation*
+
+Required roles in the provider:
+
+- Project Usage Commitment Recommender Viewer
+
+\* Needed for recommendations to reflect custom contract pricing. Otherwise, recommendations will use list pricing.
 
 ## Supported Clouds
 

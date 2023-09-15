@@ -1,5 +1,27 @@
 # Changelog
 
+## v6.0
+
+- Several parameters altered to be more descriptive and human-readable
+- Removed deprecated "Log to CM Audit Entries" parameter
+- Removed ability to filter by how long a policy was detached; see README for more details
+- Added ability to filter by volume age
+- Added ability to only report recommendations that meet a minimum savings threshold
+- Added ability to filter resources by multiple tag key:value pairs
+- Added additional context to incident description
+- Normalized incident export to be consistent with other policies
+- Added human-readable recommendation to incident export
+- Policy no longer raises new escalations if ages or savings data changed but nothing else has
+- Streamlined code for better readability and faster execution
+
+## v5.1
+
+- Corrected issue with policy not retrieving cost data on orgs using newer Azure bill connections
+
+## v5.0
+
+- Renamed Subscription List parameter for consistency and accuracy
+
 ## v4.10
 
 - Changed internal names of several incident fields to ensure that they are properly scraped for dashboards.

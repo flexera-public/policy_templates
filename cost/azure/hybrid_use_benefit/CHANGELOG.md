@@ -1,9 +1,15 @@
 # Changelog
 
-## v3.0
+## v3.1
 
 - Added pricing support from Azure retail API
 - Added monthly savings and currency support to the be included in the incidents
+
+## v3.0
+
+- Renamed Subscription List parameter for consistency and accuracy
+- Added logic required for "Meta Policy" use-cases
+- Policy now requires a valid Flexera credential to facilitate "Meta Policy" use-cases
 
 ## v2.12
 

@@ -1,5 +1,14 @@
 # Changelog
 
+## v3.2
+
+- Corrected issue with policy not retrieving cost data on orgs using newer Azure bill connections
+
+## v3.1
+
+- Added support for meta policies
+- Fixed typo in incident name for idle instances
+
 ## v3.0
 
 - Several parameters altered to be more descriptive and human-readable

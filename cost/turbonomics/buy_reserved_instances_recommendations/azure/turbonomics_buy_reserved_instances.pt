@@ -6,7 +6,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "0.1",
+  version: "0.2",
   provider: "Azure",
   source: "Turbonomic",
   service: "Usage Discount",
@@ -27,7 +27,7 @@ parameter "auth_cookie" do
   type "string"
   label "Authorization Cookie"
   no_echo true
-  description "valid authorization cookie"
+  description "Valid authorization cookie"
 end
 
 parameter "param_email" do
@@ -50,7 +50,7 @@ pagination "turbonomic_buy_ris_pagination_header" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
 #get turbonomic recommendation data
@@ -76,32 +76,12 @@ datasource "ds_get_turbonomic_recommendations" do
       field "sizeFlexible", jmes_path(col_item, "reservedInstance.sizeFlexible")
       field "savings", jmes_path(col_item, "stats[0].value")
       field "savingsCurrency", jmes_path(col_item, "stats[0].units")
+      field "uuid", jmes_path(col_item, "target.uuid")
+      field "actionID", jmes_path(col_item, "actionID")
+      field "riUtilization", jmes_path(col_item, "reservedInstance.coupons.[capacity.avg,value]")
     end
   end
 end
-
-##this will potentially be a lot of calls. how to make this more performant
-datasource "ds_get_business_units" do
-  request do
-    run_script $js_get_business_units, $param_turbonomic_host, $auth_cookie
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "[*]") do
-      field "uuid", jmes_path(col_item, "uuid")
-      field "accountID", jmes_path(col_item, "accountId")
-      field "displayName", jmes_path(col_item, "displayName")
-    end
-  end
-end
-
-datasource "ds_filtered_turbonomic_recommendations" do
-  run_script $js_filtered_turbonomic_recommendations, $ds_get_turbonomic_recommendations, $ds_get_business_units
-end
-
-###############################################################################
-# Scripts
-###############################################################################
 
 ##script using a manually acquired turbonomic cookie and pulls hard coded purchasable ri data
 script "js_get_turbonomic_recommendations", type: "javascript" do
@@ -133,6 +113,21 @@ script "js_get_turbonomic_recommendations", type: "javascript" do
 EOS
 end
 
+##this will potentially be a lot of calls. how to make this more performant
+datasource "ds_get_business_units" do
+  request do
+    run_script $js_get_business_units, $param_turbonomic_host, $auth_cookie
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "uuid", jmes_path(col_item, "uuid")
+      field "accountID", jmes_path(col_item, "accountId")
+      field "displayName", jmes_path(col_item, "displayName")
+    end
+  end
+end
+
 ## verified that discovered is the only one we need
 script "js_get_business_units", type: "javascript" do
   result "request"
@@ -155,9 +150,51 @@ script "js_get_business_units", type: "javascript" do
 EOS
 end
 
+##this will potentially be a lot of calls. how to make this more performant
+datasource "ds_get_action_details" do
+  request do
+    run_script $js_get_action_details, $param_turbonomic_host, $auth_cookie, $ds_get_turbonomic_recommendations
+  end
+  result do
+    encoding "json"
+    field "uuids", response
+  end
+end
+
+##
+script "js_get_action_details", type: "javascript" do
+  result "request"
+  parameters "turbonomic_endpoint", "auth_cookie", "ds_get_turbonomic_recommendations"
+  code <<-EOS
+  //replace cookie every day this is run
+    var uuids = []
+    _.each(ds_get_turbonomic_recommendations, function(instance){
+      if (instance.provider === "Azure Subscription"){
+        uuids.push(instance.actionID)
+      }
+    })
+    var request = {
+      verb: "POST",
+      host: turbonomic_endpoint,
+      path: "/api/v3/actions/details",
+      body_fields: {
+        "uuids": uuids,
+      },
+      headers: {
+        "Content-Type": "application/json"
+        "Cookie": auth_cookie
+      }
+    }
+  EOS
+end
+
+datasource "ds_filtered_turbonomic_recommendations" do
+  run_script $js_filtered_turbonomic_recommendations, $ds_get_turbonomic_recommendations, $ds_get_business_units, $param_turbonomic_host, $ds_get_action_details
+end
+
 script "js_filtered_turbonomic_recommendations", type: "javascript" do
   result "result"
-  parameters "ds_get_turbonomic_recommendations", "ds_get_business_units"
+  parameters "ds_get_turbonomic_recommendations", "ds_get_business_units", "turbonomic_endpoint", "ds_get_action_details"
   code <<-EOS
     instances = []
     monthlySavings = 0.0
@@ -185,7 +222,16 @@ script "js_filtered_turbonomic_recommendations", type: "javascript" do
           return value = 0.0
         }
         return value
-      }
+    }
+
+    Object.keys(ds_get_action_details.uuids).forEach(function(uuid) {
+      _.each(ds_get_turbonomic_recommendations, function(ri, index){
+        if (ri.actionID == uuid) {
+          ds_get_turbonomic_recommendations[index].riCoverage = Number(ds_get_action_details.uuids[uuid].estimatedRICoverage).toFixed(2)
+          ds_get_turbonomic_recommendations[index].riUtil = (ri.riUtilization[1]*100/ri.riUtilization[0]).toFixed(2)
+        }
+      })
+    })
 
     _.each(ds_get_business_units, function(businessUnit) {
         _.each(ds_get_turbonomic_recommendations, function(ri, index) {
@@ -213,6 +259,7 @@ script "js_filtered_turbonomic_recommendations", type: "javascript" do
                     ri.savings = Math.round(ri.savings * 730*100)/100
                     ri.effectiveCost = Number(ri.effectiveCost * 730 * ri.termValue * 12 * ri.numberOfInstances).toFixed(2)
                     ri.recurringCost = Number(ri.recurringCost * 730 * ri.numberOfInstances).toFixed(2)
+                    ri.url = "https://"+ turbonomic_endpoint + "/app/index.html#/view/main/action/" + ri.actionID
                     monthlySavings = monthlySavings + ri.savings
                     instances.push(ri)
                 }
@@ -230,7 +277,7 @@ script "js_filtered_turbonomic_recommendations", type: "javascript" do
         'instances': instances,
         'message': message
     }
-EOS
+  EOS
 end
 
 ###############################################################################
@@ -287,6 +334,15 @@ EOS
       end
       field "sizeFlexible" do
         label "Size Flexible"
+      end
+      field "url" do
+        label "System Details URL"
+      end
+      field "riCoverage" do
+        label "RI Coverage"
+      end
+      field "riUtil" do
+        label "RI Utilization"
       end
     end
     escalate $esc_email

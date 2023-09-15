@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.4
+
+- Unpublished policy from catalog since Turbonomic Rightsize Volumes does not support Google provider yet.
+
 ## v0.3
 
 - Updates provider from GCP to Google
