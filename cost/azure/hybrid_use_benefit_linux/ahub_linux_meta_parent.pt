@@ -8,7 +8,7 @@ tenancy "single"
 default_frequency "15 minutes"
 info(
   provider: "Azure",
-  version: "3.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "4.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "false"
 )
 
@@ -56,26 +56,47 @@ parameter "param_policy_schedule" do
 end
 
 ## Child Policy Parameters
-parameter "param_exclusion_tag_key" do
-  category "User Inputs"
-  label "Exclusion Tag Key"
-  description "Azure-native instance tag to ignore instances that are not using AHUB/BYOL. Only supply the tag key. The policy assumes that the tag value is irrelevant."
-  type "string"
-  default "exclude_ahub"
-end
-
 parameter "param_azure_endpoint" do
   type "string"
+  category "Policy Settings"
   label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
   allowed_values "management.azure.com", "management.chinacloudapi.cn"
   default "management.azure.com"
 end
 
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. Leave blank to check all regions."
+  default []
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags (Key:Value)"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:*"
+  allowed_pattern /(^$)|[\w]*\:.*/
+  default []
+end
+
 parameter "param_automatic_action" do
   type "list"
+  category "Actions"
   label "Automatic Actions"
-  description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values "Hybrid use benefit for Linux"
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Apply Hybrid Use Benefit"]
 end
 
 ###############################################################################
@@ -90,7 +111,7 @@ end
 
 credentials "auth_flexera" do
   schemes "oauth2"
-  label "flexera"
+  label "Flexera"
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
@@ -694,19 +715,19 @@ datasource "ds_child_incident_details" do
   end
 end
 
-datasource "ds_filtered_resources_combined_incidents" do
-  run_script $js_ds_filtered_resources_combined_incidents, $ds_child_incident_details
+datasource "ds_ahub_recommendations_combined_incidents" do
+  run_script $js_ds_ahub_recommendations_combined_incidents, $ds_child_incident_details
 end
 
-script "js_ds_filtered_resources_combined_incidents", type: "javascript" do
+script "js_ds_ahub_recommendations_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-EOS
   result = []
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
-    // If the incident summary contains "Instances Not Using Azure Hybrid Use Benefit for Linux Server" then include it in the filter result
-    if (s.indexOf("Instances Not Using Azure Hybrid Use Benefit for Linux Server") > -1) {
+    // If the incident summary contains "Azure Linux Virtual Machines Without Hybrid Use Benefit Found" then include it in the filter result
+    if (s.indexOf("Azure Linux Virtual Machines Without Hybrid Use Benefit Found") > -1) {
       _.each(incident["violation_data"], function(violation) {
         result.push(violation);
       });
@@ -722,27 +743,39 @@ end
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
-    # Consolidated incident for Instances Not Using Azure Hybrid Use Benefit for Linux Server
-  validate $ds_filtered_resources_combined_incidents do
-    summary_template "Consolidated Incident: {{ len data }} Instances Not Using Azure Hybrid Use Benefit for Linux Server"
+    # Consolidated incident for Azure Linux Virtual Machines Without Hybrid Use Benefit Found
+  validate $ds_ahub_recommendations_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} Azure Linux Virtual Machines Without Hybrid Use Benefit Found"
     escalate $esc_email
     check eq(size(data), 0)
     export do
       resource_level true
-      field "subscriptionName" do
-        label "Subscription Name"
+      field "accountID" do
+        label "Subscription ID"
       end
-      field "location" do
-        label "Location"
+      field "accountName" do
+        label "Subscription Name"
       end
       field "resourceGroup" do
         label "Resource Group"
       end
-      field "name" do
-        label "Instance Name"
+      field "resourceName" do
+        label "Resource Name"
       end
-      field "vmSize" do
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "resourceType" do
         label "Instance Size"
+      end
+      field "resourceKind" do
+        label "Resource Kind"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "osType" do
+        label "Operating System"
       end
       field "imagePublisher" do
         label "Image Publisher"
@@ -750,23 +783,23 @@ policy "policy_scheduled_report" do
       field "imageOffer" do
         label "Image Offer"
       end
-      field "imageSku" do
-        label "Image Sku"
+      field "imageId" do
+        label "Image SKU"
       end
       field "imageVersion" do
         label "Image Version"
       end
-      field "ahub" do
-        label "AHUB"
+      field "license" do
+        label "License Type"
       end
-      field "tags" do
-        label "Tags"
+      field "service" do
+        label "Service"
+      end
+      field "resourceID" do
+        label "Resource ID"
       end
       field "id" do
-        label "Id"
-      end
-      field "lic_param" do
-        label "lic_param"
+        label "ID"
       end
     end
   end
