@@ -2,7 +2,7 @@
 
 ## What it does
 
-This Policy Template is used to automatically apply the Azure Hybrid Use Benefit (AHUB) to all eligible Linux VMs in an Azure Subscription and provides a monthly savings value if AHUB were to be enabled.
+This Policy Template is used to automatically apply the Azure Hybrid Use Benefit (AHUB) to all eligible Linux VMs in an Azure Subscription.
 
 ## Functional Details
 
