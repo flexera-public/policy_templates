@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "3.1",
+  version: "4.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Hybrid Use Benefit",
@@ -18,6 +18,67 @@ info(
 # Parameters
 ###############################################################################
 
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  category "Policy Settings"
+  label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation."
+  min_value 0
+  default 0
+end
+
+parameter "param_subscriptions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Subscriptions"
+  description "Allow or Deny entered Subscriptions."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_subscriptions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Subscriptions List"
+  description "A list of allowed or denied Subscription IDs/names. Leave blank to check all Subscriptions."
+  default []
+end
+
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. Leave blank to check all regions."
+  default []
+end
+
 parameter "param_exclusion_tags" do
   type "list"
   category "Filters"
@@ -27,30 +88,12 @@ parameter "param_exclusion_tags" do
   default []
 end
 
-parameter "param_email" do
-  type "list"
-  label "Email addresses"
-  description "A list of email addresses of the recipients you wish to notify"
-end
-
-parameter "param_azure_endpoint" do
-  type "string"
-  label "Azure Endpoint"
-  allowed_values "management.azure.com", "management.chinacloudapi.cn"
-  default "management.azure.com"
-end
-
-parameter "param_subscriptions_list" do
-  label "Subscription Allowed List"
-  type "list"
-  description "Allowed Subscriptions, if empty, all subscriptions will be checked"
-end
-
 parameter "param_automatic_action" do
   type "list"
+  category "Actions"
   label "Automatic Actions"
-  description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Hybrid use benefit"]
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Apply Hybrid Use Benefit"]
 end
 
 ###############################################################################
@@ -96,6 +139,70 @@ datasource "ds_applied_policy" do
     path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
     header "Api-Version", "1.0"
   end
+end
+
+datasource "ds_region_table" do
+  run_script $js_region_table
+end
+
+script "js_region_table", type:"javascript" do
+  result "result"
+  code <<-EOS
+  result = {
+    "ukwest": "UK West",
+    "usgovvirginia": "US Gov Virginia",
+    "eastus2": "US East 2",
+    "uaenorth": "AE North",
+    "southafricawest": "ZA West",
+    "francesouth": "FR South",
+    "westcentralus": "US West Central",
+    "koreacentral": "KR Central",
+    "westeurope": "EU West",
+    "southafricanorth": "ZA North",
+    "southeastasia": "AP Southeast",
+    "centralindia": "IN Central",
+    "switzerlandwest": "CH West",
+    "norwayeast": "NO East",
+    "germanywestcentral": "DE West Central",
+    "westus2": "US West 2",
+    "australiacentral": "AU Central",
+    "italynorth": "IT North",
+    "centralus": "US Central",
+    "germanynorth": "DE North",
+    "brazilsoutheast": "BR Southeast",
+    "southindia": "IN South",
+    "swedencentral": "SE Central",
+    "francecentral": "FR Central",
+    "australiasoutheast": "AU Southeast",
+    "northeurope": "EU North",
+    "koreasouth": "KR South",
+    "usgovtexas": "US Gov TX",
+    "polandcentral": "PL Central",
+    "japaneast": "JA East",
+    "westindia": "IN West",
+    "japanwest": "JA West",
+    "westus": "US West",
+    "jioindiawest": "IN West Jio",
+    "northcentralus": "US North Central",
+    "southcentralus": "US South Central",
+    "eastasia": "AP East",
+    "jioindiacentral": "IN Central Jio",
+    "australiacentral2": "AU Central 2",
+    "canadaeast": "CA East",
+    "eastus": "US East",
+    "uaecentral": "AE Central",
+    "norwaywest": "NO West",
+    "canadacentral": "CA Central",
+    "uksouth": "UK South",
+    "qatarcentral": "QA Central",
+    "swedensouth": "SE South",
+    "brazilsouth": "BR South",
+    "australiaeast": "AU East",
+    "switzerlandnorth": "CH North",
+    "usgovarizona": "US Gov AZ",
+    "westus3": "US West 3"
+  }
+EOS
 end
 
 datasource "ds_azure_pricing" do
@@ -189,13 +296,13 @@ script "js_currency", type:"javascript" do
 EOS
 end
 
-datasource "ds_subscriptions" do
+datasource "ds_azure_subscriptions" do
   request do
     auth $auth_azure
     pagination $pagination_azure
     host $param_azure_endpoint
     path "/subscriptions/"
-    query "api-version","2019-06-01"
+    query "api-version","2020-01-01"
     header "User-Agent", "RS Policies"
     # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
     # Forces `ds_is_deleted` datasource to run first during policy execution
@@ -204,32 +311,39 @@ datasource "ds_subscriptions" do
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "subscriptionId", jmes_path(col_item,"subscriptionId")
-      field "subscriptionName", jmes_path(col_item,"displayName")
+      field "id", jmes_path(col_item, "subscriptionId")
+      field "name", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
     end
   end
 end
 
-datasource "ds_filtered_subscriptions" do
-  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscriptions_list
+datasource "ds_azure_subscriptions_filtered" do
+  run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
 end
 
-script "js_filtered_subscriptions", type: "javascript" do
-  parameters "ds_subscriptions", "param_subscriptions_list"
+script "js_azure_subscriptions_filtered", type: "javascript" do
+  parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
   result "result"
   code <<-EOS
   if (param_subscriptions_list.length > 0) {
-    result = _.filter(ds_subscriptions, function(subscription) {
-      return _.contains(param_subscriptions_list, subscription['subscriptionId']) || _.contains(param_subscriptions_list, subscription['subscriptionName'])
+    result = _.filter(ds_azure_subscriptions, function(subscription) {
+      include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
+
+      if (param_subscriptions_allow_or_deny == "Deny") {
+        include_subscription = !include_subscription
+      }
+
+      return include_subscription
     })
   } else {
-    result = ds_subscriptions
+    result = ds_azure_subscriptions
   }
 EOS
 end
 
 datasource "ds_azure_instances" do
-  iterate $ds_filtered_subscriptions
+  iterate $ds_azure_subscriptions_filtered
   request do
     auth $auth_azure
     pagination $pagination_azure
@@ -248,7 +362,8 @@ datasource "ds_azure_instances" do
       field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
       field "id", jmes_path(col_item, "id")
       field "name", jmes_path(col_item, "name")
-      field "location", jmes_path(col_item, "location")
+      field "region", jmes_path(col_item, "location")
+      field "type", jmes_path(col_item, "type")
       field "licenseType", jmes_path(col_item, "properties.licenseType")
       field "vmSize", jmes_path(col_item, "properties.hardwareProfile.vmSize")
       field "osType", jmes_path(col_item, "properties.storageProfile.osDisk.osType")
@@ -261,12 +376,71 @@ datasource "ds_azure_instances" do
   end
 end
 
-datasource "ds_filtered_resources" do
-  run_script $js_filtered_resources, $ds_azure_instances, $param_exclusion_tags, $ds_azure_pricing, $ds_currency, $ds_applied_policy
+datasource "ds_azure_instances_tag_filtered" do
+  run_script $js_azure_instances_tag_filtered, $ds_azure_instances, $param_exclusion_tags
 end
 
-script "js_filtered_resources", type: "javascript" do
-  parameters "ds_azure_instances", "param_exclusion_tags", "ds_azure_pricing", "ds_currency", "ds_applied_policy"
+script "js_azure_instances_tag_filtered", type: "javascript" do
+  parameters "ds_azure_instances", "param_exclusion_tags"
+  result "result"
+  code <<-EOS
+  if (param_exclusion_tags.length > 0) {
+    result = _.reject(ds_azure_instances, function(instance) {
+      instance_tags = []
+
+      if (typeof(instance['tags']) == 'object') {
+        _.each(Object.keys(instance['tags']), function(key) {
+          instance_tags.push([key, ":", instance['tags'][key]].join(''))
+          instance_tags.push([key, ":*"].join(''))
+        })
+      }
+
+      exclude_instance = false
+
+      _.each(param_exclusion_tags, function(exclusion_tag) {
+        if (_.contains(instance_tags, exclusion_tag)) {
+          exclude_instance = true
+        }
+      })
+
+      return exclude_instance
+    })
+  } else {
+    result = ds_azure_instances
+  }
+EOS
+end
+
+datasource "ds_azure_instances_region_filtered" do
+  run_script $js_azure_instances_region_filtered, $ds_azure_instances_tag_filtered, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_azure_instances_region_filtered", type: "javascript" do
+  parameters "ds_azure_instances_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_azure_instances_tag_filtered, function(instance) {
+      include_instance = _.contains(param_regions_list, instance['region'])
+
+      if (param_regions_allow_or_deny == "Deny") {
+        include_instance = !include_instance
+      }
+
+      return include_instance
+    })
+  } else {
+    result = ds_azure_instances_tag_filtered
+  }
+EOS
+end
+
+datasource "ds_ahub_recommendations" do
+  run_script $js_ahub_recommendations, $ds_azure_instances_region_filtered, $ds_region_table, $ds_azure_pricing, $ds_currency, $ds_applied_policy, $param_min_savings
+end
+
+script "js_ahub_recommendations", type: "javascript" do
+  parameters "ds_azure_instances_region_filtered", "ds_region_table", "ds_azure_pricing", "ds_currency", "ds_applied_policy", "param_min_savings"
   result "result"
   code <<-EOS
   // Function for formatting currency numbers later
@@ -288,129 +462,102 @@ script "js_filtered_resources", type: "javascript" do
     return formatted_number + "." + values[1]
   }
 
-  function getPriceInfo(location, vmSize, osType, pricingData) {
-    if (!pricingData[location] || !pricingData[location][vmSize] || !pricingData[location][vmSize][osType]) {
-      return null
-    }
-
-    var pricePerUnit = pricingData[location][vmSize][osType].pricePerUnit
-    var pricePerUnitAHUB =  pricingData[location][vmSize][osType].pricePerUnitAHUB
-
-    if (pricePerUnit && pricePerUnitAHUB) {
-      return pricePerUnit - pricePerUnitAHUB
-    } else {
-      return null
-    }
-  }
-
-  region_table = {
-    "ukwest": "UK West",
-    "usgovvirginia": "US Gov Virginia",
-    "eastus2": "US East 2",
-    "uaenorth": "AE North",
-    "southafricawest": "ZA West",
-    "francesouth": "FR South",
-    "westcentralus": "US West Central",
-    "koreacentral": "KR Central",
-    "westeurope": "EU West",
-    "southafricanorth": "ZA North",
-    "southeastasia": "AP Southeast",
-    "centralindia": "IN Central",
-    "switzerlandwest": "CH West",
-    "norwayeast": "NO East",
-    "germanywestcentral": "DE West Central",
-    "westus2": "US West 2",
-    "australiacentral": "AU Central",
-    "italynorth": "IT North",
-    "centralus": "US Central",
-    "germanynorth": "DE North",
-    "brazilsoutheast": "BR Southeast",
-    "southindia": "IN South",
-    "swedencentral": "SE Central",
-    "francecentral": "FR Central",
-    "australiasoutheast": "AU Southeast",
-    "northeurope": "EU North",
-    "koreasouth": "KR South",
-    "usgovtexas": "US Gov TX",
-    "polandcentral": "PL Central",
-    "japaneast": "JA East",
-    "westindia": "IN West",
-    "japanwest": "JA West",
-    "westus": "US West",
-    "jioindiawest": "IN West Jio",
-    "northcentralus": "US North Central",
-    "southcentralus": "US South Central",
-    "eastasia": "AP East",
-    "jioindiacentral": "IN Central Jio",
-    "australiacentral2": "AU Central 2",
-    "canadaeast": "CA East",
-    "eastus": "US East",
-    "uaecentral": "AE Central",
-    "norwaywest": "NO West",
-    "canadacentral": "CA Central",
-    "uksouth": "UK South",
-    "qatarcentral": "QA Central",
-    "swedensouth": "SE South",
-    "brazilsouth": "BR South",
-    "australiaeast": "AU East",
-    "switzerlandnorth": "CH North",
-    "usgovarizona": "US Gov AZ",
-    "westus3": "US West 3"
-  }
-
   result = []
+  total_savings = 0.0
 
-  _.each(ds_azure_instances, function(value) {
+  _.each(ds_azure_instances_region_filtered, function(vm) {
     tags = []
-    vm_tags = []
 
-    if (typeof(value['tags']) == 'object') {
-      _.each(Object.keys(value['tags']), function(key) {
-        tags.push([key, "=", value['tags'][key]].join(''))
-        vm_tags.push([key, ":", value['tags'][key]].join(''))
-        vm_tags.push([key, ":*"].join(''))
+    if (typeof(vm['tags']) == 'object') {
+      _.each(Object.keys(vm['tags']), function(key) {
+        tags.push([key, "=", vm['tags'][key]].join(''))
       })
     }
 
-    include_vm = true
+    priceDifference = null
+    pricePerUnit = null
+    pricePerUnitAHUB = null
 
-    _.each(param_exclusion_tags, function(exclusion_tag) {
-      if (_.contains(vm_tags, exclusion_tag)) {
-        include_vm = false
+    mapped_region = ds_region_table[vm['region']]
+    vmSize = vm['vmSize']
+    osType = vm['osType']
+
+    if (typeof(ds_azure_pricing[mapped_region]) == 'object') {
+      if (typeof(ds_azure_pricing[mapped_region][vmSize]) == 'object') {
+        if (typeof(ds_azure_pricing[mapped_region][vmSize][osType]) == 'object') {
+          pricePerUnit = ds_azure_pricing[mapped_region][vmSize][osType]['pricePerUnit']
+          pricePerUnitAHUB = ds_azure_pricing[mapped_region][vmSize][osType]['pricePerUnitAHUB']
+        }
       }
-    })
+    }
 
-    if (include_vm) {
-      regionMapping = region_table[value['location']]
-      priceDifference = getPriceInfo(regionMapping, value['vmSize'], value['osType'], ds_azure_pricing)
+    if (typeof(pricePerUnit) == 'number' && typeof(pricePerUnitAHUB) == 'number') {
+      priceDifference = pricePerUnit - pricePerUnitAHUB
+    }
 
-      if (value.osType == "Windows" && priceDifference != null && value['licenseType'] == null) {
-        monthlySavings = (priceDifference * 24 * 365.25 / 12) * ds_currency['exchange_rate']
+    if (vm['osType'] == "Windows" && priceDifference != null && vm['licenseType'] == null) {
+      savings = (priceDifference * 24 * 365.25 / 12) * ds_currency['exchange_rate']
+
+      if (savings >= param_min_savings) {
+        total_savings += savings
 
         result.push({
-          subscriptionName: value["subscriptionName"],
-          subscriptionId: value["subscriptionId"],
-          resourceGroup: value["resourceGroup"],
-          id: value["id"],
-          name: value["name"],
-          region: value["location"],
-          osType: value["osType"],
-          tags: tags.join(', ')
-          ahub: "No",
-          vmSize: value["vmSize"],
-          imagePublisher: value["imagePublisher"],
-          imageOffer: value["imageOffer"],
-          imageSku: value["imageSku"],
-          imageVersion: value["imageVersion"],
-          savingsCurrency: ds_currency['symbol'],
-          savings: parseFloat(monthlySavings.toFixed(3)),
-          policy_name: ds_applied_policy['name']
+          id: vm["id"],
+          accountID: vm["subscriptionId"],
+          accountName: vm["subscriptionName"],
+          resourceGroup: vm["resourceGroup"],
+          resourceName: vm["name"],
+          resourceKind: vm["type"],
+          region: vm["region"],
+          osType: vm["osType"],
+          tags: tags.join(', '),
+          resourceType: vm["vmSize"],
+          imagePublisher: vm["imagePublisher"],
+          imageOffer: vm["imageOffer"],
+          imageId: vm["imageSku"],
+          imageVersion: vm["imageVersion"],
+          savingsCurrency: ds_currency["symbol"],
+          savings: parseFloat(savings.toFixed(3)),
+          policy_name: ds_applied_policy["name"],
+          service: "Microsoft.Compute",
+          total_savings: "",
+          message: ""
         })
       }
     }
   })
 
+  // Message for incident output
+  total_vms = ds_azure_instances_region_filtered.length.toString()
+  total_ahub_vms = result.length.toString()
+  ahub_vms_percentage = (total_ahub_vms / total_vms * 100).toFixed(2).toString() + '%'
+
+  findings = [
+    "Out of ", total_vms, " Azure virtual machines analyzed, ",
+    total_ahub_vms, " (", ahub_vms_percentage,
+    ") qualify for Windows Hybrid Use Benefit but do not have it applied."
+  ].join('')
+
+  savings_message = [
+    ds_currency['symbol'], ' ',
+    formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['separator'])
+  ].join('')
+
   result = _.sortBy(result, function(item) { return item['savings'] * -1 })
+
+  // Dummy item to ensure that the check statement in the policy executes at least once
+  result.push({
+    id: "",               accountID: "",         accountName: "",
+    resourceGroup: "",    resourceName: "",      resourceKind: "",
+    region: "",           osType: "",            tags: "",
+    resourceType: "",     imagePublisher: "",    imageOffer: "",
+    imageId: "",          imageVersion: "",      savingsCurrency: "",
+    savings: "",          policy_name: "",       service: "",
+    total_savings: "",    message: ""
+  })
+
+  result[0]['total_savings'] = savings_message
+  result[0]['message'] = findings
 EOS
 end
 
@@ -418,26 +565,30 @@ end
 # Policy
 ###############################################################################
 
-policy "pol_azure_license_policy" do
-  validate_each $ds_filtered_resources do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Instances Not Using Azure Hybrid Use Benefit for Windows Server"
+policy "pol_azure_ahub_recommendations" do
+  validate_each $ds_ahub_recommendations do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Windows Virtual Machines Without Hybrid Use Benefit Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "id"), ""))
     escalate $esc_email
     escalate $esc_license_instances
-    check logic_or($ds_parent_policy_terminated, eq(val(item,"ahub"), "Yes"))
+    hash_exclude "total_savings", "message", "tags", "savings", "savingsCurrency"
     export do
       resource_level true
       field "accountID" do
         label "Subscription ID"
-        path "subscriptionId"
       end
       field "accountName" do
         label "Subscription Name"
-        path "subscriptionName"
       end
       field "resourceGroup" do
         label "Resource Group"
       end
-      field "name" do
+      field "resourceName" do
         label "Resource Name"
       end
       field "tags" do
@@ -445,7 +596,9 @@ policy "pol_azure_license_policy" do
       end
       field "resourceType" do
         label "Instance Size"
-        path "vmSize"
+      end
+      field "resourceKind" do
+        label "Resource Kind"
       end
       field "region" do
         label "Region"
@@ -453,11 +606,11 @@ policy "pol_azure_license_policy" do
       field "osType" do
         label "Operating System"
       end
-      field "savingsCurrency" do
-        label "Savings Currency"
-      end
       field "savings" do
         label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
       end
       field "imagePublisher" do
         label "Image Publisher"
@@ -467,10 +620,12 @@ policy "pol_azure_license_policy" do
       end
       field "imageId" do
         label "Image Sku"
-        path "imageSku"
       end
       field "imageVersion" do
         label "Image Version"
+      end
+      field "service" do
+        label "Service"
       end
       field "resourceID" do
         label "Resource ID"
@@ -495,45 +650,45 @@ escalation "esc_email" do
 end
 
 escalation "esc_license_instances" do
-  automatic contains($param_automatic_action, "Hybrid use benefit")
-  label "Add Hybrid Use Benefit"
-  description "Apply hybrid use benefit to the selected intance"
-  run "esc_license_instances", data
+  automatic contains($param_automatic_action, "Apply Hybrid Use Benefit")
+  label "Apply Hybrid Use Benefit"
+  description "Apply Hybrid Use Benefit to the selected instances"
+  run "license_instances", data, $param_azure_endpoint
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define esc_license_instances($data) return $all_responses do
+define license_instances($data, $param_azure_endpoint) return $all_responses do
   $all_responses = []
+
   foreach $item in $data do
     sub on_error: skip do
-      $update_inst_response = http_request(
+      $response = http_request(
         auth: $$auth_azure,
         verb: "patch",
-        host: "management.azure.com",
+        host: $param_azure_endpoint,
         https: true,
         href: $item["id"],
-        query_strings: {
-          "api-version": "2018-06-01"
-        },
         headers: {
           "cache-control": "no-cache",
           "content-type": "application/json"
         },
+        query_strings: {
+          "api-version": "2018-06-01"
+        },
         body: {
           "properties": {
-          "licenseType": "Windows_Server"
+            "licenseType": "Windows_Server"
           }
         }
       )
 
-      $all_responses << $update_inst_response
+      $all_responses << $response
     end
   end
 end
-
 
 ###############################################################################
 # Meta Policy [alpha]
