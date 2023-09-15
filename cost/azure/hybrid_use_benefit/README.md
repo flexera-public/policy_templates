@@ -6,7 +6,7 @@ This Policy Template is used to automatically apply the Azure Hybrid Use Benefit
 
 ## Functional Details
 
-- The policy identifies all Windows server instances that could utilize [Azure Hybrid Use Benefit](https://azure.microsoft.com/en-us/pricing/hybrid-benefit/) but are not currently using it. It raises an incident for all applicable VMs not currently using AHUB and provides a monthly savings amount if AHUB is enabled, which once approved, will enable AHUB on all identified instances.
+- The policy identifies all Windows server instances that could utilize [Azure Hybrid Use Benefit](https://azure.microsoft.com/en-us/pricing/hybrid-benefit/) but are not currently using it. It raises an incident for all applicable VMs not currently using AHUB, provides a monthly savings amount if AHUB were to be enabled, and provides the option to automatically enable AHUB on all identified instances.
 - This policy does not track licenses or availability. It is your responsibility to ensure you are not under licensed.
 
 ### Policy savings details
