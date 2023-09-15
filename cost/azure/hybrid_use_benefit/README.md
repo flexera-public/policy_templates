@@ -1,8 +1,8 @@
-# Azure Hybrid Use Benefit Policy
+# Azure Hybrid Use Benefit for Windows Server
 
 ## What it does
 
-This Policy Template is used to automatically apply the Azure Hybrid Use Benefit (AHUB) to all eligible VMs in an Azure Subscription and provides a monthly savings value if AHUB were to be enabled.
+This Policy Template is used to automatically apply the Azure Hybrid Use Benefit (AHUB) to all eligible Windows VMs in an Azure Subscription and provides a monthly savings value if AHUB were to be enabled.
 
 ## Functional Details
 
