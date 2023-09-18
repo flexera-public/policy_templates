@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "6.0",
+  version: "7.0",
   provider: "Azure",
   service: "Storage",
   policy_set: "Unused Volumes",
@@ -48,9 +48,28 @@ parameter "param_minimum_age" do
   type "number"
   category "Policy Settings"
   label "Minimum Age (Days)"
-  description "The minimum age, in days, since a volume was created to produce recommendations for it. Set to 0 to ignore age entirely and report all unattached volumes."
+  description "The minimum age, in days, since a volume was created to produce recommendations for it. Set to 0 to ignore age entirely."
   default 0
   min_value 0
+end
+
+parameter "param_stats_lookback" do
+  type "number"
+  category "Statistics"
+  label "Statistic Lookback Period"
+  description "How many days back to look at read/write metrics for volumes. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days."
+  default 30
+  min_value 1
+  max_value 90
+end
+
+parameter "param_include_status" do
+  type "string"
+  category "Filters"
+  label "Volume Status"
+  description "Whether the policy should only check unattached volumes, attached volumes, or both."
+  default "Unattached Volumes"
+  allowed_values "Unattached Volumes", "Attached Volumes", "All Volumes"
 end
 
 parameter "param_subscriptions_allow_or_deny" do
@@ -384,51 +403,139 @@ script "js_azure_disks_region_filtered", type: "javascript" do
 EOS
 end
 
+datasource "ds_azure_disks_metrics" do
+  iterate $ds_azure_disks_region_filtered
+  request do
+    run_script $js_azure_disks_metrics, val(iter_item, "id"), $param_azure_endpoint, $param_stats_lookback
+  end
+  result do
+    encoding "json"
+    field "value", val(response, "value")
+    field "id", val(iter_item, "id")
+    field "resourceName", val(iter_item, "resourceName")
+    field "resourceGroup", val(iter_item, "resourceGroup")
+    field "resourceType", val(iter_item, "resourceType")
+    field "region", val(iter_item, "region")
+    field "tags", val(iter_item, "tags")
+    field "state", val(iter_item, "state")
+    field "size", val(iter_item, "size")
+    field "timeCreated", val(iter_item, "timeCreated")
+    field "subscriptionID", val(iter_item, "subscriptionID")
+    field "subscriptionName", val(iter_item, "subscriptionName")
+  end
+end
+
+
+script "js_azure_disks_metrics", type: "javascript" do
+  parameters "resourceId", "param_azure_endpoint", "param_stats_lookback"
+  result "request"
+  code <<-EOS
+  end_date = new Date()
+  end_date.setMilliseconds(999)
+  end_date.setSeconds(59)
+  end_date.setMinutes(59)
+  end_date.setHours(23)
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - param_stats_lookback)
+  start_date.setMilliseconds(0)
+  start_date.setSeconds(0)
+  start_date.setMinutes(0)
+
+  timespan = start_date.toISOString() + "/" + end_date.toISOString()
+
+  var request = {
+    auth: "auth_azure",
+    pagination: "pagination_azure",
+    host: param_azure_endpoint,
+    verb: "GET",
+    path: resourceId + "/providers/microsoft.insights/metrics",
+    query_params: {
+      "api-version": "2018-01-01",
+      "timespan": timespan,
+      "interval": "P1D",
+      "metricnames": "Composite Disk Read Operations/sec,Composite Disk Write Operations/sec",
+      "aggregation": "average"
+    },
+    headers: {
+      "User-Agent": "RS Policies"
+    },
+    // Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status: [400, 403, 404]
+  }
+EOS
+end
+
 datasource "ds_unused_volumes" do
-  run_script $js_unused_volumes, $ds_azure_disks_region_filtered, $param_minimum_age
+  run_script $js_unused_volumes, $ds_azure_disks_metrics, $param_minimum_age, $param_include_status
 end
 
 script "js_unused_volumes", type: "javascript" do
-  parameters "ds_azure_disks_region_filtered", "param_minimum_age"
+  parameters "ds_azure_disks_metrics", "param_minimum_age", "param_include_status"
   result "result"
   code <<-EOS
   result = []
 
-  unattached_disks = _.filter(ds_azure_disks_region_filtered, function(disk) {
-    return disk['state'] == "Unattached"
-  })
+  _.each(ds_azure_disks_metrics, function(disk) {
+    include_disk = true
 
-  _.each(unattached_disks, function(disk) {
-    tags = []
-
-    if (typeof(disk['tags']) == 'object') {
-      _.each(Object.keys(disk['tags']), function(key) {
-        tags.push([key, "=", disk['tags'][key]].join(''))
-      })
+    if (param_include_status == "Unattached Volumes" && disk['state'] != "Unattached") {
+      include_disk = false
     }
 
-    today = new Date()
-    created = new Date(disk['timeCreated'])
-    age = Math.round((today - created) / 1000 / 60 / 60 / 24)
+    if (param_include_status == "Attached Volumes" && disk['state'] == "Unattached") {
+      include_disk = false
+    }
 
-    if (param_minimum_age == 0 || age >= param_minimum_age) {
-      result.push({
-        id: disk['id'],
-        resourceName: disk['resourceName'],
-        resourceGroup: disk['resourceGroup'],
-        resourceType: disk['resourceType'],
-        region: disk['region'],
-        tags: tags.join(', '),
-        state: disk['state'],
-        size: disk['size'],
-        age: age,
-        timeCreated: created.toISOString(),
-        subscriptionID: disk['subscriptionID'],
-        subscriptionName: disk['subscriptionName'],
-        service: "Microsoft.Compute",
-        savings: 0.0,
-        savingsCurrency: ''
+    if (include_disk) {
+      read_stats = null
+      write_stats = null
+
+      _.each(disk['value'], function(stat) {
+        if (stat["timeseries"][0] != undefined) {
+          if (stat['name']['value'] == "Composite Disk Read Operations/sec") {
+            read_stats = stat["timeseries"][0]["data"]
+          }
+
+          if (stat['name']['value'] == "Composite Disk Write Operations/sec") {
+            write_stats = stat["timeseries"][0]["data"]
+          }
+        }
       })
+
+      disk_activity =
+
+      tags = []
+
+      if (typeof(disk['tags']) == 'object') {
+        _.each(Object.keys(disk['tags']), function(key) {
+          tags.push([key, "=", disk['tags'][key]].join(''))
+        })
+      }
+
+      today = new Date()
+      created = new Date(disk['timeCreated'])
+      age = Math.round((today - created) / 1000 / 60 / 60 / 24)
+
+      if (param_minimum_age == 0 || age >= param_minimum_age) {
+        result.push({
+          id: disk['id'],
+          resourceName: disk['resourceName'],
+          resourceGroup: disk['resourceGroup'],
+          resourceType: disk['resourceType'],
+          region: disk['region'],
+          tags: tags.join(', '),
+          state: disk['state'],
+          size: disk['size'],
+          age: age,
+          timeCreated: created.toISOString(),
+          subscriptionID: disk['subscriptionID'],
+          subscriptionName: disk['subscriptionName'],
+          service: "Microsoft.Compute",
+          savings: 0.0,
+          savingsCurrency: ''
+        })
+      }
     }
   })
 EOS
