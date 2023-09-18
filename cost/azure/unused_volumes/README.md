@@ -2,7 +2,7 @@
 
 ## What it does
 
-This Policy Template scans all volumes in the given account and identifies any unattached volume that is older than a user-specified number of days. Any volumes that meet this criteria are considered unused. If any unused volumes are found, an incident report will show the volumes and related information. An email will be sent to the user-specified email address.
+This Policy Template scans all volumes in the given account and identifies any volume that meets the user-specified criteria for being unused. The user can filter volumes based on age, whether they are currently attached to a VM, whether there has been any read/write activity on the volume over a user-specified number of days, or any combination of these. Any volumes that meet the user-specified criteria are considered unused. If any unused volumes are found, an incident report will show the volumes and related information. An email will be sent to the user-specified email address.
 
 If the user approves that the volumes should be deleted, the policy will delete the volumes.
 If the volume is not getting deleted, say, because it is locked, then the volume will be tagged to indicate the error that was received.
@@ -26,6 +26,8 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   - `Microsoft.Compute/disks/read`
   - `Microsoft.Compute/disks/write`*
   - `Microsoft.Compute/snapshots/write`*
+  - `Microsoft.Compute/virtualMachines/read`*
+  - `Microsoft.Compute/virtualMachines/write`*
   - `Microsoft.Insights/metrics/read`
 
 \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
