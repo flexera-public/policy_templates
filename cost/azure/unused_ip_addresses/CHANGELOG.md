@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.2
+
+Refactored the Delete IP Address Action to use updated Azure APIs, improve debugging, and error handling
+
 ## v6.1
 
 - Corrected issue with policy not retrieving cost data on orgs using newer Azure bill connections

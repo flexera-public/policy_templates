@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.1
+
+- Refactored the Delete Volume and Create Snapshot Actions to use updated Azure APIs, improve debugging, and error handling
+
 ## v6.0
 
 - Several parameters altered to be more descriptive and human-readable
