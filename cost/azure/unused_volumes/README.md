@@ -43,7 +43,7 @@ This policy has the following input parameters required when launching the polic
 - *Azure Endpoint* - The endpoint to send Azure API requests to. Recommended to leave this at default unless using this policy with Azure China.
 - *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation.
 - *Minimum Age (Days)* - The minimum age, in days, since a volume was created to produce recommendations for it. Set to 0 to ignore age entirely.
-- *Statistic Lookback Period* - How many days back to look at read/write metrics for volumes. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days.
+- *Unused Days* - The number of days a volume has been unused as determined by read/write activity. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days.
 - *Volume Status* - Whether to include attached volumes, unattached, or both in the results.
 - *Allow/Deny Subscriptions* - Determines whether the Allow/Deny Subscriptions List parameter functions as an allow list (only providing results for the listed subscriptions) or a deny list (providing results for all subscriptions except for the listed subscriptions).
 - *Allow/Deny Subscriptions List* - A list of allowed or denied Subscription IDs/names. If empty, no filtering will occur and recommendations will be produced for all subscriptions.
