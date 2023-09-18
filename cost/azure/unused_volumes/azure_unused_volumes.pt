@@ -973,7 +973,7 @@ end
 # Cloud Workflow
 ###############################################################################
 
-define delete_volumes($data, $param_take_snapshot, $$param_azure_endpoint, $$rs_optima_host) return $all_responses do
+define delete_volumes($data, $param_take_snapshot, $param_azure_endpoint, $$rs_optima_host) return $all_responses do
   $status_code=''
   $$all_responses = []
   foreach $item in $data do
@@ -981,14 +981,14 @@ define delete_volumes($data, $param_take_snapshot, $$param_azure_endpoint, $$rs_
     # We check for errors at the end, and raise them all together
     sub on_error: handle_error() do
       if $item['state'] == "Attached"
-        call detach_disk($item)
+        call detach_disk($item, $param_azure_endpoint)
       end
 
       if $param_take_snapshot == "true"
-        call create_snapshot($item)
+        call create_snapshot($item, $param_azure_endpoint)
       end
 
-      call delete_unattached_disk($item['id'])
+      call delete_unattached_disk($item['id'], $param_azure_endpoint)
     end
   end
 
@@ -998,7 +998,7 @@ define delete_volumes($data, $param_take_snapshot, $$param_azure_endpoint, $$rs_
   end
 end
 
-define detach_disk($item) return $response do
+define detach_disk($item, $param_azure_endpoint) return $response do
   $response={}
   $syslog_subject = "Azure detach disk API response: "
 
@@ -1008,7 +1008,7 @@ define detach_disk($item) return $response do
   $get_response = http_request(
     auth: $$auth_azure,
     verb: "get",
-    host: $$param_azure_endpoint,
+    host: $param_azure_endpoint,
     https: true,
     href: $vm_id,
     query_strings: {
@@ -1019,21 +1019,25 @@ define detach_disk($item) return $response do
     }
   )
 
-  $vm_properties = $get_response['body']
   $updated_disk_list = []
 
-  foreach $item in $vm_properties['properties']['storageProfile']['dataDisks'] do
+  foreach $item in $get_response['body']['properties']['storageProfile']['dataDisks'] do
     if $item['managedDisk']['id'] != $disk_id
       $updated_disk_list << $item
     end
   end
 
-  $vm_properties['properties']['storageProfile']['dataDisks'] = $updated_disk_list
+  $new_properties = {}
+  $new_properties['location'] = $get_response['body']['location']
+  $new_properties['properties'] = {}
+  $new_properties['properties']['storageProfile'] = {}
+  $new_properties['properties']['storageProfile']['dataDisks'] = $updated_disk_list
+
 
   $response = http_request(
     auth: $$auth_azure,
     verb: "put",
-    host: $$param_azure_endpoint,
+    host: $param_azure_endpoint,
     https: true,
     href: $vm_id,
     query_strings: {
@@ -1042,20 +1046,20 @@ define detach_disk($item) return $response do
     headers: {
       "content-type": "application/json"
     },
-    body: $vm_properties
+    body: $new_properties
   )
 
-  $still_attached = true
+  $disk_state = "Attached"
 
-  while $still_attached do
+  while $disk_state != "Unattached" do
     sleep(5)
 
     $get_response = http_request(
       auth: $$auth_azure,
       verb: "get",
-      host: $$param_azure_endpoint,
+      host: $param_azure_endpoint,
       https: true,
-      href: $vm_id,
+      href: $disk_id,
       query_strings: {
         "api-version": "2023-07-01"
       },
@@ -1064,23 +1068,17 @@ define detach_disk($item) return $response do
       }
     )
 
-    $still_attached = false
-
-    foreach $item in $get_response['body']['properties']['storageProfile']['dataDisks'] do
-      if $item['managedDisk']['id'] == $disk_id
-        $still_attached = true
-      end
-    end
+    $disk_state = $get_response['body']['properties']['diskState']
   end
 
-  $$all_responses << to_json({"req":"PUT " + $$param_azure_endpoint + $disk_id, "resp": $response})
+  $$all_responses << to_json({"req":"PUT " + $param_azure_endpoint + $disk_id, "resp": $response})
   task_label('Checking for expected response code for Disk Detach Request Successful')
   if $response["code"] != 201 && $response["code"] != 200
     raise 'Unexpected response detaching disk: '+to_json($response)
   end
 end
 
-define create_snapshot($item) return $response do
+define create_snapshot($item, $param_azure_endpoint) return $response do
   $response={}
   $syslog_subject = "Azure create snapshot API response: "
   $snapshotName=split($item['id'], "Microsoft.Compute")
@@ -1089,7 +1087,7 @@ define create_snapshot($item) return $response do
   $response = http_request(
     auth: $$auth_azure,
     verb: "put",
-    host: $$param_azure_endpoint,
+    host: $param_azure_endpoint,
     https: true,
     href: $snapshotName,
     query_strings: {
@@ -1109,7 +1107,7 @@ define create_snapshot($item) return $response do
       }
     }
   )
-  $$all_responses << to_json({"req":"PUT " + $$param_azure_endpoint + $snapshotName, "resp": $response})
+  $$all_responses << to_json({"req":"PUT " + $param_azure_endpoint + $snapshotName, "resp": $response})
   task_label('Checking for expected response code for Snapshot Create Request Successful')
   if $response["code"] != 202 && $response["code"] != 200
     raise 'Unexpected response creating snapshot: '+to_json($response)
@@ -1117,40 +1115,40 @@ define create_snapshot($item) return $response do
     task_label('Create Snapshot Request Successful: '+$snapshotName)
     while $response["body"]["properties"]["provisioningState"] != "Succeeded" do
       task_label('Create Snapshot Status: '+$response["body"]["properties"]["provisioningState"])+' '+$snapshotName
-      call get_disksnapshot($snapshotName) retrieve $response
+      call get_disksnapshot($snapshotName, $param_azure_endpoint) retrieve $response
       sleep(1)
     end
     task_label('Create Snapshot Successful: '+$snapshotName)
   end
 end
 
-define get_disksnapshot($snapshotId) return $response do
+define get_disksnapshot($snapshotId, $param_azure_endpoint) return $response do
   $response = http_request(
     auth: $$auth_azure,
     https: true,
     verb: "get",
-    host: $$param_azure_endpoint,
+    host: $param_azure_endpoint,
     href: $snapshotId,
     query_strings: {
       "api-version": "2019-07-01"
     }
   )
-  $$all_responses << to_json({"req":"GET " + $$param_azure_endpoint + $snapshotId, "resp": $response})
+  $$all_responses << to_json({"req":"GET " + $param_azure_endpoint + $snapshotId, "resp": $response})
 end
 
-define delete_unattached_disk($disk_id) do
+define delete_unattached_disk($disk_id, $param_azure_endpoint) do
   task_label('Delete Disk starting: '+$disk_id)
   $response = http_request(
     auth: $$auth_azure,
     verb: "delete",
-    host: $$param_azure_endpoint,
+    host: $param_azure_endpoint,
     https: true,
     href: $disk_id,
     query_strings: {
       "api-version": "2019-07-01"
     }
   )
-  $$all_responses << to_json({"req":"DELETE "+ $$param_azure_endpoint + $disk_id, "resp": $response})
+  $$all_responses << to_json({"req":"DELETE "+ $param_azure_endpoint + $disk_id, "resp": $response})
   task_label('Delete Disk response: '+to_json($response["body"]))
   if $response["code"] != 202
     $error_code = $response["body"]["error"]["code"]
