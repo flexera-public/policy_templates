@@ -1,53 +1,88 @@
 name "Azure Hybrid Use Benefit for Linux Server"
 rs_pt_ver 20180301
 type "policy"
-short_description "Identifies Linux instances eligible for Azure Hybrid Use Benefit. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/hybrid_use_benefit_linux) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Identifies Linux instances eligible for Azure Hybrid Use Benefit. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/hybrid_use_benefit) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "3.0",
+  version: "4.0",
   provider: "Azure",
   service: "Compute",
-  policy_set: ""
+  policy_set: "Hybrid Use Benefit"
 )
 
 ###############################################################################
 # Parameters
 ###############################################################################
 
-parameter "param_exclusion_tag_key" do
-  category "User Inputs"
-  label "Exclusion Tag Key"
-  description "Azure-native instance tag to ignore instances that are not using AHUB/BYOL. Only supply the tag key. The policy assumes that the tag value is irrelevant."
-  type "string"
-  default "exclude_ahub"
-end
-
 parameter "param_email" do
   type "list"
-  label "Email addresses of the recipients you wish to notify"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
 end
 
 parameter "param_azure_endpoint" do
   type "string"
+  category "Policy Settings"
   label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
   allowed_values "management.azure.com", "management.chinacloudapi.cn"
   default "management.azure.com"
 end
 
+parameter "param_subscriptions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Subscriptions"
+  description "Allow or Deny entered Subscriptions."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
 parameter "param_subscriptions_list" do
-  label "Subscription Allowed List"
   type "list"
-  description "Allowed Subscriptions, if empty, all subscriptions will be checked"
+  category "Filters"
+  label "Allow/Deny Subscriptions List"
+  description "A list of allowed or denied Subscription IDs/names. Leave blank to check all Subscriptions."
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. Leave blank to check all regions."
+  default []
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags (Key:Value)"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:*"
+  allowed_pattern /(^$)|[\w]*\:.*/
+  default []
 end
 
 parameter "param_automatic_action" do
   type "list"
+  category "Actions"
   label "Automatic Actions"
-  description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values "Hybrid use benefit for Linux"
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Apply Hybrid Use Benefit"]
 end
 
 ###############################################################################
@@ -63,7 +98,7 @@ end
 
 credentials "auth_flexera" do
   schemes "oauth2"
-  label "flexera"
+  label "Flexera"
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
@@ -85,13 +120,23 @@ end
 # Datasources & Scripts
 ###############################################################################
 
-datasource "ds_subscriptions" do
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_azure_subscriptions" do
   request do
     auth $auth_azure
     pagination $pagination_azure
     host $param_azure_endpoint
     path "/subscriptions/"
-    query "api-version","2019-06-01"
+    query "api-version","2020-01-01"
     header "User-Agent", "RS Policies"
     # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
     # Forces `ds_is_deleted` datasource to run first during policy execution
@@ -100,121 +145,249 @@ datasource "ds_subscriptions" do
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "subscriptionId", jmes_path(col_item,"subscriptionId")
-      field "subscriptionName", jmes_path(col_item,"displayName")
+      field "id", jmes_path(col_item, "subscriptionId")
+      field "name", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
     end
   end
 end
 
-datasource "ds_filtered_subscriptions" do
-  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscriptions_list
+datasource "ds_azure_subscriptions_filtered" do
+  run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
 end
 
-script "js_filtered_subscriptions", type: "javascript" do
-  parameters "ds_subscriptions", "param_subscriptions_list"
-  result "results"
+script "js_azure_subscriptions_filtered", type: "javascript" do
+  parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
+  result "result"
   code <<-EOS
-  var results = []
-  if ( param_subscriptions_list.length != 0){
-    results = []
-    _.each(param_subscriptions_list, function(sub){
-      var found = _.find(ds_subscriptions, function(item){
-        return item.subscriptionId == sub || item.subscriptionName.toLowerCase() == sub.toLowerCase();
-      })
-      results.push(found)
+  if (param_subscriptions_list.length > 0) {
+    result = _.filter(ds_azure_subscriptions, function(subscription) {
+      include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
+
+      if (param_subscriptions_allow_or_deny == "Deny") {
+        include_subscription = !include_subscription
+      }
+
+      return include_subscription
     })
   } else {
-    results = ds_subscriptions
+    result = ds_azure_subscriptions
   }
 EOS
 end
 
 datasource "ds_azure_instances" do
-  iterate $ds_filtered_subscriptions
-    request do
-      auth $auth_azure
-      pagination $pagination_azure
-      host $param_azure_endpoint
-      path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/virtualMachines"])
-      query "api-version","2017-12-01"
-      header "User-Agent", "RS Policies"
-      # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-      ignore_status [400,403,404]
+  iterate $ds_azure_subscriptions_filtered
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Compute/virtualMachines"])
+    query "api-version","2017-12-01"
+    header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400,403,404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "region", jmes_path(col_item, "location")
+      field "type", jmes_path(col_item, "type")
+      field "licenseType", jmes_path(col_item, "properties.licenseType")
+      field "vmSize", jmes_path(col_item, "properties.hardwareProfile.vmSize")
+      field "osType", jmes_path(col_item, "properties.storageProfile.osDisk.osType")
+      field "imagePublisher", jmes_path(col_item, "properties.storageProfile.imageReference.publisher")
+      field "imageOffer", jmes_path(col_item, "properties.storageProfile.imageReference.offer")
+      field "imageSku", jmes_path(col_item, "properties.storageProfile.imageReference.sku")
+      field "imageVersion", jmes_path(col_item, "properties.storageProfile.imageReference.version")
+      field "tags", jmes_path(col_item, "tags")
+      field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
+      field "subscriptionName", val(iter_item, "name")
+      field "subscriptionId", val(iter_item, "id")
     end
-    result do
-      encoding "json"
-      collect jmes_path(response, "value") do
-        field "subscriptionName", val(iter_item,"subscriptionName")
-        field "id", jmes_path(col_item,"id")
-        field "name", jmes_path(col_item,"name")
-        field "location", jmes_path(col_item,"location")
-        field "licenseType", jmes_path(col_item,"properties.licenseType")
-        field "vmSize", jmes_path(col_item,"properties.hardwareProfile.vmSize")
-        field "osType", jmes_path(col_item,"properties.storageProfile.osDisk.osType")
-        field "imagePublisher", jmes_path(col_item,"properties.storageProfile.imageReference.publisher")
-        field "imageOffer", jmes_path(col_item,"properties.storageProfile.imageReference.offer")
-        field "imageSku", jmes_path(col_item,"properties.storageProfile.imageReference.sku")
-        field "imageVersion", jmes_path(col_item,"properties.storageProfile.imageReference.version")
-        field "tags", jmes_path(col_item,"tags")
-      end
-    end
+  end
 end
 
-datasource "ds_filtered_resources" do
-  run_script $js_filter_resources, $ds_azure_instances, $param_exclusion_tag_key
+datasource "ds_azure_instances_tag_filtered" do
+  run_script $js_azure_instances_tag_filtered, $ds_azure_instances, $param_exclusion_tags
 end
 
-script "js_filter_resources", type: "javascript" do
-  parameters "azure_instances","exclusion_tag"
+script "js_azure_instances_tag_filtered", type: "javascript" do
+  parameters "ds_azure_instances", "param_exclusion_tags"
   result "result"
   code <<-EOS
-  // Dummy entry to ensure validation always executes at least once
-  var result = [{ ahub: "Yes" }];
-  _.each(azure_instances, function(instance){
+  if (param_exclusion_tags.length > 0) {
+    result = _.reject(ds_azure_instances, function(instance) {
+      instance_tags = []
 
-    if (_.has(instance.tags, exclusion_tag) == false) {
-      if (instance.osType === "Linux"){
-        var resourceGroup = instance.id.split('/')[4];
-        var tags = JSON.stringify(instance["tags"]);
-        var ahub = "N/A";
-        var lic_param = "N/A"
-        if (instance.licenseType === "SLES_BYOS" || instance.licenseType === "RHEL_BYOS") {
-          ahub = "Yes"
-        } else {
-          if (instance.imagePublisher === "suse" || instance.imagePublisher === "RedHat") {
-            if (instance.licenseType === "None" || _.isUndefined(instance.licenseType)) {
-              if (instance.imagePublisher === "suse") {
-                lic_param = "SLES_BYOS"
-                ahub = "No"
-              } else {
-              if (instance.imagePublisher === "RedHat") {
-                lic_param = "RHEL_BYOS"
-                ahub = "No"
-              }
-              }
-              result.push({
-                subscriptionName: instance["subscriptionName"],
-                id: instance["id"],
-                name: instance["name"],
-                resourceGroup: resourceGroup,
-                location: instance["location"],
-                ahub: ahub,
-                vmSize: instance["vmSize"],
-                imagePublisher: instance["imagePublisher"],
-                imageOffer: instance["imageOffer"],
-                imageSku: instance["imageSku"],
-                imageVersion: instance["imageVersion"],
-                lic_param: lic_param,
-                tags: tags
-              })
-            }
-          }
-        }
+      if (typeof(instance['tags']) == 'object') {
+        _.each(Object.keys(instance['tags']), function(key) {
+          instance_tags.push([key, ":", instance['tags'][key]].join(''))
+          instance_tags.push([key, ":*"].join(''))
+        })
       }
+
+      exclude_instance = false
+
+      _.each(param_exclusion_tags, function(exclusion_tag) {
+        if (_.contains(instance_tags, exclusion_tag)) {
+          exclude_instance = true
+        }
+      })
+
+      return exclude_instance
+    })
+  } else {
+    result = ds_azure_instances
+  }
+EOS
+end
+
+datasource "ds_azure_instances_region_filtered" do
+  run_script $js_azure_instances_region_filtered, $ds_azure_instances_tag_filtered, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_azure_instances_region_filtered", type: "javascript" do
+  parameters "ds_azure_instances_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_azure_instances_tag_filtered, function(instance) {
+      include_instance = _.contains(param_regions_list, instance['region'])
+
+      if (param_regions_allow_or_deny == "Deny") {
+        include_instance = !include_instance
+      }
+
+      return include_instance
+    })
+  } else {
+    result = ds_azure_instances_tag_filtered
+  }
+EOS
+end
+
+datasource "ds_ahub_recommendations" do
+  run_script $js_ahub_recommendations, $ds_azure_instances_region_filtered, $ds_applied_policy
+end
+
+script "js_ahub_recommendations", type: "javascript" do
+  parameters "ds_azure_instances_region_filtered", "ds_applied_policy"
+  result "result"
+  code <<-EOS
+  // Function for formatting currency numbers later
+  function formatNumber(number, separator) {
+    var numString = number.toString()
+    var values = numString.split(".")
+    var formatted_number = ''
+
+    while (values[0].length > 3) {
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      formatted_number = separator + chunk + formatted_number
+    }
+
+    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
+
+    if (values[1] == undefined) { return formatted_number }
+
+    return formatted_number + "." + values[1]
+  }
+
+  result = []
+
+  _.each(ds_azure_instances_region_filtered, function(vm) {
+    tags = []
+
+    if (typeof(vm['tags']) == 'object') {
+      _.each(Object.keys(vm['tags']), function(key) {
+        tags.push([key, "=", vm['tags'][key]].join(''))
+      })
+    }
+
+    ahub_qualified = false
+    license = null
+
+    if (vm['imagePublisher'].toLowerCase() == "suse") { license = "SLES_BYOS" }
+    if (vm['imagePublisher'].toLowerCase() == "redhat") { license = "RHEL_BYOS" }
+
+    if (vm['licenseType'] == "None" || _.isUndefined(vm['licenseType'])) {
+      if (license != null) { ahub_qualified = true }
+    }
+
+    if (ahub_qualified) {
+      recommendationDetails = [
+        "Apply Hybrid Use Benefit to Azure virtual machine ",
+        vm["resourceName"], " ",
+        "in Azure Subscription ", vm["subscriptionName"],
+        " (", vm["subscriptionId"], ")"
+      ].join('')
+
+      result.push({
+        id: vm["id"],
+        accountID: vm["subscriptionId"],
+        accountName: vm["subscriptionName"],
+        resourceGroup: vm["resourceGroup"],
+        resourceName: vm["name"],
+        resourceKind: vm["type"],
+        region: vm["region"],
+        osType: vm["osType"],
+        tags: tags.join(', '),
+        resourceType: vm["vmSize"],
+        imagePublisher: vm["imagePublisher"],
+        imageOffer: vm["imageOffer"],
+        imageId: vm["imageSku"],
+        imageVersion: vm["imageVersion"],
+        policy_name: ds_applied_policy["name"],
+        recommendationDetails: recommendationDetails,
+        license: license,
+        service: "Microsoft.Compute",
+        message: ""
+      })
     }
   })
-  result = _.sortBy(result, 'subscriptionName');
-  result = _.sortBy(result, 'location');
+
+  // Message for incident output
+  total_vms = ds_azure_instances_region_filtered.length.toString()
+  total_ahub_vms = result.length.toString()
+  ahub_vms_percentage = (total_ahub_vms / total_vms * 100).toFixed(2).toString() + '%'
+
+  vm_noun = "machines"
+  if (total_vms.length == 1) { vm_noun = "machine" }
+
+  qualify_verb = "qualify"
+  do_verb = "do"
+
+  if (total_ahub_vms.length == 1) {
+    qualify_verb = "qualifies"
+    do_verb = "does"
+  }
+
+  findings = [
+    "Out of ", total_vms, " Azure virtual ", vm_noun, " analyzed, ",
+    total_ahub_vms, " (", ahub_vms_percentage,
+    ") ", qualify_verb, " for Linux Hybrid Use Benefit but ",
+    do_verb, " not have it applied."
+  ].join('')
+
+  result = _.sortBy(result, 'resourceName')
+  result = _.sortBy(result, 'resourceGroup')
+  result = _.sortBy(result, 'accountID')
+
+  // Dummy item to ensure that the check statement in the policy executes at least once
+  result.push({
+    id: "",               accountID: "",         accountName: "",
+    resourceGroup: "",    resourceName: "",      resourceKind: "",
+    region: "",           osType: "",            tags: "",
+    resourceType: "",     imagePublisher: "",    imageOffer: "",
+    imageId: "",          imageVersion: "",      policy_name: "",
+    license: "",          service: "",           total_savings: "",
+    message: ""
+  })
+
+  result[0]['message'] = findings
 EOS
 end
 
@@ -222,28 +395,45 @@ end
 # Policy
 ###############################################################################
 
-policy "pol_azure_license_policy" do
-  validate_each $ds_filtered_resources do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Instances Not Using Azure Hybrid Use Benefit for Linux Server"
+policy "pol_azure_ahub_recommendations" do
+  validate_each $ds_ahub_recommendations do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Linux Virtual Machines Without Hybrid Use Benefit Found"
+    detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "id"), ""))
     escalate $esc_email
     escalate $esc_license_instances
-    check logic_or($ds_parent_policy_terminated, eq(val(item,"ahub"), "Yes"))
-    export "result" do
+    hash_exclude "message", "tags"
+    export do
       resource_level true
-      field "subscriptionName" do
-        label "Subscription Name"
+      field "accountID" do
+        label "Subscription ID"
       end
-      field "location" do
-        label "Location"
+      field "accountName" do
+        label "Subscription Name"
       end
       field "resourceGroup" do
         label "Resource Group"
       end
-      field "name" do
-        label "Instance Name"
+      field "resourceName" do
+        label "Resource Name"
       end
-      field "vmSize" do
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "resourceType" do
         label "Instance Size"
+      end
+      field "resourceKind" do
+        label "Resource Kind"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "osType" do
+        label "Operating System"
       end
       field "imagePublisher" do
         label "Image Publisher"
@@ -251,23 +441,24 @@ policy "pol_azure_license_policy" do
       field "imageOffer" do
         label "Image Offer"
       end
-      field "imageSku" do
-        label "Image Sku"
+      field "imageId" do
+        label "Image SKU"
       end
       field "imageVersion" do
         label "Image Version"
       end
-      field "ahub" do
-        label "AHUB"
+      field "license" do
+        label "License Type"
       end
-      field "tags" do
-        label "Tags"
+      field "service" do
+        label "Service"
+      end
+      field "resourceID" do
+        label "Resource ID"
+        path "id"
       end
       field "id" do
-        label "Id"
-      end
-      field "lic_param" do
-        label "lic_param"
+        label "ID"
       end
     end
   end
@@ -280,29 +471,30 @@ end
 escalation "esc_email" do
   automatic true
   label "Send Email"
-  description "Send Incident email"
+  description "Send incident email"
   email $param_email
 end
 
 escalation "esc_license_instances" do
-  automatic contains($param_automatic_action, "Hybrid Use Benefit for Linux")
-  label "Approve AHUB for Linux"
-  description "Approve escalation to apply Hybrid Use Benefit to identified instances"
-  run "license_instances", data
+  automatic contains($param_automatic_action, "Apply Hybrid Use Benefit")
+  label "Apply Hybrid Use Benefit"
+  description "Apply Hybrid Use Benefit to the selected instances"
+  run "license_instances", data, $param_azure_endpoint
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define license_instances($data) return $all_responses do
+define license_instances($data, $param_azure_endpoint) return $all_responses do
   $all_responses = []
+
   foreach $item in $data do
     sub on_error: skip do
-      $update_inst_response = http_request(
+      $response = http_request(
         auth: $$auth_azure,
         verb: "patch",
-        host: "management.azure.com",
+        host: $param_azure_endpoint,
         https: true,
         href: $item["id"],
         query_strings: {
@@ -314,12 +506,12 @@ define license_instances($data) return $all_responses do
         },
         body: {
           "properties": {
-            "licenseType": $item["lic_param"]
+            "licenseType": $item["license"]
           }
         }
       )
 
-      $all_responses << $update_inst_response
+      $all_responses << $response
     end
   end
 end

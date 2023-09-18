@@ -6,6 +6,10 @@
 - Added ability to include attached volumes in the incident and to action on them
 - Added parameters to allow the user to configure the new functionality above
 
+## v6.1
+
+- Refactored the Delete Volume and Create Snapshot Actions to use updated Azure APIs, improve debugging, and error handling
+
 ## v6.0
 
 - Several parameters altered to be more descriptive and human-readable

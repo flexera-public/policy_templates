@@ -51,6 +51,7 @@ These templates can generate savings estimates for your environment.
 - [Azure Old Snapshots](./cost/azure/old_snapshots)
 - [Azure Reserved Instances Recommendations](./cost/azure/reserved_instances/recommendations)
 - [Azure Rightsize Compute Instances](./cost/azure/rightsize_compute_instances)
+- [Azure Rightsize SQL Databases](./cost/azure/rightsize_sql_instances)
 - [Azure Savings Plan Recommendations](./cost/azure/savings_plan/recommendations)
 - [Azure Unused IP Addresses](./cost/azure/unused_ip_addresses)
 - [Azure Unused SQL Databases](./cost/azure/unused_sql_databases)
@@ -630,7 +631,7 @@ These templates can generate savings estimates for your environment.
 <!--
 ---
 :total_count: 241
-:optimization_count: 42
+:optimization_count: 43
 :categories:
   Security: 74
   Compliance: 33
@@ -721,16 +722,16 @@ These templates can generate savings estimates for your environment.
   Inefficient Instance Usage: 2
   Lifecycle Management: 1
   Unused Database Services: 3
-  RightSize Database Services: 2
+  Rightsize Database Instances: 3
   Old Snapshots: 3
   Object Store Optimization: 3
   Idle Compute Instances: 4
   Unused Volumes: 6
   Reserved Instances: 3
-  Rightsize Database Instances: 2
   Reserved Instance: 2
   Allocate VMs: 3
   Rightsize Volumes: 2
+  RightSize Database Services: 1
   Savings Plan Utilization: 1
   GP3 Volumes: 1
   Inefficient Disk Usage: 1
