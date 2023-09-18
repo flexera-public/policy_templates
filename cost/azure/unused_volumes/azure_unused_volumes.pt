@@ -53,11 +53,11 @@ parameter "param_minimum_age" do
   min_value 0
 end
 
-parameter "param_stats_lookback" do
+parameter "param_unused_days" do
   type "number"
-  category "Statistics"
-  label "Statistic Lookback Period"
-  description "How many days back to look at read/write metrics for volumes. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days."
+  category "Policy Settings"
+  label "Unused Days"
+  description "The number of days a volume has been unused as determined by read/write activity."
   default 30
   min_value 1
   max_value 90
@@ -335,6 +335,7 @@ datasource "ds_azure_disks" do
       field "resourceType", jmes_path(col_item, "type")
       field "region", jmes_path(col_item, "location")
       field "tags", jmes_path(col_item, "tags")
+      field "attached_vm", jmes_path(col_item, "managedBy")
       field "state", jmes_path(col_item, "properties.diskState")
       field "size", jmes_path(col_item, "properties.diskSizeGB")
       field "timeCreated", jmes_path(col_item, "properties.timeCreated")
@@ -344,16 +345,40 @@ datasource "ds_azure_disks" do
   end
 end
 
+datasource "ds_azure_disks_status_filtered" do
+  run_script $js_azure_disks_status_filtered, $ds_azure_disks, $param_include_status
+end
+
+script "js_azure_disks_status_filtered", type: "javascript" do
+  parameters "ds_azure_disks", "param_include_status"
+  result "result"
+  code <<-EOS
+  if (param_include_status != "All Volumes") {
+    if (param_include_status == "Attached Volumes") {
+      result = _.filter(ds_azure_disks, function(disk) {
+        return disk['state'] == "Attached"
+      })
+    } else {
+      result = _.filter(ds_azure_disks, function(disk) {
+        return disk['state'] == "Unattached"
+      })
+    }
+  } else {
+    result = ds_azure_disks
+  }
+EOS
+end
+
 datasource "ds_azure_disks_tag_filtered" do
-  run_script $js_azure_disks_tag_filtered, $ds_azure_disks, $param_exclusion_tags
+  run_script $js_azure_disks_tag_filtered, $ds_azure_disks_status_filtered, $param_exclusion_tags
 end
 
 script "js_azure_disks_tag_filtered", type: "javascript" do
-  parameters "ds_azure_disks", "param_exclusion_tags"
+  parameters "ds_azure_disks_status_filtered", "param_exclusion_tags"
   result "result"
   code <<-EOS
   if (param_exclusion_tags.length > 0) {
-    result = _.reject(ds_azure_disks, function(disk) {
+    result = _.reject(ds_azure_disks_status_filtered, function(disk) {
       disk_tags = []
 
       if (typeof(disk['tags']) == 'object') {
@@ -374,7 +399,7 @@ script "js_azure_disks_tag_filtered", type: "javascript" do
       return exclude_disk
     })
   } else {
-    result = ds_azure_disks
+    result = ds_azure_disks_status_filtered
   }
 EOS
 end
@@ -406,7 +431,7 @@ end
 datasource "ds_azure_disks_metrics" do
   iterate $ds_azure_disks_region_filtered
   request do
-    run_script $js_azure_disks_metrics, val(iter_item, "id"), $param_azure_endpoint, $param_stats_lookback
+    run_script $js_azure_disks_metrics, val(iter_item, "id"), $param_azure_endpoint, $param_unused_days
   end
   result do
     encoding "json"
@@ -419,6 +444,7 @@ datasource "ds_azure_disks_metrics" do
     field "tags", val(iter_item, "tags")
     field "state", val(iter_item, "state")
     field "size", val(iter_item, "size")
+    field "attached_vm", val(iter_item, "attached_vm")
     field "timeCreated", val(iter_item, "timeCreated")
     field "subscriptionID", val(iter_item, "subscriptionID")
     field "subscriptionName", val(iter_item, "subscriptionName")
@@ -427,7 +453,7 @@ end
 
 
 script "js_azure_disks_metrics", type: "javascript" do
-  parameters "resourceId", "param_azure_endpoint", "param_stats_lookback"
+  parameters "resourceId", "param_azure_endpoint", "param_unused_days"
   result "request"
   code <<-EOS
   end_date = new Date()
@@ -437,7 +463,7 @@ script "js_azure_disks_metrics", type: "javascript" do
   end_date.setHours(23)
 
   start_date = new Date()
-  start_date.setDate(start_date.getDate() - param_stats_lookback)
+  start_date.setDate(start_date.getDate() - param_unused_days)
   start_date.setMilliseconds(0)
   start_date.setSeconds(0)
   start_date.setMinutes(0)
@@ -477,75 +503,64 @@ script "js_unused_volumes", type: "javascript" do
   result = []
 
   _.each(ds_azure_disks_metrics, function(disk) {
-    include_disk = true
+    read_stats = null
+    write_stats = null
 
-    if (param_include_status == "Unattached Volumes" && disk['state'] != "Unattached") {
-      include_disk = false
-    }
-
-    if (param_include_status == "Attached Volumes" && disk['state'] == "Unattached") {
-      include_disk = false
-    }
-
-    if (include_disk) {
-      read_stats = null
-      write_stats = null
-
-      _.each(disk['value'], function(stat) {
-        if (stat["timeseries"][0] != undefined) {
-          if (stat['name']['value'] == "Composite Disk Read Operations/sec") {
-            read_stats = stat["timeseries"][0]["data"]
-          }
-
-          if (stat['name']['value'] == "Composite Disk Write Operations/sec") {
-            write_stats = stat["timeseries"][0]["data"]
-          }
-        }
-      })
-
-      read_count = 0
-      write_count = 0
-
-      _.each(read_stats, function(metric) {
-        if (typeof(metric['count']) == 'number') { read_count += metric['count'] }
-      })
-
-      _.each(write_stats, function(metric) {
-        if (typeof(metric['count']) == 'number') { write_count += metric['count'] }
-      })
-
-      if (read_count + write_count == 0) {
-        tags = []
-
-        if (typeof(disk['tags']) == 'object') {
-          _.each(Object.keys(disk['tags']), function(key) {
-            tags.push([key, "=", disk['tags'][key]].join(''))
-          })
+    _.each(disk['value'], function(stat) {
+      if (stat["timeseries"][0] != undefined) {
+        if (stat['name']['value'] == "Composite Disk Read Operations/sec") {
+          read_stats = stat["timeseries"][0]["data"]
         }
 
-        today = new Date()
-        created = new Date(disk['timeCreated'])
-        age = Math.round((today - created) / 1000 / 60 / 60 / 24)
-
-        if (param_minimum_age == 0 || age >= param_minimum_age) {
-          result.push({
-            id: disk['id'],
-            resourceName: disk['resourceName'],
-            resourceGroup: disk['resourceGroup'],
-            resourceType: disk['resourceType'],
-            region: disk['region'],
-            tags: tags.join(', '),
-            state: disk['state'],
-            size: disk['size'],
-            age: age,
-            timeCreated: created.toISOString(),
-            subscriptionID: disk['subscriptionID'],
-            subscriptionName: disk['subscriptionName'],
-            service: "Microsoft.Compute",
-            savings: 0.0,
-            savingsCurrency: ''
-          })
+        if (stat['name']['value'] == "Composite Disk Write Operations/sec") {
+          write_stats = stat["timeseries"][0]["data"]
         }
+      }
+    })
+
+    read_sum = 0
+    write_sum = 0
+
+    _.each(read_stats, function(metric) {
+      if (typeof(metric['average']) == 'number') { read_sum += metric['average'] }
+    })
+
+    _.each(write_stats, function(metric) {
+      if (typeof(metric['average']) == 'number') { write_sum += metric['average'] }
+    })
+
+    if (read_sum + write_sum == 0) {
+      tags = []
+
+      if (typeof(disk['tags']) == 'object') {
+        _.each(Object.keys(disk['tags']), function(key) {
+          tags.push([key, "=", disk['tags'][key]].join(''))
+        })
+      }
+
+      today = new Date()
+      created = new Date(disk['timeCreated'])
+      age = Math.round((today - created) / 1000 / 60 / 60 / 24)
+
+      if (param_minimum_age == 0 || age >= param_minimum_age) {
+        result.push({
+          id: disk['id'],
+          resourceName: disk['resourceName'],
+          resourceGroup: disk['resourceGroup'],
+          resourceType: disk['resourceType'],
+          region: disk['region'],
+          tags: tags.join(', '),
+          state: disk['state'],
+          size: disk['size'],
+          attached_vm: disk['attached_vm'],
+          age: age,
+          timeCreated: created.toISOString(),
+          subscriptionID: disk['subscriptionID'],
+          subscriptionName: disk['subscriptionName'],
+          service: "Microsoft.Compute",
+          savings: 0.0,
+          savingsCurrency: ''
+        })
       }
     }
   })
@@ -671,11 +686,11 @@ EOS
 end
 
 datasource "ds_volume_cost_mapping" do
-  run_script $js_volume_cost_mapping, $ds_azure_disks_region_filtered, $ds_unused_volumes, $ds_volume_costs_grouped, $ds_applied_policy, $ds_currency, $param_minimum_age, $param_take_snapshot, $param_min_savings
+  run_script $js_volume_cost_mapping, $ds_azure_disks_region_filtered, $ds_unused_volumes, $ds_volume_costs_grouped, $ds_applied_policy, $ds_currency, $param_minimum_age, $param_take_snapshot, $param_min_savings, $param_include_status, $param_unused_days
 end
 
 script "js_volume_cost_mapping", type:"javascript" do
-  parameters "ds_azure_disks_region_filtered", "ds_unused_volumes", "ds_volume_costs_grouped", "ds_applied_policy", "ds_currency", "param_minimum_age", "param_take_snapshot", "param_min_savings"
+  parameters "ds_azure_disks_region_filtered", "ds_unused_volumes", "ds_volume_costs_grouped", "ds_applied_policy", "ds_currency", "param_minimum_age", "param_take_snapshot", "param_min_savings", "param_include_status", "param_unused_days"
   result "result"
   code <<-'EOS'
   // Function for formatting currency numbers later
@@ -731,6 +746,7 @@ script "js_volume_cost_mapping", type:"javascript" do
         tags: disk['tags'],
         age: disk['age'],
         timeCreated: disk['timeCreated'],
+        attached_vm: disk['attached_vm'],
         savings: parseFloat(savings.toFixed(3)),
         savingsCurrency: ds_currency['symbol'],
         recommendationDetails: recommendationDetails,
@@ -748,22 +764,80 @@ script "js_volume_cost_mapping", type:"javascript" do
   total_unused_disks = result.length.toString()
   unused_disks_percentage = (total_unused_disks / total_disks * 100).toFixed(2).toString() + '%'
 
+  total_disks_noun = "volume"
+  if (total_disks > 1) { total_disks_noun = "volumes" }
+
+  total_unused_disks_verb = "is"
+  if (total_unused_disks > 1) { total_unused_disks_verb = "are" }
+
   findings = [
-    "Out of ", total_disks , " Azure volumes analyzed, ",
+    "Out of ", total_disks , " Azure ", total_disks_noun, " analyzed, ",
     total_unused_disks, " (", unused_disks_percentage,
-    ") are unused and are recommended for deletion. "
+    ") ", total_unused_disks_verb, " unused and are recommended for deletion. "
   ].join('')
 
   if (param_minimum_age != 0) {
-    day_message = "day"
-    if (param_minimum_age.length > 1) { day_message += "s" }
+    min_age_day_noun = "day"
+    if (param_minimum_age > 1) { min_age_day_noun += "s" }
 
-    idle_message = [
-      "An unattached volume is considered unused if it is not attached to an instance ",
-      "and is at least ", param_minimum_age, " ", day_message, " old.\n\n"
-    ].join('')
+    unused_day_noun = "day"
+    if (param_unused_days > 1) { unused_day_noun += "s" }
+
+    if (param_include_status == 'Unattached Volumes') {
+      idle_message = [
+        "Volumes are considered unused if they are unattached, ",
+        "are at least ", param_minimum_age, " ", min_age_day_noun, " old, ",
+        "and have had no read/write activity for at least ",
+        param_unused_days, " ", unused_day_noun, ".\n\n"
+      ].join('')
+    }
+
+    if (param_include_status == 'Attached Volumes') {
+      idle_message = [
+        "Volumes are considered unused if they are attached, ",
+        "are at least ", param_minimum_age, " ", min_age_day_noun, " old, ",
+        "and have had no read/write activity for at least ",
+        param_unused_days, " ", unused_day_noun, ".\n\n"
+      ].join('')
+    }
+
+    if (param_include_status == 'All Volumes') {
+      idle_message = [
+        "Volumes are considered unused if they ",
+        "are at least ", param_minimum_age, " ", min_age_day_noun, " old, ",
+        "and have had no read/write activity for at least ",
+        param_unused_days, " ", unused_day_noun, ", regardless of whether they ",
+        "are currently attached or not.\n\n"
+      ].join('')
+    }
   } else {
-    idle_message = "A volume is considered unused if it is not attached to an instance regardless of how old it is.\n\n"
+    unused_day_noun = "day"
+    if (param_unused_days > 1) { unused_day_noun += "s" }
+
+    if (param_include_status == 'Unattached Volumes') {
+      idle_message = [
+        "Volumes are considered unused if they are unattached ",
+        "and have had no read/write activity for at least ",
+        param_unused_days, " ", unused_day_noun, ".\n\n"
+      ].join('')
+    }
+
+    if (param_include_status == 'Attached Volumes') {
+      idle_message = [
+        "Volumes are considered unused if they are attached ",
+        "and have had no read/write activity for at least ",
+        param_unused_days, " ", unused_day_noun, ".\n\n"
+      ].join('')
+    }
+
+    if (param_include_status == 'All Volumes') {
+      idle_message = [
+        "Volumes are considered unused if they ",
+        "have had no read/write activity for at least ",
+        param_unused_days, " ", unused_day_noun, ", regardless of whether they ",
+        "are currently attached or not.\n\n"
+      ].join('')
+    }
   }
 
   disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
@@ -851,6 +925,9 @@ policy "pol_azure_unattached_volumes" do
       end
       field "savingsCurrency" do
         label "Savings Currency"
+      end
+      field "attached_vm" do
+        label "Attached VM ID"
       end
       field "service" do
         label "Service"
