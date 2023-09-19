@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.2
+
+- Reduced execution time avoiding repetitive loops and request fields.
+
 ## v2.1
 
 - Made `Billing Center Name` parameter optional
