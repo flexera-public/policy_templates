@@ -60,7 +60,7 @@ all_notification_content_array = []
 # Match Changelog entries with Policy Templates based on paths
 # and then push Changelog contents to Notification Content Array defined above
 changelogs.each do |changelog|
-  matching_template = policy_templates.find { |template| changelog.path.include?(File.dirname(template.path)) }
+  matching_template = policy_templates.find { |template| changelog.path.gsub("/CHANGELOG.md", "") == File.dirname(template.path) }
   if matching_template
 
     # Capture directory path to create GitHub README URL
