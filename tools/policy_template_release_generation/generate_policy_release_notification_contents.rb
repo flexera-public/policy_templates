@@ -20,8 +20,8 @@ class PolicyTemplate
 end
 
 # Get a list of added and modified files
-added_files = `git diff --name-only --diff-filter=A origin/master~2..origin/master~1`.split("\n")
-modified_files = `git diff --name-only --diff-filter=M origin/master~2..origin/master~1`.split("\n")
+added_files = `git diff --name-only --diff-filter=A origin/master~1..origin/master`.split("\n")
+modified_files = `git diff --name-only --diff-filter=M origin/master~1..origin/master`.split("\n")
 changed_files = (added_files + modified_files).uniq
 
 # Initialize arrays to store Changelog objects and Policy Template objects
