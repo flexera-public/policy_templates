@@ -2,15 +2,10 @@
 
 ## What it does
 
-This Policy Template scans all volumes in the given account and identifies any volume that meets the user-specified criteria for being unused. The user can filter volumes based on age, whether they are currently attached to a VM, whether there has been any read/write activity on the volume over a user-specified number of days, or any combination of these. Any volumes that meet the user-specified criteria are considered unused. If any unused volumes are found, an incident report will show the volumes and related information. An email will be sent to the user-specified email address.
+This Policy Template scans all volumes in the given account and identifies any volume that meets the user-specified criteria for being unused. The user can filter volumes based on age, whether they are currently attached to a VM, whether there has been any read/write activity on the volume over a user-specified number of days, or any combination of these. Any volumes that meet the user-specified criteria are considered unused. If any unused volumes are found, an incident report will show the volumes and related information. An email will be sent to the user-specified email addresses.
 
 If the user approves that the volumes should be deleted, the policy will delete the volumes.
-If the volume is not getting deleted, say, because it is locked, then the volume will be tagged to indicate the error that was received.
-
-If the issue causing delete failure is removed, the next run of the policy will delete the volume.
-Note: Unused volumes report will reflect the updated set of unused volumes on the subsequent run.
-
-Optionally, the user can specify one or more tags that if found on a volume will exclude the volume from the list.
+If the volume is not getting deleted because it is locked, then the volume will be tagged to indicate the error that was received. If the issue causing delete failure is removed, the next run of the policy will delete the volume. The unused volumes report will reflect the updated set of unused volumes on the subsequent run.
 
 Note: Previous versions of this policy had the option to filter results by how long a volume was detached. This functionality did not work as expected due to Azure volume logs not recording detachment events. Such events are recorded in the logs of the VM the volume was detached from, and there is currently no way to determine the most recently attached VM for a volume through Azure's APIs. For this reason, this functionality was removed.
 
@@ -62,8 +57,8 @@ For example if a user selects the "Delete Unused Volumes" action while applying 
 
 The following policy actions are taken on any resources found to be out of compliance.
 
-- Delete unused volumes after approval
 - Send an email report
+- Delete unused volumes after approval
 
 ## Supported Clouds
 

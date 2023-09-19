@@ -337,6 +337,8 @@ datasource "ds_azure_disks" do
       field "region", jmes_path(col_item, "location")
       field "tags", jmes_path(col_item, "tags")
       field "attached_vm", jmes_path(col_item, "managedBy")
+      field "provisioningState", jmes_path(col_item, "properties.provisioningState")
+      field "osType", jmes_path(col_item, "properties.osType")
       field "state", jmes_path(col_item, "properties.diskState")
       field "size", jmes_path(col_item, "properties.diskSizeGB")
       field "timeCreated", jmes_path(col_item, "properties.timeCreated")
@@ -354,18 +356,23 @@ script "js_azure_disks_status_filtered", type: "javascript" do
   parameters "ds_azure_disks", "param_include_status"
   result "result"
   code <<-EOS
+  // Note: We filter for osType == null to filter out OS disks that VMs need to boot
+  // since these disks can't be detached/deleted without just deleting the VM itself
+
   if (param_include_status != "All Volumes") {
     if (param_include_status == "Attached Volumes") {
       result = _.filter(ds_azure_disks, function(disk) {
-        return disk['state'] == "Attached"
+        return disk['state'] == "Attached" && disk['osType'] == null
       })
     } else {
       result = _.filter(ds_azure_disks, function(disk) {
-        return disk['state'] == "Unattached"
+        return disk['state'] == "Unattached" && disk['osType'] == null
       })
     }
   } else {
-    result = ds_azure_disks
+    result = _.filter(ds_azure_disks, function(disk) {
+      return disk['osType'] == null
+    })
   }
 EOS
 end
@@ -1005,7 +1012,7 @@ define detach_disk($item, $param_azure_endpoint) return $response do
   $disk_id = $item['id']
   $vm_id = $item['attached_vm']
 
-  $get_response = http_request(
+  $vm_response = http_request(
     auth: $$auth_azure,
     verb: "get",
     host: $param_azure_endpoint,
@@ -1019,18 +1026,19 @@ define detach_disk($item, $param_azure_endpoint) return $response do
     }
   )
 
+  $$all_responses << to_json({"req":"GET " + $param_azure_endpoint + $vm_id, "resp": $vm_response})
+
   $updated_disk_list = []
 
-  foreach $item in $get_response['body']['properties']['storageProfile']['dataDisks'] do
+  foreach $item in $vm_response['body']['properties']['storageProfile']['dataDisks'] do
     if $item['managedDisk']['id'] != $disk_id
       $updated_disk_list << $item
     end
   end
 
   $new_properties = {}
-  $new_properties['location'] = $get_response['body']['location']
-  $new_properties['properties'] = {}
-  $new_properties['properties']['storageProfile'] = {}
+  $new_properties['location'] = $vm_response['body']['location']
+  $new_properties['properties'] = $vm_response['body']['properties']
   $new_properties['properties']['storageProfile']['dataDisks'] = $updated_disk_list
 
 
@@ -1049,29 +1057,32 @@ define detach_disk($item, $param_azure_endpoint) return $response do
     body: $new_properties
   )
 
+  $$all_responses << to_json({"req":"PUT " + $param_azure_endpoint + $vm_id, "resp": $response})
+
   $disk_state = "Attached"
 
   while $disk_state != "Unattached" do
     sleep(5)
 
-    $get_response = http_request(
+    $disk_response = http_request(
       auth: $$auth_azure,
       verb: "get",
       host: $param_azure_endpoint,
       https: true,
       href: $disk_id,
       query_strings: {
-        "api-version": "2023-07-01"
+        "api-version": "2023-04-02"
       },
       headers: {
         "content-type": "application/json"
       }
     )
 
-    $disk_state = $get_response['body']['properties']['diskState']
+    $$all_responses << to_json({"req":"GET " + $param_azure_endpoint + $disk_id, "resp": $disk_response})
+
+    $disk_state = $disk_response['body']['properties']['diskState']
   end
 
-  $$all_responses << to_json({"req":"PUT " + $param_azure_endpoint + $disk_id, "resp": $response})
   task_label('Checking for expected response code for Disk Detach Request Successful')
   if $response["code"] != 201 && $response["code"] != 200
     raise 'Unexpected response detaching disk: '+to_json($response)
@@ -1165,7 +1176,7 @@ define delete_unattached_disk($disk_id, $param_azure_endpoint) do
     # we expect a 404 response when the disk is deleted
     while $response["code"] != 404 do
       task_label('Current Disk Status: '+$disk_id+' '+to_json($response))
-      call get_disksnapshot($disk_id) retrieve $response
+      call get_disksnapshot($disk_id, $param_azure_endpoint) retrieve $response
       sleep(1)
     end
     task_label('Delete Disk successful: '+$disk_id)
