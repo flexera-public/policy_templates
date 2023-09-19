@@ -101,8 +101,8 @@ end
 
 credentials "auth_azure" do
   schemes "oauth2"
-  label "Azure Compute credential"
-  description "Select the Azure Credential from the list"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
   tags "provider=azure_rm"
 end
 
@@ -286,7 +286,7 @@ datasource "ds_azure_instances" do
     pagination $pagination_azure
     host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Compute/virtualMachines"])
-    query "api-version", "2019-03-01"
+    query "api-version", "2023-07-01"
     header "User-Agent", "RS Policies"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
     ignore_status [400, 403, 404]
@@ -299,7 +299,7 @@ datasource "ds_azure_instances" do
       field "resourceKind", jmes_path(col_item, "type")
       field "name", jmes_path(col_item, "name")
       field "region", jmes_path(col_item, "location")
-      field "statuses", jmes_path(col_item, "properties.instanceView.statuses")
+      field "timeCreated", jmes_path(col_item, "properties.timeCreated")
       field "osType", jmes_path(col_item, "properties.storageProfile.osDisk.osType")
       field "resourceType", jmes_path(col_item, "properties.hardwareProfile.vmSize")
       field "tags", jmes_path(col_item, "tags")
@@ -379,9 +379,7 @@ script "js_long_running_instances", type: "javascript" do
   result = []
 
   _.each(ds_azure_instances_region_filtered, function(vm) {
-    status = _.where(vm['statuses'], {"code": "PowerState/running"})[0]["displayStatus"]
-    provisionState = _.where(vm['statuses'], {"code": "ProvisioningState/succeeded"})
-    launchTime = new Date(provisionState[0]["time"])
+    launchTime = new Date(vm["timeCreated"])
     age = parseInt((Date.now().valueOf() - launchTime.valueOf()) / 86400000)
 
     if (age >= param_minimum_age) {
@@ -406,7 +404,6 @@ script "js_long_running_instances", type: "javascript" do
         subscriptionName: vm['subscriptionName'],
         tags: tags.join(', '),
         age: parseInt(age),
-        status: status,
         launchTime: launchTime.toISOString(),
         lookbackPeriod: param_minimum_age
       })
@@ -573,7 +570,6 @@ script "js_long_running_instances_incident", type: "javascript" do
       accountName: vm['subscriptionName'],
       tags: vm['tags'],
       age: vm['age'],
-      status: vm['status'],
       launchTime: vm['launchTime'],
       lookbackPeriod: vm['lookbackPeriod'],
       policy_name: ds_applied_policy['name'],
@@ -586,7 +582,7 @@ script "js_long_running_instances_incident", type: "javascript" do
       message: ""
     }
 
-    id = item['resourceId'].toLowerCase()
+    id = vm['resourceId'].toLowerCase()
 
     if (ds_instance_costs_grouped[id] != undefined) {
       instance['cost'] = Number(ds_instance_costs_grouped[id]['cost'].toFixed(3))
@@ -599,6 +595,10 @@ script "js_long_running_instances_incident", type: "javascript" do
     result.push(instance)
   })
 
+  instances_total = ds_azure_instances_region_filtered.length.toString()
+  long_instances_total = result.length.toString()
+  long_instances_percentage = (long_instances_total / instances_total * 100).toFixed(2).toString() + '%'
+
   instance_noun = "machine"
   if (instances_total > 1) { instance_noun = "machines" }
 
@@ -607,10 +607,6 @@ script "js_long_running_instances_incident", type: "javascript" do
 
   has_verb = "has"
   if (long_instances_total > 1) { day_noun = "have" }
-
-  instances_total = ds_azure_instances_region_filtered.length.toString()
-  long_instances_total = result.length.toString()
-  long_instances_percentage = (long_instances_total / instances_total * 100).toFixed(2).toString() + '%'
 
   findings = [
     "Out of ", instances_total, " Azure virtual ", instance_noun, " analyzed, ",
@@ -679,9 +675,6 @@ policy "pol_utilization" do
       end
       field "region" do
         label "Region"
-      end
-      field "operating_system" do
-        label "Operating System"
       end
       field "cost" do
         label "Estimated Monthly Cost"
