@@ -47,6 +47,7 @@ These templates can generate savings estimates for your environment.
 
 #### Azure
 
+- [Azure Hybrid Use Benefit for Windows Server](./cost/azure/hybrid_use_benefit)
 - [Azure Idle Compute Instances](./cost/azure/idle_compute_instances)
 - [Azure Old Snapshots](./cost/azure/old_snapshots)
 - [Azure Reserved Instances Recommendations](./cost/azure/reserved_instances/recommendations)
@@ -631,7 +632,7 @@ These templates can generate savings estimates for your environment.
 <!--
 ---
 :total_count: 241
-:optimization_count: 43
+:optimization_count: 44
 :categories:
   Security: 74
   Compliance: 33
@@ -702,7 +703,7 @@ These templates can generate savings estimates for your environment.
 :policy_sets:
   CIS: 61
   Public Database Access: 2
-  '': 85
+  '': 83
   AWS Config: 1
   Storage Security: 1
   Open Buckets: 2
@@ -715,6 +716,7 @@ These templates can generate savings estimates for your environment.
   ITAM: 4
   Rightsize Compute Instances: 6
   N/A: 3
+  Hybrid Use Benefit: 2
   Savings Plans: 2
   Schedule Instance: 3
   Common Bill Ingest: 1
