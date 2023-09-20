@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "3.2",
+  version: "3.3",
   provider: "AWS",
   service: "EC2",
   policy_set: "Inefficient Disk Usage",
@@ -704,7 +704,7 @@ script "js_add_costs_to_disk_util_data", type: "javascript" do
   result "result"
   code <<-EOS
 
-    //Convert AWS's mess to actual JSON
+    //Convert AWS's response to actual JSON
     gp2_pricelist = []
     _.each(ds_gp2_costs.PriceList, function(price){
       gp2_pricelist.push( JSON.parse(price.replace(/\\"/g,'"')) )
@@ -800,7 +800,10 @@ script "js_add_costs_to_disk_util_data", type: "javascript" do
       }
     })
 
-    result = ds_combined_cloudwatch_data
+    //Filter out gp3s OR if the savings is less than 0	
+    result = _.filter(ds_combined_cloudwatch_data, function(data){	
+      return ( data.volumeType == "gp2" || data.savings >= 0 )	
+    })
   EOS
 end
 
@@ -819,8 +822,6 @@ script "js_filter_disk_utilization_data", type: "javascript" do
     //if( param_avg_iops > -1 ){
     //  data = _.filter(ds_disk_utilization_with_costs, function(util_data){ return util_data.iopsUtilizationPercentage <= param_avg_iops })
     //}
-
-    //Filter out GP3s from incident here
 
     //Add Account ID
     _.each(data, function(vol){
@@ -901,8 +902,6 @@ script "js_filter_disk_utilization_data", type: "javascript" do
 
     if (_.size(data) > 0) {
       data[0]["summaryData"] = summary_data
-    } else {
-      data = [{ "summaryData": summary_data }]
     }
     console.log("data.summaryData: ", data[0].summaryData)
   EOS
