@@ -743,7 +743,13 @@ script "js_superseded_instances", type: "javascript" do
         superseded_type_price = parseFloat(superseded_type_price.toFixed(3))
       }
 
-      recommendationDetails = ""
+      recommendationDetails = [
+        "Change instance type of EC2 instance ", instance["instanceId"], " ",
+        "in AWS Account ", ds_aws_account['name'], " ",
+        "(", ds_aws_account['id'], ") ",
+        "from ", instance["resourceType"], " ",
+        "to ", superseded_type
+      ]
 
       hostname = null
 
@@ -784,6 +790,63 @@ script "js_superseded_instances", type: "javascript" do
       })
     }
   })
+
+  // Sort by descending order of savings value
+  result = _.sortBy(result, function(item) { return item['savings'] * -1 })
+
+  // Message for incident detailed template
+  savings_message = [
+    ds_currency['symbol'], ' ',
+    formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['t_separator'])
+  ].join('')
+
+  total_instances = ds_instances.length.toString()
+  total_superseded = result.length.toString()
+  superseded_percentage = (total_instances / total_superseded * 100).toFixed(2)
+
+  instance_noun = "instance"
+  if (total_instances.length > 1) { instance_noun = "instances" }
+
+  superseded_verb = "is"
+  if (total_superseded.length > 1) { superseded_verb = "are" }
+
+  findings = [
+    "Out of ", total_instances, " EC2 ", instance_noun, " analyzed, ",
+    total_superseded, " (", superseded_percentage,
+    ") ", superseded_verb, " superseded and recommended for an instance type change. ",
+    "All recommendations are for ", param_instance_type, " instance types.\n\n"
+  ].join('')
+
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
+
+  api_disclaimer = ""
+
+  if (ds_currency_conversion['to'] == undefined && ds_currency['code'] != 'USD') {
+    api_disclaimer = "\n\nSavings values are in USD due to a malfunction with Flexera's internal currency conversion API. Please contact Flexera support to report this issue."
+  }
+
+  savings_disclaimer = "Savings are estimated based on list price and may not reflect credits or discounts. "
+
+  if (ds_currency['code'] != "USD" && api_disclaimer == "") {
+    savings_disclaimer += "List prices were converted from USD using current exchange rates."
+  }
+
+  // Dummy entry to ensure the check statement in validation always runs at least once
+  result.push({
+    region: "",                 resourceID: "",               ipAddress: "",
+    ipv6Address: "",            imageId: "",                  resourceType: "",
+    platform: "",               privateDnsName: "",           launchTime: "",
+    operating_system: "",       billing_center: "",           purchase_option: "",
+    service: "",                tags: "",                     accountID: "",
+    accountName: "",            hostname: "",                 recommendationDetails: "",
+    newResourceType: "",        resourceName: "",             cost: "",
+    instance_type_price: "",    superseded_type_price: "",    savings: "",
+    savingsCurrency: "",        recommendationType: "",       policy_name: "",
+    total_savings: "",          message: ""
+  })
+
+  result[0]['total_savings'] = savings_message
+  result[0]['message'] = findings + disclaimer + savings_disclaimer + api_disclaimer
 EOS
 end
 
