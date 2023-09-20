@@ -1,5 +1,31 @@
 # Changelog
 
+## v2.10
+
+- Updated policy README file with a deeper explanation of how the GCP recommender works and the roles required to use it.
+
+## v2.9
+
+- Modified the number of GCP recommender API calls that can be done before waiting to prevent a quota limit error: 100 request per minute.
+
+## v2.8
+
+- Updated policy metadata to facilitate scraping of incidents for Recommendations dashboard
+
+## v2.7
+
+- Fix: Duplicated entries from incident report were removed.
+
+## v2.6
+
+- Fixed error getting zone name as region
+- Adding missing fields for policy logs
+- Filtering data before requests to avoid unnecessary requests to `/aggregated/disks` and `/recommenders/google.compute.disk.IdleResourceRecommender/recommendations` APIs
+
+## v2.5
+
+- Modified to make this policy run faster by using aggregated GCP API endpoints.
+
 ## v2.4
 
 - Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM

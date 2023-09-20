@@ -1,5 +1,37 @@
 # Changelog
 
+## v5.2
+
+- Corrected issue with policy, tags were being sent in an unsupported format
+
+## v5.1
+
+- Corrected issue with policy not retrieving cost data on orgs using newer Azure bill connections
+
+## v5.0
+
+- Renamed Subscription List parameter for consistency and accuracy
+- Added logic required for "Meta Policy" use-cases
+
+## v4.8
+
+- Changed internal names of several incident fields to ensure that they are properly scraped for dashboards.
+
+## v4.7
+
+- Added `Lookback Period` incident field.
+- Added `Threshold` incident field.
+- Added `Platform` incident field.
+- Changed internal names of several incident fields to ensure that they are properly scraped for dashboards.
+
+## v4.6
+
+- New escalations are no longer created if Estimated Monthly Savings or CPU Average have changed, but nothing else has.
+
+## v4.5
+
+- Updated policy metadata to facilitate scraping of incidents for Recommendations dashboard
+
 ## v4.4
 
 - Fixed error that prevented Cloud Workflow actions from completing as expected.

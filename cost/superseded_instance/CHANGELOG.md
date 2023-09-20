@@ -2,8 +2,13 @@
 
 ## v4.0
 
+- Corrected issue with policy not retrieving cost data on orgs using newer Azure bill connections
 - Added potential savings and cost information to raised incidents
 - General code modernization and clean-up
+
+## v3.1
+
+- Added check to determine if the instance has been upgraded or not
 
 ## v3.0
 

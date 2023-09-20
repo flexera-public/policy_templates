@@ -11,26 +11,24 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `enterprise_manager`
 
-- xe.com API Credential (*provider=xe*) - Please contact your Customer Support or Services representative to get this credential registered.
-
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ## Functional Details
 
 - This policy supports currency codes as per [ISO 4217](https://www.xe.com/iso4217.php), and uses the xe.com API to retrieve monthly average exchange rate.
-- This policy requires an API credential added to the tenant to use the xe.com API.
-- This policy supports three cloud providers: AWS, Azure and Google Cloud.
+- This policy supports four cloud providers natively: AWS, Azure, Google Cloud, and Oracle Cloud.
+- This policy also supports custom cloud provider names to handle specialized use cases.
 - This policy creates an adjustment rule for currency conversion using the exchange rate from xe.com.
-- This policy can be customized to suit user requirements, such as supporting vendors other than AWS, Azure and GCP.
 
 ### Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
-- *Cloud provider* - Cloud provider costs that you want to apply currency conversion to
+- *Email Addresses* - Email addresses of the recipients you wish to notify when currency conversion adjustment rules are updated.
+- *Cloud Provider* - Cloud provider costs that you want to apply currency conversion to. Select 'Other' to specify the name of a cloud provider manually.
+- *Cloud Provider Name* - Name of the cloud provider to apply currency conversion to. Only applicable if 'Other' is selected for Cloud Provider. This should correspond to the Cloud Vendor field in the Flexera One UI or the 'vendor' field in Optima.
 - *Currency From* - Currency you want to convert from (based on ISO 4217 codes - e.g., 'USD' for US Dollar)
 - *Currency To* - Currency you want to convert to (based on ISO 4217 codes - e.g., 'EUR' for Euro)
-- *Email addresses* - A list of email addresses to notify
 
 ## Supported Clouds
 

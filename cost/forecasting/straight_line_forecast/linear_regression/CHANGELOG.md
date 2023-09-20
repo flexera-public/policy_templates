@@ -1,5 +1,15 @@
 # Changelog
 
+## v3.3
+
+- Updated policy to take only top-level billing center costs
+- Fixed 'Vendor Account Name' option for `param_dimension`
+- Added 'Billing Center' as an option for `param_dimension`
+
+## v3.2
+
+- Updated indentation for chart url so it renders corrrectly in the policy incident email
+
 ## v3.1
 
 - Updated `js_generate_past_month_list` logic to fix bug where start date and end date clash when running policy at the end of January

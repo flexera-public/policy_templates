@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.13
+
+- Updated `param_tags_to_check` parameter to take a list of tag keys, as opposed to a list of tag key-value pairs
+- Updated tag logic to return 'Missing Tag Keys' as well as 'Tag Keys with Missing Tag Values' in incident
+
 ## v2.12
 
 - Replaced the term **whitelist** with **allowed list**.

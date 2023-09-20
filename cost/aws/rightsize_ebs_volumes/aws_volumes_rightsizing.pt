@@ -1,13 +1,13 @@
 name "AWS Rightsize EBS Volumes"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks cost inefficient EBS volumes. It finds GP2 volume types and recommending them for upgrade for GP3 if this provides cost savings. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ebs_volumes/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Checks for cost inefficient EBS volumes. This policy finds GP2 volume types and recommends them for an upgrade to GP3 if cost savings is present. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ebs_volumes/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "2.0",
+  version: "3.2",
   provider: "AWS",
   service: "EC2",
   policy_set: "Inefficient Disk Usage",
@@ -25,12 +25,19 @@ parameter "param_aws_account_number" do
   default ""
 end
 
+parameter "param_allowed_regions_allow_or_deny" do
+  type "string"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details"
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
 parameter "param_allowed_regions" do
   type "list"
-  label "Allowed Regions"
+  label "Regions"
   allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
-  description "A list of allowed regions. See the README for more details"
-  default []
+  description "A list of allowed or denied regions. See the README for more details"
 end
 
 parameter "param_exclusion_tag_key" do
@@ -141,6 +148,95 @@ datasource "ds_get_caller_identity" do
   end
 end
 
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+datasource "ds_top_level_billing_centers" do
+  run_script $js_top_level_bc, $ds_billing_centers
+end
+
+script "js_top_level_bc", type: "javascript" do
+  parameters "billing_centers"
+  result "filtered_billing_centers"
+  code <<-EOS
+  var filtered_billing_centers =
+    _.reject(billing_centers, function(bc){ return bc.parent_id != null });
+EOS
+end
+
+datasource "ds_account_name" do
+  request do
+    run_script $js_get_account_name, $ds_get_caller_identity, $ds_top_level_billing_centers, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "vendor_account_name", jmes_path(col_item, "dimensions.vendor_account_name")
+    end
+  end
+end
+
+script "js_get_account_name", type: "javascript" do
+  parameters "account_id", "billing_centers", "org", "optima_host"
+  result "request"
+  code <<-EOS
+    // returns date formatted as string: YYYY-mm-dd
+    function getFormattedDailyDate(date) {
+      var year = date.getFullYear();
+      var month = (1 + date.getMonth()).toString();
+      month = month.length > 1 ? month : '0' + month;
+      var day = date.getDate().toString();
+      day = day.length > 1 ? day : '0' + day;
+      return year + '-' + month + '-' + day;
+    }
+    var start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 3)));
+    var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)));
+    var request = {
+      auth: "auth_flexera",
+      host: optima_host,
+      verb: "POST",
+      path: "/bill-analysis/orgs/" + org + "/costs/select",
+      body_fields: {
+        "dimensions": ["vendor_account_name"],
+        "granularity": "day",
+        "start_at": start_date,
+        "end_at": end_date,
+        "metrics": ["cost_nonamortized_unblended_adj"],
+        "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id})),
+        "limit": 1,
+        "filter": {
+          "dimension": "vendor_account",
+          "type": "equal",
+          "value": account_id[0]["account"]
+        }
+      },
+      headers: {
+        "User-Agent": "RS Policies",
+        "Api-Version": "1.0"
+      },
+      ignore_status: [400]
+    }
+  EOS
+end
+
 # GET LIST OF OPTED-IN OR OPTED-IN-NOT-REQUIRED REGIONS
 datasource "ds_regions_list" do
   # https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeRegions.html
@@ -168,11 +264,11 @@ end
 
 #FILTER REGIONS LIST ON 'ALLOWED REGIONS' PARAMETER
 datasource "ds_regions" do
-  run_script $js_get_regions, $param_allowed_regions, $ds_regions_list
+  run_script $js_get_regions, $param_allowed_regions, $ds_regions_list, $param_allowed_regions_allow_or_deny
 end
 
 script "js_get_regions", type:"javascript" do
-  parameters "user_entered_regions", "all_regions"
+  parameters "user_entered_regions", "all_regions", "regions_allow_or_deny"
   result "regions"
   code <<-EOS
     if (_.isEmpty(user_entered_regions)) {
@@ -181,6 +277,12 @@ script "js_get_regions", type:"javascript" do
       //Filter unique regions
       var uniqueRegions = _.uniq(user_entered_regions);
       var all_regions_list = []
+      //Filter and remove denied regions from all_regions
+      if (regions_allow_or_deny == "Deny"){
+        var all_regions = all_regions.filter(function(obj){
+          return user_entered_regions.indexOf(obj.region) === -1;
+        });
+      }
       all_regions.forEach(function(all_region){
         all_regions_list.push(all_region.region)
       })
@@ -262,7 +364,7 @@ script "js_filter_volumes", type: "javascript" do
     var result = []
     _.each(ds_aws_ebs_volumes, function(vol){
       var tags = vol.tags
-      if ( !(_.contains(_.pluck(tags, 'key'), tag_key) 
+      if ( !(_.contains(_.pluck(tags, 'key'), tag_key)
       && _.contains(_.pluck(tags, 'value'), tag_value)) ) {
         result.push(vol)
       }
@@ -411,11 +513,11 @@ end
 
 #COMBINE EBS DATA WITH CLOUDWATCH DATA
 datasource "ds_combined_cloudwatch_data" do
-  run_script $js_combine_cloudwatch_data, $ds_cloudwatch_ebs_read_iops_usage, $ds_cloudwatch_ebs_write_iops_usage
+  run_script $js_combine_cloudwatch_data, $ds_cloudwatch_ebs_read_iops_usage, $ds_cloudwatch_ebs_write_iops_usage, $ds_account_name
 end
 
 script "js_combine_cloudwatch_data", type: "javascript" do
-  parameters "ds_cloudwatch_read_ops", "ds_cloudwatch_write_ops"
+  parameters "ds_cloudwatch_read_ops", "ds_cloudwatch_write_ops", "ds_account_name"
   result "period"
   code <<-EOS
 
@@ -424,6 +526,11 @@ script "js_combine_cloudwatch_data", type: "javascript" do
 
   //Calculate Average Read Ops and Average Write Ops over period
   period = []
+
+  accountName = ""
+  if (ds_account_name[0] != null) {
+    accountName = ds_account_name[0]['vendor_account_name']
+  }
 
   _.each(volumes, function(volume_id){
     //console.log("Volume ID: ", volume_id)
@@ -437,7 +544,7 @@ script "js_combine_cloudwatch_data", type: "javascript" do
       //console.log("this is a null array for datapoints")
     } else {
       _.each(vol_read_data.datapoints, function(datapoint){
-        total_read_ops += datapoint.readOpsSum 
+        total_read_ops += datapoint.readOpsSum
         total_read_data_points += datapoint.readOpsSampleCount
       })
       //console.log("this is an array exists for datapoints")
@@ -448,11 +555,11 @@ script "js_combine_cloudwatch_data", type: "javascript" do
       data_message.push({ "message": "No CloudWatch Write Operations data." })
     } else {
       _.each(vol_write_data.datapoints, function(datapoint){
-        total_write_ops += datapoint.writeOpsSum 
+        total_write_ops += datapoint.writeOpsSum
         total_write_data_points += datapoint.writeOpsSampleCount
       })
     }
-    
+
     var iops_average = 0
     var iops_utilization_percentage = 0
     if(vol_read_data.datapoints.length > 0){
@@ -460,11 +567,13 @@ script "js_combine_cloudwatch_data", type: "javascript" do
       iops_utilization_percentage = ((iops_average / ( vol_read_data.iops )) * 100).toFixed(2)
     }
 
-    //Create string for Tags
-    var existing_tags = ""
+    var resourceName = "";
+    var existing_tags = []
     _.each( vol_read_data.tags, function(tag){
-      if( existing_tags == "" ){ existing_tags += tag.key + "=" + tag.value } 
-      else{ existing_tags += ", " + tag.key + "=" + tag.value }
+      if (tag.key == "Name") {
+        resourceName = tag.value
+      }
+      existing_tags.push(tag.key + "=" + tag.value)
     })
 
     //Create string for Attachment Set Statuses
@@ -482,6 +591,7 @@ script "js_combine_cloudwatch_data", type: "javascript" do
     })
 
     period.push({
+      "accountName": accountName,
       "volumeId": volume_id,
       "region": vol_read_data.region,
       "size": vol_read_data.size,
@@ -490,10 +600,12 @@ script "js_combine_cloudwatch_data", type: "javascript" do
       "volumeType": vol_read_data.volumeType,
       "iops": vol_read_data.iops,
       "throughput": vol_read_data.throughput,
-      "iopsAverage": iops_average,
+      "iopsAverage": Math.round(iops_average*100)/100,
       "iopsUtilizationPercentage": iops_utilization_percentage,
       "tags": existing_tags,
-      "cloudwatchDataWarning": cloudwatch_data_message
+      "resourceName": resourceName,
+      "cloudwatchDataWarning": cloudwatch_data_message,
+      "lookbackPeriod": "30 days",
     })
   })
 
@@ -525,7 +637,7 @@ script "js_get_gp2_costs", type: "javascript" do
       "MaxResults": 100,
       "ServiceCode": "AmazonEC2"
     }
-    
+
     request = {
       "auth": "auth_aws",
       "host": "api.pricing.us-east-1.amazonaws.com",
@@ -540,7 +652,7 @@ script "js_get_gp2_costs", type: "javascript" do
       "body_fields": body
     }
   EOS
-end 
+end
 
 datasource "ds_gp3_costs" do
   request do
@@ -590,24 +702,24 @@ end
 script "js_add_costs_to_disk_util_data", type: "javascript" do
   parameters "ds_gp2_costs", "ds_gp3_costs", "ds_combined_cloudwatch_data"
   result "result"
-  code <<-'EOS'
+  code <<-EOS
 
     //Convert AWS's mess to actual JSON
     gp2_pricelist = []
     _.each(ds_gp2_costs.PriceList, function(price){
-      gp2_pricelist.push( JSON.parse(price.replace(/\\"/g,"'")) )
+      gp2_pricelist.push( JSON.parse(price.replace(/\\"/g,'"')) )
     })
     console.log(gp2_pricelist)
 
     gp3_pricelist = []
     _.each(ds_gp3_costs.PriceList, function(price){
-      gp3_pricelist.push( JSON.parse(price.replace(/\\"/g,"'")))
+      gp3_pricelist.push( JSON.parse(price.replace(/\\"/g,'"')))
     })
 
     //Add monthly saving to volume (IF volume type is GP2) where volume type and region matches
     _.each(ds_combined_cloudwatch_data, function(data){
       if( data.volumeType == "gp2"){
-        
+
         //Matching gp2 pricing
         var matching_gp2_pricing = _.find(gp2_pricelist, function(price){
           return ( price.product.attributes.regionCode == data.region )
@@ -621,7 +733,7 @@ script "js_add_costs_to_disk_util_data", type: "javascript" do
             _.each(price_dimensions, function(pd){
               var gp2_storage = 0
               if( data.size != "" ){ gp2_storage = Number(data.size) }
-              monthly_gp2_price = 
+              monthly_gp2_price =
                 (gp2_storage * Number(matching_gp2_pricing.terms.OnDemand[od].priceDimensions[pd].pricePerUnit.USD))
             })
           })
@@ -636,7 +748,7 @@ script "js_add_costs_to_disk_util_data", type: "javascript" do
         var monthly_gp3_price = 0
         if( matching_gp3_pricing != null ){
           _.each(matching_gp3_pricing, function(price_type){
-            
+
             //Charge per IOPS
             if(price_type.product.productFamily == "System Operation"){
               var on_demand_codes = _.keys(price_type.terms.OnDemand)
@@ -646,7 +758,7 @@ script "js_add_costs_to_disk_util_data", type: "javascript" do
                   var iops = 3000
                   if( data.iops != "" && Number(data.iops) >= 3000 ){ iops = Number(data.iops) }
                   console.log("iops: ", iops)
-                  monthly_gp3_price += 
+                  monthly_gp3_price +=
                     ((iops - 3000) * Number(price_type.terms.OnDemand[od].priceDimensions[pd].pricePerUnit.USD))
                 })
               })
@@ -660,7 +772,7 @@ script "js_add_costs_to_disk_util_data", type: "javascript" do
                   var throughput = 125
                   if( data.throughput != "" && Number(data.throughput) >= 125 ){ throughput = Number(data.throughput) }
                   console.log("throughput: ", throughput)
-                  monthly_gp3_price += 
+                  monthly_gp3_price +=
                     ((throughput - 125) * Number(price_type.terms.OnDemand[od].priceDimensions[pd].pricePerUnit.USD))
                 })
               })
@@ -674,7 +786,7 @@ script "js_add_costs_to_disk_util_data", type: "javascript" do
                   var storage = 0
                   if( data.size != "" ){ storage = Number(data.size)}
                   console.log("storage :", storage)
-                  monthly_gp3_price += 
+                  monthly_gp3_price +=
                     (storage * Number(price_type.terms.OnDemand[od].priceDimensions[pd].pricePerUnit.USD))
                 })
               })
@@ -713,6 +825,7 @@ script "js_filter_disk_utilization_data", type: "javascript" do
     //Add Account ID
     _.each(data, function(vol){
       vol["accountID"] = ds_get_caller_identity[0].account
+      vol["service"] = "AmazonEC2"
       console.log("Account ID:", vol.accountID)
     })
 
@@ -756,7 +869,7 @@ script "js_filter_disk_utilization_data", type: "javascript" do
     var savings_amount_str = _.pluck(data, "savings")
     var savings_amount = []
     _.each(savings_amount_str, function(sav){
-      if (sav == null || sav == undefined){ 
+      if (sav == null || sav == undefined){
         sav = 0
         savings_amount.push(sav)
       } else {
@@ -766,7 +879,7 @@ script "js_filter_disk_utilization_data", type: "javascript" do
     })
     console.log(savings_amount)
 
-    var total_gp2_gp3_savings = _.reduce(savings_amount, function(mem, num){ 
+    var total_gp2_gp3_savings = _.reduce(savings_amount, function(mem, num){
       console.log("Savings Moving to GP3 volume type: ", mem)
       //if (Number(mem.savings) == null){
       //  mem.savings = 0
@@ -785,7 +898,7 @@ script "js_filter_disk_utilization_data", type: "javascript" do
     }
     console.log(summary_data)
 
-    
+
     if (_.size(data) > 0) {
       data[0]["summaryData"] = summary_data
     } else {
@@ -825,7 +938,10 @@ policy "pol_utilization" do
       field "accountID" do
         label "Account ID"
       end
-      field "id" do
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
         label "Volume ID"
         path "volumeId"
       end
@@ -835,15 +951,23 @@ policy "pol_utilization" do
       field "region" do
         label "Region"
       end
-      field "status" do
+      field "state" do
         label "Volume Status"
+        path "status"
       end
       field "attachmentStatus" do
         label "Volume Attachment Status"
         path "attachmentStatus"
       end
-      field "volumeType" do
+      field "resourceType" do
         label "Volume Type"
+        path "volumeType"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "iopsAverage" do
+        label "IOPS Average %"
       end
       field "gp2Price" do
         label "Monthly Cost"
@@ -857,8 +981,18 @@ policy "pol_utilization" do
       field "tags" do
         label "Tags"
       end
+      field "service" do
+        label "Service"
+      end
       field "cloudwatchDataWarning" do
         label "CloudWatch Data Warning"
+      end
+      field "lookbackPeriod" do
+        label "Lookback Period"
+      end
+      field "id" do
+        label "ID"
+        path "volumeId"
       end
     end
   end

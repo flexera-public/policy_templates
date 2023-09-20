@@ -1,5 +1,44 @@
 # Changelog
 
+## v6.2
+
+Refactored the Delete IP Address Action to use updated Azure APIs, improve debugging, and error handling
+
+## v6.1
+
+- Corrected issue with policy not retrieving cost data on orgs using newer Azure bill connections
+
+## v6.0
+
+- Several parameters altered to be more descriptive and human-readable
+- Removed deprecated "Log to CM Audit Entries" parameter
+- Added ability to specify how long an IP address should be unattached to consider it unused
+- Added ability to filter resources by multiple tag key:value pairs
+- Added additional context to incident description
+- Normalized incident export to be consistent with other policies
+- Added human-readable recommendation to incident export
+- Added additional fields to incident export to facilitate scraping for dashboards
+- Policy no longer raises new escalations if savings data changed but nothing else has
+- Streamlined code for better readability and faster execution
+
+## v5.0
+
+- Renamed Subscription List parameter for consistency and accuracy
+- Added logic required for "Meta Policy" use-cases
+- Fixed issue with incident not properly including messaging
+
+## v4.7
+
+- Fixed an issue causing some incidents to raise an error instead of populating correctly
+
+## v4.6
+
+- New escalations are no longer created if Estimated Monthly Savings or Savings Currency have changed, but nothing else has
+
+## v4.5
+
+- Updated policy metadata to facilitate scraping of incidents for Recommendations dashboard
+
 ## v4.4
 
 - Raised API limit to handle situations where more than 10,000 line items need to be retrieved.

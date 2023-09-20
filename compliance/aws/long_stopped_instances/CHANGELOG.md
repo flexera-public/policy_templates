@@ -1,5 +1,14 @@
 # Changelog
 
+## v4.0
+
+- Added logic required for "Meta Policy" use-cases
+- Updated template and readme to reflect addition of `auth_flexera`
+
+## v3.0
+
+- Added parameter to enable Allow or Deny filtering by user entered regions
+
 ## v2.9
 
 - Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM

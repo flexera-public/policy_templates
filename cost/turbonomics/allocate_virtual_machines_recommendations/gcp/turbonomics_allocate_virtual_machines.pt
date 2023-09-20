@@ -1,18 +1,17 @@
-name "Turbonomic Allocate Virtual Machine Recommendations GCP"
+name "Turbonomic Allocate Virtual Machine Recommendations Google"
 rs_pt_ver 20180301
 type "policy"
-short_description "Turbonomic policy for allocating RI coverage for virtual machines [README](https://github.com/flexera-public/policy_templates/tree/master/cost/turbonomics/allocate_virtual_machines_recommendations/gcp) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Turbonomic policy for allocating RI coverage for virtual machines [README](https://github.com/flexera-public/policy_templates/tree/master/cost/turbonomics/allocate_virtual_machines_recommendations/google) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.1",
-  provider: "GCP",
+  version: "2.3",
+  provider: "Google",
   source: "Turbonomic",
   service: "Compute",
   policy_set: "Allocate VMs",
-  recommendation_type: "Rate Reduction",
-  publish: "false"
+  recommendation_type: "Rate Reduction"
 )
 
 ##################
@@ -74,7 +73,7 @@ datasource "ds_get_turbonomics_recommendations" do
       field "resourceGroup", jmes_path(col_item, "target.aspects.cloudAspect.resourceGroup.displayName")
       field "resourceName", jmes_path(col_item, "target.displayName")
       field "region", jmes_path(col_item, "currentLocation.displayName")
-      field "resourceType", jmes_path(col_item, "currentEntity.displayName")
+      field "resourceType", jmes_path(col_item, "template.displayName")
       field "provider", jmes_path(col_item, "target.discoveredBy.type")
       field "details", jmes_path(col_item, "details")
       field "tags", jmes_path(col_item, "target.tags")
@@ -219,11 +218,34 @@ script "js_filtered_turbonomics_recommendations", type: "javascript" do
     return result+"."+values[1]
     }
 
+    function propertyExists(prop) {
+      return typeof prop !== "undefined" && prop !== null
+    }
+
+    function calculateCoverage(cov) {
+      return (cov.value * 100 / cov.capacity.avg).toFixed(2)
+    }
+
     Object.keys(ds_get_action_details.uuids).forEach(function(uuid) {
       _.each(ds_get_turbonomics_recommendations, function(vm, index){
         if (vm.uuid === uuid) {
-          ds_get_turbonomics_recommendations[index].riCoverageBefore = ds_get_action_details.uuids[uuid].riCoverageBefore.value
-          ds_get_turbonomics_recommendations[index].riCoverageAfter = ds_get_action_details.uuids[uuid].riCoverageAfter.value
+          if ( propertyExists(ds_get_action_details.uuids[uuid].riCoverageBefore.capacity)
+            && propertyExists(ds_get_action_details.uuids[uuid].riCoverageBefore.capacity.avg)
+            && propertyExists(ds_get_action_details.uuids[uuid].riCoverageBefore.value)
+          ) {
+            ds_get_turbonomics_recommendations[index].riCoverageBefore = calculateCoverage(ds_get_action_details.uuids[uuid].riCoverageBefore)
+          } else {
+            ds_get_turbonomics_recommendations[index].riCoverageBefore = 0
+          }
+
+          if ( propertyExists(ds_get_action_details.uuids[uuid].riCoverageAfter.capacity)
+            && propertyExists(ds_get_action_details.uuids[uuid].riCoverageAfter.capacity.avg)
+            && propertyExists(ds_get_action_details.uuids[uuid].riCoverageAfter.value)
+          ) {
+            ds_get_turbonomics_recommendations[index].riCoverageAfter = calculateCoverage(ds_get_action_details.uuids[uuid].riCoverageAfter)
+          } else {
+            ds_get_turbonomics_recommendations[index].riCoverageAfter = 0
+          }
         }
       })
     })
@@ -261,9 +283,6 @@ script "js_filtered_turbonomics_recommendations", type: "javascript" do
           return
         });
 
-        if (typeof vm.riCoverageBefore === "undefined" || vm.riCoverageBefore === null){
-          vm.riCoverageBefore = 0
-        }
         vm.service = "Compute"
         savingsString = ""
         if (typeof vm.savings === "undefined" || vm.savings === null || vm.savings === "" || isNaN(vm.savings)) {
