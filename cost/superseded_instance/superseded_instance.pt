@@ -207,80 +207,61 @@ script "js_currency", type:"javascript" do
 EOS
 end
 
-datasource "ds_costs_time_periods" do
-  run_script $js_costs_time_periods, rs_org_id, rs_optima_host, $ds_billing_centers
+datasource "ds_optima_dates" do
+  run_script $js_optima_dates
 end
 
-script "js_costs_time_periods", type: "javascript" do
-  parameters "rs_org_id", "rs_optima_host", "ds_billing_centers"
-  result "results"
+script "js_optima_dates", type:"javascript" do
+  result "result"
   code <<-EOS
-    // Get todays date
-    var date = new Date()
-    var results = []
-
-    // Setup time periods for collecting costs
-    var date = new Date()
-    var thirtyDaysAgo = new Date(date.getFullYear(), date.getMonth() - 1, date.getDate())
-    var sevenDaysAgo = new Date(date.getFullYear(), date.getMonth(), date.getDate() - 7)
-    var timePeriods = [thirtyDaysAgo, sevenDaysAgo]
-
-    // For each time period, push the items
-    _.each(timePeriods, function(date) {
-      // Make sure we get at least a month worth of costs
-      var year = date.getUTCFullYear()
-      var month =  (date.getUTCMonth()==11)?1:2 + date.getUTCMonth()
-
-      if (month == 1) {
-        var lmonth = 12
-        var lyear = year
-        year=year+1
-      } else {
-        var lmonth = month - 1
-        var lyear = year
-      }
-
-      mo = month.toString().length > 1 ? month : '0' + month
-      lmo = lmonth.toString().length > 1 ? lmonth : '0' + lmonth
-      var next_month = year + "-" + mo
-      var current_month = lyear + "-" + lmo
-
-      results.push({
-        "next_month": next_month,
-        "current_month": current_month
-      })
-    })
-  EOS
+  result = [
+    { days_back: 0 },
+    { days_back: 7 },
+    { days_back: 14 },
+    { days_back: 21 },
+    { days_back: 28 }
+  ]
+EOS
 end
 
 datasource "ds_new_bc_costs" do
-iterate $ds_costs_time_periods
-request do
-  run_script $js_new_costs_request, val(iter_item, "next_month"), val(iter_item, "current_month"), rs_org_id, $ds_billing_centers, $param_billing_centers, rs_optima_host, $ds_costs_time_periods
-end
-result do
-  encoding "json"
-  collect jmes_path(response, "rows[*]") do
-    field "vendor", jmes_path(col_item, "dimensions.vendor")
-    field "vendor_account", jmes_path(col_item, "dimensions.vendor_account")
-    field "vendor_account_name", jmes_path(col_item, "dimensions.vendor_account_name")
-    field "resource_group", jmes_path(col_item, "dimensions.resource_group")
-    field "operating_system", jmes_path(col_item, "dimensions.operating_system")
-    field "resource_type", jmes_path(col_item, "dimensions.resource_type")
-    field "service", jmes_path(col_item, "dimensions.service")
-    field "cost_amortized_unblended_adj", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
-    field "region", jmes_path(col_item, "dimensions.region")
-    field "instance_type", jmes_path(col_item, "dimensions.instance_type")
-    field "billing_center_id", jmes_path(col_item, "dimensions.billing_center_id")
-    field "resource_id", jmes_path(col_item, "dimensions.resource_id")
+  iterate $ds_optima_dates
+  request do
+    run_script $js_new_bc_costs, val(iter_item, 'days_back'), rs_org_id, $ds_billing_centers, $param_billing_centers, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "vendor", jmes_path(col_item, "dimensions.vendor")
+      field "vendor_account", jmes_path(col_item, "dimensions.vendor_account")
+      field "vendor_account_name", jmes_path(col_item, "dimensions.vendor_account_name")
+      field "resource_group", jmes_path(col_item, "dimensions.resource_group")
+      field "operating_system", jmes_path(col_item, "dimensions.operating_system")
+      field "resource_type", jmes_path(col_item, "dimensions.resource_type")
+      field "service", jmes_path(col_item, "dimensions.service")
+      field "cost_amortized_unblended_adj", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+      field "region", jmes_path(col_item, "dimensions.region")
+      field "instance_type", jmes_path(col_item, "dimensions.instance_type")
+      field "billing_center_id", jmes_path(col_item, "dimensions.billing_center_id")
+      field "resource_id", jmes_path(col_item, "dimensions.resource_id")
+      field "days_back", val(iter_item, "days_back")
+    end
   end
 end
-end
 
-script "js_new_costs_request", type: "javascript" do
-  parameters "next_month", "current_month", "org_id", "ds_billing_centers", "param_billing_centers", "rs_optima_host", "ds_costs_time_periods"
+script "js_new_bc_costs", type: "javascript" do
+  parameters "days_back", "org_id", "ds_billing_centers", "param_billing_centers", "rs_optima_host"
   result "request"
   code <<-EOS
+  //Get Start and End dates
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3 - days_back)
+  start_date = start_date.toISOString().split("T")[0]
+
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2 - days_back)
+  end_date = end_date.toISOString().split("T")[0]
+
   billing_center_ids = []
 
   if (param_billing_centers.length === 0) {
@@ -309,15 +290,15 @@ script "js_new_costs_request", type: "javascript" do
 
   expression = [
     {"type" : "and", "expressions" : [
+      azure_service_expression,
       {"dimension":"category","type":"equal","value":"Compute"},
       {"dimension":"vendor","type":"equal","value":"Azure"},
-      azure_service_expression,
       {"dimension":"resource_type","type":"substring","substring":"Virtual Machines"}
     ]},
     {"type" : "and", "expressions" : [
+      azure_service_expression,
       {"dimension":"category","type":"equal","value":"Compute"},
       {"dimension":"vendor","type":"equal","value":"AzureCSP"},
-      azure_service_expression,
       {"dimension":"resource_type","type":"substring","substring":"Virtual Machines"}
     ]},
     {"type" : "and", "expressions" : [
@@ -326,15 +307,15 @@ script "js_new_costs_request", type: "javascript" do
       {"dimension":"vendor","type":"equal","value":"AWS"}
     ]},
     {"type" : "and", "expressions" : [
+      azure_service_expression,
       {"dimension":"category","type":"equal","value":"Compute"},
       {"dimension":"vendor","type":"equal","value":"AzureMCA-Enterprise"},
-      azure_service_expression,
       {"dimension":"resource_type","type":"substring","substring":"Virtual Machines"}
     ]},
       {"type" : "and", "expressions" : [
+        azure_service_expression,
       {"dimension":"category","type":"equal","value":"Compute"},
       {"dimension":"vendor","type":"equal","value":"AzureMCA-CSP"},
-      azure_service_expression,
       {"dimension":"resource_type","type":"substring","substring":"Virtual Machines"}
     ]},
     {"type" : "and", "expressions" : [
@@ -352,10 +333,10 @@ script "js_new_costs_request", type: "javascript" do
     body_fields: {
       "billing_center_ids": billing_center_ids,
       "dimensions": dimensions,
-      "metrics": ["usage_amount", "cost_amortized_unblended_adj"],
-      "granularity": "month",
-      "start_at": current_month,
-      "end_at": next_month,
+      "metrics": ["cost_amortized_unblended_adj"],
+      "granularity": "day",
+      "start_at": start_date,
+      "end_at": end_date,
       "limit": 100000,
       "filter": {
         "type": "or",
@@ -420,39 +401,52 @@ script "js_format_costs", type: "javascript" do
   parameters "new_bc_costs", "ds_billing_centers"
   result "result"
   code <<-EOS
-  date = new Date()
-  today = date.getDate()
-  numdays = new Date(date.getUTCFullYear(), date.getUTCMonth(), 0).getDate()
-  monthcomplete = today / numdays
-
   bc_object = {}
 
   _.each(ds_billing_centers, function(bc) {
     bc_object[bc['id']] = bc['name']
   })
 
-  result = []
+  instances = {}
 
   _.each(new_bc_costs, function(cost) {
-    run_rate = cost['cost_amortized_unblended_adj'] / monthcomplete
+    id = cost['resource_id']
 
-    if (cost['cost_amortized_unblended_adj'] != 0) {
-      result.push({
-        billing_center: bc_object[cost['id']],
-        id: cost['id'],
-        vendor: cost['vendor'],
-        vendor_account: cost['vendor_account'],
-        vendor_account_name: cost['vendor_account_name'],
-        resource_group: cost['resource_group'],
-        operating_system: cost['operating_system'],
-        resource_type: cost['resource_type'],
-        region: cost['region'],
-        service: cost['service'],
-        instance_type: cost['instance_type'],
-        resource_id: cost['resource_id'],
-        run_rate: parseFloat(run_rate).toFixed(2),
-      })
+    if (instances[id] == undefined) {
+      instances[id] = {}
     }
+
+    instances[id]['billing_center'] = bc_object[cost['billing_center_id']]
+    instances[id]['id'] = cost['id']
+    instances[id]['vendor'] = cost['vendor']
+    instances[id]['vendor_account'] = cost['vendor_account']
+    instances[id]['vendor_account_name'] = cost['vendor_account_name']
+    instances[id]['resource_group'] = cost['resource_group']
+    instances[id]['operating_system'] = cost['operating_system']
+    instances[id]['resource_type'] = cost['resource_type']
+    instances[id]['region'] = cost['region']
+    instances[id]['service'] = cost['service']
+    instances[id]['resource_id'] = cost['resource_id']
+
+    if (instances[id]['instance_type'] == undefined) {
+      instances[id]['instance_type'] = {}
+    }
+
+    instances[id]['instance_type'][cost['days_back']] = cost['instance_type']
+
+    if (cost['days_back'] == 0) {
+      if (instances[id]['run_rate'] == undefined || instances[id]['run_rate'] == null) {
+        instances[id]['run_rate'] = 0
+      }
+
+      instances[id]['run_rate'] += cost['cost_amortized_unblended_adj'] * 365.25 / 12
+    }
+  })
+
+  result = []
+
+  _.each(Object.keys(instances), function(key) {
+    result.push(instances[key])
   })
 EOS
 end
@@ -513,40 +507,34 @@ script "js_combined_instance_data", type: "javascript" do
   var superseded_instance_map = _.extend(ds_aws_instance_size_map, ds_azure_instance_size_map, ds_google_instance_size_map)
   var cost_map = { "AWS": ds_aws_instance_cost_map, "Azure": ds_azure_instance_cost_map }
 
-  function formatNumber(number, separator) {
-    var numString = number.toString()
-    var values=numString.split(".")
-    var formatted_result = ''
-
-    while (values[0].length > 3) {
-      var chunk = values[0].substr(-3)
-      values[0] = values[0].substr(0, values[0].length - 3)
-      formatted_result = separator + chunk + formatted_result
-    }
-
-    if (values[0].length > 0) {
-      formatted_result = values[0] + formatted_result
-    }
-
-    if (values[1] == undefined) {
-      return formatted_result
-    }
-
-    return formatted_result + "." + values[1]
-  }
-
   total_savings = 0
 
   // for loop instead of _.each() so that continue statements function as expected
   for (var i = 0; i < ds_format_costs.length; i++) {
     instance = ds_format_costs[i]
 
-    var vendor = instance['vendor']
-    var region = instance['region']
-    var instance_type = instance['instance_type']
-    var operating_system = instance['operating_system']
+    vendor = instance['vendor']
+    region = instance['region']
+    operating_system = instance['operating_system']
+    instance_type = instance['instance_type'][0]
+    instance_type_new = instance['instance_type'][0]
+    instance_type_old = instance['instance_type'][28]
 
-    if (instance_type == "None") { continue }
+    if (instance_type_old == null || instance_type_old == undefined) {
+      instance_type_old = instance['instance_type'][21]
+    }
+
+    if (instance_type_old == null || instance_type_old == undefined) {
+      instance_type_old = instance['instance_type'][14]
+    }
+
+    if (instance_type_old == null || instance_type_old == undefined) {
+      instance_type_old = instance['instance_type'][7]
+    }
+
+    if (instance_type == "None" || instance_type == undefined || instance_type == null) {
+      continue
+    }
 
     if (vendor == "AWS") {
       region_code = ds_aws_region_map[region]
@@ -625,6 +613,8 @@ script "js_combined_instance_data", type: "javascript" do
         new_list_price *= ds_currency['exchange_rate']
         estimated_monthly_savings *= ds_currency['exchange_rate']
 
+        instance_size_changed = instance_type_old != null && instance_type_old != undefined && instance_type_new != null && instance_type_new != undefined && instance_type_new != instance_type_old
+
         if ((estimated_monthly_savings != null && estimated_monthly_savings >= param_min_savings) || param_min_savings == 0) {
           result.push({
             billing_center: instance['billing_center'],
@@ -637,7 +627,7 @@ script "js_combined_instance_data", type: "javascript" do
             operating_system: operating_system,
             instance_type: instance_type,
             new_instance_type: new_instance_type,
-            instance_size_changed: instance_type == new_instance_type,
+            instance_size_changed: instance_size_changed,
             resourceID: instance['resource_id'],
             resourceType: instance['resource_type'],
             run_rate: instance['run_rate'],
@@ -673,7 +663,7 @@ script "js_combined_instance_data", type: "javascript" do
     api_disclaimer = "\n\nSavings values are in USD due to a malfunction with Flexera's internal currency conversion API. Please contact Flexera support to report this issue."
   }
 
-  result[0]['message'] = "Total Potential Savings: " + cur + total_savings.toFixed(2) + api_disclaimer
+  result[0]['message'] = "Total Potential Savings: " + ds_currency['code'] + total_savings.toFixed(2) + api_disclaimer
 EOS
 end
 
@@ -687,7 +677,7 @@ policy "pol_superseded_instance" do
     detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
     check eq(val(item, "resourceID"), "")
     escalate $esc_email
-    hash_exclude "old_price", "new_price", "savings", "savingsCurrency", "policy_name", "message"
+    hash_exclude "run_rate", "old_price", "new_price", "savings", "savingsCurrency", "policy_name", "message"
     export do
       resource_level false
       field "vendor" do
@@ -727,7 +717,7 @@ policy "pol_superseded_instance" do
         label "New Instance Type"
       end
       field "instance_size_changed" do
-        label "Instance Has Been Adjusted"
+        label "Instance Resized in Last 30 Days"
       end
       field "vpc_incompatible_move" do
         label "VPC Required"
