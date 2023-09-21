@@ -618,7 +618,6 @@ script "js_instance_costs_grouped", type: "javascript" do
     result[id]['operating_system'] = item['operating_system']
     result[id]['billing_center'] = bc_object[item['billing_center_id']]
     result[id]['purchase_option'] = item['purchase_option']
-    result[id]['service'] = item['service']
   })
 EOS
 end
@@ -665,14 +664,12 @@ script "js_superseded_instances", type: "javascript" do
     operating_system = null
     billing_center = null
     purchase_option = null
-    service = null
 
-    if (ds_instance_costs_grouped['id'] != undefined) {
-      cost = ds_instance_costs_grouped['id']['cost']
-      operating_system = ds_instance_costs_grouped['id']['operating_system']
-      billing_center = ds_instance_costs_grouped['id']['billing_center']
-      purchase_option = ds_instance_costs_grouped['id']['purchase_option']
-      service = ds_instance_costs_grouped['id']['service']
+    if (ds_instance_costs_grouped[id] != undefined) {
+      cost = ds_instance_costs_grouped[id]['cost']
+      operating_system = ds_instance_costs_grouped[id]['operating_system']
+      billing_center = ds_instance_costs_grouped[id]['billing_center']
+      purchase_option = ds_instance_costs_grouped[id]['purchase_option']
     }
 
     type_table = {
@@ -695,14 +692,23 @@ script "js_superseded_instances", type: "javascript" do
     if (typeof(superseded_type) == 'string' && typeof(operating_system) == 'string') {
       if (ds_aws_instance_cost_map[instance['region']] != undefined) {
         instance_type_cost_map = ds_aws_instance_cost_map[instance['region']][instance_type]
-        superseded_type_cost_map = ds_aws_instance_cost_map[instance['region']][superseded_type]
 
         if (instance_type_cost_map != undefined) {
-          instance_type_price = instance_type_cost_map[operating_system]
+          instance_type_price_map = instance_type_cost_map[operating_system]
         }
 
+        if (instance_type_price_map != undefined) {
+          instance_type_price = instance_type_price_map['pricePerUnit']
+        }
+
+        superseded_type_cost_map = ds_aws_instance_cost_map[instance['region']][superseded_type]
+
         if (superseded_type_cost_map != undefined) {
-          superseded_type_price = superseded_type_cost_map[operating_system]
+          superseded_type_price_map = superseded_type_cost_map[operating_system]
+        }
+
+        if (superseded_type_price_map != undefined) {
+          superseded_type_price = superseded_type_price_map['pricePerUnit']
         }
       }
     }
@@ -731,15 +737,15 @@ script "js_superseded_instances", type: "javascript" do
 
       savings = parseFloat(savings.toFixed(3))
 
-      if (cost != null) {
+      if (typeof(cost) == 'number') {
         cost = parseFloat(cost.toFixed(3))
       }
 
-      if (instance_type_price != null) {
+      if (typeof(instance_type_price) == 'number') {
         instance_type_price = parseFloat(instance_type_price.toFixed(3))
       }
 
-      if (superseded_type_price != null) {
+      if (typeof(superseded_type_price) == 'number') {
         superseded_type_price = parseFloat(superseded_type_price.toFixed(3))
       }
 
@@ -749,7 +755,7 @@ script "js_superseded_instances", type: "javascript" do
         "(", ds_aws_account['id'], ") ",
         "from ", instance["resourceType"], " ",
         "to ", superseded_type
-      ]
+      ].join('')
 
       hostname = null
 
@@ -767,10 +773,10 @@ script "js_superseded_instances", type: "javascript" do
         platform: instance['platform'],
         privateDnsName: instance['privateDnsName'],
         launchTime: instance['launchTime'],
-        operating_system: operating_system,
+        osType: operating_system,
         billing_center: billing_center,
         purchase_option: purchase_option,
-        service: service,
+        service: "AmazonEC2",
         tags: tags.join(', '),
         accountID: ds_aws_account['id'],
         accountName: ds_aws_account['name'],
@@ -802,7 +808,7 @@ script "js_superseded_instances", type: "javascript" do
 
   total_instances = ds_instances.length.toString()
   total_superseded = result.length.toString()
-  superseded_percentage = (total_instances / total_superseded * 100).toFixed(2)
+  superseded_percentage = (total_superseded / total_instances * 100).toFixed(2).toString() + '%'
 
   instance_noun = "instance"
   if (total_instances.length > 1) { instance_noun = "instances" }
@@ -836,7 +842,7 @@ script "js_superseded_instances", type: "javascript" do
     region: "",                 resourceID: "",               ipAddress: "",
     ipv6Address: "",            imageId: "",                  resourceType: "",
     platform: "",               privateDnsName: "",           launchTime: "",
-    operating_system: "",       billing_center: "",           purchase_option: "",
+    osType: "",                 billing_center: "",           purchase_option: "",
     service: "",                tags: "",                     accountID: "",
     accountName: "",            hostname: "",                 recommendationDetails: "",
     newResourceType: "",        resourceName: "",             cost: "",
@@ -900,6 +906,9 @@ policy "pol_utilization" do
       end
       field "platform" do
         label "Platform"
+      end
+      field "osType" do
+        label "Operating System"
       end
       field "hostname" do
         label "Hostname"
