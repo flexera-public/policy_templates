@@ -164,6 +164,7 @@ script "js_broken_bill_uploads", type: "javascript" do
       })
     }
 
+    // Make sure we ignore any bill uploads that aren't actually in-progress
     return broken_files && bill_upload['status'] == 'in-progress'
   })
 EOS
@@ -177,12 +178,6 @@ datasource "ds_abort_broken_uploads" do
   result do
     encoding "json"
     field "id", jmes_path(response, "id")
-    field "billConnectId", jmes_path(response, "billConnectId")
-    field "billingPeriod", jmes_path(response, "billingPeriod")
-    field "createdAt", jmes_path(response, "createdAt")
-    field "files", jmes_path(response, "files")
-    field "status", jmes_path(response, "status")
-    field "updatedAt", jmes_path(response, "updatedAt")
   end
 end
 
@@ -213,15 +208,15 @@ end
 # Broken bill uploads aborted above are not considered in-progress.
 # Otherwise, it contains a single item for the next datasource to iterate over.
 datasource "ds_bill_upload_check" do
-  run_script $js_bill_upload_check, $ds_existing_bill_uploads, $ds_broken_bill_uploads, $ds_abort_broken_uploads
+  run_script $js_bill_upload_check, $ds_existing_bill_uploads, $ds_abort_broken_uploads
 end
 
 script "js_bill_upload_check", type: "javascript" do
-  parameters "ds_existing_bill_uploads", "ds_broken_bill_uploads", "ds_abort_broken_uploads"
+  parameters "ds_existing_bill_uploads", "ds_abort_broken_uploads"
   result "result"
   code <<-EOS
   result = [1]
-  broken_upload_ids = _.pluck(ds_broken_bill_uploads, 'id')
+  broken_upload_ids = _.pluck(ds_abort_broken_uploads, 'id')
 
   in_progress_uploads = _.filter(ds_existing_bill_uploads, function(bill_upload) {
     return bill_upload['status'] == 'in-progress' && _.contains(broken_upload_ids, bill_upload['id']) == false
