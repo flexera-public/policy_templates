@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "6.1",
+  version: "7.0",
   provider: "Azure",
   service: "Storage",
   policy_set: "Unused Volumes",
@@ -48,9 +48,28 @@ parameter "param_minimum_age" do
   type "number"
   category "Policy Settings"
   label "Minimum Age (Days)"
-  description "The minimum age, in days, since a volume was created to produce recommendations for it. Set to 0 to ignore age entirely and report all unattached volumes."
+  description "The minimum age, in days, since a volume was created to produce recommendations for it. Set to 0 to ignore age entirely."
   default 0
   min_value 0
+end
+
+parameter "param_unused_days" do
+  type "number"
+  category "Policy Settings"
+  label "Unused Days"
+  description "The number of days a volume has been unused as determined by read/write activity."
+  default 30
+  min_value 1
+  max_value 90
+end
+
+parameter "param_include_status" do
+  type "string"
+  category "Filters"
+  label "Volume Status"
+  description "Whether the policy should only check unattached volumes, attached volumes, or both."
+  default "Unattached Volumes"
+  allowed_values "Unattached Volumes", "Attached Volumes", "All Volumes"
 end
 
 parameter "param_subscriptions_allow_or_deny" do
@@ -317,6 +336,9 @@ datasource "ds_azure_disks" do
       field "resourceType", jmes_path(col_item, "type")
       field "region", jmes_path(col_item, "location")
       field "tags", jmes_path(col_item, "tags")
+      field "attached_vm", jmes_path(col_item, "managedBy")
+      field "provisioningState", jmes_path(col_item, "properties.provisioningState")
+      field "osType", jmes_path(col_item, "properties.osType")
       field "state", jmes_path(col_item, "properties.diskState")
       field "size", jmes_path(col_item, "properties.diskSizeGB")
       field "timeCreated", jmes_path(col_item, "properties.timeCreated")
@@ -326,16 +348,45 @@ datasource "ds_azure_disks" do
   end
 end
 
+datasource "ds_azure_disks_status_filtered" do
+  run_script $js_azure_disks_status_filtered, $ds_azure_disks, $param_include_status
+end
+
+script "js_azure_disks_status_filtered", type: "javascript" do
+  parameters "ds_azure_disks", "param_include_status"
+  result "result"
+  code <<-EOS
+  // Note: We filter for osType == null to filter out OS disks that VMs need to boot
+  // since these disks can't be detached/deleted without just deleting the VM itself
+
+  if (param_include_status != "All Volumes") {
+    if (param_include_status == "Attached Volumes") {
+      result = _.filter(ds_azure_disks, function(disk) {
+        return disk['state'] == "Attached" && disk['osType'] == null
+      })
+    } else {
+      result = _.filter(ds_azure_disks, function(disk) {
+        return disk['state'] == "Unattached" && disk['osType'] == null
+      })
+    }
+  } else {
+    result = _.filter(ds_azure_disks, function(disk) {
+      return disk['osType'] == null
+    })
+  }
+EOS
+end
+
 datasource "ds_azure_disks_tag_filtered" do
-  run_script $js_azure_disks_tag_filtered, $ds_azure_disks, $param_exclusion_tags
+  run_script $js_azure_disks_tag_filtered, $ds_azure_disks_status_filtered, $param_exclusion_tags
 end
 
 script "js_azure_disks_tag_filtered", type: "javascript" do
-  parameters "ds_azure_disks", "param_exclusion_tags"
+  parameters "ds_azure_disks_status_filtered", "param_exclusion_tags"
   result "result"
   code <<-EOS
   if (param_exclusion_tags.length > 0) {
-    result = _.reject(ds_azure_disks, function(disk) {
+    result = _.reject(ds_azure_disks_status_filtered, function(disk) {
       disk_tags = []
 
       if (typeof(disk['tags']) == 'object') {
@@ -356,7 +407,7 @@ script "js_azure_disks_tag_filtered", type: "javascript" do
       return exclude_disk
     })
   } else {
-    result = ds_azure_disks
+    result = ds_azure_disks_status_filtered
   }
 EOS
 end
@@ -385,51 +436,144 @@ script "js_azure_disks_region_filtered", type: "javascript" do
 EOS
 end
 
+datasource "ds_azure_disks_metrics" do
+  iterate $ds_azure_disks_region_filtered
+  request do
+    run_script $js_azure_disks_metrics, val(iter_item, "id"), $param_azure_endpoint, $param_unused_days
+  end
+  result do
+    encoding "json"
+    field "value", val(response, "value")
+    field "id", val(iter_item, "id")
+    field "resourceName", val(iter_item, "resourceName")
+    field "resourceGroup", val(iter_item, "resourceGroup")
+    field "resourceType", val(iter_item, "resourceType")
+    field "region", val(iter_item, "region")
+    field "tags", val(iter_item, "tags")
+    field "state", val(iter_item, "state")
+    field "size", val(iter_item, "size")
+    field "attached_vm", val(iter_item, "attached_vm")
+    field "timeCreated", val(iter_item, "timeCreated")
+    field "subscriptionID", val(iter_item, "subscriptionID")
+    field "subscriptionName", val(iter_item, "subscriptionName")
+  end
+end
+
+
+script "js_azure_disks_metrics", type: "javascript" do
+  parameters "resourceId", "param_azure_endpoint", "param_unused_days"
+  result "request"
+  code <<-EOS
+  end_date = new Date()
+  end_date.setMilliseconds(999)
+  end_date.setSeconds(59)
+  end_date.setMinutes(59)
+  end_date.setHours(23)
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - param_unused_days)
+  start_date.setMilliseconds(0)
+  start_date.setSeconds(0)
+  start_date.setMinutes(0)
+
+  timespan = start_date.toISOString() + "/" + end_date.toISOString()
+
+  var request = {
+    auth: "auth_azure",
+    pagination: "pagination_azure",
+    host: param_azure_endpoint,
+    verb: "GET",
+    path: resourceId + "/providers/microsoft.insights/metrics",
+    query_params: {
+      "api-version": "2018-01-01",
+      "timespan": timespan,
+      "interval": "P1D",
+      "metricnames": "Composite Disk Read Operations/sec,Composite Disk Write Operations/sec",
+      "aggregation": "average"
+    },
+    headers: {
+      "User-Agent": "RS Policies"
+    },
+    // Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status: [400, 403, 404]
+  }
+EOS
+end
+
 datasource "ds_unused_volumes" do
-  run_script $js_unused_volumes, $ds_azure_disks_region_filtered, $param_minimum_age
+  run_script $js_unused_volumes, $ds_azure_disks_metrics, $param_minimum_age, $param_include_status
 end
 
 script "js_unused_volumes", type: "javascript" do
-  parameters "ds_azure_disks_region_filtered", "param_minimum_age"
+  parameters "ds_azure_disks_metrics", "param_minimum_age", "param_include_status"
   result "result"
   code <<-EOS
   result = []
 
-  unattached_disks = _.filter(ds_azure_disks_region_filtered, function(disk) {
-    return disk['state'] == "Unattached"
-  })
+  _.each(ds_azure_disks_metrics, function(disk) {
+    read_stats = null
+    write_stats = null
 
-  _.each(unattached_disks, function(disk) {
-    tags = []
+    _.each(disk['value'], function(stat) {
+      if (stat["timeseries"][0] != undefined) {
+        if (stat['name']['value'] == "Composite Disk Read Operations/sec") {
+          read_stats = stat["timeseries"][0]["data"]
+        }
 
-    if (typeof(disk['tags']) == 'object') {
-      _.each(Object.keys(disk['tags']), function(key) {
-        tags.push([key, "=", disk['tags'][key]].join(''))
-      })
-    }
+        if (stat['name']['value'] == "Composite Disk Write Operations/sec") {
+          write_stats = stat["timeseries"][0]["data"]
+        }
+      }
+    })
 
-    today = new Date()
-    created = new Date(disk['timeCreated'])
-    age = Math.round((today - created) / 1000 / 60 / 60 / 24)
+    read_sum = 0
+    write_sum = 0
 
-    if (param_minimum_age == 0 || age >= param_minimum_age) {
-      result.push({
-        id: disk['id'],
-        resourceName: disk['resourceName'],
-        resourceGroup: disk['resourceGroup'],
-        resourceType: disk['resourceType'],
-        region: disk['region'],
-        tags: tags.join(', '),
-        state: disk['state'],
-        size: disk['size'],
-        age: age,
-        timeCreated: created.toISOString(),
-        subscriptionID: disk['subscriptionID'],
-        subscriptionName: disk['subscriptionName'],
-        service: "Microsoft.Compute",
-        savings: 0.0,
-        savingsCurrency: ''
-      })
+    _.each(read_stats, function(metric) {
+      if (typeof(metric['average']) == 'number') {
+        read_sum += metric['average']
+      }
+    })
+
+    _.each(write_stats, function(metric) {
+      if (typeof(metric['average']) == 'number') {
+        write_sum += metric['average']
+      }
+    })
+
+    if (read_sum + write_sum == 0) {
+      tags = []
+
+      if (typeof(disk['tags']) == 'object') {
+        _.each(Object.keys(disk['tags']), function(key) {
+          tags.push([key, "=", disk['tags'][key]].join(''))
+        })
+      }
+
+      today = new Date()
+      created = new Date(disk['timeCreated'])
+      age = Math.round((today - created) / 1000 / 60 / 60 / 24)
+
+      if (param_minimum_age == 0 || age >= param_minimum_age) {
+        result.push({
+          id: disk['id'],
+          resourceName: disk['resourceName'],
+          resourceGroup: disk['resourceGroup'],
+          resourceType: disk['resourceType'],
+          region: disk['region'],
+          tags: tags.join(', '),
+          state: disk['state'],
+          size: disk['size'],
+          attached_vm: disk['attached_vm'],
+          age: age,
+          timeCreated: created.toISOString(),
+          subscriptionID: disk['subscriptionID'],
+          subscriptionName: disk['subscriptionName'],
+          service: "Microsoft.Compute",
+          savings: 0.0,
+          savingsCurrency: ''
+        })
+      }
     }
   })
 EOS
@@ -554,11 +698,11 @@ EOS
 end
 
 datasource "ds_volume_cost_mapping" do
-  run_script $js_volume_cost_mapping, $ds_azure_disks_region_filtered, $ds_unused_volumes, $ds_volume_costs_grouped, $ds_applied_policy, $ds_currency, $param_minimum_age, $param_take_snapshot, $param_min_savings
+  run_script $js_volume_cost_mapping, $ds_azure_disks_region_filtered, $ds_unused_volumes, $ds_volume_costs_grouped, $ds_applied_policy, $ds_currency, $param_minimum_age, $param_take_snapshot, $param_min_savings, $param_include_status, $param_unused_days
 end
 
 script "js_volume_cost_mapping", type:"javascript" do
-  parameters "ds_azure_disks_region_filtered", "ds_unused_volumes", "ds_volume_costs_grouped", "ds_applied_policy", "ds_currency", "param_minimum_age", "param_take_snapshot", "param_min_savings"
+  parameters "ds_azure_disks_region_filtered", "ds_unused_volumes", "ds_volume_costs_grouped", "ds_applied_policy", "ds_currency", "param_minimum_age", "param_take_snapshot", "param_min_savings", "param_include_status", "param_unused_days"
   result "result"
   code <<-'EOS'
   // Function for formatting currency numbers later
@@ -614,10 +758,11 @@ script "js_volume_cost_mapping", type:"javascript" do
         tags: disk['tags'],
         age: disk['age'],
         timeCreated: disk['timeCreated'],
+        attached_vm: disk['attached_vm'],
         savings: parseFloat(savings.toFixed(3)),
         savingsCurrency: ds_currency['symbol'],
         recommendationDetails: recommendationDetails,
-        lookbackPeriod: param_minimum_age,
+        lookbackPeriod: param_unused_days,
         // These are to avoid errors when we hash_exclude these fields
         total_savings: '',
         message: '',
@@ -631,22 +776,80 @@ script "js_volume_cost_mapping", type:"javascript" do
   total_unused_disks = result.length.toString()
   unused_disks_percentage = (total_unused_disks / total_disks * 100).toFixed(2).toString() + '%'
 
+  total_disks_noun = "volume"
+  if (total_disks > 1) { total_disks_noun = "volumes" }
+
+  total_unused_disks_verb = "is"
+  if (total_unused_disks > 1) { total_unused_disks_verb = "are" }
+
   findings = [
-    "Out of ", total_disks , " Azure volumes analyzed, ",
+    "Out of ", total_disks , " Azure ", total_disks_noun, " analyzed, ",
     total_unused_disks, " (", unused_disks_percentage,
-    ") are unused and are recommended for deletion. "
+    ") ", total_unused_disks_verb, " unused and are recommended for deletion. "
   ].join('')
 
   if (param_minimum_age != 0) {
-    day_message = "day"
-    if (param_minimum_age.length > 1) { day_message += "s" }
+    min_age_day_noun = "day"
+    if (param_minimum_age > 1) { min_age_day_noun += "s" }
 
-    idle_message = [
-      "An unattached volume is considered unused if it is not attached to an instance ",
-      "and is at least ", param_minimum_age, " ", day_message, " old.\n\n"
-    ].join('')
+    unused_day_noun = "day"
+    if (param_unused_days > 1) { unused_day_noun += "s" }
+
+    if (param_include_status == 'Unattached Volumes') {
+      idle_message = [
+        "Volumes are considered unused if they are unattached, ",
+        "are at least ", param_minimum_age, " ", min_age_day_noun, " old, ",
+        "and have had no read/write activity for at least ",
+        param_unused_days, " ", unused_day_noun, ".\n\n"
+      ].join('')
+    }
+
+    if (param_include_status == 'Attached Volumes') {
+      idle_message = [
+        "Volumes are considered unused if they are attached, ",
+        "are at least ", param_minimum_age, " ", min_age_day_noun, " old, ",
+        "and have had no read/write activity for at least ",
+        param_unused_days, " ", unused_day_noun, ".\n\n"
+      ].join('')
+    }
+
+    if (param_include_status == 'All Volumes') {
+      idle_message = [
+        "Volumes are considered unused if they ",
+        "are at least ", param_minimum_age, " ", min_age_day_noun, " old, ",
+        "and have had no read/write activity for at least ",
+        param_unused_days, " ", unused_day_noun, ", regardless of whether they ",
+        "are currently attached or not.\n\n"
+      ].join('')
+    }
   } else {
-    idle_message = "A volume is considered unused if it is not attached to an instance regardless of how old it is.\n\n"
+    unused_day_noun = "day"
+    if (param_unused_days > 1) { unused_day_noun += "s" }
+
+    if (param_include_status == 'Unattached Volumes') {
+      idle_message = [
+        "Volumes are considered unused if they are unattached ",
+        "and have had no read/write activity for at least ",
+        param_unused_days, " ", unused_day_noun, ".\n\n"
+      ].join('')
+    }
+
+    if (param_include_status == 'Attached Volumes') {
+      idle_message = [
+        "Volumes are considered unused if they are attached ",
+        "and have had no read/write activity for at least ",
+        param_unused_days, " ", unused_day_noun, ".\n\n"
+      ].join('')
+    }
+
+    if (param_include_status == 'All Volumes') {
+      idle_message = [
+        "Volumes are considered unused if they ",
+        "have had no read/write activity for at least ",
+        param_unused_days, " ", unused_day_noun, ", regardless of whether they ",
+        "are currently attached or not.\n\n"
+      ].join('')
+    }
   }
 
   disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
@@ -735,6 +938,9 @@ policy "pol_azure_unattached_volumes" do
       field "savingsCurrency" do
         label "Savings Currency"
       end
+      field "attached_vm" do
+        label "Attached VM ID"
+      end
       field "service" do
         label "Service"
       end
@@ -767,24 +973,29 @@ escalation "esc_delete_volumes" do
   automatic contains($param_automatic_action, "Delete Volumes")
   label "Delete Volumes"
   description "Approval to terminate all selected instances"
-  run "delete_volumes", data, $param_take_snapshot, rs_optima_host
+  run "delete_volumes", data, $param_take_snapshot, $param_azure_endpoint, rs_optima_host
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define delete_volumes($data, $param_take_snapshot, $$rs_optima_host) return $all_responses do
+define delete_volumes($data, $param_take_snapshot, $param_azure_endpoint, $$rs_optima_host) return $all_responses do
   $status_code=''
   $$all_responses = []
   foreach $item in $data do
     # Break this into it's own sub task, and for any errors, capture them with handle_error
     # We check for errors at the end, and raise them all together
     sub on_error: handle_error() do
-      if $param_take_snapshot == "true"
-        call create_snapshot($item)
+      if $item['state'] == "Attached"
+        call detach_disk($item, $param_azure_endpoint)
       end
-      call delete_unattached_disk($item['id'])
+
+      if $param_take_snapshot == "true"
+        call create_snapshot($item, $param_azure_endpoint)
+      end
+
+      call delete_unattached_disk($item['id'], $param_azure_endpoint)
     end
   end
 
@@ -794,7 +1005,91 @@ define delete_volumes($data, $param_take_snapshot, $$rs_optima_host) return $all
   end
 end
 
-define create_snapshot($item) return $response do
+define detach_disk($item, $param_azure_endpoint) return $response do
+  $response={}
+  $syslog_subject = "Azure detach disk API response: "
+
+  $disk_id = $item['id']
+  $vm_id = $item['attached_vm']
+
+  $vm_response = http_request(
+    auth: $$auth_azure,
+    verb: "get",
+    host: $param_azure_endpoint,
+    https: true,
+    href: $vm_id,
+    query_strings: {
+      "api-version": "2023-07-01"
+    },
+    headers: {
+      "content-type": "application/json"
+    }
+  )
+
+  $$all_responses << to_json({"req":"GET " + $param_azure_endpoint + $vm_id, "resp": $vm_response})
+
+  $updated_disk_list = []
+
+  foreach $item in $vm_response['body']['properties']['storageProfile']['dataDisks'] do
+    if $item['managedDisk']['id'] != $disk_id
+      $updated_disk_list << $item
+    end
+  end
+
+  $new_properties = {}
+  $new_properties['location'] = $vm_response['body']['location']
+  $new_properties['properties'] = $vm_response['body']['properties']
+  $new_properties['properties']['storageProfile']['dataDisks'] = $updated_disk_list
+
+
+  $response = http_request(
+    auth: $$auth_azure,
+    verb: "put",
+    host: $param_azure_endpoint,
+    https: true,
+    href: $vm_id,
+    query_strings: {
+      "api-version": "2023-07-01"
+    },
+    headers: {
+      "content-type": "application/json"
+    },
+    body: $new_properties
+  )
+
+  $$all_responses << to_json({"req":"PUT " + $param_azure_endpoint + $vm_id, "resp": $response})
+
+  $disk_state = "Attached"
+
+  while $disk_state != "Unattached" do
+    sleep(5)
+
+    $disk_response = http_request(
+      auth: $$auth_azure,
+      verb: "get",
+      host: $param_azure_endpoint,
+      https: true,
+      href: $disk_id,
+      query_strings: {
+        "api-version": "2023-04-02"
+      },
+      headers: {
+        "content-type": "application/json"
+      }
+    )
+
+    $$all_responses << to_json({"req":"GET " + $param_azure_endpoint + $disk_id, "resp": $disk_response})
+
+    $disk_state = $disk_response['body']['properties']['diskState']
+  end
+
+  task_label('Checking for expected response code for Disk Detach Request Successful')
+  if $response["code"] != 201 && $response["code"] != 200
+    raise 'Unexpected response detaching disk: '+to_json($response)
+  end
+end
+
+define create_snapshot($item, $param_azure_endpoint) return $response do
   $response={}
   $syslog_subject = "Azure create snapshot API response: "
   $snapshotName=split($item['id'], "Microsoft.Compute")
@@ -803,7 +1098,7 @@ define create_snapshot($item) return $response do
   $response = http_request(
     auth: $$auth_azure,
     verb: "put",
-    host: "management.azure.com",
+    host: $param_azure_endpoint,
     https: true,
     href: $snapshotName,
     query_strings: {
@@ -823,48 +1118,48 @@ define create_snapshot($item) return $response do
       }
     }
   )
-  $$all_responses << to_json({"req":"PUT management.azure.com" + $snapshotName,"resp": $response})
-  task_label('Checking for expected response code for  Snapshot Create Request Successful')
+  $$all_responses << to_json({"req":"PUT " + $param_azure_endpoint + $snapshotName, "resp": $response})
+  task_label('Checking for expected response code for Snapshot Create Request Successful')
   if $response["code"] != 202 && $response["code"] != 200
     raise 'Unexpected response creating snapshot: '+to_json($response)
   else
     task_label('Create Snapshot Request Successful: '+$snapshotName)
     while $response["body"]["properties"]["provisioningState"] != "Succeeded" do
       task_label('Create Snapshot Status: '+$response["body"]["properties"]["provisioningState"])+' '+$snapshotName
-      call get_disksnapshot($snapshotName) retrieve $response
+      call get_disksnapshot($snapshotName, $param_azure_endpoint) retrieve $response
       sleep(1)
     end
     task_label('Create Snapshot Successful: '+$snapshotName)
   end
 end
 
-define get_disksnapshot($snapshotId) return $response do
+define get_disksnapshot($snapshotId, $param_azure_endpoint) return $response do
   $response = http_request(
     auth: $$auth_azure,
     https: true,
     verb: "get",
-    host: "management.azure.com",
+    host: $param_azure_endpoint,
     href: $snapshotId,
     query_strings: {
       "api-version": "2019-07-01"
     }
   )
-  $$all_responses << to_json({"req":"GET management.azure.com" + $snapshotId,"resp": $response})
+  $$all_responses << to_json({"req":"GET " + $param_azure_endpoint + $snapshotId, "resp": $response})
 end
 
-define delete_unattached_disk($disk_id) do
+define delete_unattached_disk($disk_id, $param_azure_endpoint) do
   task_label('Delete Disk starting: '+$disk_id)
   $response = http_request(
     auth: $$auth_azure,
     verb: "delete",
-    host: "management.azure.com",
+    host: $param_azure_endpoint,
     https: true,
     href: $disk_id,
     query_strings: {
       "api-version": "2019-07-01"
     }
   )
-  $$all_responses << to_json({"req":"DELETE management.azure.com"+$disk_id,"resp": $response})
+  $$all_responses << to_json({"req":"DELETE "+ $param_azure_endpoint + $disk_id, "resp": $response})
   task_label('Delete Disk response: '+to_json($response["body"]))
   if $response["code"] != 202
     $error_code = $response["body"]["error"]["code"]
@@ -881,7 +1176,7 @@ define delete_unattached_disk($disk_id) do
     # we expect a 404 response when the disk is deleted
     while $response["code"] != 404 do
       task_label('Current Disk Status: '+$disk_id+' '+to_json($response))
-      call get_disksnapshot($disk_id) retrieve $response
+      call get_disksnapshot($disk_id, $param_azure_endpoint) retrieve $response
       sleep(1)
     end
     task_label('Delete Disk successful: '+$disk_id)
