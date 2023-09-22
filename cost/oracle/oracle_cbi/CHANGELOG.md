@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2
+
+- Fixed issue where a failed file upload would sometimes stall the policy indefinitely
+
 ## v3.1
 
 - Fixed issue where bill upload would sometimes not commit
