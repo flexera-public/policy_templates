@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "3.2",
+  version: "3.3",
   provider: "AWS",
   service: "EC2",
   policy_set: "Inefficient Disk Usage",
@@ -533,7 +533,6 @@ script "js_combine_cloudwatch_data", type: "javascript" do
   }
 
   _.each(volumes, function(volume_id){
-    //console.log("Volume ID: ", volume_id)
     var total_read_ops = 0, total_read_data_points = 0
     var total_write_ops = 0, total_write_data_points = 0
     var data_message = []
@@ -541,13 +540,11 @@ script "js_combine_cloudwatch_data", type: "javascript" do
     var vol_read_data = _.find(ds_cloudwatch_read_ops, function(read_data){ return read_data.volumeId == volume_id })
     if(vol_read_data.datapoints.length <= 0){
       data_message.push({ "message": "No CloudWatch Read Operations data." })
-      //console.log("this is a null array for datapoints")
     } else {
       _.each(vol_read_data.datapoints, function(datapoint){
         total_read_ops += datapoint.readOpsSum
         total_read_data_points += datapoint.readOpsSampleCount
       })
-      //console.log("this is an array exists for datapoints")
     }
 
     var vol_write_data = _.find(ds_cloudwatch_write_ops, function(write_data){ return write_data.volumeId == volume_id })
@@ -608,8 +605,6 @@ script "js_combine_cloudwatch_data", type: "javascript" do
       "lookbackPeriod": "30 days",
     })
   })
-
-  console.log(period)
   EOS
 end
 
@@ -704,12 +699,11 @@ script "js_add_costs_to_disk_util_data", type: "javascript" do
   result "result"
   code <<-EOS
 
-    //Convert AWS's mess to actual JSON
+    //Convert AWS's response to actual JSON
     gp2_pricelist = []
     _.each(ds_gp2_costs.PriceList, function(price){
       gp2_pricelist.push( JSON.parse(price.replace(/\\"/g,'"')) )
     })
-    console.log(gp2_pricelist)
 
     gp3_pricelist = []
     _.each(ds_gp3_costs.PriceList, function(price){
@@ -743,7 +737,6 @@ script "js_add_costs_to_disk_util_data", type: "javascript" do
         var matching_gp3_pricing = _.filter(gp3_pricelist, function(price){
           return ( price.product.attributes.regionCode == data.region )
         })
-        console.log(data.region + ": ", matching_gp3_pricing)
 
         var monthly_gp3_price = 0
         if( matching_gp3_pricing != null ){
@@ -757,7 +750,6 @@ script "js_add_costs_to_disk_util_data", type: "javascript" do
                 _.each(price_dimensions, function(pd){
                   var iops = 3000
                   if( data.iops != "" && Number(data.iops) >= 3000 ){ iops = Number(data.iops) }
-                  console.log("iops: ", iops)
                   monthly_gp3_price +=
                     ((iops - 3000) * Number(price_type.terms.OnDemand[od].priceDimensions[pd].pricePerUnit.USD))
                 })
@@ -771,7 +763,6 @@ script "js_add_costs_to_disk_util_data", type: "javascript" do
                 _.each(price_dimensions, function(pd){
                   var throughput = 125
                   if( data.throughput != "" && Number(data.throughput) >= 125 ){ throughput = Number(data.throughput) }
-                  console.log("throughput: ", throughput)
                   monthly_gp3_price +=
                     ((throughput - 125) * Number(price_type.terms.OnDemand[od].priceDimensions[pd].pricePerUnit.USD))
                 })
@@ -785,7 +776,6 @@ script "js_add_costs_to_disk_util_data", type: "javascript" do
                 _.each(price_dimensions, function(pd){
                   var storage = 0
                   if( data.size != "" ){ storage = Number(data.size)}
-                  console.log("storage :", storage)
                   monthly_gp3_price +=
                     (storage * Number(price_type.terms.OnDemand[od].priceDimensions[pd].pricePerUnit.USD))
                 })
@@ -800,10 +790,12 @@ script "js_add_costs_to_disk_util_data", type: "javascript" do
       }
     })
 
-    result = ds_combined_cloudwatch_data
+    //Filter out gp3s OR if the savings is less than 0	
+    result = _.filter(ds_combined_cloudwatch_data, function(data){	
+      return ( data.volumeType == "gp2" || data.savings >= 0 )	
+    })
   EOS
 end
-
 
 #FILTER IOPS UTILIZATION PERCENTAGE AGAINST IOPS UTILIZATION PARAMETER ("param_avg_iops")
 datasource "ds_filtered_disk_utilization_data" do
@@ -812,7 +804,7 @@ end
 
 script "js_filter_disk_utilization_data", type: "javascript" do
   parameters "ds_disk_utilization_with_costs", "ds_currency_reference", "ds_currency_code", "ds_get_caller_identity"
-  result "data"
+  result "result"
   code <<-EOS
     var data = ds_disk_utilization_with_costs
     //Filter data on average iops parameter
@@ -820,13 +812,10 @@ script "js_filter_disk_utilization_data", type: "javascript" do
     //  data = _.filter(ds_disk_utilization_with_costs, function(util_data){ return util_data.iopsUtilizationPercentage <= param_avg_iops })
     //}
 
-    //Filter out GP3s from incident here
-
     //Add Account ID
     _.each(data, function(vol){
       vol["accountID"] = ds_get_caller_identity[0].account
       vol["service"] = "AmazonEC2"
-      console.log("Account ID:", vol.accountID)
     })
 
     //Format Number for Policy Incident Summary Template
@@ -877,34 +866,26 @@ script "js_filter_disk_utilization_data", type: "javascript" do
         savings_amount.push(sav)
       }
     })
-    console.log(savings_amount)
 
-    var total_gp2_gp3_savings = _.reduce(savings_amount, function(mem, num){
-      console.log("Savings Moving to GP3 volume type: ", mem)
-      //if (Number(mem.savings) == null){
-      //  mem.savings = 0
-      //}
-      //if (Number(num.savings) == null){
-      //  num.savings = 0
-      //}
+    var total_gp2_gp3_savings = _.reduce(savings_amount, function(mem, num) {
       return mem + num
     }, 0)
-    console.log(total_gp2_gp3_savings)
-    total_gp2_gp3_savings = cur + ' ' + formatNumber((Math.round(total_gp2_gp3_savings * 100) / 100), separator)
-
-    var summary_data = {
-      "message": "The total estimated monthly savings from moving gp2 volumes to gp3 volumes is " + total_gp2_gp3_savings,
-      "count": _.size(data)
-    }
-    console.log(summary_data)
-
-
+    total_gp2_gp3_savings = cur + ' ' + formatNumber(parseFloat(total_gp2_gp3_savings).toFixed(2), separator)
+    
+    result = []
     if (_.size(data) > 0) {
-      data[0]["summaryData"] = summary_data
-    } else {
-      data = [{ "summaryData": summary_data }]
+      _.each(data, function(obj) {
+        result.push(obj)
+      })
     }
-    console.log("data.summaryData: ", data[0].summaryData)
+
+    // Dummy entry to ensure the check statement in validation always runs at least once
+    result.push({
+      resourceID: "",
+      message: ""
+    })
+
+    result[0]["message"] = "The total estimated monthly savings from moving gp2 volumes to gp3 volumes is " + total_gp2_gp3_savings
   EOS
 end
 
@@ -924,15 +905,15 @@ end
 ###############################################################################
 
 policy "pol_utilization" do
-  validate $ds_filtered_disk_utilization_data do
+  validate_each $ds_filtered_disk_utilization_data do
     summary_template <<-EOS
-    {{ rs_project_name }} (Account ID: {{ rs_project_id }}):{{ with index data 0 }}{{ .summaryData.count }}{{ end }} Underutilized EBS volumes
+    {{ rs_project_name }} (Account ID: {{ rs_project_id }}):{{ len data }} Underutilized EBS volumes
     EOS
-    detail_template <<-EOS
-    {{ with index data 0 }}{{ .summaryData.message }}{{ end }}
+    detail_template <<-'EOS'
+    {{ with index data 0 }}{{ .message }}{{ end }}
     EOS
     escalate $esc_email
-    check logic_or($ds_parent_policy_terminated, eq(size(data),0))
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     export do
       resource_level true
       field "accountID" do
