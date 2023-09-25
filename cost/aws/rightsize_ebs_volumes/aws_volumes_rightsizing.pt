@@ -75,7 +75,7 @@ parameter "param_automatic_action" do
   category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Convert to GP3"]
+  allowed_values ["Upgrade Volumes to GP3"]
   default []
 end
 
@@ -908,15 +908,15 @@ script "js_underutil_volumes", type: "javascript" do
 
   // Dummy item to ensure the policy's check statement always executes at least once
   result.push({
-    resourceID: "",          resourceName: "",                 resourceType: "",
-    encrypted: "",           createTime: "",                   iops: "",
-    size: "",                state: "",                        throughput: "",
-    attachmentStatus: "",    tags: "",                         region: "",
-    iopsAverage: "",         iopsUtilizationPercentage: "",    gp2_price: "",
-    gp3_price: "",           savings: "",                      savingsCurrency: "",
-    cost: "",                age: "",                          accountID: "",
-    accountName: "",         recommendationDetails: "",        policy_name: "",
-    service: "",             total_savings: "",                message: ""
+    resourceID: "",          resourceName: "",    resourceType: "",
+    encrypted: "",           createTime: "",      iops: "",
+    size: "",                state: "",           throughput: "",
+    attachmentStatus: "",    tags: "",            region: "",
+    gp2_price: "",           gp3_price: "",       savings: "",
+    savingsCurrency: "",     cost: "",            age: "",
+    accountID: "",           accountName: "",     recommendationDetails: "",
+    policy_name: "",         service: "",         total_savings: "",
+    message: ""
   })
 
   result[0]['total_savings'] = savings_message
@@ -938,6 +938,7 @@ policy "pol_underutil_volumes" do
     EOS
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
+    escalate $esc_upgrade_volumes
     hash_exclude "age", "tags", "resourceName", "savings", "savingsCurrency", "total_savings", "message", "attachmentStatus"
     export do
       resource_level true
@@ -973,6 +974,9 @@ policy "pol_underutil_volumes" do
       end
       field "state" do
         label "Status"
+      end
+      field "iops" do
+        label "IOPS"
       end
       field "attachmentStatus" do
         label "Attachment Status"
@@ -1012,6 +1016,94 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email
+end
+
+escalation "esc_upgrade_volumes" do
+  automatic contains($param_automatic_action, "Upgrade Volumes to GP3")
+  label "Upgrade Volumes to GP3"
+  description "Approval to upgrade all selected volumes to GP3"
+  run "upgrade_volumes", data
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+# Core CWF function to upgrade volumes to GP3
+define upgrade_volumes($data) return $all_responses do
+  # Change "No" to "Yes" to enable CWF debug logging
+  $log_to_cm_audit_entries = "No"
+
+  $$debug = $log_to_cm_audit_entries == "Yes"
+  $$log = []
+  $all_responses = []
+  $syslog_subject = "AWS Rightsizing EBS [GP2->GP3]: "
+
+  call sys_log(join([$syslog_subject, "Identified Instances"]), to_s($data))
+
+  foreach $instance in $data do
+    call upgrade_volume($instance) retrieve $upgrade_response
+    $all_responses << $upgrade_response
+  end
+end
+
+# CWF function to upgrade a volume to GP3
+define upgrade_volume($volume) return $response do
+  $syslog_subject = "AWS Upgrading Volume to GP3: "
+
+  call sys_log(join([$syslog_subject, "Instance"]), to_s($volume["resourceID"]))
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    href: "/",
+    host: "ec2." + $volume['region'] + ".amazonaws.com",
+    query_strings: {
+      "Action": "ModifyVolume",
+      "Version": "2016-11-15",
+      "VolumeType": "gp3",
+      "VolumeId": $volume["resourceID"]
+    }
+  )
+
+  call sys_log(join([$syslog_subject, "Responses"]), to_s($response))
+end
+
+# CWF function to record information to the logs
+define sys_log($subject, $detail) do
+  # Create empty errors array if doesn't already exist
+  if !$$errors
+    $$errors = []
+  end
+  # Check if debug is enabled
+  if $$debug
+    # Append to global $$errors
+    # This is the suggested way to capture errors
+    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
+    # If Flexera NAM Zone, create audit_entries [to be deprecated]
+    # This is the legacy method for capturing errors and only supported on Flexera NAM
+    if $$rs_optima_host == "api.optima.flexeraeng.com"
+      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
+      $task_label = "Creating audit entry for " + $subject
+      sub task_label: $task, on_error: skip_error_and_append($task) do
+        rs_cm.audit_entries.create(
+          notify: "None",
+          audit_entry: {
+            auditee_href: @@account,
+            summary: $subject,
+            detail: $detail
+          }
+        )
+      end # End sub on_error
+    end # End if rs_optima_host
+  end # End if debug is enabled
+end
+
+# CWF function to handle errors
+define skip_error_and_append($subject) do
+  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $_error_behavior = "skip"
 end
 
 ###############################################################################
