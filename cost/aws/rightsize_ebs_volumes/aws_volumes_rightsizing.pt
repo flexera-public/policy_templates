@@ -564,7 +564,7 @@ datasource "ds_volumes_write_iops_usage" do
   end
 end
 
-script "js_volume_iops_usage", type: "javascript" do
+script "js_volumes_iops_usage", type: "javascript" do
   result "request"
   parameters "region", "volumeId", "param_stats_lookback", "metricName"
   code <<-EOS
@@ -994,6 +994,24 @@ script "js_underutil_volumes", type: "javascript" do
   parameters "ds_volumes_tag_filtered", "ds_volumes_with_prices", "ds_volume_costs_grouped", "ds_aws_account", "ds_currency", "ds_currency_conversion", "ds_applied_policy", "param_min_savings", "param_stats_lookback"
   result "result"
   code <<-'EOS'
+  // Used for formatting numbers to look pretty
+  function formatNumber(number, separator){
+    numString = number.toString()
+    values = numString.split(".")
+    formatted_number = ''
+
+    while (values[0].length > 3) {
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      formatted_number = separator + chunk + formatted_number
+    }
+
+    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
+    if (values[1] == undefined) { return formatted_number }
+
+    return formatted_number + "." + values[1]
+  }
+
   result = []
   total_savings = 0.0
 
@@ -1009,6 +1027,12 @@ script "js_underutil_volumes", type: "javascript" do
       endDate = new Date()
       timeDifference = endDate.getTime() - startDate.getTime()
       daysDifference = (timeDifference / (1000 * 3600 * 24)).toFixed(2)
+
+      recommendationDetails = [
+        "Upgrade volume ", volume['volumeId'], " ",
+        "in AWS Account ", ds_aws_account['name'], " ",
+        "(", ds_aws_account['id'], ") from GP2 to GP3"
+      ].join('')
 
       result.push({
         resourceID: volume['volumeId'],
@@ -1033,6 +1057,7 @@ script "js_underutil_volumes", type: "javascript" do
         age: parseFloat(daysDifference),
         accountID: ds_aws_account['id'],
         accountName: ds_aws_account['name'],
+        recommendationDetails: recommendationDetails,
         lookbackPeriod: param_stats_lookback,
         policy_name: ds_applied_policy['name'],
         service: "AmazonEC2",
@@ -1041,6 +1066,49 @@ script "js_underutil_volumes", type: "javascript" do
       })
     }
   })
+
+  result = _.sortBy(result, function(item) { return item['savings'] * -1 })
+
+  savings_message = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['separator'])
+
+  total_volumes = ds_volumes_tag_filtered.length.toString()
+  total_underutil_volumes = result.length.toString()
+  underutil_volumes_percentage = (total_underutil_volumes / total_volumes * 100).toFixed(2).toString() + '%'
+
+  volume_noun = "volume"
+  if (total_volumes > 1) { volume_noun = "volumes" }
+
+  volume_verb = "is"
+  if (total_underutil_volumes > 1) { volume_verb = "are" }
+
+  findings = [
+    "Out of ", total_volumes, " GP2 ", volume_noun, " analyzed, ",
+    total_underutil_volumes, " (", underutil_volumes_percentage,
+    ") ", volume_verb, " recommended for upgrade to GP3."
+  ].join('')
+
+  api_disclaimer = ""
+
+  if (ds_currency_conversion['to'] == undefined && ds_currency['code'] != 'USD') {
+    api_disclaimer = "\n\nPrice and savings values are in USD due to a malfunction with Flexera's internal currency conversion API. Please contact Flexera support to report this issue."
+  }
+
+  // Dummy item to ensure the policy's check statement always executes at least once
+  result.push({
+    resourceID: "",          resourceName: "",                 resourceType: "",
+    encrypted: "",           createTime: "",                   iops: "",
+    size: "",                state: "",                        throughput: "",
+    attachmentStatus: "",    tags: "",                         region: "",
+    iopsAverage: "",         iopsUtilizationPercentage: "",    gp2_price: "",
+    gp3_price: "",           savings: "",                      savingsCurrency: "",
+    cost: "",                age: "",                          accountID: "",
+    accountName: "",         recommendationDetails: "",        lookbackPeriod: "",
+    policy_name: "",         service: "",                      total_savings: "",
+    message: ""
+  })
+
+  result[0]['total_savings'] = savings_message
+  result[0]['message'] = findings + api_disclaimer
 EOS
 end
 
