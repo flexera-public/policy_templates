@@ -2,7 +2,7 @@
 
 ## v3.3
 
-- Updated logic to filter out gp3 volumes from recommendations as currently unsupported.
+- Updated logic to filter out GP3 volumes from recommendations as currently unsupported.
 - Updated the data used for the policy incident to ensure a policy incident is not created when there are no recommendations
 
 ## v3.2

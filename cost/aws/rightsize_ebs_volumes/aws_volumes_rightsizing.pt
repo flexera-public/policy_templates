@@ -1,7 +1,7 @@
 name "AWS Rightsize EBS Volumes"
 rs_pt_ver 20180301
 type "policy"
-short_description "This policy finds AWS GP2 volume types and recommends them for an upgrade to GP3 if cost savings is present. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ebs_volumes/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "This policy finds AWS GP2 volume types and recommends them for an upgrade to GP3 if this would result in savings. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ebs_volumes/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "low"
 category "Cost"
@@ -68,16 +68,6 @@ parameter "param_exclusion_tags" do
   type "string"
   allowed_pattern /(^$)|([\w]?)+\:([\w]?)+/
   default ""
-end
-
-parameter "param_stats_lookback" do
-  type "number"
-  category "Statistics"
-  label "Statistic Lookback Period"
-  description "How many days back to look at CloudWatch data for volumes. This value cannot be set higher than 90 because AWS does not retain metrics for longer than 90 days."
-  default 30
-  min_value 1
-  max_value 90
 end
 
 parameter "param_automatic_action" do
@@ -311,7 +301,6 @@ script "js_currency_target", type:"javascript" do
 EOS
 end
 
-
 # Branching logic:
 # This datasource returns an empty array if the target currency is USD.
 # This prevents ds_currency_conversion from running if it's not needed.
@@ -462,7 +451,6 @@ datasource "ds_volumes" do
   end
 end
 
-
 datasource "ds_volumes_tag_filtered" do
   run_script $js_volumes_tag_filtered, $ds_volumes, $param_exclusion_tags
 end
@@ -497,197 +485,6 @@ script "js_volumes_tag_filtered", type: "javascript" do
       return volume['volumeType'] != 'gp2'
     })
   }
-EOS
-end
-
-datasource "ds_volumes_read_iops_usage" do
-  iterate $ds_volumes_tag_filtered
-  request do
-    run_script $js_volumes_iops_usage, val(iter_item, "region"), val(iter_item, "volumeId"), $param_stats_lookback, "VolumeReadOps"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult") do
-      field "volumeId", val(iter_item, "volumeId")
-      field "volumeType", val(iter_item, "volumeType")
-      field "encrypted", val(iter_item, "encrypted")
-      field "createTime", val(iter_item, "createTime")
-      field "iops", val(iter_item, "iops")
-      field "size", val(iter_item, "size")
-      field "status", val(iter_item, "status")
-      field "throughput", val(iter_item, "throughput")
-      field "attachmentSet", val(iter_item, "attachmentSet")
-      field "tags", val(iter_item, "tags")
-      field "region", val(iter_item, "region")
-      field "datapoints" do
-        collect jmes_path(col_item, "Datapoints[*]") do
-          field "readOpsMaximum", jmes_path(col_item, "Maximum")
-          field "readOpsAverage", jmes_path(col_item, "Average")
-          field "readOpsSampleCount", jmes_path(col_item, "SampleCount")
-          field "readOpsSum", jmes_path(col_item, "Sum")
-          field "readOpsUnit", jmes_path(col_item, "Unit")
-        end
-      end
-    end
-  end
-end
-
-datasource "ds_volumes_write_iops_usage" do
-  iterate $ds_volumes_tag_filtered
-  request do
-    run_script $js_volumes_iops_usage, val(iter_item, "region"), val(iter_item, "volumeId"), $param_stats_lookback, "VolumeWriteOps"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult") do
-      field "volumeId", val(iter_item, "volumeId")
-      field "volumeType", val(iter_item, "volumeType")
-      field "encrypted", val(iter_item, "encrypted")
-      field "createTime", val(iter_item, "createTime")
-      field "iops", val(iter_item, "iops")
-      field "size", val(iter_item, "size")
-      field "status", val(iter_item, "status")
-      field "throughput", val(iter_item, "throughput")
-      field "attachmentSet", val(iter_item, "attachmentSet")
-      field "tags", val(iter_item, "tags")
-      field "region", val(iter_item, "region")
-      field "datapoints" do
-        collect jmes_path(col_item, "Datapoints[*]") do
-          field "readOpsMaximum", jmes_path(col_item, "Maximum")
-          field "readOpsAverage", jmes_path(col_item, "Average")
-          field "readOpsSampleCount", jmes_path(col_item, "SampleCount")
-          field "readOpsSum", jmes_path(col_item, "Sum")
-          field "readOpsUnit", jmes_path(col_item, "Unit")
-        end
-      end
-    end
-  end
-end
-
-script "js_volumes_iops_usage", type: "javascript" do
-  result "request"
-  parameters "region", "volumeId", "param_stats_lookback", "metricName"
-  code <<-EOS
-  end_date = new Date().toISOString()
-  start_date = new Date(new Date().setDate(new Date().getDate() - param_stats_lookback)).toISOString()
-
-  var request = {
-    "auth": "auth_aws",
-    "host": "monitoring." + region + ".amazonaws.com",
-    "verb": "GET",
-    "path": "/",
-    "headers": {
-      "User-Agent": "RS Policies",
-      "Content-Type": "application/json",
-      "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
-      "Accept": "application/json",
-      "Content-Encoding": "amz-1.0"
-    },
-    "query_params": {
-      "Action": "GetMetricStatistics",
-      "Version": "2010-08-01",
-      "Namespace": "AWS/EBS"
-      "MetricName": metricName,
-      "Dimensions.member.1.Name": "VolumeId",
-      "Dimensions.member.1.Value": volumeId,
-      "StartTime": start_date,
-      "EndTime": end_date,
-      "Period": "2592000",
-      "Statistics.member.1": "Average",
-      "Statistics.member.2": "Maximum",
-      "Statistics.member.3": "SampleCount",
-      "Statistics.member.4": "Sum"
-    }
-  }
-  EOS
-end
-
-datasource "ds_volumes_combined" do
-  run_script $js_volumes_combined, $ds_volumes_read_iops_usage, $ds_volumes_write_iops_usage
-end
-
-script "js_volumes_combined", type: "javascript" do
-  parameters "ds_volumes_read_iops_usage", "ds_volumes_write_iops_usage"
-  result "result"
-  code <<-EOS
-  result = []
-  read_object = {}
-
-  _.each(ds_volumes_read_iops_usage, function(volume) {
-    read_object[volume['volumeId']] = volume
-  })
-
-  _.each(ds_volumes_write_iops_usage, function(volume) {
-    read_data = null
-    write_data = volume['datapoints']
-
-    if (typeof(read_object[volume['volumeId']]) == 'object') {
-      read_data = read_object[volume['volumeId']]['datapoints']
-    }
-
-    if (typeof(read_data) == 'object' && typeof(write_data) == 'object') {
-      iopsAverage = null
-      iopsUtilizationPercentage = null
-
-      total_read_ops = 0
-      total_write_ops = 0
-      total_read_datapoints = 0
-      total_write_datapoints = 0
-
-      _.each(read_data, function(datapoint) {
-        total_read_ops += datapoint['readOpsSum']
-        total_read_datapoints += datapoint['readOpsSampleCount']
-      })
-
-      _.each(write_data, function(datapoint) {
-        total_write_ops += datapoint['readOpsSum']
-        total_write_datapoints += datapoint['readOpsSampleCount']
-      })
-
-      if (read_data.length > 0 && write_data.length > 0) {
-        iopsAverage = parseFloat(((total_read_ops / total_readdata_points ) / 60) + ((total_write_ops / total_write_data_points) / 60).toFixed(2))
-        iopsUtilizationPercentage = parseFloat(((iops_average / (volume['iops'])) * 100).toFixed(2))
-      }
-
-      tags = []
-      volumeName = ""
-
-      if (volume['tags'] != null && volume['tags'] != undefined) {
-        _.each(volume['tags'], function(tag) {
-          tags.push([tag['key'], tag['value']].join('='))
-
-          if (tag['key'] == 'Name') { volumeName = tag['value'] }
-        })
-      }
-
-      attachmentStatus = []
-
-      _.each(volume['attachmentSet'], function(attachment) {
-        if (attachmentStatus.length != 0) { attachmentStatus.push(", ") }
-
-        attachmentStatus.push(attachment['instanceId'])
-        attachmentStatus.push("=")
-        attachmentStatus.push(attachment['attachmentStatus'])
-      })
-
-      result.push({
-        volumeId: volume['volumeId'],
-        volumeName: volumeName,
-        volumeType: volume['volumeType'],
-        encrypted: volume['encrypted'],
-        createTime: volume['createTime'],
-        iops: volume['iops'],
-        size: volume['size'],
-        status: volume['status'],
-        throughput: volume['throughput'],
-        attachmentStatus: attachmentStatus.join(''),
-        tags: tags.join(', '),
-        region: volume['region'],
-        iopsAverage: iopsAverage,
-        iopsUtilizationPercentage: iopsUtilizationPercentage
-      })
-    }
-  })
 EOS
 end
 
@@ -741,18 +538,18 @@ EOS
 end
 
 datasource "ds_volumes_with_prices" do
-  run_script $js_volumes_with_prices, $ds_volumes_combined, $ds_gp2_prices, $ds_gp3_prices, $ds_currency
+  run_script $js_volumes_with_prices, $ds_volumes_tag_filtered, $ds_gp2_prices, $ds_gp3_prices, $ds_currency
 end
 
 script "js_volumes_with_prices", type: "javascript" do
-  parameters "ds_volumes_combined", "ds_gp2_prices", "ds_gp3_prices", "ds_currency"
+  parameters "ds_volumes_tag_filtered", "ds_gp2_prices", "ds_gp3_prices", "ds_currency"
   result "result"
   code <<-EOS
   // Function to convert price lists to proper JSON
   function convertPriceList(priceList) {
     convertedPriceList = {}
 
-    _.each(PriceList, function(price) {
+    _.each(priceList, function(price) {
       entry = JSON.parse(price.replace(/\\"/g,'"'))
       region = entry['product']['attributes']['regionCode']
 
@@ -852,15 +649,36 @@ script "js_volumes_with_prices", type: "javascript" do
   gp2_pricelist = convertPriceList(ds_gp2_prices['PriceList'])
   gp3_pricelist = convertPriceList(ds_gp3_prices['PriceList'])
 
-  _.each(ds_volumes_combined, function(volume) {
+  _.each(ds_volumes_tag_filtered, function(volume) {
     gp2_price = getGP2Price(volume, gp2_pricelist) * ds_currency['exchange_rate']
     gp3_price = getGP3Price(volume, gp3_pricelist) * ds_currency['exchange_rate']
     savings = gp2_price - gp3_price
 
     if (savings >= 0 && gp2_price != 0 && gp3_price != 0) {
+      tags = []
+      volumeName = ""
+
+      if (volume['tags'] != null && volume['tags'] != undefined) {
+        _.each(volume['tags'], function(tag) {
+          tags.push([tag['key'], tag['value']].join('='))
+
+          if (tag['key'] == 'Name') { volumeName = tag['value'] }
+        })
+      }
+
+      attachmentStatus = []
+
+      _.each(volume['attachmentSet'], function(attachment) {
+        if (attachmentStatus.length != 0) { attachmentStatus.push(", ") }
+
+        attachmentStatus.push(attachment['instanceId'])
+        attachmentStatus.push("=")
+        attachmentStatus.push(attachment['attachmentStatus'])
+      })
+
       result.push({
         volumeId: volume['volumeId'],
-        volumeName: volume['volumeName'],
+        volumeName: volumeName,
         volumeType: volume['volumeType'],
         encrypted: volume['encrypted'],
         createTime: volume['createTime'],
@@ -868,11 +686,9 @@ script "js_volumes_with_prices", type: "javascript" do
         size: volume['size'],
         status: volume['status'],
         throughput: volume['throughput'],
-        attachmentStatus: volume['attachmentStatus'],
-        tags: volume['tags'],
+        attachmentStatus: attachmentStatus.join(''),
+        tags: tags.join(', '),
         region: volume['region'],
-        iopsAverage: volume['iopsAverage'],
-        iopsUtilizationPercentage: volume['iopsUtilizationPercentage'],
         gp2_price: gp2_price,
         gp3_price: gp3_price,
         savings: savings,
@@ -987,11 +803,11 @@ EOS
 end
 
 datasource "ds_underutil_volumes" do
-  run_script $js_underutil_volumes, $ds_volumes_tag_filtered, $ds_volumes_with_prices, $ds_volume_costs_grouped, $ds_aws_account, $ds_currency, $ds_currency_conversion, $ds_applied_policy, $param_min_savings, $param_stats_lookback
+  run_script $js_underutil_volumes, $ds_volumes_tag_filtered, $ds_volumes_with_prices, $ds_volume_costs_grouped, $ds_aws_account, $ds_currency, $ds_currency_conversion, $ds_applied_policy, $param_min_savings
 end
 
 script "js_underutil_volumes", type: "javascript" do
-  parameters "ds_volumes_tag_filtered", "ds_volumes_with_prices", "ds_volume_costs_grouped", "ds_aws_account", "ds_currency", "ds_currency_conversion", "ds_applied_policy", "param_min_savings", "param_stats_lookback"
+  parameters "ds_volumes_tag_filtered", "ds_volumes_with_prices", "ds_volume_costs_grouped", "ds_aws_account", "ds_currency", "ds_currency_conversion", "ds_applied_policy", "param_min_savings"
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
@@ -1047,8 +863,6 @@ script "js_underutil_volumes", type: "javascript" do
         attachmentStatus: volume['attachmentStatus'],
         tags: volume['tags'],
         region: volume['region'],
-        iopsAverage: volume['iopsAverage'],
-        iopsUtilizationPercentage: volume['iopsUtilizationPercentage'],
         gp2_price: parseFloat(volume['gp2_price'].toFixed(3)),
         gp3_price: parseFloat(volume['gp3_price'].toFixed(3)),
         savings: parseFloat(volume['savings'].toFixed(3)),
@@ -1058,7 +872,6 @@ script "js_underutil_volumes", type: "javascript" do
         accountID: ds_aws_account['id'],
         accountName: ds_aws_account['name'],
         recommendationDetails: recommendationDetails,
-        lookbackPeriod: param_stats_lookback,
         policy_name: ds_applied_policy['name'],
         service: "AmazonEC2",
         total_savings: "",
@@ -1102,9 +915,8 @@ script "js_underutil_volumes", type: "javascript" do
     iopsAverage: "",         iopsUtilizationPercentage: "",    gp2_price: "",
     gp3_price: "",           savings: "",                      savingsCurrency: "",
     cost: "",                age: "",                          accountID: "",
-    accountName: "",         recommendationDetails: "",        lookbackPeriod: "",
-    policy_name: "",         service: "",                      total_savings: "",
-    message: ""
+    accountName: "",         recommendationDetails: "",        policy_name: "",
+    service: "",             total_savings: "",                message: ""
   })
 
   result[0]['total_savings'] = savings_message
@@ -1118,14 +930,15 @@ end
 
 policy "pol_underutil_volumes" do
   validate_each $ds_underutil_volumes do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Underutilized EBS Volumes Found"
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Underutilized GP2 Volumes Found"
     detail_template <<-'EOS'
     **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
 
     {{ with index data 0 }}{{ .message }}{{ end }}
     EOS
-    escalate $esc_email
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    hash_exclude "age", "tags", "resourceName", "savings", "savingsCurrency", "total_savings", "message", "attachmentStatus"
     export do
       resource_level true
       field "accountID" do
@@ -1161,11 +974,8 @@ policy "pol_underutil_volumes" do
       field "state" do
         label "Status"
       end
-      field "iopsAverage" do
-        label "IOPS Average %"
-      end
       field "attachmentStatus" do
-        label "Volume Attachment Status"
+        label "Attachment Status"
       end
       field "cost" do
         label "Estimated Monthly Cost"
@@ -1181,9 +991,6 @@ policy "pol_underutil_volumes" do
       end
       field "savingsCurrency" do
         label "Savings Currency"
-      end
-      field "lookbackPeriod" do
-        label "Lookback Period (Days)"
       end
       field "service" do
         label "Service"
