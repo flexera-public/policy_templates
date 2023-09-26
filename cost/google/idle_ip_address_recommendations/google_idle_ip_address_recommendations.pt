@@ -2,9 +2,10 @@ name "Google Idle IP Address Recommender"
 rs_pt_ver 20180301
 type "policy"
 short_description "This Policy finds Google Idle IP Address Recommendations and reports when it finds them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/google/idle_ip_address_recommendations) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
-category "Cost"
+long_description ""
 severity "low"
-default_frequency "daily"
+category "Cost"
+default_frequency "weekly"
 info(
   version: "3.0",
   provider: "Google",
@@ -95,6 +96,13 @@ credentials "auth_google" do
   label "Google"
   description "Select the Google Cloud Credential from the list."
   tags "provider=gce"
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
 end
 
 ###############################################################################
@@ -206,7 +214,7 @@ script "js_google_projects_filtered", type: "javascript" do
   code <<-EOS
   if (param_projects_list.length > 0) {
     result = _.filter(ds_google_projects, function(project) {
-      include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name'] || _.contains(param_projects_list, project['number'])
+      include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name']) || _.contains(param_projects_list, project['number'])
 
       if (param_projects_allow_or_deny == "Deny") {
         include_project = !include_project
@@ -227,10 +235,10 @@ datasource "ds_ip_address_lists" do
   end
   result do
     encoding "json"
+    field "items", jmes_path(response, "items")
     field "projectId", val(iter_item, "id")
     field "projectNumber", val(iter_item, "number")
     field "projectName", val(iter_item, "name")
-    field "items", jq(response, ".items")
   end
 end
 
@@ -270,28 +278,35 @@ script "js_ip_addresses", type: "javascript" do
   result = []
 
   _.each(ds_ip_address_lists, function(ip_list) {
-    _.each(ip_list['items'], function(region, key) {
-      region_name = "global"
-      if (key != "global") { region_name = key.split("/")[1] }
+    _.each(_.keys(ip_list['items']), function(key) {
+      region = "global"
+      if (key != "global") { region = key.split("/")[1] }
 
-      include_region = _.contains(param_regions_list, region_name)
-      if (param_regions_allow_or_deny == "Deny") { include_region = !include_region }
+      if (param_regions_list.length == 0) {
+        include_region = true
+      } else {
+        include_region = _.contains(param_regions_list, region)
+        if (param_regions_allow_or_deny == "Deny") { include_region = !include_region }
+      }
 
-      if (include_region && typeof(region['addresses']) == 'object') {
-        _.each(region['addresses'], function(address) {
+      if (include_region && typeof(ip_list['items'][key]['addresses']) == 'object') {
+        _.each(ip_list['items'][key]['addresses'], function(address) {
           result.push({
             projectId: ip_list['projectId'],
             projectNumber: ip_list['projectNumber'],
             projectName: ip_list['projectName'],
-            region: region_name,
-            id: address['address'],
+            region: region,
+            id: address['id'],
+            address: address['address'],
             name: address['name'],
             labels: address['labels'],
             description: address['description'],
             type: address['kind'],
+            addressType: address['addressType'],
+            networkTier: address['networkTier'],
             selfLink: address['selfLink'],
             status: address['status'],
-            version: address['ipVersion']
+            creationTime: new Date(address['creationTimestamp']).toISOString()
           })
         })
       }
@@ -380,7 +395,7 @@ end
 script "js_recommendations_incident", type:"javascript" do
   parameters "ds_ip_addresses", "ds_recommendations", "ds_currency", "ds_currency_reference", "ds_applied_policy", "param_min_savings"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   // Function for formatting currency numbers later
   function formatNumber(number, separator) {
     var numString = number.toString()
@@ -410,6 +425,9 @@ script "js_recommendations_incident", type:"javascript" do
   result = []
   total_savings = 0.0
 
+  currency = "$"
+  seperator = ","
+
   _.each(ds_recommendations, function(recommendation) {
     resource_link = recommendation['resourceLink'].replace("//compute.googleapis.com/", "")
 
@@ -417,9 +435,6 @@ script "js_recommendations_incident", type:"javascript" do
     if (typeof(address_object[resource_link]) == 'object') { address = address_object[resource_link] }
 
     if (address != null) {
-      currency = "$"
-      seperator = ","
-
       if (recommendation['currency'] != undefined) {
         if (ds_currency_reference[recommendation['currency']] != undefined) {
           currency = ds_currency_reference[recommendation['currency']]['symbol']
@@ -442,28 +457,37 @@ script "js_recommendations_incident", type:"javascript" do
       if (savings >= param_min_savings) {
         total_savings += savings
 
+        labels = []
+
+        if (typeof(address['labels']) == 'object') {
+          _.each(Object.keys(address['labels']), function(key) {
+            labels.push([key, "=", address['labels'][key]].join(''))
+          })
+        }
+
         result.push({
-          id: address['id'],
-          ipAddress: address['id'],
           accountID: address['projectId'],
-          projectNumber: address['projectNumber'],
           accountName: address['projectName'],
+          projectNumber: address['projectNumber'],
           region: address['region'],
           resourceID: address['id'],
+          ipAddress: address['address'],
           resourceName: address['name'],
-          tags: address['labels'],
           description: address['description'],
           resourceType: address['type'],
+          addressType: address['addressType'],
+          networkTier: address['networkTier'],
           selfLink: address['selfLink'],
           status: address['status'],
-          version: address['version'],
-          description: recommendation['description'],
+          creationTime: address['creationTime'],
           priority: recommendation['priority'],
           primaryImpact: recommendation['primaryImpact'],
           primaryImpactCategory: recommendation['primaryImpact']['category'],
+          recommenderDescription: recommendation['description'],
           recommenderSubtype: recommendation['recommenderSubtype'],
           state: recommendation['state'],
           policy_name: ds_applied_policy['name'],
+          tags: labels.join(', '),
           savings: savings,
           savingsCurrency: currency,
           service: "Other"
@@ -484,10 +508,16 @@ script "js_recommendations_incident", type:"javascript" do
   total_unused_ips = result.length.toString()
   unused_ips_percentage = (total_unused_ips / total_ips * 100).toFixed(2).toString() + '%'
 
+  ip_noun = "address"
+  if (total_ips > 1) { ip_noun = "addresses" }
+
+  ip_verb = "is"
+  if (total_unused_ips > 1) { ip_verb = "are" }
+
   findings = [
-    "Out of ", total_ips , " IP addresses analyzed, ",
+    "Out of ", total_ips , " IP ", ip_noun, " analyzed, ",
     total_unused_ips, " (", unused_ips_percentage,
-    ") are unused and recommended for deletion.\n\n"
+    ") ", ip_verb, " unused and recommended for deletion.\n\n"
   ].join('')
 
   disclaimer = "Recommendations are generated by Google Cloud. Please refer to Google's documentation if different recommendations are desired."
@@ -547,7 +577,6 @@ policy "policy_recommendations" do
       end
       field "ipAddress" do
         label "IP Address"
-        path "resourceID"
       end
       field "region" do
         label "Region"
