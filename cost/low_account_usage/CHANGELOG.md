@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.3
+
+- Added filters to API calls to reduce response body lenght.
+- Removed unused vars and fields.
+- Reduced execution time by removing unnecessary loops and functions.
+
 ## v2.2
 
 - Reduced execution time avoiding repetitive loops and request fields.
