@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "3.2",
+  version: "3.3",
   provider: "Azure",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -67,6 +67,23 @@ parameter "param_subscriptions_list" do
   category "Filters"
   label "Allow/Deny Subscriptions List"
   description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
   default []
 end
 
@@ -359,11 +376,11 @@ datasource "ds_azure_instances" do
   end
 end
 
-datasource "ds_azure_instances_filtered" do
-  run_script $js_azure_instances_filtered, $ds_azure_instances, $param_exclusion_tags
+datasource "ds_azure_instances_tag_filtered" do
+  run_script $js_azure_instances_tag_filtered, $ds_azure_instances, $param_exclusion_tags
 end
 
-script "js_azure_instances_filtered", type: "javascript" do
+script "js_azure_instances_tag_filtered", type: "javascript" do
   parameters "ds_azure_instances", "param_exclusion_tags"
   result "result"
   code <<-EOS
@@ -389,6 +406,30 @@ script "js_azure_instances_filtered", type: "javascript" do
     })
   } else {
     result = ds_azure_instances
+  }
+EOS
+end
+
+datasource "ds_azure_instances_region_filtered" do
+  run_script $js_azure_instances_region_filtered, $ds_azure_instances_tag_filtered, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_azure_instances_region_filtered", type: "javascript" do
+  parameters "ds_azure_instances_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_azure_instances_tag_filtered, function(vm) {
+      include_vm = _.contains(param_regions_list, vm['region'])
+
+      if (param_regions_allow_or_deny == "Deny") {
+        include_vm = !include_vm
+      }
+
+      return include_vm
+    })
+  } else {
+    result = ds_azure_instances_tag_filtered
   }
 EOS
 end
@@ -442,7 +483,7 @@ EOS
 end
 
 datasource "ds_azure_instances_metrics" do
-  iterate $ds_azure_instances_filtered
+  iterate $ds_azure_instances_region_filtered
   request do
     run_script $js_azure_instances_metrics, val(iter_item, "resourceId"), $param_azure_endpoint, $param_stats_lookback
   end
@@ -747,11 +788,11 @@ datasource "ds_azure_instance_size_map" do
 end
 
 datasource "ds_idle_and_underutil_instances" do
-  run_script $js_idle_and_underutil_instances, $ds_azure_instances_filtered, $ds_azure_instances_metrics_organized, $ds_instance_costs_grouped, $ds_azure_instance_size_map, $ds_currency, $ds_applied_policy, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_min_savings, $param_stats_lookback
+  run_script $js_idle_and_underutil_instances, $ds_azure_instances_region_filtered, $ds_azure_instances_metrics_organized, $ds_instance_costs_grouped, $ds_azure_instance_size_map, $ds_currency, $ds_applied_policy, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_min_savings, $param_stats_lookback
 end
 
 script "js_idle_and_underutil_instances", type:"javascript" do
-  parameters "ds_azure_instances_filtered", "ds_azure_instances_metrics_organized", "ds_instance_costs_grouped", "ds_azure_instance_size_map", "ds_currency", "ds_applied_policy", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_min_savings", "param_stats_lookback"
+  parameters "ds_azure_instances_region_filtered", "ds_azure_instances_metrics_organized", "ds_instance_costs_grouped", "ds_azure_instance_size_map", "ds_currency", "ds_applied_policy", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_min_savings", "param_stats_lookback"
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
@@ -889,7 +930,7 @@ script "js_idle_and_underutil_instances", type:"javascript" do
 
   // Build out the detail_template for the incidents
   if (checking_cpu || checking_mem) {
-    instances_total = ds_azure_instances_filtered.length.toString()
+    instances_total = ds_azure_instances_region_filtered.length.toString()
     underutil_instances_total = underutil_list.length.toString()
     underutil_instances_percentage = (underutil_instances_total / instances_total * 100).toFixed(2).toString() + '%'
     idle_instances_total = idle_list.length.toString()

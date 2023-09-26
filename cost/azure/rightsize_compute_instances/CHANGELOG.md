@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.3
+
+- Added ability to filter resources by region
+
 ## v3.2
 
 - Corrected issue with policy not retrieving cost data on orgs using newer Azure bill connections
