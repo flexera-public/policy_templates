@@ -382,10 +382,13 @@ These templates can generate savings estimates for your environment.
 
 #### AWS
 
+- Compute
+
+  - [AWS Long Running Instances](./operational/aws/long_running_instances)
+
 - EC2
 
   - [AWS Instance Scheduled Events](./operational/aws/instance_scheduled_events)
-  - [AWS Long Running Instances](./operational/aws/long_running_instances)
 
 - Lambda
 
@@ -682,9 +685,9 @@ These templates can generate savings estimates for your environment.
   Storage Accounts: 2
   '': 63
   Identity: 1
-  Compute: 36
+  Compute: 37
   Policy: 1
-  EC2: 13
+  EC2: 12
   Org: 1
   ECS: 1
   All: 3

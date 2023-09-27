@@ -1,5 +1,11 @@
 # Changelog
 
+## v7.0
+
+- Policy now retrieves read/write stats to determine if a volume is unused
+- Added ability to include attached volumes in the incident and to action on them
+- Added parameters to allow the user to configure the new functionality above
+
 ## v6.1
 
 - Refactored the Delete Volume and Create Snapshot Actions to use updated Azure APIs, improve debugging, and error handling
