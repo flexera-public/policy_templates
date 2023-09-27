@@ -132,6 +132,7 @@ datasource "ds_applied_policy" do
   end
 end
 
+# Gather local currency info
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
@@ -156,32 +157,19 @@ datasource "ds_currency_code" do
   end
 end
 
-datasource "ds_currency" do
-  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+datasource "ds_currency_target" do
+  run_script $js_currency_target, $ds_currency_reference, $ds_currency_code
 end
 
-script "js_currency", type:"javascript" do
+script "js_currency_target", type:"javascript" do
   parameters "ds_currency_reference", "ds_currency_code"
   result "result"
   code <<-EOS
-  symbol = "$"
-  separator = ","
+  // Default to USD if currency is not found
+  result = ds_currency_reference['USD']
 
-  if (ds_currency_code['value'] != undefined) {
-    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
-      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
-
-      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
-        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
-      } else {
-        separator = ""
-      }
-    }
-  }
-
-  result = {
-    symbol: symbol,
-    separator: separator
+  if (ds_currency_code['value'] != undefined && ds_currency_reference[ds_currency_code['value']] != undefined) {
+    result = ds_currency_reference[ds_currency_code['value']]
   }
 EOS
 end
@@ -387,13 +375,85 @@ script "js_recommendations", type: "javascript" do
 EOS
 end
 
+# Branching logic:
+# This datasource returns an empty array if the target currency is USD.
+# This prevents ds_currency_conversion from running if it's not needed.
+datasource "ds_conditional_currency_conversion" do
+  run_script $js_conditional_currency_conversion, $ds_currency_target, $ds_recommendations
+end
+
+script "js_conditional_currency_conversion", type: "javascript" do
+  parameters "ds_currency_target", "ds_recommendations"
+  result "result"
+  code <<-EOS
+  result = []
+  from_currency = "USD"
+
+  if (ds_recommendations.length > 0) {
+    from_currency = ds_recommendations[0]["currency"]
+  }
+
+  // Make the request only if the target currency is not USD
+  if (ds_currency_target['code'] != from_currency) {
+    result = [{ from: from_currency }]
+  }
+EOS
+end
+
+datasource "ds_currency_conversion" do
+  # Only make a request if the target currency is not USD
+  iterate $ds_conditional_currency_conversion
+  request do
+    host "api.xe-auth.flexeraeng.com"
+    path "/prod/{proxy+}"
+    query "from", val(iter_item, 'from')
+    query "to", val($ds_currency_target, 'code')
+    query "amount", "1"
+    # Ignore currency conversion if API has issues
+    ignore_status [400, 404, 502]
+  end
+  result do
+    encoding "json"
+    field "from", jmes_path(response, "from")
+    field "to", jmes_path(response, "to")
+    field "amount", jmes_path(response, "amount")
+    field "year", jmes_path(response, "year")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_target, $ds_currency_conversion
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_target", "ds_currency_conversion"
+  result "result"
+  code <<-EOS
+  result = ds_currency_target
+  result['exchange_rate'] = 1
+
+  if (ds_currency_conversion['to'] != undefined) {
+    currency_code = ds_currency_target['code']
+    current_month = parseInt(new Date().toISOString().split('-')[1])
+
+    conversion_block = _.find(ds_currency_conversion['to'][currency_code], function(item) {
+      return item['month'] == current_month
+    })
+
+    if (conversion_block != undefined) {
+      result['exchange_rate'] = conversion_block['monthlyAverage']
+    }
+  }
+EOS
+end
+
 #GET IP ADDRESS COST MAPPING
 datasource "ds_recommendations_incident" do
-  run_script $js_recommendations_incident, $ds_ip_addresses, $ds_recommendations, $ds_currency, $ds_currency_reference, $ds_applied_policy, $param_min_savings
+  run_script $js_recommendations_incident, $ds_ip_addresses, $ds_recommendations, $ds_currency, $ds_currency_conversion, $ds_applied_policy, $param_min_savings
 end
 
 script "js_recommendations_incident", type:"javascript" do
-  parameters "ds_ip_addresses", "ds_recommendations", "ds_currency", "ds_currency_reference", "ds_applied_policy", "param_min_savings"
+  parameters "ds_ip_addresses", "ds_recommendations", "ds_currency", "ds_currency_conversion", "ds_applied_policy", "param_min_savings"
   result "result"
   code <<-'EOS'
   // Function for formatting currency numbers later
@@ -425,9 +485,6 @@ script "js_recommendations_incident", type:"javascript" do
   result = []
   total_savings = 0.0
 
-  currency = "$"
-  seperator = ","
-
   _.each(ds_recommendations, function(recommendation) {
     resource_link = recommendation['resourceLink'].replace("//compute.googleapis.com/", "")
 
@@ -435,13 +492,6 @@ script "js_recommendations_incident", type:"javascript" do
     if (typeof(address_object[resource_link]) == 'object') { address = address_object[resource_link] }
 
     if (address != null) {
-      if (recommendation['currency'] != undefined) {
-        if (ds_currency_reference[recommendation['currency']] != undefined) {
-          currency = ds_currency_reference[recommendation['currency']]['symbol']
-          seperator = ds_currency_reference[recommendation['currency']]['t_separator']
-        }
-      }
-
       costNanos = recommendation['costNanos']
       if (costNanos == null || costNanos == undefined) { costNanos = 0 }
       if (costNanos != null && costNanos != undefined) { costNanos = Number(costNanos) * -1 }
@@ -452,7 +502,7 @@ script "js_recommendations_incident", type:"javascript" do
 
       savings = 0.0
       duration = parseFloat(recommendation['duration'].replace("s", "")) / 2628288
-      if (duration != 0) { savings = (costUnits + costNanos * Math.pow(10, -9)) / duration }
+      if (duration != 0) { savings = (costUnits + costNanos * Math.pow(10, -9)) / duration * ds_currency['exchange_rate']}
 
       if (savings >= param_min_savings) {
         total_savings += savings
@@ -483,13 +533,13 @@ script "js_recommendations_incident", type:"javascript" do
           priority: recommendation['priority'],
           primaryImpact: recommendation['primaryImpact'],
           primaryImpactCategory: recommendation['primaryImpact']['category'],
-          recommenderDescription: recommendation['description'],
+          recommendationDetails: recommendation['description'],
           recommenderSubtype: recommendation['recommenderSubtype'],
           state: recommendation['state'],
           policy_name: ds_applied_policy['name'],
           tags: labels.join(', '),
-          savings: savings,
-          savingsCurrency: currency,
+          savings: parseFloat(savings.toFixed(3)),
+          savingsCurrency: ds_currency['symbol'],
           service: "Other"
         })
       }
@@ -500,7 +550,8 @@ script "js_recommendations_incident", type:"javascript" do
   result = _.sortBy(result, function(item) { return item['savings'] * -1 })
 
   savings_message = [
-    currency, ' ', formatNumber(parseFloat(total_savings).toFixed(2), seperator)
+    ds_currency['symbol'], ' ',
+    formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['t_separator'])
   ].join('')
 
   // Message for incident output
@@ -521,7 +572,6 @@ script "js_recommendations_incident", type:"javascript" do
   ].join('')
 
   disclaimer = "Recommendations are generated by Google Cloud. Please refer to Google's documentation if different recommendations are desired."
-
 
   // Dummy item to ensure that the check statement in the policy executes at least once
   result.push({
@@ -587,9 +637,6 @@ policy "policy_recommendations" do
       field "tags" do
         label "Labels"
       end
-      field "description" do
-        label "Description"
-      end
       field "service" do
         label "Service"
       end
@@ -602,11 +649,11 @@ policy "policy_recommendations" do
       field "priority" do
         label "Priority"
       end
-      field "recommenderDescription" do
-        label "Recommender Description"
+      field "recommendationDetails" do
+        label "Recommendation"
       end
       field "recommenderSubtype" do
-        label "Recommender Sub Type"
+        label "Recommendation Sub Type"
       end
       field "state" do
         label "State"
@@ -619,6 +666,7 @@ policy "policy_recommendations" do
       end
       field "id" do
         label "ID"
+        path "resourceID"
       end
     end
   end
