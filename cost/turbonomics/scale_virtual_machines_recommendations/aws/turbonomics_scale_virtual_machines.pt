@@ -6,7 +6,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "0.4",
+  version: "0.5",
   provider: "AWS",
   source: "Turbonomic",
   service: "Compute",
@@ -88,7 +88,7 @@ datasource "ds_get_turbonomic_recommendations" do
       field "resourceGroup", jmes_path(col_item, "target.aspects.cloudAspect.resourceGroup.displayName")
       field "resourceName", jmes_path(col_item, "target.displayName")
       field "region", jmes_path(col_item, "currentLocation.displayName")
-      field "resourceType", jmes_path(col_item, "currentEntity.displayName")
+      field "currentResourceType", jmes_path(col_item, "currentEntity.displayName")
       field "newResourceType", jmes_path(col_item, "newEntity.displayName")
       field "provider", jmes_path(col_item, "target.discoveredBy.type")
       field "details", jmes_path(col_item, "details")
@@ -319,6 +319,7 @@ script "js_filtered_turbonomic_recommendations", type: "javascript" do
         vm.savings = (Math.round(vm.savings * 730 * 1000 * (vm.uptime/100)) / 1000)
         monthlySavings = monthlySavings + vm.savings
         vm.url = "https://" + param_turbonomic_endpoint + "/app/index.html#/view/main/action/" + vm.urlUUID
+        vm.resourceType = vm.currentResourceType
         instances.push(vm)
       }
     })
@@ -344,7 +345,7 @@ script "js_get_stats", type: "javascript" do
           {"name": "NetThroughput", "groupBy": ["key", "percentile"]}
         ],
         "startDate": startDate.getTime(),
-        "endDate": endDate.getTime()     
+        "endDate": endDate.getTime()
       },
       headers: {
         "Content-Type": "application/json"
@@ -404,6 +405,7 @@ script "js_filtered_stats", type: "javascript" do
   }
   _.each(ds_filtered_turbonomic_recommendations, function (instance, index) {
     monthlySavings = monthlySavings + instance.savings
+    ds_filtered_turbonomic_recommendations[index].resourceType = instance.resourceType
     _.each(ds_get_stats, function (stats) {
       if (instance.targetUUID == stats.uuid) {
         ds_filtered_turbonomic_recommendations[index] = getStats(ds_filtered_turbonomic_recommendations[index], stats, "CURRENT")
@@ -448,6 +450,9 @@ EOS
       field "resourceName" do
         label "Resource Name"
       end
+      field "resourceType" do
+        label "Resource Type"
+      end
       field "savingsCurrency" do
         label "Savings Currency"
       end
@@ -460,7 +465,7 @@ EOS
       field "uptime" do
         label "Virtual Machine Uptime Percentage"
       end
-      field "resourceType" do
+      field "currentResourceType" do
         label "Current Compute Tier"
       end
       field "newResourceType" do
