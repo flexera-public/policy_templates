@@ -941,16 +941,13 @@ end
 ###############################################################################
 
 define change_instances($data, $param_azure_endpoint) return $all_responses do
-  # Change "No" to "Yes" to enable CWF debug logging
-  $log_to_cm_audit_entries = "No"
+  $$all_responses = []
 
-  $$debug = $log_to_cm_audit_entries == "Yes"
-
-  $response={}
-
-  $syslog_subject = "Azure Superseded Instances Policy: "
   foreach $item in $data do
-    sub on_error: skip do
+    sub on_error: handle_error() do
+      $change_url = "https://" + $param_azure_endpoint + $item["resourceID"] + "?api-version=2019-03-01"
+      task_label("PATCH " + $change_url)
+
       $response = http_request(
         auth: $$auth_azure,
         verb: "patch",
@@ -972,23 +969,30 @@ define change_instances($data, $param_azure_endpoint) return $all_responses do
         }
       )
 
-      call sys_log(join([$syslog_subject, "Response"]), to_s($response))
+      task_label("Patch Azure VM response: " + $item["resourceID"] + " " + to_json($response))
+      $$all_responses << to_json({"req": "PATCH " + $change_url, "resp": $response})
+
+      if $response["code"] != 202 && $response["code"] != 200
+        raise "Unexpected response patching Azure VM: "+ $item["resourceID"] + " " + to_json($response)
+      end
+
+      task_label("Patch Azure VM successful: " + $item["resourceID"] )
     end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
   end
 end
 
-#function to log
-define sys_log($subject, $detail) do
-  if $$debug
-    rs_cm.audit_entries.create(
-      notify: "None",
-      audit_entry: {
-        auditee_href: @@account,
-        summary: $subject,
-        detail: $detail
-      }
-    )
+define handle_error() do
+  if !$$errors
+    $$errors = []
   end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
 end
 
 ###############################################################################
