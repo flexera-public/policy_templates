@@ -702,29 +702,25 @@ escalation "esc_delete_ip_address" do
   automatic contains($param_automatic_action, "Delete IP Addresses")
   label "Delete IP Addresses"
   description "Approval to delete all selected IP addresses"
-  run "delete_ip_addresses", data, rs_optima_host
+  run "delete_ip_addresses", data
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define delete_ip_addresses($data, $$rs_optima_host) return $all_responses do
-  # Change "No" to "Yes" to enable CWF debug logging
-  $log_to_cm_audit_entries = "No"
-
-  $$debug = $log_to_cm_audit_entries == "Yes"
+define delete_ip_addresses($data) return $all_responses do
+  $$all_responses = []
 
   foreach $item in $data do
-    sub on_error: skip do
+    sub on_error: handle_error() do
       call delete_ip_address($item['selfLink'])
     end
   end
 end
 
 define delete_ip_address($selfLink) do
-  $response={}
-  $syslog_subject = "Google Idle IP Address: "
+  task_label("DELETE " + $selfLink)
 
   $response = http_delete(
     url: $selfLink,
@@ -735,39 +731,22 @@ define delete_ip_address($selfLink) do
     }
   )
 
-  call sys_log($syslog_subject, to_s($response))
+  task_label("Delete Google IP address response: " + $item["ipAddress"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $selfLink, "resp": $response})
+
+  if $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response deleting Google IP address: "+ $item["ipAddress"] + " " + to_json($response)
+  else
+    task_label("Patch Azure VM successful: " + $item["ipAddress"])
+  end
 end
 
-define sys_log($subject, $detail) do
-  # Create empty errors array if doesn't already exist
+define handle_error() do
   if !$$errors
     $$errors = []
   end
-  # Check if debug is enabled
-  if $$debug
-    # Append to global $$errors
-    # This is the suggested way to capture errors
-    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
-    # If Flexera NAM Zone, create audit_entries [to be deprecated]
-    # This is the legacy method for capturing errors and only supported on Flexera NAM
-    if $$rs_optima_host == "api.optima.flexeraeng.com"
-      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
-      $task_label = "Creating audit entry for " + $subject
-      sub task_label: $task, on_error: skip_error_and_append($task) do
-        rs_cm.audit_entries.create(
-          notify: "None",
-          audit_entry: {
-            auditee_href: @@account,
-            summary: $subject,
-            detail: $detail
-          }
-        )
-      end # End sub on_error
-    end # End if rs_optima_host
-  end # End if debug is enabled
-end
-
-define skip_error_and_append($subject) do
-  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
   $_error_behavior = "skip"
 end
