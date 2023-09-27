@@ -1,5 +1,19 @@
 # Changelog
 
+## v3.0
+
+- Policy now converts savings to local currency when appropriate
+- Several parameters altered to be more descriptive and human-readable
+- Removed deprecated "Log to CM Audit Entries" parameter
+- Added ability to only report recommendations that meet a minimum savings threshold
+- Added ability to filter resources by project and by region via an allow list or a deny list
+- Added ability to filter resources by multiple label key:value pairs
+- Added additional context to incident description
+- Normalized incident export to be consistent with other policies
+- Added additional fields to incident export to facilitate scraping for dashboards
+- Policy no longer raises new escalations if savings data changed but nothing else has
+- Streamlined code for better readability and faster execution
+
 ## v2.11
 
 - Updated policy README file with a deeper explanation of how the GCP recommender works and the roles required to use it.

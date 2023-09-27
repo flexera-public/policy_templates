@@ -219,7 +219,12 @@ end
 datasource "ds_ip_address_lists" do
   iterate $ds_google_projects_filtered
   request do
-    run_script $js_ip_address_lists, val(iter_item, "id"), $param_exclusion_labels
+    auth $auth_google
+    pagination $pagination_google
+    host "compute.googleapis.com"
+    path join(["/compute/v1/projects/", val(iter_item, "id"), "/aggregated/addresses"])
+    query "filter", '(status != "IN_USE") AND (addressType != "INTERNAL")'
+    ignore_status [403, 404]
   end
   result do
     encoding "json"
@@ -230,36 +235,11 @@ datasource "ds_ip_address_lists" do
   end
 end
 
-script "js_ip_address_lists", type: "javascript" do
-  parameters "projectId", "param_exclusion_labels"
-  result "request"
-  code <<-EOS
-  filter = ['(status != "IN_USE") AND (addressType != "INTERNAL")']
-
-  _.each(param_exclusion_labels, function(label) {
-    filter.push(" AND (NOT labels.")
-    filter.push(label)
-    filter.push(")")
-  })
-
-  var request = {
-    auth: "auth_google",
-    pagination: "pagination_google",
-    host: "compute.googleapis.com",
-    ignore_status: [403, 404],
-    path: "/compute/v1/projects/" + projectId + "/aggregated/addresses",
-    query_params: {
-      "filter": filter.join('')
-    }
-  }
-EOS
+datasource "ds_ip_addresses_region_filtered" do
+  run_script $js_ip_addresses_region_filtered, $ds_ip_address_lists, $param_regions_allow_or_deny, $param_regions_list
 end
 
-datasource "ds_ip_addresses" do
-  run_script $js_ip_addresses, $ds_ip_address_lists, $param_regions_allow_or_deny, $param_regions_list
-end
-
-script "js_ip_addresses", type: "javascript" do
+script "js_ip_addresses_region_filtered", type: "javascript" do
   parameters "ds_ip_address_lists", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-EOS
@@ -300,6 +280,41 @@ script "js_ip_addresses", type: "javascript" do
       }
     })
   })
+EOS
+end
+
+datasource "ds_ip_addresses" do
+  run_script $js_ip_addresses, $ds_ip_addresses_region_filtered, $param_exclusion_labels
+end
+
+script "js_ip_addresses", type: "javascript" do
+  parameters "ds_ip_addresses_region_filtered", "param_exclusion_labels"
+  result "result"
+  code <<-EOS
+  if (param_exclusion_labels.length > 0) {
+    result = _.reject(ds_ip_addresses_region_filtered, function(ip) {
+      ip_labels = []
+
+      if (typeof(ip['labels']) == 'object') {
+        _.each(Object.keys(ip['labels']), function(key) {
+          ip_labels.push([key, ":", ip['labels'][key]].join(''))
+          ip_labels.push([key, ":*"].join(''))
+        })
+      }
+
+      exclude_ip = false
+
+      _.each(param_exclusion_labels, function(exclusion_label) {
+        if (_.contains(ip_labels, exclusion_label)) {
+          exclude_ip = true
+        }
+      })
+
+      return exclude_ip
+    })
+  } else {
+    result = ds_ip_addresses_region_filtered
+  }
 EOS
 end
 
