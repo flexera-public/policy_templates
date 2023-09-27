@@ -966,32 +966,26 @@ end
 
 # Core CWF function to downsize instances
 define change_instances($data) return $all_responses do
-  # Change "No" to "Yes" to enable CWF debug logging
-  $log_to_cm_audit_entries = "No"
-
-  $$debug = $log_to_cm_audit_entries == "Yes"
-  $$log = []
-  $all_responses = []
-  $syslog_subject = "AWS Superseded EC2 Instances [Change Type]: "
-
-  call sys_log(join([$syslog_subject, "Identified Instances"]), to_s($data))
+  $$all_responses = []
 
   foreach $instance in $data do
-    call get_instance_state($instance) retrieve $state_response, $initial_state
-    $all_responses << $state_response
+    sub on_error: handle_error() do
+      call get_instance_state($instance) retrieve $state_response, $initial_state
+      $$all_responses << $state_response
 
-    if $initial_state != "terminated" && $initial_state != "pending"
-      if $initial_state != "stopped"
-        call stop_instance($instance) retrieve $stop_response
-        $all_responses << $stop_response
-      end
+      if $initial_state != "terminated" && $initial_state != "pending"
+        if $initial_state != "stopped"
+          call stop_instance($instance) retrieve $stop_response
+          $$all_responses << $stop_response
+        end
 
-      call change_instance($instance) retrieve $change_response
-      $all_responses << $change_response
+        call change_instance($instance) retrieve $change_response
+        $$all_responses << $change_response
 
-      if $initial_state == "running"
-        call start_instance($instance) retrieve $start_response
-        $all_responses << $start_response
+        if $initial_state == "running"
+          call start_instance($instance) retrieve $start_response
+          $$all_responses << $start_response
+        end
       end
     end
   end
@@ -999,9 +993,8 @@ end
 
 # CWF function to change an instance type
 define change_instance($instance) return $response do
-  $syslog_subject = "AWS Change Instance Type : "
-
-  call sys_log(join([$syslog_subject, "Instance"]), to_s($instance["resourceID"]))
+  $change_url = "https://" + "ec2." + $instance["region"] + ".amazonaws.com/?Action=ModifyInstanceAttribute&Version=2016-11-15&InstanceId=" + $instance["resourceID"] + "&InstanceType.Value=" + $instance["newResourceType"]
+  task_label("POST " + $change_url)
 
   $response = http_request(
     auth: $$auth_aws,
@@ -1017,22 +1010,29 @@ define change_instance($instance) return $response do
     }
   )
 
-  $current_state = "dummy_value"
+  task_label("Post AWS EC2 instance response: " + $item["resourceID"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $change_url, "resp": $response})
 
-  while $current_state != "stopped" do
-    sleep(30)
+  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
+    raise "Unexpected response posting AWS EC2 instance: "+ $item["resourceID"] + " " + to_json($response)
+  else
+    task_label("Post AWS EC2 instance request Accepted and the operation will complete asynchronously")
+
     call get_instance_state($instance) retrieve $state_response, $current_state
+    sleep(5)
+
+    while $current_state != "stopped" do
+      task_label('Post AWS EC2 instance Status (waiting for "stopped" state): ' + $current_state) + ' ' + $item["resourceID"]
+      call get_instance_state($instance) retrieve $state_response, $current_state
+      sleep(5)
+    end
   end
-
-  call sys_log(join([$syslog_subject, "Responses"]), to_s($response))
 end
-
 
 # CWF function to start an instance
 define start_instance($instance) return $response do
-  $syslog_subject = "AWS Starting Instance: "
-
-  call sys_log(join([$syslog_subject, "Instance"]), to_s($instance["resourceID"]))
+  $start_url = "https://" + "ec2." + $instance["region"] + ".amazonaws.com/?Action=StartInstances&Version=2016-11-15&InstanceId.1=" + $instance["resourceID"]
+  task_label("POST " + $start_url)
 
   $response = http_request(
     auth: $$auth_aws,
@@ -1047,14 +1047,18 @@ define start_instance($instance) return $response do
     }
   )
 
-  call sys_log(join([$syslog_subject, "Responses"]), to_s($response))
+  task_label("Post AWS EC2 instance response: " + $item["resourceID"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $start_url, "resp": $response})
+
+  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
+    raise "Unexpected response posting AWS EC2 instance: "+ $item["resourceID"] + " " + to_json($response)
+  end
 end
 
 # CWF function to stop an instance
 define stop_instance($instance) return $response do
-  $syslog_subject = "AWS Stopping Instance: "
-
-  call sys_log(join([$syslog_subject, "Instance"]), to_s($instance["resourceID"]))
+  $stop_url = "https://" + "ec2." + $instance["region"] + ".amazonaws.com/?Action=StopInstances&Version=2016-11-15&InstanceId.1=" + $instance["resourceID"]
+  task_label("POST " + $stop_url)
 
   $response = http_request(
     auth: $$auth_aws,
@@ -1069,21 +1073,29 @@ define stop_instance($instance) return $response do
     }
   )
 
-  $current_state = "dummy_value"
+  task_label("Post AWS EC2 instance response: " + $item["resourceID"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $stop_url, "resp": $response})
 
-  while $current_state != "stopped" do
-    sleep(30)
+  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
+    raise "Unexpected response posting AWS EC2 instance: "+ $item["resourceID"] + " " + to_json($response)
+  else
+    task_label("Post AWS EC2 instance request Accepted and the operation will complete asynchronously")
+
     call get_instance_state($instance) retrieve $state_response, $current_state
-  end
+    sleep(5)
 
-  call sys_log(join([$syslog_subject, "Responses"]), to_s($response))
+    while $current_state != "stopped" do
+      task_label('Post AWS EC2 instance Status (waiting for "stopped" state): ' + $current_state) + ' ' + $item["resourceID"]
+      call get_instance_state($instance) retrieve $state_response, $current_state
+      sleep(5)
+    end
+  end
 end
 
 # CWF function to get the current state of an instance
 define get_instance_state($instance) return $response, $instance_state do
-  $syslog_subject = "AWS Describing Instance: "
-
-  call sys_log(join([$syslog_subject, "Instance"]), to_s($instance["resourceID"]))
+  $state_url = "https://" + "ec2." + $instance["region"] + ".amazonaws.com/?Action=DescribeInstanceStatus&Version=2016-11-15&IncludeAllInstances=true&InstanceId.1=" + $instance["resourceID"]
+  task_label("POST " + $state_url)
 
   $response = http_request(
     auth: $$auth_aws,
@@ -1099,44 +1111,23 @@ define get_instance_state($instance) return $response, $instance_state do
     }
   )
 
-  call sys_log(join([$syslog_subject, "Responses"]), to_s($response))
+  task_label("Post AWS EC2 instance response: " + $item["resourceID"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $state_url, "resp": $response})
 
-  $instance_state = $response["body"]["DescribeInstanceStatusResponse"]["instanceStatusSet"]["item"]["instanceState"]["name"]
+  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
+    raise "Unexpected response posting AWS EC2 instance: "+ $item["resourceID"] + " " + to_json($response)
+  else
+    $instance_state = $response["body"]["DescribeInstanceStatusResponse"]["instanceStatusSet"]["item"]["instanceState"]["name"]
+  end
 end
 
-# CWF function to record information to the logs
-define sys_log($subject, $detail) do
-  # Create empty errors array if doesn't already exist
+define handle_error() do
   if !$$errors
     $$errors = []
   end
-  # Check if debug is enabled
-  if $$debug
-    # Append to global $$errors
-    # This is the suggested way to capture errors
-    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
-    # If Flexera NAM Zone, create audit_entries [to be deprecated]
-    # This is the legacy method for capturing errors and only supported on Flexera NAM
-    if $$rs_optima_host == "api.optima.flexeraeng.com"
-      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
-      $task_label = "Creating audit entry for " + $subject
-      sub task_label: $task, on_error: skip_error_and_append($task) do
-        rs_cm.audit_entries.create(
-          notify: "None",
-          audit_entry: {
-            auditee_href: @@account,
-            summary: $subject,
-            detail: $detail
-          }
-        )
-      end # End sub on_error
-    end # End if rs_optima_host
-  end # End if debug is enabled
-end
-
-# CWF function to handle errors
-define skip_error_and_append($subject) do
-  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
   $_error_behavior = "skip"
 end
 
