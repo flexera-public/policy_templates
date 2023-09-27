@@ -34,9 +34,10 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
     - `Compute Recommender Admin`*
 
   - Permissions
+    - `recommender.computeAddressIdleResourceRecommendations.list`
     - `resourcemanager.projects.get`
     - `compute.addresses.list`
-    - `recommender.computeAddressIdleResourceRecommendations.list`
+    - `compute.addresses.delete`*
 
 \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
 
