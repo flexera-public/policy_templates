@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.5
+
+- Added `Resource Type` incident field.
+
 ## v0.4
 
 - Added `RI Coverage` incident field.
