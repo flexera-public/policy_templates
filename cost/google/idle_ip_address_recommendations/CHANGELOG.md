@@ -2,6 +2,7 @@
 
 ## v3.0
 
+- Policy now requires a Flexera credential
 - Policy now converts savings to local currency when appropriate
 - Several parameters altered to be more descriptive and human-readable
 - Removed deprecated "Log to CM Audit Entries" parameter
