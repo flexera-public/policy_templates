@@ -35,6 +35,7 @@ These templates can generate savings estimates for your environment.
 - [AWS Rightsize EBS Volumes](./cost/aws/rightsize_ebs_volumes)
 - [AWS Rightsize EC2 Instances](./cost/aws/rightsize_ec2_instances)
 - [AWS Savings Plan Recommendations](./cost/aws/savings_plan/recommendations)
+- [AWS Superseded EC2 Instances](./cost/aws/superseded_instances)
 - [AWS Unused IP Addresses](./cost/aws/unused_ip_addresses)
 - [AWS Unused RDS Instances](./cost/aws/unused_rds)
 - [AWS Unused Volumes](./cost/aws/unused_volumes)
@@ -54,6 +55,7 @@ These templates can generate savings estimates for your environment.
 - [Azure Rightsize Compute Instances](./cost/azure/rightsize_compute_instances)
 - [Azure Rightsize SQL Databases](./cost/azure/rightsize_sql_instances)
 - [Azure Savings Plan Recommendations](./cost/azure/savings_plan/recommendations)
+- [Azure Superseded Compute Instances](./cost/azure/superseded_instances)
 - [Azure Unused IP Addresses](./cost/azure/unused_ip_addresses)
 - [Azure Unused SQL Databases](./cost/azure/unused_sql_databases)
 - [Azure Unused Volumes](./cost/azure/unused_volumes)
@@ -185,6 +187,7 @@ These templates can generate savings estimates for your environment.
 - Compute
 
   - [AWS Rightsize EC2 Instances](./cost/aws/rightsize_ec2_instances)
+  - [AWS Superseded EC2 Instances](./cost/aws/superseded_instances)
   - [Turbonomic Allocate Virtual Machine Recommendations AWS](./cost/turbonomics/allocate_virtual_machines_recommendations/aws)
   - [Turbonomic Rightsize Virtual Machines Recommendations AWS](./cost/turbonomics/scale_virtual_machines_recommendations/aws)
 
@@ -254,6 +257,7 @@ These templates can generate savings estimates for your environment.
   - [Azure Rightsize Compute Instances](./cost/azure/rightsize_compute_instances)
   - [Azure Savings Plan Recommendations](./cost/azure/savings_plan/recommendations)
   - [Azure Schedule Instance](./cost/azure/schedule_instance)
+  - [Azure Superseded Compute Instances](./cost/azure/superseded_instances)
   - [Azure Unused IP Addresses](./cost/azure/unused_ip_addresses)
   - [Turbonomic Allocate Virtual Machine Recommendations Azure](./cost/turbonomics/allocate_virtual_machines_recommendations/azure)
   - [Turbonomic Rightsize Virtual Machines Recommendations Azure](./cost/turbonomics/scale_virtual_machines_recommendations/azure)
@@ -414,12 +418,12 @@ These templates can generate savings estimates for your environment.
 - Compute
 
   - [Azure Long Running Instances](./operational/azure/azure_long_running_instances)
-  - [Azure Migrate Integration](./operational/azure/azure_migrate)
   - [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks)
   - [Expiring Azure Certificates](./operational/azure/azure_certificates)
 
 - Tags
 
+  - [Azure Migrate Integration](./operational/azure/azure_migrate)
   - [Azure Tag Cardinality Report](./operational/azure/tag_cardinality)
 
 #### Flexera
@@ -523,8 +527,8 @@ These templates can generate savings estimates for your environment.
   - [AWS IAM Ensure Access Keys Are Rotated](./security/aws/iam_rotate_access_keys)
   - [AWS IAM Ensure Credentials Unused For >45 days Are Disabled](./security/aws/iam_disable_45_day_creds)
   - [AWS IAM Ensure MFA Enabled For IAM Users](./security/aws/iam_mfa_enabled_for_iam_users)
-  - [AWS IAM Ensure One Active Key Per IAM User](./security/aws/iam_users_perms_via_groups_only)
   - [AWS IAM Ensure One Active Key Per IAM User](./security/aws/iam_one_active_key_per_user)
+  - [AWS IAM Ensure One Active Key Per IAM User](./security/aws/iam_users_perms_via_groups_only)
   - [AWS IAM Report Attached Admin IAM Policies](./security/aws/iam_no_admin_iam_policies_attached)
   - [AWS IAM Report Expired SSL/TLS Certificates](./security/aws/iam_expired_ssl_certs)
   - [AWS IAM Report Insufficient Password Policy](./security/aws/iam_min_password_length)
@@ -634,124 +638,125 @@ These templates can generate savings estimates for your environment.
 <!-- Begin Policy Template Stats -->
 <!--
 ---
-:total_count: 241
-:optimization_count: 44
+:total_count: 243
+:optimization_count: 46
 :categories:
-  Security: 74
-  Compliance: 33
-  Cost: 98
   Operational: 23
+  Cost: 100
   SaaS Management: 13
+  Compliance: 33
+  Security: 74
 :providers:
-  Azure: 77
-  AWS: 77
-  GCE: 8
-  Flexera Optima: 26
-  Google: 11
-  GitHub: 7
   Flexera Cloud Management: 3
-  Flexera ITAM: 5
-  Flexera FNMS: 1
   Flexera: 6
-  Azure China: 1
-  GCP: 1
-  Kubecost: 2
-  Oracle: 1
-  '': 1
+  Flexera Optima: 26
+  AWS: 78
   Flexera RISC: 2
-  Flexera SaaS Manager: 9
+  Azure: 78
+  Flexera ITAM: 5
+  Google: 11
+  Kubecost: 2
+  '': 1
+  Azure China: 1
+  Oracle: 1
+  GCE: 8
+  GCP: 1
   ServiceNow: 1
+  Flexera SaaS Manager: 9
   Okta: 1
   Microsoft: 1
+  GitHub: 7
+  Flexera FNMS: 1
 :services:
-  Storage: 20
+  '': 63
+  CCO: 1
+  Lambda: 1
+  EC2: 12
+  Tags: 3
+  Compute: 38
+  FNMS: 1
   SQL: 15
-  PostgreSQL: 4
+  AKS: 2
+  RDS: 6
+  Usage Discount: 6
+  Storage: 20
+  Kubernetes: 2
+  S3: 9
+  All: 3
+  EBS: 3
+  ELB: 4
+  Cost Explorer: 1
+  Blob Store: 1
+  Storage Accounts: 2
+  N/A: 1
+  Common Bill Ingestion: 1
+  Office 365: 1
   IAM: 19
+  ECS: 1
+  Org: 1
+  Identity: 1
+  Policy: 1
+  Config: 1
+  CloudTrail: 7
+  KMS: 1
+  DBS: 1
+  VPC: 1
   Security: 3
+  PostgreSQL: 4
   compute: 1
   Network Security Group: 2
   App Service: 1
   MySQL: 2
-  S3: 9
-  ELB: 4
-  CloudTrail: 7
-  DBS: 1
-  VPC: 1
-  Config: 1
-  RDS: 6
-  EBS: 3
-  KMS: 1
-  Storage Accounts: 2
-  '': 63
-  Identity: 1
-  Compute: 37
-  Policy: 1
-  EC2: 12
-  Org: 1
-  ECS: 1
-  All: 3
-  N/A: 1
-  Blob Store: 1
-  Usage Discount: 6
-  Cost Explorer: 1
-  Kubernetes: 2
-  Common Bill Ingestion: 1
-  AKS: 2
-  Tags: 2
-  CCO: 1
-  Lambda: 1
-  FNMS: 1
-  Office 365: 1
 :policy_sets:
-  CIS: 61
-  Public Database Access: 2
   '': 83
-  AWS Config: 1
-  Storage Security: 1
-  Open Buckets: 2
+  Tag Cardinality: 3
+  Long Running Instances: 2
+  Schedule Report: 1
+  Database Services: 1
+  Schedule Flexera ITAM Report: 1
+  Allocate VMs: 3
+  Reserved Instance: 2
+  Rightsize Database Instances: 3
+  Rightsize Compute Instances: 6
+  Unused Volumes: 6
+  Rightsize Volumes: 2
+  Rightsize Containers: 1
+  Rightsize Clusters: 1
+  Inefficient Disk Usage: 1
+  Object Store Optimization: 3
+  N/A: 3
+  Idle Compute Instances: 4
+  Unused Database Services: 3
+  GP3 Volumes: 1
+  RightSize Database Services: 1
+  Old Snapshots: 3
+  Schedule Instance: 3
+  Savings Plan Utilization: 1
+  Savings Plans: 2
+  Reserved Instances: 3
+  Inefficient Instance Usage: 2
+  Superseded Compute Instances: 2
+  Unused IP Addresses: 3
+  Forecasting: 4
+  Lifecycle Management: 1
+  Hybrid Use Benefit: 2
+  Common Bill Ingest: 1
+  Common Bill Ingestion: 1
+  Native Recommendations: 1
+  Committed Use Discount: 1
+  Rightsize Database Services: 1
+  Disallowed Regions: 2
+  Untagged resources: 1
   Instances not running FlexNet Inventory Agent: 2
   Long Stopped Instances: 3
-  Disallowed Regions: 2
-  Untagged Resources: 1
-  Untagged resources: 1
-  Unlabeled Resources: 1
   ITAM: 4
-  Rightsize Compute Instances: 6
-  N/A: 3
-  Hybrid Use Benefit: 2
-  Savings Plans: 2
-  Schedule Instance: 3
-  Common Bill Ingest: 1
-  Unused IP Addresses: 3
-  Inefficient Instance Usage: 2
-  Lifecycle Management: 1
-  Unused Database Services: 3
-  Rightsize Database Instances: 3
-  Old Snapshots: 3
-  Object Store Optimization: 3
-  Idle Compute Instances: 4
-  Unused Volumes: 6
-  Reserved Instances: 3
-  Reserved Instance: 2
-  Allocate VMs: 3
-  Rightsize Volumes: 2
-  RightSize Database Services: 1
-  Savings Plan Utilization: 1
-  GP3 Volumes: 1
-  Inefficient Disk Usage: 1
-  Native Recommendations: 1
-  Rightsize Database Services: 1
-  Committed Use Discount: 1
-  Rightsize Clusters: 1
-  Rightsize Containers: 1
-  Common Bill Ingestion: 1
-  Forecasting: 4
-  Schedule Flexera ITAM Report: 1
-  Database Services: 1
-  Long Running Instances: 3
-  Tag Cardinality: 2
-  Schedule Report: 1
+  Untagged Resources: 1
+  Unlabeled Resources: 1
+  CIS: 61
+  AWS Config: 1
+  Public Database Access: 2
+  Open Buckets: 2
+  Storage Security: 1
 -->
 <!-- End Policy Template Stats -->
 
