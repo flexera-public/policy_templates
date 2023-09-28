@@ -12,6 +12,7 @@ default_child_policy_template_files = [
   "../../cost/aws/old_snapshots/aws_delete_old_snapshots.pt",
   "../../cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt",
   "../../cost/aws/rightsize_ebs_volumes/aws_volumes_rightsizing.pt",
+  "../../cost/aws/superseded_instances/aws_superseded_instances.pt",
   "../../cost/aws/unused_ip_addresses/aws_unused_ip_addresses.pt",
   "../../cost/aws/unused_rds/unused_rds.pt",
   "../../cost/aws/unused_volumes/aws_delete_unused_volumes.pt",
