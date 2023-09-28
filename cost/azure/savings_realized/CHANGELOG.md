@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.4
+
+- Added a condition to prevent null report chart array
+
 ## v3.3
 
 - Corrected issue with policy not retrieving cost data on orgs using newer Azure bill connections
