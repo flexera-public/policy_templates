@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.1
+
+- Changed service metadata to "Compute" to ensure proper incident scraping
+
 ## v4.0
 
 - Added logic required for "Meta Policy" use-cases
