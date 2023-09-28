@@ -2,7 +2,7 @@
 
 ## Deprecated
 
-This policy is no longer being updated. Please use the versions of this policy specific to the cloud environments you need recommendations for.
+This policy is no longer being updated. Please use the version of this policy specific to the cloud environment you need recommendations for.
 
 - [**AWS Superseded EC2 Instances**](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/superseded_instances)
 - [**Azure Superseded Compute Instances**](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/superseded_instances)
