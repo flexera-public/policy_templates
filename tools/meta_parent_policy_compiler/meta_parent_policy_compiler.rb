@@ -32,6 +32,7 @@ default_child_policy_template_files = [
   "../../cost/azure/hybrid_use_benefit/azure_hybrid_use_benefit.pt",
   "../../cost/azure/hybrid_use_benefit_linux/ahub_linux.pt",
   "../../cost/azure/hybrid_use_benefit_sql/ahub_sql.pt",
+  "../../cost/azure/superseded_instances/azure_superseded_instances.pt",
   "../../cost/azure/storage_account_lifecycle_management/storage_account_lifecycle_management.pt",
   "../../operational/azure/azure_certificates/azure_certificates.pt",
   "../../operational/azure/azure_long_running_instances/azure_long_running_instances.pt",
