@@ -14,6 +14,7 @@
 - Added additional fields to incident export to facilitate scraping for dashboards
 - Policy no longer raises new escalations if savings data changed but nothing else has
 - Streamlined code for better readability and faster execution
+- Added logic required for "Meta Policy" use-cases
 
 ## v2.11
 
