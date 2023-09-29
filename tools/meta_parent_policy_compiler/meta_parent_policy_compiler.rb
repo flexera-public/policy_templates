@@ -35,6 +35,8 @@ default_child_policy_template_files = [
   "../../operational/azure/azure_long_running_instances/azure_long_running_instances.pt",
   "../../operational/azure/tag_cardinality/azure_tag_cardinality.pt",
   "../../operational/azure/vms_without_managed_disks/azure_vms_without_managed_disks.pt",
+  # Google Policy Templates
+  "../../cost/google/idle_ip_address_recommendations/google_idle_ip_address_recommendations.pt"
 ]
 
 
@@ -181,6 +183,8 @@ def compile_meta_parent_policy(file_path)
     parent_pt_path = "aws_meta_parent.pt.template"
   elsif file_path.include?("azure")
     parent_pt_path = "azure_meta_parent.pt.template"
+  elsif file_path.include?("google")
+    parent_pt_path = "google_meta_parent.pt.template"
   else
     print("Could not determine parent policy template to use for #{file_path}\n")
     exit(1)
@@ -204,8 +208,8 @@ def compile_meta_parent_policy(file_path)
   # We need to do this because we need to exclude the param_email and param_aws_account_number params from meta parent pt
   output_pt_params = []
   parameters.each do |param|
-    # Check if the param string container either param_email, param_aws_account_number, or param_subscription_allowed_list
-    param.include?("param_email") || param.include?("param_aws_account_number") || param.include?("param_subscription_allowed_list") || param.include?("param_subscriptions_list") || param.include?("param_subscriptions_allow_or_deny") ? nil : output_pt_params.push(param)
+    # Filter out parameters that we don't want the user to manage because they are used by our meta policy automation
+    param.include?("param_email") || param.include?("param_aws_account_number") || param.include?("param_subscription_allowed_list") || param.include?("param_subscriptions_list") || param.include?("param_subscriptions_allow_or_deny") || param.include?("param_project") || param.include?("param_projects_list") || param.include?("param_projects_allow_or_deny") ? nil : output_pt_params.push(param)
   end
   # Replace placeholder with the identified output parameter blocks
   output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_PARAMETERS_BLOCKS__", output_pt_params.join("\n\n"))
