@@ -300,6 +300,9 @@ datasource "ds_google_projects" do
     host "cloudresourcemanager.googleapis.com"
     path "/v1/projects/"
     query "filter", "(lifecycleState:ACTIVE)"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
   end
   result do
     encoding "json"
@@ -373,7 +376,7 @@ datasource "ds_get_instances" do
   end
   result do
     encoding "json"
-    field "instances", jq(response, "[ .items | to_entries | map_values(.value) | map(select(has(\"instances\"))) | .[].instances | .[] | {id,name,selfLink,status,tags,zone,kind}]")
+    field "instances", jq(response, "[ .items | to_entries | map_values(.value) | map(select(has(\"instances\"))) | .[].instances | .[] | {id,name,selfLink,status,tags,zone,kind,hostname,cpuPlatform,labels,description}]")
     field "projectId", val(iter_item, "id")
     field "projectName", val(iter_item, "name")
     field "projectNumber", val(iter_item, "number")
@@ -412,21 +415,24 @@ script "js_instances", type: "javascript" do
           cpuMinimum = stats_by_resource[id]['cpuMinimum']
         }
 
+        zone = instance['zone'].split('/')[8]
+        region = ds_zone_to_region[zone]
+
         result.push({
           id: instance['id'],
           name: instance['name'],
           description: instance['description'],
           status: instance['status'],
-          zone: instance['zone'].split('/')[8],
           selfLink: instance['selfLink'],
           cpuPlatform: instance['cpuPlatform'],
           hostname: instance['hostname'],
           kind: instance['kind'],
           labels: instance['labels'],
-          region: ds_zone_to_region[instance['zone']],
           projectId: response['projectId'],
           projectName: response['projectName'],
           projectNumber: response['projectNumber'],
+          zone: zone,
+          region: region,
           cpuAverage: cpuAverage,
           cpuMaximum: cpuMaximum,
           cpuMinimum: cpuMinimum
@@ -746,16 +752,16 @@ script "js_sorted_recommendations", type:"javascript" do
             status: instance['status'],
             zone: instance['zone'],
             selfLink: instance['selfLink'],
-            cpuPlatform: instance['cpuPlatform'],
+            platform: instance['cpuPlatform'],
             hostname: instance['hostname'],
             region: instance['region'],
             kind: instance['kind'],
-            accountID: instance['accountID'],
-            accountName: instance['accountName'],
+            accountID: instance['projectId'],
+            accountName: instance['projectName'],
             projectNumber: instance['projectNumber'],
-            cpuAverage: instance['cpuAverage'],
-            cpuMaximum: instance['cpuMaximum'],
-            cpuMinimum: instance['cpuMinimum'],
+            cpuAverage: Number(instance['cpuAverage'].toFixed(2)),
+            cpuMaximum: Number(instance['cpuMaximum'].toFixed(2)),
+            cpuMinimum: Number(instance['cpuMinimum'].toFixed(2)),
             priority: recommendation['priority'],
             primaryImpact: recommendation['primaryImpact'],
             primaryImpactCategory: recommendation['primaryImpact']['category'],
@@ -768,7 +774,7 @@ script "js_sorted_recommendations", type:"javascript" do
             tags: labels.join(', '),
             savings: parseFloat(savings.toFixed(3)),
             savingsCurrency: ds_currency['symbol'],
-            service: "Other",
+            service: "Compute Engine",
             total_savings: "",
             message: ""
           })
@@ -833,16 +839,16 @@ script "js_sorted_recommendations", type:"javascript" do
             status: instance['status'],
             zone: instance['zone'],
             selfLink: instance['selfLink'],
-            cpuPlatform: instance['cpuPlatform'],
+            platform: instance['cpuPlatform'],
             hostname: instance['hostname'],
             region: instance['region'],
             kind: instance['kind'],
-            accountID: instance['accountID'],
-            accountName: instance['accountName'],
+            accountID: instance['projectId'],
+            accountName: instance['projectName'],
             projectNumber: instance['projectNumber'],
-            cpuAverage: instance['cpuAverage'],
-            cpuMaximum: instance['cpuMaximum'],
-            cpuMinimum: instance['cpuMinimum'],
+            cpuAverage: Number(instance['cpuAverage'].toFixed(2)),
+            cpuMaximum: Number(instance['cpuMaximum'].toFixed(2)),
+            cpuMinimum: Number(instance['cpuMinimum'].toFixed(2)),
             priority: recommendation['priority'],
             primaryImpact: recommendation['primaryImpact'],
             primaryImpactCategory: recommendation['primaryImpact']['category'],
@@ -856,7 +862,7 @@ script "js_sorted_recommendations", type:"javascript" do
             tags: labels.join(', '),
             savings: parseFloat(savings.toFixed(3)),
             savingsCurrency: ds_currency['symbol'],
-            service: "Other",
+            service: "Compute Engine",
             total_savings: "",
             message: ""
           })
@@ -866,8 +872,8 @@ script "js_sorted_recommendations", type:"javascript" do
   }
 
   result = {
-    idle: idle_result,
-    underutil: underutil_result,
+    idle_result: idle_result,
+    underutil_result: underutil_result,
     idle_total_savings: idle_total_savings,
     underutil_total_savings: underutil_total_savings
   }
@@ -1048,7 +1054,7 @@ policy "policy_recommendations" do
 
     {{ with index data 0 }}{{ .message }}{{ end }}
     EOS
-    check eq(val(item, "resourceID"), "")
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     escalate $esc_downsize_instances
     hash_exclude "tags", "savings", "savingsCurrency", "total_savings", "message", "cpuMaximum", "cpuMinimum", "cpuAverage"
@@ -1083,6 +1089,9 @@ policy "policy_recommendations" do
       end
       field "hostname" do
         label "Hostname"
+      end
+      field "platform" do
+        label "Platform"
       end
       field "cpuMaximum" do
         label "CPU Maximum %"
@@ -1139,7 +1148,7 @@ policy "policy_recommendations" do
 
     {{ with index data 0 }}{{ .message }}{{ end }}
     EOS
-    check eq(val(item, "resourceID"), "")
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     escalate $esc_delete_instances
     hash_exclude "tags", "savings", "savingsCurrency", "total_savings", "message", "cpuMaximum", "cpuMinimum", "cpuAverage"
@@ -1171,6 +1180,9 @@ policy "policy_recommendations" do
       end
       field "hostname" do
         label "Hostname"
+      end
+      field "platform" do
+        label "Platform"
       end
       field "cpuMaximum" do
         label "CPU Maximum %"
@@ -1423,4 +1435,94 @@ define handle_error() do
   # We check for errors at the end, and raise them all together
   # Skip errors handled by this definition
   $_error_behavior = "skip"
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
 end
