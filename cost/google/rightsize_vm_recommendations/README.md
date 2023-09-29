@@ -39,8 +39,8 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
     - `Compute Recommender Admin`*
 
   - Permissions
-    - `recommender.computeInstanceMachineTypeRecommendations.list`
-    - `recommender.computeInstanceIdleResourceRecommendations.list`
+    - `recommender.computeInstanceMachineTypeRecommendations.list`?
+    - `recommender.computeInstanceIdleResourceRecommendations.list`?
     - `resourcemanager.projects.get`
     - `monitoring.metricDescriptors.list`
     - `monitoring.timeSeries.list`
@@ -50,6 +50,8 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
     - `compute.instances.stop`*
     - `compute.instances.setMachineType`*
     - `compute.instances.delete`*
+
+? Only the permissions needed for the specific recommendations you're looking to produce are required. If using this policy only for idle recommendations, for example, `recommender.computeInstanceMachineTypeRecommendations.list` is not needed.
 
 \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
 

@@ -502,32 +502,62 @@ script "js_instances_region_filtered", type: "javascript" do
 EOS
 end
 
-datasource "ds_recommender_requests" do
-  run_script $js_recommender_requests, $ds_instances_region_filtered
+datasource "ds_idle_recommender_requests" do
+  run_script $js_idle_recommender_requests, $ds_instances_region_filtered, $param_idle_or_underutilized
 end
 
-script "js_recommender_requests", type: "javascript" do
-  parameters "ds_instances_region_filtered"
+script "js_idle_recommender_requests", type: "javascript" do
+  parameters "ds_instances_region_filtered", "param_idle_or_underutilized"
   result "result"
   code <<-EOS
   result = []
 
-  _.each(ds_instances_region_filtered, function(instance) {
-    request = {
-      projectId: instance['projectId'],
-      zone: instance['zone']
-    }
+  // Skip gathering recommendations for idle instances if the user opted not to
+  if (param_idle_or_underutilized != "Underutilized") {
+    _.each(ds_instances_region_filtered, function(instance) {
+      request = {
+        projectId: instance['projectId'],
+        zone: instance['zone']
+      }
 
-    if (_.findWhere(result, request) == undefined) {
-      request['number'] = result.length + 1
-      result.push(request)
-    }
-  })
+      if (_.findWhere(result, request) == undefined) {
+        request['number'] = result.length + 1
+        result.push(request)
+      }
+    })
+  }
+EOS
+end
+
+datasource "ds_underutil_recommender_requests" do
+  run_script $js_underutil_recommender_requests, $ds_instances_region_filtered, $param_idle_or_underutilized
+end
+
+script "js_underutil_recommender_requests", type: "javascript" do
+  parameters "ds_instances_region_filtered", "param_idle_or_underutilized"
+  result "result"
+  code <<-EOS
+  result = []
+
+  // Skip gathering recommendations for underutilized instances if the user opted not to
+  if (param_idle_or_underutilized != "Idle") {
+    _.each(ds_instances_region_filtered, function(instance) {
+      request = {
+        projectId: instance['projectId'],
+        zone: instance['zone']
+      }
+
+      if (_.findWhere(result, request) == undefined) {
+        request['number'] = result.length + 1
+        result.push(request)
+      }
+    })
+  }
 EOS
 end
 
 datasource "ds_idle_recommendations" do
-  iterate $ds_recommender_requests
+  iterate $ds_idle_recommender_requests
   request do
     run_script $js_recommendations, val(iter_item, "projectId"), val(iter_item, "zone"), val(iter_item, "number"), "IdleResourceRecommender"
   end
@@ -555,8 +585,8 @@ datasource "ds_idle_recommendations" do
   end
 end
 
-datasource "ds_rightsize_recommendations" do
-  iterate $ds_recommender_requests
+datasource "ds_underutil_recommendations" do
+  iterate $ds_underutil_recommender_requests
   request do
     run_script $js_recommendations, val(iter_item, "projectId"), val(iter_item, "zone"), val(iter_item, "number"), "MachineTypeRecommender"
   end
@@ -610,11 +640,11 @@ end
 # This datasource returns an empty array if the target currency is USD.
 # This prevents ds_currency_conversion from running if it's not needed.
 datasource "ds_conditional_currency_conversion" do
-  run_script $js_conditional_currency_conversion, $ds_currency_target, $ds_idle_recommendations, $ds_rightsize_recommendations
+  run_script $js_conditional_currency_conversion, $ds_currency_target, $ds_idle_recommendations, $ds_underutil_recommendations
 end
 
 script "js_conditional_currency_conversion", type: "javascript" do
-  parameters "ds_currency_target", "ds_idle_recommendations", "ds_rightsize_recommendations"
+  parameters "ds_currency_target", "ds_idle_recommendations", "ds_underutil_recommendations"
   result "result"
   code <<-EOS
   result = []
@@ -624,8 +654,8 @@ script "js_conditional_currency_conversion", type: "javascript" do
     from_currency = ds_idle_recommendations[0]["currency"]
   }
 
-  if (ds_rightsize_recommendations.length > 0) {
-    from_currency = ds_rightsize_recommendations[0]["currency"]
+  if (ds_underutil_recommendations.length > 0) {
+    from_currency = ds_underutil_recommendations[0]["currency"]
   }
 
   // Make the request only if the target currency is not USD
@@ -683,11 +713,11 @@ EOS
 end
 
 datasource "ds_sorted_recommendations" do
-  run_script $js_sorted_recommendations, $ds_instances_region_filtered, $ds_idle_recommendations, $ds_rightsize_recommendations, $ds_currency, $ds_currency_conversion, $ds_applied_policy, $param_min_savings, $param_idle_or_underutilized
+  run_script $js_sorted_recommendations, $ds_instances_region_filtered, $ds_idle_recommendations, $ds_underutil_recommendations, $ds_currency, $ds_currency_conversion, $ds_applied_policy, $param_min_savings, $param_idle_or_underutilized
 end
 
 script "js_sorted_recommendations", type:"javascript" do
-  parameters "ds_instances_region_filtered", "ds_idle_recommendations", "ds_rightsize_recommendations", "ds_currency", "ds_currency_conversion", "ds_applied_policy", "param_min_savings", "param_idle_or_underutilized"
+  parameters "ds_instances_region_filtered", "ds_idle_recommendations", "ds_underutil_recommendations", "ds_currency", "ds_currency_conversion", "ds_applied_policy", "param_min_savings", "param_idle_or_underutilized"
   result "result"
   code <<-'EOS'
   instance_object = {}
@@ -786,7 +816,7 @@ script "js_sorted_recommendations", type:"javascript" do
   if (param_idle_or_underutilized != "Idle") {
     idle_resources = _.pluck(idle_result, "resourceID")
 
-    _.each(ds_rightsize_recommendations, function(recommendation) {
+    _.each(ds_underutil_recommendations, function(recommendation) {
       resource_link = recommendation['resourceLink'].replace("//compute.googleapis.com/", "")
 
       instance = null
