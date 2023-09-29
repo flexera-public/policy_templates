@@ -417,16 +417,16 @@ script "js_instances", type: "javascript" do
           name: instance['name'],
           description: instance['description'],
           status: instance['status'],
-          zone: instance['zone'],
+          zone: instance['zone'].split('/')[8],
           selfLink: instance['selfLink'],
           cpuPlatform: instance['cpuPlatform'],
           hostname: instance['hostname'],
           kind: instance['kind'],
           labels: instance['labels'],
           region: ds_zone_to_region[instance['zone']],
-          projectId: ds_get_instances['projectId'],
-          projectName: ds_get_instances['projectName'],
-          projectNumber: ds_get_instances['projectNumber'],
+          projectId: response['projectId'],
+          projectName: response['projectName'],
+          projectNumber: response['projectNumber'],
           cpuAverage: cpuAverage,
           cpuMaximum: cpuMaximum,
           cpuMinimum: cpuMinimum
@@ -509,7 +509,7 @@ script "js_recommender_requests", type: "javascript" do
   _.each(ds_instances_region_filtered, function(instance) {
     request = {
       projectId: instance['projectId'],
-      region: instance['region']
+      zone: instance['zone']
     }
 
     if (_.findWhere(result, request) == undefined) {
@@ -523,13 +523,13 @@ end
 datasource "ds_idle_recommendations" do
   iterate $ds_recommender_requests
   request do
-    run_script $js_recommendations, val(iter_item, "projectId"), val(iter_item, "region"), val(iter_item, "number"), "IdleResourceRecommender"
+    run_script $js_recommendations, val(iter_item, "projectId"), val(iter_item, "zone"), val(iter_item, "number"), "IdleResourceRecommender"
   end
   result do
     encoding "json"
     collect jmes_path(response, "recommendations[*]") do
       field "projectId", val(iter_item, "projectId")
-      field "region", val(iter_item, "region")
+      field "zone", val(iter_item, "zone")
       field "id", jmes_path(col_item, "name")
       field "description", jmes_path(col_item, "description")
       field "resourceLink", jmes_path(col_item, "content.overview.resource")
@@ -552,13 +552,13 @@ end
 datasource "ds_rightsize_recommendations" do
   iterate $ds_recommender_requests
   request do
-    run_script $js_recommendations, val(iter_item, "projectId"), val(iter_item, "region"), val(iter_item, "number"), "MachineTypeRecommender"
+    run_script $js_recommendations, val(iter_item, "projectId"), val(iter_item, "zone"), val(iter_item, "number"), "MachineTypeRecommender"
   end
   result do
     encoding "json"
     collect jmes_path(response, "recommendations[*]") do
       field "projectId", val(iter_item, "projectId")
-      field "region", val(iter_item, "region")
+      field "zone", val(iter_item, "zone")
       field "id", jmes_path(col_item, "name")
       field "description", jmes_path(col_item, "description")
       field "resourceLink", jmes_path(col_item, "content.overview.resource")
@@ -579,7 +579,7 @@ datasource "ds_rightsize_recommendations" do
 end
 
 script "js_recommendations", type: "javascript" do
-  parameters "projectId", "region", "number", "type"
+  parameters "projectId", "zone", "number", "type"
   result "request"
   code <<-EOS
   // If 100 requests have been made, wait 1 minute to avoid throttling
@@ -594,7 +594,7 @@ script "js_recommendations", type: "javascript" do
     pagination: "pagination_google",
     host: "recommender.googleapis.com",
     ignore_status: 403,
-    path: "/v1/projects/" + projectId + "/locations/" + region + "/recommenders/google.compute.instance." + type + "/recommendations",
+    path: "/v1/projects/" + projectId + "/locations/" + zone + "/recommenders/google.compute.instance." + type + "/recommendations",
     query_strings: { alt: "json" }
   }
 EOS
@@ -677,16 +677,16 @@ EOS
 end
 
 datasource "ds_sorted_recommendations" do
-  run_script $js_sorted_recommendations, $ds_instances, $ds_idle_recommendations, $ds_rightsize_recommendations, $ds_currency, $ds_currency_conversion, $ds_applied_policy, $param_min_savings, $param_idle_or_underutilized
+  run_script $js_sorted_recommendations, $ds_instances_region_filtered, $ds_idle_recommendations, $ds_rightsize_recommendations, $ds_currency, $ds_currency_conversion, $ds_applied_policy, $param_min_savings, $param_idle_or_underutilized
 end
 
 script "js_sorted_recommendations", type:"javascript" do
-  parameters "ds_instances", "ds_idle_recommendations", "ds_rightsize_recommendations", "ds_currency", "ds_currency_conversion", "ds_applied_policy", "param_min_savings", "param_idle_or_underutilized"
+  parameters "ds_instances_region_filtered", "ds_idle_recommendations", "ds_rightsize_recommendations", "ds_currency", "ds_currency_conversion", "ds_applied_policy", "param_min_savings", "param_idle_or_underutilized"
   result "result"
   code <<-'EOS'
   instance_object = {}
 
-  _.each(ds_instances, function(instance) {
+  _.each(ds_instances_region_filtered, function(instance) {
     selfLink = instance['selfLink'].replace("https://www.googleapis.com/compute/v1/", "")
     instance_object[selfLink] = instance
   })
@@ -714,7 +714,12 @@ script "js_sorted_recommendations", type:"javascript" do
         if (costUnits != null && costUnits != undefined) { costUnits = Number(costUnits) * -1 }
 
         savings = 0.0
-        duration = parseFloat(recommendation['duration'].replace("s", "")) / 2628288
+        duration = 0
+
+        if (recommendation['duration'] != null) {
+          duration = parseFloat(recommendation['duration'].replace("s", "")) / 2628288
+        }
+
         if (duration != 0) { savings = (costUnits + costNanos * Math.pow(10, -9)) / duration * ds_currency['exchange_rate']}
 
         if (savings >= param_min_savings) {
@@ -791,7 +796,12 @@ script "js_sorted_recommendations", type:"javascript" do
         if (costUnits != null && costUnits != undefined) { costUnits = Number(costUnits) * -1 }
 
         savings = 0.0
-        duration = parseFloat(recommendation['duration'].replace("s", "")) / 2628288
+        duration = 0
+
+        if (recommendation['duration'] != null) {
+          duration = parseFloat(recommendation['duration'].replace("s", "")) / 2628288
+        }
+
         if (duration != 0) { savings = (costUnits + costNanos * Math.pow(10, -9)) / duration * ds_currency['exchange_rate']}
 
         if (savings >= param_min_savings && _.contains(idle_resources, instance['id']) == false) {
@@ -865,11 +875,11 @@ EOS
 end
 
 datasource "ds_idle_incident" do
-  run_script $js_idle_incident, $ds_sorted_recommendations, $ds_instances, $ds_currency, $param_idle_or_underutilized
+  run_script $js_idle_incident, $ds_sorted_recommendations, $ds_instances_region_filtered, $ds_currency, $param_idle_or_underutilized
 end
 
 script "js_idle_incident", type:"javascript" do
-  parameters "ds_sorted_recommendations", "ds_instances", "ds_currency", "param_idle_or_underutilized"
+  parameters "ds_sorted_recommendations", "ds_instances_region_filtered", "ds_currency", "param_idle_or_underutilized"
   result "result"
   code <<-'EOS'
   // Function for formatting currency numbers later
@@ -901,7 +911,7 @@ script "js_idle_incident", type:"javascript" do
   ].join('')
 
   // Message for incident output
-  total_instances = ds_instances.length.toString()
+  total_instances = ds_instances_region_filtered.length.toString()
   total_idle_instances = result.length.toString()
   idle_percentage = (total_idle_instances / total_instances * 100).toFixed(2).toString() + '%'
 
@@ -946,11 +956,11 @@ EOS
 end
 
 datasource "ds_underutil_incident" do
-  run_script $js_underutil_incident, $ds_sorted_recommendations, $ds_instances, $ds_currency, $param_idle_or_underutilized
+  run_script $js_underutil_incident, $ds_sorted_recommendations, $ds_instances_region_filtered, $ds_currency, $param_idle_or_underutilized
 end
 
 script "js_underutil_incident", type:"javascript" do
-  parameters "ds_sorted_recommendations", "ds_instances", "ds_currency", "param_idle_or_underutilized"
+  parameters "ds_sorted_recommendations", "ds_instances_region_filtered", "ds_currency", "param_idle_or_underutilized"
   result "result"
   code <<-'EOS'
   // Function for formatting currency numbers later
@@ -982,7 +992,7 @@ script "js_underutil_incident", type:"javascript" do
   ].join('')
 
   // Message for incident output
-  total_instances = ds_instances.length.toString()
+  total_instances = ds_instances_region_filtered.length.toString()
   total_underutil_instances = result.length.toString()
   underutil_percentage = (total_underutil_instances / total_instances * 100).toFixed(2).toString() + '%'
 
