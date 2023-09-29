@@ -2,11 +2,11 @@
 
 ## v2.0
 
+- Policy now requires a Flexera credential
+- Policy now converts savings to local currency when appropriate
 - Policy now reports on both underutilized and idle instances
 - Downsize action can now be taken on underutilized instances
 - Delete action can now be taken on idle instances
-- Flexera credential is now required
-- Savings is now converted to local currency where appropriate
 - Several parameters altered to be more descriptive and human-readable
 - Removed deprecated "Log to CM Audit Entries" parameter
 - Removed ability to filter by zone; filtering by region is now supported
@@ -18,6 +18,7 @@
 - Added additional fields to incident export to facilitate scraping for dashboards
 - Policy no longer raises new escalations if savings data changed but nothing else has
 - Streamlined code for better readability and faster execution
+- Added logic required for "Meta Policy" use-cases
 
 ## v1.1
 
