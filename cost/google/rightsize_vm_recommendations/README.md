@@ -72,7 +72,7 @@ This policy has the following input parameters required when launching the polic
 - *Allow/Deny Regions List* - Filter results by region, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all the regions.
 - *Exclusion Labels (Key:Value)* - Google labels to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific label key/value pairs, and Key:\* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:\*
 - *Report Idle or Underutilized* - Whether to report on idle VM instances, underutilized VM instances, or both. If both are selected, VM instances raised in the idle VM instances incident will never appear in the underutilized VM instances incident.
-- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
+- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s). The "Downsize VM Instances" option is only applies to underutilized instances, while the "Stop VM Instances" and "Delete VM Instances" options only apply to idle instances.
 
 Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
 For example, if a user selects the "Delete VM Instances" action while applying the policy, all idle VM instances will be deleted.
@@ -83,6 +83,7 @@ The following policy actions are taken on any resources found to be out of compl
 
 - Send an email report
 - Downsize underutilized VM instances after approval
+- Stop idle VM instances after approval
 - Delete idle VM instances after approval
 
 ## Supported Clouds
