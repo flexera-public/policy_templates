@@ -6,6 +6,7 @@
 - Policy now converts savings to local currency when appropriate
 - Policy now reports on both underutilized and idle instances
 - Downsize action can now be taken on underutilized instances
+- Stop action can now be taken on idle instances
 - Delete action can now be taken on idle instances
 - Several parameters altered to be more descriptive and human-readable
 - Removed deprecated "Log to CM Audit Entries" parameter
