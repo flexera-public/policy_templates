@@ -92,7 +92,7 @@ parameter "param_automatic_action" do
   category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Downsize VM Instances", "Delete VM Instances"]
+  allowed_values ["Downsize VM Instances", "Stop VM Instances", "Delete VM Instances"]
   default []
 end
 
@@ -376,7 +376,7 @@ datasource "ds_get_instances" do
   end
   result do
     encoding "json"
-    field "instances", jq(response, "[ .items | to_entries | map_values(.value) | map(select(has(\"instances\"))) | .[].instances | .[] | {id,name,selfLink,status,tags,zone,kind,hostname,cpuPlatform,labels,description}]")
+    field "instances", jq(response, "[ .items | to_entries | map_values(.value) | map(select(has(\"instances\"))) | .[].instances | .[] | {id,name,selfLink,status,tags,zone,kind,hostname,cpuPlatform,labels,description,machineType}]")
     field "projectId", val(iter_item, "id")
     field "projectName", val(iter_item, "name")
     field "projectNumber", val(iter_item, "number")
@@ -425,6 +425,7 @@ script "js_instances", type: "javascript" do
           status: instance['status'],
           selfLink: instance['selfLink'],
           cpuPlatform: instance['cpuPlatform'],
+          machineType: instance['machineType'],
           hostname: instance['hostname'],
           kind: instance['kind'],
           labels: instance['labels'],
@@ -771,8 +772,8 @@ script "js_sorted_recommendations", type:"javascript" do
 
           resourceType = null
 
-          if (typeof(recommendation['currentMachineType']) == 'object') {
-            resourceType = recommendation['currentMachineType']['name']
+          if (typeof(instance['machineType']) == 'string') {
+            resourceType = instance['machineType'].split('/')[10]
           }
 
           idle_result.push({
@@ -1180,6 +1181,7 @@ policy "policy_recommendations" do
     EOS
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
+    escalate $esc_stop_instances
     escalate $esc_delete_instances
     hash_exclude "tags", "savings", "savingsCurrency", "total_savings", "message", "cpuMaximum", "cpuMinimum", "cpuAverage"
     export do
@@ -1282,6 +1284,13 @@ escalation "esc_downsize_instances" do
   run "downsize_instances", data
 end
 
+escalation "esc_stop_instances" do
+  automatic contains($param_automatic_action, "Stop VM Instances")
+  label "Stop VM Instances"
+  description "Approval to stop all selected VM instances"
+  run "stop_instances", data
+end
+
 escalation "esc_delete_instances" do
   automatic contains($param_automatic_action, "Delete VM Instances")
   label "Delete VM Instances"
@@ -1301,6 +1310,20 @@ define downsize_instances($data) return $all_responses do
       call stop_instance($instance) retrieve $stop_response
       call resize_instance($instance) retrieve $resize_response
       call start_instance($instance) retrieve $start_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+define stop_instances($data) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call stop_instance($instance) retrieve $stop_response
     end
   end
 
@@ -1428,7 +1451,7 @@ define stop_instance($instance) return $response do
   call get_instance_state($instance) retrieve $state_response, $current_state
   sleep(5)
 
-  while $current_state != "STOPPED" do
+  while $current_state != "STOPPED" && $current_state != "TERMINATED" do
     call get_instance_state($instance) retrieve $state_response, $current_state
     sleep(5)
   end
