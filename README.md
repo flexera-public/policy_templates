@@ -66,10 +66,6 @@ These templates can generate savings estimates for your environment.
 - [Turbonomic Rightsize Virtual Machines Recommendations Azure](./cost/turbonomics/scale_virtual_machines_recommendations/azure)
 - [Turbonomic Rightsize Virtual Volumes Recommendations Azure](./cost/turbonomics/rightsize_virtual_volumes_recommendations/azure)
 
-#### GCP
-
-- [Google Rightsize VM Recommender](./cost/google/rightsize_vm_recommendations)
-
 #### Google
 
 - [Google Cloud SQL Idle Instance Recommender](./cost/google/cloud_sql_idle_instance_recommendations)
@@ -77,6 +73,7 @@ These templates can generate savings estimates for your environment.
 - [Google Idle IP Address Recommender](./cost/google/idle_ip_address_recommendations)
 - [Google Idle Persistent Disk Recommender](./cost/google/idle_persistent_disk_recommendations)
 - [Google Idle VM Recommender](./cost/google/idle_vm_recommendations)
+- [Google Rightsize VM Recommender](./cost/google/rightsize_vm_recommendations)
 - [Turbonomic Allocate Virtual Machine Recommendations Google](./cost/turbonomics/allocate_virtual_machines_recommendations/gcp)
 - [Turbonomic Delete Unattached Volumes Recommendations Google](./cost/turbonomics/delete_unattached_volumes/gcp)
 - [Turbonomic Rightsize Virtual Machines Recommendations Google](./cost/turbonomics/scale_virtual_machines_recommendations/gcp)
@@ -92,7 +89,7 @@ These templates can generate savings estimates for your environment.
 
 - [AWS Untagged Resources](./compliance/aws/untagged_resources)
 
-- EC2
+- Compute
 
   - [AWS Disallowed Regions](./compliance/aws/disallowed_regions)
   - [AWS EC2 Instances not running FlexNet Inventory Agent](./compliance/aws/instances_without_fnm_agent)
@@ -186,8 +183,16 @@ These templates can generate savings estimates for your environment.
 
 - Compute
 
+  - [AWS Burstable Instance CloudWatch Utilization](./cost/aws/burstable_instance_cloudwatch_credit_utilization)
+  - [AWS Idle Compute Instances](./cost/aws/idle_compute_instances)
+  - [AWS Inefficient Instance Utilization using CloudWatch](./cost/aws/instance_cloudwatch_utilization)
+  - [AWS Reserved Instances Recommendations](./cost/aws/reserved_instances/recommendations)
+  - [AWS Rightsize EBS Volumes](./cost/aws/rightsize_ebs_volumes)
   - [AWS Rightsize EC2 Instances](./cost/aws/rightsize_ec2_instances)
+  - [AWS Schedule Instance](./cost/aws/schedule_instance)
   - [AWS Superseded EC2 Instances](./cost/aws/superseded_instances)
+  - [AWS Unused IP Addresses](./cost/aws/unused_ip_addresses)
+  - [Reserved Instances Coverage](./cost/aws/reserved_instances/coverage)
   - [Turbonomic Allocate Virtual Machine Recommendations AWS](./cost/turbonomics/allocate_virtual_machines_recommendations/aws)
   - [Turbonomic Rightsize Virtual Machines Recommendations AWS](./cost/turbonomics/scale_virtual_machines_recommendations/aws)
 
@@ -199,17 +204,6 @@ These templates can generate savings estimates for your environment.
 
   - [AWS GP3 Upgradeable Volumes](./cost/aws/gp3_volume_upgrade)
   - [AWS Unused Volumes](./cost/aws/unused_volumes)
-
-- EC2
-
-  - [AWS Burstable Instance CloudWatch Utilization](./cost/aws/burstable_instance_cloudwatch_credit_utilization)
-  - [AWS Idle Compute Instances](./cost/aws/idle_compute_instances)
-  - [AWS Inefficient Instance Utilization using CloudWatch](./cost/aws/instance_cloudwatch_utilization)
-  - [AWS Reserved Instances Recommendations](./cost/aws/reserved_instances/recommendations)
-  - [AWS Rightsize EBS Volumes](./cost/aws/rightsize_ebs_volumes)
-  - [AWS Schedule Instance](./cost/aws/schedule_instance)
-  - [AWS Unused IP Addresses](./cost/aws/unused_ip_addresses)
-  - [Reserved Instances Coverage](./cost/aws/reserved_instances/coverage)
 
 - ELB
 
@@ -322,7 +316,6 @@ These templates can generate savings estimates for your environment.
 - [New Service Usage](./cost/new_service_usage)
 - [Reserved Instance Report by Billing Center](./cost/aws/reserved_instances/report_by_bc)
 - [Scheduled Report](./cost/scheduled_reports)
-- [Superseded Instances](./cost/superseded_instance)
 - [Vendor Commitment Forecast](./cost/forecasting/commitment_forecast)
 
 #### GCE
@@ -342,12 +335,6 @@ These templates can generate savings estimates for your environment.
 
   - [Google Object Storage Optimization](./cost/google/object_storage_optimization)
 
-#### GCP
-
-- Compute
-
-  - [Google Rightsize VM Recommender](./cost/google/rightsize_vm_recommendations)
-
 #### Google
 
 - Compute
@@ -355,6 +342,7 @@ These templates can generate savings estimates for your environment.
   - [Google Committed Use Discount Recommender](./cost/google/cud_recommendations)
   - [Google Idle IP Address Recommender](./cost/google/idle_ip_address_recommendations)
   - [Google Idle VM Recommender](./cost/google/idle_vm_recommendations)
+  - [Google Rightsize VM Recommender](./cost/google/rightsize_vm_recommendations)
   - [Turbonomic Allocate Virtual Machine Recommendations Google](./cost/turbonomics/allocate_virtual_machines_recommendations/gcp)
   - [Turbonomic Rightsize Virtual Machines Recommendations Google](./cost/turbonomics/scale_virtual_machines_recommendations/gcp)
 
@@ -388,11 +376,8 @@ These templates can generate savings estimates for your environment.
 
 - Compute
 
-  - [AWS Long Running Instances](./operational/aws/long_running_instances)
-
-- EC2
-
   - [AWS Instance Scheduled Events](./operational/aws/instance_scheduled_events)
+  - [AWS Long Running Instances](./operational/aws/long_running_instances)
 
 - Lambda
 
@@ -638,29 +623,28 @@ These templates can generate savings estimates for your environment.
 <!-- Begin Policy Template Stats -->
 <!--
 ---
-:total_count: 243
+:total_count: 242
 :optimization_count: 46
 :categories:
   Operational: 23
-  Cost: 100
+  Cost: 99
   SaaS Management: 13
   Compliance: 33
   Security: 74
 :providers:
   Flexera Cloud Management: 3
   Flexera: 6
-  Flexera Optima: 26
+  Flexera Optima: 25
   AWS: 78
   Flexera RISC: 2
   Azure: 78
   Flexera ITAM: 5
-  Google: 11
+  Google: 12
   Kubecost: 2
   '': 1
   Azure China: 1
   Oracle: 1
   GCE: 8
-  GCP: 1
   ServiceNow: 1
   Flexera SaaS Manager: 9
   Okta: 1
@@ -668,12 +652,11 @@ These templates can generate savings estimates for your environment.
   GitHub: 7
   Flexera FNMS: 1
 :services:
-  '': 63
+  '': 62
   CCO: 1
   Lambda: 1
-  EC2: 12
+  Compute: 50
   Tags: 3
-  Compute: 38
   FNMS: 1
   SQL: 15
   AKS: 2
@@ -708,7 +691,7 @@ These templates can generate savings estimates for your environment.
   App Service: 1
   MySQL: 2
 :policy_sets:
-  '': 83
+  '': 82
   Tag Cardinality: 3
   Long Running Instances: 2
   Schedule Report: 1
