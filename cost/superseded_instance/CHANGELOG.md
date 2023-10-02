@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2
+
+- Deprecated: This policy is no longer being updated. See README for more information.
+
 ## v3.1
 
 - Added check to determine if the instance has been upgraded or not
