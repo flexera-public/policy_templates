@@ -349,7 +349,7 @@ datasource "ds_get_disks" do
   end
   result do
     encoding "json"
-    field "disks", jq(response, "[ .items | to_entries | map_values(.value) | map(select(has(\"disks\"))) | .[].disks | .[] | { id,name,kind,type,description,labels,status,sizeGb,selfLink,zone,creationTimestamp,lastAttachTimestamp,lastDetachTimestamp,sourceSnapshot,sourceSnapshotId,sourceStorageObject,sourceImage,sourceImageId,sourceDisk,sourceDiskId }]")
+    field "disks", jq(response, "[ .items | to_entries | map_values(.value) | map(select(has(\"disks\"))) | .[].disks | .[] | { id,name,kind,type,description,labels,status,sizeGb,selfLink,zone,creationTimestamp }]")
     field "projectId", val(iter_item, "id")
     field "projectName", val(iter_item, "name")
     field "projectNumber", val(iter_item, "number")
@@ -369,7 +369,6 @@ script "js_disks", type: "javascript" do
   _.each(ds_get_disks, function(response) {
     _.each(response['disks'], function(disk) {
       age = null
-      daysUnattached = null
       now = new Date()
 
       if (typeof(disk['creationTimestamp']) == 'string') {
@@ -378,46 +377,40 @@ script "js_disks", type: "javascript" do
         age = (creationDifference / (1000 * 60 * 60 * 24)).toFixed(2)
       }
 
-      if (typeof(disk['lastDetachTimestamp']) == 'string') {
-        lastDetachTime = new Date(disk['lastDetachTimestamp'])
-        lastDetachDifference = now.getTime() - lastDetachTime.getTime()
-        daysUnattached = (creationDifference / (1000 * 60 * 60 * 24)).toFixed(2)
-      } else {
-        // Assume the disk has never been attached if this value doesn't exist
-        daysUnattached = age
+      zone = null
+      region = null
+
+      if (typeof(disk['zone']) == 'string') {
+        zone = disk['zone'].split('/')[8]
+        region = ds_zone_to_region[zone]
       }
 
-      zone = disk['zone'].split('/')[8]
-      region = ds_zone_to_region[zone]
+      type = null
 
-      result.push({
-        id: disk['id'],
-        name: disk['name'],
-        kind: disk['kind'],
-        type: disk['type'].split('/')[10],
-        description: disk['description'],
-        labels: disk['labels'],
-        status: disk['status'],
-        sizeGb: disk['sizeGb'],
-        selfLink: disk['selfLink'],
-        creationTime: disk['creationTimestamp'],
-        lastAttachTime: disk['lastAttachTimestamp'],
-        lastDetachTime: disk['lastDetachTimestamp'],
-        sourceSnapshot: disk['sourceSnapshot'],
-        sourceSnapshotId: disk['sourceSnapshotId'],
-        sourceStorageObject: disk['sourceStorageObject'],
-        sourceImage: disk['sourceImage'],
-        sourceImageId: disk['sourceImageId'],
-        sourceDisk: disk['sourceDisk'],
-        sourceDiskId: disk['sourceDiskId'],
-        projectId: response['projectId'],
-        projectName: response['projectName'],
-        projectNumber: response['projectNumber'],
-        age: age,
-        daysUnattached: daysUnattached,
-        zone: zone,
-        region: region
-      })
+      if (typeof(disk['type']) == 'string') {
+        type = disk['type'].split('/')[10]
+      }
+
+      if (zone != null) {
+        result.push({
+          id: disk['id'],
+          name: disk['name'],
+          kind: disk['kind'],
+          description: disk['description'],
+          labels: disk['labels'],
+          status: disk['status'],
+          sizeGb: disk['sizeGb'],
+          selfLink: disk['selfLink'],
+          creationTime: disk['creationTimestamp'],
+          projectId: response['projectId'],
+          projectName: response['projectName'],
+          projectNumber: response['projectNumber'],
+          age: age,
+          zone: zone,
+          region: region,
+          type: type
+        })
+      }
     })
   })
 EOS
@@ -707,20 +700,10 @@ script "js_recommendations_incident", type:"javascript" do
           zone: disk['zone'],
           region: disk['region'],
           creationTime: new Date(disk['creationTime']).toISOString(),
-          lastAttachTime: new Date(disk['lastAttachTime']).toISOString(),
-          lastDetachTime: new Date(disk['lastDetachTime']).toISOString(),
-          sourceSnapshot: disk['sourceSnapshot'],
-          sourceSnapshotId: disk['sourceSnapshotId'],
-          sourceStorageObject: disk['sourceStorageObject'],
-          sourceImage: disk['sourceImage'],
-          sourceImageId: disk['sourceImageId'],
-          sourceDisk: disk['sourceDisk'],
-          sourceDiskId: disk['sourceDiskId'],
           accountID: disk['projectId'],
           accountName: disk['projectName'],
           projectNumber: disk['projectNumber'],
           age: disk['age'],
-          daysUnattached: disk['daysUnattached'],
           priority: recommendation['priority'],
           primaryImpact: recommendation['primaryImpact'],
           primaryImpactCategory: recommendation['primaryImpact']['category'],
@@ -768,19 +751,16 @@ script "js_recommendations_incident", type:"javascript" do
 
   // Dummy item to ensure that the check statement in the policy executes at least once
   result.push({
-    resourceID: "",            resourceName: "",             kind: "",
-    resourceType: "",          description: "",              labels: "",
-    status: "",                size: "",                     selfLink: "",
-    zone: "",                  region: "",                   creationTime: "",
-    lastAttachTime: "",        lastDetachTime: "",           sourceSnapshot: "",
-    sourceSnapshotId: "",      sourceStorageObject: "",      sourceImage: "",
-    sourceImageId: "",         sourceDisk: "",               sourceDiskId: "",
-    accountID: "",             accountName: "",              projectNumber: "",
-    age: "",                   daysUnattached: "",           priority: "",
-    primaryImpact: "",         primaryImpactCategory: "",    recommendationDetails: "",
-    recommenderSubtype: "",    state: "",                    policy_name: "",
-    tags: "",                  savings: "",                  savingsCurrency: "",
-    service: "",               total_savings: "",            message: ""
+    resourceID: "",               resourceName: "",             kind: "",
+    resourceType: "",             description: "",              labels: "",
+    status: "",                   size: "",                     selfLink: "",
+    zone: "",                     region: "",                   creationTime: "",
+    accountID: "",                accountName: "",              projectNumber: "",
+    age: "",                      priority: "",                 primaryImpact: "",
+    primaryImpactCategory: "",    recommendationDetails: "",    recommenderSubtype: "",
+    state: "",                    policy_name: "",              tags: "",
+    savings: "",                  savingsCurrency: "",          service: "",
+    total_savings: "",            message: ""
   })
 
   result[0]['total_savings'] = savings_message
@@ -803,7 +783,7 @@ policy "policy_recommendations" do
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     escalate $esc_delete_disks
-    hash_exclude "age", "daysUnattached", "lastAttachTime", "lastDetachTime", "tags", "savings", "savingsCurrency", "total_savings", "message"
+    hash_exclude "age", "tags", "savings", "savingsCurrency", "total_savings", "message"
     export do
       resource_level true
       field "accountID" do
@@ -841,9 +821,6 @@ policy "policy_recommendations" do
       end
       field "age" do
         label "Age (Days)"
-      end
-      field "daysUnattached" do
-        label "Days Unattached"
       end
       field "size" do
         label "Disk Size (GB)"
