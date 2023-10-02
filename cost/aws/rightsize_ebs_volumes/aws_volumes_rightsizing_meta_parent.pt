@@ -8,7 +8,7 @@ tenancy "single"
 default_frequency "15 minutes"
 info(
   provider: "AWS",
-  version: "3.3", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "4.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "false"
 )
 
@@ -56,22 +56,34 @@ parameter "param_policy_schedule" do
 end
 
 ## Child Policy Parameters
-parameter "param_allowed_regions_allow_or_deny" do
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation"
+  min_value 0
+  default 0
+end
+
+parameter "param_regions_allow_or_deny" do
   type "string"
+  category "Filters"
   label "Allow/Deny Regions"
   description "Allow or Deny entered regions. See the README for more details"
   allowed_values "Allow", "Deny"
   default "Allow"
 end
 
-parameter "param_allowed_regions" do
+parameter "param_regions_list" do
   type "list"
-  label "Regions"
+  category "Filters"
+  label "Allow/Deny Regions List"
   allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   description "A list of allowed or denied regions. See the README for more details"
+  default []
 end
 
-parameter "param_exclusion_tag_key" do
+parameter "param_exclusion_tags" do
   category "User Inputs"
   label "Exclusion Tag Key:Value"
   description "Cloud native tag to ignore instances that you don't want to consider for downsizing or termination. Format: Key:Value"
@@ -80,11 +92,20 @@ parameter "param_exclusion_tag_key" do
   default ""
 end
 
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Upgrade Volumes to GP3"]
+  default []
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
 credentials "auth_aws" do
-  schemes "aws","aws_sts"
+  schemes "aws", "aws_sts"
   label "AWS"
   description "Select the AWS Credential from the list"
   tags "provider=aws"
@@ -93,8 +114,8 @@ end
 
 credentials "auth_flexera" do
   schemes "oauth2"
-  label "Flexera_Automation"
-  description "Select FlexeraOne OAuth2 credentials"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
 
@@ -687,19 +708,19 @@ datasource "ds_child_incident_details" do
   end
 end
 
-datasource "ds_filtered_disk_utilization_data_combined_incidents" do
-  run_script $js_ds_filtered_disk_utilization_data_combined_incidents, $ds_child_incident_details
+datasource "ds_underutil_volumes_combined_incidents" do
+  run_script $js_ds_underutil_volumes_combined_incidents, $ds_child_incident_details
 end
 
-script "js_ds_filtered_disk_utilization_data_combined_incidents", type: "javascript" do
+script "js_ds_underutil_volumes_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-EOS
   result = []
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
-    // If the incident summary contains "Underutilized EBS volumes" then include it in the filter result
-    if (s.indexOf("Underutilized EBS volumes") > -1) {
+    // If the incident summary contains "AWS Underutilized GP" then include it in the filter result
+    if (s.indexOf("AWS Underutilized GP") > -1) {
       _.each(incident["violation_data"], function(violation) {
         result.push(violation);
       });
@@ -715,9 +736,9 @@ end
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
-    # Consolidated incident for Underutilized EBS volumes
-  validate $ds_filtered_disk_utilization_data_combined_incidents do
-    summary_template "Consolidated Incident: {{ len data }} Underutilized EBS volumes"
+    # Consolidated incident for AWS Underutilized GP
+  validate $ds_underutil_volumes_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} AWS Underutilized GP"
     escalate $esc_email
     check eq(size(data), 0)
     export do
@@ -729,49 +750,55 @@ policy "policy_scheduled_report" do
         label "Account Name"
       end
       field "resourceID" do
-        label "Volume ID"
-      end
-      field "size" do
-        label "Volume Size (GB)"
-      end
-      field "region" do
-        label "Region"
-      end
-      field "state" do
-        label "Volume Status"
-      end
-      field "attachmentStatus" do
-        label "Volume Attachment Status"
-      end
-      field "resourceType" do
-        label "Volume Type"
+        label "Resource ID"
       end
       field "resourceName" do
         label "Resource Name"
       end
-      field "iopsAverage" do
-        label "IOPS Average %"
+      field "tags" do
+        label "Resource Tags"
       end
-      field "gp2Price" do
-        label "Monthly Cost"
+      field "age" do
+        label "Age (Days)"
       end
-      field "gp3Price" do
-        label "Monthly Cost if moved to GP3"
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "size" do
+        label "Size (GB)"
+      end
+      field "state" do
+        label "Status"
+      end
+      field "iops" do
+        label "IOPS"
+      end
+      field "attachmentStatus" do
+        label "Attachment Status"
+      end
+      field "cost" do
+        label "Estimated Monthly Cost"
+      end
+      field "gp2_price" do
+        label "Current Monthly List Price"
+      end
+      field "gp3_price" do
+        label "New Monthly List Price"
       end
       field "savings" do
-        label "Estimated Monthly Savings from moving to GP3"
+        label "Estimated Monthly Savings"
       end
-      field "tags" do
-        label "Tags"
+      field "savingsCurrency" do
+        label "Savings Currency"
       end
       field "service" do
         label "Service"
-      end
-      field "cloudwatchDataWarning" do
-        label "CloudWatch Data Warning"
-      end
-      field "lookbackPeriod" do
-        label "Lookback Period"
       end
       field "id" do
         label "ID"
