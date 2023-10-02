@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.4
+
+- Changed service metadata to "Compute" to ensure proper incident scraping
+
 ## v6.3
 
 - Added conditional logic to only use currency conversion API when needed
