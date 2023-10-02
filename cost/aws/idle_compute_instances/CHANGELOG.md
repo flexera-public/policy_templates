@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.3
+
+- Changed service metadata to "Compute" to ensure proper incident scraping
+
 ## v5.2
 
 - Fixed output of `Tags` incident field

@@ -2,7 +2,7 @@
 
 ## What it does
 
-This policy checks for all cost inefficient volumes an AWS Account. In this first iteration, this includes finding GP2 volume types and recommending them for upgrade for GP3 if this provides cost savings. A Policy Incident will be created with all of volumes that fall into these criteria.
+This policy checks all GP2 volumes on an AWS Account to see if the GP3 equivalent would be less expensive. An incident is raised with all volumes that would be less expensive if upgraded from GP2 to GP3.
 
 ## Functional Details
 
@@ -12,19 +12,27 @@ This policy checks for all cost inefficient volumes an AWS Account. In this firs
 
 ### Policy savings details
 
-The policy includes the estimated savings. The estimated savings is recognized if the resource is upgraded. The AWS Pricing API is used to retrieve and calculate the estimated savings which is the expected GP3 cost subtracted from the estimated current GP2 cost of the volume. The incident message detail includes the sum of each resource *Estimated Monthly Savings from moving to gp3* as *Total Estimated Monthly Savings*.
+The policy includes the estimated savings. The estimated savings is recognized if the volume is upgraded from GP2 to GP3. The AWS Pricing API is used to retrieve and calculate the estimated savings which is the expected GP3 cost subtracted from the estimated current GP2 cost of the volume. The incident message detail includes the sum of each resource *Estimated Monthly Saving* as *Potential Monthly Savings*.
+
+If the Flexera organization is configured to use a currency other than USD, the savings values will be converted from USD using the exchange rate at the time that the policy executes.
 
 ## Input Parameters
 
-- *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created.
-- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [more](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
-- *Allowed/Denied Regions* - Whether to treat regions parameter as allow or deny list.
-- *Regions* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
-- *Exclusion Tag Key:Value* - Cloud native tag to ignore instances that you don't want to consider for downsizing or termination. Format: Key:Value
+- *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
+- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
+- *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
+- *Allow/Deny Regions List* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled. See [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
+- *Exclusion Tags (Key:Value)* - Cloud native tags to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:\* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:\*
+- *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation.
+- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
+
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave this parameter blank for *manual* action.
+For example if a user selects the "Upgrade Volumes to GP3" action while applying the policy, all the volumes that appear in the raised incident will be upgraded to GP3.
 
 ## Policy Actions
 
 - Sends an email notification
+- Upgrade GP2 volumes to GP3 after approval
 
 ## Prerequisites
 
@@ -35,9 +43,12 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
 
 - [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
-  - `ec2:DescribeVolumes`
   - `ec2:DescribeRegions`
+  - `ec2:DescribeVolumes`
+  - `ec2:ModifyVolume`*
   - `pricing:GetProducts`
+
+  \* Only required for taking action (upgrading to GP3); the policy will still function in a read-only capacity without these permissions.
 
   Example IAM Permission Policy:
 
@@ -48,8 +59,9 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
           {
               "Effect": "Allow",
               "Action": [
-                  "ec2:DescribeVolumes",
                   "ec2:DescribeRegions",
+                  "ec2:DescribeVolumes",
+                  "ec2:ModifyVolume",
                   "pricing:GetProducts"
               ],
               "Resource": "*"
