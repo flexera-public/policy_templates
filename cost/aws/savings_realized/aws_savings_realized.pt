@@ -7,7 +7,7 @@ default_frequency "monthly"
 severity "low"
 category "Cost"
 info(
-  version: "3.2",
+  version: "3.3",
   provider: "Flexera",
   service: "All",
   policy_set: "N/A"
@@ -104,6 +104,11 @@ datasource "ds_aggregated_costs" do
       field "usage_amount", jmes_path(col_item, "metrics.usage_amount")
       field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
       field "month", jmes_path(col_item, "timestamp")
+      field "database_edition", jmes_path(col_item, "dimensions.database_edition")
+      field "database_engine", jmes_path(col_item, "dimensions.database_engine")
+      field "deployment_option", jmes_path(col_item, "dimensions.deployment_option")
+      field "license_model", jmes_path(col_item, "dimensions.license_model")
+      field "operating_system", jmes_path(col_item, "dimensions.operating_system")
     end
   end
 end
@@ -147,7 +152,12 @@ script "js_get_aggregated_costs", type: "javascript" do
       "instance_type",
       "region",
       "purchase_option",
-      "usage_unit"
+      "usage_unit",
+      "database_edition",
+      "database_engine",
+      "deployment_option",
+      "license_model",
+      "operating_system"
     ],
     "granularity": "month",
     "metrics": [
@@ -189,6 +199,11 @@ script "js_get_savings_realized", type: "javascript" do
   sp_costs = _.filter(all_costs, function(cost){ return cost.purchase_option == "Savings Plan" })
   spot_costs = _.filter(all_costs, function(cost){ return cost.purchase_option == "Spot" })
 
+  console.log("All Costs: ", all_costs.length)
+  console.log("OD Costs: ", od_costs.length)
+  console.log("RI Costs: ", ri_costs.length)
+  console.log("SP Costs: ", sp_costs.length)
+  console.log("Spot Costs: ", spot_costs.length)
 
   //Get list of Instance Types, Regions, Purchase Options, Months
   inst_type = _.pluck( _.uniq(all_costs, function(all){ return all.instance_type }), "instance_type" )
@@ -204,36 +219,92 @@ script "js_get_savings_realized", type: "javascript" do
     savings_realized_data.push({ "month": mo, "cost": total_month_cost, "dimension": "Total Actual Spend On Discountable Compute" })
   })
 
-  //calculate On-Demand cost of instance per hour across all months for each instance type/region/operating system combination
-  unique_cost_inst_hrs = []
-  _.each(inst_type, function(inst){
-    _.each(region, function(rg){
-      od_cost_inst_hr_tot = 0, count = 0
-      _.each(od_costs, function(od){
-        if(od.instance_type == inst && od.region == rg){
-          od_cost_inst_hr_tot += (od.cost / od.usage_amount)
-          count ++
-        }
-      })
-      avg_od_cost_inst_hr = 0
-      if(count > 0){ avg_od_cost_inst_hr = od_cost_inst_hr_tot / count }
-      //console.log(avg_od_cost_inst_hr, rg, inst)
+  // create an object with all different combination of instance_type/region/operating_system/database_engine/database_edition/license_model/deployment_option
+  combinations = {}
+  _.each(all_costs, function(cost){
+    if (combinations[cost.instance_type] == null) {
+      combinations[cost.instance_type] = {}
+    }
+    if (combinations[cost.instance_type][cost.region] == null) {
+      combinations[cost.instance_type][cost.region] = {}
+    }
+    if (combinations[cost.instance_type][cost.region][cost.operating_system] == null) {
+      combinations[cost.instance_type][cost.region][cost.operating_system] = {}
+    }
+    if (combinations[cost.instance_type][cost.region][cost.operating_system][cost.database_engine] == null) {
+      combinations[cost.instance_type][cost.region][cost.operating_system][cost.database_engine] = {}
+    }
+    if (combinations[cost.instance_type][cost.region][cost.operating_system][cost.database_engine][cost.database_edition] == null) {
+      combinations[cost.instance_type][cost.region][cost.operating_system][cost.database_engine][cost.database_edition] = {}
+    }
+    if (combinations[cost.instance_type][cost.region][cost.operating_system][cost.database_engine][cost.database_edition][cost.license_model] == null) {
+      combinations[cost.instance_type][cost.region][cost.operating_system][cost.database_engine][cost.database_edition][cost.license_model] = {}
+    }
+    if (combinations[cost.instance_type][cost.region][cost.operating_system][cost.database_engine][cost.database_edition][cost.license_model][cost.deployment_option] == null) {
+      combinations[cost.instance_type][cost.region][cost.operating_system][cost.database_engine][cost.database_edition][cost.license_model][cost.deployment_option] = {}
+    }
 
-      unique_cost_inst_hrs.push({
-        "instance_type": inst,
-        "region": rg,
-        "avg_od_cost_inst_hr": avg_od_cost_inst_hr
+  })
+
+
+  //calculate On-Demand cost of instance per hour across all months for each instance instance_type/region/operating_system/database_engine/database_edition/license_model/deployment_option combination
+  unique_cost_inst_hrs = []
+
+  _.each(combinations, function(regions, instance_type){
+    _.each(regions, function(operating_systems, region){
+      _.each(operating_systems, function(db_engines, operating_system){
+        _.each(db_engines, function(db_editions, db_engine){
+          _.each(db_editions, function(license_models, db_edition){
+            _.each(license_models, function(deployment_options, license_model){
+              _.each(deployment_options, function(value, deployment_option){
+
+                od_cost_inst_hr_tot = 0, count = 0
+                _.each(od_costs, function(od){
+                  if(od.instance_type == instance_type && od.region == region &&
+                    od.operating_system == operating_system && od.database_engine == db_engine &&
+                    od.database_edition == db_edition && od.license_model == license_model &&
+                    od.deployment_option == deployment_option){
+
+                    od_cost_inst_hr_tot += (od.cost / od.usage_amount)
+                    count ++
+                  }
+                })
+
+                avg_od_cost_inst_hr = 0
+                if(count > 0){ avg_od_cost_inst_hr = od_cost_inst_hr_tot / count }
+
+                unique_cost_inst_hrs.push({
+                  "instance_type": instance_type,
+                  "region": region,
+                  "operating_system": operating_system,
+                  "license_model": license_model,
+                  "database_edition": db_edition,
+                  "database_engine": db_engine,
+                  "deployment_option": deployment_option,
+                  "avg_od_cost_inst_hr": avg_od_cost_inst_hr
+                })
+              })
+            })
+          })
+        })
       })
     })
   })
   //console.log("Cost instance hours", unique_cost_inst_hrs)
 
   //apply cost_inst_hr to calculate savings realized
+
+  console.log("Unique Costs Instance: ", unique_cost_inst_hrs.length)
+  ri_processed_counter = 0, sp_processed_counter = 0, spot_processed_counter = 0
+
   _.each(unique_cost_inst_hrs, function(inst_hr){
 
     //Reserved Instance savings
     _.each(ri_costs, function(ri){
-      if (ri.instance_type == inst_hr.instance_type && ri.region == inst_hr.region){
+      if (ri.instance_type == inst_hr.instance_type && ri.region == inst_hr.region && ri.operating_system == inst_hr.operating_system &&
+          ri.license_model == inst_hr.license_model && ri.database_edition == inst_hr.database_edition &&
+          ri.database_engine == inst_hr.database_engine && ri.deployment_option == inst_hr.deployment_option){
+        ri_processed_counter++
         savings_realized_per_inst_hr = inst_hr.avg_od_cost_inst_hr - (ri.cost / ri.usage_amount)
         //console.log(savings_realized_per_inst_hr, ri.region, ri.instance_type)
 
@@ -257,9 +328,12 @@ script "js_get_savings_realized", type: "javascript" do
 
     //Savings Plan savings
     _.each(sp_costs, function(sp){
-      if (sp.instance_type == inst_hr.instance_type && sp.region == inst_hr.region){
+      if (sp.instance_type == inst_hr.instance_type && sp.region == inst_hr.region && sp.operating_system == inst_hr.operating_system &&
+          sp.license_model == inst_hr.license_model && sp.database_edition == inst_hr.database_edition &&
+          sp.database_engine == inst_hr.database_engine && sp.deployment_option == inst_hr.deployment_option){
+        sp_processed_counter++
         savings_realized_per_inst_hr = inst_hr.avg_od_cost_inst_hr - (sp.cost / sp.usage_amount)
-        console.log(savings_realized_per_inst_hr, sp.region, sp.instance_type)
+        //console.log(savings_realized_per_inst_hr, sp.region, sp.instance_type)
 
         savings_realized = 0
         if(sp.cost > 0 ){
@@ -281,7 +355,10 @@ script "js_get_savings_realized", type: "javascript" do
 
     //Spot Instance savings
     _.each(spot_costs, function(spot){
-      if (spot.instance_type == inst_hr.instance_type && spot.region == inst_hr.region){
+      if (spot.instance_type == inst_hr.instance_type && spot.region == inst_hr.region && spot.operating_system == inst_hr.operating_system &&
+          spot.license_model == inst_hr.license_model && spot.database_edition == inst_hr.database_edition &&
+          spot.database_engine == inst_hr.database_engine && spot.deployment_option == inst_hr.deployment_option){
+        spot_processed_counter++
         savings_realized_per_inst_hr = inst_hr.avg_od_cost_inst_hr - (spot.cost / spot.usage_amount)
         savings_realized = 0
         if(spot.cost > 0 ){
@@ -300,6 +377,10 @@ script "js_get_savings_realized", type: "javascript" do
     })
 
   })
+
+  console.log("RI Costs Processed: ", ri_processed_counter)
+  console.log("SP Costs Processed: ", sp_processed_counter)
+  console.log("Spot Costs Processed: ", spot_processed_counter)
 
   //reduce list - aggregate SAVINGS REALIZED costs for same purchase option for same month
   purchase_options = _.pluck( _.sortBy( _.uniq( temp_result, function(data){ return data.purchase_option }), "purchase_option" ), "purchase_option" )
