@@ -78,6 +78,15 @@ parameter "param_exclusion_labels" do
   default []
 end
 
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Stop Cloud SQL Instances", "Delete Cloud SQL Instances"]
+  default []
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -447,7 +456,6 @@ script "js_currency", type:"javascript" do
 EOS
 end
 
-
 datasource "ds_recommendations_incident" do
   run_script $js_recommendations_incident, $ds_cloudsql_instances_region_filtered, $ds_recommendations, $ds_currency, $ds_currency_conversion, $ds_applied_policy, $param_min_savings
 end
@@ -565,6 +573,8 @@ policy "policy_recommendations" do
     EOS
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
+    escalate $esc_stop_instances
+    escalate $esc_delete_instances
     hash_exclude "tags", "savings", "savingsCurrency", "total_savings", "message"
     export do
       resource_level true
@@ -647,10 +657,108 @@ escalation "esc_email" do
   email $param_email
 end
 
+escalation "esc_stop_instances" do
+  automatic contains($param_automatic_action, "Stop Cloud SQL Instances")
+  label "Stop Cloud SQL Instances"
+  description "Approval to stop all selected Cloud SQL instances"
+  run "stop_instances", data
+end
+
+escalation "esc_delete_instances" do
+  automatic contains($param_automatic_action, "Delete Cloud SQL Instances")
+  label "Delete Cloud SQL Instances"
+  description "Approval to delete all selected Cloud SQL instances"
+  run "delete_instances", data
+end
+
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
+define stop_instances($data) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call stop_instance($instance) retrieve $stop_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+define delete_instances($data) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call delete_instance($instance) retrieve $delete_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+define stop_instance($instance) return $response do
+  task_label("PATCH " + $instance['selfLink'])
+
+  $body = '{ "settings": { "activationPolicy": "NEVER" } }'
+
+  $response = http_patch(
+    url: $instance['selfLink'],
+    auth: $$auth_google,
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json"
+    },
+    body: $body
+  )
+
+  task_label("Patch Google Cloud SQL instance response: " + $instance["resourceName"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $instance['selfLink'], "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response patching Google Cloud SQL instance: "+ $instance["resourceName"] + " " + to_json($response)
+  else
+    task_label("Patch Google Cloud SQL instance successful: " + $instance["resourceName"])
+  end
+end
+
+define delete_instance($instance) return $response do
+  task_label("DELETE " + $instance['selfLink'])
+
+  $response = http_delete(
+    url: $instance['selfLink'],
+    auth: $$auth_google,
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json"
+    }
+  )
+
+  task_label("Delete Google Cloud SQL instance response: " + $instance["resourceName"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $instance['selfLink'], "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response deleting Google Cloud SQL instance: "+ $instance["resourceName"] + " " + to_json($response)
+  else
+    task_label("Delete Google Cloud SQL instance successful: " + $instance["resourceName"])
+  end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
+end
 
 ###############################################################################
 # Meta Policy [alpha]
