@@ -849,6 +849,9 @@ policy "policy_recommendations" do
       field "service" do
         label "Service"
       end
+      field "selfLink" do
+        label "Resource Link"
+      end
       field "id" do
         label "ID"
         path "resourceID"
@@ -908,36 +911,36 @@ define snapshot_disk($disk) return $response do
       "content-type": "application/json"
     },
     body: {
-      name: join([$disk["name"], "-final-snapshot"])
+      name: join([$disk["resourceName"], "-final-snapshot"])
     }
   )
 
-  task_label("Post Google disk response: " + $instance["resourceName"] + " " + to_json($response))
-  $$all_responses << to_json({"req": "POST " + $instance['selfLink'] + '/createSnapshot', "resp": $response})
+  task_label("Post Google disk response: " + $disk["resourceName"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $disk['selfLink'] + '/createSnapshot', "resp": $response})
 
   if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
-    raise "Unexpected response posting Google disk: "+ $instance["resourceName"] + " " + to_json($response)
+    raise "Unexpected response posting Google disk: "+ $disk["resourceName"] + " " + to_json($response)
   else
-    task_label("Post Google disk successful: " + $instance["resourceName"])
+    task_label("Post Google disk successful: " + $disk["resourceName"])
 
-    $snapshot = $response["body"]
+    $operation = $response["body"]
 
     sleep(5)
-    call get_snapshot_status($snapshot) retrieve $status_response, $current_status
+    call get_operation_status($operation) retrieve $status_response, $current_status
     sleep(5)
 
-    while $current_status != "READY" do
-      call get_snapshot_status($snapshot) retrieve $status_response, $current_status
+    while $current_status != "DONE" do
+      call get_operation_status($operation) retrieve $status_response, $current_status
       sleep(5)
     end
   end
 end
 
-define get_snapshot_status($snapshot) return $response, $snapshot_status do
-  task_label("GET " + $snapshot['selfLink'])
+define get_operation_status($operation) return $response, $operation_status do
+  task_label("GET " + $operation['selfLink'])
 
   $response = http_get(
-    url: $snapshot['selfLink'],
+    url: $operation['selfLink'],
     auth: $$auth_google,
     headers: {
       "cache-control": "no-cache",
@@ -945,14 +948,14 @@ define get_snapshot_status($snapshot) return $response, $snapshot_status do
     }
   )
 
-  task_label("Get Google snapshot response: " + $snapshot["resourceName"] + " " + to_json($response))
-  $$all_responses << to_json({"req": "GET " + $snapshot['selfLink'], "resp": $response})
+  task_label("Get Google operation response: " + $operation["name"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "GET " + $operation['selfLink'], "resp": $response})
 
   if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
-    raise "Unexpected response getting Google snapshot: "+ $snapshot["resourceName"] + " " + to_json($response)
+    raise "Unexpected response getting Google operation: "+ $operation["name"] + " " + to_json($response)
   else
-    task_label("Get Google snapshot successful: " + $snapshot["resourceName"])
-    $snapshot_status = $response["body"]["status"]
+    task_label("Get Google operation successful: " + $operation["name"])
+    $operation_status = $response["body"]["status"]
   end
 end
 
