@@ -93,8 +93,7 @@ categories = [
   'compliance',
   'operational',
   'saas management',
-  'security',
-  'hybrid'
+  'security'
 ].sort
 #only check .pt files
 has_app_changes.each do |file|
