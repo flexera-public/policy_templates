@@ -7,20 +7,30 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "1.0",
+  version: "1.1",
   provider: "Azure China",
-  service: "N/A",
-  policy_set: "Common Bill Ingest"
+  service: "Common Bill Ingestion",
+  policy_set: "Common Bill Ingestion"
 )
 
 ###############################################################################
 # Parameters
 ###############################################################################
 
-# Need to read the Azure EA key from credentials
-permission "perm_read_creds" do
-  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
-  resources "rs_cm.credentials"
+parameter "param_billing_period" do
+  type "string"
+  label "Month To Ingest"
+  description "Month to process bills for."
+  default "Current Month"
+  allowed_values "Current Month", "Specific Month"
+end
+
+parameter "param_specific_period" do
+  type "string"
+  label "Billing Period"
+  description "Billing period to process bills for in YYYY-MM format. Only relevant if Specific Month is selected for Month To Ingest."
+  default "2020-01"
+  allowed_pattern /^(19|20)\d\d-(0[1-9]|1[0-2])$/
 end
 
 # Could maybe get this from the EA key, but for now just ask for it
@@ -48,7 +58,7 @@ end
 # Authentication
 ###############################################################################
 
-#AUTHENTICATE WITH AZURE
+#AUTHENTICATE WITH AZURE CHINA
 credentials "azure_ea_auth" do
   schemes "api_key"
   label "Azure"
@@ -56,30 +66,37 @@ credentials "azure_ea_auth" do
   tags "provider=azure_ea_china"
 end
 
-#AUTHENTICATE WITH FLEXERA/OPTIMA
-credentials "auth_rs" do
+#AUTHENTICATE WITH FLEXERA
+credentials "auth_flexera" do
   schemes "oauth2"
   label "flexera"
   description "Select FlexeraOne OAuth2 credentials"
-  tags "provider=flexera"
+  tags "provider=Flexera"
 end
 
 ###############################################################################
 # Datasources and Scripts
 ###############################################################################
 
-#GET BILLING PERIOD
+#GET BILLING PERIOD FOR RETRIEVING BILLING DATA FROM AZURE CHINA API
 datasource "ds_billing_period" do
-  run_script $js_get_billing_period
+  run_script $js_get_billing_period, $param_billing_period, $param_specific_period
 end
 
 script "js_get_billing_period", type: "javascript" do
+  parameters "param_billing_period", "param_specific_period"
   result "result"
   code <<-EOS
-  var current_bill_date = new Date()
-  current_bill_date.setDate(current_bill_date.getDate() - 2)
-  var billing_period = current_bill_date.toISOString().split("-")[0] + "-" + current_bill_date.toISOString().split("-")[1]
-  
+  //Get Billing Period
+  var billing_period = ""
+  if (param_billing_period == "Specific Month" && param_specific_period != "") {
+    billing_period = param_specific_period
+  } else {
+    var current_bill_date = new Date()
+    current_bill_date.setDate(current_bill_date.getDate() - 2)
+    billing_period = current_bill_date.toISOString().split("-")[0] + "-" + current_bill_date.toISOString().split("-")[1]
+  }
+
   var result = { 
     "billing_period": billing_period
   }
@@ -106,7 +123,7 @@ end
 #CREATE BILL UPLOAD
 datasource "ds_bill_upload" do
   request do
-    auth $auth_rs
+    auth $auth_flexera
     verb "POST"
     host rs_optima_host
     path join(["/optima/orgs/", rs_org_id, "/billUploads"])
@@ -130,7 +147,7 @@ script "create_bill_upload_file", type: "javascript" do
   result "request"
   code <<-EOS
     var request = {
-      auth: "auth_rs",
+      auth: "auth_flexera",
       verb: "POST",
       host: optima_host,
       path: "/optima/orgs/" + org_id + "/billUploads/" + bill_upload_id + '/files/azure-china' + ds_billing_period_data.billing_period + '.csv',
@@ -154,7 +171,7 @@ script "js_cbi_commit", type: "javascript" do
   result "request"
   code <<-EOS
     var request = {
-      auth: "auth_rs",
+      auth: "auth_flexera",
       verb: "POST",
       host: optima_host,
       path: "/optima/orgs/" + org_id + "/billUploads/" + bill_upload_id + '/operations',
