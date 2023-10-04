@@ -280,7 +280,7 @@ These templates can generate savings estimates for your environment.
 
 #### Azure China
 
-- N/A
+- Common Bill Ingestion
 
   - [Azure China Common Bill Ingestion](./cost/azure/azure_china_cbi)
 
@@ -671,8 +671,7 @@ These templates can generate savings estimates for your environment.
   Cost Explorer: 1
   Blob Store: 1
   Storage Accounts: 2
-  N/A: 1
-  Common Bill Ingestion: 1
+  Common Bill Ingestion: 2
   Office 365: 1
   IAM: 19
   ECS: 1
@@ -723,8 +722,7 @@ These templates can generate savings estimates for your environment.
   Forecasting: 4
   Lifecycle Management: 1
   Hybrid Use Benefit: 2
-  Common Bill Ingest: 1
-  Common Bill Ingestion: 1
+  Common Bill Ingestion: 2
   Native Recommendations: 1
   Committed Use Discount: 1
   Rightsize Database Services: 1
