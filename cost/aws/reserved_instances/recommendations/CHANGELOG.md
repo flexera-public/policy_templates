@@ -4,6 +4,7 @@
 
 - Policy now automatically converts savings from USD to local currency when appropriate
 - Several parameters altered to be more descriptive and intuitive to use
+- `ElasticSearch` is now referred to as `OpenSearch` in keeping with current AWS naming convention
 - Added additional context to incident description
 - Normalized incident export to be consistent with other policies
 - Streamlined code for better readability and faster execution
