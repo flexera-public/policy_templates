@@ -1,5 +1,25 @@
 # Changelog
 
+## v4.0
+
+- Several parameters altered to be more descriptive and human-readable
+- Added ability to only report recommendations that meet a minimum savings threshold
+- Added ability to filter resources by multiple tag key:value pairs
+- Added ability to take automated actions to upgrade GP2 volumes to GP3
+- Added additional context to incident description
+- Removed unneeded `IOPS Average %` and `Lookback Period` fields from incident export
+- Removed unneeded API calls to CloudWatch
+- Normalized incident export to be consistent with other policies
+- Added human-readable recommendation to incident export
+- Added additional fields to incident export to facilitate scraping for dashboards
+- Policy no longer raises new escalations if statistics or savings data changed but nothing else has
+- Streamlined code for better readability and faster execution
+
+## v3.3
+
+- Updated logic to filter out GP3 volumes from recommendations as currently unsupported.
+- Updated the data used for the policy incident to ensure a policy incident is not created when there are no recommendations
+
 ## v3.2
 
 - Added `Resource Name` incident field

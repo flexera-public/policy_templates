@@ -6,11 +6,11 @@ severity "low"
 category "Operational"
 default_frequency "hourly"
 info(
-  version: "0.1",
+  version: "0.3",
   provider: "",
   service: "",
   policy_set: "",
-	publish: "false"
+  publish: "false"
 )
 
 parameter "param_turbonomic_username" do
@@ -59,6 +59,8 @@ datasource "ds_applied_policies" do
     encoding "json"
     collect jq(response, ".items[]") do
       field "id", val(col_item, "id")
+      field "policy_aggregate_id", val(col_item, "policy_aggregate_id")
+      field "org_id", jq(col_item, ".project.org_id")
       field "name", val(col_item, "name")
       field "info_source", jq(col_item, ".info.source")
     end
@@ -67,10 +69,10 @@ end
 
 # Filters the applied policy where the info.source is set to either "Turbonomic" or "Turbonomics"
 datasource "ds_turbo_applied_policies" do
-  run_script $js_filter_turbo_policies, $ds_applied_policies
+  run_script $js_turbo_applied_policies, $ds_applied_policies
 end
 
-script "js_filter_turbo_policies", type: "javascript" do
+script "js_turbo_applied_policies", type: "javascript" do
   parameters "applied_policies"
   result "filtered_policies"
   code <<-EOS
@@ -80,16 +82,106 @@ script "js_filter_turbo_policies", type: "javascript" do
   EOS
 end
 
+# collect additional data for the applied policies
+datasource "ds_turbo_policies_with_next_start" do
+  iterate $ds_turbo_applied_policies
+  request do
+    run_script $js_turbo_policies_with_next_start, val(iter_item, "id"), rs_project_id, rs_governance_host
+  end
+  result do
+    encoding "json"
+    collect jq(response, ".") do
+      field "id", val(iter_item, "id")
+      field "policy_aggregate_id", val(iter_item, "policy_aggregate_id")
+      field "org_id", val(iter_item, "org_id")
+      field "info_source", val(iter_item, "info_source")
+      field "name", val(iter_item, "name")
+      field "time", val(iter_item, "time")
+      field "next_evaluation_start", jq(col_item, ".next_evaluation_start")
+    end
+  end
+end
+
+script "js_turbo_policies_with_next_start", type: "javascript" do
+  result "result"
+  parameters "policy_id", "rs_project_id", "rs_governance_host"
+  code <<-EOS
+  result = {
+    auth: "auth_flexera",
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id + "/status",
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+  EOS
+end
+
+# Get Current Policy Details
+datasource "ds_self_policy_info" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+    header "Content-Type", "application/json"
+    ignore_status [403,404]
+  end
+  result do
+    encoding "json"
+    field "frequency", jmes_path(response, "frequency")
+  end
+end
+
+# Filters the applied policy by next_evaluation_start
+datasource "ds_filtered_turbo_policies" do
+  run_script $js_filter_turbo_policies, $ds_turbo_policies_with_next_start, $ds_self_policy_info
+end
+
+script "js_filter_turbo_policies", type: "javascript" do
+  parameters "policies_with_next_start", "ds_self_policy_info"
+  result "results"
+  code <<-EOS
+  var nextStart = function (interval) {
+    var currentDate = new Date();
+    var newDate = new Date(currentDate);
+    switch (interval) {
+      case '15 minutes':
+        newDate.setMinutes(currentDate.getMinutes() + 15);
+        break;
+      case 'hourly':
+        newDate.setHours(currentDate.getHours() + 1);
+        break;
+      case 'daily':
+        newDate.setDate(currentDate.getDate() + 1);
+        break;
+      case 'weekly':
+        newDate.setDate(currentDate.getDate() + 7);
+        break;
+      case 'monthly':
+        newDate.setMonth(currentDate.getMonth() + 1);
+        break;
+    }
+    return newDate.getTime();
+  }
+
+  var results = _.filter(policies_with_next_start, function(policy) {
+    return new Date(policy.next_evaluation_start).getTime() <= nextStart(ds_self_policy_info.frequency)
+  });
+  EOS
+end
+
 ###############################################################################
 # Policy
 ###############################################################################
 
-policy "pol_turbo_applied_policies" do
-  validate $ds_turbo_applied_policies do
+policy "pol_filtered_turbo_policies" do
+  validate $ds_filtered_turbo_policies do
     summary_template "Turbo policies found"
     detail_template <<-EOS
-    The following applied policies are running for Turbonomics. The auth_token parameter will be updated
-    with refreshed cookie.
+    The following applied policies are running for Turbonomics and require the auth_token parameter to be
+    updated before the next run. It will be updated with refreshed cookie.
 
     | ID | Name | Source |
     | -- | ---- | ------ |
@@ -152,8 +244,13 @@ define update_cookie($turbo_policies, $param_turbonomic_username, $param_turbono
       end
       if $found
         # If the applied policy has the auth_cookie or param_auth_cookie parameter, we'll update with a fresh value
+        if $policy["policy_aggregate_id"] != null
+          $url = "https://" + $gov_host + "/api/governance/orgs/" + $policy["org_id"] + "/policy_aggregates/" + $policy["policy_aggregate_id"]
+        else
+          $url = "https://" + $gov_host + "/api/governance/projects/" + $proj_id + "/applied_policies/" + $policy["id"]
+        end
         $response = http_patch(
-          url: "https://" + $gov_host + "/api/governance/projects/" + $proj_id + "/applied_policies/" + $policy["id"],
+          url: $url,
           headers: {
             "Api-Version": "1.0"
           },
@@ -162,7 +259,9 @@ define update_cookie($turbo_policies, $param_turbonomic_username, $param_turbono
             options: $modified
           }
         )
-        if $response["code"] != 204
+        # Policy Aggregate Service returns 202 on successful update and
+        # Applied Policy Service returns 204 on successful update
+        if $response["code"] != 204 && $response["code"] != 202
           raise "Unexpected response code from policy template update: " + $response["code"] + " body: " + to_s($response["body"])
         end
       end

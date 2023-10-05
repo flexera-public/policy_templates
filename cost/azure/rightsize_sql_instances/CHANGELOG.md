@@ -1,5 +1,28 @@
 # Changelog
 
+## v4.0
+
+- Several parameters altered to be more descriptive and human-readable
+- Removed deprecated "Log to CM Audit Entries" parameter
+- Added potential savings to recommendations
+- Added ability to only report recommendations that meet a minimum savings threshold
+- Added incident for unused instances based on lack of connections
+- Added ability to delete unused instances
+- Added ability to configure how many days back to consider when determining if instance is unused or underutilized
+- Added ability to filter resources by multiple tag key:value pairs
+- Added ability to filter resources by region
+- Added additional context to incident description
+- Normalized incident export to be consistent with other policies
+- Added human-readable recommendation to incident export
+- Policy no longer raises new escalations if statistics or savings data changed but nothing else has
+- Streamlined code for better readability and faster execution
+
+## v3.0
+
+- Renamed Subscription List parameter for consistency and accuracy
+- Added logic required for "Meta Policy" use-cases
+- Policy now requires a valid Flexera credential to facilitate "Meta Policy" use-cases
+
 ## v2.13
 
 - Added `Lookback Period` incident field.

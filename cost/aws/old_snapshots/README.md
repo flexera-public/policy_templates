@@ -2,15 +2,38 @@
 
 ## What it does
 
-This policy finds AWS snapshots in the given account which are older than the specified days and deletes them after user approval. For a snapshot, if images are created then we can't delete the snapshot without deleting the images. So, if the user selects Yes, the snapshot will be deleted along with the images, and if No the snapshot will not be considered for deletion. Account specific snapshots are determined by filtering based on the owner-id. The account number is used as an owner-id.
+This policy finds AWS snapshots in the given account which are older than the specified days and deletes them after user approval. Snapshots with an associated AMI can be included or excluded depending on the settings selected when applying the policy; if included, the AMI will be deleted along with the snapshot if the snapshot is deleted.
 
 ### Policy savings details
 
-The policy includes the estimated savings. The estimated savings is recognized if the resource is terminated. Optima is used to receive the estimated savings which is the product of the most recent full day’s cost of the resource \* 30. The savings are displayed in the *Estimated Monthly Savings* column. If the resource can not be found in Optima the value is 0.0. The incident header includes the sum of each resource *Estimated Monthly Savings* as Total Estimated Monthly Savings.
+The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the resource is terminated. The estimated monthly savings is calculated by multiplying the actual cost of the resource for 1 day, as found within Flexera CCO, by 30.4375, which is the average number of days in a month. The savings are�displayed in the *Estimated Monthly Savings*�column. If the resource cannot be found in Flexera CCO, the estimated savings is 0. The incident header includes the sum of each resource *Estimated Monthly Savings* as *Potential Monthly Savings*.
 
-If the AWS bill for the AWS account is registered in Optima in a different Flexera One org than the project where the policy template is applied, the *Flexera One Org ID for Optima* parameter can be set to the org where the AWS account is registered in Optima. Leaving this parameter set to `current` will result in using the same org as the project where the policy template is applied querying for Optima cost data.
+## Input Parameters
 
-The *Estimated Monthly Savings* and *Total Estimated Monthly Savings* are rounded to 3 decimal places, so the savings value will display 0.0 if the estimated savings is less than $0.0005.
+This policy has the following input parameters required when launching the policy.
+
+- *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created.
+- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
+- *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
+- *Allow/Deny Regions List* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled. See [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
+- *Exclusion Service Types* - Exclude the selected services (EC2 or RDS). If left blank, all services will be analyzed.
+- *Exclusion EC2 Snapshot Description* - Exclude EC2 snapshots with the provided descriptions. If left blank, all EC2 snapshots will be analyzed. This setting has no effect on RDS snapshots.
+- *Exclusion RDS Snapshot Types* - Exclude the selected RDS snapshot types. If left blank, all types will be analyzed. This setting has no effect on EC2 snapshots.
+- *Exclusion Tags (Key:Value)* - Cloud native tags to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:\* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:\*
+- *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation.
+- *Snapshot Age* - The number of days since the snapshot was created to consider it old.
+- *Include Snapshots with AMI* - Whether or not to produce recommendations for snapshots with an associated registered AMI (Amazon Machine Image).
+- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
+
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example, if a user selects the "Delete Snapshots" action while applying the policy, all the snapshots that didn't satisfy the policy condition will be deleted.
+
+## Policy Actions
+
+The following policy actions are taken on any resources found to be out of compliance.
+
+- Send an email report
+- Delete old snapshots after an approval
 
 ## Prerequisites
 
@@ -20,15 +43,17 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   - `ec2:DescribeRegions`
   - `ec2:DescribeImages`
   - `ec2:DescribeSnapshots`
+  - `ec2:DeregisterImage`*
+  - `ec2:DeleteSnapshot`*
   - `rds:DescribeDBInstances`
   - `rds:DescribeDBSnapshots`
   - `rds:DescribeDBClusters`
   - `rds:DescribeDBClusterSnapshots`
+  - `rds:DeleteDBClusterSnapshot`*
+  - `rds:DeleteDBSnapshot`*
   - `sts:GetCallerIdentity`
-  - `ec2:DeregisterImage`
-  - `ec2:DeleteSnapshot`
-  - `rds:DeleteDBClusterSnapshot`
-  - `rds:DeleteDBSnapshot`
+
+  \* Only required for taking action (deletion); the policy will still function in a read-only capacity without these permissions.
 
   Example IAM Permission Policy:
 
@@ -42,15 +67,15 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
                   "ec2:DescribeRegions",
                   "ec2:DescribeImages",
                   "ec2:DescribeSnapshots",
+                  "ec2:DeregisterImage",
+                  "ec2:DeleteSnapshot"
                   "rds:DescribeDBInstances",
                   "rds:DescribeDBSnapshots",
                   "rds:DescribeDBClusters",
                   "rds:DescribeDBClusterSnapshots",
-                  "sts:GetCallerIdentity",
-                  "ec2:DeregisterImage",
                   "rds:DeleteDBSnapshot",
                   "rds:DeleteDBClusterSnapshot",
-                  "ec2:DeleteSnapshot"
+                  "sts:GetCallerIdentity"
               ],
               "Resource": "*"
           }
@@ -62,30 +87,6 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   - `billing_center_viewer`
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
-
-## Input Parameters
-
-This policy has the following input parameters required when launching the policy.
-
-- *Allow/Deny Regions* - Whether to treat regions parameter as allow or deny list.
-- *Regions* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
-- *Email addresses* - A list of email addresses to notify.
-- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [more](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
-- *Snapshot age* - The number of days since the snapshot was created.
-- *Deregister Image* - If Yes, the snapshot will be deleted along with the images, and if No the snapshot will not be considered for deletion.
-- *Exclude Tags* - List of tags that a snapshot can have to exclude it from the list.
-- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
-- *Flexera One Org ID for Optima* - The Flexera One org ID for Optima queries used to determine estimated costs, by default the current org is used.
-
-Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
-For example, if a user selects the "Delete Snapshots" action while applying the policy, all the snapshots that didn't satisfy the policy condition will be deleted.
-
-## Policy Actions
-
-The following policy actions are taken on any resources found to be out of compliance.
-
-- Send an email report
-- Delete old snapshots after an approval
 
 ## Supported Clouds
 

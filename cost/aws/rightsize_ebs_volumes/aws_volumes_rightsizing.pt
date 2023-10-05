@@ -1,15 +1,15 @@
 name "AWS Rightsize EBS Volumes"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks for cost inefficient EBS volumes. This policy finds GP2 volume types and recommends them for an upgrade to GP3 if cost savings is present. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ebs_volumes/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "This policy finds AWS GP2 volume types and recommends them for an upgrade to GP3 if this would result in savings. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ebs_volumes/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "3.2",
+  version: "4.0",
   provider: "AWS",
-  service: "EC2",
+  service: "Compute",
   policy_set: "Inefficient Disk Usage",
   recommendation_type: "Usage Reduction"
 )
@@ -18,29 +18,50 @@ info(
 # Parameters
 ###############################################################################
 
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+  default []
+end
+
 parameter "param_aws_account_number" do
   type "string"
+  category "Policy Settings"
   label "Account Number"
   description "The account number for AWS STS Cross Account Roles."
   default ""
 end
 
-parameter "param_allowed_regions_allow_or_deny" do
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation"
+  min_value 0
+  default 0
+end
+
+parameter "param_regions_allow_or_deny" do
   type "string"
+  category "Filters"
   label "Allow/Deny Regions"
   description "Allow or Deny entered regions. See the README for more details"
   allowed_values "Allow", "Deny"
   default "Allow"
 end
 
-parameter "param_allowed_regions" do
+parameter "param_regions_list" do
   type "list"
-  label "Regions"
+  category "Filters"
+  label "Allow/Deny Regions List"
   allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   description "A list of allowed or denied regions. See the README for more details"
+  default []
 end
 
-parameter "param_exclusion_tag_key" do
+parameter "param_exclusion_tags" do
   category "User Inputs"
   label "Exclusion Tag Key:Value"
   description "Cloud native tag to ignore instances that you don't want to consider for downsizing or termination. Format: Key:Value"
@@ -49,30 +70,31 @@ parameter "param_exclusion_tag_key" do
   default ""
 end
 
-parameter "param_email" do
+parameter "param_automatic_action" do
   type "list"
-  label "Email addresses to notify"
-  description "Email addresses of the recipients you wish to notify when new incidents are created"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Upgrade Volumes to GP3"]
+  default []
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-#AUTHENTICATE WITH AWS
 credentials "auth_aws" do
-  schemes "aws","aws_sts"
+  schemes "aws", "aws_sts"
   label "AWS"
   description "Select the AWS Credential from the list"
   tags "provider=aws"
   aws_account_number $param_aws_account_number
 end
 
-#AUTHENTICATE WITH FLEXERA/OPTIMA
 credentials "auth_flexera" do
   schemes "oauth2"
-  label "Flexera_Automation"
-  description "Select FlexeraOne OAuth2 credentials"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
 
@@ -80,8 +102,7 @@ end
 # Pagination
 ###############################################################################
 
-#PAGINATION FOR AWS DESCRIBE VOLUMES CALL
-pagination "aws_volumes_pagination_xml" do
+pagination "pagination_aws_volumes" do
   get_page_marker do
     body_path "//DescribeVolumesResponse/nextToken"
   end
@@ -90,8 +111,7 @@ pagination "aws_volumes_pagination_xml" do
   end
 end
 
-#PAGINATION FOR AWS PRICING API CALL
-pagination "pagination_aws_products" do
+pagination "pagination_aws_pricing" do
   get_page_marker do
     body_path "NextToken"
   end
@@ -104,7 +124,142 @@ end
 # Datasources & Scripts
 ###############################################################################
 
-#GET CURRENCY REFERENCE AND CURRENCY CODE FOR ORG
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-au.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-au.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get AWS account info
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account", xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_get_caller_identity
+end
+
+script "js_aws_account", type:"javascript" do
+  parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+  result = _.find(ds_cloud_vendor_accounts, function(account) {
+    return account['id'] == ds_get_caller_identity[0]['account']
+  })
+
+  // This is in case the API does not return the relevant account info
+  if (result == undefined) {
+    result = {
+      id: ds_get_caller_identity[0]['account'],
+      name: "",
+      tags: {}
+    }
+  }
+EOS
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
+end
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-EOS
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+# Gather local currency info
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
@@ -129,117 +284,90 @@ datasource "ds_currency_code" do
   end
 end
 
-#GET CALLER IDENTITY TO RETURN DETAILS ABOUT IAM ROLE USED TO CALL THE OPERATION (AWS STS)
-datasource "ds_get_caller_identity" do
-  request do
-    auth $auth_aws
-    verb "GET"
-    host "sts.amazonaws.com"
-    path "/"
-    header "User-Agent", "RS Policies"
-    query "Action", "GetCallerIdentity"
-    query "Version", "2011-06-15"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
-      field "account",xpath(col_item, "Account")
-    end
-  end
+datasource "ds_currency_target" do
+  run_script $js_currency_target, $ds_currency_reference, $ds_currency_code
 end
 
-datasource "ds_billing_centers" do
-  request do
-    auth $auth_flexera
-    host rs_optima_host
-    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
-    header "Api-Version", "1.0"
-    header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
-    ignore_status [403]
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "[*]") do
-      field "href", jmes_path(col_item, "href")
-      field "id", jmes_path(col_item, "id")
-      field "name", jmes_path(col_item, "name")
-      field "parent_id", jmes_path(col_item, "parent_id")
-    end
-  end
-end
-
-datasource "ds_top_level_billing_centers" do
-  run_script $js_top_level_bc, $ds_billing_centers
-end
-
-script "js_top_level_bc", type: "javascript" do
-  parameters "billing_centers"
-  result "filtered_billing_centers"
+script "js_currency_target", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
   code <<-EOS
-  var filtered_billing_centers =
-    _.reject(billing_centers, function(bc){ return bc.parent_id != null });
+  // Default to USD if currency is not found
+  result = ds_currency_reference['USD']
+
+  if (ds_currency_code['value'] != undefined && ds_currency_reference[ds_currency_code['value']] != undefined) {
+    result = ds_currency_reference[ds_currency_code['value']]
+  }
 EOS
 end
 
-datasource "ds_account_name" do
+# Branching logic:
+# This datasource returns an empty array if the target currency is USD.
+# This prevents ds_currency_conversion from running if it's not needed.
+datasource "ds_conditional_currency_conversion" do
+  run_script $js_conditional_currency_conversion, $ds_currency_target
+end
+
+script "js_conditional_currency_conversion", type: "javascript" do
+  parameters "ds_currency_target"
+  result "result"
+  code <<-EOS
+  result = []
+  // Make the request only if the target currency is not USD
+  if (ds_currency_target['code'] != 'USD') {
+    result = [1]
+  }
+EOS
+end
+
+datasource "ds_currency_conversion" do
+  # Only make a request if the target currency is not USD
+  iterate $ds_conditional_currency_conversion
   request do
-    run_script $js_get_account_name, $ds_get_caller_identity, $ds_top_level_billing_centers, rs_org_id, rs_optima_host
+    host "api.xe-auth.flexeraeng.com"
+    path "/prod/{proxy+}"
+    query "from", "USD"
+    query "to", val($ds_currency_target, 'code')
+    query "amount", "1"
+    # Ignore currency conversion if API has issues
+    ignore_status [400, 404, 502]
   end
   result do
     encoding "json"
-    collect jmes_path(response, "rows[*]") do
-      field "vendor_account_name", jmes_path(col_item, "dimensions.vendor_account_name")
-    end
+    field "from", jmes_path(response, "from")
+    field "to", jmes_path(response, "to")
+    field "amount", jmes_path(response, "amount")
+    field "year", jmes_path(response, "year")
   end
 end
 
-script "js_get_account_name", type: "javascript" do
-  parameters "account_id", "billing_centers", "org", "optima_host"
-  result "request"
-  code <<-EOS
-    // returns date formatted as string: YYYY-mm-dd
-    function getFormattedDailyDate(date) {
-      var year = date.getFullYear();
-      var month = (1 + date.getMonth()).toString();
-      month = month.length > 1 ? month : '0' + month;
-      var day = date.getDate().toString();
-      day = day.length > 1 ? day : '0' + day;
-      return year + '-' + month + '-' + day;
-    }
-    var start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 3)));
-    var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)));
-    var request = {
-      auth: "auth_flexera",
-      host: optima_host,
-      verb: "POST",
-      path: "/bill-analysis/orgs/" + org + "/costs/select",
-      body_fields: {
-        "dimensions": ["vendor_account_name"],
-        "granularity": "day",
-        "start_at": start_date,
-        "end_at": end_date,
-        "metrics": ["cost_nonamortized_unblended_adj"],
-        "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id})),
-        "limit": 1,
-        "filter": {
-          "dimension": "vendor_account",
-          "type": "equal",
-          "value": account_id[0]["account"]
-        }
-      },
-      headers: {
-        "User-Agent": "RS Policies",
-        "Api-Version": "1.0"
-      },
-      ignore_status: [400]
-    }
-  EOS
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_target, $ds_currency_conversion
 end
 
-# GET LIST OF OPTED-IN OR OPTED-IN-NOT-REQUIRED REGIONS
-datasource "ds_regions_list" do
-  # https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeRegions.html
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_target", "ds_currency_conversion"
+  result "result"
+  code <<-EOS
+  result = ds_currency_target
+  result['exchange_rate'] = 1
+
+  if (ds_currency_conversion['to'] != undefined) {
+    currency_code = ds_currency_target['code']
+    current_month = parseInt(new Date().toISOString().split('-')[1])
+
+    conversion_block = _.find(ds_currency_conversion['to'][currency_code], function(item) {
+      return item['month'] == current_month
+    })
+
+    if (conversion_block != undefined) {
+      result['exchange_rate'] = conversion_block['monthlyAverage']
+    }
+  }
+EOS
+end
+
+datasource "ds_describe_regions" do
   request do
     auth $auth_aws
     verb "GET"
@@ -262,374 +390,142 @@ datasource "ds_regions_list" do
   end
 end
 
-#FILTER REGIONS LIST ON 'ALLOWED REGIONS' PARAMETER
 datasource "ds_regions" do
-  run_script $js_get_regions, $param_allowed_regions, $ds_regions_list, $param_allowed_regions_allow_or_deny
+  run_script $js_regions, $ds_describe_regions, $param_regions_list, $param_regions_allow_or_deny
 end
 
-script "js_get_regions", type:"javascript" do
-  parameters "user_entered_regions", "all_regions", "regions_allow_or_deny"
-  result "regions"
+script "js_regions", type:"javascript" do
+  parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
+  result "result"
   code <<-EOS
-    if (_.isEmpty(user_entered_regions)) {
-      regions = all_regions;
-    } else {
-      //Filter unique regions
-      var uniqueRegions = _.uniq(user_entered_regions);
-      var all_regions_list = []
-      //Filter and remove denied regions from all_regions
-      if (regions_allow_or_deny == "Deny"){
-        var all_regions = all_regions.filter(function(obj){
-          return user_entered_regions.indexOf(obj.region) === -1;
-        });
-      }
-      all_regions.forEach(function(all_region){
-        all_regions_list.push(all_region.region)
-      })
+  allow_deny_test = { "Allow": true, "Deny": false }
 
-      //Filter valid regions
-      var valid_regions = [];
-      _.map(uniqueRegions, function(uniqueRegion){
-        if (all_regions_list.indexOf(uniqueRegion) > -1) {
-          valid_regions.push({"region": uniqueRegion})
-        }
-      })
-
-      //Throw an error if no valid regions found
-      if (_.isEmpty(valid_regions)) {
-        regions = all_regions
-      } else {
-        regions = valid_regions
-      }
-    }
-  EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_describe_regions, function(item) {
+      return _.contains(param_regions_list, item['region']) == allow_deny_test[param_regions_allow_or_deny]
+    })
+  } else {
+    result = ds_describe_regions
+  }
+EOS
 end
 
-#GET LIST OF EBS VOLUMES ACROSS ALL FILTERED REGIONS
-#https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstances.html
-datasource "ds_aws_ebs_volumes" do
+datasource "ds_volumes" do
   iterate $ds_regions
   request do
     verb "GET"
     auth $auth_aws
-    pagination $aws_volumes_pagination_xml
+    pagination $pagination_aws_volumes
     host join(["ec2.", val(iter_item, "region"), ".amazonaws.com"])
     path "/"
     query "Action", "DescribeVolumes"
     query "Version", "2016-11-15"
-    #query "Filter.1.Name", "attachment.status"
-    #query "Filter.1.Value.1", "attached"
-    #query "Filter.2.Name", "status"
-    #query "Filter.2.Value.1", "in-use"
     header "User-Agent", "RS Policies"
     header "Content-Type", "text/xml"
   end
   result do
     encoding "xml"
     collect xpath(response, "//DescribeVolumesResponse/volumeSet/item", "array") do
-      field "region",val(iter_item, "region")
       field "volumeId", xpath(col_item, "volumeId")
+      field "volumeType", xpath(col_item, "volumeType")
+      field "encrypted", xpath(col_item, "encrypted")
+      field "createTime", xpath(col_item, "createTime")
       field "iops", xpath(col_item, "iops")
       field "size", xpath(col_item, "size")
       field "status", xpath(col_item, "status")
+      field "throughput", xpath(col_item, "throughput")
       field "attachmentSet" do
         collect xpath(col_item, "attachmentSet/item", "array") do
           field "instanceId", xpath(col_item, "instanceId")
           field "attachmentStatus", xpath(col_item, "status")
         end
       end
-      field "volumeType", xpath(col_item, "volumeType")
       field "tags" do
-        collect xpath(col_item,"tagSet/item","array") do
+        collect xpath(col_item,"tagSet/item", "array") do
           field "key", xpath(col_item, "key")
           field "value", xpath(col_item, "value")
         end
       end
-      field "throughput", xpath(col_item, "throughput") #Unit: MiB/s
+      field "region", val(iter_item, "region")
     end
   end
 end
 
-#FILTER INSTANCES BY 'TAG KEY EXCLUSION' PARAMETER
-datasource "ds_filtered_volumes" do
-  run_script $js_filter_volumes, $ds_aws_ebs_volumes, $param_exclusion_tag_key
+datasource "ds_volumes_tag_filtered" do
+  run_script $js_volumes_tag_filtered, $ds_volumes, $param_exclusion_tags
 end
 
-script "js_filter_volumes", type: "javascript" do
+script "js_volumes_tag_filtered", type: "javascript" do
+  parameters "ds_volumes", "param_exclusion_tags"
   result "result"
-  parameters "ds_aws_ebs_volumes", "param_exclusion_tag_key"
   code <<-EOS
-    var tag_key = param_exclusion_tag_key.split(':')[0]
-    var tag_value = param_exclusion_tag_key.split(':')[1]
-    var result = []
-    _.each(ds_aws_ebs_volumes, function(vol){
-      var tags = vol.tags
-      if ( !(_.contains(_.pluck(tags, 'key'), tag_key)
-      && _.contains(_.pluck(tags, 'value'), tag_value)) ) {
-        result.push(vol)
+  if (param_exclusion_tags.length > 0) {
+    result = _.reject(ds_volumes, function(volume) {
+      volume_tags = []
+
+      if (volume['tags'] != null && volume['tags'] != undefined) {
+        _.each(volume['tags'], function(tag) {
+          volume_tags.push([tag['key'], tag['value']].join(':'))
+          volume_tags.push([tag['key'], '*'].join(':'))
+        })
       }
-    })
-  EOS
-end
 
-#GET EBS READ OPERATIONS (FOR IOPS) METRICS FROM CLOUDWATCH - (COULD REPLACE WITH BATCH CALL?)
-datasource "ds_cloudwatch_ebs_read_iops_usage" do
-  iterate $ds_filtered_volumes
-  request do
-    run_script $js_get_cloudwatch_read_ops, val(iter_item, "region"), val(iter_item, "volumeId")
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult") do
-      field "region", val(iter_item, "region")
-      field "volumeId", val(iter_item, "volumeId")
-      field "size", val(iter_item, "size")
-      field "status", val(iter_item, "status")
-      field "volumeType", val(iter_item, "volumeType")
-      field "iops", val(iter_item, "iops")
-      field "throughput", val(iter_item, "throughput")
-      field "tags", val(iter_item, "tags")
-      field "attachmentSet", val(iter_item, "attachmentSet")
-      field "datapoints" do
-        collect jmes_path(col_item, "Datapoints[*]") do
-          field "readOpsMaximum", jmes_path(col_item, "Maximum")
-          field "readOpsAverage", jmes_path(col_item, "Average")
-          field "readOpsSampleCount", jmes_path(col_item, "SampleCount")  #Sample Count in this case represents Metric Granularity (1 minute in this case)
-          field "readOpsSum", jmes_path(col_item, "Sum")                  #Sum is total read ops for this period
-          field "readOpsUnit", jmes_path(col_item, "Unit")
-        end
-      end
-    end
-  end
-end
+      exclude_volume = false
 
-script "js_get_cloudwatch_read_ops", type: "javascript" do
-  result "results"
-  parameters "region", "volume_id"
-  code <<-EOS
-  var end_date = new Date().toISOString()
-  var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
-
-  results = {
-    "auth": "auth_aws",
-    "host": "monitoring." + region + ".amazonaws.com",
-    "verb": "GET",
-    "path": "/",
-    "headers": {
-      "User-Agent": "RS Policies",
-      "Content-Type": "application/json",
-      "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
-      "Accept": "application/json",
-      "Content-Encoding": "amz-1.0"
-    },
-    "query_params": {
-      "Action": "GetMetricStatistics",
-      "Version": "2010-08-01",
-      "Namespace": "AWS/EBS"
-      "MetricName": "VolumeReadOps",
-      "Dimensions.member.1.Name": "VolumeId",
-      "Dimensions.member.1.Value": volume_id,
-      "StartTime": start_date,
-      "EndTime": end_date,
-      "Period": "2592000",
-      "Statistics.member.1": "Average",
-      "Statistics.member.2": "Maximum",
-      "Statistics.member.3": "SampleCount",
-      "Statistics.member.4": "Sum"
-    }
-  }
-  EOS
-end
-
-#GET EBS WRITE OPERATIONS (FOR IOPS) METRICS FROM CLOUDWATCH - (COULD REPLACE WITH BATCH CALL?)
-datasource "ds_cloudwatch_ebs_write_iops_usage" do
-  iterate $ds_filtered_volumes
-  request do
-    run_script $js_get_cloudwatch_write_ops, val(iter_item, "region"), val(iter_item, "volumeId")
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult") do
-      field "region", val(iter_item, "region")
-      field "volumeId", val(iter_item, "volumeId")
-      field "size", val(iter_item, "size")
-      field "status", val(iter_item, "status")
-      field "volumeType", val(iter_item, "volumeType")
-      field "iops", val(iter_item, "iops")
-      field "throughput", val(iter_item, "throughput")
-      field "tags", val(iter_item, "tags")
-      field "datapoints" do
-        collect jmes_path(col_item, "Datapoints[*]") do
-          field "writeOpsMaximum", jmes_path(col_item, "Maximum")
-          field "writeOpsAverage", jmes_path(col_item, "Average")
-          field "writeOpsSampleCount", jmes_path(col_item, "SampleCount")
-          field "writeOpsSum", jmes_path(col_item, "Sum")
-          field "writeOpsUnit", jmes_path(col_item, "Unit")
-        end
-      end
-    end
-  end
-end
-
-script "js_get_cloudwatch_write_ops", type: "javascript" do
-  result "results"
-  parameters "region", "volume_id"
-  code <<-EOS
-  var end_date = new Date().toISOString()
-  var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
-
-  results = {
-    "auth": "auth_aws",
-    "host": "monitoring." + region + ".amazonaws.com",
-    "verb": "GET",
-    "path": "/",
-    "headers": {
-      "User-Agent": "RS Policies",
-      "Content-Type": "application/json",
-      "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
-      "Accept": "application/json",
-      "Content-Encoding": "amz-1.0"
-    },
-    "query_params": {
-      "Action": "GetMetricStatistics",
-      "Version": "2010-08-01",
-      "Namespace": "AWS/EBS"
-      "MetricName": "VolumeWriteOps",
-      "Dimensions.member.1.Name": "VolumeId",
-      "Dimensions.member.1.Value": volume_id,
-      "StartTime": start_date,
-      "EndTime": end_date,
-      "Period": "2592000",
-      "Statistics.member.1": "Average",
-      "Statistics.member.2": "Maximum",
-      "Statistics.member.3": "SampleCount",
-      "Statistics.member.4": "Sum"
-    }
-  }
-  EOS
-end
-
-#GET THROUGHPUT METRICS?
-
-#COMBINE EBS DATA WITH CLOUDWATCH DATA
-datasource "ds_combined_cloudwatch_data" do
-  run_script $js_combine_cloudwatch_data, $ds_cloudwatch_ebs_read_iops_usage, $ds_cloudwatch_ebs_write_iops_usage, $ds_account_name
-end
-
-script "js_combine_cloudwatch_data", type: "javascript" do
-  parameters "ds_cloudwatch_read_ops", "ds_cloudwatch_write_ops", "ds_account_name"
-  result "period"
-  code <<-EOS
-
-  //Get list of Volume IDs
-  var volumes = _.union( _.pluck(ds_cloudwatch_read_ops, "volumeId"), _.pluck(ds_cloudwatch_write_ops, "volumeId") )
-
-  //Calculate Average Read Ops and Average Write Ops over period
-  period = []
-
-  accountName = ""
-  if (ds_account_name[0] != null) {
-    accountName = ds_account_name[0]['vendor_account_name']
-  }
-
-  _.each(volumes, function(volume_id){
-    //console.log("Volume ID: ", volume_id)
-    var total_read_ops = 0, total_read_data_points = 0
-    var total_write_ops = 0, total_write_data_points = 0
-    var data_message = []
-
-    var vol_read_data = _.find(ds_cloudwatch_read_ops, function(read_data){ return read_data.volumeId == volume_id })
-    if(vol_read_data.datapoints.length <= 0){
-      data_message.push({ "message": "No CloudWatch Read Operations data." })
-      //console.log("this is a null array for datapoints")
-    } else {
-      _.each(vol_read_data.datapoints, function(datapoint){
-        total_read_ops += datapoint.readOpsSum
-        total_read_data_points += datapoint.readOpsSampleCount
+      _.each(param_exclusion_tags, function(exclusion_tag) {
+        if (_.contains(volume_tags, exclusion_tag)) {
+          exclude_volume = true
+        }
       })
-      //console.log("this is an array exists for datapoints")
-    }
 
-    var vol_write_data = _.find(ds_cloudwatch_write_ops, function(write_data){ return write_data.volumeId == volume_id })
-    if(vol_write_data.datapoints.length <= 0){
-      data_message.push({ "message": "No CloudWatch Write Operations data." })
-    } else {
-      _.each(vol_write_data.datapoints, function(datapoint){
-        total_write_ops += datapoint.writeOpsSum
-        total_write_data_points += datapoint.writeOpsSampleCount
-      })
-    }
-
-    var iops_average = 0
-    var iops_utilization_percentage = 0
-    if(vol_read_data.datapoints.length > 0){
-      iops_average = (( total_read_ops / total_read_data_points ) / 60) + (( total_write_ops / total_write_data_points ) / 60)
-      iops_utilization_percentage = ((iops_average / ( vol_read_data.iops )) * 100).toFixed(2)
-    }
-
-    var resourceName = "";
-    var existing_tags = []
-    _.each( vol_read_data.tags, function(tag){
-      if (tag.key == "Name") {
-        resourceName = tag.value
-      }
-      existing_tags.push(tag.key + "=" + tag.value)
+      return exclude_volume && volume['volumeType'] != 'gp2'
     })
-
-    //Create string for Attachment Set Statuses
-    var attachment_statuses = ""
-    _.each( vol_read_data.attachmentSet, function(attachment){
-      if( attachment_statuses == "" ){ attachment_statuses += attachment.instanceId + "=" + attachment.attachmentStatus }
-      else{ attachment_statuses += ", " + attachment.InstanceId + "=" + attachment.attachmentStatus }
+  } else {
+    result = _.reject(ds_volumes, function(volume) {
+      return volume['volumeType'] != 'gp2'
     })
-
-    //Create string for CloudWatch Read/Write Ops Data (if doesn't exist)
-    var cloudwatch_data_message = ""
-    _.each( data_message, function(data){
-      if( cloudwatch_data_message == "" ){ cloudwatch_data_message += data.message }
-      else{ cloudwatch_data_message += ", " + data.message }
-    })
-
-    period.push({
-      "accountName": accountName,
-      "volumeId": volume_id,
-      "region": vol_read_data.region,
-      "size": vol_read_data.size,
-      "status": vol_read_data.status,
-      "attachmentStatus": attachment_statuses,
-      "volumeType": vol_read_data.volumeType,
-      "iops": vol_read_data.iops,
-      "throughput": vol_read_data.throughput,
-      "iopsAverage": Math.round(iops_average*100)/100,
-      "iopsUtilizationPercentage": iops_utilization_percentage,
-      "tags": existing_tags,
-      "resourceName": resourceName,
-      "cloudwatchDataWarning": cloudwatch_data_message,
-      "lookbackPeriod": "30 days",
-    })
-  })
-
-  console.log(period)
-  EOS
+  }
+EOS
 end
 
-#GET GP2 AND GP3 LIST PRICES
-datasource "ds_gp2_costs" do
+datasource "ds_gp2_prices" do
   request do
-    run_script $js_get_gp2_costs
+    run_script $js_volume_prices, "gp2"
   end
 end
 
-script "js_get_gp2_costs", type: "javascript" do
+datasource "ds_gp3_prices" do
+  request do
+    run_script $js_volume_prices, "gp3"
+  end
+end
+
+script "js_volume_prices", type: "javascript" do
+  parameters "volumeApiName"
   result "request"
   code <<-EOS
-    var body = {
+  var request = {
+    "auth": "auth_aws",
+    "host": "api.pricing.us-east-1.amazonaws.com",
+    "verb": "POST",
+    "path": "/",
+    "headers": {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/x-amz-json-1.1",
+      "x-amz-target": "AWSPriceListService.GetProducts",
+      "Accept": "application/json"
+    },
+    "body_fields": {
       "Filters": [
         {
-          "Type": "TERM_MATCH", "Field": "ServiceCode", "Value": "AmazonEC2"
+          "Type": "TERM_MATCH",
+          "Field": "ServiceCode",
+          "Value": "AmazonEC2"
         },
         {
-          "Type": "TERM_MATCH", "Field": "volumeApiName", "Value": "gp2"
+          "Type": "TERM_MATCH",
+          "Field": "volumeApiName",
+          "Value": volumeApiName
         }
       ],
       "FormatVersion": "aws_v1",
@@ -637,275 +533,481 @@ script "js_get_gp2_costs", type: "javascript" do
       "MaxResults": 100,
       "ServiceCode": "AmazonEC2"
     }
-
-    request = {
-      "auth": "auth_aws",
-      "host": "api.pricing.us-east-1.amazonaws.com",
-      "verb": "POST",
-      "path": "/",
-      "headers": {
-        "User-Agent": "RS Policies",
-        "Content-Type": "application/x-amz-json-1.1",
-        "x-amz-target": "AWSPriceListService.GetProducts",
-        "Accept": "application/json"
-      },
-      "body_fields": body
-    }
-  EOS
+  }
+EOS
 end
 
-datasource "ds_gp3_costs" do
+datasource "ds_volumes_with_prices" do
+  run_script $js_volumes_with_prices, $ds_volumes_tag_filtered, $ds_gp2_prices, $ds_gp3_prices, $ds_currency
+end
+
+script "js_volumes_with_prices", type: "javascript" do
+  parameters "ds_volumes_tag_filtered", "ds_gp2_prices", "ds_gp3_prices", "ds_currency"
+  result "result"
+  code <<-EOS
+  // Function to convert price lists to proper JSON
+  function convertPriceList(priceList) {
+    convertedPriceList = {}
+
+    _.each(priceList, function(price) {
+      entry = JSON.parse(price.replace(/\\"/g,'"'))
+      region = entry['product']['attributes']['regionCode']
+
+      if (convertedPriceList[region] == undefined) {
+        convertedPriceList[region] = []
+      }
+
+      convertedPriceList[region].push(entry)
+    })
+
+    return convertedPriceList
+  }
+
+  // Function to grab price on GP2 price list
+  function getGP2Price(instance, priceList) {
+    hourly_cost_multiplier = 365.25 / 12 * 24
+    region = instance['region']
+
+    size = 0
+    if (instance['size'] != "") {
+      size = Number(instance['size'])
+    }
+
+    foundPrice = 0.0
+
+    if (priceList[region] != undefined) {
+      _.each(priceList[region], function(item) {
+        on_demand_pricing = item['terms']['OnDemand']
+
+        _.each(_.keys(on_demand_pricing), function(odKey) {
+          price_dimensions = on_demand_pricing[odKey]['priceDimensions']
+
+          _.each(_.keys(price_dimensions), function(priceKey) {
+            foundPrice = Number(price_dimensions[priceKey]['pricePerUnit']['USD']) * size
+          })
+        })
+      })
+    }
+
+    return foundPrice * hourly_cost_multiplier
+  }
+
+  // Function to grab price on GP3 price list
+  function getGP3Price(instance, priceList) {
+    hourly_cost_multiplier = 365.25 / 12 * 24
+    region = instance['region']
+
+    size = 0
+    if (instance['size'] != "") {
+      size = Number(instance['size'])
+    }
+
+    iops = 3000
+    if (instance['iops'] != "" && Number(instance['iops']) >= 3000) {
+      iops = Number(instance['iops'])
+    }
+
+    throughput = 125
+    if (instance['throughput'] != "" && Number(instance['throughput']) >= 125) {
+      throughput = Number(instance['throughput'])
+    }
+
+    foundPrice = 0.0
+
+    if (priceList[region] != undefined) {
+      _.each(priceList[region], function(item) {
+        prePrice = 0.0
+
+        on_demand_pricing = item['terms']['OnDemand']
+
+        _.each(_.keys(on_demand_pricing), function(odKey) {
+          price_dimensions = on_demand_pricing[odKey]['priceDimensions']
+
+          _.each(_.keys(price_dimensions), function(priceKey) {
+            prePrice = Number(price_dimensions[priceKey]['pricePerUnit']['USD'])
+          })
+        })
+
+        if (item['product']['productFamily'] == "System Operation") {
+          foundPrice += prePrice * (iops - 3000)
+        }
+
+        if (item['product']['productFamily'] == "Provisioned Throughput") {
+          foundPrice += prePrice * (throughput - 125)
+        }
+
+        if (item['product']['productFamily'] == "Storage") {
+          foundPrice += prePrice * size
+        }
+      })
+    }
+
+    return foundPrice * hourly_cost_multiplier
+  }
+
+  result = []
+  gp2_pricelist = convertPriceList(ds_gp2_prices['PriceList'])
+  gp3_pricelist = convertPriceList(ds_gp3_prices['PriceList'])
+
+  _.each(ds_volumes_tag_filtered, function(volume) {
+    gp2_price = getGP2Price(volume, gp2_pricelist) * ds_currency['exchange_rate']
+    gp3_price = getGP3Price(volume, gp3_pricelist) * ds_currency['exchange_rate']
+    savings = gp2_price - gp3_price
+
+    if (savings >= 0 && gp2_price != 0 && gp3_price != 0) {
+      tags = []
+      volumeName = ""
+
+      if (volume['tags'] != null && volume['tags'] != undefined) {
+        _.each(volume['tags'], function(tag) {
+          tags.push([tag['key'], tag['value']].join('='))
+
+          if (tag['key'] == 'Name') { volumeName = tag['value'] }
+        })
+      }
+
+      attachmentStatus = []
+
+      _.each(volume['attachmentSet'], function(attachment) {
+        if (attachmentStatus.length != 0) { attachmentStatus.push(", ") }
+
+        attachmentStatus.push(attachment['instanceId'])
+        attachmentStatus.push("=")
+        attachmentStatus.push(attachment['attachmentStatus'])
+      })
+
+      result.push({
+        volumeId: volume['volumeId'],
+        volumeName: volumeName,
+        volumeType: volume['volumeType'],
+        encrypted: volume['encrypted'],
+        createTime: volume['createTime'],
+        iops: volume['iops'],
+        size: volume['size'],
+        status: volume['status'],
+        throughput: volume['throughput'],
+        attachmentStatus: attachmentStatus.join(''),
+        tags: tags.join(', '),
+        region: volume['region'],
+        gp2_price: gp2_price,
+        gp3_price: gp3_price,
+        savings: savings,
+        savingsCurrency: ds_currency['symbol']
+      })
+    }
+  })
+EOS
+end
+
+datasource "ds_volume_costs" do
   request do
-    run_script $js_get_gp3_costs
+    run_script $js_volume_costs, $ds_aws_account, $ds_top_level_bcs, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"rows[*]") do
+      field "resourceId", jmes_path(col_item, "dimensions.resource_id")
+      field "resourceType", jmes_path(col_item, "dimensions.resource_type")
+      field "vendorAccountName", jmes_path(col_item, "dimensions.vendor_account_name")
+      field "adjustmentName", jmes_path(col_item, "dimensions.adjustment_name")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+    end
   end
 end
 
-script "js_get_gp3_costs", type: "javascript" do
+script "js_volume_costs", type: "javascript" do
+  parameters "ds_aws_account", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
-    var body = {
-      "Filters": [
-        {
-          "Type": "TERM_MATCH", "Field": "ServiceCode", "Value": "AmazonEC2"
-        },
-        {
-          "Type": "TERM_MATCH", "Field": "volumeApiName", "Value": "gp3"
-        }
-      ],
-      "FormateVersion": "aws_v1",
-      "NextToken": null,
-      "MaxResults": 100,
-      "ServiceCode": "AmazonEC2"
-    }
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
 
-    request = {
-      "auth": "auth_aws",
-      "host": "api.pricing.us-east-1.amazonaws.com",
-      "verb": "POST",
-      "path": "/",
-      "headers": {
-        "User-Agent": "RS Policies",
-        "Content-Type": "application/x-amz-json-1.1",
-        "x-amz-target": "AWSPriceListService.GetProducts",
-        "Accept": "application/json"
-      },
-      "body_fields": body
-    }
-  EOS
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
+    body_fields: {
+      dimensions: ["resource_id", "vendor_account_name", "resource_type", "adjustment_name"],
+      granularity: "day",
+      start_at: start_date,
+      end_at: end_date,
+      metrics: ["cost_amortized_unblended_adj"],
+      billing_center_ids: ds_top_level_bcs,
+      limit: 100000,
+      "filter": {
+        "type": "and",
+        "expressions": [
+          {
+            "dimension": "service",
+            "type": "equal",
+            "value": "AmazonEC2"
+          },
+          {
+            "dimension": "resource_type",
+            "type": "equal",
+            "value": "Storage"
+          },
+          {
+            "dimension": "vendor_account",
+            "type": "equal",
+            "value": ds_aws_account['id']
+          },
+          {
+            type: "not",
+            expression: {
+              dimension: "adjustment_name",
+              type: "substring",
+              substring: "Shared"
+            }
+          }
+        ]
+      }
+    },
+    headers: {
+      'User-Agent': "RS Policies",
+      'Api-Version': "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
 end
 
-#ADD PRICES TO GP2 DISKS
-datasource "ds_disk_utilization_with_costs" do
-  run_script $js_add_costs_to_disk_util_data, $ds_gp2_costs, $ds_gp3_costs, $ds_combined_cloudwatch_data
+datasource "ds_volume_costs_grouped" do
+  run_script $js_volume_costs_grouped, $ds_volume_costs
 end
 
-script "js_add_costs_to_disk_util_data", type: "javascript" do
-  parameters "ds_gp2_costs", "ds_gp3_costs", "ds_combined_cloudwatch_data"
+script "js_volume_costs_grouped", type: "javascript" do
+  parameters "ds_volume_costs"
   result "result"
   code <<-EOS
+  // Multiple a single day's cost by the average number of days in a month.
+  // The 0.25 is to account for leap years for extra precision.
+  cost_multiplier = 365.25 / 12
 
-    //Convert AWS's mess to actual JSON
-    gp2_pricelist = []
-    _.each(ds_gp2_costs.PriceList, function(price){
-      gp2_pricelist.push( JSON.parse(price.replace(/\\"/g,'"')) )
-    })
-    console.log(gp2_pricelist)
+  // Group cost data by resourceId for later use
+  result = {}
 
-    gp3_pricelist = []
-    _.each(ds_gp3_costs.PriceList, function(price){
-      gp3_pricelist.push( JSON.parse(price.replace(/\\"/g,'"')))
-    })
+  _.each(ds_volume_costs, function(item) {
+    id = item['resourceId'].toLowerCase()
 
-    //Add monthly saving to volume (IF volume type is GP2) where volume type and region matches
-    _.each(ds_combined_cloudwatch_data, function(data){
-      if( data.volumeType == "gp2"){
-
-        //Matching gp2 pricing
-        var matching_gp2_pricing = _.find(gp2_pricelist, function(price){
-          return ( price.product.attributes.regionCode == data.region )
-        })
-
-        var monthly_gp2_price = 0
-        if( matching_gp2_pricing != null ){
-          var on_demand_codes = _.keys(matching_gp2_pricing.terms.OnDemand)
-          _.each(on_demand_codes, function(od){
-            var price_dimensions = _.keys(matching_gp2_pricing.terms.OnDemand[od].priceDimensions)
-            _.each(price_dimensions, function(pd){
-              var gp2_storage = 0
-              if( data.size != "" ){ gp2_storage = Number(data.size) }
-              monthly_gp2_price =
-                (gp2_storage * Number(matching_gp2_pricing.terms.OnDemand[od].priceDimensions[pd].pricePerUnit.USD))
-            })
-          })
-        }
-
-        //Matching gp3 pricing
-        var matching_gp3_pricing = _.filter(gp3_pricelist, function(price){
-          return ( price.product.attributes.regionCode == data.region )
-        })
-        console.log(data.region + ": ", matching_gp3_pricing)
-
-        var monthly_gp3_price = 0
-        if( matching_gp3_pricing != null ){
-          _.each(matching_gp3_pricing, function(price_type){
-
-            //Charge per IOPS
-            if(price_type.product.productFamily == "System Operation"){
-              var on_demand_codes = _.keys(price_type.terms.OnDemand)
-              _.each(on_demand_codes, function(od){
-                var price_dimensions = _.keys(price_type.terms.OnDemand[od].priceDimensions)
-                _.each(price_dimensions, function(pd){
-                  var iops = 3000
-                  if( data.iops != "" && Number(data.iops) >= 3000 ){ iops = Number(data.iops) }
-                  console.log("iops: ", iops)
-                  monthly_gp3_price +=
-                    ((iops - 3000) * Number(price_type.terms.OnDemand[od].priceDimensions[pd].pricePerUnit.USD))
-                })
-              })
-            }
-            //Charge per Provisioned Throughput (Mbps)
-            if(price_type.product.productFamily == "Provisioned Throughput"){
-              var on_demand_codes = _.keys(price_type.terms.OnDemand)
-              _.each(on_demand_codes, function(od){
-                var price_dimensions = _.keys(price_type.terms.OnDemand[od].priceDimensions)
-                _.each(price_dimensions, function(pd){
-                  var throughput = 125
-                  if( data.throughput != "" && Number(data.throughput) >= 125 ){ throughput = Number(data.throughput) }
-                  console.log("throughput: ", throughput)
-                  monthly_gp3_price +=
-                    ((throughput - 125) * Number(price_type.terms.OnDemand[od].priceDimensions[pd].pricePerUnit.USD))
-                })
-              })
-            }
-            //Charge per Storage (GB)
-            if(price_type.product.productFamily == "Storage"){
-              var on_demand_codes = _.keys(price_type.terms.OnDemand)
-              _.each(on_demand_codes, function(od){
-                var price_dimensions = _.keys(price_type.terms.OnDemand[od].priceDimensions)
-                _.each(price_dimensions, function(pd){
-                  var storage = 0
-                  if( data.size != "" ){ storage = Number(data.size)}
-                  console.log("storage :", storage)
-                  monthly_gp3_price +=
-                    (storage * Number(price_type.terms.OnDemand[od].priceDimensions[pd].pricePerUnit.USD))
-                })
-              })
-            }
-          })
-        }
-
-        data["gp2Price"] = (monthly_gp2_price).toFixed(3)
-        data["gp3Price"] = (monthly_gp3_price).toFixed(3)
-        data["savings"] = (monthly_gp2_price - monthly_gp3_price).toFixed(3)
-      }
-    })
-
-    result = ds_combined_cloudwatch_data
-  EOS
+    if (result[id] == undefined) { result[id] = 0.0 }
+    result[id] += item['cost'] * cost_multiplier
+  })
+EOS
 end
 
-
-#FILTER IOPS UTILIZATION PERCENTAGE AGAINST IOPS UTILIZATION PARAMETER ("param_avg_iops")
-datasource "ds_filtered_disk_utilization_data" do
-  run_script $js_filter_disk_utilization_data, $ds_disk_utilization_with_costs, $ds_currency_reference, $ds_currency_code, $ds_get_caller_identity
+datasource "ds_underutil_volumes" do
+  run_script $js_underutil_volumes, $ds_volumes_tag_filtered, $ds_volumes_with_prices, $ds_volume_costs_grouped, $ds_aws_account, $ds_currency, $ds_currency_conversion, $ds_applied_policy, $param_min_savings
 end
 
-script "js_filter_disk_utilization_data", type: "javascript" do
-  parameters "ds_disk_utilization_with_costs", "ds_currency_reference", "ds_currency_code", "ds_get_caller_identity"
-  result "data"
-  code <<-EOS
-    var data = ds_disk_utilization_with_costs
-    //Filter data on average iops parameter
-    //if( param_avg_iops > -1 ){
-    //  data = _.filter(ds_disk_utilization_with_costs, function(util_data){ return util_data.iopsUtilizationPercentage <= param_avg_iops })
-    //}
+script "js_underutil_volumes", type: "javascript" do
+  parameters "ds_volumes_tag_filtered", "ds_volumes_with_prices", "ds_volume_costs_grouped", "ds_aws_account", "ds_currency", "ds_currency_conversion", "ds_applied_policy", "param_min_savings"
+  result "result"
+  code <<-'EOS'
+  // Used for formatting numbers to look pretty
+  function formatNumber(number, separator){
+    numString = number.toString()
+    values = numString.split(".")
+    formatted_number = ''
 
-    //Filter out GP3s from incident here
-
-    //Add Account ID
-    _.each(data, function(vol){
-      vol["accountID"] = ds_get_caller_identity[0].account
-      vol["service"] = "AmazonEC2"
-      console.log("Account ID:", vol.accountID)
-    })
-
-    //Format Number for Policy Incident Summary Template
-    function formatNumber(number, separator){
-      var numString = number.toString()
-      var values = numString.split(".")
-      var result = ''
-      while( values[0].length > 3 ){
-        var chunk = values[0].substr(-3)
-        values[0] = values[0].substr(0, values[0].length - 3)
-        result = separator + chunk + result
-      }
-      if( values[0].length > 0 ){
-        result = values[0] + result
-      }
-      if( values[1] == undefined ){
-        return result
-      }
-      return result + "." + values[1]
+    while (values[0].length > 3) {
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      formatted_number = separator + chunk + formatted_number
     }
 
-    //Format costs with currency symbol and thousands separator
-    if( ds_currency_code['value'] !== undefined ){
-      if ( ds_currency_reference[ds_currency_code['value']] !== undefined ) {
-        var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
-        if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
-          var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
-        } else {
-          var separator = ""
-        }
-      } else {
-        var cur = ""
-        var separator = ""
-      }
-    } else {
-      var cur = "$"
-      var separator = ","
+    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
+    if (values[1] == undefined) { return formatted_number }
+
+    return formatted_number + "." + values[1]
+  }
+
+  result = []
+  total_savings = 0.0
+
+  _.each(ds_volumes_with_prices, function(volume) {
+    if (volume['savings'] >= param_min_savings) {
+      total_savings += volume['savings']
+
+      id = volume['volumeId'].toLowerCase()
+      cost = ds_volume_costs_grouped[id]
+      if (typeof(cost) != 'number') { cost = 0.0 }
+
+      startDate = new Date(volume['createTime']) // Volume Created Date
+      endDate = new Date()
+      timeDifference = endDate.getTime() - startDate.getTime()
+      daysDifference = (timeDifference / (1000 * 3600 * 24)).toFixed(2)
+
+      recommendationDetails = [
+        "Upgrade volume ", volume['volumeId'], " ",
+        "in AWS Account ", ds_aws_account['name'], " ",
+        "(", ds_aws_account['id'], ") from GP2 to GP3"
+      ].join('')
+
+      result.push({
+        resourceID: volume['volumeId'],
+        resourceName: volume['volumeName'],
+        resourceType: volume['volumeType'],
+        encrypted: volume['encrypted'],
+        createTime: startDate.toISOString(),
+        iops: volume['iops'],
+        size: volume['size'],
+        state: volume['status'],
+        throughput: volume['throughput'],
+        attachmentStatus: volume['attachmentStatus'],
+        tags: volume['tags'],
+        region: volume['region'],
+        gp2_price: parseFloat(volume['gp2_price'].toFixed(3)),
+        gp3_price: parseFloat(volume['gp3_price'].toFixed(3)),
+        savings: parseFloat(volume['savings'].toFixed(3)),
+        savingsCurrency: volume['savingsCurrency'],
+        cost: parseFloat(cost.toFixed(3)),
+        age: parseFloat(daysDifference),
+        accountID: ds_aws_account['id'],
+        accountName: ds_aws_account['name'],
+        recommendationDetails: recommendationDetails,
+        policy_name: ds_applied_policy['name'],
+        service: "AmazonEC2",
+        total_savings: "",
+        message: ""
+      })
     }
+  })
 
-    var savings_amount_str = _.pluck(data, "savings")
-    var savings_amount = []
-    _.each(savings_amount_str, function(sav){
-      if (sav == null || sav == undefined){
-        sav = 0
-        savings_amount.push(sav)
-      } else {
-        sav = Number(sav)
-        savings_amount.push(sav)
-      }
-    })
-    console.log(savings_amount)
+  result = _.sortBy(result, function(item) { return item['savings'] * -1 })
 
-    var total_gp2_gp3_savings = _.reduce(savings_amount, function(mem, num){
-      console.log("Savings Moving to GP3 volume type: ", mem)
-      //if (Number(mem.savings) == null){
-      //  mem.savings = 0
-      //}
-      //if (Number(num.savings) == null){
-      //  num.savings = 0
-      //}
-      return mem + num
-    }, 0)
-    console.log(total_gp2_gp3_savings)
-    total_gp2_gp3_savings = cur + ' ' + formatNumber((Math.round(total_gp2_gp3_savings * 100) / 100), separator)
+  savings_message = [
+    ds_currency['symbol'], ' ',
+    formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['t_separator'])
+  ].join('')
 
-    var summary_data = {
-      "message": "The total estimated monthly savings from moving gp2 volumes to gp3 volumes is " + total_gp2_gp3_savings,
-      "count": _.size(data)
-    }
-    console.log(summary_data)
+  total_volumes = ds_volumes_tag_filtered.length.toString()
+  total_underutil_volumes = result.length.toString()
+  underutil_volumes_percentage = (total_underutil_volumes / total_volumes * 100).toFixed(2).toString() + '%'
 
+  volume_noun = "volume"
+  if (total_volumes > 1) { volume_noun = "volumes" }
 
-    if (_.size(data) > 0) {
-      data[0]["summaryData"] = summary_data
-    } else {
-      data = [{ "summaryData": summary_data }]
-    }
-    console.log("data.summaryData: ", data[0].summaryData)
-  EOS
+  volume_verb = "is"
+  if (total_underutil_volumes > 1) { volume_verb = "are" }
+
+  findings = [
+    "Out of ", total_volumes, " GP2 ", volume_noun, " analyzed, ",
+    total_underutil_volumes, " (", underutil_volumes_percentage,
+    ") ", volume_verb, " recommended for upgrade to GP3."
+  ].join('')
+
+  api_disclaimer = ""
+
+  if (ds_currency_conversion['to'] == undefined && ds_currency['code'] != 'USD') {
+    api_disclaimer = "\n\nPrice and savings values are in USD due to a malfunction with Flexera's internal currency conversion API. Please contact Flexera support to report this issue."
+  }
+
+  // Dummy item to ensure the policy's check statement always executes at least once
+  result.push({
+    resourceID: "",          resourceName: "",    resourceType: "",
+    encrypted: "",           createTime: "",      iops: "",
+    size: "",                state: "",           throughput: "",
+    attachmentStatus: "",    tags: "",            region: "",
+    gp2_price: "",           gp3_price: "",       savings: "",
+    savingsCurrency: "",     cost: "",            age: "",
+    accountID: "",           accountName: "",     recommendationDetails: "",
+    policy_name: "",         service: "",         total_savings: "",
+    message: ""
+  })
+
+  result[0]['total_savings'] = savings_message
+  result[0]['message'] = findings + api_disclaimer
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_underutil_volumes" do
+  validate_each $ds_underutil_volumes do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Underutilized GP2 Volumes Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    escalate $esc_upgrade_volumes
+    hash_exclude "age", "tags", "resourceName", "savings", "savingsCurrency", "total_savings", "message", "attachmentStatus"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "age" do
+        label "Age (Days)"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "size" do
+        label "Size (GB)"
+      end
+      field "state" do
+        label "Status"
+      end
+      field "iops" do
+        label "IOPS"
+      end
+      field "attachmentStatus" do
+        label "Attachment Status"
+      end
+      field "cost" do
+        label "Estimated Monthly Cost"
+      end
+      field "gp2_price" do
+        label "Current Monthly List Price"
+      end
+      field "gp3_price" do
+        label "New Monthly List Price"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+    end
+  end
 end
 
 ###############################################################################
@@ -919,83 +1021,69 @@ escalation "esc_email" do
   email $param_email
 end
 
+escalation "esc_upgrade_volumes" do
+  automatic contains($param_automatic_action, "Upgrade Volumes to GP3")
+  label "Upgrade Volumes to GP3"
+  description "Approval to upgrade all selected volumes to GP3"
+  run "upgrade_volumes", data
+end
+
 ###############################################################################
-# Policy
+# Cloud Workflow
 ###############################################################################
 
-policy "pol_utilization" do
-  validate $ds_filtered_disk_utilization_data do
-    summary_template <<-EOS
-    {{ rs_project_name }} (Account ID: {{ rs_project_id }}):{{ with index data 0 }}{{ .summaryData.count }}{{ end }} Underutilized EBS volumes
-    EOS
-    detail_template <<-EOS
-    {{ with index data 0 }}{{ .summaryData.message }}{{ end }}
-    EOS
-    escalate $esc_email
-    check logic_or($ds_parent_policy_terminated, eq(size(data),0))
-    export do
-      resource_level true
-      field "accountID" do
-        label "Account ID"
-      end
-      field "accountName" do
-        label "Account Name"
-      end
-      field "resourceID" do
-        label "Volume ID"
-        path "volumeId"
-      end
-      field "size" do
-        label "Volume Size (GB)"
-      end
-      field "region" do
-        label "Region"
-      end
-      field "state" do
-        label "Volume Status"
-        path "status"
-      end
-      field "attachmentStatus" do
-        label "Volume Attachment Status"
-        path "attachmentStatus"
-      end
-      field "resourceType" do
-        label "Volume Type"
-        path "volumeType"
-      end
-      field "resourceName" do
-        label "Resource Name"
-      end
-      field "iopsAverage" do
-        label "IOPS Average %"
-      end
-      field "gp2Price" do
-        label "Monthly Cost"
-      end
-      field "gp3Price" do
-        label "Monthly Cost if moved to GP3"
-      end
-      field "savings" do
-        label "Estimated Monthly Savings from moving to GP3"
-      end
-      field "tags" do
-        label "Tags"
-      end
-      field "service" do
-        label "Service"
-      end
-      field "cloudwatchDataWarning" do
-        label "CloudWatch Data Warning"
-      end
-      field "lookbackPeriod" do
-        label "Lookback Period"
-      end
-      field "id" do
-        label "ID"
-        path "volumeId"
-      end
+# Core CWF function to upgrade volumes to GP3
+define upgrade_volumes($data) return $all_responses do
+  $$all_responses = []
+
+  foreach $volume in $data do
+    sub on_error: handle_error() do
+      call upgrade_volume($volume) retrieve $upgrade_response
     end
   end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+# CWF function to upgrade a volume to GP3
+define upgrade_volume($volume) return $response do
+  $upgrade_url = "https://ec2." + $volume['region'] + ".amazonaws.com/?Action=ModifyVolume&Version=2016-11-15&VolumeType=gp3&VolumeId=" + $volume["resourceID"]
+  task_label("POST " + $upgrade_url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    href: "/",
+    host: "ec2." + $volume['region'] + ".amazonaws.com",
+    query_strings: {
+      "Action": "ModifyVolume",
+      "Version": "2016-11-15",
+      "VolumeType": "gp3",
+      "VolumeId": $volume["resourceID"]
+    }
+  )
+
+  task_label("Post AWS volume response: " + $volume["resourceID"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $upgrade_url, "resp": $response})
+
+  if $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response posting AWS volume: "+ $volume["resourceID"] + " " + to_json($response)
+  else
+    task_label("Post AWS volume successful: " + $volume["resourceID"])
+  end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
 end
 
 ###############################################################################
@@ -1018,7 +1106,6 @@ datasource "ds_get_policy" do
     field "id", jmes_path(response, "id")
   end
 end
-
 
 datasource "ds_parent_policy_terminated" do
   run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id

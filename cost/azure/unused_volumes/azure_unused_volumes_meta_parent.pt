@@ -2,19 +2,19 @@ name "Azure Unused Volumes Meta Parent"
 rs_pt_ver 20180301
 type "policy"
 short_description "Applies and manages \"child\" [Azure Unused Volumes](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/unused_volumes) Policies."
-long_description ""
 severity "low"
 category "Cost"
-default_frequency "daily"
+tenancy "single"
+default_frequency "15 minutes"
 info(
-  version: "0.1",
   provider: "Azure",
+  version: "7.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "false"
 )
 
-###############################################################################
+##############################################################################
 # Parameters
-###############################################################################
+##############################################################################
 
 ## Meta Parent Parameters
 ## These are params specific to the meta parent policy.
@@ -25,6 +25,28 @@ parameter "param_combined_incident_email" do
   default []
 end
 
+parameter "param_dimension_filter_includes" do
+  type "list"
+  label "Dimension Include Filters"
+  description <<-EOS
+  Filters [`dimension_name=dimension_value` pairs] to determine which Azure Subscriptions returned by the Flexera Bill Analysis API to **INCLUDE** and be applied to.
+  During each run this policy will select Azure Subscriptions who match **all** the filters defined and apply a child policy for each.
+  If no include filters are provided, then all Azure Subscriptions are included by default.
+  Most of the dimensions in Flexera can be used [default dimensions, custom tag dimensions, rule-based dimensions].  Full list of available dimensions documented in the [Bill Analysis API Docs](https://reference.rightscale.com/bill_analysis/).
+  EOS
+end
+
+parameter "param_dimension_filter_excludes" do
+  type "list"
+  label "Dimension Exclude Filters"
+  description <<-EOS
+  Filters [`dimension_name=dimension_value` pairs] to determine which Azure Subscriptions returned by  the Flexera Bill Analysis API to **EXCLUDE** and *not* have policy applied to.
+  During each run this policy will select Azure Subscriptions who match **all** the filters defined here and excludes them from results.
+  Can be used to exclude specific Azure Subscriptions [`vendor_account=123456789012`]
+  Most of the dimensions in Flexera can be used [default dimensions, custom tag dimensions, rule-based dimensions].  Full list of available dimensions documented in the [Bill Analysis API Docs](https://reference.rightscale.com/bill_analysis/).
+  EOS
+end
+
 parameter "param_policy_schedule" do
   type "string"
   label "Child Policy Schedule"
@@ -33,83 +55,100 @@ parameter "param_policy_schedule" do
   allowed_values "daily", "weekly", "monthly"
 end
 
-parameter "param_subscription_list" do
-  label "Subscription List"
-  type "list"
-  description "Subscription List to create the child policy, if empty, all subscriptions will be used"
-  default []
+## Child Policy Parameters
+parameter "param_azure_endpoint" do
+  type "string"
+  category "Policy Settings"
+  label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
 end
 
-## Child Policy Parameters
-## These are params from the child policy, excluding param_email and param_subscription_allowed_list [disabled by commenting out]
-
-# parameter "param_email" do
-#   type "list"
-#   label "Email addresses"
-#   description "A list of email addresses to notify"
-#   default []
-# end
-
-parameter "param_unattached_days" do
+parameter "param_min_savings" do
   type "number"
-  label "Unused Age"
-  description "Number of days the volume is unused"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation"
+  min_value 0
+  default 0
+end
+
+parameter "param_minimum_age" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Age (Days)"
+  description "The minimum age, in days, since a volume was created to produce recommendations for it. Set to 0 to ignore age entirely."
+  default 0
+  min_value 0
+end
+
+parameter "param_unused_days" do
+  type "number"
+  category "Policy Settings"
+  label "Unused Days"
+  description "The number of days a volume has been unused as determined by read/write activity."
   default 30
   min_value 1
   max_value 90
 end
 
-parameter "param_create_snapshot" do
+parameter "param_include_status" do
   type "string"
+  category "Filters"
+  label "Volume Status"
+  description "Whether the policy should only check unattached volumes, attached volumes, or both."
+  default "Unattached Volumes"
+  allowed_values "Unattached Volumes", "Attached Volumes", "All Volumes"
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags (Key:Value)"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:*"
+  allowed_pattern /(^$)|[\w]*\:.*/
+  default []
+end
+
+parameter "param_take_snapshot" do
+  type "string"
+  category "Actions"
   label "Create Final Snapshot"
-  description "Boolean for whether or not to take a final snapshot before deleting"
+  description "Whether or not to take a final snapshot before deleting an unused volume."
   allowed_values "true", "false"
   default "true"
 end
 
-parameter "param_exclusion_tag_key" do
-  category "User Inputs"
-  label "Exclusion Tag Key"
-  description "A list of tags used to excluded volumes from the incident."
-  type "list"
-  default []
-end
-
-parameter "param_azure_endpoint" do
-  type "string"
-  label "Azure Endpoint"
-  description "Azure Endpoint to access resources"
-  allowed_values "management.azure.com", "management.chinacloudapi.cn"
-  default "management.azure.com"
-end
-
-# parameter "param_subscription_allowed_list" do
-#   label "Subscription Allowed List"
-#   type "list"
-#   description "Allowed Subscriptions, if empty, all subscriptions will be checked"
-#   default []
-# end
-
 parameter "param_automatic_action" do
   type "list"
-  label "Automatic Action(s)"
-  description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Delete Unused Volumes"]
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Delete Volumes"]
   default []
-end
-
-parameter "param_log_to_cm_audit_entries" do
-  type "string"
-  label "Log to CM Audit Entries"
-  description "Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left set to No on Flexera EU"
-  allowed_values "Yes", "No"
-  default "No"
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
-
 credentials "auth_azure" do
   schemes "oauth2"
   label "Azure"
@@ -119,7 +158,7 @@ end
 
 credentials "auth_flexera" do
   schemes "oauth2"
-  label "flexera"
+  label "Flexera"
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
@@ -168,8 +207,8 @@ script "js_child_policy_options", type: "javascript" do
   code <<-EOS
   // Filter Options that are not appropriate for Child Policy
   var options = _.map(ds_self_policy_information.options, function(option){
-    // param_combined_incident_email, param_policy_schedule, param_subscription_list are exclusion to Meta Parent Policy Parameters
-    if (!_.contains(["param_combined_incident_email", "param_policy_schedule", "param_subscription_list"], option.name)) {
+    // param_combined_incident_email, param_dimension_filter_includes, param_dimension_filter_excludes", param_policy_schedule are exclusion to Meta Parent Policy Parameters
+    if (!_.contains(["param_combined_incident_email", "param_dimension_filter_includes", "param_dimension_filter_excludes", "param_policy_schedule"], option.name)) {
       return { "name": option.name, "value": option.value };
     }
   });
@@ -179,43 +218,6 @@ script "js_child_policy_options", type: "javascript" do
     "value": []
   });
   EOS
-end
-
-datasource "ds_subscriptions" do
-  request do
-    auth $auth_azure
-    pagination $pagination_azure
-    host $param_azure_endpoint
-    path "/subscriptions/"
-    query "api-version","2020-01-01"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "value[*]") do
-      field "subscriptionID", jmes_path(col_item, "subscriptionId")
-      field "subscriptionName", jmes_path(col_item, "displayName")
-      field "state", jmes_path(col_item, "state")
-    end
-  end
-end
-
-datasource "ds_filtered_subscriptions" do
-  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_list
-end
-
-script "js_filtered_subscriptions", type: "javascript" do
-  parameters "ds_subscriptions", "param_subscription_list"
-  result "result"
-  code <<-EOS
-  if (param_subscription_list.length > 0) {
-    result = _.filter(ds_subscriptions, function(sub) {
-      return _.contains(param_subscription_list, sub['subscriptionID']) || _.contains(param_subscription_list, sub['subscriptionName'])
-    })
-  } else {
-    result = ds_subscriptions
-  }
-EOS
 end
 
 datasource "ds_child_policy_options_map" do
@@ -271,6 +273,119 @@ datasource "ds_child_policy_information" do
       field "short_description", jmes_path(col_item, "short_description")
     end
   end
+end
+
+datasource "ds_get_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    # Select the Billing Centers that have "parent_id" undefined or "" (i.e. top-level Billing Centers)
+    collect jq(response, '.[] | select(.parent_id == null)' ) do
+      field "href", jq(col_item,".href")
+      field "id", jq(col_item,".id")
+      field "name", jq(col_item,".name")
+      field "parent_id", jq(col_item,".parent_id")
+    end
+  end
+end
+
+# Get the Azure subscriptions
+datasource "ds_get_azure_subscriptions" do
+  request do
+    run_script $js_make_billing_center_request, rs_org_id, rs_optima_host, $ds_get_billing_centers, $param_dimension_filter_includes, $param_dimension_filter_excludes
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"rows[*]") do
+      field "subscriptionID", jmes_path(col_item,"dimensions.vendor_account")
+      field "subscriptionName", jmes_path(col_item,"dimensions.vendor_account_name")
+    end
+  end
+end
+
+script "js_make_billing_center_request", type: "javascript" do
+  parameters "rs_org_id", "rs_optima_host", "billing_centers_unformatted", "param_dimension_filter_includes", "param_dimension_filter_excludes"
+  result "request"
+  code <<-EOS
+
+  billing_centers_formatted = []
+
+  for (x=0; x< billing_centers_unformatted.length; x++) {
+    billing_centers_formatted.push(billing_centers_unformatted[x]["id"])
+  }
+
+  finish = new Date()
+  finishFormatted = finish.toJSON().split("T")[0]
+  start = new Date()
+  start.setDate(start.getDate() - 30)
+  startFormatted = start.toJSON().split("T")[0]
+
+  // Default dimensions and filter expressions required for meta parent policy
+  var dimensions = ["vendor_account", "vendor_account_name"];
+  var filter_expressions = [
+    { dimension: "vendor", type: "substring", substring: "Azure" } // Use a substring type to include both "Azure" (Azure EA) and "AzureMCA-Enterprise" (Azure MCA) subscriptions
+  ]
+
+  // Append to default dimensions and filter expressions using parent policy params
+  _.each(param_dimension_filter_includes, function (v) {
+    // split key=value string
+    var split = v.split("=");
+    var k = split[0];
+    var v = split[1];
+    // append to lists
+    dimensions.push(k);
+    filter_expressions.push({ dimension: k, type: "equal", value: v });
+  });
+
+  // Append to filter expressions using exclude policy params
+  _.each(param_dimension_filter_excludes, function (v) {
+    // split key=value string
+    var split = v.split("=");
+    var k = split[0];
+    var v = split[1];
+    // append to lists
+    dimensions.push(k);
+    filter_expressions.push({ "type": "not", "expression": { "dimension": k, "type": "equal", "value": v } });
+  });
+
+  // Produces a duplicate-free version of the array
+  dimensions = _.uniq(dimensions);
+
+  var body = {
+    "dimensions": dimensions,
+    "granularity":"day",
+    "start_at": startFormatted,
+    "end_at": finishFormatted,
+    "metrics":["cost_amortized_unblended_adj"],
+    "billing_center_ids": billing_centers_formatted,
+    "filter":
+    {
+      "type": "and",
+      "expressions": filter_expressions
+    },
+    "summarized": true
+  }
+  var request = {
+    auth:  'auth_flexera',
+    host:  rs_optima_host,
+    scheme: 'https',
+    verb: 'POST',
+    path:  "/bill-analysis/orgs/"+ rs_org_id + "/costs/aggregated",
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+    body: JSON.stringify(body)
+  }
+  EOS
 end
 
 # Get Child policies
@@ -359,7 +474,7 @@ script "js_format_existing_policies", type: "javascript" do
   for (x=0; x<ds_get_existing_policies.length; x++) {
     options = format_options_keyvalue(ds_get_existing_policies[x].options);
 
-    subscriptionID=options["param_subscription_allowed_list"][0]
+    subscriptionID=options["param_subscriptions_list"][0]
     if (formatted[subscriptionID] == undefined) {
       formatted[subscriptionID] = {
         "applied_policy_id":ds_get_existing_policies[x]["applied_policy_id"],
@@ -412,7 +527,7 @@ script "js_format_existing_policies", type: "javascript" do
 end
 
 datasource "ds_take_in_parameters" do
-  run_script $js_take_in_parameters, $ds_filtered_subscriptions, $ds_format_self, first($ds_child_policy_information), $ds_format_existing_policies, $ds_child_policy_options, $ds_child_policy_options_map, $param_policy_schedule, policy_id, f1_app_host, rs_org_id, rs_project_id
+  run_script $js_take_in_parameters, $ds_get_azure_subscriptions, $ds_format_self, first($ds_child_policy_information), $ds_format_existing_policies, $ds_child_policy_options, $ds_child_policy_options_map, $param_policy_schedule, policy_id, f1_app_host, rs_org_id, rs_project_id
 end
 
 # hardcode template href with id from catalog
@@ -425,10 +540,9 @@ end
 # param_exclude_tags and param_allowed_regions are arrays. I'm doing an update on the order changing but the values remaining the same.
 # If we only want to do an update on the values changing we could sort before doing the equality check.
 script "js_take_in_parameters", type: "javascript" do
-  parameters "ds_filtered_subscriptions", "ds_format_self", "ds_child_policy_information", "ds_format_existing_policies", "ds_child_policy_options", "ds_child_policy_options_map", "param_policy_schedule", "meta_parent_policy_id", "f1_app_host", "rs_org_id", "rs_project_id"
+  parameters "ds_get_azure_subscriptions", "ds_format_self", "ds_child_policy_information", "ds_format_existing_policies", "ds_child_policy_options", "ds_child_policy_options_map", "param_policy_schedule", "meta_parent_policy_id", "f1_app_host", "rs_org_id", "rs_project_id"
   result "grid_and_cwf"
   code <<-EOS
-
   max_actions = 50;
 
   grid_and_cwf={grid:[], to_create:[], to_update:[], to_delete:[], parent_policy:ds_format_self};
@@ -466,8 +580,8 @@ script "js_take_in_parameters", type: "javascript" do
     }
   }
 
-  for (x=0; x<ds_filtered_subscriptions.length; x++) {
-    cur = ds_filtered_subscriptions[x];
+  for (x=0; x<ds_get_azure_subscriptions.length; x++) {
+    cur = ds_get_azure_subscriptions[x];
     cur_subscriptionID = cur.subscriptionID;
 
     // Name and description do not vary between create or updates so defining them here
@@ -482,9 +596,9 @@ script "js_take_in_parameters", type: "javascript" do
       // Use the options from the parent policy in "name value" list format
       options = _.toArray(ds_child_policy_options);
 
-      // Set param_subscription_allowed_list values for this child policy
+      // Set param_subscriptions_list values for this child policy
       options.push({
-        "name": "param_subscription_allowed_list",
+        "name": "param_subscriptions_list",
         "value": [cur_subscriptionID],
       });
 
@@ -524,9 +638,9 @@ script "js_take_in_parameters", type: "javascript" do
       // Use the options from the parent policy in "name value" list format
       options = _.toArray(ds_child_policy_options);
 
-      // Set param_subscription_allowed_list values for this child policy
+      // Set param_subscriptions_list values for this child policy
       options.push({
-        "name": "param_subscription_allowed_list",
+        "name": "param_subscriptions_list",
         "value": [cur_subscriptionID],
       });
 
@@ -648,25 +762,36 @@ datasource "ds_child_incident_details" do
   end
 end
 
-datasource "ds_child_incidents_combined" do
-  run_script $js_child_incidents_combined, $ds_child_incident_details
+datasource "ds_volume_cost_mapping_combined_incidents" do
+  run_script $js_ds_volume_cost_mapping_combined_incidents, $ds_child_incident_details
 end
 
-script "js_child_incidents_combined", type: "javascript" do
+script "js_ds_volume_cost_mapping_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-EOS
-  result = _.flatten(_.pluck(ds_child_incident_details, 'violation_data')).slice(0, 100000)
+  result = []
+  _.each(ds_child_incident_details, function(incident) {
+    s = incident["summary"];
+    // If the incident summary contains "Azure Unused Volumes Found" then include it in the filter result
+    if (s.indexOf("Azure Unused Volumes Found") > -1) {
+      _.each(incident["violation_data"], function(violation) {
+        result.push(violation);
+      });
+    }
+  });
 EOS
 end
+
 
 # Summary and a conditional incident which will show up if any policy is being applied, updated or deleted.
 # Minimum of 1 incident, max of four
 # Could swap the summary to only showing running
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
-  # Combined incident with all of the data from the child incidents.
-  validate $ds_child_incidents_combined do
+  # Consolidated Incident Check(s)
+    # Consolidated incident for Azure Unused Volumes Found
+  validate $ds_volume_cost_mapping_combined_incidents do
     summary_template "Consolidated Incident: {{ len data }} Azure Unused Volumes Found"
     escalate $esc_email
     check eq(size(data), 0)
@@ -678,11 +803,23 @@ policy "policy_scheduled_report" do
       field "accountName" do
         label "Subscription Name"
       end
-      field "resourceID" do
-        label "Resource ID"
+      field "resourceGroup" do
+        label "Resource Group"
       end
       field "resourceName" do
         label "Resource Name"
+      end
+      field "tags" do
+        label "Tags"
+      end
+      field "age" do
+        label "Age (Days)"
+      end
+      field "timeCreated" do
+        label "Created At"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
       end
       field "resourceType" do
         label "Resource Type"
@@ -690,14 +827,11 @@ policy "policy_scheduled_report" do
       field "region" do
         label "Region"
       end
-      field "resourceGroup" do
-        label "Resource Group"
+      field "size" do
+        label "Disk Size (GB)"
       end
-      field "diskSize" do
-        label "Disk Size in GB"
-      end
-      field "tags" do
-        label "Tags"
+      field "state" do
+        label "State"
       end
       field "savings" do
         label "Estimated Monthly Savings"
@@ -705,14 +839,25 @@ policy "policy_scheduled_report" do
       field "savingsCurrency" do
         label "Savings Currency"
       end
-      field "id" do
-        label "Disk Id"
+      field "attached_vm" do
+        label "Attached VM ID"
       end
       field "service" do
         label "Service"
       end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "lookbackPeriod" do
+        label "Lookback Period"
+      end
+      field "id" do
+        label "ID"
+      end
     end
   end
+
+  # Status Incident Check
   validate $ds_take_in_parameters do
     summary_template "{{ data.parent_policy.name }}: Status of Child Policies"
     detail_template <<-EOS
@@ -764,6 +909,8 @@ EOS
     #   end
     # end
   end
+
+  # Create Child Policies Incident Check
   validate $ds_to_create do
     summary_template "Policies being created"
     detail_template <<-EOS
@@ -778,6 +925,8 @@ EOS
     escalate $create_policies
     check eq(size(data),0)
   end
+
+  # Update Child Policies Incident Check
   validate $ds_to_update do
     summary_template "Policies being updated"
     detail_template <<-EOS
@@ -792,6 +941,8 @@ EOS
     escalate $update_policies
     check eq(size(data),0)
   end
+
+  # Delete Child Policies Incident Check
   validate $ds_to_delete do
     summary_template "Policies being deleted"
     detail_template <<-EOS

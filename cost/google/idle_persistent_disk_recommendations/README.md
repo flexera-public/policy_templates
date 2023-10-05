@@ -4,6 +4,22 @@
 
 This Policy finds Idle Persistent Disk Recommendations and reports when it finds them. You can then delete the idle volumes
 
+### How it works
+
+This policy uses the GCP recommender `google.compute.disk.IdleResourceRecommender`, which checks if a resource has not been attached to a VM or other resource for 15 days, the recommender classifies that resource as idle.
+
+Idle resource recommendations begin 15 days after resource creation, and they are updated once every 24 hours.
+
+It is important that the policy GCP credentials have at least one of the following roles:
+
+- `recommender.computeAddressIdleResourceRecommendations.list`
+
+You also need to [enable the Recommender API](https://console.cloud.google.com/flows/enableapi?apiid=recommender.googleapis.com)
+
+Check the following official GCP docs for more:
+
+- [Viewing and applying idle resources recommendations](https://cloud.google.com/compute/docs/viewing-and-applying-idle-resources-recommendations)
+
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
@@ -18,6 +34,7 @@ This policy has the following input parameters required when launching the polic
 The following policy actions are taken on any resources found to be out of compliance.
 
 - Send an email report
+- Delete volume after an approval
 
 ## Prerequisites
 
@@ -31,10 +48,23 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
 
 Provider tag value to match this policy: `gce`
 
+Required APIs to have enabled in the provider:
+
+- Resource Manager API
+- Compute Engine API
+- Recommender API
+
 Required permissions in the provider:
 
-- The `resourcemanager.projects.get` permission
-- The `roles/recommender.computeAdmin` role
+- resourcemanager.projects.get
+- compute.disks.list
+
+Required roles in the provider:
+
+- Compute Recommender Viewer
+- Compute Recommender Admin*
+
+\* Only required for taking action (deletion); the policy will still function in a read-only capacity without these permissions.
 
 ## Supported Clouds
 

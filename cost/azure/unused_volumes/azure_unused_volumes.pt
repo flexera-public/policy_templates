@@ -5,9 +5,9 @@ short_description "Checks for unused volumes older than specified number of days
 long_description ""
 severity "low"
 category "Cost"
-default_frequency "daily"
+default_frequency "weekly"
 info(
-  version: "4.10",
+  version: "7.0",
   provider: "Azure",
   service: "Storage",
   policy_set: "Unused Volumes",
@@ -20,65 +20,117 @@ info(
 
 parameter "param_email" do
   type "list"
-  label "Email addresses"
-  description "A list of email addresses to notify"
-  default []
-end
-
-parameter "param_unattached_days" do
-  type "number"
-  label "Unused Age"
-  description "Number of days the volume is unused"
-  default 30
-  min_value 1
-  max_value 90
-end
-
-parameter "param_create_snapshot" do
-  type "string"
-  label "Create Final Snapshot"
-  description "Boolean for whether or not to take a final snapshot before deleting"
-  allowed_values "true", "false"
-  default "true"
-end
-
-parameter "param_exclusion_tag_key" do
-  category "User Inputs"
-  label "Exclusion Tag Key"
-  description "A list of tags used to excluded volumes from the incident."
-  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
   default []
 end
 
 parameter "param_azure_endpoint" do
   type "string"
+  category "Policy Settings"
   label "Azure Endpoint"
-  description "Azure Endpoint to access resources"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
   allowed_values "management.azure.com", "management.chinacloudapi.cn"
   default "management.azure.com"
 end
 
-parameter "param_subscription_allowed_list" do
-  label "Subscription Allowed List"
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation"
+  min_value 0
+  default 0
+end
+
+parameter "param_minimum_age" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Age (Days)"
+  description "The minimum age, in days, since a volume was created to produce recommendations for it. Set to 0 to ignore age entirely."
+  default 0
+  min_value 0
+end
+
+parameter "param_unused_days" do
+  type "number"
+  category "Policy Settings"
+  label "Unused Days"
+  description "The number of days a volume has been unused as determined by read/write activity."
+  default 30
+  min_value 1
+  max_value 90
+end
+
+parameter "param_include_status" do
+  type "string"
+  category "Filters"
+  label "Volume Status"
+  description "Whether the policy should only check unattached volumes, attached volumes, or both."
+  default "Unattached Volumes"
+  allowed_values "Unattached Volumes", "Attached Volumes", "All Volumes"
+end
+
+parameter "param_subscriptions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Subscriptions"
+  description "Allow or Deny entered Subscriptions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_subscriptions_list" do
   type "list"
-  description "Allowed Subscriptions, if empty, all subscriptions will be checked"
+  category "Filters"
+  label "Allow/Deny Subscriptions List"
+  description "A list of allowed or denied Subscription IDs/names. See the README for more details."
   default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags (Key:Value)"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:*"
+  allowed_pattern /(^$)|[\w]*\:.*/
+  default []
+end
+
+parameter "param_take_snapshot" do
+  type "string"
+  category "Actions"
+  label "Create Final Snapshot"
+  description "Whether or not to take a final snapshot before deleting an unused volume."
+  allowed_values "true", "false"
+  default "true"
 end
 
 parameter "param_automatic_action" do
   type "list"
-  label "Automatic Action(s)"
-  description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Delete Unused Volumes"]
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Delete Volumes"]
   default []
-end
-
-parameter "param_log_to_cm_audit_entries" do
-  type "string"
-  label "Log to CM Audit Entries"
-  description "Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left set to No on Flexera EU"
-  allowed_values "Yes", "No"
-  default "No"
 end
 
 ###############################################################################
@@ -94,7 +146,7 @@ end
 
 credentials "auth_flexera" do
   schemes "oauth2"
-  label "flexera"
+  label "Flexera"
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
@@ -116,6 +168,54 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
+end
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-EOS
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
@@ -128,53 +228,49 @@ datasource "ds_currency_code" do
   request do
     auth $auth_flexera
     host rs_optima_host
-    path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
     header "Api-Version", "0.1"
     header "User-Agent", "RS Policies"
     ignore_status [403]
   end
   result do
     encoding "json"
-    field "id", jmes_path(response,"id")
-    field "value", jmes_path(response,"value")
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
   end
 end
 
-datasource "ds_billing_centers" do
-  request do
-    auth $auth_flexera
-    host rs_optima_host
-    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
-    header "Api-Version", "1.0"
-    header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
-    ignore_status [403]
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "href", jmes_path(col_item,"href")
-      field "id", jmes_path(col_item,"id")
-      field "name", jmes_path(col_item,"name")
-      field "parent_id", jmes_path(col_item,"parent_id")
-    end
-  end
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
 end
 
-datasource "ds_top_level_bcs" do
-  run_script $js_top_level_bcs, $ds_billing_centers
-end
-
-script "js_top_level_bcs", type: "javascript" do
-  parameters "ds_billing_centers"
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
   result "result"
   code <<-EOS
-  filtered_bcs = _.reject(ds_billing_centers, function(bc) { return bc['parent_id'] != null })
-  result = _.compact(_.pluck(filtered_bcs, 'id'))
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
 EOS
 end
 
-datasource "ds_subscriptions" do
+datasource "ds_azure_subscriptions" do
   request do
     auth $auth_azure
     pagination $pagination_azure
@@ -182,7 +278,6 @@ datasource "ds_subscriptions" do
     path "/subscriptions/"
     query "api-version","2020-01-01"
     header "User-Agent", "RS Policies"
-
     # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
     # Forces `ds_is_deleted` datasource to run first during policy execution
     header "Meta-Flexera", val($ds_is_deleted, "path")
@@ -190,38 +285,44 @@ datasource "ds_subscriptions" do
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "subscriptionID", jmes_path(col_item, "subscriptionId")
-      field "subscriptionName", jmes_path(col_item, "displayName")
+      field "id", jmes_path(col_item, "subscriptionId")
+      field "name", jmes_path(col_item, "displayName")
       field "state", jmes_path(col_item, "state")
     end
   end
 end
 
-datasource "ds_filtered_subscriptions" do
-  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_allowed_list
+datasource "ds_azure_subscriptions_filtered" do
+  run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
 end
 
-script "js_filtered_subscriptions", type: "javascript" do
-  parameters "ds_subscriptions", "param_subscription_allowed_list"
+script "js_azure_subscriptions_filtered", type: "javascript" do
+  parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
   result "result"
   code <<-EOS
-  if (param_subscription_allowed_list.length > 0) {
-    result = _.filter(ds_subscriptions, function(sub) {
-      return _.contains(param_subscription_allowed_list, sub['subscriptionID']) || _.contains(param_subscription_allowed_list, sub['subscriptionName'])
+  if (param_subscriptions_list.length > 0) {
+    result = _.filter(ds_azure_subscriptions, function(subscription) {
+      include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
+
+      if (param_subscriptions_allow_or_deny == "Deny") {
+        include_subscription = !include_subscription
+      }
+
+      return include_subscription
     })
   } else {
-    result = ds_subscriptions
+    result = ds_azure_subscriptions
   }
 EOS
 end
 
 datasource "ds_azure_disks" do
-  iterate $ds_filtered_subscriptions
+  iterate $ds_azure_subscriptions_filtered
   request do
     auth $auth_azure
     pagination $pagination_azure
     host $param_azure_endpoint
-    path join(["/subscriptions/", val(iter_item,"subscriptionID"), "/providers/Microsoft.Compute/disks"])
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Compute/disks"])
     query "api-version", "2019-07-01"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
     ignore_status [400, 403, 404]
@@ -229,127 +330,277 @@ datasource "ds_azure_disks" do
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "id", jmes_path(col_item,"id")
+      field "id", jmes_path(col_item, "id")
       field "resourceName", jmes_path(col_item, "name")
       field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
       field "resourceType", jmes_path(col_item, "type")
       field "region", jmes_path(col_item, "location")
       field "tags", jmes_path(col_item, "tags")
-      field "diskState", jmes_path(col_item, "properties.diskState")
+      field "attached_vm", jmes_path(col_item, "managedBy")
+      field "provisioningState", jmes_path(col_item, "properties.provisioningState")
+      field "osType", jmes_path(col_item, "properties.osType")
+      field "state", jmes_path(col_item, "properties.diskState")
+      field "size", jmes_path(col_item, "properties.diskSizeGB")
       field "timeCreated", jmes_path(col_item, "properties.timeCreated")
-      field "diskSize", jmes_path(col_item, "properties.diskSizeGB")
-      field "subscriptionID",val(iter_item, "subscriptionID")
-      field "subscriptionName",val(iter_item, "subscriptionName")
+      field "subscriptionID", val(iter_item, "id")
+      field "subscriptionName", val(iter_item, "name")
     end
   end
 end
 
-datasource "ds_filter_disks" do
-  run_script $js_filter_disks, $param_exclusion_tag_key, $ds_azure_disks
+datasource "ds_azure_disks_status_filtered" do
+  run_script $js_azure_disks_status_filtered, $ds_azure_disks, $param_include_status
 end
 
-script "js_filter_disks", type: "javascript" do
-  parameters "param_exclusion_tag_key", "ds_azure_disks"
+script "js_azure_disks_status_filtered", type: "javascript" do
+  parameters "ds_azure_disks", "param_include_status"
+  result "result"
+  code <<-EOS
+  // Note: We filter for osType == null to filter out OS disks that VMs need to boot
+  // since these disks can't be detached/deleted without just deleting the VM itself
+
+  if (param_include_status != "All Volumes") {
+    if (param_include_status == "Attached Volumes") {
+      result = _.filter(ds_azure_disks, function(disk) {
+        return disk['state'] == "Attached" && disk['osType'] == null
+      })
+    } else {
+      result = _.filter(ds_azure_disks, function(disk) {
+        return disk['state'] == "Unattached" && disk['osType'] == null
+      })
+    }
+  } else {
+    result = _.filter(ds_azure_disks, function(disk) {
+      return disk['osType'] == null
+    })
+  }
+EOS
+end
+
+datasource "ds_azure_disks_tag_filtered" do
+  run_script $js_azure_disks_tag_filtered, $ds_azure_disks_status_filtered, $param_exclusion_tags
+end
+
+script "js_azure_disks_tag_filtered", type: "javascript" do
+  parameters "ds_azure_disks_status_filtered", "param_exclusion_tags"
+  result "result"
+  code <<-EOS
+  if (param_exclusion_tags.length > 0) {
+    result = _.reject(ds_azure_disks_status_filtered, function(disk) {
+      disk_tags = []
+
+      if (typeof(disk['tags']) == 'object') {
+        _.each(Object.keys(disk['tags']), function(key) {
+          disk_tags.push([key, ":", disk['tags'][key]].join(''))
+          disk_tags.push([key, ":*"].join(''))
+        })
+      }
+
+      exclude_disk = false
+
+      _.each(param_exclusion_tags, function(exclusion_tag) {
+        if (_.contains(disk_tags, exclusion_tag)) {
+          exclude_disk = true
+        }
+      })
+
+      return exclude_disk
+    })
+  } else {
+    result = ds_azure_disks_status_filtered
+  }
+EOS
+end
+
+datasource "ds_azure_disks_region_filtered" do
+  run_script $js_azure_disks_region_filtered, $ds_azure_disks_tag_filtered, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_azure_disks_region_filtered", type: "javascript" do
+  parameters "ds_azure_disks_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_azure_disks_tag_filtered, function(disk) {
+      include_disk = _.contains(param_regions_list, disk['region'])
+
+      if (param_regions_allow_or_deny == "Deny") {
+        include_disk = !include_disk
+      }
+
+      return include_disk
+    })
+  } else {
+    result = ds_azure_disks_tag_filtered
+  }
+EOS
+end
+
+datasource "ds_azure_disks_metrics" do
+  iterate $ds_azure_disks_region_filtered
+  request do
+    run_script $js_azure_disks_metrics, val(iter_item, "id"), $param_azure_endpoint, $param_unused_days
+  end
+  result do
+    encoding "json"
+    field "value", val(response, "value")
+    field "id", val(iter_item, "id")
+    field "resourceName", val(iter_item, "resourceName")
+    field "resourceGroup", val(iter_item, "resourceGroup")
+    field "resourceType", val(iter_item, "resourceType")
+    field "region", val(iter_item, "region")
+    field "tags", val(iter_item, "tags")
+    field "state", val(iter_item, "state")
+    field "size", val(iter_item, "size")
+    field "attached_vm", val(iter_item, "attached_vm")
+    field "timeCreated", val(iter_item, "timeCreated")
+    field "subscriptionID", val(iter_item, "subscriptionID")
+    field "subscriptionName", val(iter_item, "subscriptionName")
+  end
+end
+
+
+script "js_azure_disks_metrics", type: "javascript" do
+  parameters "resourceId", "param_azure_endpoint", "param_unused_days"
+  result "request"
+  code <<-EOS
+  end_date = new Date()
+  end_date.setMilliseconds(999)
+  end_date.setSeconds(59)
+  end_date.setMinutes(59)
+  end_date.setHours(23)
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - param_unused_days)
+  start_date.setMilliseconds(0)
+  start_date.setSeconds(0)
+  start_date.setMinutes(0)
+
+  timespan = start_date.toISOString() + "/" + end_date.toISOString()
+
+  var request = {
+    auth: "auth_azure",
+    pagination: "pagination_azure",
+    host: param_azure_endpoint,
+    verb: "GET",
+    path: resourceId + "/providers/microsoft.insights/metrics",
+    query_params: {
+      "api-version": "2018-01-01",
+      "timespan": timespan,
+      "interval": "P1D",
+      "metricnames": "Composite Disk Read Operations/sec,Composite Disk Write Operations/sec",
+      "aggregation": "average"
+    },
+    headers: {
+      "User-Agent": "RS Policies"
+    },
+    // Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status: [400, 403, 404]
+  }
+EOS
+end
+
+datasource "ds_unused_volumes" do
+  run_script $js_unused_volumes, $ds_azure_disks_metrics, $param_minimum_age, $param_include_status
+end
+
+script "js_unused_volumes", type: "javascript" do
+  parameters "ds_azure_disks_metrics", "param_minimum_age", "param_include_status"
   result "result"
   code <<-EOS
   result = []
 
-  _.each(ds_azure_disks, function(disk) {
-    tags = []
-    tag_found = false
+  _.each(ds_azure_disks_metrics, function(disk) {
+    read_stats = null
+    write_stats = null
 
-    if (disk['tags'] != "undefined" && disk['tags'] != null) {
-      _.each(Object.keys(disk['tags']), function(key) {
-        tags.push(key + '=' + disk['tags'][key])
-
-        if (_.contains(param_exclusion_tag_key, key)) {
-          tag_found = true
+    _.each(disk['value'], function(stat) {
+      if (stat["timeseries"][0] != undefined) {
+        if (stat['name']['value'] == "Composite Disk Read Operations/sec") {
+          read_stats = stat["timeseries"][0]["data"]
         }
-      })
-    }
 
-    if (disk['diskState'] == "Unattached" && tag_found == false) {
-      result.push({
-        disk_id: disk['id'],
-        resourceName: disk['resourceName'],
-        region: disk['region'],
-        diskState: disk['diskState'],
-        diskSize: disk['diskSize'],
-        resourceGroup: disk['resourceGroup'],
-        resourceType: disk['resourceType'],
-        timeCreated: disk['timeCreated'],
-        subscriptionID: disk['subscriptionID'],
-        subscriptionName: disk['subscriptionName'],
-        service: disk['resourceType'].split("/")[0],
-        tags: tags
-      })
+        if (stat['name']['value'] == "Composite Disk Write Operations/sec") {
+          write_stats = stat["timeseries"][0]["data"]
+        }
+      }
+    })
+
+    read_sum = 0
+    write_sum = 0
+
+    _.each(read_stats, function(metric) {
+      if (typeof(metric['average']) == 'number') {
+        read_sum += metric['average']
+      }
+    })
+
+    _.each(write_stats, function(metric) {
+      if (typeof(metric['average']) == 'number') {
+        write_sum += metric['average']
+      }
+    })
+
+    if (read_sum + write_sum == 0) {
+      tags = []
+
+      if (typeof(disk['tags']) == 'object') {
+        _.each(Object.keys(disk['tags']), function(key) {
+          tags.push([key, "=", disk['tags'][key]].join(''))
+        })
+      }
+
+      today = new Date()
+      created = new Date(disk['timeCreated'])
+      age = Math.round((today - created) / 1000 / 60 / 60 / 24)
+
+      if (param_minimum_age == 0 || age >= param_minimum_age) {
+        result.push({
+          id: disk['id'],
+          resourceName: disk['resourceName'],
+          resourceGroup: disk['resourceGroup'],
+          resourceType: disk['resourceType'],
+          region: disk['region'],
+          tags: tags.join(', '),
+          state: disk['state'],
+          size: disk['size'],
+          attached_vm: disk['attached_vm'],
+          age: age,
+          timeCreated: created.toISOString(),
+          subscriptionID: disk['subscriptionID'],
+          subscriptionName: disk['subscriptionName'],
+          service: "Microsoft.Compute",
+          savings: 0.0,
+          savingsCurrency: ''
+        })
+      }
     }
   })
 EOS
 end
 
-# Pull log activity per disk instead of per subscription.
-# This is because pulling data via subscription actually takes longer due to pagination
-# and the large number of irrelevant log entries due to Azure's limited filtering options.
-datasource "ds_azure_log_activity" do
-  iterate $ds_filter_disks
-  request do
-    run_script $js_azure_log_activity, val(iter_item,"subscriptionID"), val(iter_item, "disk_id"), $param_unattached_days, $param_azure_endpoint
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "value[*]") do
-      field "operationName", jmes_path(col_item, "operationName.localizedValue")
-      field "resourceID", jmes_path(col_item, "resourceId")
-    end
-  end
+datasource "ds_unused_volumes_subscriptions" do
+  run_script $js_unused_volumes_subscriptions, $ds_unused_volumes
 end
 
-script "js_azure_log_activity", type: "javascript" do
-  parameters "subscriptionID", "disk_id", "param_unattached_days", "param_azure_endpoint"
-  result "request"
+script "js_unused_volumes_subscriptions", type: "javascript" do
+  parameters "ds_unused_volumes"
+  result "result"
   code <<-EOS
-  end_date = new Date()
-  end_date = end_date.toISOString().split('T')[0] + 'T23:59:59Z'
-
-  start_date = new Date()
-  start_date.setDate(start_date.getDate() - parseInt(param_unattached_days))
-  start_date = start_date.toISOString().split('T')[0] + 'T00:00:00Z'
-
-  filter = [
-    "eventTimestamp ge '", start_date, "' and ",
-    "eventTimestamp le '", end_date, "' and ",
-    "eventChannels eq 'Admin, Operation' and ",
-    "resourceId eq '", disk_id, "'"
-  ].join('')
-
-  var request = {
-    host: param_azure_endpoint,
-    path: "/subscriptions/" + subscriptionID + "/providers/microsoft.insights/eventtypes/management/values",
-    verb: "GET",
-    // Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-    ignore_status: [400, 403, 404],
-    auth: "auth_azure",
-    pagination: "pagination_azure",
-    query_params: {
-      'api-version': '2015-04-01',
-      '$filter': filter
-      '$select': 'operationName,properties'
-    }
-  }
+  result = _.compact(_.uniq(_.pluck(ds_unused_volumes, 'subscriptionID')))
 EOS
 end
 
 datasource "ds_volume_costs" do
-  iterate $ds_filtered_subscriptions
+  iterate $ds_unused_volumes_subscriptions
   request do
-    run_script $js_volume_costs, val(iter_item, "subscriptionID"), $ds_top_level_bcs, rs_org_id, rs_optima_host
+    run_script $js_volume_costs, iter_item, $ds_top_level_bcs, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
     collect jmes_path(response, "rows[*]") do
-      field "resource_id", jmes_path(col_item, "dimensions.resource_id")
-      field "cost_nonamortized_unblended_adj", jmes_path(col_item, "metrics.cost_nonamortized_unblended_adj")
+      field "resourceID", jmes_path(col_item, "dimensions.resource_id")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
     end
   end
 end
@@ -376,21 +627,39 @@ script "js_volume_costs", type:"javascript" do
       "granularity": "day",
       "start_at": start_date,
       "end_at": end_date,
-      "metrics": ["cost_nonamortized_unblended_adj"],
+      "metrics": ["cost_amortized_unblended_adj"],
       "billing_center_ids": ds_top_level_bcs,
       "limit": 100000,
       "filter": {
         "type": "and",
         "expressions": [
           {
-            "dimension": "service",
-            "type": "equal",
-            "value": "Microsoft.Compute"
+            "type": "or",
+            "expressions": [
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "Microsoft.Compute"
+              },
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "microsoft.compute"
+              }
+            ]
           },
           {
             "dimension": "vendor_account",
             "type": "equal",
             "value": subscriptionID
+          },
+          {
+            "type": "not",
+            "expression": {
+              "dimension": "adjustment_name",
+              "type": "substring",
+              "substring": "Shared"
+            }
           }
         ]
       }
@@ -404,169 +673,208 @@ script "js_volume_costs", type:"javascript" do
 EOS
 end
 
-datasource "ds_filter_activities" do
-  run_script $js_filter_activities, $ds_filter_disks, $ds_azure_log_activity, $param_unattached_days
+datasource "ds_volume_costs_grouped" do
+  run_script $js_volume_costs_grouped, $ds_volume_costs
 end
 
-script "js_filter_activities", type: "javascript" do
-  parameters "ds_filter_disks", "ds_azure_log_activity", "param_unattached_days"
+script "js_volume_costs_grouped", type: "javascript" do
+  parameters "ds_volume_costs"
   result "result"
   code <<-EOS
-  result = []
+  // Multiple a single day's cost by the average number of days in a month.
+  // The 0.25 is to account for leap years for extra precision.
+  cost_multiplier = 365.25 / 12
 
-  azure_log_activity = {}
+  // Group cost data by resourceId for later use
+  result = {}
 
-  _.each(ds_azure_log_activity, function(item) {
-    azure_log_activity[item['resourceID'].toLowerCase()] = false
-  })
+  _.each(ds_volume_costs, function(item) {
+    id = item['resourceID'].toLowerCase()
 
-  _.each(ds_filter_disks, function(disk) {
-    inactive_disk = azure_log_activity[disk['disk_id'].toLowerCase()]
-
-    if (inactive_disk == null || inactive_disk == undefined) {
-      inactive_disk = true
-    }
-
-    expectedDate = new Date()
-    createdTime = new Date(disk['timeCreated'])
-    expectedDate.setDate(expectedDate.getDate() - parseInt(param_unattached_days))
-
-    if (inactive_disk && expectedDate.getTime() >= createdTime.getTime()) {
-      result.push({
-        disk_id: disk['disk_id'],
-        resourceName: disk['resourceName'],
-        region: disk['region'],
-        diskSize: disk['diskSize'],
-        subscriptionID: disk['subscriptionID'],
-        subscriptionName: disk['subscriptionName'],
-        resourceGroup: disk['resourceGroup'],
-        resourceType: disk['resourceType'],
-        tags: disk['tags'].join(', '),
-        service: disk['service'],
-        savings: 0.0,
-        savingsCurrency: ''
-      })
-    }
+    if (result[id] == undefined) { result[id] = 0.0 }
+    result[id] += item['cost'] * cost_multiplier
   })
 EOS
 end
 
 datasource "ds_volume_cost_mapping" do
-  run_script $js_volume_cost_mapping, $ds_filter_activities, $ds_volume_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $param_unattached_days
+  run_script $js_volume_cost_mapping, $ds_azure_disks_region_filtered, $ds_unused_volumes, $ds_volume_costs_grouped, $ds_applied_policy, $ds_currency, $param_minimum_age, $param_take_snapshot, $param_min_savings, $param_include_status, $param_unused_days
 end
 
 script "js_volume_cost_mapping", type:"javascript" do
-  parameters "ds_filter_activities", "ds_volume_costs", "ds_currency_code", "ds_currency_reference", "ds_billing_centers", "param_unattached_days"
+  parameters "ds_azure_disks_region_filtered", "ds_unused_volumes", "ds_volume_costs_grouped", "ds_applied_policy", "ds_currency", "param_minimum_age", "param_take_snapshot", "param_min_savings", "param_include_status", "param_unused_days"
   result "result"
-  code <<-EOS
-  // Output will contain both a list of instances and a general status message
-  instances = []
-  message = ''
-
-  // Function to format numbers nicely
+  code <<-'EOS'
+  // Function for formatting currency numbers later
   function formatNumber(number, separator) {
-    numString = number.toString()
-    values = numString.split(".")
-    formatted_number = ''
+    var numString = number.toString()
+    var values = numString.split(".")
+    var formatted_number = ''
 
     while (values[0].length > 3) {
-      chunk = values[0].substr(-3)
+      var chunk = values[0].substr(-3)
       values[0] = values[0].substr(0, values[0].length - 3)
       formatted_number = separator + chunk + formatted_number
     }
 
-    if (values[0].length > 0) {
-      formatted_number = values[0] + formatted_number
-    }
+    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
 
-    if (values[1] == undefined) {
-      return formatted_number
-    }
+    if (values[1] == undefined) { return formatted_number }
 
     return formatted_number + "." + values[1]
   }
 
-  // Format costs with currency symbol and thousands separator
-  cur = "$"
-  separator = ","
+  result = []
 
-  if (ds_currency_code['value'] !== undefined) {
-    if (ds_currency_reference[ds_currency_code['value']] !== undefined) {
-      var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
-      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined) {
-        var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
-      } else {
-        var separator = ""
-      }
-    } else {
-      var cur = ""
-      var separator = ""
+  total_savings = 0.0
+
+  _.each(ds_unused_volumes, function(disk) {
+    savings = ds_volume_costs_grouped[disk['id'].toLowerCase()]
+
+    if (savings == null || savings == undefined) {
+      savings = 0.0
     }
-  }
 
-  // Integrate the cost data into our list of volumes
-  total = 0
+    total_savings += savings
 
-  if (ds_billing_centers.length != 0) {
-    // This is to keep track of whether any cost data was found
-    costs_exist = false
+    recommendationDetails = [
+      "Delete unused volume ", disk["resourceName"], " ",
+      "in Azure Subscription ", disk["subscriptionName"],
+      " (", disk["subscriptionID"], ")"
+    ].join('')
 
-    // Create an object with a key for each volume whose value is set to 0
-    var costs_by_resource_id = {}
-
-    _.each(ds_filter_activities, function(volume) {
-      costs_by_resource_id[volume['disk_id'].toLowerCase()] = 0
-    })
-
-    // Add in the cost data to the above object so each key is equal to all
-    // of the costs for that volume
-    _.each(ds_volume_costs, function(cost) {
-      if (costs_by_resource_id[cost['resource_id'].toLowerCase()] != null && costs_by_resource_id[cost['resource_id'].toLowerCase()] != undefined) {
-        costs_by_resource_id[cost['resource_id'].toLowerCase()] += cost['cost_nonamortized_unblended_adj']
-        total += cost['cost_nonamortized_unblended_adj']
-
-        // If we're here, cost data was found, so we set this to true
-        costs_exist = true
-      }
-    })
-
-    _.each(ds_filter_activities, function(volume) {
-      monthly_savings = costs_by_resource_id[volume['disk_id'].toLowerCase()] * 30
-
-      instances.push({
-        disk_id: volume['disk_id'],
-        resourceName: volume['resourceName'],
-        region: volume['region'],
-        diskSize: volume['diskSize'],
-        resourceGroup: volume['resourceGroup'],
-        resourceType: volume['resourceType'],
-        subscriptionID: volume['subscriptionID'],
-        subscriptionName: volume['subscriptionName'],
-        tags: volume['tags'],
-        service: volume['service'],
-        savings: parseFloat(monthly_savings).toFixed(3),
-        savingsCurrency: cur,
-        lookbackPeriod: param_unattached_days
+    if (savings >= param_min_savings) {
+      result.push({
+        accountID: disk['subscriptionID'],
+        accountName: disk['subscriptionName'],
+        resourceID: disk['id'],
+        resourceName: disk['resourceName'],
+        resourceGroup: disk['resourceGroup'],
+        resourceType: disk['resourceType'],
+        region: disk['region'],
+        service: disk['service'],
+        state: disk['state'],
+        size: disk['size'],
+        tags: disk['tags'],
+        age: disk['age'],
+        timeCreated: disk['timeCreated'],
+        attached_vm: disk['attached_vm'],
+        savings: parseFloat(savings.toFixed(3)),
+        savingsCurrency: ds_currency['symbol'],
+        recommendationDetails: recommendationDetails,
+        lookbackPeriod: param_unused_days,
+        // These are to avoid errors when we hash_exclude these fields
+        total_savings: '',
+        message: '',
+        policy_name: ''
       })
-    })
+    }
+  })
 
-    if (costs_exist) {
-      message = "The total estimated monthly savings are " + cur + ' ' + formatNumber((Math.round(total * 30 * 100) / 100), separator)
-    } else {
-      message = "The Flexera Optima system does not have any data to calculate savings for these resources"
+  // Message for incident output
+  total_disks = ds_azure_disks_region_filtered.length.toString()
+  total_unused_disks = result.length.toString()
+  unused_disks_percentage = (total_unused_disks / total_disks * 100).toFixed(2).toString() + '%'
+
+  total_disks_noun = "volume"
+  if (total_disks > 1) { total_disks_noun = "volumes" }
+
+  total_unused_disks_verb = "is"
+  if (total_unused_disks > 1) { total_unused_disks_verb = "are" }
+
+  findings = [
+    "Out of ", total_disks , " Azure ", total_disks_noun, " analyzed, ",
+    total_unused_disks, " (", unused_disks_percentage,
+    ") ", total_unused_disks_verb, " unused and are recommended for deletion. "
+  ].join('')
+
+  if (param_minimum_age != 0) {
+    min_age_day_noun = "day"
+    if (param_minimum_age > 1) { min_age_day_noun += "s" }
+
+    unused_day_noun = "day"
+    if (param_unused_days > 1) { unused_day_noun += "s" }
+
+    if (param_include_status == 'Unattached Volumes') {
+      idle_message = [
+        "Volumes are considered unused if they are unattached, ",
+        "are at least ", param_minimum_age, " ", min_age_day_noun, " old, ",
+        "and have had no read/write activity for at least ",
+        param_unused_days, " ", unused_day_noun, ".\n\n"
+      ].join('')
+    }
+
+    if (param_include_status == 'Attached Volumes') {
+      idle_message = [
+        "Volumes are considered unused if they are attached, ",
+        "are at least ", param_minimum_age, " ", min_age_day_noun, " old, ",
+        "and have had no read/write activity for at least ",
+        param_unused_days, " ", unused_day_noun, ".\n\n"
+      ].join('')
+    }
+
+    if (param_include_status == 'All Volumes') {
+      idle_message = [
+        "Volumes are considered unused if they ",
+        "are at least ", param_minimum_age, " ", min_age_day_noun, " old, ",
+        "and have had no read/write activity for at least ",
+        param_unused_days, " ", unused_day_noun, ", regardless of whether they ",
+        "are currently attached or not.\n\n"
+      ].join('')
     }
   } else {
-    instances = ds_filter_activities
-    message = "You do not have the minimum required role of billing_center_viewer to view the savings"
+    unused_day_noun = "day"
+    if (param_unused_days > 1) { unused_day_noun += "s" }
+
+    if (param_include_status == 'Unattached Volumes') {
+      idle_message = [
+        "Volumes are considered unused if they are unattached ",
+        "and have had no read/write activity for at least ",
+        param_unused_days, " ", unused_day_noun, ".\n\n"
+      ].join('')
+    }
+
+    if (param_include_status == 'Attached Volumes') {
+      idle_message = [
+        "Volumes are considered unused if they are attached ",
+        "and have had no read/write activity for at least ",
+        param_unused_days, " ", unused_day_noun, ".\n\n"
+      ].join('')
+    }
+
+    if (param_include_status == 'All Volumes') {
+      idle_message = [
+        "Volumes are considered unused if they ",
+        "have had no read/write activity for at least ",
+        param_unused_days, " ", unused_day_noun, ", regardless of whether they ",
+        "are currently attached or not.\n\n"
+      ].join('')
+    }
   }
 
-  instances = _.sortBy(instances, 'subscriptionName')
-  instances = _.sortBy(instances, 'region')
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
 
-  result = {
-    "instances": instances,
-    "message": message
-  }
+  savings_message = [
+    ds_currency['symbol'], ' ',
+    formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['separator'])
+  ].join('')
+
+  // Sort by descending order of savings value
+  result = _.sortBy(result, function(item) { return item['savings'] * -1 })
+
+  // Dummy item to ensure that the check statement in the policy executes at least once
+  result.push({
+    resourceID: "",
+    total_savings: "",
+    message: "",
+    tags: "",
+    savings: "",
+    savingsCurrency: ""
+  })
+
+  result[0]['total_savings'] = savings_message
+  result[0]['message'] = findings + idle_message + disclaimer
+  result[0]['policy_name'] = ds_applied_policy['name']
 EOS
 end
 
@@ -575,50 +883,54 @@ end
 ###############################################################################
 
 policy "pol_azure_unattached_volumes" do
-  validate $ds_volume_cost_mapping do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} Unused Volumes Found"
-    detail_template <<-EOS
-The following {{ len data.instances }} unused volumes, for Account: {{ rs_project_name }} (ID: {{ rs_project_id }}), have exceeded the specified age of: {{ parameters.param_unattached_days }} days old.\n
-{{data.message}}
-EOS
+  validate_each $ds_volume_cost_mapping do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Unused Volumes Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
     escalate $esc_email
     escalate $esc_delete_volumes
-    check logic_or($ds_parent_policy_terminated,    eq(size(val(data, "instances")), 0)    )
-    export "instances" do
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    hash_exclude "savings", "savingsCurrency", "age", "size"
+    export do
       resource_level true
       field "accountID" do
         label "Subscription ID"
-        path "subscriptionID"
       end
       field "accountName" do
         label "Subscription Name"
-        path "subscriptionName"
-      end
-      field "resourceID" do
-        label "Resource ID"
-        path "disk_id"
-      end
-      field "resourceName" do
-        label "Resource Name"
-      end
-      field "resourceType" do
-        label "Resource Type"
-      end
-      field "lookbackPeriod" do
-        label "Lookback Period"
-      end
-      field "region" do
-        label "Region"
       end
       field "resourceGroup" do
         label "Resource Group"
       end
-      field "size" do
-        label "Disk Size in GB"
-        path "diskSize"
+      field "resourceName" do
+        label "Resource Name"
       end
       field "tags" do
         label "Tags"
+      end
+      field "age" do
+        label "Age (Days)"
+      end
+      field "timeCreated" do
+        label "Created At"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "size" do
+        label "Disk Size (GB)"
+      end
+      field "state" do
+        label "State"
       end
       field "savings" do
         label "Estimated Monthly Savings"
@@ -626,12 +938,21 @@ EOS
       field "savingsCurrency" do
         label "Savings Currency"
       end
-      field "id" do
-        label "Disk Id"
-        path "disk_id"
+      field "attached_vm" do
+        label "Attached VM ID"
       end
       field "service" do
         label "Service"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "lookbackPeriod" do
+        label "Lookback Period"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
       end
     end
   end
@@ -649,186 +970,226 @@ escalation "esc_email" do
 end
 
 escalation "esc_delete_volumes" do
-  automatic contains($param_automatic_action, "Delete Unused Volumes")
-  label "Delete unused volumes"
-  description "Delete the unused volumes"
-  run "delete_unused_volumes", data, $param_create_snapshot, $param_log_to_cm_audit_entries, rs_optima_host
+  automatic contains($param_automatic_action, "Delete Volumes")
+  label "Delete Volumes"
+  description "Approval to terminate all selected instances"
+  run "delete_volumes", data, $param_take_snapshot, $param_azure_endpoint, rs_optima_host
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define delete_unused_volumes($data, $param_create_snapshot,$param_log_to_cm_audit_entries, $$rs_optima_host) return $all_responses do
-  $$debug = $param_log_to_cm_audit_entries == "Yes"
+define delete_volumes($data, $param_take_snapshot, $param_azure_endpoint, $$rs_optima_host) return $all_responses do
   $status_code=''
-  $all_responses = []
+  $$all_responses = []
   foreach $item in $data do
-    sub on_error: skip do
-      call sys_log("In for item =",to_s($item))
-      if $param_create_snapshot == "true"
-        call create_snapshot($item) retrieve $status_code
-        if to_s($status_code)=="202"
-          call delete_unattached_disk($item['id'])
-        else
-          call sys_log("Azure create snapshot error statusCode: ",to_s($status_code))
-        end
-      else
-        call delete_unattached_disk($item['id'])
+    # Break this into it's own sub task, and for any errors, capture them with handle_error
+    # We check for errors at the end, and raise them all together
+    sub on_error: handle_error() do
+      if $item['state'] == "Attached"
+        call detach_disk($item, $param_azure_endpoint)
       end
+
+      if $param_take_snapshot == "true"
+        call create_snapshot($item, $param_azure_endpoint)
+      end
+
+      call delete_unattached_disk($item['id'], $param_azure_endpoint)
     end
+  end
+
+  # If we encountered any errors, use `raise` to mark the CWF process as errored
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
   end
 end
 
-define create_snapshot($item) return $status_code do
+define detach_disk($item, $param_azure_endpoint) return $response do
   $response={}
-  $syslog_subject = "Azure create snapshot API response: "
-  call sys_log($syslog_subject,to_s($item))
-  $snapshotName=split($item['id'], "Microsoft.Compute")
-  $snapshotName=join([$snapshotName[0], "Microsoft.Compute", "/snapshots/", $item['name'], "Snapshot"])
+  $syslog_subject = "Azure detach disk API response: "
+
+  $disk_id = $item['id']
+  $vm_id = $item['attached_vm']
+
+  $vm_response = http_request(
+    auth: $$auth_azure,
+    verb: "get",
+    host: $param_azure_endpoint,
+    https: true,
+    href: $vm_id,
+    query_strings: {
+      "api-version": "2023-07-01"
+    },
+    headers: {
+      "content-type": "application/json"
+    }
+  )
+
+  $$all_responses << to_json({"req":"GET " + $param_azure_endpoint + $vm_id, "resp": $vm_response})
+
+  $updated_disk_list = []
+
+  foreach $item in $vm_response['body']['properties']['storageProfile']['dataDisks'] do
+    if $item['managedDisk']['id'] != $disk_id
+      $updated_disk_list << $item
+    end
+  end
+
+  $new_properties = {}
+  $new_properties['location'] = $vm_response['body']['location']
+  $new_properties['properties'] = $vm_response['body']['properties']
+  $new_properties['properties']['storageProfile']['dataDisks'] = $updated_disk_list
+
+
   $response = http_request(
     auth: $$auth_azure,
     verb: "put",
-    host: "management.azure.com",
+    host: $param_azure_endpoint,
+    https: true,
+    href: $vm_id,
+    query_strings: {
+      "api-version": "2023-07-01"
+    },
+    headers: {
+      "content-type": "application/json"
+    },
+    body: $new_properties
+  )
+
+  $$all_responses << to_json({"req":"PUT " + $param_azure_endpoint + $vm_id, "resp": $response})
+
+  $disk_state = "Attached"
+
+  while $disk_state != "Unattached" do
+    sleep(5)
+
+    $disk_response = http_request(
+      auth: $$auth_azure,
+      verb: "get",
+      host: $param_azure_endpoint,
+      https: true,
+      href: $disk_id,
+      query_strings: {
+        "api-version": "2023-04-02"
+      },
+      headers: {
+        "content-type": "application/json"
+      }
+    )
+
+    $$all_responses << to_json({"req":"GET " + $param_azure_endpoint + $disk_id, "resp": $disk_response})
+
+    $disk_state = $disk_response['body']['properties']['diskState']
+  end
+
+  task_label('Checking for expected response code for Disk Detach Request Successful')
+  if $response["code"] != 201 && $response["code"] != 200
+    raise 'Unexpected response detaching disk: '+to_json($response)
+  end
+end
+
+define create_snapshot($item, $param_azure_endpoint) return $response do
+  $response={}
+  $syslog_subject = "Azure create snapshot API response: "
+  $snapshotName=split($item['id'], "Microsoft.Compute")
+  $snapshotName=join([$snapshotName[0], "Microsoft.Compute", "/snapshots/", $item['resourceName'], "Snapshot"])
+
+  $response = http_request(
+    auth: $$auth_azure,
+    verb: "put",
+    host: $param_azure_endpoint,
     https: true,
     href: $snapshotName,
     query_strings: {
-      "api-version": "2019-07-01"
-    },
-    headers:{
-      "content-type": "application/json"
-    },
-    body: {
-      "properties": {
-        "creationData": {
-          "createOption": "Copy",
-          "sourceUri": $item["id"]
-        }
-      },
-      "region": $item["region"]
-    }
-  )
-  call sys_log("Create Snapshot response",to_s($response))
-  $status_code = $response["code"]
-  call sys_log("status_code",to_s($status_code))
-  if $status_code == 202
-    $snapshotstatus=$response["body"]["properties"]["provisioningState"]
-    if $snapshotstatus == "Updating"
-      $expected_status = "Succeeded"
-      while $expected_status !~ $snapshotstatus do
-        call sys_log("In while snapshotstatus",to_s($disksnapshot_status))
-        call get_disksnapshot($snapshotName) retrieve $status
-        $disksnapshot_status = $status
-        call sys_log("disksnapshot_status",to_s($disksnapshot_status))
-        if $disksnapshot_status == "Creating"
-          $disksnapshot_status="Updating"
-        end
-        if $disksnapshot_status == "Succeeded"
-          call sys_log("disksnapshot_status in if","")
-          $snapshotstatus= "Succeeded"
-        elsif  $disksnapshot_status !~ "Updating"
-          call sys_log("disksnapshot_status in elsif","")
-          $snapshotstatus= "Succeeded"
-          $status_code = 400
-          call sys_log($syslog_subject, join(["Failed to create snapshot for following disk: ", to_s($item['name'])]))
-        end
-      end
-    end
-  end
-end
-
-define get_disksnapshot($snapshotId) return $status do
-  $snapshot_response = http_request(
-    auth: $$auth_azure,
-    https: true,
-    verb: "get",
-    host: "management.azure.com",
-    href: $snapshotId,
-    query_strings: {
-      "api-version": "2019-07-01"
-    }
-  )
-  call sys_log("Get Snapshot Details ",to_s($snapshot_response))
-  call sys_log("Get Snapshot status ",to_s($snapshot_response["body"]["properties"]["provisioningState"]))
-  $status = to_s($snapshot_response["body"]["properties"]["provisioningState"])
-end
-
-define delete_unattached_disk($disk_id) do
-  $response={}
-  $syslog_subject = "Azure delete unattached disk API response: "
-  $response = http_request(
-    auth: $$auth_azure,
-    verb: "delete",
-    host: "management.azure.com",
-    https: true,
-    href: $disk_id,
-    query_strings: {
-      "api-version": "2019-07-01"
-    }
-  )
-  call sys_log($syslog_subject,to_s($response))
-  $delete_status = $response["code"]
-  if $delete_status != 202
-    $error_code = $response["body"]["error"]["code"]
-    call tagdisk_error($disk_id,$error_code)
-  end
-end
-
-define tagdisk_error($disk_id,$error_code) do
-  $response={}
-  $syslog_subject = "Azure tag a disk API response: "
-  $response = http_request(
-    auth: $$auth_azure,
-    verb: "patch",
-    host: "management.azure.com",
-    https: true,
-    href: $disk_id,
-    query_strings: {
-      "api-version": "2019-07-01"
+      "api-version": "2021-12-01"
     },
     headers: {
       "content-type": "application/json"
     },
     body: {
-      "tags": {
-        "DeleteDiskError" :$error_code
+      "location": $item["region"],
+      "name": $item['resourceName']+"Snapshot",
+      "properties": {
+        "creationData": {
+          "createOption": "Copy",
+          "sourceResourceId": $item["id"]
+        }
       }
     }
   )
-  call sys_log(join([$syslog_subject, "Response"]),to_s($response))
+  $$all_responses << to_json({"req":"PUT " + $param_azure_endpoint + $snapshotName, "resp": $response})
+  task_label('Checking for expected response code for Snapshot Create Request Successful')
+  if $response["code"] != 202 && $response["code"] != 200
+    raise 'Unexpected response creating snapshot: '+to_json($response)
+  else
+    task_label('Create Snapshot Request Successful: '+$snapshotName)
+    while $response["body"]["properties"]["provisioningState"] != "Succeeded" do
+      task_label('Create Snapshot Status: '+$response["body"]["properties"]["provisioningState"])+' '+$snapshotName
+      call get_disksnapshot($snapshotName, $param_azure_endpoint) retrieve $response
+      sleep(1)
+    end
+    task_label('Create Snapshot Successful: '+$snapshotName)
+  end
 end
 
-define sys_log($subject, $detail) do
-  # Create empty errors array if doesn't already exist
+define get_disksnapshot($snapshotId, $param_azure_endpoint) return $response do
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "get",
+    host: $param_azure_endpoint,
+    href: $snapshotId,
+    query_strings: {
+      "api-version": "2019-07-01"
+    }
+  )
+  $$all_responses << to_json({"req":"GET " + $param_azure_endpoint + $snapshotId, "resp": $response})
+end
+
+define delete_unattached_disk($disk_id, $param_azure_endpoint) do
+  task_label('Delete Disk starting: '+$disk_id)
+  $response = http_request(
+    auth: $$auth_azure,
+    verb: "delete",
+    host: $param_azure_endpoint,
+    https: true,
+    href: $disk_id,
+    query_strings: {
+      "api-version": "2019-07-01"
+    }
+  )
+  $$all_responses << to_json({"req":"DELETE "+ $param_azure_endpoint + $disk_id, "resp": $response})
+  task_label('Delete Disk response: '+to_json($response["body"]))
+  if $response["code"] != 202
+    $error_code = $response["body"]["error"]["code"]
+    task_label('Delete Disk unexpected response: '+$disk_id+' '+to_json($response))
+    # call tagdisk_error($disk_id,$error_code)
+    raise 'Delete Disk unexpected response: '+$disk_id+' '+to_json($response)
+  else
+    # 202 Response means the delete was accepted
+
+    # explicitly reset response["code"]... it should be 202 though from check above so this is not needed
+    $response = { "code": 0 }
+    # wait until disk is deleted
+    # TODO: add retry limit with backoff timer
+    # we expect a 404 response when the disk is deleted
+    while $response["code"] != 404 do
+      task_label('Current Disk Status: '+$disk_id+' '+to_json($response))
+      call get_disksnapshot($disk_id, $param_azure_endpoint) retrieve $response
+      sleep(1)
+    end
+    task_label('Delete Disk successful: '+$disk_id)
+  end
+end
+
+define handle_error() do
   if !$$errors
     $$errors = []
   end
-  # Check if debug is enabled
-  if $$debug
-    # Append to global $$errors
-    # This is the suggested way to capture errors
-    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
-    # If Flexera NAM Zone, create audit_entries [to be deprecated]
-    # This is the legacy method for capturing errors and only supported on Flexera NAM
-    if $$rs_optima_host == "api.optima.flexeraeng.com"
-      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
-      $task_label = "Creating audit entry for " + $subject
-      sub task_label: $task, on_error: skip_error_and_append($task) do
-        rs_cm.audit_entries.create(
-          notify: "None",
-          audit_entry: {
-            auditee_href: @@account,
-            summary: $subject,
-            detail: $detail
-          }
-        )
-      end # End sub on_error
-    end # End if rs_optima_host
-  end # End if debug is enabled
-end
-
-define skip_error_and_append($subject) do
-  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
   $_error_behavior = "skip"
 end
 
