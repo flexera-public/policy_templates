@@ -8,6 +8,7 @@
 - Added additional context to incident description
 - Normalized incident export to be consistent with other policies
 - Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera credential
 
 ## v2.20
 
