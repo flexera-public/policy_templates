@@ -6,7 +6,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "0.1",
+  version: "0.2",
   provider: "AWS",
   source: "Turbonomic",
   service: "Usage Discount",
@@ -64,11 +64,11 @@ datasource "ds_get_turbonomic_recommendations" do
       field "businessUUID", jmes_path(col_item, "reservedInstance.accountId")
       field "termValue", jmes_path(col_item, "reservedInstance.term.value")
       field "termUnits", jmes_path(col_item, "reservedInstance.term.units")
-      field "paymentOptions", jmes_path(col_item, "reservedInstance.payment")
+      field "paymentOption", jmes_path(col_item, "reservedInstance.payment")
       field "tenancy", jmes_path(col_item, "reservedInstance.tenancy")
       field "region", jmes_path(col_item, "currentLocation.displayName")
       field "resourceType", jmes_path(col_item, "newEntity.displayName")
-      field "riType", jmes_path(col_item, "reservedInstance.type")
+      field "riClass", jmes_path(col_item, "reservedInstance.type")
       field "provider", jmes_path(col_item, "target.discoveredBy.type")
       field "numberOfInstances", jmes_path(col_item, "reservedInstance.instanceCount")
       field "details", jmes_path(col_item, "details")
@@ -79,6 +79,8 @@ datasource "ds_get_turbonomic_recommendations" do
       field "sizeFlexible", jmes_path(col_item, "reservedInstance.sizeFlexible")
       field "savings", jmes_path(col_item, "stats[0].value")
       field "savingsCurrency", jmes_path(col_item, "stats[0].units")
+      field "uuid", jmes_path(col_item, "uuid")
+      field "coupons", jmes_path(col_item, "reservedInstance.coupons")
     end
   end
 end
@@ -99,7 +101,17 @@ datasource "ds_get_business_units" do
 end
 
 datasource "ds_filtered_turbonomic_recommendations" do
-  run_script $js_filtered_turbonomic_recommendations, $ds_get_turbonomic_recommendations, $ds_get_business_units
+  run_script $js_filtered_turbonomic_recommendations, $ds_get_turbonomic_recommendations, $ds_get_business_units, $param_turbonomic_host, $ds_get_action_details
+end
+
+datasource "ds_get_action_details" do
+  request do
+    run_script $js_get_action_details, $param_turbonomic_host, $auth_cookie, $ds_get_turbonomic_recommendations
+  end
+  result do
+    encoding "json"
+    field "uuids", response
+  end
 end
 
 ###############################################################################
@@ -160,7 +172,7 @@ end
 
 script "js_filtered_turbonomic_recommendations", type: "javascript" do
   result "result"
-  parameters "ds_get_turbonomic_recommendations", "ds_get_business_units"
+  parameters "ds_get_turbonomic_recommendations", "ds_get_business_units", "param_turbonomic_host", "ds_get_action_details"
   code <<-EOS
     instances = []
     monthlySavings = 0.0
@@ -189,7 +201,13 @@ script "js_filtered_turbonomic_recommendations", type: "javascript" do
       }
       return value
     }
-
+    Object.keys(ds_get_action_details.uuids).forEach(function(uuid) {
+      _.each(ds_get_turbonomic_recommendations, function(ri, index){
+        if (ri.uuid === uuid) {
+          ds_get_turbonomic_recommendations[index].riCoverage = Number(ds_get_action_details.uuids[uuid].estimatedRICoverage).toFixed(2)
+        }
+      })
+    })
     _.each(ds_get_business_units, function(businessUnit) {
         _.each(ds_get_turbonomic_recommendations, function(ri, index) {
             if (ri.businessUUID === businessUnit.uuid) {
@@ -217,6 +235,12 @@ script "js_filtered_turbonomic_recommendations", type: "javascript" do
                     ri.effectiveCost = Number(ri.effectiveCost * 730 * ri.termValue * 12 * ri.numberOfInstances).toFixed(2)
                     ri.recurringCost = Number(ri.recurringCost * 730 * ri.numberOfInstances).toFixed(2)
                     monthlySavings = monthlySavings + ri.savings
+                    if (typeof ri.coupons.value != "undefined" && ri.coupons.value != null) {
+                      if (typeof ri.coupons.capacity.avg != "undefined" && ri.coupons.capacity.avg != null) {
+                        ri.riUtilization = Number(ri.coupons.value * 100 / ri.coupons.capacity.avg).toFixed(2)
+                      }
+                    }
+                    ri.url = "https://" + param_turbonomic_host + "/app/index.html#/view/main/action/" + ri.uuid
                     instances.push(ri)
                 }
             }
@@ -232,6 +256,30 @@ script "js_filtered_turbonomic_recommendations", type: "javascript" do
     result = {
         'instances': instances,
         'message': message
+    }
+EOS
+end
+
+script "js_get_action_details", type: "javascript" do
+  result "request"
+  parameters "param_turbonomic_host", "auth_cookie", "ds_get_turbonomic_recommendations"
+  code <<-EOS
+  //replace cookie every day this is run
+    var uuids = []
+    _.each(ds_get_turbonomic_recommendations, function(instance){
+      uuids.push(instance.uuid)
+    })
+    var request = {
+      verb: "POST",
+      host: param_turbonomic_host,
+      path: "/api/v3/actions/details",
+      body_fields: {
+        "uuids": uuids,
+      },
+      headers: {
+        "Content-Type": "application/json"
+        "Cookie": auth_cookie
+      }
     }
 EOS
 end
@@ -269,8 +317,8 @@ EOS
       field "resourceType" do
         label "Resource Type"
       end
-      field "riType" do
-        label "Reserved Instance Type"
+      field "riClass" do
+        label "RI Class"
       end
       field "term" do
         label "Term"
@@ -298,6 +346,18 @@ EOS
       end
       field "sizeFlexible" do
         label "Size Flexible"
+      end
+      field "riUtilization" do
+        label "RI Utilization"
+      end
+      field "riCoverage" do
+        label "RI Coverage"
+      end
+      field "paymentOption" do
+        label "Payment Option"
+      end
+      field "url" do
+        label "System Details URL"
       end
     end
     escalate $esc_email

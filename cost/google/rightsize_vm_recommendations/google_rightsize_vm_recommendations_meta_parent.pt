@@ -1,14 +1,14 @@
-name "AWS Rightsize Compute Instances Meta Parent"
+name "Google Rightsize VM Recommender Meta Parent"
 rs_pt_ver 20180301
 type "policy"
-short_description "Applies and manages \"child\" [AWS Rightsize Compute Instances](https://github.com/flexera/policy_templates/tree/master/cost/aws/rightsize_compute_instances/) Policies."
+short_description "Applies and manages \"child\" [Google Rightsize VM Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_vm_recommendations) Policies."
 severity "low"
 category "Cost"
 tenancy "single"
 default_frequency "15 minutes"
 info(
-  provider: "Flexera",
-  version: "0.2",
+  provider: "Google",
+  version: "2.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "false"
 )
 
@@ -29,9 +29,9 @@ parameter "param_dimension_filter_includes" do
   type "list"
   label "Dimension Include Filters"
   description <<-EOS
-  Filters [`dimension_name=dimension_value` pairs] to determine which AWS Accounts returned by the Flexera Bill Analysis API to **INCLUDE** and be applied to.
-  During each run this policy will select AWS Accounts who match **all** the filters defined and apply a child policy for each.
-  If no include filters are provided, then all AWS Accounts are included by default.
+  Filters [`dimension_name=dimension_value` pairs] to determine which Google Projects returned by the Flexera Bill Analysis API to **INCLUDE** and be applied to.
+  During each run this policy will select Google Projects who match **all** the filters defined and apply a child policy for each.
+  If no include filters are provided, then all Google Projects are included by default.
   Most of the dimensions in Flexera can be used [default dimensions, custom tag dimensions, rule-based dimensions].  Full list of available dimensions documented in the [Bill Analysis API Docs](https://reference.rightscale.com/bill_analysis/).
   EOS
 end
@@ -40,9 +40,9 @@ parameter "param_dimension_filter_excludes" do
   type "list"
   label "Dimension Exclude Filters"
   description <<-EOS
-  Filters [`dimension_name=dimension_value` pairs] to determine which AWS Accounts returned by  the Flexera Bill Analysis API to **EXCLUDE** and *not* have policy applied to.
-  During each run this policy will select AWS Accounts who match **all** the filters defined here and excludes them from results.
-  Can be used to exclude specific AWS Accounts [`vendor_account=123456789012`]
+  Filters [`dimension_name=dimension_value` pairs] to determine which Google Projects returned by  the Flexera Bill Analysis API to **EXCLUDE** and *not* have policy applied to.
+  During each run this policy will select Google Projects who match **all** the filters defined here and excludes them from results.
+  Can be used to exclude specific Google Projects [`vendor_account=123456789012`]
   Most of the dimensions in Flexera can be used [default dimensions, custom tag dimensions, rule-based dimensions].  Full list of available dimensions documented in the [Bill Analysis API Docs](https://reference.rightscale.com/bill_analysis/).
   EOS
 end
@@ -56,145 +56,87 @@ parameter "param_policy_schedule" do
 end
 
 ## Child Policy Parameters
-## These are params from the child policy, excluding param_email and param_aws_account_number [disabled by commenting out]
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation."
+  min_value 0
+  default 0
+end
 
-# parameter "param_email" do
-#   type "list"
-#   label "Email addresses"
-#   description "Email addresses of the recipients you wish to notify when new incidents are created"
-# end
-
-# parameter "param_01_aws_account_number" do
-#   type "string"
-#   label "Account Number"
-#   description "The account number for AWS STS Cross Account Roles."
-#   default ""
-# end
-
-parameter "param_021_allowed_regions_allow_or_deny" do
+parameter "param_regions_allow_or_deny" do
   type "string"
+  category "Filters"
   label "Allow/Deny Regions"
-  description "Allow or Deny entered regions. See the README for more details"
+  description "Allow or Deny entered regions. See the README for more details."
   allowed_values "Allow", "Deny"
   default "Allow"
 end
 
-parameter "param_02_allowed_regions" do
+parameter "param_regions_list" do
   type "list"
-  label "Regions"
-  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
-  description "A list of allowed or denied regions. See the README for more details"
-end
-
-#IDLE INSTANCE THRESHOLD PARAMETERS##########
-parameter "param_03_idle_threshold_cpu_value" do
-  type "number"
-  label "Idle Instance CPU Threshold (%)"
-  description "The CPU threshold at which to consider an instance to be 'idle' and therefore be flagged for termination. Set to -1 to ignore CPU utilization"
-  default 5
-  min_value -1
-  max_value 100
-end
-
-parameter "param_04_idle_threshold_mem_value" do
-  type "number"
-  label "Idle Instance Memory Threshold (%)"
-  description "The Memory threshold at which to consider an instance to be 'idle' and therefore be flagged for termination. Set to -1 to ignore memory utilization"
-  default 5
-  min_value -1
-  max_value 100
-end
-#############################################
-
-#UNDERUTILIZED INSTANCE THRESHOLD PARAMETERS#
-parameter "param_05_underutil_threshold_cpu_value" do
-  type "number"
-  label "Underutilized Instance CPU Threshold (%)" # 'Inefficient' or 'Underutilized' as correct terminology?
-  description "The CPU threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing. Set to -1 to ignore CPU utilization"
-  default 40
-  min_value -1
-  max_value 100
-end
-
-parameter "param_06_underutil_threshold_mem_value" do
-  type "number"
-  label "Underutilized Instance Memory Threshold (%)"
-  description "The Memory threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing. Set to -1 to ignore memory utilization"
-  default 40
-  min_value -1
-  max_value 100
-end
-#############################################
-
-#GLOBAL THRESHOLD PARAMETERS - CHECK MEM AND/OR CPU, SET THRESHOLD STAT
-parameter "param_07_check_both" do
-  type "string"
-  label "Idle/Utilized for both CPU/Memory or either"
-  description "Set whether an instance should be considered idle and/or underutilized only if both CPU and memory are under the thresholds or if either CPU or memory are under. Note: this parameter is only valid when at least one Memory Utilization threshold and one CPU Utilization threshold is NOT set to -1"
-  default "Either CPU or Memory"
-  allowed_values "Both CPU and Memory", "Either CPU or Memory"
-end
-
-parameter "param_08_threshold_statistic" do
-  type "string"
-  label "Threshold Statistic"
-  description "Statistic to use for the metric threshold"
-  default "Average"
-  allowed_values "Average", "p99", "p95", "p90"
-end
-#############################################
-
-parameter "param_09_exclusion_tag_key" do
-  category "User Inputs"
-  label "Exclusion Tag Key:Value"
-  description "Cloud native tag to ignore instances that you don't want to consider for downsizing or termination. Format: Key:Value"
-  type "string"
-  allowed_pattern /(^$)|([\w]?)+\:([\w]?)+/
-  default ""
-end
-
-parameter "param_10_api_wait" do
-  type "number"
-  label "CloudWatch API Wait Time"
-  description "Amount of time to wait between CloudWatch API requests to avoid throttling (seconds)"
-  default 5
-  min_value 1
-  max_value 60
-end
-
-parameter "param_11_automatic_action" do
-  type "list"
-  label "Automatic Actions"
-  description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Terminate Instances"]
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
   default []
 end
 
-parameter "param_12_log_to_cm_audit_entries" do
+parameter "param_exclusion_labels" do
+  type "list"
+  category "Filters"
+  label "Exclusion Labels (Key:Value)"
+  description "Google labels to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific label key/value pairs, and Key:* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:*"
+  allowed_pattern /(^$)|[\w]*\:.*/
+  default []
+end
+
+parameter "param_idle_or_underutilized" do
   type "string"
-  label "Log to CM Audit Entries"
-  description "Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left set to No on Flexera EU"
-  default "No"
-  allowed_values "Yes", "No"
+  category "Filters"
+  label "Report Idle or Underutilized"
+  description "Whether to report on idle VM instances, underutilized VM instances, or both."
+  allowed_values "Idle & Underutilized", "Idle", "Underutilized"
+  default "Idle & Underutilized"
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Downsize VM Instances", "Stop VM Instances", "Delete VM Instances"]
+  default []
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
-
-credentials "auth_aws" do
-  schemes "aws","aws_sts"
-  label "AWS"
-  description "Select the AWS Cloud Credential from the list."
-  tags "provider=aws"
-  aws_account_number $param_aws_account_number
+credentials "auth_google" do
+  schemes "oauth2"
+  label "Google"
+  description "Select the Google Cloud Credential from the list."
+  tags "provider=gce"
 end
 
 credentials "auth_flexera" do
   schemes "oauth2"
-  label "flexera"
+  label "Flexera"
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_google" do
+  get_page_marker do
+    body_path "nextPageToken"
+  end
+  set_page_marker do
+    query "pageToken"
+  end
 end
 
 ###############################################################################
@@ -228,7 +170,7 @@ script "js_child_policy_options", type: "javascript" do
   code <<-EOS
   // Filter Options that are not appropriate for Child Policy
   var options = _.map(ds_self_policy_information.options, function(option){
-    // param_combined_incident_email, param_dimension_filter_includes, param_dimension_filter_excludes, param_policy_schedule are exclusion to Meta Parent Policy Parameters
+    // param_combined_incident_email, param_dimension_filter_includes, param_dimension_filter_excludes", param_policy_schedule are exclusion to Meta Parent Policy Parameters
     if (!_.contains(["param_combined_incident_email", "param_dimension_filter_includes", "param_dimension_filter_excludes", "param_policy_schedule"], option.name)) {
       return { "name": option.name, "value": option.value };
     }
@@ -278,7 +220,6 @@ script "js_format_self", type: "javascript" do
 end
 
 # Get Child Policy Details
-
 datasource "ds_child_policy_information" do
   request do
     auth $auth_flexera
@@ -289,7 +230,7 @@ datasource "ds_child_policy_information" do
   result do
     encoding "json"
     # Select the published policy that is published by "support@flexera.com" and matches the name of the child policy template
-    collect jq(response, '.items[] | select(.name == "AWS Rightsize Compute Instances" and .created_by.email == "support@flexera.com")' ) do
+    collect jq(response, '.items[] | select(.name == "Google Rightsize VM Recommender" and .created_by.email == "support@flexera.com")' ) do
       field "name", jmes_path(col_item, "name")
       field "href", jmes_path(col_item, "href")
       field "short_description", jmes_path(col_item, "short_description")
@@ -297,12 +238,11 @@ datasource "ds_child_policy_information" do
   end
 end
 
-# Get Billing Center IDs
 datasource "ds_get_billing_centers" do
   request do
     auth $auth_flexera
     host rs_optima_host
-    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
     query "view", "allocation_table"
@@ -316,6 +256,20 @@ datasource "ds_get_billing_centers" do
       field "id", jq(col_item,".id")
       field "name", jq(col_item,".name")
       field "parent_id", jq(col_item,".parent_id")
+    end
+  end
+end
+
+# Get the Google projects
+datasource "ds_get_google_projects" do
+  request do
+    run_script $js_make_billing_center_request, rs_org_id, rs_optima_host, $ds_get_billing_centers, $param_dimension_filter_includes, $param_dimension_filter_excludes
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"rows[*]") do
+      field "projectID", jmes_path(col_item,"dimensions.vendor_account")
+      field "projectName", jmes_path(col_item,"dimensions.vendor_account_name")
     end
   end
 end
@@ -340,7 +294,7 @@ script "js_make_billing_center_request", type: "javascript" do
   // Default dimensions and filter expressions required for meta parent policy
   var dimensions = ["vendor_account", "vendor_account_name"];
   var filter_expressions = [
-    { dimension: "vendor", type: "equal", value: "AWS" }
+    { dimension: "vendor", type: "equal", value: "GCP" }
   ]
 
   // Append to default dimensions and filter expressions using parent policy params
@@ -397,20 +351,6 @@ script "js_make_billing_center_request", type: "javascript" do
   EOS
 end
 
-# Get the AWS acounts
-datasource "ds_get_aws_accounts" do
-  request do
-    run_script $js_make_billing_center_request, rs_org_id, rs_optima_host, $ds_get_billing_centers, $param_dimension_filter_includes, $param_dimension_filter_excludes
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"rows[*]") do
-      field "aws_account_id", jmes_path(col_item,"dimensions.vendor_account")
-      field "aws_account_name", jmes_path(col_item,"dimensions.vendor_account_name")
-    end
-  end
-end
-
 # Get Child policies
 datasource "ds_get_existing_policies" do
   request do
@@ -447,7 +387,7 @@ datasource "ds_get_existing_policies_incidents" do
       field "state", jq(col_item, ".state")
       field "violation_data_count", jq(col_item, ".violation_data_count")
       field "updated_at", jq(col_item, ".updated_at")
-      field "meta_parent_policy_id", jq(col_item, ".applied_policy.meta_parent_policy_id")
+      field "meta_parent_policy_id", jq(col_item, ".meta_parent_policy_id")
     end
   end
 end
@@ -474,7 +414,7 @@ end
 
 # format
 # duplicates logic should compare updated at
-# we can validate update here when destructring the existing policy options, don't need updated at
+# we can validate update here when destructing the existing policy options, don't need updated at
 # format options
 script "js_format_existing_policies", type: "javascript" do
   parameters "ds_get_existing_policies", "ds_format_incidents"
@@ -491,15 +431,15 @@ script "js_format_existing_policies", type: "javascript" do
   result = {}
   formatted = {}
   duplicates = []
-  // tracking holds all existing policies and later can be used to determine if existing policies should be deleted [i.e. if cloud account was removed]
+  // tracking holds all existing policies and later can be used to determine if existing policies should be deleted [i.e. if cloud subscription was removed]
   tracking = {}
 
   for (x=0; x<ds_get_existing_policies.length; x++) {
     options = format_options_keyvalue(ds_get_existing_policies[x].options);
 
-    aws_account_id=options["param_aws_account_number"]
-    if (formatted[aws_account_id] == undefined) {
-      formatted[aws_account_id] = {
+    projectID=options["param_projects_list"][0]
+    if (formatted[projectID] == undefined) {
+      formatted[projectID] = {
         "applied_policy_id":ds_get_existing_policies[x]["applied_policy_id"],
         "applied_policy_name":ds_get_existing_policies[x]["name"],
         "status":ds_get_existing_policies[x]["status"],
@@ -507,9 +447,9 @@ script "js_format_existing_policies", type: "javascript" do
         "incident": ds_format_incidents[ds_get_existing_policies[x]["applied_policy_id"]],
         "options": options
       }
-      tracking[aws_account_id] = false
+      tracking[projectID] = false
     } else {
-      current = formatted[aws_account_id]
+      current = formatted[projectID]
 
       currDate = new Date(current.updated_at)
       newDate = new Date(ds_get_existing_policies[x].updated_at)
@@ -530,7 +470,7 @@ script "js_format_existing_policies", type: "javascript" do
           "updated_at":current["updated_at"],
           "incident": current["incident"]
         })
-        formatted[aws_account_id] = {
+        formatted[projectID] = {
           "applied_policy_id":ds_get_existing_policies[x]["applied_policy_id"],
           "applied_policy_name":ds_get_existing_policies[x]["name"],
           "status":ds_get_existing_policies[x]["status"],
@@ -550,23 +490,22 @@ script "js_format_existing_policies", type: "javascript" do
 end
 
 datasource "ds_take_in_parameters" do
-  run_script $js_take_in_parameters, $ds_get_aws_accounts, $ds_format_self, first($ds_child_policy_information),  $ds_format_existing_policies, $ds_child_policy_options, $ds_child_policy_options_map, $param_policy_schedule, policy_id, f1_app_host, rs_org_id, rs_project_id
+  run_script $js_take_in_parameters, $ds_get_google_projects, $ds_format_self, first($ds_child_policy_information), $ds_format_existing_policies, $ds_child_policy_options, $ds_child_policy_options_map, $param_policy_schedule, policy_id, f1_app_host, rs_org_id, rs_project_id
 end
 
 # hardcode template href with id from catalog
 # catalog policies show in customer's published templates with their org id
 # "template_href": "/api/governance/orgs/" + rs_org_id + "/published_templates/62618616e3dff80001572bf0"
 # update logic: the only reason we're going to update the child policies for is changes to options
-# and only some options, email is always blank and aws_account_id is tied to the idenity of each policy, so: new account creation, removal of account: termination
+# and only some options, email is always blank and projectID is tied to the idenity of each policy, so: new project creation, removal of project: termination
 # param_automatic_action is a list with only one action, unless the person is applying using an API and putting the same value multiple times this should either be a length of 0 or 1
 # param_log_to_cm_audit_entries is a String of Yes or No
 # param_exclude_tags and param_allowed_regions are arrays. I'm doing an update on the order changing but the values remaining the same.
 # If we only want to do an update on the values changing we could sort before doing the equality check.
 script "js_take_in_parameters", type: "javascript" do
-  parameters "ds_get_aws_accounts", "ds_format_self", "ds_child_policy_information", "ds_format_existing_policies", "ds_child_policy_options", "ds_child_policy_options_map", "param_policy_schedule", "meta_parent_policy_id", "f1_app_host", "rs_org_id", "rs_project_id"
+  parameters "ds_get_google_projects", "ds_format_self", "ds_child_policy_information", "ds_format_existing_policies", "ds_child_policy_options", "ds_child_policy_options_map", "param_policy_schedule", "meta_parent_policy_id", "f1_app_host", "rs_org_id", "rs_project_id"
   result "grid_and_cwf"
   code <<-EOS
-
   max_actions = 50;
 
   grid_and_cwf={grid:[], to_create:[], to_update:[], to_delete:[], parent_policy:ds_format_self};
@@ -604,28 +543,26 @@ script "js_take_in_parameters", type: "javascript" do
     }
   }
 
-  for (x=0; x<ds_get_aws_accounts.length; x++) {
-    cur = ds_get_aws_accounts[x];
-    cur_aws_account_id = cur.aws_account_id.replace(/['"]+/g, '');
+  for (x=0; x<ds_get_google_projects.length; x++) {
+    cur = ds_get_google_projects[x];
+    cur_projectID = cur.projectID;
 
     // Name and description do not vary between create or updates so defining them here
-    name = ds_child_policy_information.name + ": " + cur.aws_account_name + " (" + cur_aws_account_id + ") (child policy)";
-    description = ds_child_policy_information.name + " policy applied by [" + ds_format_self.name + "](" + applied_policy_url_prefix + meta_parent_policy_id + ") to AWS Account **" + cur.aws_account_name +"** (`" + cur_aws_account_id + "`).  " + ds_child_policy_information.short_description;
+    name = ds_child_policy_information.name + ": " + cur.projectName + " (" + cur_projectID + ") (child policy)";
+    description = ds_child_policy_information.name + " policy applied by [" + ds_format_self.name + "](" + applied_policy_url_prefix + meta_parent_policy_id + ") to Google Project **" + cur.projectName +"** (`" + cur_projectID + "`).  " + ds_child_policy_information.short_description;
 
-    // Check if child policy exists for current account id
-    if ( ! _.contains(_.keys(ds_format_existing_policies.formatted), cur_aws_account_id) ) {
-      console.log("Child Policy for "+cur_aws_account_id+" does not exist and should be created");
-
-      // Child Policy does not exist for current account ID and should be created
-
+    // Check if child policy exists for current Project ID
+    if ( ! _.contains(_.keys(ds_format_existing_policies.formatted), cur_projectID) ) {
+      // Child Policy does not exist and should be created
+      console.log("Child Policy for Subscription ID: "+cur_projectID+" does not exist and should be created");
 
       // Use the options from the parent policy in "name value" list format
       options = _.toArray(ds_child_policy_options);
 
-      // Set param_aws_account_id values for this child policy
+      // Set param_projects_list values for this child policy
       options.push({
-        "name": "param_aws_account_number",
-        "value": cur_aws_account_id
+        "name": "param_projects_list",
+        "value": [cur_projectID],
       });
 
       if (grid_and_cwf.to_create.length < max_actions) {
@@ -655,26 +592,26 @@ script "js_take_in_parameters", type: "javascript" do
         grid_and_cwf.grid.push(policy_status)
       }
     } else {
-      console.log("Child Policy for "+cur_aws_account_id+" does exist for current account ID and may need to be updated or deleted");
-      // Child Policy does exist for current account ID and may need to be updated or deleted
+      console.log("Child Policy for "+cur_projectID+" does exist for current project ID and may need to be updated or deleted");
+      // Child Policy does exist for current project ID and may need to be updated or deleted
       // Assume by default we should keep it and not update it
-      should_keep[cur_aws_account_id] = true;
+      should_keep[cur_projectID] = true;
       should_update = false;
 
       // Use the options from the parent policy in "name value" list format
       options = _.toArray(ds_child_policy_options);
 
-      // Set param_aws_account_id values for this child policy
+      // Set param_projects_list values for this child policy
       options.push({
-        "name": "param_aws_account_number",
-        "value": cur_aws_account_id
+        "name": "param_projects_list",
+        "value": [cur_projectID],
       });
 
       // Check if child policy params match parent policy params
       _.each(ds_format_self.options, function(value, key) {
         // If any child and parent param values do not match, mark the child policy as should_update
-        if ( !_.isEqual(value, ds_format_existing_policies["formatted"][cur_aws_account_id]["options"][key]) ) {
-          console.log("Child Policy Param does not match Parent Policy and should be updated. "+key+" does not match "+value+"!="+ds_format_existing_policies["formatted"][cur_aws_account_id]["options"][key]);
+        if ( !_.isEqual(value, ds_format_existing_policies["formatted"][cur_projectID]["options"][key]) ) {
+          console.log("Child Policy Param does not match Parent Policy and should be updated. "+key+" does not match "+value+"!="+ds_format_existing_policies["formatted"][cur_projectID]["options"][key]);
           should_update = true;
         }
       });
@@ -684,12 +621,12 @@ script "js_take_in_parameters", type: "javascript" do
         // Child policy needs to be updated
         if (grid_and_cwf.to_update.length < max_actions) {
           // Child policy needs to be updated and is within the max_actions limit
-          console.log("Child Policy needs to be updated. ds_format_existing_policies.formatted[cur_aws_account_id]="+JSON.stringify(ds_format_existing_policies.formatted[cur_aws_account_id]));
-          add_to_grid(ds_format_existing_policies.formatted[cur_aws_account_id], "updating")
-          name = ds_format_existing_policies.formatted[cur_aws_account_id].applied_policy_name
+          console.log("Child Policy needs to be updated. ds_format_existing_policies.formatted[cur_projectID]="+JSON.stringify(ds_format_existing_policies.formatted[cur_projectID]));
+          add_to_grid(ds_format_existing_policies.formatted[cur_projectID], "updating")
+          name = ds_format_existing_policies.formatted[cur_projectID].applied_policy_name
           // Add to_update
           grid_and_cwf.to_update.push({
-            "applied_policy_id": ds_format_existing_policies.formatted[cur_aws_account_id].applied_policy_id,
+            "applied_policy_id": ds_format_existing_policies.formatted[cur_projectID].applied_policy_id,
             "name" : name,
             "description" : description,
             "credentials" : ds_format_self.credentials,
@@ -699,12 +636,12 @@ script "js_take_in_parameters", type: "javascript" do
         } else {
           // Child policy needs to be updated but is outside the max_actions limit
           // Add to grid but do not add to to_update
-          console.log("Child Policy needs to be updated. ds_format_existing_policies.formatted[cur_aws_account_id]="+JSON.stringify(ds_format_existing_policies.formatted[cur_aws_account_id]));
-          add_to_grid(ds_format_existing_policies.formatted[cur_aws_account_id], "to be updated");
+          console.log("Child Policy needs to be updated. ds_format_existing_policies.formatted[cur_projectID]="+JSON.stringify(ds_format_existing_policies.formatted[cur_projectID]));
+          add_to_grid(ds_format_existing_policies.formatted[cur_projectID], "to be updated");
         }
       } else {
         // Child policy does not need to be updated
-        add_to_grid(ds_format_existing_policies.formatted[cur_aws_account_id], "running");
+        add_to_grid(ds_format_existing_policies.formatted[cur_projectID], "running");
       }
     }
   }
@@ -788,186 +725,94 @@ datasource "ds_child_incident_details" do
   end
 end
 
-datasource "ds_child_incidents_combined" do
-  run_script $js_child_incidents_combined, $ds_child_incident_details
+datasource "ds_underutil_incident_combined_incidents" do
+  run_script $js_ds_underutil_incident_combined_incidents, $ds_child_incident_details
 end
 
-script "js_child_incidents_combined", type: "javascript" do
+script "js_ds_underutil_incident_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-EOS
-  underutil_incidents = _.filter(ds_child_incident_details, function(incident) {
-    return _.contains(incident["summary"].split(' '), 'underutilized')
-  })
-
-  idle_incidents = _.filter(ds_child_incident_details, function(incident) {
-    return _.contains(incident["summary"].split(' '), 'idle')
-  })
-
-  result = {
-    underutil: _.flatten(_.pluck(underutil_incidents, 'violation_data')).slice(0, 100000),
-    idle: _.flatten(_.pluck(idle_incidents, 'violation_data')).slice(0, 100000)
-  }
+  result = []
+  _.each(ds_child_incident_details, function(incident) {
+    s = incident["summary"];
+    // If the incident summary contains "Google Underutilized VM Instances Found" then include it in the filter result
+    if (s.indexOf("Google Underutilized VM Instances Found") > -1) {
+      _.each(incident["violation_data"], function(violation) {
+        result.push(violation);
+      });
+    }
+  });
 EOS
 end
+
+datasource "ds_idle_incident_combined_incidents" do
+  run_script $js_ds_idle_incident_combined_incidents, $ds_child_incident_details
+end
+
+script "js_ds_idle_incident_combined_incidents", type: "javascript" do
+  parameters "ds_child_incident_details"
+  result "result"
+  code <<-EOS
+  result = []
+  _.each(ds_child_incident_details, function(incident) {
+    s = incident["summary"];
+    // If the incident summary contains "Google Idle VM Instances Found" then include it in the filter result
+    if (s.indexOf("Google Idle VM Instances Found") > -1) {
+      _.each(incident["violation_data"], function(violation) {
+        result.push(violation);
+      });
+    }
+  });
+EOS
+end
+
 
 # Summary and a conditional incident which will show up if any policy is being applied, updated or deleted.
 # Minimum of 1 incident, max of four
 # Could swap the summary to only showing running
-# Could also just have one incident and use meta_status to determine which esclation happens
+# Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
-  # Combined incidents with all of the data from the child incidents
-  validate $ds_child_incidents_combined do
-    summary_template "Consolidated Incident: {{ len data.underutil }} AWS Underutilized Compute Instances Found"
+  # Consolidated Incident Check(s)
+    # Consolidated incident for Google Underutilized VM Instances Found
+  validate $ds_underutil_incident_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} Google Underutilized VM Instances Found"
     escalate $esc_email
-    check eq(size(val(data, 'underutil')), 0)
-    export 'underutil' do
+    check eq(size(data), 0)
+    export do
       resource_level true
       field "accountID" do
-        label "Account ID"
+        label "Project ID"
       end
       field "accountName" do
-        label "Account Name"
+        label "Project Name"
+      end
+      field "projectNumber" do
+        label "Project Number"
       end
       field "resourceID" do
         label "Resource ID"
-      end
-      field "resourceType" do
-        label "Instance Size"
       end
       field "resourceName" do
         label "Resource Name"
-      end
-      field "newResourceType" do
-        label "Recommended Instance Size"
-      end
-      field "region" do
-        label "Region"
-      end
-      field "platform" do
-        label "Platform"
-      end
-      field "hostname" do
-        label "Hostname"
-      end
-      field "savings" do
-        label "Estimated Monthly Savings"
-      end
-      field "savingsCurrency" do
-        label "Savings Currency"
-      end
-      field "privateDnsName" do
-        label "Private DNS Name"
-      end
-      field "launchTime" do
-        label "Launch Time"
-      end
-      field "cpuMaximum" do
-        label "CPU Maximum %"
-      end
-      field "cpuMinimum" do
-        label "CPU Minimum %"
-      end
-      field "cpuAverage" do
-        label "CPU Average %"
-      end
-      field "cpuP99" do
-        label "CPU p99"
-      end
-      field "cpuP95" do
-        label "CPU p95"
-      end
-      field "cpuP90" do
-        label "CPU p90"
-      end
-      field "memMaximum" do
-        label "Memory Maximum %"
-      end
-      field "memMinimum" do
-        label "Memory Minimum %"
-      end
-      field "memAverage" do
-        label "Memory Average %"
-      end
-      field "memP99" do
-        label "Memory p99"
-      end
-      field "memP95" do
-        label "Memory p95"
-      end
-      field "memP90" do
-        label "Memory p90"
-      end
-      field "tags" do
-        label "Tags"
-      end
-      field "lookbackPeriod" do
-        label "Lookback Period"
-      end
-      field "service" do
-        label "Service"
-      end
-      field "id" do
-        label "ID"
-      end
-      field "threshold" do
-        label "CPU Threshold"
-      end
-      field "memoryThreshold" do
-        label "Memory Threshold"
-      end
-      field "thresholdType" do
-        label "Threshold Type"
-      end
-    end
-  end
-  validate $ds_child_incidents_combined do
-    summary_template "Consolidated Incident: {{ len data.idle }} AWS Idle Compute Instances Found"
-    escalate $esc_email
-    check eq(size(val(data, 'idle')), 0)
-    export 'idle' do
-      resource_level true
-      field "accountID" do
-        label "Account ID"
-      end
-      field "accountName" do
-        label "Account Name"
-      end
-      field "resourceID" do
-        label "Resource ID"
       end
       field "resourceType" do
         label "Resource Type"
       end
-      field "resourceName" do
-        label "Resource Name"
-      end
-      field "vmSize" do
-        label "Instance Size"
-      end
       field "newResourceType" do
-        label "Recommended Instance Size"
+        label "Recommended Resource Type"
+      end
+      field "zone" do
+        label "Zone"
       end
       field "region" do
         label "Region"
       end
-      field "platform" do
-        label "Platform"
-      end
       field "hostname" do
         label "Hostname"
       end
-      field "savings" do
-        label "Estimated Monthly Savings"
-      end
-      field "savingsCurrency" do
-        label "Savings Currency"
-      end
-      field "privateDnsName" do
-        label "Private DNS Name"
-      end
-      field "launchTime" do
-        label "Launch Time"
+      field "platform" do
+        label "Platform"
       end
       field "cpuMaximum" do
         label "CPU Maximum %"
@@ -978,56 +823,131 @@ policy "policy_scheduled_report" do
       field "cpuAverage" do
         label "CPU Average %"
       end
-      field "cpuP99" do
-        label "CPU p99"
-      end
-      field "cpuP95" do
-        label "CPU p95"
-      end
-      field "cpuP90" do
-        label "CPU p90"
-      end
-      field "memMaximum" do
-        label "Memory Maximum %"
-      end
-      field "memMinimum" do
-        label "Memory Minimum %"
-      end
-      field "memAverage" do
-        label "Memory Average %"
-      end
-      field "memP99" do
-        label "Memory p99"
-      end
-      field "memP95" do
-        label "Memory p95"
-      end
-      field "memP90" do
-        label "Memory p90"
+      field "primaryImpactCategory" do
+        label "Primary Impact Category"
       end
       field "tags" do
-        label "Tags"
-      end
-      field "lookbackPeriod" do
-        label "Lookback Period"
+        label "Labels"
       end
       field "service" do
         label "Service"
       end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Currency"
+      end
+      field "priority" do
+        label "Priority"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "recommenderSubtype" do
+        label "Recommendation Sub Type"
+      end
+      field "state" do
+        label "State"
+      end
+      field "status" do
+        label "Status"
+      end
+      field "selfLink" do
+        label "Resource Link"
+      end
       field "id" do
         label "ID"
       end
-      field "threshold" do
-        label "CPU Threshold"
+    end
+  end
+
+  # Consolidated incident for Google Idle VM Instances Found
+  validate $ds_idle_incident_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} Google Idle VM Instances Found"
+    escalate $esc_email
+    check eq(size(data), 0)
+    export do
+      resource_level true
+      field "accountID" do
+        label "Project ID"
       end
-      field "memoryThreshold" do
-        label "Memory Threshold"
+      field "accountName" do
+        label "Project Name"
       end
-      field "thresholdType" do
-        label "Threshold Type"
+      field "projectNumber" do
+        label "Project Number"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "zone" do
+        label "Zone"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "hostname" do
+        label "Hostname"
+      end
+      field "platform" do
+        label "Platform"
+      end
+      field "cpuMaximum" do
+        label "CPU Maximum %"
+      end
+      field "cpuMinimum" do
+        label "CPU Minimum %"
+      end
+      field "cpuAverage" do
+        label "CPU Average %"
+      end
+      field "primaryImpactCategory" do
+        label "Primary Impact Category"
+      end
+      field "tags" do
+        label "Labels"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Currency"
+      end
+      field "priority" do
+        label "Priority"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "recommenderSubtype" do
+        label "Recommendation Sub Type"
+      end
+      field "state" do
+        label "State"
+      end
+      field "status" do
+        label "Status"
+      end
+      field "selfLink" do
+        label "Resource Link"
+      end
+      field "id" do
+        label "ID"
       end
     end
   end
+
+  # Status Incident Check
   validate $ds_take_in_parameters do
     summary_template "{{ data.parent_policy.name }}: Status of Child Policies"
     detail_template <<-EOS
@@ -1079,6 +999,8 @@ EOS
     #   end
     # end
   end
+
+  # Create Child Policies Incident Check
   validate $ds_to_create do
     summary_template "Policies being created"
     detail_template <<-EOS
@@ -1093,6 +1015,8 @@ EOS
     escalate $create_policies
     check eq(size(data),0)
   end
+
+  # Update Child Policies Incident Check
   validate $ds_to_update do
     summary_template "Policies being updated"
     detail_template <<-EOS
@@ -1107,6 +1031,8 @@ EOS
     escalate $update_policies
     check eq(size(data),0)
   end
+
+  # Delete Child Policies Incident Check
   validate $ds_to_delete do
     summary_template "Policies being deleted"
     detail_template <<-EOS
@@ -1203,7 +1129,6 @@ define update_applied_policies($data, $governance_host, $rs_project_id) return $
     })
   end
 end
-
 
 escalation "delete_policies" do
   run "delete_applied_policies", data, rs_governance_host, rs_project_id

@@ -1,5 +1,19 @@
 # Changelog
 
+## v2.3
+
+- Added filters to API calls to reduce response body lenght.
+- Removed unused vars and fields.
+- Reduced execution time by removing unnecessary loops and functions.
+
+## v2.2
+
+- Reduced execution time avoiding repetitive loops and request fields.
+
+## v2.1
+
+- Made `Billing Center Name` parameter optional
+
 ## v2.0
 
 - Deprecated `auth_rs` authentication (type: `rightscale`) and replaced with `auth_flexera` (type: `oauth2`).  This is a breaking change which requires a Credential for `auth_flexera` [`provider=flexera`] before the policy can be applied.  Please see docs for setting up [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm)

@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.3
+
+- Added the following dimensions to get costs and calculate cost per hour average: `operating_system`, `database_engine`, `database_edition`, `license_model`, `deployment_option`
+
 ## v3.2
 
 - Updated indentation for chart url so it renders corrrectly in the policy incident email

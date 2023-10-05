@@ -1,5 +1,36 @@
 # Changelog
 
+## v6.4
+
+- Changed service metadata to "Compute" to ensure proper incident scraping
+
+## v6.3
+
+- Added conditional logic to only use currency conversion API when needed
+
+## v6.2
+
+- Corrected issue where attached IP addresses were being included in the incident
+- Added logic to ensure policy still completes even if the Flexera currency conversion API is unresponsive
+
+## v6.1
+
+- Added ability to filter resources by tag key alone without regard for tag value
+
+## v6.0
+
+- Policy now converts savings from USD to local currency when appropriate
+- Several parameters altered to be more descriptive and human-readable
+- Removed deprecated "Log to CM Audit Entries" parameter
+- Added ability to specify how long an IP address should be unattached to consider it unused
+- Added ability to filter resources by multiple tag key:value pairs
+- Added additional context to incident description
+- Normalized incident export to be consistent with other policies
+- Added human-readable recommendation to incident export
+- Added additional fields to incident export to facilitate scraping for dashboards
+- Policy no longer raises new escalations if savings data changed but nothing else has
+- Streamlined code for better readability and faster execution
+
 ## 5.2
 
 - Added `Resource Name` incident field

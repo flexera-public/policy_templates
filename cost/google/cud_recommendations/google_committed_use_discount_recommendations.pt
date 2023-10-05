@@ -6,7 +6,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "3.2",
+  version: "3.3",
   provider: "Google",
   service: "Compute",
   recommendation_type: "Rate Reduction",
@@ -153,7 +153,8 @@ script "js_recommenders", type: "javascript" do
           projectNumber: project.projectNumber,
           accountID: project.accountID,
           accountName: project.accountName
-          region: region
+          region: region,
+          requestNumber: results.length + 1
         })
       })
     }
@@ -165,7 +166,7 @@ end
 datasource "ds_recommendations" do
   iterate $ds_recommenders
   request do
-    run_script $js_recommender_call, val(iter_item,"accountID"), val(iter_item, "region")
+    run_script $js_recommender_call, val(iter_item,"accountID"), val(iter_item, "region"), val(iter_item, "requestNumber")
   end
   result do
     encoding "json"
@@ -190,12 +191,15 @@ datasource "ds_recommendations" do
 end
 
 script "js_recommender_call", type: "javascript" do
-  parameters "accountID", "region"
+  parameters "accountID", "region", "requestNumber"
   result "request"
   code <<-EOF
-  var now = new Date().getTime();
-  var sleepDuration = 10000
-  while(new Date().getTime() < now + sleepDuration){ /* Do nothing */ }
+  // If 100 requests have been made, wait
+  if (requestNumber % 100 === 0) {
+    var now = new Date().getTime();
+    var sleepDuration = 60000
+    while(new Date().getTime() < now + sleepDuration){ /* Do nothing */ }
+  }
   var request = {
     auth: "auth_google",
     pagination: "google_pagination",

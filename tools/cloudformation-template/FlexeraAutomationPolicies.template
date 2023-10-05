@@ -29,6 +29,7 @@ Metadata:
           - paramPermsAWSUnusedIPAddresses
           - paramPermsAWSOldSnapshots
           - paramPermsAWSIdleComputeInstances
+          - paramPermsAWSRightsizeEC2Instances
           - paramPermsAWSReservedInstancesRecommendation
           - paramPermsAWSObjectStorageOptimization
           - paramPermsAWSExpiringSavingsPlans
@@ -63,6 +64,8 @@ Metadata:
         default: "Permissions for Policy Template: AWS Old Snapshots"
       paramPermsAWSIdleComputeInstances:
         default: "Permissions for Policy Template: AWS Idle Compute Instances"
+      paramPermsAWSRightsizeEC2Instances:
+        default: "Permissions for Policy Template: AWS Rightsize EC2 Instances"
       paramPermsAWSReservedInstancesRecommendation:
         default: "Permissions for Policy Template: AWS Reserved Instances Recommendation"
       paramPermsAWSObjectStorageOptimization:
@@ -161,6 +164,14 @@ Parameters:
     AllowedValues:
       - No Access
       - Read Only
+  paramPermsAWSRightsizeEC2Instances:
+    Description: 'What permissions should policies using "AWS Rightsize EC2 Instances" Policy Template be granted on the IAM Role that will be created?'
+    Type: String
+    Default: Read Only
+    AllowedValues:
+      - No Access
+      - Read Only
+      - Read and Take Action
   paramPermsAWSReservedInstancesRecommendation:
     Description: 'What permissions should policies using "AWS Reserved Instances Recommendation" Policy Template be granted on the IAM Role that will be created?'
     Type: String
@@ -272,6 +283,13 @@ Conditions:
   # CreatePolicyAWSIdleComputeInstancesAction: !Equals
   #   - !Ref paramPermsAWSIdleComputeInstances
   #   - Read and Take Action
+  CreatePolicyAWSRightsizeEC2InstancesRead: !Not
+    - !Equals
+      - !Ref paramPermsAWSRightsizeEC2Instances
+      - No Access
+  CreatePolicyAWSRightsizeEC2InstancesAction: !Equals
+    - !Ref paramPermsAWSRightsizeEC2Instances
+    - Read and Take Action
   CreatePolicyAWSReservedInstancesRecommendationRead: !Not
     - !Equals
       - !Ref paramPermsAWSReservedInstancesRecommendation
@@ -369,6 +387,9 @@ Mappings:
         - "cloudwatch:GetMetricStatistics"
         - "cloudwatch:GetMetricData"
         - "cloudwatch:ListMetrics"
+        - "rds:DescribeDBInstances"
+        - "rds:ListTagsForResource"
+        - "sts:GetCallerIdentity"
       action: []
     AWSUnusedIPAddresses:
       read:
@@ -401,6 +422,20 @@ Mappings:
         - "cloudwatch:GetMetricData"
         - "cloudwatch:ListMetrics"
       action: []
+    AWSRightsizeEC2Instances:
+      read:
+        - "ec2:DescribeInstanceStatus"
+        - "ec2:DescribeRegions"
+        - "ec2:DescribeInstances"
+        - "ec2:DescribeTags"
+        - "cloudwatch:GetMetricStatistics"
+        - "cloudwatch:GetMetricData"
+        - "cloudwatch:ListMetrics"
+      action:
+        - "ec2:ModifyInstanceAttribute"
+        - "ec2:StartInstances"
+        - "ec2:StopInstances"
+        - "ec2:TerminateInstances"
     AWSReservedInstancesRecommendation:
       read:
         - "ce:GetReservationPurchaseRecommendation"
@@ -675,6 +710,45 @@ Resources:
               - PermissionMap
               - AWSIdleComputeInstances
               - read
+            Resource: "*"
+  ## AWS Rightsize EC2 Instances Permission Policies
+  iamPolicyAWSRightsizeEC2Instances:
+    Type: "AWS::IAM::Policy"
+    Condition: CreatePolicyAWSRightsizeEC2InstancesRead
+    Properties:
+      PolicyName: !Join
+        - "_"
+        - - !Ref paramRoleName
+          - AWSRightsizeEC2InstancesReadPermissionPolicy
+      Roles:
+        - !Ref iamRole
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: !FindInMap
+              - PermissionMap
+              - AWSRightsizeEC2Instances
+              - read
+            Resource: "*"
+  iamPolicyAWSRightsizeEC2InstancesAction:
+    Type: "AWS::IAM::Policy"
+    Condition: CreatePolicyAWSRightsizeEC2InstancesAction
+    Properties:
+      PolicyName: !Join
+        - "_"
+        - - !Ref paramRoleName
+          - AWSRightsizeEC2InstancesActionPermissionPolicy
+      Roles:
+        - !Ref iamRole
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: !FindInMap
+              - PermissionMap
+              - AWSRightsizeEC2Instances
+              - action
             Resource: "*"
   ## AWS Reserved Instances Recommendation
   iamPolicyAWSReservedInstancesRecommendation:

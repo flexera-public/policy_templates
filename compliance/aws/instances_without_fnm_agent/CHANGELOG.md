@@ -1,5 +1,13 @@
 # Changelog
 
+## v4.2
+
+- Changed service metadata to "Compute" to ensure proper incident scraping
+
+## v4.1
+
+- Added logic required for "Meta Policy" use-cases
+
 ## v4.0
 
 - Added parameter to enable Allow or Deny filtering by user entered regions

@@ -30,11 +30,11 @@ This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/Ma
 
 For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
 
-Provider tag value to match this policy: `azure_rm`
+- [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:
+  - `Microsoft.Storage/storageAccounts/read`
 
-Required permissions in the provider:
-
-- Microsoft.Storage/storageAccounts/read
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - `billing_center_viewer`
 
 ## Supported Clouds
 
