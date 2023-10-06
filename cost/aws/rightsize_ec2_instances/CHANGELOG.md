@@ -1,5 +1,10 @@
 # Changelog
 
+## v4.2
+
+- Added "Stop Instance" action for Idle resources
+- Improved debugging and error handling of Policy Actions
+
 ## v4.1
 
 - Added ability to filter resources by tag key alone without regard for tag value
