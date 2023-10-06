@@ -13,7 +13,7 @@ This policy checks all the instances in an AWS Account for CPU and Memory usage 
 
 ### Policy savings details
 
-The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the resource is terminated or downsized. Optima is used to retrieve and calculate the estimated savings which is the cost of the resource for a full day (3 days ago) multiplied by 30.44 (the average number of days in a month), or 0 if no cost information for the resource was found in Optima. The savings is displayed in the Estimated Monthly Savings column. The incident message detail includes the sum of each resource *Estimated Monthly Savings* as *Potential Monthly Savings*.
+The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the resource is stopped, terminated, or downsized. Optima is used to retrieve and calculate the estimated savings which is the cost of the resource for a full day (3 days ago) multiplied by 30.44 (the average number of days in a month), or 0 if no cost information for the resource was found in Optima. The savings is displayed in the Estimated Monthly Savings column. The incident message detail includes the sum of each resource *Estimated Monthly Savings* as *Potential Monthly Savings*.
 
 ## Input Parameters
 
@@ -38,6 +38,7 @@ For example if a user selects the "Terminate Instances" action while applying th
 ## Policy Actions
 
 - Sends an email notification
+- Stop virtual machines (if idle) after approval
 - Terminate virtual machines (if idle) after approval
 - Downsize virtual machines (if underutilized but not idle) after approval
 
