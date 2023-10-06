@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "4.1",
+  version: "4.2",
   provider: "AWS",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -1357,6 +1357,7 @@ policy "pol_utilization" do
     EOS
     check logic_or($ds_parent_policy_terminated, ne(val(item, "recommendationType"), "Terminate"))
     escalate $esc_email
+    escalate $esc_stop_instances
     escalate $esc_terminate_instances
     hash_exclude "underutil_message", "idle_message", "underutil_total_savings", "idle_total_savings", "tags", "savings", "savingsCurrency", "cpu_maximum", "cpu_minimum", "cpu_average", "cpu_p99", "cpu_p95", "cpu_p90", "mem_maximum", "mem_minimum", "mem_average", "mem_p99", "mem_p95", "mem_p90"
     export do
@@ -1489,6 +1490,13 @@ escalation "esc_downsize_instances" do
   run "downsize_instances", data
 end
 
+escalation "esc_stop_instances" do
+  automatic contains($param_automatic_action, "Stop Instances")
+  label "Stop Instances"
+  description "Approval to stop all selected instances"
+  run "stop_instances", data
+end
+
 escalation "esc_terminate_instances" do
   automatic contains($param_automatic_action, "Terminate Instances")
   label "Terminate Instances"
@@ -1499,6 +1507,31 @@ end
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
+
+# Core CWF function to stop instances
+define stop_instances($data) return $all_responses do
+  # Change "No" to "Yes" to enable CWF debug logging
+  $log_to_cm_audit_entries = "No"
+
+  $$debug = $log_to_cm_audit_entries == "Yes"
+  $$log = []
+  $all_responses = []
+  $syslog_subject = "AWS Rightsizing Compute [Stop]: "
+
+  call sys_log(join([$syslog_subject, "Identified Instances"]), to_s($data))
+
+  foreach $instance in $data do
+    call get_instance_state($instance) retrieve $state_response, $initial_state
+    $all_responses << $state_response
+
+    if $initial_state != "terminated" && $initial_state != "pending"
+      if $initial_state != "stopped"
+        call stop_instance($instance) retrieve $stop_response
+        $all_responses << $stop_response
+      end
+    end
+  end
+end
 
 # Core CWF function to downsize instances
 define downsize_instances($data) return $all_responses do
