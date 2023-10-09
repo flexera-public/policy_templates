@@ -4,6 +4,8 @@
 
 - Policy now automatically converts savings from USD to local currency when appropriate
 - Added exchange rate context to incident to allow user to derive unmodified USD values when needed
+- Added ability to use Subscription list parameter as either an "allow" list or a "deny" list
+- Added ability to filter recommendations by region
 - Several parameters altered to be more descriptive and intuitive to use
 - Added additional context to incident description
 - Normalized incident export to be consistent with other policies
