@@ -70,15 +70,6 @@ parameter "param_term" do
   allowed_values "Any", "1 Year", "3 Year"
 end
 
-parameter "param_payment_option" do
-  type "string"
-  category "Savings Plan Settings"
-  label "Payment Option"
-  description "Savings Plan purchase option to provide recommendations for."
-  default "No Upfront"
-  allowed_values "No Upfront", "Partial Upfront", "All Upfront"
-end
-
 parameter "param_savings_plan_type" do
   type "string"
   category "Savings Plan Settings"
@@ -86,6 +77,15 @@ parameter "param_savings_plan_type" do
   description "Type of Savings Plan to provide recommendations for."
   default "Compute Savings Plan"
   allowed_values "Compute Savings Plan", "EC2 Instance Savings Plan", "SageMaker Savings Plans"
+end
+
+parameter "param_payment_option" do
+  type "string"
+  category "Savings Plan Settings"
+  label "Payment Option"
+  description "Savings Plan purchase option to provide recommendations for."
+  default "No Upfront"
+  allowed_values "No Upfront", "Partial Upfront", "All Upfront"
 end
 
 ###############################################################################
@@ -360,7 +360,7 @@ script "js_sp_recommendations", type: "javascript" do
     AccountScope: param_scope.toUpperCase(),
     LookbackPeriodInDays: period_table[param_days],
     PaymentOption: param_payment_option.replace(' ', '_').toUpperCase()
-    SavingsPlansType: plan[param_savings_plan_type],
+    SavingsPlansType: plan_table[param_savings_plan_type],
     TermInYears: term_table[param_term]
   }
 
@@ -427,31 +427,60 @@ script "js_sp_normalization", type: "javascript" do
     currentAverageHourlyOnDemandSpend = recommendation["currentAverageHourlyOnDemandSpend"] * exchange_rate
     currentMaximumHourlyOnDemandSpend = recommendation["currentMaximumHourlyOnDemandSpend"] * exchange_rate
     currentMinimumHourlyOnDemandSpend = recommendation["currentMinimumHourlyOnDemandSpend"] * exchange_rate
+    estimatedAverageUtilization = recommendation["estimatedAverageUtilization"] * 1
     estimatedMonthlySavingsAmount = recommendation["estimatedMonthlySavingsAmount"] * exchange_rate
     estimatedOnDemandCost = recommendation["estimatedOnDemandCost"] * exchange_rate
-    estimatedROI = recommendation["estimatedROI"]
     estimatedSavingsAmount = recommendation["estimatedSavingsAmount"] * exchange_rate
-    estimatedSavingsPercentage = recommendation["estimatedSavingsPercentage"]
+    estimatedSavingsPercentage = recommendation["estimatedSavingsPercentage"] * 1
     estimatedSavingsPlanCost = recommendation["estimatedSavingsPlanCost"] * exchange_rate
     upfrontCost = recommendation["upfrontCost"] * exchange_rate
 
     if (estimatedMonthlySavingsAmount >= param_min_savings) {
-      total_savings += estimatedMonthlySavingsAmount
+      total_savings += recommendation["estimatedMonthlySavingsAmount"] * exchange_rate
+
+      if (typeof(currentAverageHourlyOnDemandSpend) != 'number') { currentAverageHourlyOnDemandSpend = "" }
+      if (typeof(currentAverageHourlyOnDemandSpend) == 'number') { currentAverageHourlyOnDemandSpend = Number(currentAverageHourlyOnDemandSpend.toFixed(3)) }
+
+      if (typeof(currentMaximumHourlyOnDemandSpend) != 'number') { currentMaximumHourlyOnDemandSpend = "" }
+      if (typeof(currentMaximumHourlyOnDemandSpend) == 'number') { currentMaximumHourlyOnDemandSpend = Number(currentMaximumHourlyOnDemandSpend.toFixed(3)) }
+
+      if (typeof(currentMinimumHourlyOnDemandSpend) != 'number') { currentMinimumHourlyOnDemandSpend = "" }
+      if (typeof(currentMinimumHourlyOnDemandSpend) == 'number') { currentMinimumHourlyOnDemandSpend = Number(currentMinimumHourlyOnDemandSpend.toFixed(3)) }
+
+      if (typeof(estimatedAverageUtilization) != 'number') { estimatedAverageUtilization = "" }
+      if (typeof(estimatedAverageUtilization) == 'number') { estimatedAverageUtilization = Number(estimatedAverageUtilization.toFixed(3)) }
+
+      if (typeof(estimatedMonthlySavingsAmount) != 'number') { estimatedMonthlySavingsAmount = "" }
+      if (typeof(estimatedMonthlySavingsAmount) == 'number') { estimatedMonthlySavingsAmount = Number(estimatedMonthlySavingsAmount.toFixed(3)) }
+
+      if (typeof(estimatedOnDemandCost) != 'number') { estimatedOnDemandCost = "" }
+      if (typeof(estimatedOnDemandCost) == 'number') { estimatedOnDemandCost = Number(estimatedOnDemandCost.toFixed(3)) }
+
+      if (typeof(estimatedSavingsAmount) != 'number') { estimatedSavingsAmount = "" }
+      if (typeof(estimatedSavingsAmount) == 'number') { estimatedSavingsAmount = Number(estimatedSavingsAmount.toFixed(3)) }
+
+      if (typeof(estimatedSavingsPercentage) != 'number') { estimatedSavingsPercentage = "" }
+      if (typeof(estimatedSavingsPercentage) == 'number') { estimatedSavingsPercentage = Number(estimatedSavingsPercentage.toFixed(2)) }
+
+      if (typeof(estimatedSavingsPlanCost) != 'number') { estimatedSavingsPlanCost = "" }
+      if (typeof(estimatedSavingsPlanCost) == 'number') { estimatedSavingsPlanCost = Number(estimatedSavingsPlanCost.toFixed(3)) }
+
+      if (typeof(upfrontCost) != 'number') { upfrontCost = "" }
+      if (typeof(upfrontCost) == 'number') { upfrontCost = Number(upfrontCost.toFixed(3)) }
 
       result.push({
         accountID: recommendation["accountID"],
         accountName: ds_vendor_account_table[recommendation["accountID"]],
         savingsCurrency: ds_currency['symbol'],
-        currentAverageHourlyOnDemandSpend: Number(currentAverageHourlyOnDemandSpend.toFixed(3)),
-        currentMaximumHourlyOnDemandSpend: Number(currentMaximumHourlyOnDemandSpend.toFixed(3)),
-        currentMinimumHourlyOnDemandSpend: Number(currentMinimumHourlyOnDemandSpend.toFixed(3)),
-        estimatedAverageUtilization: Number(recommendation["estimatedAverageUtilization"].toFixed(3)),
-        savings: Number(estimatedMonthlySavingsAmount.toFixed(3)),
-        estimatedOnDemandCost: Number(estimatedOnDemandCost.toFixed(3)),
-        estimatedROI: Number(recommendation["estimatedROI"].toFixed(3)),
-        estimatedSavingsAmount: Number(estimatedSavingsAmount.toFixed(3)),
-        estimatedSavingsPercentage: Number(estimatedSavingsPercentage.toFixed(2)),
-        estimatedSavingsPlanCost: Number(estimatedSavingsPlanCost.toFixed(3)),
+        currentAverageHourlyOnDemandSpend: currentAverageHourlyOnDemandSpend,
+        currentMaximumHourlyOnDemandSpend: currentMaximumHourlyOnDemandSpend,
+        currentMinimumHourlyOnDemandSpend: currentMinimumHourlyOnDemandSpend,
+        estimatedAverageUtilization: estimatedAverageUtilization,
+        savings: estimatedMonthlySavingsAmount,
+        estimatedOnDemandCost: estimatedOnDemandCost,
+        estimatedSavingsAmount: estimatedSavingsAmount,
+        estimatedSavingsPercentage: estimatedSavingsPercentage,
+        estimatedSavingsPlanCost: estimatedSavingsPlanCost,
         recommendedQuantity: recommendation["hourlyCommitmentToPurchase"],
         instanceFamily: recommendation["instanceFamily"],
         offeringId: recommendation["offeringId"],
