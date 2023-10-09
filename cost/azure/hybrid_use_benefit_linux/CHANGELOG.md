@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.2
+
+- Fixed issue where policy fails if an instance lacks Image Publisher metadata
+
 ## v4.1
 
 - Fixed README link in policy metadata
