@@ -26,8 +26,8 @@ This policy has the following input parameters required when launching the polic
 - *Look Back Period* - Number of days of prior usage to analyze
 - *Account Scope* - The account scope that you want your recommendations for. Select Payer to produce results only for a Master Payer account, or Linked to produce results for all linked accounts as well.
 - *Savings Plan Term* - Length of savings plan term to provide recommendations for.
-- *Payment Option* - Savings Plan purchase option to provide recommendations for.
 - *Savings Plan Type* - Type of Savings Plan to provide recommendations for.
+- *Payment Option* - Savings Plan purchase option to provide recommendations for.
 
 ## Policy Actions
 
