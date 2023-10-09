@@ -61,6 +61,23 @@ parameter "param_subscriptions_list" do
   default []
 end
 
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. Leave blank to check all regions."
+  default []
+end
+
 parameter "param_days" do
   type "string"
   category "Reservation Settings"
@@ -411,12 +428,36 @@ script "js_ri_recommendations", type: "javascript" do
 EOS
 end
 
+datasource "ds_ri_recommendations_region_filtered" do
+  run_script $js_ri_recommendations_region_filtered, $ds_ri_recommendations, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_ri_recommendations_region_filtered", type: "javascript" do
+  parameters "ds_ri_recommendations", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_ri_recommendations, function(recommendation) {
+      include_recommendation = _.contains(param_regions_list, recommendation['region'])
+
+      if (param_regions_allow_or_deny == "Deny") {
+        include_recommendation = !include_recommendation
+      }
+
+      return include_recommendation
+    })
+  } else {
+    result = ds_ri_recommendations
+  }
+EOS
+end
+
 datasource "ds_ri_incident" do
-  run_script $js_ri_incident, $ds_ri_recommendations, $ds_currency, $ds_currency_conversion, $ds_applied_policy, $param_term, $param_days, $param_service, $param_scope, $param_min_savings
+  run_script $js_ri_incident, $ds_ri_recommendations_region_filtered, $ds_currency, $ds_currency_conversion, $ds_applied_policy, $param_term, $param_days, $param_service, $param_scope, $param_min_savings
 end
 
 script "js_ri_incident", type: "javascript" do
-  parameters "ds_ri_recommendations", "ds_currency", "ds_currency_conversion", "ds_applied_policy", "param_term", "param_days", "param_service", "param_scope", "param_min_savings"
+  parameters "ds_ri_recommendations_region_filtered", "ds_currency", "ds_currency_conversion", "ds_applied_policy", "param_term", "param_days", "param_service", "param_scope", "param_min_savings"
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
@@ -442,7 +483,7 @@ script "js_ri_incident", type: "javascript" do
 
   exchange_rate = ds_currency['exchange_rate']
 
-  _.each(ds_ri_recommendations, function(recommendation) {
+  _.each(ds_ri_recommendations_region_filtered, function(recommendation) {
     if (recommendation["netSavings"] * exchange_rate >= param_min_savings) {
       total_savings += recommendation["netSavings"] * exchange_rate
 
