@@ -1,5 +1,17 @@
 # Changelog
 
+## v4.0
+
+- Policy now automatically converts savings from USD to local currency when appropriate
+- Added exchange rate context to incident to allow user to derive unmodified USD values when needed
+- Added ability to use Project list parameter as either an "allow" list or a "deny" list
+- Added ability to filter recommendations by region
+- Several parameters altered to be more descriptive and intuitive to use
+- Added additional context to incident description
+- Normalized incident export to be consistent with other policies
+- Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera credential
+
 ## v3.3
 
 - Modified the number of GCP recommender API calls that can be done before waiting to prevent a quota limit error: 100 request per minute.
