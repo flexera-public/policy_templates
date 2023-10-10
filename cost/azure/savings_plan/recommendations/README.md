@@ -17,9 +17,9 @@ The policy includes several cost and savings metrics provided directly by the [A
 - *Estimated Monthly Savings* - The difference between `Current Monthly Cost` and `New Monthly Cost with Savings Plan`, which indicates how much would be saved by acting on the recommendation and purchasing the Savings Plans.
 - *Recommended Quantity to Purchase* - Recommended number of Savings Plan hours to purchase.
 - *Total Hours* - The total hours for which the cost is covered. Roughly equal to the number of hours in the `Look Back Period` in most cases.
-- *Benefit Cost* - The estimated hourly cost with benefit. Equal to `Recommended Quantity to Purchase` * `Total Hours`.
-- *Wastage Cost* - Estimated unused portion of `Benefit Cost`.
-- *Overage Cost* - The difference between `New Monthly Cost with Savings Plan` and `Benefit Cost` across `Total Hours`
+- *Benefit Cost (Hours)* - The estimated hourly cost with benefit. Equal to `Recommended Quantity to Purchase` * `Total Hours`.
+- *Wastage Cost (Hours)* - Estimated unused portion of `Benefit Cost (Hours)`.
+- *Overage Cost (Hours)* - The difference between `New Monthly Cost with Savings Plan` and `Benefit Cost (Hours)` across `Total Hours`
 
 If the Flexera organization is configured to use a currency other than USD, all costs/savings reported by this policy will be converted from USD using the exchange rate at the time that the policy executes.
 
