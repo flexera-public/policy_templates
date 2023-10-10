@@ -3,6 +3,7 @@
 ## v4.1
 
 - Added `Operating System` incident field.
+- Renamed field from `osType` to `platform`
 
 ## v4.0
 
