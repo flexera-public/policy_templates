@@ -10,9 +10,18 @@ Recommendations are obtained via requests to the [Azure Cost Management API](htt
 
 ### Policy Savings Details
 
-The policy includes the estimated savings. The estimated savings is recognized if the recommended savings plan is purchased. The savings values are provided directly by the [Azure Cost Management API](https://learn.microsoft.com/en-us/rest/api/cost-management/benefit-recommendations/list?tabs=HTTP).
+The policy includes several cost and savings metrics provided directly by the [Azure Cost Management API](https://learn.microsoft.com/en-us/rest/api/cost-management/benefit-recommendations/list?tabs=HTTP):
 
-If the Flexera organization is configured to use a currency other than USD, the savings values will be converted from USD using the exchange rate at the time that the policy executes.
+- *Current Monthly Cost* - Total monthly cost for the covered resources before any Savings Plans are purchased.
+- *New Monthly Cost with Savings Plan* - New monthly cost for the covered resources after any Savings Plans are purchased. Should always be lower than the `Current Monthly Cost`
+- *Estimated Monthly Savings* - The difference between `Current Monthly Cost` and `New Monthly Cost with Savings Plan`, which indicates how much would be saved by acting on the recommendation and purchasing the Savings Plans.
+- *Recommended Quantity to Purchase* - Recommended number of Savings Plan hours to purchase.
+- *Total Hours* - The total hours for which the cost is covered. Roughly equal to the number of hours in the `Look Back Period` in most cases.
+- *Benefit Cost* - The estimated hourly cost with benefit. Equal to `Recommended Quantity to Purchase` * `Total Hours`.
+- *Wastage Cost* - Estimated unused portion of `Benefit Cost`.
+- *Overage Cost* - The difference between `New Monthly Cost with Savings Plan` and `Benefit Cost` across `Total Hours`
+
+If the Flexera organization is configured to use a currency other than USD, all costs/savings reported by this policy will be converted from USD using the exchange rate at the time that the policy executes.
 
 ## Input Parameters
 
