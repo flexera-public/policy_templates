@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.1
+
+- Added `Operating System` incident field.
+
 ## v4.0
 
 - Several parameters altered to be more descriptive and human-readable
