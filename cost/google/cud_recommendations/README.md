@@ -51,6 +51,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 
   - Permissions
     - `resourcemanager.projects.get`
+    - `recommender.usageCommitmentRecommendations.list`
     - `billing.resourceCosts.get`*
     - `billing.accounts.getSpendingInformation`*
 
