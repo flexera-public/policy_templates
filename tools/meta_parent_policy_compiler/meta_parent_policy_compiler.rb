@@ -14,6 +14,7 @@ default_child_policy_template_files = [
   "../../cost/aws/object_storage_optimization/aws_object_storage_optimization.pt",
   "../../cost/aws/old_snapshots/aws_delete_old_snapshots.pt",
   "../../cost/aws/rds_instance_cloudwatch_utilization/rds_instance_cloudwatch_utilization.pt",
+  "../../cost/aws/rds_instance_license_info/rds_instance_license_info.pt",
   "../../cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt",
   "../../cost/aws/rightsize_ebs_volumes/aws_volumes_rightsizing.pt",
   "../../cost/aws/s3_storage_policy/aws_s3_bucket_policy_check.pt",
