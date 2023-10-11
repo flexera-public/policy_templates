@@ -1,4 +1,4 @@
-# AWS Reserved Instances Recommendation
+# AWS Reserved Instances Recommendations
 
 ## What it does
 
