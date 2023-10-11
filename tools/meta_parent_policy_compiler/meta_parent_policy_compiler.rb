@@ -16,6 +16,7 @@ default_child_policy_template_files = [
   "../../cost/aws/unused_ip_addresses/aws_unused_ip_addresses.pt",
   "../../cost/aws/unused_rds/unused_rds.pt",
   "../../cost/aws/unused_volumes/aws_delete_unused_volumes.pt",
+  "../../cost/aws/s3_storage_policy/aws_s3_bucket_policy_check.pt",
   "../../compliance/aws/long_stopped_instances/aws_long_stopped_instances.pt",
   "../../operational/aws/lambda_functions_with_high_error_rate/lambda_functions_with_high_error_rate.pt",
   "../../operational/aws/long_running_instances/long_running_instances.pt",
