@@ -164,11 +164,7 @@ script "js_filter_resources", type: "javascript" do
     "locationType": "multi-region",
     "storageClass": "STANDARD",
     "etag": "CAE=",
-    "labels": {
-      "vmrole": "webserver",
-      "environment": "production",
-      "location": "west"
-    }
+
   }
 
   // ds_storage_buckets mockup data
@@ -183,27 +179,34 @@ script "js_filter_resources", type: "javascript" do
   // DO NOT REMOVE: _.each(ds_storage_buckets, function (gr) {
     // DO NOT REMOVE: var obj = gr["all_res"];
   _.each(storage_buckets, function (obj) {
-    console.log("entro")
     if (obj !== undefined && obj.items !== undefined) {
       for (var key in obj.items) {
-        var isResMissedTag = false;
+        var labelMissing = false;
         var all_include_label = '';
         var all_missed_label = '';
+        var all_missed_values = '';
         if (JSON.stringify(obj.items[key]["labels"]) == undefined) {
           var labels = "none";
         } else {
           var labels = obj.items[key]["labels"];
           var labels_str = JSON.stringify(labels);
-        }
+        }       
         for (var j = 0; j < param_label_key_lower.length; j++) {
-          if (_.isEmpty(labels_str) || (labels_str.toLowerCase().indexOf(param_label_key_lower[j])) == -1) {
-            isResMissedTag = true;
+          var labelMissing = true
+          for (var labelKey in labels) {
+            if (labelKey.toLowerCase() == param_label_key_lower[j]){
+              labelMissing = false
+              all_include_label = all_include_label + " " + param_label_key_lower[j];
+              if (labels[labelKey] == "" || labels[labelKey] == null) {
+                all_missed_values = all_missed_values + " " + param_label_key_lower[j]
+              }
+            }
+          }
+          if (labelMissing) {
             all_missed_label = all_missed_label + " " + param_label_key_lower[j];
-          } else {
-            all_include_label = all_include_label + " " + param_label_key_lower[j];
           }
         }
-        if (isResMissedTag) {
+        if (labelMissing) {
           result.push({
             id: obj.items[key]["id"],
             labels: labels,
@@ -211,6 +214,7 @@ script "js_filter_resources", type: "javascript" do
             selfLink: obj.items[key]["selfLink"],
             all_missed_label: all_missed_label,
             all_include_label: all_include_label,
+            all_missed_values: all_missed_values,
             labels_str: labels_str,
             type: "buckets",
             name: obj.items[key]["name"]
@@ -229,7 +233,7 @@ script "js_filter_resources", type: "javascript" do
         if (gr["uri"].indexOf("aggregated") !== -1) {
           if (obj.items[key]["warning"] == undefined) {
             for (var k in obj.items[key][type]) {
-              var isResMissedTag = false;
+              var labelMissing = false;
               var all_include_label = '';
               var all_missed_label = '';
               if (JSON.stringify(obj.items[key][type][k]["labels"]) == undefined) {
@@ -239,14 +243,21 @@ script "js_filter_resources", type: "javascript" do
                 var labels_str = JSON.stringify(labels);
               }
               for (var j = 0; j < param_label_key_lower.length; j++) {
-                if (_.isEmpty(labels_str) || (labels_str.toLowerCase().indexOf(param_label_key_lower[j])) == -1) {
-                  isResMissedTag = true;
+                var labelMissing = true
+                for (var labelKey in labels) {
+                  if (labelKey.toLowerCase() == param_label_key_lower[j]){
+                    labelMissing = false
+                    all_include_label = all_include_label + " " + param_label_key_lower[j];
+                    if (labels[labelKey] == "" || labels[labelKey] == null) {
+                      all_missed_values = all_missed_values + " " + param_label_key_lower[j]
+                    }
+                  }
+                }
+                if (labelMissing) {
                   all_missed_label = all_missed_label + " " + param_label_key_lower[j];
-                } else {
-                  all_include_label = all_include_label + " " + param_label_key_lower[j];
                 }
               }
-              if (isResMissedTag) {
+              if (labelMissing) {
                 result.push({
                   id: obj.items[key][type][k]["id"],
                   labels: labels,
@@ -262,7 +273,7 @@ script "js_filter_resources", type: "javascript" do
             }
           }
         } else if (gr["uri"].indexOf("global") !== -1) {
-          var isResMissedTag = false;
+          var labelMissing = false;
           var all_include_label = '';
           var all_missed_label = '';
           if (JSON.stringify(obj.items[key]["labels"]) == undefined) {
@@ -272,14 +283,21 @@ script "js_filter_resources", type: "javascript" do
             var labels_str = JSON.stringify(labels);
           }
           for (var j = 0; j < param_label_key_lower.length; j++) {
-            if (_.isEmpty(labels_str) || (labels_str.toLowerCase().indexOf(param_label_key_lower[j])) == -1) {
-              isResMissedTag = true;
+            var labelMissing = true
+            for (var labelKey in labels) {
+              if (labelKey.toLowerCase() == param_label_key_lower[j]){
+                labelMissing = false
+                all_include_label = all_include_label + " " + param_label_key_lower[j];
+                if (labels[labelKey] == "" || labels[labelKey] == null) {
+                  all_missed_values = all_missed_values + " " + param_label_key_lower[j]
+                }
+              }
+            }
+            if (labelMissing) {
               all_missed_label = all_missed_label + " " + param_label_key_lower[j];
-            } else {
-              all_include_label = all_include_label + " " + param_label_key_lower[j];
             }
           }
-          if (isResMissedTag) {
+          if (labelMissing) {
             result.push({
               id: obj.items[key]["id"],
               labels: labels,
@@ -325,7 +343,7 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_azure_resource" do
+policy "policy_google_resource" do
   validate $ds_filtered_resources do
     summary_template "{{ len data }} Google Resources out of compliance."
     escalate $esc_email
@@ -343,7 +361,10 @@ policy "policy_azure_resource" do
         label "Existing Labels"
       end
       field "all_missed_label" do
-        label "Missing Labels"
+        label "Missing Label Keys"
+      end
+      field "all_missed_values" do
+        label "Label Keys with Missing Label values"
       end
       field "id" do
         label "Resources Id"
@@ -392,19 +413,22 @@ define label_resources($data, $param_labels_to_add, $$rs_optima_host) return $al
   $$log = []
   $all_responses = []
 
+  $list_of_labels_to_add_foreach_data = []
+
   foreach $item in $data do
-    $new_labels = {}
-    if $item["labels"] == "none"
-      $new_labels = {}
-    else
-      $new_labels = $item["labels"]
-    end
+
+    $filtered_labels_to_add_obj = {}
     foreach $label in $param_labels_to_add do
-      if $new_labels != null
-        $new_labels[first(split($label,"="))]=last(split($label,"="))
+      $label_key_to_add = first(split( $tag, "=" ))
+      $label_value_to_add = ""
+      if $label_key_to_add != last(split( $tag, "="))
+        $label_value_to_add = last(split( $tag, "="))
       end
-      $$log << "after split: "+$new_labels[first(split($label,"="))]
+      $filtered_labels_to_add_obj[$label_key_to_add] = $label_value_to_add
     end
+
+    $list_of_labels_to_add_foreach_data << $filtered_labels_to_add_obj
+
     sub on_error: handle_error($postResponse) do
       $$log << "after split: "+join([$item["selfLink"],"/setLabels"])
       if $item["type"] != "buckets"
@@ -416,7 +440,7 @@ define label_resources($data, $param_labels_to_add, $$rs_optima_host) return $al
             "content-type": "application/json"
           },
           body: {
-            "labels": $new_labels,
+            "labels": $filtered_labels_to_add_obj,
             "labelFingerprint": $item["labelFingerprint"]
           }
         )
@@ -429,7 +453,7 @@ define label_resources($data, $param_labels_to_add, $$rs_optima_host) return $al
             "content-type": "application/json"
           },
           body: {
-            "labels": $new_labels
+            "labels": $filtered_labels_to_add_obj
           }
         )
       end
@@ -448,18 +472,33 @@ define handle_error($response) do
   end
 end
 
-#DEFINE SYSLOG
 define sys_log($subject, $detail) do
-  if $$debug
-    rs_cm.audit_entries.create(
-      notify: "None",
-      audit_entry: {
-        auditee_href: @@account,
-        summary: "GCP add Labels "+ $subject,
-        detail: $detail
-      }
-    )
+  # Create empty errors array if doesn't already exist
+  if !$$errors
+    $$errors = []
   end
+  # Check if debug is enabled
+  if $$debug
+    # Append to global $$errors
+    # This is the suggested way to capture errors
+    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
+    # If Flexera NAM Zone, create audit_entries [to be deprecated]
+    # This is the legacy method for capturing errors and only supported on Flexera NAM
+    if $$rs_optima_host == "api.optima.flexeraeng.com"
+      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
+      $task_label = "Creating audit entry for " + $subject
+      sub task_label: $task, on_error: skip_error_and_append($task) do
+        rs_cm.audit_entries.create(
+          notify: "None",
+          audit_entry: {
+            auditee_href: @@account,
+            summary: $subject,
+            detail: $detail
+          }
+        )
+      end # End sub on_error
+    end # End if rs_optima_host
+  end # End if debug is enabled
 end
 
 define skip_error_and_append($subject) do
