@@ -11,6 +11,7 @@
 - Normalized incident export to be consistent with other policies
 - Streamlined code for better readability and faster execution
 - Policy now requires a valid Flexera credential
+- Policy now requires `Microsoft.Billing/billingAccounts/read` permission for Azure credential
 
 ## v2.17
 

@@ -429,6 +429,7 @@ datasource "ds_ri_recommendations" do
     collect jmes_path(response, "value[*]") do
       field "region", jmes_path(col_item, "location")
       field "skuName", jmes_path(col_item, "sku")
+      field "kind", jmes_path(col_item, "kind")
       field "meterId", jmes_path(col_item, "properties.meterId")
       field "scope", jmes_path(col_item, "properties.scope")
       field "term", jmes_path(col_item, "properties.term")
@@ -533,12 +534,22 @@ script "js_ri_incident", type: "javascript" do
   exchange_rate = ds_currency['exchange_rate']
 
   _.each(ds_ri_recommendations_region_filtered, function(recommendation) {
-    if (recommendation["netSavings"] * exchange_rate >= param_min_savings) {
-      total_savings += recommendation["netSavings"] * exchange_rate
+    if (recommendation['kind'] == 'legacy') {
+      costWithNoRI = recommendation["costWithNoRI"]
+      totalCostWithRI = recommendation["totalCostWithRI"]
+      netSavings = recommendation["netSavings"]
+    } else {
+      costWithNoRI = recommendation["costWithNoRI"]["value"]
+      totalCostWithRI = recommendation["totalCostWithRI"]["value"]
+      netSavings = recommendation["netSavings"]["value"]
+    }
 
-      costWithNoRI = Math.round(recommendation["costWithNoRI"] * exchange_rate * 100) / 100
-      totalCostWithRI = Math.round(recommendation["totalCostWithRI"] * exchange_rate * 100) / 100
-      netSavings = Math.round(recommendation["netSavings"] * exchange_rate * 100) / 100
+    if (netSavings * exchange_rate >= param_min_savings) {
+      total_savings += netSavings * exchange_rate
+
+      costWithNoRI = Math.round(costWithNoRI * exchange_rate * 100) / 100
+      totalCostWithRI = Math.round(totalCostWithRI * exchange_rate * 100) / 100
+      netSavings = Math.round(netSavings * exchange_rate * 100) / 100
 
       result.push({
         accountID: recommendation["subscriptionId"],
