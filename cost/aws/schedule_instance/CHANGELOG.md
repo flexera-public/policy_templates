@@ -1,5 +1,10 @@
 # Changelog
 
+## v4.0
+
+- Added logic required for "Meta Policy" use-cases
+- To facilitate "Meta Policy" use-cases, policy now requires a Flexera credential
+
 ## v3.1
 
 - Changed service metadata to "Compute" to ensure proper incident scraping
