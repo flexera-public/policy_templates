@@ -14,7 +14,7 @@ Recommendations are obtained via requests to the [AWS Savings Plans Purchase Rec
 
 The policy includes the estimated savings. The estimated savings is recognized if the recommended savings plan is purchased. The savings values are provided directly by the [AWS Savings Plans Purchase Recommendation API](https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_GetSavingsPlansPurchaseRecommendation.html).
 
-If the Flexera organization is configured to use a currency other than USD, the savings values will be converted from USD using the exchange rate at the time that the policy executes.
+If the Flexera organization is configured to use a currency other than the one the [AWS Savings Plans Purchase Recommendation API](https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_GetSavingsPlansPurchaseRecommendation.html) returns, the savings values will be converted using the exchange rate at the time that the policy executes.
 
 ## Input Parameters
 
