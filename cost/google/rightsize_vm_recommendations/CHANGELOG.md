@@ -1,5 +1,9 @@
 # Google Rightsize VM Recommender
 
+## v2.1
+
+- Policy metadata and incident export now correctly state that the recommendation for idle instances is to stop them rather than delete them
+
 ## v2.0
 
 - Policy now requires a Flexera credential
