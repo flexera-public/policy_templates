@@ -21,7 +21,7 @@ The policy includes several cost and savings metrics provided directly by the [A
 - *Wastage Cost (Hours)* - Estimated unused portion of `Benefit Cost (Hours)`.
 - *Overage Cost (Hours)* - The difference between `New Monthly Cost with Savings Plan` and `Benefit Cost (Hours)` across `Total Hours`
 
-If the Flexera organization is configured to use a currency other than USD, all costs/savings reported by this policy will be converted from USD using the exchange rate at the time that the policy executes.
+If the Flexera organization is configured to use a currency other than the one the [Azure Cost Management API](https://learn.microsoft.com/en-us/rest/api/cost-management/benefit-recommendations/list?tabs=HTTP) returns, the savings values will be converted using the exchange rate at the time that the policy executes.
 
 ## Input Parameters
 
