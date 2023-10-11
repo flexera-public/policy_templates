@@ -305,18 +305,17 @@ script "js_conditional_currency_conversion", type: "javascript" do
 
   // Make the request only if the target currency is not USD
   if (ds_currency_target['code'] != from_currency) {
-    result = [{ from: from_currency }]
+    result = { from: from_currency }
   }
 EOS
 end
 
 datasource "ds_currency_conversion" do
   # Only make a request if the target currency is not USD
-  iterate $ds_conditional_currency_conversion
   request do
     host "api.xe-auth.flexeraeng.com"
     path "/prod/{proxy+}"
-    query "from", val(iter_item, 'from')
+    query "from", val($ds_conditional_currency_conversion, 'from')
     query "to", val($ds_currency_target, 'code')
     query "amount", "1"
     # Ignore currency conversion if API has issues
@@ -452,18 +451,19 @@ script "js_sp_incident", type: "javascript" do
   }
 
   // Messaging for currency conversion
+  currency = ds_conditional_currency_conversion['from']
   conversion_message = ""
 
-  if (ds_currency['code'] != ds_conditional_currency_conversion['from'] && ds_currency_conversion['to'] != undefined && exchange_rate != 1) {
+  if (ds_currency['code'] != currency && ds_currency_conversion['to'] != undefined && exchange_rate != 1) {
     conversion_message = [
-      "Savings values were converted from ", ds_conditional_currency_conversion['from'],
+      "Savings values were converted from ", currency,
       " to ", ds_currency['code'],
       " using an exchange rate of ", exchange_rate, ".\n\n"
     ].join('')
   }
 
-  if (ds_currency['code'] != ds_conditional_currency_conversion['from'] && ds_currency_conversion['to'] == undefined) {
-    conversion_message = "Savings values are in ", ds_conditional_currency_conversion['from'], " due to a malfunction with Flexera's internal currency conversion API. Please contact Flexera support to report this issue."
+  if (ds_currency['code'] != currency && ds_currency_conversion['to'] == undefined) {
+    conversion_message = "Savings values are in ", currency, " due to a malfunction with Flexera's internal currency conversion API. Please contact Flexera support to report this issue."
   }
 
   message = [
