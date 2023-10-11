@@ -7,16 +7,17 @@ require "json"
 default_child_policy_template_files = [
   # AWS Policy Templates
   "../../compliance/aws/instances_without_fnm_agent/aws_instances_not_running_flexnet_inventory_agent.pt",
+  "../../cost/aws/gp3_volume_upgrade/aws_upgrade_to_gp3_volume.pt",
   "../../cost/aws/idle_compute_instances/idle_compute_instances.pt",
   "../../cost/aws/object_storage_optimization/aws_object_storage_optimization.pt",
   "../../cost/aws/old_snapshots/aws_delete_old_snapshots.pt",
   "../../cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt",
   "../../cost/aws/rightsize_ebs_volumes/aws_volumes_rightsizing.pt",
+  "../../cost/aws/s3_storage_policy/aws_s3_bucket_policy_check.pt",
   "../../cost/aws/superseded_instances/aws_superseded_instances.pt",
   "../../cost/aws/unused_ip_addresses/aws_unused_ip_addresses.pt",
   "../../cost/aws/unused_rds/unused_rds.pt",
   "../../cost/aws/unused_volumes/aws_delete_unused_volumes.pt",
-  "../../cost/aws/s3_storage_policy/aws_s3_bucket_policy_check.pt",
   "../../compliance/aws/long_stopped_instances/aws_long_stopped_instances.pt",
   "../../operational/aws/lambda_functions_with_high_error_rate/lambda_functions_with_high_error_rate.pt",
   "../../operational/aws/long_running_instances/long_running_instances.pt",
