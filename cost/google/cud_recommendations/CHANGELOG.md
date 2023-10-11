@@ -3,7 +3,7 @@
 ## v4.0
 
 - Policy now converts savings to local currency when appropriate
-- Added exchange rate context to incident to allow user to derive unmodified USD values when needed
+- Added exchange rate context to incident to allow user to revert currency conversion when needed
 - Added ability to use Project list parameter as either an "allow" list or a "deny" list
 - Added ability to filter recommendations by region
 - Several parameters altered to be more descriptive and intuitive to use
