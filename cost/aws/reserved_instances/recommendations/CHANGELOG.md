@@ -2,9 +2,9 @@
 
 ## v3.0
 
-- Policy now automatically converts savings from USD to local currency when appropriate
+- Policy now automatically converts savings to local currency when appropriate
 - Removed parameter to do the above manually via a user-specified exchange rate
-- Added exchange rate context to incident to allow user to derive unmodified USD values when needed
+- Added exchange rate context to incident to allow user to derive unmodified values when needed
 - Several parameters altered to be more descriptive and intuitive to use
 - `ElasticSearch` is now referred to as `OpenSearch` in keeping with current AWS naming conventions
 - Added additional context to incident description

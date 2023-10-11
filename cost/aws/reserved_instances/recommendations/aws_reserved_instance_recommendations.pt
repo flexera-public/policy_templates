@@ -185,72 +185,6 @@ script "js_currency_target", type:"javascript" do
 EOS
 end
 
-# Branching logic:
-# This datasource returns an empty array if the target currency is USD.
-# This prevents ds_currency_conversion from running if it's not needed.
-datasource "ds_conditional_currency_conversion" do
-  run_script $js_conditional_currency_conversion, $ds_currency_target
-end
-
-script "js_conditional_currency_conversion", type: "javascript" do
-  parameters "ds_currency_target"
-  result "result"
-  code <<-EOS
-  result = []
-  // Make the request only if the target currency is not USD
-  if (ds_currency_target['code'] != 'USD') {
-    result = [1]
-  }
-EOS
-end
-
-datasource "ds_currency_conversion" do
-  # Only make a request if the target currency is not USD
-  iterate $ds_conditional_currency_conversion
-  request do
-    host "api.xe-auth.flexeraeng.com"
-    path "/prod/{proxy+}"
-    query "from", "USD"
-    query "to", val($ds_currency_target, 'code')
-    query "amount", "1"
-    # Ignore currency conversion if API has issues
-    ignore_status [400, 404, 502]
-  end
-  result do
-    encoding "json"
-    field "from", jmes_path(response, "from")
-    field "to", jmes_path(response, "to")
-    field "amount", jmes_path(response, "amount")
-    field "year", jmes_path(response, "year")
-  end
-end
-
-datasource "ds_currency" do
-  run_script $js_currency, $ds_currency_target, $ds_currency_conversion
-end
-
-script "js_currency", type:"javascript" do
-  parameters "ds_currency_target", "ds_currency_conversion"
-  result "result"
-  code <<-EOS
-  result = ds_currency_target
-  result['exchange_rate'] = 1
-
-  if (ds_currency_conversion['to'] != undefined) {
-    currency_code = ds_currency_target['code']
-    current_month = parseInt(new Date().toISOString().split('-')[1])
-
-    conversion_block = _.find(ds_currency_conversion['to'][currency_code], function(item) {
-      return item['month'] == current_month
-    })
-
-    if (conversion_block != undefined) {
-      result['exchange_rate'] = conversion_block['monthlyAverage']
-    }
-  }
-EOS
-end
-
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -366,6 +300,7 @@ datasource "ds_ri_recommendations" do
           field "averageNormalizedUnitsUsedPerHour", jmes_path(col_item, "AverageNormalizedUnitsUsedPerHour")
           field "averageNumberOfInstancesUsedPerHour", jmes_path(col_item, "AverageNumberOfInstancesUsedPerHour")
           field "averageUtilization", jmes_path(col_item, "AverageUtilization")
+          field "currency", jmes_path(col_item, "CurrencyCode")
           field "estimatedBreakEvenInMonths", jmes_path(col_item, "EstimatedBreakEvenInMonths")
           field "estimatedMonthlyOnDemandCost", jmes_path(col_item, "EstimatedMonthlyOnDemandCost")
           field "estimatedMonthlySavingsAmount", jmes_path(col_item, "EstimatedMonthlySavingsAmount")
@@ -462,12 +397,88 @@ script "js_ri_recommendations", type: "javascript" do
 EOS
 end
 
+# Branching logic:
+# This datasource returns an empty array if the target currency is USD.
+# This prevents ds_currency_conversion from running if it's not needed.
+datasource "ds_conditional_currency_conversion" do
+  run_script $js_conditional_currency_conversion, $ds_currency_target, $ds_ri_recommendations
+end
+
+script "js_conditional_currency_conversion", type: "javascript" do
+  parameters "ds_currency_target", "ds_ri_recommendations"
+  result "result"
+  code <<-EOS
+  result = []
+  from_currency = "USD"
+
+  if (ds_ri_recommendations.length > 0) {
+    if (ds_ri_recommendations[0]['recommendationDetails'].length > 0) {
+      if (typeof(ds_ri_recommendations[0]['recommendationDetails'][0]['currency']) == 'string') {
+        from_currency = ds_ri_recommendations[0]['recommendationDetails'][0]['currency']
+      }
+    }
+  }
+
+  // Make the request only if the target currency is not USD
+  if (ds_currency_target['code'] != from_currency) {
+    result = [{ from: from_currency }]
+  }
+EOS
+end
+
+datasource "ds_currency_conversion" do
+  # Only make a request if the target currency is not USD
+  iterate $ds_conditional_currency_conversion
+  request do
+    host "api.xe-auth.flexeraeng.com"
+    path "/prod/{proxy+}"
+    query "from", val(iter_item, 'from')
+    query "to", val($ds_currency_target, 'code')
+    query "amount", "1"
+    # Ignore currency conversion if API has issues
+    ignore_status [400, 404, 502]
+  end
+  result do
+    encoding "json"
+    field "from", jmes_path(response, "from")
+    field "to", jmes_path(response, "to")
+    field "amount", jmes_path(response, "amount")
+    field "year", jmes_path(response, "year")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_target, $ds_currency_conversion
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_target", "ds_currency_conversion"
+  result "result"
+  code <<-EOS
+  result = ds_currency_target
+  result['exchange_rate'] = 1
+
+  if (ds_currency_conversion['to'] != undefined) {
+    currency_code = ds_currency_target['code']
+    current_month = parseInt(new Date().toISOString().split('-')[1])
+
+    conversion_block = _.find(ds_currency_conversion['to'][currency_code], function(item) {
+      return item['month'] == current_month
+    })
+
+    if (conversion_block != undefined) {
+      result['exchange_rate'] = conversion_block['monthlyAverage']
+    }
+  }
+EOS
+end
+
 datasource "ds_ri_normalization" do
-  run_script $js_ri_normalization, $ds_ri_recommendations, $ds_applied_policy, $ds_vendor_account_table, $ds_currency, $ds_currency_conversion, $param_days, $param_service, $param_service_spec, $param_scope, $param_term, $param_payment_option, $param_min_savings
+  run_script $js_ri_normalization, $ds_ri_recommendations, $ds_applied_policy, $ds_vendor_account_table, $ds_currency, $ds_currency_conversion, $ds_conditional_currency_conversion, $param_days, $param_service, $param_service_spec, $param_scope, $param_term, $param_payment_option, $param_min_savings
 end
 
 script "js_ri_normalization", type: "javascript" do
-  parameters "ds_ri_recommendations", "ds_applied_policy", "ds_vendor_account_table", "ds_currency", "ds_currency_conversion", "param_days", "param_service", "param_service_spec", "param_scope", "param_term", "param_payment_option", "param_min_savings"
+  parameters "ds_ri_recommendations", "ds_applied_policy", "ds_vendor_account_table", "ds_currency", "ds_currency_conversion", "ds_conditional_currency_conversion", "param_days", "param_service", "param_service_spec", "param_scope", "param_term", "param_payment_option", "param_min_savings"
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
@@ -586,17 +597,18 @@ script "js_ri_normalization", type: "javascript" do
   })
 
   // Messaging for currency conversion
+  currency = ds_conditional_currency_conversion[0]['from']
   conversion_message = ""
 
-  if (ds_currency['code'] != 'USD' && ds_currency_conversion['to'] != undefined && exchange_rate != 1) {
+  if (ds_currency['code'] != currency && ds_currency_conversion['to'] != undefined && exchange_rate != 1) {
     conversion_message = [
-      "Savings values were converted from USD to ", ds_currency['code'],
+      "Savings values were converted from ", currency, " to ", ds_currency['code'],
       " using an exchange rate of ", exchange_rate, ".\n\n"
     ].join('')
   }
 
-  if (ds_currency['code'] != 'USD' && ds_currency_conversion['to'] == undefined) {
-    conversion_message = "Savings values are in USD due to a malfunction with Flexera's internal currency conversion API. Please contact Flexera support to report this issue."
+  if (ds_currency['code'] != currency && ds_currency_conversion['to'] == undefined) {
+    conversion_message = "Savings values are in ", currency, " due to a malfunction with Flexera's internal currency conversion API. Please contact Flexera support to report this issue."
   }
 
   // Only show EC2 Specification setting if it is applicable
