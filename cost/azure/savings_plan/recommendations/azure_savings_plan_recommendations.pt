@@ -303,19 +303,20 @@ script "js_conditional_currency_conversion", type: "javascript" do
     from_currency = ds_sp_recommendations[0]["currency"]
   }
 
-  // Make the request only if the target currency is not USD
+  // Make the request only if the target currency is not the same
   if (ds_currency_target['code'] != from_currency) {
-    result = { from: from_currency }
+    result = [{ from: from_currency }]
   }
 EOS
 end
 
 datasource "ds_currency_conversion" do
   # Only make a request if the target currency is not USD
+  iterate $ds_conditional_currency_conversion
   request do
     host "api.xe-auth.flexeraeng.com"
     path "/prod/{proxy+}"
-    query "from", val($ds_conditional_currency_conversion, 'from')
+    query "from", val(iter_item, 'from')
     query "to", val($ds_currency_target, 'code')
     query "amount", "1"
     # Ignore currency conversion if API has issues
@@ -451,7 +452,12 @@ script "js_sp_incident", type: "javascript" do
   }
 
   // Messaging for currency conversion
-  currency = ds_conditional_currency_conversion['from']
+  currency = ds_currency['code']
+
+  if (ds_conditional_currency_conversion[0] != undefined) {
+    currency = ds_conditional_currency_conversion[0]['from']
+  }
+
   conversion_message = ""
 
   if (ds_currency['code'] != currency && ds_currency_conversion['to'] != undefined && exchange_rate != 1) {
