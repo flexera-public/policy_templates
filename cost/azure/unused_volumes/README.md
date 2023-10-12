@@ -1,6 +1,6 @@
 # Azure Unused Volumes
 
-## What it does
+## What It Does
 
 This Policy Template scans all volumes in the given account and identifies any volume that meets the user-specified criteria for being unused. The user can filter volumes based on age, whether they are currently attached to a VM, whether there has been any read/write activity on the volume over a user-specified number of days, or any combination of these. Any volumes that meet the user-specified criteria are considered unused. If any unused volumes are found, an incident report will show the volumes and related information. An email will be sent to the user-specified email addresses.
 
@@ -9,9 +9,14 @@ If the volume is not getting deleted because it is locked, then the volume will 
 
 Note: Previous versions of this policy had the option to filter results by how long a volume was detached. This functionality did not work as expected due to Azure volume logs not recording detachment events. Such events are recorded in the logs of the VM the volume was detached from, and there is currently no way to determine the most recently attached VM for a volume through Azure's APIs. For this reason, this functionality was removed.
 
-### Policy savings details
+### Policy Savings Details
 
-The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the resource is deleted or downsized. Optima is used to retrieve and calculate the estimated savings which is the cost of the resource for a full day (3 days ago) multiplied by 30.44 (the average number of days in a month) or 0 if no cost information for the resource was found in Optima. The savings is displayed in the Estimated Monthly Savings column. The incident message detail includes the sum of each resource *Estimated Monthly Savings* as *Potential Monthly Savings*.
+The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the resource is terminated.
+
+- The `Estimated Monthly Savings` is calculated by multiplying the amortized cost of the resource for 1 day, as found within Flexera CCO, by 30.44, which is the average number of days in a month.
+- Since the costs of individual resources are obtained from Flexera CCO, they will take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
+- If the resource cannot be found in Flexera CCO, the `Estimated Monthly Savings` is 0.
+- The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
 
 ## Prerequisites
 
