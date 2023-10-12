@@ -1,6 +1,6 @@
 # AWS Unused Volumes
 
-## What it does
+## What It Does
 
 This Policy finds unused volumes in the given account and deletes them after user approval. The user can optionally create a snapshot before deleting the volume. CloudWatch is used to determine its use by checking if there are read or write operations within the number of user-specified days. The Volume Status parameter will determine whether to include attached volumes in the resulting incident, unattached, or both. Policy Incident will be created with all of volumes that fall into these criteria.
 
@@ -9,9 +9,14 @@ Note: The unused volumes incident will reflect the updated set of unused volumes
 
 Optionally, the user can specify one or more tags that if found on a volume will exclude the volume from the list.
 
-### Policy savings details
+### Policy Savings Details
 
-The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the resource is terminated or downsized. Optima is used to retrieve and calculate the estimated savings which is the cost of the resource for a full day (3 days ago) multiplied by 30.44 (the average number of days in a month), or 0 if no cost information for the resource was found in Optima. The savings is displayed in the Estimated Monthly Savings column. The incident message detail includes the sum of each resource *Estimated Monthly Savings* as *Potential Monthly Savings*.
+The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the resource is terminated.
+
+- The `Estimated Monthly Savings` is calculated by multiplying the amortized cost of the resource for 1 day, as found within Flexera CCO, by 30.44, which is the average number of days in a month.
+- Since the costs of individual resources are obtained from Flexera CCO, they will take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
+- If the resource cannot be found in Flexera CCO, the `Estimated Monthly Savings` is 0.
+- The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
 
 ## Input Parameters
 

@@ -1,6 +1,6 @@
 # AWS Unused IP Addresses
 
-## What it does
+## What It Does
 
 This Policy Template scans all IP addresses in the given account and identifies any unused IP addresses. If any are found, an incident report will show the IP addresses, and related information, and an email will be sent to the user-specified email address. If the user approves that the IP addresses should be deleted, the policy will delete the IP addresses. Optionally, the user can specify one or more tags that if found on an IP address will exclude the IP address from the list, as well as specify a minimum number of days for an IP address to be unattached before considering it unused.
 
@@ -8,11 +8,13 @@ This Policy Template scans all IP addresses in the given account and identifies 
 
 The policy utilizes the AWS EC2 API to get a list of unattached IP addresses and the AWS CloudTrail API to determine when the IP address was detached from an instance. An incident is raised with any unattached IP addresses that have been detached for longer than the user-specified threshold.
 
-### Policy savings details
+### Policy Savings Details
 
-The policy includes the estimated savings. The estimated savings is recognized if the resource is terminated. The savings is calculated using the per hour cost of unused IPs for a period of 30 days and is displayed in the Estimated Monthly Savings column and the total estimated sum of all the unused IPs is displayed in the incident detail message.
+The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the resource is terminated.
 
-If the Flexera organization is configured to use a currency other than USD, the savings values will be converted from USD using the exchange rate at the time that the policy executes.
+- The `Estimated Monthly Savings` is calculated using the per hour price of unused IPs, obtained from the AWS Pricing API, multiplied by 24 and then 30.44 to get an estimated monthly price.
+- Since the prices of individual resources are *not* obtained from Flexera CCO, they will *not* take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
+- The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
 
 ## Input Parameters
 
