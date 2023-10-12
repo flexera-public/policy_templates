@@ -18,7 +18,7 @@ If the Flexera organization is configured to use a currency other than USD, the 
 
 ### Policy Savings Details
 
-The policy includes the estimated monthly savings. The estimated monthly savings if the volume is upgraded from GP2 to GP3.
+The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the volume is upgraded from GP2 to GP3.
 
 - The `Estimated Monthly Cost` is calculated by multiplying the amortized cost of the resource for 1 day, as found within Flexera CCO, by 30.44, which is the average number of days in a month. This value is not used for calculating savings but is provided as a reference.
 - Since the `Estimated Monthly Cost` of individual resources is obtained from Flexera CCO, it will take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.

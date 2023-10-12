@@ -26,6 +26,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - If no cost information for the resource type was found in our internal database, the `Estimated Monthly Savings` is 0.
 - Since the savings is calculated from list prices rather than data obtained from Flexera CCO, they will *not* take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
 - The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
+- If the Flexera organization is configured to use a currency other than USD, the savings values will be converted from USD using the exchange rate at the time that the policy executes.
 
 ## Input Parameters
 
