@@ -393,12 +393,13 @@ script "js_currency", type:"javascript" do
   result = ds_currency_target
   result['exchange_rate'] = 1
 
-  if (ds_currency_conversion['to'] != undefined) {
-    currency_code = ds_currency_target['code']
-    current_month = parseInt(new Date().toISOString().split('-')[1])
+  if (ds_currency_conversion[0]['to'] != undefined) {
+    currency_code = _.keys(ds_currency_conversion[0]['to'])[0]
+    monthly_conversions = ds_currency_conversion[0]['to'][currency_code]
+    current_month = Number(new Date().toISOString().split('-')[1])
 
-    conversion_block = _.find(ds_currency_conversion['to'][currency_code], function(item) {
-      return item['month'] == current_month
+    conversion_block = _.find(monthly_conversions, function(item) {
+      return Number(item['month']) == current_month
     })
 
     if (conversion_block != undefined) {
@@ -456,7 +457,9 @@ script "js_recommendations_incident", type:"javascript" do
   currency = ""
 
   _.each(filtered_recommendations, function(recommendation) {
-    currency = recommendation['currency']
+    if (typeof(recommendation['currency']) == 'string' && recommendation['currency'] != "") {
+      currency = recommendation['currency']
+    }
 
     costNanos = recommendation['costNanos']
     if (costNanos == null || costNanos == undefined) { costNanos = 0 }
@@ -502,7 +505,7 @@ script "js_recommendations_incident", type:"javascript" do
         projectNumber: recommendation['projectNumber'],
         resourceID: recommendation['id'],
         region: recommendation['region'],
-        description: recommendation['description'],
+        recommendationDetails: recommendation['description'],
         priority: recommendation['priority'],
         scope: recommendation['recommenderSubtype'],
         state: recommendation['state'],
@@ -524,15 +527,15 @@ script "js_recommendations_incident", type:"javascript" do
   // Messaging for currency conversion
   conversion_message = ""
 
-  if (ds_currency['code'] != currency && ds_currency_conversion['to'] != undefined && exchange_rate != 1) {
+  if (ds_currency['code'] != currency && ds_currency_conversion[0]['to'] != undefined && ds_currency['exchange_rate'] != 1) {
     conversion_message = [
       "Savings values were converted from ", currency, " to ", ds_currency['code'],
-      " using an exchange rate of ", exchange_rate, ".\n\n"
+      " using an exchange rate of ", ds_currency['exchange_rate'], ".\n\n"
     ].join('')
   }
 
-  if (ds_currency['code'] != currency && ds_currency_conversion['to'] == undefined) {
-    conversion_message = "Savings values are in ", currency, " due to a malfunction with Flexera's internal currency conversion API. Please contact Flexera support to report this issue."
+  if (ds_currency['code'] != currency && ds_currency_conversion[0]['to'] == undefined) {
+    conversion_message = "Savings values are in " + currency + " due to a malfunction with Flexera's internal currency conversion API. Please contact Flexera support to report this issue."
   }
 
   message = [
@@ -556,7 +559,7 @@ script "js_recommendations_incident", type:"javascript" do
   // Dummy item to ensure validation runs at least once
   result.push({
     accountID: "",        accountName: "",     projectNumber: "",
-    resourceID: "",       region: "",          description: "",
+    resourceID: "",       region: "",          recommendationDetails: "",
     priority: "",         scope: "",           state: "",
     algorithm: "",        savings: "",         savingsCurrency: "",
     resourceName: "",     resourceType: "",    resourcesToPurchase: "",
@@ -616,8 +619,8 @@ policy "policy_recommendations" do
       field "algorithm" do
         label "Algorithm"
       end
-      field "description" do
-        label "Description"
+      field "recommendationDetails" do
+        label "Recommendation"
       end
       field "savings" do
         label "Estimated Monthly Savings"
