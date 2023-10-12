@@ -20,6 +20,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - Since the costs of individual resources are obtained from Flexera CCO, they will take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
 - If the resource cannot be found in Flexera CCO, the `Estimated Monthly Savings` is 0.
 - The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
+- Both `Estimated Monthly Savings` and `Potential Monthly Savings` will be reported in the currency of the Flexera organization the policy is applied in.
 
 ## Input Parameters
 
