@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2
+
+- Fixed issue with currency conversion check when array is empty
+
 ## v3.1
 
 - Fixed issue where policy would fail to do proper currency conversion
