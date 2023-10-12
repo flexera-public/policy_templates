@@ -39,8 +39,9 @@ default_child_policy_template_files = [
   "../../operational/azure/tag_cardinality/azure_tag_cardinality.pt",
   "../../operational/azure/vms_without_managed_disks/azure_vms_without_managed_disks.pt",
   # Google Policy Templates
-  "../../cost/google/idle_ip_address_recommendations/google_idle_ip_address_recommendations.pt",
   "../../cost/google/cloud_sql_idle_instance_recommendations/google_sql_idle_instance_recommendations.pt",
+  "../../cost/google/idle_ip_address_recommendations/google_idle_ip_address_recommendations.pt",
+  "../../cost/google/idle_persistent_disk_recommendations/google_idle_persistent_disk_recommendations.pt",
   "../../cost/google/rightsize_vm_recommendations/google_rightsize_vm_recommendations.pt"
 ]
 

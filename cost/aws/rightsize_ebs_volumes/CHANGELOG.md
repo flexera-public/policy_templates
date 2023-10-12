@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.1
+
+- Fixed issue where list prices reported in incident were inflated
+
 ## v4.0
 
 - Several parameters altered to be more descriptive and human-readable
