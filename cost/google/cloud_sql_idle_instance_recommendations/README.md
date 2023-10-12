@@ -12,7 +12,7 @@ This policy uses the following Google recommenders:
 
 More information is available in Google's documentation:
 
-- [Viewing and applying idle resources recommendations](https://cloud.google.com/compute/docs/viewing-and-applying-idle-resources-recommendations)
+- [Identify idle Cloud SQL instances](https://cloud.google.com/sql/docs/mysql/recommender-sql-idle)
 
 ### Policy savings details
 
