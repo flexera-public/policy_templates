@@ -15,6 +15,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - The `Estimated Monthly Savings` is calculated using the per hour price of unused IPs, obtained from the AWS Pricing API, multiplied by 24 and then 30.44 to get an estimated monthly price.
 - Since the prices of individual resources are *not* obtained from Flexera CCO, they will *not* take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
 - The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
+- If the Flexera organization is configured to use a currency other than USD, the savings values will be converted from USD using the exchange rate at the time that the policy executes.
 
 ## Input Parameters
 

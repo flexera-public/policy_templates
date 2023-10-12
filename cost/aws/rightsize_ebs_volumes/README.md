@@ -26,6 +26,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - Since savings is calculated based on list prices obtained from the AWS Pricing API, they will *not* take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
 - The savings are displayed in the `Estimated Monthly Savings` column.
 - The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
+- If the Flexera organization is configured to use a currency other than USD, the savings values will be converted from USD using the exchange rate at the time that the policy executes.
 
 ## Input Parameters
 
