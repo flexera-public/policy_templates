@@ -18,7 +18,7 @@ If the Flexera organization is configured to use a currency other than the one t
 
 This policy has the following input parameters required when launching the policy.
 
-- *Email addresses* - A list of email addresses to notify
+- *Email Addresses* - A list of email addresses to notify
 - *Azure Endpoint* - Azure Endpoint to access resources
 - *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation.
 - *Allow/Deny Subscriptions* - Allow or Deny entered Subscriptions to filter results.
