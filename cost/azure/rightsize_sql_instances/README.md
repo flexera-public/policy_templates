@@ -17,8 +17,8 @@ This policy checks all the Azure SQL single database instances in Azure Subscrip
 The policy includes the estimated monthly savings. The estimated monthly savings is recognized for unused resources if the resource is terminated, and for underutilized resources if the resource is downsized.
 
 - The `Estimated Monthly Savings` is calculated by multiplying the amortized cost of the resource for 1 day, as found within Flexera CCO, by 30.44, which is the average number of days in a month.
-- For unused resources, the savings is the full cost of the resource.
-- For underutilized resources, the savings is the full cost of the resource is divided by the current capacity of the instance, multiplied by the recommended capacity of the instance, and then subtracted from the current cost of the instance.
+- For unused resources, the `Estimated Monthly Savings` is the full cost of the resource.
+- For underutilized resources, the `Estimated Monthly Savings` is the full cost of the resource is divided by the current capacity of the instance, multiplied by the recommended capacity of the instance, and then subtracted from the current cost of the instance.
 - Since the costs of individual resources are obtained from Flexera CCO, they will take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
 - If the resource cannot be found in Flexera CCO, the `Estimated Monthly Savings` is 0.
 - The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
