@@ -68,8 +68,8 @@ These templates can generate savings estimates for your environment.
 
 #### Google
 
-- [Google Cloud SQL Idle Instance Recommender](./cost/google/cloud_sql_idle_instance_recommendations)
 - [Google Committed Use Discount Recommender](./cost/google/cud_recommendations)
+- [Google Idle Cloud SQL Instance Recommender](./cost/google/cloud_sql_idle_instance_recommendations)
 - [Google Idle IP Address Recommender](./cost/google/idle_ip_address_recommendations)
 - [Google Idle Persistent Disk Recommender](./cost/google/idle_persistent_disk_recommendations)
 - [Google Idle VM Recommender](./cost/google/idle_vm_recommendations)
@@ -348,7 +348,7 @@ These templates can generate savings estimates for your environment.
 
 - SQL
 
-  - [Google Cloud SQL Idle Instance Recommender](./cost/google/cloud_sql_idle_instance_recommendations)
+  - [Google Idle Cloud SQL Instance Recommender](./cost/google/cloud_sql_idle_instance_recommendations)
 
 - Storage
 
