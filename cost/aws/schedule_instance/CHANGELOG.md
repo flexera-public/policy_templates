@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2
+
+- Updated description of `Account Number` parameter
+
 ## v3.1
 
 - Changed service metadata to "Compute" to ensure proper incident scraping
