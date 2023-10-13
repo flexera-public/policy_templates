@@ -1,5 +1,18 @@
 # Changelog
 
+## v3.0
+
+- Policy now automatically converts savings to local currency when appropriate
+- Added exchange rate context to incident to allow user to revert currency conversion when needed
+- Added ability to use Subscription list parameter as either an "allow" list or a "deny" list
+- Added ability to filter recommendations by region
+- Several parameters altered to be more descriptive and intuitive to use
+- Added additional context to incident description
+- Normalized incident export to be consistent with other policies
+- Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera credential
+- Policy now requires `Microsoft.Billing/billingAccounts/read` permission for Azure credential
+
 ## v2.17
 
 - Changed internal names of several incident fields to ensure that they are properly scraped for dashboards.
