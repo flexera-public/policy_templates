@@ -187,55 +187,6 @@ datasource "ds_applied_policy" do
   end
 end
 
-datasource "ds_azure_billing_accounts" do
-  request do
-    auth $auth_azure
-    pagination $pagination_azure
-    host $param_azure_endpoint
-    path "/providers/Microsoft.Billing/billingAccounts"
-    query "api-version", "2019-10-01-preview"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "value[*]") do
-      field "id", jmes_path(col_item, "id")
-      field "name", jmes_path(col_item, "name")
-      field "type", jmes_path(col_item, "type")
-      field "billingProfiles", jmes_path(col_item, "properties.billingProfiles")
-      field "currency", jmes_path(col_item, "properties.enrollmentDetails.currency")
-    end
-  end
-end
-
-datasource "ds_azure_currency_code" do
-  run_script $js_azure_currency_code, $ds_azure_billing_accounts
-end
-
-script "js_azure_currency_code", type:"javascript" do
-  parameters "ds_azure_billing_accounts"
-  result "result"
-  code <<-EOS
-  result = { code: 'USD' }
-
-  _.each(ds_azure_billing_accounts, function(account) {
-    if (typeof(account['currency']) == 'string') {
-      result['code'] = account['currency']
-    } else {
-      if (typeof(account['billingProfiles']) == 'object') {
-        _.each(account['billingProfiles'], function(profile) {
-          if (typeof(profile['properties']) == 'object') {
-            if (typeof(profile['properties']['currency']) == 'string') {
-              result['code'] = profile['properties']['currency']
-            }
-          }
-        })
-      }
-    }
-  })
-EOS
-end
-
 # Gather local currency info
 datasource "ds_currency_reference" do
   request do
@@ -278,6 +229,56 @@ script "js_currency_target", type:"javascript" do
 EOS
 end
 
+datasource "ds_azure_billing_accounts" do
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path "/providers/Microsoft.Billing/billingAccounts"
+    query "api-version", "2019-10-01-preview"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "type", jmes_path(col_item, "type")
+      field "billingProfiles", jmes_path(col_item, "properties.billingProfiles")
+      field "currency", jmes_path(col_item, "properties.enrollmentDetails.currency")
+    end
+  end
+end
+
+datasource "ds_azure_currency_code" do
+  run_script $js_azure_currency_code, $ds_azure_billing_accounts, $ds_currency_target
+end
+
+script "js_azure_currency_code", type:"javascript" do
+  parameters "ds_azure_billing_accounts", "ds_currency_target"
+  result "result"
+  code <<-EOS
+  // Default to currency in Flexera org if API call fails
+  result = { code: ds_currency_target['code'] }
+
+  _.each(ds_azure_billing_accounts, function(account) {
+    if (typeof(account['currency']) == 'string') {
+      result['code'] = account['currency']
+    } else {
+      if (typeof(account['billingProfiles']) == 'object') {
+        _.each(account['billingProfiles'], function(profile) {
+          if (typeof(profile['properties']) == 'object') {
+            if (typeof(profile['properties']['currency']) == 'string') {
+              result['code'] = profile['properties']['currency']
+            }
+          }
+        })
+      }
+    }
+  })
+EOS
+end
+
 # Branching logic:
 # This datasource returns an empty array if the source and target currency are the same.
 # This prevents ds_currency_conversion from running if it's not needed.
@@ -290,7 +291,7 @@ script "js_conditional_currency_conversion", type: "javascript" do
   result "result"
   code <<-EOS
   result = []
-  // Make the request only if the target currency is not USD
+  // Make the request only if the target currency is not same as source
   if (ds_currency_target['code'] != ds_azure_currency_code['code']) {
     result = [1]
   }
@@ -503,11 +504,11 @@ EOS
 end
 
 datasource "ds_ri_incident" do
-  run_script $js_ri_incident, $ds_ri_recommendations_region_filtered, $ds_currency, $ds_currency_conversion, $ds_azure_currency_code, $ds_applied_policy, $param_term, $param_days, $param_service, $param_scope, $param_min_savings
+  run_script $js_ri_incident, $ds_ri_recommendations_region_filtered, $ds_currency, $ds_currency_conversion, $ds_azure_currency_code, $ds_azure_billing_accounts, $ds_applied_policy, $param_term, $param_days, $param_service, $param_scope, $param_min_savings
 end
 
 script "js_ri_incident", type: "javascript" do
-  parameters "ds_ri_recommendations_region_filtered", "ds_currency", "ds_currency_conversion", "ds_azure_currency_code", "ds_applied_policy", "param_term", "param_days", "param_service", "param_scope", "param_min_savings"
+  parameters "ds_ri_recommendations_region_filtered", "ds_currency", "ds_currency_conversion", "ds_azure_currency_code", "ds_azure_billing_accounts", "ds_applied_policy", "param_term", "param_days", "param_service", "param_scope", "param_min_savings"
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
@@ -590,8 +591,13 @@ script "js_ri_incident", type: "javascript" do
     ].join('')
   }
 
-  if (ds_currency['code'] != currency && ds_currency_conversion.length == 0) {
-    conversion_message = "Savings values are in ", currency, " due to a malfunction with Flexera's internal currency conversion API. Please contact Flexera support to report this issue."
+  if (ds_azure_billing_accounts.length == 0) {
+    conversion_message = [
+      "Unable to determine currency for savings values reported by Azure. ",
+      "Savings values are all unmodified and assumed to be in ", currency, " already. ",
+      "Please add the *Microsoft.Billing/billingAccounts/read* permission ",
+      "to your Microsoft Azure credential in order to ensure proper currency conversion.\n\n"
+    ].join('')
   }
 
   message = [
