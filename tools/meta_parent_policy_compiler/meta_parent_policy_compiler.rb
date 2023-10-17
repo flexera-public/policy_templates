@@ -20,6 +20,7 @@ default_child_policy_template_files = [
   "../../operational/aws/lambda_functions_with_high_error_rate/lambda_functions_with_high_error_rate.pt",
   "../../operational/aws/long_running_instances/long_running_instances.pt",
   "../../security/aws/rds_publicly_accessible/aws_publicly_accessible_rds_instances.pt",
+  "../../operational/aws/tag_cardinality/aws_tag_cardinality.pt",
   # Azure Policy Templates
   "../../compliance/azure/instances_without_fnm_agent/azure_instances_not_running_flexnet_inventory_agent.pt",
   "../../cost/azure/idle_compute_instances/azure_idle_compute_instances.pt",

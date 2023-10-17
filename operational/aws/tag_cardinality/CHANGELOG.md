@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.0
+
+- Added logic required for "Meta Policy" use-cases
+
 ## v2.3
 
 - A list of the unique tag values is now included as a column in the incident
