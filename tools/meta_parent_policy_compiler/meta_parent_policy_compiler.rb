@@ -45,6 +45,7 @@ default_child_policy_template_files = [
   "../../cost/azure/schedule_instance/azure_schedule_instance.pt",
   "../../cost/azure/superseded_instances/azure_superseded_instances.pt",
   "../../cost/azure/storage_account_lifecycle_management/storage_account_lifecycle_management.pt",
+  "../../cost/azure/databricks/rightsize_compute/azure_databricks_rightsize_compute.pt",
   "../../operational/azure/azure_certificates/azure_certificates.pt",
   "../../operational/azure/azure_long_running_instances/azure_long_running_instances.pt",
   "../../operational/azure/tag_cardinality/azure_tag_cardinality.pt",
@@ -80,14 +81,14 @@ def compile_meta_parent_policy(file_path)
   # print("\n###########################\n")
 
   # Get the parameters
-  parameters = pt.scan(/parameter ".*?" do.*?^end/m)
+  parameters = pt.scan(/^parameter ".*?" do.*?^end/m)
 
   # print("Parameters:\n")
   # print(parameters.join("\n---------\n"))
   # print("\n###########################\n")
 
   # Get the credentials
-  credentials = pt.scan(/credentials ".*?" do.*?^end/m)
+  credentials = pt.scan(/^credentials ".*?" do.*?^end/m)
 
   # Get resource level
   resource_level = pt.scan(/^\s*resource_level (true|false)$/)
@@ -131,7 +132,7 @@ def compile_meta_parent_policy(file_path)
   # Get the checks
   # Use regex to extract the validate and validate_each checks from the policy template string s
   # The regex is not perfect, but it works for now
-  checks = pt.scan(/validate.*?do.*?^  end/m)
+  checks = pt.scan(/^\s+validate.*?do.*?^  end/m)
   checks.each do |validate_block|
     # Print Raw Validate Block as a String
     # print("Raw Validate Block:\n")
