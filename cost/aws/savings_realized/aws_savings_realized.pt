@@ -97,18 +97,10 @@ datasource "ds_aggregated_costs" do
   result do
     encoding "json"
     collect jmes_path(response, "rows") do
-      field "instance_type", jmes_path(col_item, "dimensions.instance_type")
-      field "region", jmes_path(col_item, "dimensions.region")
       field "purchase_option", jmes_path(col_item, "dimensions.purchase_option")
-      field "usage_unit", jmes_path(col_item, "dimensions.usage_unit")
-      field "usage_amount", jmes_path(col_item, "metrics.usage_amount")
       field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+      field "savings", jmes_path(col_item, "metrics.savings_rate_reduction_amortized_adj")
       field "month", jmes_path(col_item, "timestamp")
-      field "database_edition", jmes_path(col_item, "dimensions.database_edition")
-      field "database_engine", jmes_path(col_item, "dimensions.database_engine")
-      field "deployment_option", jmes_path(col_item, "dimensions.deployment_option")
-      field "license_model", jmes_path(col_item, "dimensions.license_model")
-      field "operating_system", jmes_path(col_item, "dimensions.operating_system")
     end
   end
 end
@@ -136,33 +128,17 @@ script "js_get_aggregated_costs", type: "javascript" do
         { "dimension": "vendor", "type": "equal", "value": "AWS" },
         {
           "type": "not",
-          "expression": { "dimension": "instance_type", "type": "equal", "value": "None" }
-        },
-        {
-          "type": "not",
-          "expression": { "dimension": "category", "type": "equal", "value": "Commitments" }
-        },
-        {
-          "type": "not",
           "expression": { "dimension": "purchase_option", "type": "equal", "value": "On Demand (Non-Discountable)" }
         }
       ]
     },
     "dimensions": [
-      "instance_type",
-      "region",
-      "purchase_option",
-      "usage_unit",
-      "database_edition",
-      "database_engine",
-      "deployment_option",
-      "license_model",
-      "operating_system"
+      "purchase_option"
     ],
     "granularity": "month",
     "metrics": [
       "cost_amortized_unblended_adj",
-      "usage_amount"
+      "savings_rate_reduction_amortized_adj",
     ]
     "end_at": end_date,
     "start_at": start_date
@@ -192,6 +168,12 @@ script "js_get_savings_realized", type: "javascript" do
   code <<-'EOS'
   var savings_realized_data = []
 
+  //Get arrays for Purchase Option
+  od_costs = _.filter(all_costs, function(cost){ return cost.purchase_option == "On Demand" })
+  ri_costs = _.filter(all_costs, function(cost){ return cost.purchase_option == "Reserved" })
+  sp_costs = _.filter(all_costs, function(cost){ return cost.purchase_option == "Savings Plan" })
+  spot_costs = _.filter(all_costs, function(cost){ return cost.purchase_option == "Spot" })
+
   //Get list of Months
   months = _.pluck( _.uniq(all_costs, function(all){ return all.month }), "month" )
 
@@ -204,105 +186,45 @@ script "js_get_savings_realized", type: "javascript" do
     savings_realized_data.push({ "month": mo, "cost": total_month_cost, "dimension": "Total Actual Spend On Discountable Compute" })
   })
 
-  // create an object with all different combination of instance_type/region/operating_system/database_engine/database_edition/license_model/deployment_option and the costs records that matches that combination filtered by purchase option
-  instance_combinations = {}
-  _.each(all_costs, function(cost){
-    key = [cost.instance_type, cost.region, cost.operating_system, cost.database_engine, cost.database_edition, cost.license_model, cost.deployment_option].join("---")
-
-    if (instance_combinations[key] == null) {
-      instance_combinations[key] = {
-        "ri_costs": [],
-        "sp_costs": [],
-        "spot_costs": [],
-        "on_demand_total_cost" : 0,
-        "on_demand_counter" : 0
-      }
-    }
-
-    switch (cost.purchase_option) {
-      case "On Demand":
-        // these will be used to average cost calculation
-        instance_combinations[key].on_demand_total_cost += (cost.cost / cost.usage_amount)
-        instance_combinations[key].on_demand_counter++
-        break;
-      case "Reserved":
-        instance_combinations[key].ri_costs.push(cost)
-        break;
-      case "Savings Plan":
-        instance_combinations[key].sp_costs.push(cost)
-        break;
-      case "Spot":
-        instance_combinations[key].spot_costs.push(cost)
-        break;
-    }
-  })
-
   var temp_result = []
 
-  _.each(instance_combinations, function(value, key){
-
-    // calculate On-Demand cost of instance per hour across all months for each instance instance_type/region/operating_system/database_engine/database_edition/license_model/deployment_option combination
-    avg_od_cost_inst_hr = 0
-    if(value.on_demand_counter > 0){ avg_od_cost_inst_hr = value.on_demand_total_cost / value.on_demand_counter }
-
-    //Reserved Instance savings
-    _.each(value.ri_costs, function(ri){
-      savings_realized_per_inst_hr = avg_od_cost_inst_hr - (ri.cost / ri.usage_amount)
-
-      savings_realized = 0
-      if(ri.cost > 0 ){
-        savings_realized = savings_realized_per_inst_hr * ri.usage_amount
+  //Reserved Instance savings
+  _.each(ri_costs, function(ri){
+    temp_result.push(
+      {
+        "month": ri.month,
+        "region": ri.region,
+        "instance_type": ri.instance_type,
+        "savings_realized": ri.savings,
+        "purchase_option": "Reservations"
       }
+    )
+  })
 
-      temp_result.push(
-        {
-          "month": ri.month,
-          "region": ri.region,
-          "instance_type": ri.instance_type,
-          "savings_realized": savings_realized,
-          "purchase_option": "Reservations"
-        }
-      )
-    })
-
-    //Savings Plan savings
-    _.each(value.sp_costs, function(sp){
-      savings_realized_per_inst_hr = avg_od_cost_inst_hr - (sp.cost / sp.usage_amount)
-
-      savings_realized = 0
-      if(sp.cost > 0 ){
-        savings_realized = savings_realized_per_inst_hr * sp.usage_amount
+  //Savings Plan savings
+  _.each(sp_costs, function(sp){
+    temp_result.push(
+      {
+        "month": sp.month,
+        "region": sp.region,
+        "instance_type": sp.instance_type,
+        "savings_realized": sp.savings,
+        "purchase_option": "Savings Plans"
       }
+    )
+  })
 
-      temp_result.push(
-        {
-          "month": sp.month,
-          "region": sp.region,
-          "instance_type": sp.instance_type,
-          "savings_realized": savings_realized,
-          "purchase_option": "Savings Plans"
-        }
-      )
-    })
-
-    //Spot Instance savings
-    _.each(value.spot_costs, function(spot){
-      savings_realized_per_inst_hr = avg_od_cost_inst_hr - (spot.cost / spot.usage_amount)
-      savings_realized = 0
-      if(spot.cost > 0 ){
-        savings_realized = savings_realized_per_inst_hr * spot.usage_amount
+  //Spot Instance savings
+  _.each(spot_costs, function(spot){
+    temp_result.push(
+      {
+        "month": spot.month,
+        "region": spot.region,
+        "instance_type": spot.instance_type,
+        "savings_realized": spot.savings,
+        "purchase_option": "Spot Instances"
       }
-
-      temp_result.push(
-        {
-          "month": spot.month,
-          "region": spot.region,
-          "instance_type": spot.instance_type,
-          "savings_realized": savings_realized,
-          "purchase_option": "Spot Instances"
-        }
-      )
-    })
+    )
   })
 
   //reduce list - aggregate SAVINGS REALIZED costs for same purchase option for same month
