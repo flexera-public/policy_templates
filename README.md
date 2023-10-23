@@ -208,6 +208,10 @@ These templates can generate savings estimates for your environment.
 
   - [AWS Delete Unused Classic Load Balancers](./cost/aws/elb/clb_unused)
 
+- Marketplace
+
+  - [AWS New Marketplace Products](./operational/aws/marketplace_new_products)
+
 - RDS
 
   - [AWS RDS Instances](./cost/aws/rds_instance_license_info)
@@ -254,6 +258,10 @@ These templates can generate savings estimates for your environment.
   - [Azure Unused IP Addresses](./cost/azure/unused_ip_addresses)
   - [Turbonomic Allocate Virtual Machine Recommendations Azure](./cost/turbonomics/allocate_virtual_machines_recommendations/azure)
   - [Turbonomic Rightsize Virtual Machines Recommendations Azure](./cost/turbonomics/scale_virtual_machines_recommendations/azure)
+
+- Marketplace
+
+  - [Azure New Marketplace Products](./operational/azure/marketplace_new_products)
 
 - SQL
 
@@ -622,10 +630,10 @@ These templates can generate savings estimates for your environment.
 <!-- Begin Policy Template Stats -->
 <!--
 ---
-:total_count: 242
+:total_count: 244
 :optimization_count: 46
 :categories:
-  Cost: 99
+  Cost: 101
   Operational: 23
   SaaS Management: 13
   Compliance: 33
@@ -633,10 +641,10 @@ These templates can generate savings estimates for your environment.
 :providers:
   Flexera Optima: 25
   '': 1
-  Azure: 77
+  Azure: 78
   Azure China: 1
   Flexera: 6
-  AWS: 78
+  AWS: 79
   Kubecost: 2
   Flexera Cloud Management: 3
   Oracle: 1
@@ -667,6 +675,7 @@ These templates can generate savings estimates for your environment.
   Kubernetes: 2
   Usage Discount: 6
   CCO: 1
+  Marketplace: 2
   AKS: 2
   Tags: 2
   Lambda: 1
@@ -720,6 +729,7 @@ These templates can generate savings estimates for your environment.
   Rightsize Volumes: 2
   Allocate VMs: 3
   Reserved Instance: 2
+  New Marketplace Products: 2
   Database Services: 1
   Long Running Instances: 2
   Tag Cardinality: 2
