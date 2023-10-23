@@ -324,7 +324,7 @@ script "js_azure_vmsize_map", type: "javascript" do
   result = {}
 
   _.each(ds_azure_vmsizes, function(item) {
-    result[item['size']] = item['cores']
+    result[item['size'].toLowerCase().trim()] = item['cores']
   })
 EOS
 end
@@ -351,7 +351,8 @@ script "js_ahub_incident", type: "javascript" do
         })
       }
 
-      cores = parseInt(ds_azure_vmsize_map[vm['resourceType']])
+      vmsize = vm['resourceType'].toLowerCase().trim()
+      cores = parseInt(ds_azure_vmsize_map[vmsize])
 
       instance = {
         resourceID: vm["id"],
@@ -375,11 +376,13 @@ script "js_ahub_incident", type: "javascript" do
         message: ''
       }
 
-      if (vm['licenseType'] == 'Windows_Server') {
-        total_cores_with_ahub += cores
-        vms_with_ahub.push(instance)
-      } else {
-        vms_without_ahub.push(instance)
+      if (typeof(cores) == 'number' && isNaN(cores) == false) {
+        if (vm['licenseType'] == 'Windows_Server') {
+          total_cores_with_ahub += cores
+          vms_with_ahub.push(instance)
+        } else {
+          vms_without_ahub.push(instance)
+        }
       }
     }
   })
@@ -390,23 +393,25 @@ script "js_ahub_incident", type: "javascript" do
   license_cores = param_licenses * 16
   license_ahub = param_licenses * 2
   result = []
+  summary = ''
+  message = ''
 
   if (vms_with_ahub.length > 0 && (vms_with_ahub.length > license_ahub || total_cores_with_ahub > license_cores)) {
-    result = vms_with_ahub
+    result = result.concat(vms_with_ahub)
 
     vm_noun = "Virtual Machine"
     if (result.length > 1) { vm_noun += "s" }
 
-    result[0]['summary'] = [
+    summary = [
       result.length, " AHUB-Enabled Azure ", vm_noun, " Found. ",
       "Total Core Count: ", total_cores_with_ahub
     ].join('')
 
-    disable_count = vms_with_ahub.length - license_ahub
+    disable_count = result.length - license_ahub
     disable_cores = total_cores_with_ahub - license_cores
 
     if (total_cores_with_ahub > license_cores && vms_with_ahub.length > license_ahub) {
-      result[0]['message'] = [
+      message = [
         "More licenses have been consumed than allocated.\n\n",
         "Recommendation: Disable AHUB for ", disable_count, " of the listed ",
         "virtual machines whose combined core count should be at minimum ",
@@ -415,7 +420,7 @@ script "js_ahub_incident", type: "javascript" do
     }
 
     if (total_cores_with_ahub < license_cores && vms_with_ahub.length > license_ahub) {
-      result[0]['message'] = [
+      message = [
         "More licenses have been consumed than allocated.\n\n",
         "Recommendation: Disable AHUB for ", disable_count, " of the listed ",
         "virtual machines."
@@ -423,7 +428,7 @@ script "js_ahub_incident", type: "javascript" do
     }
 
     if (total_cores_with_ahub > license_cores && vms_with_ahub.length < license_ahub) {
-      result[0]['message'] = [
+      message = [
         "More licenses have been consumed than allocated.\n\n",
         "Recommendation: Disable AHUB for any of the listed ",
         "virtual machines whose combined core count should be at minimum ",
@@ -431,19 +436,19 @@ script "js_ahub_incident", type: "javascript" do
       ].join('')
     }
   } else if (vms_without_ahub.length > 0 && total_cores_with_ahub < license_cores && vms_with_ahub.length < license_ahub) {
-    result = vms_without_ahub
+    result = result.concat(vms_without_ahub)
 
     vm_noun = "Virtual Machine"
     if (result.length > 1) { vm_noun += "s" }
 
-    result[0]['summary'] = [
+    summary = [
       result.length, " AHUB-Disabled Azure ", vm_noun, " Found"
     ].join('')
 
     enable_count = license_ahub - vms_with_ahub.length
     if (enable_count > result.length) { enable_count = result.length }
 
-    result[0]['message'] = [
+    message = [
       "More licenses have been allocated than consumed.\n\n",
       "Recommendation: Enable AHUB for up to ", enable_count, " ",
       "virtual machines whose combined core count should be no more than ",
@@ -461,6 +466,9 @@ script "js_ahub_incident", type: "javascript" do
     cores: "",           policy_name: "",       summary: "",
     message: ""
   })
+
+  result[0]['summary'] = summary
+  result[0]['message'] = message
 EOS
 end
 
