@@ -1,5 +1,19 @@
 # Changelog
 
+## v3.0
+
+- Fixed bug that would cause policy to raise error if incident contained no results
+- Added logic required for "Meta Policy" use-cases
+- Several parameters altered to be more descriptive and human-readable
+- Added ability to filter resources by subscription either via allow or deny list
+- Added ability to filter resources by region
+- Added ability to filter resources by multiple tag key:value pairs
+- Added additional context to incident description
+- Normalized incident export to be consistent with other policies
+- Policy no longer raises new escalations if irrelevant metadata changed but nothing else has
+- Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera One credential
+
 ## v2.9
 
 - Replaced the term **whitelist** with **allowed list**.
