@@ -1,5 +1,10 @@
 # Changelog
 
+## v3.0
+
+- Added logic required for "Meta Policy" use-cases
+- To facilitate "Meta Policy" use-cases, policy now requires a Flexera credential
+
 ## v2.9
 
 - Replaced the term **whitelist** with **allowed list**.

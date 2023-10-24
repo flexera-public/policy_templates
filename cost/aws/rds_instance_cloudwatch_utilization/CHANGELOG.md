@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2
+
+- Added logic required for "Meta Policy" use-cases
+
 ## v3.1
 
 - Added `Account Name` incident field
