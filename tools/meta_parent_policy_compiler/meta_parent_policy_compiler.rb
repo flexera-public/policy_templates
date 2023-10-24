@@ -29,6 +29,7 @@ default_child_policy_template_files = [
   "../../security/aws/rds_publicly_accessible/aws_publicly_accessible_rds_instances.pt",
   # Azure Policy Templates
   "../../compliance/azure/azure_disallowed_regions/azure_disallowed_regions.pt",
+  "../../compliance/azure/ahub_manual/azure_ahub_utilization_with_manual_entry.pt",
   "../../compliance/azure/instances_without_fnm_agent/azure_instances_not_running_flexnet_inventory_agent.pt",
   "../../compliance/azure/azure_long_stopped_instances/long_stopped_instances_azure.pt",
   "../../cost/azure/idle_compute_instances/azure_idle_compute_instances.pt",
@@ -49,9 +50,11 @@ default_child_policy_template_files = [
   "../../operational/azure/tag_cardinality/azure_tag_cardinality.pt",
   "../../operational/azure/vms_without_managed_disks/azure_vms_without_managed_disks.pt",
   # Google Policy Templates
+  "../../cost/google/cloud_sql_idle_instance_recommendations/google_sql_idle_instance_recommendations.pt",
   "../../cost/google/idle_ip_address_recommendations/google_idle_ip_address_recommendations.pt",
   "../../cost/google/idle_persistent_disk_recommendations/google_idle_persistent_disk_recommendations.pt",
-  "../../cost/google/rightsize_vm_recommendations/google_rightsize_vm_recommendations.pt"
+  "../../cost/google/rightsize_vm_recommendations/google_rightsize_vm_recommendations.pt",
+  "../../cost/google/cud_recommendations/google_committed_use_discount_recommendations.pt"
 ]
 
 

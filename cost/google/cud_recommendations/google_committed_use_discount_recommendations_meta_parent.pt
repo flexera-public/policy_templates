@@ -1,14 +1,14 @@
-name "Google Rightsize VM Recommender Meta Parent"
+name "Google Committed Use Discount Recommender Meta Parent"
 rs_pt_ver 20180301
 type "policy"
-short_description "Applies and manages \"child\" [Google Rightsize VM Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_vm_recommendations) Policies."
+short_description "Applies and manages \"child\" [Google Committed Use Discount Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/cud_recommendations) Policies."
 severity "low"
 category "Cost"
 tenancy "single"
 default_frequency "15 minutes"
 info(
   provider: "Google",
-  version: "2.1", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "4.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "false"
 )
 
@@ -82,31 +82,22 @@ parameter "param_regions_list" do
   default []
 end
 
-parameter "param_exclusion_labels" do
-  type "list"
-  category "Filters"
-  label "Exclusion Labels (Key:Value)"
-  description "Google labels to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific label key/value pairs, and Key:* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:*"
-  allowed_pattern /(^$)|[\w]*\:.*/
-  default []
-end
-
-parameter "param_idle_or_underutilized" do
+parameter "param_term" do
   type "string"
-  category "Filters"
-  label "Report Idle or Underutilized"
-  description "Whether to report on idle VM instances, underutilized VM instances, or both."
-  allowed_values "Idle & Underutilized", "Idle", "Underutilized"
-  default "Idle & Underutilized"
+  category "Reservation Settings"
+  label "Term"
+  description "Length of Committed Use Discount term to provide recommendations for."
+  default "1 Year"
+  allowed_values "1 Year", "3 Year"
 end
 
-parameter "param_automatic_action" do
-  type "list"
-  category "Actions"
-  label "Automatic Actions"
-  description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Downsize VM Instances", "Stop VM Instances", "Delete VM Instances"]
-  default []
+parameter "param_algorithm" do
+  type "string"
+  category "Reservation Settings"
+  label "Recommendation Algorithm"
+  description "The algorithm to use for generating Committed Use Discount recommendations. See README for more information."
+  default "Optimal"
+  allowed_values "Optimal", "Stable Usage"
 end
 
 ###############################################################################
@@ -230,7 +221,7 @@ datasource "ds_child_policy_information" do
   result do
     encoding "json"
     # Select the published policy that is published by "support@flexera.com" and matches the name of the child policy template
-    collect jq(response, '.items[] | select(.name == "Google Rightsize VM Recommender" and .created_by.email == "support@flexera.com")' ) do
+    collect jq(response, '.items[] | select(.name == "Google Committed Use Discount Recommender" and .created_by.email == "support@flexera.com")' ) do
       field "name", jmes_path(col_item, "name")
       field "href", jmes_path(col_item, "href")
       field "short_description", jmes_path(col_item, "short_description")
@@ -725,40 +716,19 @@ datasource "ds_child_incident_details" do
   end
 end
 
-datasource "ds_underutil_incident_combined_incidents" do
-  run_script $js_ds_underutil_incident_combined_incidents, $ds_child_incident_details
+datasource "ds_recommendations_incident_combined_incidents" do
+  run_script $js_ds_recommendations_incident_combined_incidents, $ds_child_incident_details
 end
 
-script "js_ds_underutil_incident_combined_incidents", type: "javascript" do
+script "js_ds_recommendations_incident_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-EOS
   result = []
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
-    // If the incident summary contains "Google Underutilized VM Instances Found" then include it in the filter result
-    if (s.indexOf("Google Underutilized VM Instances Found") > -1) {
-      _.each(incident["violation_data"], function(violation) {
-        result.push(violation);
-      });
-    }
-  });
-EOS
-end
-
-datasource "ds_idle_incident_combined_incidents" do
-  run_script $js_ds_idle_incident_combined_incidents, $ds_child_incident_details
-end
-
-script "js_ds_idle_incident_combined_incidents", type: "javascript" do
-  parameters "ds_child_incident_details"
-  result "result"
-  code <<-EOS
-  result = []
-  _.each(ds_child_incident_details, function(incident) {
-    s = incident["summary"];
-    // If the incident summary contains "Google Idle VM Instances Found" then include it in the filter result
-    if (s.indexOf("Google Idle VM Instances Found") > -1) {
+    // If the incident summary contains "Google Committed Use Discount Recommendations" then include it in the filter result
+    if (s.indexOf("Google Committed Use Discount Recommendations") > -1) {
       _.each(incident["violation_data"], function(violation) {
         result.push(violation);
       });
@@ -774,9 +744,9 @@ end
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
-    # Consolidated incident for Google Underutilized VM Instances Found
-  validate $ds_underutil_incident_combined_incidents do
-    summary_template "Consolidated Incident: {{ len data }} Google Underutilized VM Instances Found"
+    # Consolidated incident for Google Committed Use Discount Recommendations
+  validate $ds_recommendations_incident_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} Google Committed Use Discount Recommendations"
     escalate $esc_email
     check eq(size(data), 0)
     export do
@@ -799,38 +769,20 @@ policy "policy_scheduled_report" do
       field "resourceType" do
         label "Resource Type"
       end
-      field "newResourceType" do
-        label "Recommended Resource Type"
-      end
-      field "zone" do
-        label "Zone"
+      field "resourcesToPurchase" do
+        label "Resources To Purchase"
       end
       field "region" do
         label "Region"
       end
-      field "hostname" do
-        label "Hostname"
+      field "term" do
+        label "Term"
       end
-      field "platform" do
-        label "Platform"
+      field "algorithm" do
+        label "Algorithm"
       end
-      field "cpuMaximum" do
-        label "CPU Maximum %"
-      end
-      field "cpuMinimum" do
-        label "CPU Minimum %"
-      end
-      field "cpuAverage" do
-        label "CPU Average %"
-      end
-      field "primaryImpactCategory" do
-        label "Primary Impact Category"
-      end
-      field "tags" do
-        label "Labels"
-      end
-      field "service" do
-        label "Service"
+      field "recommendationDetails" do
+        label "Recommendation"
       end
       field "savings" do
         label "Estimated Monthly Savings"
@@ -841,105 +793,11 @@ policy "policy_scheduled_report" do
       field "priority" do
         label "Priority"
       end
-      field "recommendationDetails" do
-        label "Recommendation"
-      end
-      field "recommenderSubtype" do
-        label "Recommendation Sub Type"
+      field "scope" do
+        label "Scope"
       end
       field "state" do
         label "State"
-      end
-      field "status" do
-        label "Status"
-      end
-      field "selfLink" do
-        label "Resource Link"
-      end
-      field "id" do
-        label "ID"
-      end
-    end
-  end
-
-  # Consolidated incident for Google Idle VM Instances Found
-  validate $ds_idle_incident_combined_incidents do
-    summary_template "Consolidated Incident: {{ len data }} Google Idle VM Instances Found"
-    escalate $esc_email
-    check eq(size(data), 0)
-    export do
-      resource_level true
-      field "accountID" do
-        label "Project ID"
-      end
-      field "accountName" do
-        label "Project Name"
-      end
-      field "projectNumber" do
-        label "Project Number"
-      end
-      field "resourceID" do
-        label "Resource ID"
-      end
-      field "resourceName" do
-        label "Resource Name"
-      end
-      field "resourceType" do
-        label "Resource Type"
-      end
-      field "zone" do
-        label "Zone"
-      end
-      field "region" do
-        label "Region"
-      end
-      field "hostname" do
-        label "Hostname"
-      end
-      field "platform" do
-        label "Platform"
-      end
-      field "cpuMaximum" do
-        label "CPU Maximum %"
-      end
-      field "cpuMinimum" do
-        label "CPU Minimum %"
-      end
-      field "cpuAverage" do
-        label "CPU Average %"
-      end
-      field "primaryImpactCategory" do
-        label "Primary Impact Category"
-      end
-      field "tags" do
-        label "Labels"
-      end
-      field "service" do
-        label "Service"
-      end
-      field "savings" do
-        label "Estimated Monthly Savings"
-      end
-      field "savingsCurrency" do
-        label "Currency"
-      end
-      field "priority" do
-        label "Priority"
-      end
-      field "recommendationDetails" do
-        label "Recommendation"
-      end
-      field "recommenderSubtype" do
-        label "Recommendation Sub Type"
-      end
-      field "state" do
-        label "State"
-      end
-      field "status" do
-        label "Status"
-      end
-      field "selfLink" do
-        label "Resource Link"
       end
       field "id" do
         label "ID"

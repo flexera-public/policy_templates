@@ -68,8 +68,8 @@ These templates can generate savings estimates for your environment.
 
 #### Google
 
-- [Google Cloud SQL Idle Instance Recommender](./cost/google/cloud_sql_idle_instance_recommendations)
 - [Google Committed Use Discount Recommender](./cost/google/cud_recommendations)
+- [Google Idle Cloud SQL Instance Recommender](./cost/google/cloud_sql_idle_instance_recommendations)
 - [Google Idle IP Address Recommender](./cost/google/idle_ip_address_recommendations)
 - [Google Idle Persistent Disk Recommender](./cost/google/idle_persistent_disk_recommendations)
 - [Google Idle VM Recommender](./cost/google/idle_vm_recommendations)
@@ -179,8 +179,6 @@ These templates can generate savings estimates for your environment.
 
 #### AWS
 
-- [AWS Savings Plan Recommendations](./cost/aws/savings_plan/recommendations)
-
 - Compute
 
   - [AWS Burstable Instance CloudWatch Utilization](./cost/aws/burstable_instance_cloudwatch_credit_utilization)
@@ -189,6 +187,7 @@ These templates can generate savings estimates for your environment.
   - [AWS Reserved Instances Recommendations](./cost/aws/reserved_instances/recommendations)
   - [AWS Rightsize EBS Volumes](./cost/aws/rightsize_ebs_volumes)
   - [AWS Rightsize EC2 Instances](./cost/aws/rightsize_ec2_instances)
+  - [AWS Savings Plan Recommendations](./cost/aws/savings_plan/recommendations)
   - [AWS Schedule Instance](./cost/aws/schedule_instance)
   - [AWS Superseded EC2 Instances](./cost/aws/superseded_instances)
   - [AWS Unused IP Addresses](./cost/aws/unused_ip_addresses)
@@ -208,6 +207,10 @@ These templates can generate savings estimates for your environment.
 - ELB
 
   - [AWS Delete Unused Classic Load Balancers](./cost/aws/elb/clb_unused)
+
+- Marketplace
+
+  - [AWS New Marketplace Products](./operational/aws/marketplace_new_products)
 
 - RDS
 
@@ -255,6 +258,10 @@ These templates can generate savings estimates for your environment.
   - [Azure Unused IP Addresses](./cost/azure/unused_ip_addresses)
   - [Turbonomic Allocate Virtual Machine Recommendations Azure](./cost/turbonomics/allocate_virtual_machines_recommendations/azure)
   - [Turbonomic Rightsize Virtual Machines Recommendations Azure](./cost/turbonomics/scale_virtual_machines_recommendations/azure)
+
+- Marketplace
+
+  - [Azure New Marketplace Products](./operational/azure/marketplace_new_products)
 
 - SQL
 
@@ -348,7 +355,7 @@ These templates can generate savings estimates for your environment.
 
 - SQL
 
-  - [Google Cloud SQL Idle Instance Recommender](./cost/google/cloud_sql_idle_instance_recommendations)
+  - [Google Idle Cloud SQL Instance Recommender](./cost/google/cloud_sql_idle_instance_recommendations)
 
 - Storage
 
@@ -408,7 +415,6 @@ These templates can generate savings estimates for your environment.
 
 - Tags
 
-  - [Azure Migrate Integration](./operational/azure/azure_migrate)
   - [Azure Tag Cardinality Report](./operational/azure/tag_cardinality)
 
 #### Flexera
@@ -439,6 +445,7 @@ These templates can generate savings estimates for your environment.
 #### Flexera RISC
 
 - [Application Migration Recommendations](./operational/compute_instance_migration)
+- [Azure Migrate Integration](./operational/azure/azure_migrate)
 - [NetFlow Top Talkers](./operational/azure/network_flow)
 
 ### Policy Templates for SaaS Management
@@ -512,8 +519,8 @@ These templates can generate savings estimates for your environment.
   - [AWS IAM Ensure Access Keys Are Rotated](./security/aws/iam_rotate_access_keys)
   - [AWS IAM Ensure Credentials Unused For >45 days Are Disabled](./security/aws/iam_disable_45_day_creds)
   - [AWS IAM Ensure MFA Enabled For IAM Users](./security/aws/iam_mfa_enabled_for_iam_users)
-  - [AWS IAM Ensure One Active Key Per IAM User](./security/aws/iam_one_active_key_per_user)
   - [AWS IAM Ensure One Active Key Per IAM User](./security/aws/iam_users_perms_via_groups_only)
+  - [AWS IAM Ensure One Active Key Per IAM User](./security/aws/iam_one_active_key_per_user)
   - [AWS IAM Report Attached Admin IAM Policies](./security/aws/iam_no_admin_iam_policies_attached)
   - [AWS IAM Report Expired SSL/TLS Certificates](./security/aws/iam_expired_ssl_certs)
   - [AWS IAM Report Insufficient Password Policy](./security/aws/iam_min_password_length)
@@ -623,121 +630,123 @@ These templates can generate savings estimates for your environment.
 <!-- Begin Policy Template Stats -->
 <!--
 ---
-:total_count: 242
+:total_count: 244
 :optimization_count: 46
 :categories:
+  Cost: 101
   Operational: 23
-  Cost: 99
   SaaS Management: 13
   Compliance: 33
   Security: 74
 :providers:
-  Flexera Cloud Management: 3
-  Flexera: 6
   Flexera Optima: 25
-  AWS: 78
-  Flexera RISC: 2
-  Azure: 78
-  Flexera ITAM: 5
-  Google: 12
-  Kubecost: 2
   '': 1
+  Azure: 78
   Azure China: 1
+  Flexera: 6
+  AWS: 79
+  Kubecost: 2
+  Flexera Cloud Management: 3
   Oracle: 1
+  Google: 12
   GCE: 8
+  Flexera RISC: 3
+  Flexera ITAM: 5
   ServiceNow: 1
-  Flexera SaaS Manager: 9
   Okta: 1
+  Flexera SaaS Manager: 9
   Microsoft: 1
   GitHub: 7
   Flexera FNMS: 1
 :services:
   '': 62
-  CCO: 1
-  Lambda: 1
-  Compute: 50
-  Tags: 3
-  FNMS: 1
   SQL: 15
-  AKS: 2
-  RDS: 6
-  Usage Discount: 6
+  Compute: 51
+  Blob Store: 1
   Storage: 20
-  Kubernetes: 2
-  S3: 9
+  Common Bill Ingestion: 2
+  Storage Accounts: 2
   All: 3
   EBS: 3
+  RDS: 6
+  S3: 9
   ELB: 4
   Cost Explorer: 1
-  Blob Store: 1
-  Storage Accounts: 2
-  Common Bill Ingestion: 2
+  Kubernetes: 2
+  Usage Discount: 6
+  CCO: 1
+  Marketplace: 2
+  AKS: 2
+  Tags: 2
+  Lambda: 1
+  FNMS: 1
   Office 365: 1
-  IAM: 19
-  ECS: 1
-  Org: 1
-  Identity: 1
   Policy: 1
-  Config: 1
-  CloudTrail: 7
-  KMS: 1
-  DBS: 1
-  VPC: 1
-  Security: 3
+  Identity: 1
+  IAM: 19
+  Org: 1
+  ECS: 1
+  MySQL: 2
+  App Service: 1
   PostgreSQL: 4
   compute: 1
+  Security: 3
   Network Security Group: 2
-  App Service: 1
-  MySQL: 2
+  CloudTrail: 7
+  VPC: 1
+  KMS: 1
+  Config: 1
+  DBS: 1
 :policy_sets:
   '': 82
-  Tag Cardinality: 3
-  Long Running Instances: 2
-  Schedule Report: 1
-  Database Services: 1
-  Schedule Flexera ITAM Report: 1
-  Allocate VMs: 3
-  Reserved Instance: 2
+  Unused Database Services: 3
+  Superseded Compute Instances: 2
+  Object Store Optimization: 3
+  Unused IP Addresses: 3
+  Hybrid Use Benefit: 3
   Rightsize Database Instances: 3
+  Inefficient Instance Usage: 2
+  Old Snapshots: 3
   Rightsize Compute Instances: 6
   Unused Volumes: 6
-  Rightsize Volumes: 2
+  Savings Plans: 2
+  Common Bill Ingestion: 2
+  Lifecycle Management: 1
+  Reserved Instances: 3
+  Idle Compute Instances: 4
+  N/A: 3
+  Schedule Instance: 3
+  GP3 Volumes: 1
+  Inefficient Disk Usage: 1
+  Savings Plan Utilization: 1
+  RightSize Database Services: 1
+  Forecasting: 4
   Rightsize Containers: 1
   Rightsize Clusters: 1
-  Inefficient Disk Usage: 1
-  Object Store Optimization: 3
-  N/A: 3
-  Idle Compute Instances: 4
-  Unused Database Services: 3
-  GP3 Volumes: 1
-  RightSize Database Services: 1
-  Old Snapshots: 3
-  Schedule Instance: 3
-  Savings Plan Utilization: 1
-  Savings Plans: 2
-  Reserved Instances: 3
-  Inefficient Instance Usage: 2
-  Superseded Compute Instances: 2
-  Unused IP Addresses: 3
-  Forecasting: 4
-  Lifecycle Management: 1
-  Hybrid Use Benefit: 2
-  Common Bill Ingestion: 2
   Native Recommendations: 1
-  Committed Use Discount: 1
   Rightsize Database Services: 1
+  Committed Use Discount: 1
+  Rightsize Volumes: 2
+  Allocate VMs: 3
+  Reserved Instance: 2
+  New Marketplace Products: 2
+  Database Services: 1
+  Long Running Instances: 2
+  Tag Cardinality: 2
+  Schedule Flexera ITAM Report: 1
+  Schedule Report: 1
   Disallowed Regions: 2
-  Untagged resources: 1
-  Instances not running FlexNet Inventory Agent: 2
-  Long Stopped Instances: 3
-  ITAM: 4
   Untagged Resources: 1
+  Long Stopped Instances: 3
+  Instances not running FlexNet Inventory Agent: 2
+  Untagged resources: 1
+  ITAM: 4
   Unlabeled Resources: 1
   CIS: 61
-  AWS Config: 1
   Public Database Access: 2
-  Open Buckets: 2
+  AWS Config: 1
   Storage Security: 1
+  Open Buckets: 2
 -->
 <!-- End Policy Template Stats -->
 

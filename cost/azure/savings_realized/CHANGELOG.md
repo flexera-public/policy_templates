@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.5
+
+- Policy incident no longer includes extraneous information about date and time in `Month` field
+
 ## v3.4
 
 - Added a condition to prevent null report chart array
