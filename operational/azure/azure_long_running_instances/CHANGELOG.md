@@ -3,6 +3,7 @@
 ## v4.2
 
 - Fixed error where policy would sometimes report on stopped instances
+- Fixed minor language error in incident output
 
 ## v4.1
 
