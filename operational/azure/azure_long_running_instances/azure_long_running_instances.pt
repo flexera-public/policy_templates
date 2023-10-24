@@ -7,7 +7,7 @@ category "Operational"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "4.1",
+  version: "4.2",
   provider: "Azure",
   service: "Compute",
   policy_set: "Long Running Instances"
@@ -302,6 +302,8 @@ datasource "ds_azure_instances" do
       field "timeCreated", jmes_path(col_item, "properties.timeCreated")
       field "platform", jmes_path(col_item, "properties.storageProfile.osDisk.osType")
       field "resourceType", jmes_path(col_item, "properties.hardwareProfile.vmSize")
+      field "provisioningState", jmes_path(col_item, "properties.provisioningState")
+      field "statuses", jmes_path(col_item, "properties.instanceView.statuses")
       field "tags", jmes_path(col_item, "tags")
       field "subscriptionId",val(iter_item, "id")
       field "subscriptionName",val(iter_item, "name")
@@ -309,16 +311,31 @@ datasource "ds_azure_instances" do
   end
 end
 
+datasource "ds_azure_instances_running" do
+  run_script $js_azure_instances_tag_running, $ds_azure_instances
+end
+
+script "js_azure_instances_running", type: "javascript" do
+  parameters "ds_azure_instances"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_azure_instances, function(instance) {
+    codes = _.pluck(instance['statuses'], 'code')
+    return instance['provisioningState'] == 'Succeeded' && _.contains(codes, "PowerState/running")
+  })
+EOS
+end
+
 datasource "ds_azure_instances_tag_filtered" do
-  run_script $js_azure_instances_tag_filtered, $ds_azure_instances, $param_exclusion_tags
+  run_script $js_azure_instances_tag_filtered, $ds_azure_instances_running, $param_exclusion_tags
 end
 
 script "js_azure_instances_tag_filtered", type: "javascript" do
-  parameters "ds_azure_instances", "param_exclusion_tags"
+  parameters "ds_azure_instances_running", "param_exclusion_tags"
   result "result"
   code <<-EOS
   if (param_exclusion_tags.length > 0) {
-    result = _.reject(ds_azure_instances, function(instance) {
+    result = _.reject(ds_azure_instances_running, function(instance) {
       instance_tags = []
 
       if (typeof(instance['tags']) == 'object') {
@@ -339,7 +356,7 @@ script "js_azure_instances_tag_filtered", type: "javascript" do
       return exclude_instance
     })
   } else {
-    result = ds_azure_instances
+    result = ds_azure_instances_running
   }
 EOS
 end
