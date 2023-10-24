@@ -22,28 +22,34 @@ The policy leverages the AWS EC2 API to determine volume encryption settings.
 
 ## Prerequisites
 
-This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
-### Credential configuration
+- [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
+  - `ec2:DescribeVolumes`
+  - `ec2:DescribeRegions`
 
-For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
+  Example IAM Permission Policy:
 
-Provider tag value to match this policy: `aws` , `aws_sts`
+  ```json
+  {
+      "Version": "2012-10-17",
+      "Statement": [
+          {
+              "Effect": "Allow",
+              "Action": [
+                  "ec2:DescribeVolumes",
+                  "ec2:DescribeRegions"
+              ],
+              "Resource": "*"
+          }
+      ]
+  }
+  ```
 
-Required permissions in the provider:
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - `billing_center_viewer`
 
-```javascript
-{
-    "Version": "2012-10-17",
-    "Statement":[{
-    "Effect":"Allow",
-    "Action":["ec2:DescribeVolumes",
-                "ec2:DescribeRegions"],
-    "Resource":"*"
-    }
-  ]
-}
-```
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ## Supported Clouds
 

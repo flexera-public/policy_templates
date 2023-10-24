@@ -1,8 +1,13 @@
 # Changelog
 
-## v2.5
+## v3.1
 
 - Updated description of `Account Number` parameter
+
+## v3.0
+
+- Added logic required for "Meta Policy" use-cases
+- To facilitate "Meta Policy" use-cases, policy now requires a Flexera credential
 
 ## v2.4
 

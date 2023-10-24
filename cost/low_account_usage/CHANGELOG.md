@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.4
+
+- Added `Account ID` incident field.
+
 ## v2.3
 
 - Added filters to API calls to reduce response body lenght.

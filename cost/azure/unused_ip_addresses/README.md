@@ -1,12 +1,18 @@
 # Azure Unused IP Addresses
 
-## What it does
+## What It Does
 
 This Policy Template scans all IP addresses in the given account and identifies any unused IP addresses. An IP address is considered unused if it has been detached for a user-specified number of days. If any are found, an incident report will show the IP addresses, and related information, and an email will be sent to the user-specified email address. If the user approves that the IP addresses should be deleted, the policy will delete the IP addresses. Optionally, the user can filter results by resource tag, subscription ID/name, or region.
 
-### Policy savings details
+### Policy Savings Details
 
-The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the IP address is deleted. Optima is used to retrieve and calculate the estimated savings which is the cost of the IP address for a full day (3 days ago) multiplied by 30.44 (the average number of days in a month), or 0 if no cost information for the resource was found in Optima. The savings is displayed in the Estimated Monthly Savings column. The incident message detail includes the sum of each resource *Estimated Monthly Savings* as *Potential Monthly Savings*.
+The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the resource is deleted.
+
+- The `Estimated Monthly Savings` is calculated by multiplying the amortized cost of the resource for 1 day, as found within Flexera CCO, by 30.44, which is the average number of days in a month.
+- Since the costs of individual resources are obtained from Flexera CCO, they will take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
+- If the resource cannot be found in Flexera CCO, the `Estimated Monthly Savings` is 0.
+- The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
+- Both `Estimated Monthly Savings` and `Potential Monthly Savings` will be reported in the currency of the Flexera organization the policy is applied in.
 
 ## Prerequisites
 

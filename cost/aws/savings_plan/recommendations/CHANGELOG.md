@@ -1,5 +1,16 @@
 # Changelog
 
+## v3.0
+
+- Policy now automatically converts savings to local currency when appropriate
+- Removed parameter to do the above manually via a user-specified exchange rate
+- Added exchange rate context to incident to allow user to derive unmodified values when needed
+- Several parameters altered to be more descriptive and intuitive to use
+- Added additional context to incident description
+- Normalized incident export to be consistent with other policies
+- Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera credential
+
 ## v2.17
 
 - Added `Term` incident field.

@@ -1,8 +1,12 @@
 # Changelog
 
-## v3.2
+## v3.3
 
 - Updated description of `Account Number` parameter
+
+## v3.2
+
+- Added logic required for "Meta Policy" use-cases
 
 ## v3.1
 

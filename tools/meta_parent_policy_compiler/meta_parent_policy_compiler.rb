@@ -6,22 +6,32 @@ require "json"
 # More info at https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md
 default_child_policy_template_files = [
   # AWS Policy Templates
+  "../../compliance/aws/disallowed_regions/aws_disallowed_regions.pt",
   "../../compliance/aws/instances_without_fnm_agent/aws_instances_not_running_flexnet_inventory_agent.pt",
+  "../../compliance/aws/long_stopped_instances/aws_long_stopped_instances.pt",
+  "../../cost/aws/gp3_volume_upgrade/aws_upgrade_to_gp3_volume.pt",
   "../../cost/aws/idle_compute_instances/idle_compute_instances.pt",
   "../../cost/aws/object_storage_optimization/aws_object_storage_optimization.pt",
   "../../cost/aws/old_snapshots/aws_delete_old_snapshots.pt",
+  "../../cost/aws/rds_instance_cloudwatch_utilization/rds_instance_cloudwatch_utilization.pt",
+  "../../cost/aws/rds_instance_license_info/rds_instance_license_info.pt",
   "../../cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt",
   "../../cost/aws/rightsize_ebs_volumes/aws_volumes_rightsizing.pt",
+  "../../cost/aws/s3_storage_policy/aws_s3_bucket_policy_check.pt",
+  "../../cost/aws/schedule_instance/aws_schedule_instance.pt",
   "../../cost/aws/superseded_instances/aws_superseded_instances.pt",
   "../../cost/aws/unused_ip_addresses/aws_unused_ip_addresses.pt",
   "../../cost/aws/unused_rds/unused_rds.pt",
   "../../cost/aws/unused_volumes/aws_delete_unused_volumes.pt",
-  "../../compliance/aws/long_stopped_instances/aws_long_stopped_instances.pt",
   "../../operational/aws/lambda_functions_with_high_error_rate/lambda_functions_with_high_error_rate.pt",
   "../../operational/aws/long_running_instances/long_running_instances.pt",
+  "../../security/aws/ebs_unencrypted_volumes/aws_unencrypted_volumes.pt",
   "../../security/aws/rds_publicly_accessible/aws_publicly_accessible_rds_instances.pt",
   # Azure Policy Templates
+  "../../compliance/azure/azure_disallowed_regions/azure_disallowed_regions.pt",
+  "../../compliance/azure/ahub_manual/azure_ahub_utilization_with_manual_entry.pt",
   "../../compliance/azure/instances_without_fnm_agent/azure_instances_not_running_flexnet_inventory_agent.pt",
+  "../../compliance/azure/azure_long_stopped_instances/long_stopped_instances_azure.pt",
   "../../cost/azure/idle_compute_instances/azure_idle_compute_instances.pt",
   "../../cost/azure/old_snapshots/azure_delete_old_snapshots.pt",
   "../../cost/azure/rightsize_compute_instances/azure_compute_rightsizing.pt",
@@ -32,6 +42,7 @@ default_child_policy_template_files = [
   "../../cost/azure/hybrid_use_benefit/azure_hybrid_use_benefit.pt",
   "../../cost/azure/hybrid_use_benefit_linux/ahub_linux.pt",
   "../../cost/azure/hybrid_use_benefit_sql/ahub_sql.pt",
+  "../../cost/azure/schedule_instance/azure_schedule_instance.pt",
   "../../cost/azure/superseded_instances/azure_superseded_instances.pt",
   "../../cost/azure/storage_account_lifecycle_management/storage_account_lifecycle_management.pt",
   "../../operational/azure/azure_certificates/azure_certificates.pt",
@@ -216,7 +227,7 @@ def compile_meta_parent_policy(file_path)
   output_pt_params = []
   parameters.each do |param|
     # Filter out parameters that we don't want the user to manage because they are used by our meta policy automation
-    param.include?("param_email") || param.include?("param_aws_account_number") || param.include?("param_subscription_allowed_list") || param.include?("param_subscriptions_list") || param.include?("param_subscriptions_allow_or_deny") || param.include?("param_project") || param.include?("param_projects_list") || param.include?("param_projects_allow_or_deny") ? nil : output_pt_params.push(param)
+    param.include?("param_email") || param.include?("param_aws_account_number") || param.include?("param_subscription_allowed_list") || param.include?("param_subscriptions_list") || param.include?("param_subscriptions_allow_or_deny") || param.include?("param_project") || param.include?("param_projects_list") || param.include?("param_projects_allow_or_deny") || param.include?("param_schedule") ? nil : output_pt_params.push(param)
   end
   # Replace placeholder with the identified output parameter blocks
   output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_PARAMETERS_BLOCKS__", output_pt_params.join("\n\n"))
