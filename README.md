@@ -698,12 +698,12 @@ These templates can generate savings estimates for your environment.
   Config: 1
   DBS: 1
 :policy_sets:
-  '': 83
+  '': 82
   Unused Database Services: 3
   Superseded Compute Instances: 2
   Object Store Optimization: 3
   Unused IP Addresses: 3
-  Hybrid Use Benefit: 2
+  Hybrid Use Benefit: 3
   Rightsize Database Instances: 3
   Inefficient Instance Usage: 2
   Old Snapshots: 3
