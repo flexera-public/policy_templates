@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.5
+
+- Updated label logic to return `Missing Label Keys` as well as `Label Keys with Missing Label Values` in incident
+
 ## v2.4
 
 - Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM
