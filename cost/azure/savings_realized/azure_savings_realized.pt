@@ -192,8 +192,9 @@ EOS
 end
 
 datasource "ds_ri_aggregated_costs_old" do
+  iterate $ds_bill_connections_old
   request do
-    run_script $js_get_aggregated_costs, $ds_bill_connections_old, $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host, "ri_old"
+    run_script $js_get_aggregated_costs, val(iter_item, 'id'), $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host, "ri_old"
   end
   result do
     encoding "json"
@@ -209,8 +210,9 @@ datasource "ds_ri_aggregated_costs_old" do
 end
 
 datasource "ds_ri_aggregated_costs_new" do
+  iterate $ds_bill_connections_new
   request do
-    run_script $js_get_aggregated_costs, $ds_bill_connections_new, $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host, "ri_new"
+    run_script $js_get_aggregated_costs, val(iter_item, 'id'), $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host, "ri_new"
   end
   result do
     encoding "json"
@@ -226,8 +228,9 @@ datasource "ds_ri_aggregated_costs_new" do
 end
 
 datasource "ds_base_aggregated_costs_old" do
+  iterate $ds_bill_connections_old
   request do
-    run_script $js_get_aggregated_costs, $ds_bill_connections_old, $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host, "base_old"
+    run_script $js_get_aggregated_costs, val(iter_item, 'id'), $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host, "base_old"
   end
   result do
     encoding "json"
@@ -243,8 +246,9 @@ datasource "ds_base_aggregated_costs_old" do
 end
 
 datasource "ds_base_aggregated_costs_new" do
+  iterate $ds_bill_connections_new
   request do
-    run_script $js_get_aggregated_costs, $ds_bill_connections_new, $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host, "base_new"
+    run_script $js_get_aggregated_costs, val(iter_item, 'id'), $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host, "base_new"
   end
   result do
     encoding "json"
@@ -260,18 +264,14 @@ datasource "ds_base_aggregated_costs_new" do
 end
 
 script "js_get_aggregated_costs", type: "javascript" do
-  parameters "bill_connections", "ds_filtered_bcs", "start_date", "end_date", "org_id", "optima_host", "connection_type"
+  parameters "bill_connection_id", "ds_filtered_bcs", "start_date", "end_date", "org_id", "optima_host", "connection_type"
   result "request"
   code <<-EOS
-  bill_source_expressions = []
-
-  _.each(bill_connections, function(item) {
-    bill_source_expressions.push({
-      "dimension": "bill_source",
-      "type": "equal",
-      "value": item['id']
-    })
-  })
+  bill_source_expression = {
+    "dimension": "bill_source",
+    "type": "equal",
+    "value": bill_connection_id
+  }
 
   // Set filters based on the type of request (RI or Base)
   // and whether or not we're pulling costs for an old Azure EA connection or a new one
@@ -279,20 +279,11 @@ script "js_get_aggregated_costs", type: "javascript" do
     filter = {
       "type": "and",
       "expressions": [
-        { "type": "or", "expressions": bill_source_expressions },
         {
           "type": "or",
           "expressions": [
-            {
-              "dimension": "service",
-              "type": "equal",
-              "value": "Microsoft.Compute"
-            },
-            {
-              "dimension": "service",
-              "type": "equal",
-              "value": "microsoft.compute"
-            }
+            { "dimension": "service", "type": "equal", "value": "Microsoft.Compute" },
+            { "dimension": "service", "type": "equal", "value": "microsoft.compute" }
           ]
         },
         {
@@ -313,7 +304,8 @@ script "js_get_aggregated_costs", type: "javascript" do
         {
           "type": "not",
           "expression": { "dimension": "instance_type", "type": "equal", "value": "None" }
-        }
+        },
+        bill_source_expression
       ]
     }
   }
@@ -322,22 +314,14 @@ script "js_get_aggregated_costs", type: "javascript" do
     filter = {
       "type": "and",
       "expressions": [
-        { "type": "or", "expressions": bill_source_expressions },
         {
           "type": "or",
           "expressions": [
-            {
-              "dimension": "purchase_option",
-              "type": "equal",
-              "value": "Reserved"
-            },
-            {
-              "dimension": "purchase_option",
-              "type": "equal",
-              "value": "reserved"
-            }
+            { "dimension": "purchase_option", "type": "equal", "value": "Reserved" },
+            { "dimension": "purchase_option", "type": "equal", "value": "reserved" }
           ]
-        }
+        },
+        bill_source_expression
       ]
     }
   }
@@ -346,20 +330,11 @@ script "js_get_aggregated_costs", type: "javascript" do
     filter = {
       "type": "and",
       "expressions": [
-        { "type": "or", "expressions": bill_source_expressions },
         {
           "type": "or",
           "expressions": [
-            {
-              "dimension": "service",
-              "type": "equal",
-              "value": "Microsoft.Compute"
-            },
-            {
-              "dimension": "service",
-              "type": "equal",
-              "value": "microsoft.compute"
-            }
+            { "dimension": "service", "type": "equal", "value": "Microsoft.Compute" },
+            { "dimension": "service", "type": "equal", "value": "microsoft.compute" }
           ]
         },
         {
@@ -383,7 +358,8 @@ script "js_get_aggregated_costs", type: "javascript" do
         {
           "type": "not",
           "expression": { "dimension": "instance_type", "type": "equal", "value": "None" }
-        }
+        },
+        bill_source_expression
       ]
     }
   }
@@ -392,22 +368,14 @@ script "js_get_aggregated_costs", type: "javascript" do
     filter = {
       "type": "and",
       "expressions": [
-        { "type": "or", "expressions": bill_source_expressions },
         {
           "type": "or",
           "expressions": [
-            {
-              "dimension": "category",
-              "type": "equal",
-              "value": "Commitments"
-            },
-            {
-              "dimension": "category",
-              "type": "equal",
-              "value": "commitments"
-            }
+            { "dimension": "category", "type": "equal", "value": "Commitments" },
+            { "dimension": "category", "type": "equal", "value": "commitments" }
           ]
-        }
+        },
+        bill_source_expression
       ]
     }
   }
