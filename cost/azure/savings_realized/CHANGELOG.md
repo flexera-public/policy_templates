@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.6
+
+- Additional corrections around retrieving cost data on orgs using newer Azure bill connections
+
 ## v3.5
 
 - Policy incident no longer includes extraneous information about date and time in `Month` field

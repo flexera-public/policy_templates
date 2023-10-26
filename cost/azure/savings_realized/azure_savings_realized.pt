@@ -3,14 +3,14 @@ rs_pt_ver 20180301
 type "policy"
 short_description "This policy calculates savings realized by Reserved Instance purchases for Azure. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/savings_realized/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
-default_frequency "monthly"
-severity "low"
 category "Cost"
+severity "low"
+default_frequency "monthly"
 info(
-  version: "3.5",
-  provider: "Flexera",
-  service: "All",
-  policy_set: "N/A"
+  version: "3.6",
+  provider: "Azure",
+  service: "Compute",
+  policy_set: "Savings Realized"
 )
 
 ###############################################################################
@@ -19,17 +19,23 @@ info(
 
 parameter "param_email" do
   type "list"
+  category "Policy Settings"
   label "Email addresses"
+  description "A list of email addresses to notify."
+  default []
 end
 
 parameter "param_billing_centers" do
-  label "Billing Center Name"
-  description "List of Billing Center Names to check Savings Realized for. Leave blank for whole Organization view."
   type "list"
+  category "Policy Settings"
+  label "Billing Center Name"
+  description "List of Billing Center Names/IDs to check Savings Realized for. Leave blank for whole Organization view."
+  default []
 end
 
 parameter "param_period_start" do
   type "string"
+  category "Policy Settings"
   label "Period Start Date"
   description 'The starting month of the historical data to analyze (in YYYY-MM format e.g., "2021-10")'
   allowed_pattern /20[2-9][0-9]-[0-1][0-9]/
@@ -37,6 +43,7 @@ end
 
 parameter "param_period_end" do
   type "string"
+  category "Policy Settings"
   label "Period End Date"
   description "The ending month of the historical data to analyze (in YYYY-MM format)"
   allowed_pattern /20[2-9][0-9]-[0-1][0-9]/
@@ -44,6 +51,7 @@ end
 
 parameter "param_chart_type" do
   type "string"
+  category "Policy Settings"
   label "Chart Type"
   description "The type of bar chart to view savings realized data by"
   allowed_values "Grouped Bar Chart", "Stacked Bar Chart"
@@ -56,42 +64,136 @@ end
 
 credentials "auth_flexera" do
   schemes "oauth2"
-  label "flexera"
+  label "Flexera"
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
 
 ###############################################################################
-# Datasources and Scripts
+# Datasources & Scripts
 ###############################################################################
 
-#GET BILLING CENTERS FOR ORG
-datasource "ds_billing_centers" do
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
   request do
     auth $auth_flexera
-    host rs_optima_host
-    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-au.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-au.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get a list of active bill connections
+datasource "ds_bill_connections" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-onboarding/v1/orgs/", rs_org_id, "/bill-connects"])
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
   end
   result do
     encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "href", jmes_path(col_item,"href")
-      field "id", jmes_path(col_item,"id")
-      field "name", jmes_path(col_item,"name")
-      field "parent_id", jmes_path(col_item,"parent_id")
-      field "ancestor_ids", jmes_path(col_item,"ancestor_ids")
-      field "allocation_table", jmes_path(col_item,"allocation_table")
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "kind", jmes_path(col_item, "kind")
     end
   end
 end
 
-#GET RESERVED INSTANCE COSTS
-datasource "ds_ri_aggregated_costs" do
+# Filter out old Azure EA connections and new Azure EA connections
+datasource "ds_bill_connections_old" do
+  run_script $js_bill_connections_filter, $ds_bill_connections, "finops:bill-connect-azure-ea"
+end
+
+datasource "ds_bill_connections_new" do
+  run_script $js_bill_connections_filter, $ds_bill_connections, "finops:bill-connect-cbi-oi-azure-ea"
+end
+
+script "js_bill_connections_filter", type:"javascript" do
+  parameters "ds_bill_connections", "filter_value"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_bill_connections, function(connection) {
+    return connection['kind'] == filter_value
+  })
+EOS
+end
+
+datasource "ds_billing_centers" do
   request do
-    run_script $js_get_ri_aggregated_costs, $ds_billing_centers, $param_period_start, $param_period_end, $param_billing_centers, rs_org_id, rs_optima_host
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+datasource "ds_filtered_bcs" do
+  run_script $js_filtered_bcs, $ds_billing_centers, $param_billing_centers
+end
+
+script "js_filtered_bcs", type: "javascript" do
+  parameters "ds_billing_centers", "param_billing_centers"
+  result "result"
+  code <<-EOS
+  if (param_billing_centers.length == 0) {
+    filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+      return bc['parent_id'] == null || bc['parent_id'] == undefined
+    })
+  } else {
+    filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+      return _.contains(param_billing_centers, bc['id']) || _.contains(param_billing_centers, bc['name']) || _.contains(param_billing_centers, bc['name'].toLowerCase()) || _.contains(param_billing_centers, bc['name'].toUpperCase())
+    })
+  }
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_ri_aggregated_costs_old" do
+  request do
+    run_script $js_get_aggregated_costs, $ds_bill_connections_old, $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host, "ri_old"
   end
   result do
     encoding "json"
@@ -106,27 +208,79 @@ datasource "ds_ri_aggregated_costs" do
   end
 end
 
-script "js_get_ri_aggregated_costs", type: "javascript" do
-  parameters "ds_billing_centers", "start_date", "end_date", "param_billing_centers", "org_id", "optima_host"
+datasource "ds_ri_aggregated_costs_new" do
+  request do
+    run_script $js_get_aggregated_costs, $ds_bill_connections_new, $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host, "ri_new"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows") do
+      field "instance_type", jmes_path(col_item, "dimensions.instance_type")
+      field "region", jmes_path(col_item, "dimensions.region")
+      field "usage_unit", jmes_path(col_item, "dimensions.usage_unit")
+      field "usage_amount", jmes_path(col_item, "metrics.usage_amount")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+      field "month", jmes_path(col_item, "timestamp")
+    end
+  end
+end
+
+datasource "ds_base_aggregated_costs_old" do
+  request do
+    run_script $js_get_aggregated_costs, $ds_bill_connections_old, $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host, "base_old"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows") do
+      field "instance_type", jmes_path(col_item, "dimensions.instance_type")
+      field "region", jmes_path(col_item, "dimensions.region")
+      field "usage_unit", jmes_path(col_item, "dimensions.usage_unit")
+      field "usage_amount", jmes_path(col_item, "metrics.usage_amount")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+      field "month", jmes_path(col_item, "timestamp")
+    end
+  end
+end
+
+datasource "ds_base_aggregated_costs_new" do
+  request do
+    run_script $js_get_aggregated_costs, $ds_bill_connections_new, $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host, "base_new"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows") do
+      field "instance_type", jmes_path(col_item, "dimensions.instance_type")
+      field "region", jmes_path(col_item, "dimensions.region")
+      field "usage_unit", jmes_path(col_item, "dimensions.usage_unit")
+      field "usage_amount", jmes_path(col_item, "metrics.usage_amount")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+      field "month", jmes_path(col_item, "timestamp")
+    end
+  end
+end
+
+script "js_get_aggregated_costs", type: "javascript" do
+  parameters "bill_connections", "ds_filtered_bcs", "start_date", "end_date", "org_id", "optima_host", "connection_type"
   result "request"
   code <<-EOS
+  bill_source_expressions = []
 
-  //Get billing centers. If user specifies no billing centers, retrieve all top level billing centers. Else get array of billing centers that match the names stated in BC param
-  var billing_center_ids = []
-  if (param_billing_centers.length === 0){
-    var top_billing_centers = _.reject(ds_billing_centers, function(bc){ return bc.parent_id != null });
-    billing_center_ids = _.map(top_billing_centers, function(value, key){ return value.id });
-  } else {
-    billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
-    billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
-  }
+  _.each(bill_connections, function(item) {
+    bill_source_expressions.push({
+      "dimension": "bill_source",
+      "type": "equal",
+      "value": item['id']
+    })
+  })
 
-  var payload = {
-    "billing_center_ids": billing_center_ids,
-    "filter": {
+  // Set filters based on the type of request (RI or Base)
+  // and whether or not we're pulling costs for an old Azure EA connection or a new one
+  if (connection_type == 'ri_old') {
+    filter = {
       "type": "and",
       "expressions": [
         { "dimension": "vendor", "type": "equal", "value": "Azure" },
+        { "type": "or", "expressions": bill_source_expressions },
         {
           "type": "or",
           "expressions": [
@@ -148,72 +302,39 @@ script "js_get_ri_aggregated_costs", type: "javascript" do
           "expression": { "dimension": "instance_type", "type": "equal", "value": "None" }
         }
       ]
-    },
-    "dimensions": [
-      "instance_type",
-      "region",
-      "usage_unit"
-    ],
-    "granularity": "month",
-    "metrics": [
-      "cost_amortized_unblended_adj",
-      "usage_amount"
-    ]
-    "end_at": end_date,
-    "start_at": start_date
-  }
-
-  var request = {
-    auth: "auth_flexera",
-    host: optima_host,
-    path: "/bill-analysis/orgs/" + org_id + "/costs/aggregated",
-    verb: "POST",
-    body_fields: payload,
-    headers: {
-      "User-Agent": "RS Policies"
     }
   }
-  EOS
-end
 
-#GET BASE COSTS
-datasource "ds_base_aggregated_costs" do
-  request do
-    run_script $js_get_base_aggregated_costs, $ds_billing_centers, $param_period_start, $param_period_end, $param_billing_centers, rs_org_id, rs_optima_host
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "rows") do
-      field "instance_type", jmes_path(col_item, "dimensions.instance_type")
-      field "region", jmes_path(col_item, "dimensions.region")
-      field "usage_unit", jmes_path(col_item, "dimensions.usage_unit")
-      field "usage_amount", jmes_path(col_item, "metrics.usage_amount")
-      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
-      field "month", jmes_path(col_item, "timestamp")
-    end
-  end
-end
-
-script "js_get_base_aggregated_costs", type: "javascript" do
-  parameters "ds_billing_centers", "start_date", "end_date", "param_billing_centers", "org_id", "optima_host"
-  result "request"
-  code <<-EOS
-
-  //Get billing centers. If user specifies no billing centers, retrieve all top level billing centers. Else get array of billing centers that match the names stated in BC param
-  var billing_center_ids = []
-  if (param_billing_centers.length === 0){
-    var top_billing_centers = _.reject(ds_billing_centers, function(bc){ return bc.parent_id != null });
-    billing_center_ids = _.map(top_billing_centers, function(value, key){ return value.id });
-  } else {
-    billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
-    billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
-  }
-
-  var payload = {
-    "billing_center_ids": billing_center_ids,
-    "filter": {
+  if (connection_type == 'ri_new') {
+    filter = {
       "type": "and",
       "expressions": [
+        { "dimension": "vendor", "type": "equal", "value": "Azure" },
+        { "type": "or", "expressions": bill_source_expressions },
+        {
+          "type": "or",
+          "expressions": [
+            {
+              "dimension": "purchase_option",
+              "type": "equal",
+              "value": "Reserved"
+            },
+            {
+              "dimension": "purchase_option",
+              "type": "equal",
+              "value": "reserved"
+            }
+          ]
+        }
+      ]
+    }
+  }
+
+  if (connection_type == 'base_old') {
+    filter = {
+      "type": "and",
+      "expressions": [
+        { "type": "or", "expressions": bill_source_expressions },
         {
           "type": "or",
           "expressions": [
@@ -267,7 +388,51 @@ script "js_get_base_aggregated_costs", type: "javascript" do
           }
         }
       ]
-    },
+    }
+  }
+
+  if (connection_type == 'base_new') {
+    filter = {
+      "type": "and",
+      "expressions": [
+        { "type": "or", "expressions": bill_source_expressions },
+        {
+          "type": "or",
+          "expressions": [
+            {
+              "dimension": "vendor",
+              "type": "equal",
+              "value": "Azure"
+            },
+            {
+              "dimension": "vendor",
+              "type": "equal",
+              "value": "azure"
+            }
+          ]
+        },
+        {
+          "type": "or",
+          "expressions": [
+            {
+              "dimension": "category",
+              "type": "equal",
+              "value": "Commitments"
+            },
+            {
+              "dimension": "category",
+              "type": "equal",
+              "value": "commitments"
+            }
+          ]
+        }
+      ]
+    }
+  }
+
+  var payload = {
+    "billing_center_ids": ds_filtered_bcs,
+    "filter": filter,
     "dimensions": [
       "instance_type",
       "region",
@@ -292,7 +457,23 @@ script "js_get_base_aggregated_costs", type: "javascript" do
       "User-Agent": "RS Policies"
     }
   }
-  EOS
+EOS
+end
+
+datasource "ds_ri_aggregated_costs" do
+  run_script $js_cost_combiner, $ds_ri_aggregated_costs_old, $ds_ri_aggregated_costs_new
+end
+
+datasource "ds_base_aggregated_costs" do
+  run_script $js_cost_combiner, $ds_base_aggregated_costs_old, $ds_base_aggregated_costs_new
+end
+
+script "js_cost_combiner", type:"javascript" do
+  parameters "ds_costs_1", "ds_costs_2"
+  result "result"
+  code <<-EOS
+  result = ds_costs_1.concat(ds_costs_2)
+EOS
 end
 
 #CALCULATE SAVINGS REALIZED (BASE COST - RI COST) FOR EACH INSTANCE TYPE, FOR EACH REGION
@@ -489,19 +670,7 @@ script "js_create_chart_data", type: "javascript" do
   if ( report.length !== 0 ){
     report[0]["chart_dimensions"] = chart
   }
-
-  EOS
-end
-
-###############################################################################
-# Escalations
-###############################################################################
-
-escalation "esc_savings_realized_report" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
+EOS
 end
 
 ###############################################################################
@@ -511,14 +680,13 @@ end
 policy "policy_purchase_option_by_inst_type_and_region" do
   validate_each $ds_chart_data do
     summary_template "Azure Savings Realized from Reservations"
-    detail_template <<-EOS
-# Savings Realized On Compute Reservations Report
-![Savings Realized On Compute Reservations Chart](https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id={{ rs_org_id }}&rs_project_id={{ rs_project_id }}&{{ with index data 0 }}{{ .chart_dimensions.chart_data }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_type }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_image }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_title }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_y_axis }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_label }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_style }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_color }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_data_scale }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_format }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend_position }}{{ end }})
-EOS
-    escalate $esc_savings_realized_report
-    check eq(0,1)
+    detail_template <<-'EOS'
+    # Savings Realized On Compute Reservations Report
+    ![Savings Realized On Compute Reservations Chart](https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id={{ rs_org_id }}&rs_project_id={{ rs_project_id }}&{{ with index data 0 }}{{ .chart_dimensions.chart_data }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_type }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_image }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_title }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_y_axis }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_label }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_style }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_color }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_data_scale }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_format }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend_position }}{{ end }})
+    EOS
+    check eq(0, 1)
+    escalate $esc_email
     export do
-      # no actions so resource_level can be false
       resource_level false
       field "month" do
         label "Month"
@@ -534,4 +702,15 @@ EOS
       end
     end
   end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
 end
