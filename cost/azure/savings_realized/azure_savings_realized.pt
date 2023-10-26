@@ -267,12 +267,6 @@ script "js_get_aggregated_costs", type: "javascript" do
   parameters "bill_connection_id", "ds_filtered_bcs", "start_date", "end_date", "org_id", "optima_host", "connection_type"
   result "request"
   code <<-EOS
-  bill_source_expression = {
-    "dimension": "bill_source",
-    "type": "equal",
-    "value": bill_connection_id
-  }
-
   // Set filters based on the type of request (RI or Base)
   // and whether or not we're pulling costs for an old Azure EA connection or a new one
   if (connection_type == 'ri_old') {
@@ -304,8 +298,7 @@ script "js_get_aggregated_costs", type: "javascript" do
         {
           "type": "not",
           "expression": { "dimension": "instance_type", "type": "equal", "value": "None" }
-        },
-        bill_source_expression
+        }
       ]
     }
   }
@@ -317,11 +310,17 @@ script "js_get_aggregated_costs", type: "javascript" do
         {
           "type": "or",
           "expressions": [
+            { "dimension": "category", "type": "equal", "value": "Commitments" },
+            { "dimension": "category", "type": "equal", "value": "commitments" }
+          ]
+        },
+        {
+          "type": "or",
+          "expressions": [
             { "dimension": "purchase_option", "type": "equal", "value": "Reserved" },
             { "dimension": "purchase_option", "type": "equal", "value": "reserved" }
           ]
-        },
-        bill_source_expression
+        }
       ]
     }
   }
@@ -358,8 +357,7 @@ script "js_get_aggregated_costs", type: "javascript" do
         {
           "type": "not",
           "expression": { "dimension": "instance_type", "type": "equal", "value": "None" }
-        },
-        bill_source_expression
+        }
       ]
     }
   }
@@ -371,14 +369,34 @@ script "js_get_aggregated_costs", type: "javascript" do
         {
           "type": "or",
           "expressions": [
-            { "dimension": "category", "type": "equal", "value": "Commitments" },
-            { "dimension": "category", "type": "equal", "value": "commitments" }
+            { "dimension": "service", "type": "equal", "value": "Microsoft.Compute" },
+            { "dimension": "service", "type": "equal", "value": "microsoft.compute" }
           ]
         },
-        bill_source_expression
+        {
+          "type": "not",
+          "expression": {
+            "type": "or",
+            "expressions": [
+              { "dimension": "purchase_option", "type": "equal", "value": "Reserved" },
+              { "dimension": "purchase_option", "type": "equal", "value": "reserved" },
+              { "dimension": "purchase_option", "type": "equal", "value": "Spot" },
+              { "dimension": "purchase_option", "type": "equal", "value": "spot" },
+              { "dimension": "purchase_option", "type": "equal", "value": "Savings Plan" },
+              { "dimension": "purchase_option", "type": "equal", "value": "savings plan" }
+            ]
+          }
+        }
       ]
     }
   }
+
+  // Ensure we're filtering our request to just the specific bill connection
+  filter["expressions"].push({
+    "dimension": "bill_source",
+    "type": "equal",
+    "value": bill_connection_id
+  })
 
   var payload = {
     "billing_center_ids": ds_filtered_bcs,
