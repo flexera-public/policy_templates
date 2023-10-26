@@ -17,7 +17,7 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 - This policy supports a view of savings realized from AWS Compute Reserved Instances, Savings Plans and Spot Instances
 - This policy supports a view of savings realized for a list of specific billing centers or for the entire Organization.
-- This policy uses the on-demand rate and the reserved instance/savings plan/spot instance rate by instance type and region to derive a savings rate. The policy then uses usage amount to calculate total savings realized.
+- This policy categorizes savings by purchase option and uses [savings metric](https://docs.flexera.com/flexera/EN/Optima/TabularView.htm#tabularview_2609086307_1192596) to derive total savings realized.
 - This policy produces a bar chart showing savings realized vs. total actual spend for the period of historical months specified.
 
 ### Input Parameters
