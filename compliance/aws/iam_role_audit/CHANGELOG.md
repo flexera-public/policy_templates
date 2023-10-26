@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.6
+
+- Updated description of `Account Number` parameter
+
 ## v2.5
 
 - Removed unused `sys_log` definition

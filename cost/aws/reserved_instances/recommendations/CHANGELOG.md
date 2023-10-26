@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.3
+
+- Updated description of `Account Number` parameter
+
 ## v3.2
 
 - Fixed issue with currency conversion check when array is empty

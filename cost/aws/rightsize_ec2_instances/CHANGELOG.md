@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.2
+
+- Updated description of `Account Number` parameter
+
 ## v4.1
 
 - Added ability to filter resources by tag key alone without regard for tag value

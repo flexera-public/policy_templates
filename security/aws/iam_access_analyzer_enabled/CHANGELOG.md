@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1
+
+- Updated description of `Account Number` parameter
+
 ## v3.0
 
 - Added functionality to support region inclusion/exclusion.
