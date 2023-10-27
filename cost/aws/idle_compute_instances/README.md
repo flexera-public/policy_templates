@@ -1,5 +1,11 @@
 # AWS Idle Compute Instances Policy
 
+## Deprecated
+
+This policy is no longer being updated. The [AWS Rightsize EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/) policy now includes this functionality and is the recommended policy for getting idle compute recommendations.
+
+## What It Does
+
 This Policy Template checks for idle instance in AWS EC2 and then terminates them upon approval.
 
 ## Prerequisites

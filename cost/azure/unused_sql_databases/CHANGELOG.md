@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.2
+
+- Deprecated: This policy is no longer being updated. Please see policy README for more information.
+
 ## v5.1
 
 - Corrected issue with policy not retrieving cost data on orgs using newer Azure bill connections

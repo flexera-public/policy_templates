@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.12
+
+- Deprecated: This policy is no longer being updated. Please see policy README for more information.
+
 ## v2.11
 
 - Updated policy README file with a deeper explanation of how the GCP recommender works and the roles required to use it.
