@@ -2,7 +2,7 @@
 
 ## v1.2
 
-- updated version to match meta parent and child policy
+- updated short description README link
 
 ## v1.1
 
