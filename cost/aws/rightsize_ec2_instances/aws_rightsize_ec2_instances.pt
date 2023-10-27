@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "4.2",
+  version: "4.3",
   provider: "AWS",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -593,7 +593,7 @@ script "js_cloudwatch_queries", type: "javascript" do
               "MetricName": mem_metricname,
               "Dimensions": dimensions
             },
-            "Period": 2592000,
+            "Period": lookback,
             "Stat": stat
           },
           "ReturnData": true
@@ -608,11 +608,11 @@ end
 
 # Combine queries into 500 item blocks so we can make bulk requests to Cloudwatch
 datasource "ds_instances_requests" do
-  run_script $js_instances_requests, $ds_cloudwatch_queries
+  run_script $js_instances_requests, $ds_cloudwatch_queries, $param_stats_lookback
 end
 
 script "js_instances_requests", type: "javascript" do
-  parameters "queries"
+  parameters "queries", "param_stats_lookback"
   result "result"
   code <<-EOS
   // Organize the queries into discrete requests to send in.
@@ -620,8 +620,16 @@ script "js_instances_requests", type: "javascript" do
   result = []
   query_block_size = 500
 
-  end_date = parseInt(new Date().getTime() / 1000)
-  start_date = parseInt(new Date(new Date().setDate(new Date().getDate() - 30)).getTime() / 1000)
+  // Round down to beginning of the hour to avoid getting multiple values
+  // from CloudWatch due to how the data is sliced
+  end_date = new Date()
+  end_date.setMinutes(0, 0, 0)
+  end_date = parseInt(end_date.getTime() / 1000)
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - param_stats_lookback)
+  start_date.setMinutes(0, 0, 0)
+  start_date = parseInt(start_date.getTime() / 1000)
 
   _.each(Object.keys(queries), function(region) {
     for (i = 0; i < queries[region].length; i += query_block_size) {
@@ -703,7 +711,11 @@ script "js_cloudwatch_data_sorted", type: "javascript" do
     region = item['region']
     instance_name = item['id'].split('_')[0] + '-' + item['id'].split('_')[1]
     metric = item['id'].split('_')[2]
-    value = item['values'][0]
+
+    // Grabbing index 0 SHOULD be safe because we should only get one result.
+    // Just in case AWS slices the data weirdly and returns 2 results, we make
+    // sure we grab the last item every time, which contains the actual data we need.
+    value = item['values'][item['values'].length - 1]
 
     if (result[region] == undefined) { result[region] = {} }
     if (result[region][instance_name] == undefined) { result[region][instance_name] = {} }
