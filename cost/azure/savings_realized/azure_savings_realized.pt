@@ -83,71 +83,6 @@ datasource "ds_applied_policy" do
   end
 end
 
-# Get region-specific Flexera API endpoints
-datasource "ds_flexera_api_hosts" do
-  run_script $js_flexera_api_hosts, rs_optima_host
-end
-
-script "js_flexera_api_hosts", type: "javascript" do
-  parameters "rs_optima_host"
-  result "result"
-  code <<-EOS
-  host_table = {
-    "api.optima.flexeraeng.com": {
-      flexera: "api.flexera.com",
-      fsm: "api.fsm.flexeraeng.com"
-    },
-    "api.optima-eu.flexeraeng.com": {
-      flexera: "api.flexera.eu",
-      fsm: "api.fsm-eu.flexeraeng.com"
-    },
-    "api.optima-au.flexeraeng.com": {
-      flexera: "api.flexera.au",
-      fsm: "api.fsm-au.flexeraeng.com"
-    }
-  }
-
-  result = host_table[rs_optima_host]
-EOS
-end
-
-# Get a list of active bill connections
-datasource "ds_bill_connections" do
-  request do
-    auth $auth_flexera
-    host val($ds_flexera_api_hosts, 'flexera')
-    path join(["/finops-onboarding/v1/orgs/", rs_org_id, "/bill-connects"])
-    header "Api-Version", "1.0"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "values[*]") do
-      field "id", jmes_path(col_item, "id")
-      field "kind", jmes_path(col_item, "kind")
-    end
-  end
-end
-
-# Filter out old Azure EA connections and new Azure EA connections
-datasource "ds_bill_connections_old" do
-  run_script $js_bill_connections_filter, $ds_bill_connections, "finops:bill-connect-azure-ea"
-end
-
-datasource "ds_bill_connections_new" do
-  run_script $js_bill_connections_filter, $ds_bill_connections, "finops:bill-connect-cbi-oi-azure-ea"
-end
-
-script "js_bill_connections_filter", type:"javascript" do
-  parameters "ds_bill_connections", "filter_value"
-  result "result"
-  code <<-EOS
-  result = _.filter(ds_bill_connections, function(connection) {
-    return connection['kind'] == filter_value
-  })
-EOS
-end
-
 datasource "ds_billing_centers" do
   request do
     auth $auth_flexera
@@ -191,10 +126,70 @@ script "js_filtered_bcs", type: "javascript" do
 EOS
 end
 
+# Gather list of bill connections from Optima data
+datasource "ds_bill_connections" do
+  request do
+    run_script $js_bill_connections, $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows") do
+      field "bill_source", jmes_path(col_item, "dimensions.bill_source")
+    end
+  end
+end
+
+script "js_bill_connections", type: "javascript" do
+  parameters "ds_filtered_bcs", "start_date","end_date", "org_id", "optima_host"
+  result "request"
+  code <<-EOS
+  payload = {
+    "billing_center_ids": ds_filtered_bcs,
+    "dimensions": [ "bill_source" ],
+    "granularity": "month",
+    "metrics": [ "cost_amortized_unblended_adj" ],
+    "end_at": end_date,
+    "start_at": start_date
+  }
+
+  var request = {
+    auth: "auth_flexera",
+    host: optima_host,
+    path: "/bill-analysis/orgs/" + org_id + "/costs/aggregated",
+    verb: "POST",
+    body_fields: payload,
+    headers: {
+      "User-Agent": "RS Policies"
+    }
+  }
+EOS
+end
+
+# Filter out old Azure EA connections and new Azure EA connections
+datasource "ds_bill_connections_old" do
+  run_script $js_bill_connections_filter, $ds_bill_connections, 0
+end
+
+datasource "ds_bill_connections_new" do
+  run_script $js_bill_connections_filter, $ds_bill_connections, 7
+end
+
+script "js_bill_connections_filter", type:"javascript" do
+  parameters "ds_bill_connections", "index"
+  result "result"
+  code <<-EOS
+  bill_sources = _.filter(ds_bill_connections, function(connection) {
+    return connection['bill_source'].indexOf('azure-ea') == index
+  })
+
+  result = _.uniq(_.compact(_.pluck(bill_sources, 'bill_source')))
+EOS
+end
+
 datasource "ds_ri_aggregated_costs_old" do
   iterate $ds_bill_connections_old
   request do
-    run_script $js_get_aggregated_costs, val(iter_item, 'id'), $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host, "ri_old"
+    run_script $js_get_aggregated_costs, iter_item, $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host, "ri_old"
   end
   result do
     encoding "json"
@@ -212,7 +207,7 @@ end
 datasource "ds_ri_aggregated_costs_new" do
   iterate $ds_bill_connections_new
   request do
-    run_script $js_get_aggregated_costs, val(iter_item, 'id'), $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host, "ri_new"
+    run_script $js_get_aggregated_costs, iter_item, $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host, "ri_new"
   end
   result do
     encoding "json"
@@ -230,7 +225,7 @@ end
 datasource "ds_base_aggregated_costs_old" do
   iterate $ds_bill_connections_old
   request do
-    run_script $js_get_aggregated_costs, val(iter_item, 'id'), $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host, "base_old"
+    run_script $js_get_aggregated_costs, iter_item, $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host, "base_old"
   end
   result do
     encoding "json"
@@ -248,7 +243,7 @@ end
 datasource "ds_base_aggregated_costs_new" do
   iterate $ds_bill_connections_new
   request do
-    run_script $js_get_aggregated_costs, val(iter_item, 'id'), $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host, "base_new"
+    run_script $js_get_aggregated_costs, iter_item, $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host, "base_new"
   end
   result do
     encoding "json"
@@ -398,7 +393,7 @@ script "js_get_aggregated_costs", type: "javascript" do
     "value": bill_connection_id
   })
 
-  var payload = {
+  payload = {
     "billing_center_ids": ds_filtered_bcs,
     "filter": filter,
     "dimensions": [
