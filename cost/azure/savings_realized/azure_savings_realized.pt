@@ -531,44 +531,52 @@ script "js_savings_realized", type: "javascript" do
 EOS
 end
 
-#CHART CREATION
 datasource "ds_chart_data" do
-  run_script $js_create_chart_data, $ds_savings_realized, $ds_applied_policy, $param_chart_type
+  run_script $js_chart_data, $ds_savings_realized, $ds_applied_policy, $param_chart_type
 end
 
-script "js_create_chart_data", type: "javascript" do
-  parameters "savings_realized_data", "ds_applied_policy", "param_chart_type"
-  result "report"
+script "js_chart_data", type: "javascript" do
+  parameters "ds_savings_realized", "ds_applied_policy", "param_chart_type"
+  result "result"
   code <<-EOS
-  //Get months
-  var months = _.pluck( _.uniq(savings_realized_data, function(data){ return data.month }), "month" )
+  months = _.uniq(_.pluck(ds_savings_realized, 'month'))
 
   //Create report data (Concatenate savings realized and total costs into one object/row of data)
-  var report = []
-  _.each(months, function(mo){
+  result = []
+
+  _.each(months, function(month) {
     savings_realized = 0
     total_spend = 0
-    _.each(savings_realized_data, function(data){
-      if(mo == data.month && data.dimension == "Savings Realized On Compute Reservations"){
-        savings_realized = data.cost
-      }
-      if(mo == data.month && data.dimension == "Total Actual Spend On Discountable Compute"){
-        total_spend = data.cost
-      }
+    percentage = 0
+
+    savings_realized_for_month = _.find(ds_savings_realized, function(data) {
+      return data['month'] == month && data['dimension'] == "Savings Realized On Compute Reservations"
     })
 
-    month = mo
-    report.push({
-      "month": mo.split('-')[0] + '-' + mo.split('-')[1],
+    if (typeof(savings_realized_for_month) == 'object') {
+      savings_realized = savings_realized_for_month['cost']
+    }
+
+    total_spend_for_month = _.find(ds_savings_realized, function(data) {
+      return data['month'] == month && data['dimension'] == "Total Actual Spend On Discountable Compute"
+    })
+
+    if (typeof(total_spend_for_month) == 'object') {
+      total_spend = total_spend_for_month['cost']
+    }
+
+    percentage = (savings_realized / (total_spend + savings_realized)) *100
+
+    result.push({
+      "month": month.split('-')[0] + '-' + month.split('-')[1],
       "total_spend": parseFloat(total_spend).toFixed(2),
       "savings_realized": parseFloat(savings_realized).toFixed(2),
-      "percentage": parseFloat((savings_realized/(total_spend + savings_realized))*100).toFixed(0).toString() + "%"
+      "percentage": parseFloat(percentage).toFixed(2) + "%"
     })
   })
 
   //Group data by Cost Dimension
-  group_by_dimension =
-  _.groupBy(savings_realized_data, function(data){ return data.dimension })
+  group_by_dimension = _.groupBy(ds_savings_realized, function(data) { return data.dimension })
 
   //Determine chart type
   chart_type = "cht="
@@ -578,7 +586,7 @@ script "js_create_chart_data", type: "javascript" do
   //Create chart axis labels
   chart_axis_labels =
   ("chxl=1:," +
-    _.uniq(savings_realized_data, function(sr) { return sr.month })
+    _.uniq(ds_savings_realized, function(sr) { return sr.month })
     .map(function(sr){ return sr.month.substring(0,7) })
   ).split(",").join("|")
 
@@ -593,8 +601,8 @@ script "js_create_chart_data", type: "javascript" do
 
   //calculate scale
   //chart_range = ("chxr=0," +
-  max = (Math.max.apply(Math, savings_realized_data.map(function(sr){ return sr.savings_realized }))*1.1).toFixed(2)
-  min = (Math.min.apply(Math, savings_realized_data.map(function(sr){ return sr.savings_realized }))*0.9).toFixed(2)
+  max = (Math.max.apply(Math, ds_savings_realized.map(function(sr){ return sr.savings_realized }))*1.1).toFixed(2)
+  min = (Math.min.apply(Math, ds_savings_realized.map(function(sr){ return sr.savings_realized }))*0.9).toFixed(2)
   chart_range = "chxr=0," + min + "," + max
 
   //Create chart dataset
@@ -629,9 +637,9 @@ script "js_create_chart_data", type: "javascript" do
     chart_legend_position: encodeURI("chdlp=b")
   }
 
-  if ( report.length !== 0 ){
-    report[0]["chart_dimensions"] = chart
-    report[0]["policy_name"] = ds_applied_policy['name']
+  if (result.length > 0) {
+    result[0]["chart_dimensions"] = chart
+    result[0]["policy_name"] = ds_applied_policy['name']
   }
 EOS
 end
