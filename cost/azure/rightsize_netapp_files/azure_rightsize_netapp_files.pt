@@ -1,0 +1,268 @@
+name "Azure Rightsize NetApp Files"
+rs_pt_ver 20180301
+type "policy"
+short_description "Cheks for oversized NetApp Volumes and suggest recommendations to save money. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_netapp_files/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+category "Cost"
+severity "low"
+default_frequency "weekly"
+info(
+  version: "0.0",
+  provider: "Azure",
+  service: "NetApp Files",
+  policy_set: "Rightsize NetApp Files",
+  recommendation_type: "Usage Reduction"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  category "Policy Settings"
+  label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_subscriptions_to_check" do
+  type "list"
+  category "Filters"
+  label "Azure subscriptions to check"
+  description "Enter the subscription IDs that you want this policy to check for oversized managed disks."
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_azure" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+datasource "ds_subscriptions_to_check" do
+  run_script $js_subscriptions_to_check, $param_subscriptions_to_check
+end
+
+script "js_subscriptions_to_check", type: "javascript" do
+  parameters "param_subscriptions_to_check"
+  result "subscriptions_to_check"
+  code <<-EOS
+  var subscriptions_to_check = param_subscriptions_to_check
+EOS
+end
+
+datasource "ds_resource_groups" do
+  iterate $ds_subscriptions_to_check
+  request do
+    auth $auth_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", iter_item, "/resourceGroups"])
+    query "api-version", "2020-09-01"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscription_id", iter_item
+      field "resource_group_name", jmes_path(col_item, "name")
+    end
+  end
+end
+
+datasource "ds_naf_accounts" do
+  iterate $ds_resource_groups
+  request do
+    auth $auth_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "subscription_id"), "/resourceGroups/", val(iter_item, "resource_group_name"), "/providers/Microsoft.NetApp/netAppAccounts"])
+    query "api-version", "2023-05-01"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscription_id", jmes_path(iter_item, "subscription_id")
+      field "resource_group_name", jmes_path(iter_item, "resource_group_name")
+      field "naf_account_name", jmes_path(col_item, "name")
+    end
+  end
+end
+
+datasource "ds_naf_capacity_pools_v1" do
+  iterate $ds_naf_accounts
+  request do
+    auth $auth_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "subscription_id"), "/resourceGroups/", val(iter_item, "resource_group_name"), "/providers/Microsoft.NetApp/netAppAccounts/", val(iter_item, "naf_account_name"), "/capacityPools"])
+    query "api-version", "2023-05-01"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscription_id", jmes_path(iter_item, "subscription_id")
+      field "resource_group_name", jmes_path(iter_item, "resource_group_name")
+      field "naf_account_name", jmes_path(iter_item, "naf_account_name")
+      field "naf_pool_name", jmes_path(col_item, "name")
+    end
+  end
+end
+
+datasource "ds_naf_capacity_pools_v2" do
+  run_script $js_naf_capacity_pools_v2, $ds_naf_capacity_pools_v1
+end
+
+script "js_naf_capacity_pools_v2", type: "javascript" do
+  parameters "ds_naf_capacity_pools_v1"
+  result "result"
+  code <<-EOS
+  var result = _.map(ds_naf_capacity_pools_v1, function(item) {
+    item.naf_pool_name = item.naf_pool_name.split("/")[1]
+    return item
+  })
+EOS
+end
+
+datasource "ds_naf_volumes" do
+  iterate $ds_naf_capacity_pools_v2
+  request do
+    auth $auth_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "subscription_id"), "/resourceGroups/", val(iter_item, "resource_group_name"), "/providers/Microsoft.NetApp/netAppAccounts/", val(iter_item, "naf_account_name"), "/capacityPools/", val(iter_item, "naf_pool_name"), "/volumes"])
+    query "api-version", "2023-05-01"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscription_id", jmes_path(iter_item, "subscription_id")
+      field "resource_group_name", jmes_path(iter_item, "resource_group_name")
+      field "naf_account_name", jmes_path(iter_item, "naf_account_name")
+      field "naf_pool_name", jmes_path(iter_item, "naf_pool_name")
+      field "naf_volume_name", jmes_path(col_item, "name")
+      field "naf_volume_uri", jmes_path(col_item, "id")
+    end
+  end
+end
+
+datasource "ds_naf_volume_metrics_v1" do
+  iterate $ds_naf_volumes
+  request do
+    auth $auth_azure
+    host $param_azure_endpoint
+    path join([val(iter_item, "naf_volume_uri"), "/providers/Microsoft.Insights/metrics"])
+    query "api-version", "2018-01-01"
+    query "metricnames", "VolumeLogicalSize,VolumeAllocatedSize,VolumeConsumedSizePercentage"
+  end
+  result do
+    encoding "json"
+    field "subscription_id", jmes_path(iter_item, "subscription_id")
+    field "resource_group_name", jmes_path(iter_item, "resource_group_name")
+    field "naf_account_name", jmes_path(iter_item, "naf_account_name")
+    field "naf_pool_name", jmes_path(iter_item, "naf_pool_name")
+    field "naf_volume_name", jmes_path(iter_item, "naf_volume_name")
+    field "naf_volume_uri", jmes_path(iter_item, "naf_volume_uri")
+    field "naf_volume_metrics", jmes_path(response, "value[*]")
+  end
+end
+
+datasource "ds_naf_volume_metrics_v2" do
+  run_script $js_naf_volume_metrics_v2, $ds_naf_volume_metrics_v1
+end
+
+script "js_naf_volume_metrics_v2", type: "javascript" do
+  parameters "ds_naf_volume_metrics_v1"
+  result "result"
+  code <<-EOS
+  var nafVolumes = _.map(ds_naf_volume_metrics_v1, function(item) {
+    _.forEach(item.naf_volume_metrics, function(metric) {
+      var lastPointInTS = metric.timeseries[0].data[metric.timeseries[0].data.length - 1].average
+      switch (metric.name.value) {
+        case "VolumeLogicalSize":
+          item.volume_logical_size = Math.round(lastPointInTS / 1000000000) + "GB"
+          break;
+        case "VolumeAllocatedSize":
+          item.volume_allocated_size = Math.round(lastPointInTS / 1000000000) + "GB"
+          break;
+        case "VolumeConsumedSizePercentage":
+          item.volume_consumed_size_percentage = Math.round(lastPointInTS)
+          break;
+      }
+    })
+    return item
+  })
+  var oversizedNafVolumes = _.filter(nafVolumes, function(item) {
+    return item.volume_consumed_size_percentage <= 50
+  })
+  var result = oversizedNafVolumes
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_azure_rightsize_netapp_files" do
+  validate $ds_naf_volume_metrics_v2 do
+    summary_template "There are {{ len data }} oversized Azure NetApp File Volumes"
+    check eq(size(data), 0)
+    escalate $esc_email
+    export do
+      resource_level true
+      field "id" do
+        label "ID"
+        path "naf_volume_uri"
+      end
+      field "naf_volume_name" do
+        label "NetApp File Volume Name"
+      end
+
+      field "volume_logical_size" do
+        label "NetApp File Volume Logical Size"
+      end
+
+      field "volume_allocated_size" do
+        label "NetApp File Volume Allocated Size"
+      end
+
+      field "volume_consumed_size_percentage" do
+        label "NetApp File Volume Consumed Size Percentage"
+      end
+
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email."
+  email $param_email
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
