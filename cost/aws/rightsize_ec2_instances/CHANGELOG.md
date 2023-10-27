@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.3
+
+- Fixed issue with gathering and interpreting CloudWatch metrics
+
 ## v4.2
 
 - Updated description of `Account Number` parameter
