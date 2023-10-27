@@ -6,7 +6,7 @@
 
 ## v1.1
 
-- updated short description README link
+- Updated description of `Account Number` parameter
 
 ## v1.0
 
