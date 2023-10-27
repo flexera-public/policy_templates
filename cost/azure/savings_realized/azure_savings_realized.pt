@@ -439,97 +439,96 @@ script "js_cost_combiner", type:"javascript" do
 EOS
 end
 
-#CALCULATE SAVINGS REALIZED (BASE COST - RI COST) FOR EACH INSTANCE TYPE, FOR EACH REGION
 datasource "ds_savings_realized" do
-  run_script $js_get_savings_realized, $ds_ri_aggregated_costs, $ds_base_aggregated_costs
+  run_script $js_savings_realized, $ds_ri_aggregated_costs, $ds_base_aggregated_costs
 end
 
-script "js_get_savings_realized", type: "javascript" do
-  parameters "ri_costs", "base_costs"
-  result "savings_realized_data"
+script "js_savings_realized", type: "javascript" do
+  parameters "ds_ri_aggregated_costs", "ds_base_aggregated_costs"
+  result "result"
   code <<-'EOS'
-  var temp_result = []
-  var savings_realized_data = []
+  result = []
 
-  //Get list of Instance Types, Regions, Months
-  inst_type = _.pluck( _.uniq(ri_costs, function(ri){ return ri.instance_type }), "instance_type" )
-  region = _.pluck( _.uniq(ri_costs, function(ri){ return ri.region }), "region" )
-  months = _.union(
-    _.pluck( _.uniq(ri_costs, function(ri){ return ri.month }), "month" ),
-    _.pluck( _.uniq(base_costs, function(base){ return base.month }), "month" )
-  )
+  all_costs = ds_ri_aggregated_costs.concat(ds_base_aggregated_costs)
 
-  //calculate total cost for each month
-  _.each(months, function(mo){
-    total_month_cost = 0
-    _.each(ri_costs, function(ri){
-      if(ri.month == mo){ total_month_cost += ri.cost }
+  // Get list of Instance Types, Regions, Months
+  instance_types = _.uniq(_.pluck(all_costs, 'instance_type'))
+  regions = _.uniq(_.pluck(all_costs, 'region'))
+  months = _.uniq(_.pluck(all_costs, 'month'))
+
+  // Calculate total cost for each month
+  _.each(months, function(month) {
+    month_costs = _.filter(all_costs, function(cost) { return cost['month'] == month })
+    total_month_cost = _.reduce(_.pluck(month_costs, 'cost'), function(memo, num) { return memo + num }, 0)
+
+    result.push({
+      month: month,
+      cost: total_month_cost,
+      dimension: "Total Actual Spend On Discountable Compute"
     })
-    _.each(base_costs, function(base){
-      if(base.month == mo){ total_month_cost += base.cost }
-    })
-    savings_realized_data.push({ "month": mo, "cost": total_month_cost, "dimension": "Total Actual Spend On Discountable Compute" })
   })
 
-  //calculate base cost of instance per hour across all months for each instance type/region/operating system combination
-  unique_cost_inst_hrs = []
-  _.each(inst_type, function(inst){
-    _.each(region, function(rg){
-      base_cost_inst_hr_tot = 0, count = 0
-      _.each(base_costs, function(base){
-        if(base.instance_type == inst && base.region == rg){
-          base_cost_inst_hr_tot += (base.cost / base.usage_amount)
-          count ++
+  // Calculate base cost of instance per hour across all months
+  // for each instance type/region/operating system combination
+  unique_cost_instance_hours = []
+
+  _.each(instance_types, function(type) {
+    _.each(regions, function(region) {
+      base_cost_instance_hour_total = 0
+      count = 0
+
+      _.each(ds_base_aggregated_costs, function(cost){
+        if (cost['instance_type'] == type && cost['region'] == region) {
+          base_cost_instance_hour_total += (cost['cost'] / cost['usage_amount'])
+          count += 1
         }
       })
-      avg_base_cost_inst_hr = 0
-      if(count > 0){ avg_base_cost_inst_hr = base_cost_inst_hr_tot / count }
 
-      unique_cost_inst_hrs.push({
-        "instance_type": inst,
-        "region": rg,
-        "avg_base_cost_inst_hr": avg_base_cost_inst_hr
+      avg_base_cost_instance_hour = 0
+      if (count > 0) { avg_base_cost_instance_hour = base_cost_instance_hour_total / count }
+
+      unique_cost_instance_hours.push({
+        instance_type: type,
+        region: region,
+        avg_base_cost_instance_hour: avg_base_cost_instance_hour
       })
     })
   })
 
-  //apply cost_inst_hr to calculate savings realized
-  _.each(ri_costs, function(ri){
-    _.each(unique_cost_inst_hrs, function(inst_hr){
-      if (ri.instance_type == inst_hr.instance_type && ri.region == inst_hr.region && ri.operating_system == inst_hr.operating_system){
-        savings_realized_per_inst_hr = inst_hr.avg_base_cost_inst_hr - (ri.cost / ri.usage_amount)
+  // Apply cost_instance_hour to calculate savings realized
+  savings_realized_object = {}
+
+  _.each(ds_ri_aggregated_costs, function(cost) {
+    _.each(unique_cost_instance_hours, function(instance_hour) {
+      if (cost['instance_type'] == instance_hour['instance_type'] && cost['region'] == instance_hour['region']) {
+        savings_realized_per_instance_hour = instance_hour['avg_base_cost_instance_hour'] - (cost['cost'] / cost['usage_amount'])
+
         savings_realized = 0
-        if(ri.cost > 0 ){
-          savings_realized = savings_realized_per_inst_hr * ri.usage_amount
+        if (cost['cost'] > 0) {
+          savings_realized = savings_realized_per_instance_hour * cost['usage_amount']
         }
-        //console.log("On-Demand Rate: " + inst_hr.avg_base_cost_inst_hr, "Reserved Rate: " + (ri.cost/ri.usage_amount), ri.region, ri.instance_type)
 
-        temp_result.push(
-          {
-            "month": ri.month,
-            "region": ri.region,
-            "instance_type": ri.instance_type,
-            "savings_realized": savings_realized
-          }
-        )
+        if (savings_realized_object[cost['month']] == undefined) { savings_realized_object[cost['month']] = 0 }
+          savings_realized_object[cost['month']] += savings_realized
       }
     })
   })
 
-  //reduce list - aggregate SAVINGS REALIZED costs for same month
-  _.each(months, function(mo){
-    savings_realized = 0
-    _.each(temp_result, function(res){
-      if(mo == res.month){
-        savings_realized += res.savings_realized
-      }
+  _.each(months, function(month) {
+    cost = 0
+    if (typeof(savings_realized_object[cost['month']]) == 'number') {
+      cost = savings_realized_object[cost['month']]
+    }
+
+    result.push({
+      month: month,
+      cost: cost,
+      dimension: "Savings Realized On Compute Reservations"
     })
-    savings_realized_data.push({ "month": mo, "cost": savings_realized, "dimension": "Savings Realized On Compute Reservations" })
   })
 
-  //sort by month
-  savings_realized_data = _.sortBy(savings_realized_data, "month")
-  EOS
+  result = _.sortBy(result, "month")
+EOS
 end
 
 #CHART CREATION
