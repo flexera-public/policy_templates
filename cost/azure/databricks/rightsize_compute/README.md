@@ -26,8 +26,8 @@ The savings is displayed in the Estimated Monthly Savings column. The incident m
 
 ## Prerequisites
 
-
 ### Create `Azure Databricks ClusterId` Tag Dimension in Flexera
+
 This is required for the policy templates to be able to map each Azure Virtual Machine to a Databricks Cluster.
 
 Navigate to *Administration > Custom Tags* in Flexera and Create a new Tag Dimension
@@ -38,8 +38,8 @@ Navigate to *Administration > Custom Tags* in Flexera and Create a new Tag Dimen
 > *Note: These values are case-sensitive*
 
 ### Credential configuration
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
 For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
 
@@ -54,6 +54,7 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ### Optional: **Databricks Credential** (*provider=databricks*)
+
 Setting up authentication to the Azure Databricks workspaces themselves will enable getting additional metadata from the Databricks APIs (Cluster Name, Cluster Type, Cluster Tags)
 
 #### Option 1: Auth to Databricks using Azure Service Principal (Recommended)
@@ -68,18 +69,18 @@ This is the recommended method and enables a single Azure Service Principal to t
 
 2. Add Service Principal to all DB Workspace using the Client ID
 
-   Databricks Workspace > Admin Settings > Service Principal<br/>
-   ( `https://<workspaceUrl>/?#setting/accounts/servicePrincipals` )
+   Databricks Workspace > Admin Settings > Service Principal (i.e. `https://<workspaceUrl>/?#setting/accounts/servicePrincipals` )
 
 3. Grant Service Principal Permissions in DB Workspace
 
    We currently recommend adding Service Principal to `admin` group so it can see all clusters and compute resources within the cluster.
 
-   Databricks Workspace > Admin Settings > Groups<br />
-   ( `https://<workspaceUrl>/?#setting/accounts/groups` )
+   Databricks Workspace > Admin Settings > Groups (i.e. `https://<workspaceUrl>/?#setting/accounts/groups` )
 
 ##### Create `OAuth2` Credential in Flexera
+
 Replace these:
+
  - `<access_token>`
  - `<flexeraProjectId>`
  - `<Credential Name>`
@@ -94,7 +95,9 @@ curl 'https://api.flexera.com/cred/v2/projects/<flexeraProjectId>/credentials/oa
 #### Option 2: Auth to Databricks using Databricks Personal Access Token
 
 ##### Create `API Key` Credential in Flexera
+
 Replace these:
+
  - `<access_token>`
  - `<flexeraProjectId>`
  - `<Credential Name>`
