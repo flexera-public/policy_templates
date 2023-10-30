@@ -2,7 +2,7 @@
 
 ## v6.2
 
-Refactored the Delete IP Address Action to use updated Azure APIs, improve debugging, and error handling
+- Refactored code for Delete IP Address Action to improve debugging and error handling
 
 ## v6.1
 

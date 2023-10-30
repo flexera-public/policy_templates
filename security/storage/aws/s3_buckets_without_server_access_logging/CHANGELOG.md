@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.7
+
+- Updated description of `Account Number` parameter
+
 ## v2.6
 
 - Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM

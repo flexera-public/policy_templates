@@ -55,6 +55,14 @@ parameter "param_policy_schedule" do
   allowed_values "daily", "weekly", "monthly"
 end
 
+parameter "param_template_source" do
+  type "string"
+  label "Child Policy Template Source"
+  description "By default, will use the \"AWS Tag Cardinality\" Policy Template from Catalog.  Optionally, you can use the \"AWS Tag Cardinality\" Policy Template uploaded in the current Flexera Project."
+  default "Published Catalog Template"
+  allowed_values "Published Catalog Template", "Uploaded Template"
+end
+
 ## Child Policy Parameters
 parameter "param_azure_endpoint" do
   type "string"
@@ -157,7 +165,7 @@ script "js_child_policy_options", type: "javascript" do
   // Filter Options that are not appropriate for Child Policy
   var options = _.map(ds_self_policy_information.options, function(option){
     // param_combined_incident_email, param_dimension_filter_includes, param_dimension_filter_excludes", param_policy_schedule are exclusion to Meta Parent Policy Parameters
-    if (!_.contains(["param_combined_incident_email", "param_dimension_filter_includes", "param_dimension_filter_excludes", "param_policy_schedule"], option.name)) {
+    if (!_.contains(["param_combined_incident_email", "param_dimension_filter_includes", "param_dimension_filter_excludes", "param_policy_schedule", "param_template_source"], option.name)) {
       return { "name": option.name, "value": option.value };
     }
   });
@@ -205,8 +213,8 @@ script "js_format_self", type: "javascript" do
   EOS
 end
 
-# Get Child Policy Details
-datasource "ds_child_policy_information" do
+# Get Pulished Policy Details
+datasource "ds_published_child_policy_information" do
   request do
     auth $auth_flexera
     host rs_governance_host
@@ -216,7 +224,26 @@ datasource "ds_child_policy_information" do
   result do
     encoding "json"
     # Select the published policy that is published by "support@flexera.com" and matches the name of the child policy template
-    collect jq(response, '.items[] | select(.name == "Azure Idle Compute Instances" and .created_by.email == "support@flexera.com")' ) do
+    collect jq(response, '.items[] | select(.name == "Azure Idle Compute Instances" and .created_by.email == "BKaraffa@flexera.com")' ) do
+      field "name", jmes_path(col_item, "name")
+      field "href", jmes_path(col_item, "href")
+      field "short_description", jmes_path(col_item, "short_description")
+    end
+  end
+end
+
+# Get Uploaded Policy Details
+datasource "ds_project_child_policy_information" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/policy_templates"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    # Select the uploaded policy that matches the name of the child policy template
+    collect jq(response, '.items[] | select(.name == "Azure Idle Compute Instances")' ) do
       field "name", jmes_path(col_item, "name")
       field "href", jmes_path(col_item, "href")
       field "short_description", jmes_path(col_item, "short_description")
@@ -476,7 +503,7 @@ script "js_format_existing_policies", type: "javascript" do
 end
 
 datasource "ds_take_in_parameters" do
-  run_script $js_take_in_parameters, $ds_get_azure_subscriptions, $ds_format_self, first($ds_child_policy_information), $ds_format_existing_policies, $ds_child_policy_options, $ds_child_policy_options_map, $param_policy_schedule, policy_id, f1_app_host, rs_org_id, rs_project_id
+  run_script $js_take_in_parameters, $ds_get_azure_subscriptions, $ds_format_self, first($ds_published_child_policy_information), first($ds_project_child_policy_information), $ds_format_existing_policies, $ds_child_policy_options, $ds_child_policy_options_map, $param_template_source, $param_policy_schedule, policy_id, f1_app_host, rs_org_id, rs_project_id
 end
 
 # hardcode template href with id from catalog
@@ -489,9 +516,17 @@ end
 # param_exclude_tags and param_allowed_regions are arrays. I'm doing an update on the order changing but the values remaining the same.
 # If we only want to do an update on the values changing we could sort before doing the equality check.
 script "js_take_in_parameters", type: "javascript" do
-  parameters "ds_get_azure_subscriptions", "ds_format_self", "ds_child_policy_information", "ds_format_existing_policies", "ds_child_policy_options", "ds_child_policy_options_map", "param_policy_schedule", "meta_parent_policy_id", "f1_app_host", "rs_org_id", "rs_project_id"
+  parameters "ds_get_azure_subscriptions", "ds_format_self", "ds_published_child_policy_information", "ds_project_child_policy_information", "ds_format_existing_policies", "ds_child_policy_options", "ds_child_policy_options_map", "param_template_source", "param_policy_schedule", "meta_parent_policy_id", "f1_app_host", "rs_org_id", "rs_project_id"
   result "grid_and_cwf"
   code <<-EOS
+
+  // Set Child Policy Information based on param_template_source value
+  if (param_template_source == "Published Catalog Template") {
+    child_policy_information = ds_published_child_policy_information
+  } else {
+    child_policy_information = ds_project_child_policy_information
+  }
+
   max_actions = 50;
 
   grid_and_cwf={grid:[], to_create:[], to_update:[], to_delete:[], parent_policy:ds_format_self};
@@ -534,8 +569,8 @@ script "js_take_in_parameters", type: "javascript" do
     cur_subscriptionID = cur.subscriptionID;
 
     // Name and description do not vary between create or updates so defining them here
-    name = ds_child_policy_information.name + ": " + cur.subscriptionName + " (" + cur_subscriptionID + ") (child policy)";
-    description = ds_child_policy_information.name + " policy applied by [" + ds_format_self.name + "](" + applied_policy_url_prefix + meta_parent_policy_id + ") to Azure Subscription **" + cur.subscriptionName +"** (`" + cur_subscriptionID + "`).  " + ds_child_policy_information.short_description;
+    name = child_policy_information.name + ": " + cur.subscriptionName + " (" + cur_subscriptionID + ") (child policy)";
+    description = child_policy_information.name + " policy applied by [" + ds_format_self.name + "](" + applied_policy_url_prefix + meta_parent_policy_id + ") to Azure Subscription **" + cur.subscriptionName +"** (`" + cur_subscriptionID + "`).  " + child_policy_information.short_description;
 
     // Check if child policy exists for current subscription id
     if ( ! _.contains(_.keys(ds_format_existing_policies.formatted), cur_subscriptionID) ) {
@@ -559,7 +594,7 @@ script "js_take_in_parameters", type: "javascript" do
           "options" : options,
           "frequency" : param_policy_schedule,
           "meta_parent_policy_id": meta_parent_policy_id,
-          "template_href": ds_child_policy_information.href
+          "template_href": child_policy_information.href
         })
         policy_status={
           "policy_name": name,

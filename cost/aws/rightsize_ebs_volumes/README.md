@@ -1,6 +1,6 @@
 # AWS Rightsize EBS Volumes
 
-## What it does
+## What It Does
 
 This policy checks all GP2 volumes on an AWS Account to see if the GP3 equivalent would be less expensive. An incident is raised with all volumes that would be less expensive if upgraded from GP2 to GP3.
 
@@ -15,6 +15,17 @@ This policy checks all GP2 volumes on an AWS Account to see if the GP3 equivalen
 The policy includes the estimated savings. The estimated savings is recognized if the volume is upgraded from GP2 to GP3. The AWS Pricing API is used to retrieve and calculate the estimated savings which is the expected GP3 cost subtracted from the estimated current GP2 cost of the volume. The incident message detail includes the sum of each resource *Estimated Monthly Saving* as *Potential Monthly Savings*.
 
 If the Flexera organization is configured to use a currency other than USD, the savings values will be converted from USD using the exchange rate at the time that the policy executes.
+
+### Policy Savings Details
+
+The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the volume is upgraded from GP2 to GP3.
+
+- The `Estimated Monthly Cost` is calculated by multiplying the amortized cost of the resource for 1 day, as found within Flexera CCO, by 30.44, which is the average number of days in a month. This value is not used for calculating savings but is provided as a reference.
+- Since the `Estimated Monthly Cost` of individual resources is obtained from Flexera CCO, it will take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
+- The AWS Pricing API is used to retrieve the list price of the current volume type and the recommended volume type. The `Estimated Monthly Savings` is calculated by subtracting the estimated price of the recommended GP3 volume type from the price of the current GP2 volume type.
+- Since `Estimated Monthly Savings` is calculated based on list prices obtained from the AWS Pricing API, they will *not* take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
+- The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
+- If the Flexera organization is configured to use a currency other than USD, the savings values will be converted from USD using the exchange rate at the time that the policy executes.
 
 ## Input Parameters
 
