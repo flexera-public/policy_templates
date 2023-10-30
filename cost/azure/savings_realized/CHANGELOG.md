@@ -5,6 +5,7 @@
 - Incident subject is now the name of the applied policy
 - Policy metadata updated to better categorize the policy
 - Additional corrections around retrieving cost data on orgs using newer Azure bill connections
+- Streamlined code for better readability and faster execution
 
 ## v3.5
 
