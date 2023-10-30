@@ -5,9 +5,9 @@ short_description "A policy that sends email notifications when Azure Reservatio
 long_description ""
 severity "medium"
 category "Cost"
-default_frequency "daily"
+default_frequency "weekly"
 info(
-  version: "2.17",
+  version: "3.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Reserved Instances",
@@ -18,87 +18,125 @@ info(
 # Parameters
 ###############################################################################
 
-parameter "param_days" do
-  category "RI"
-  label "Look Back Period"
-  default "Last7Days"
-  description "Number of days of prior usage to analyze"
-  allowed_values "Last7Days","Last30Days","Last60Days"
-  type "string"
-end
-
-parameter "param_type" do
-  category "RI"
-  label "Resource Type"
-  default "All"
-  description "The resource type used for reservation recommendations"
-  allowed_values "All","VirtualMachines","SQLDatabases","PostgreSQL","ManagedDisk", "MySQL", "RedHat", "MariaDB", "RedisCache", "CosmosDB", "SqlDataWarehouse", "SUSELinux", "AppService", "BlockBlob", "AzureDataExplorer", "VMwareCloudSimple"
-  type "string"
-end
-
-parameter "param_term" do
-  category "RI"
-  label "Term"
-  default "1 Year"
-  description "The reservation term"
-  allowed_values "1 Year", "3 Year"
-  type "string"
-end
-
-
-parameter "param_scope" do
-  category "RI"
-  label "Reservation Scope"
-  default "Single"
-  description "Single or Shared Reservation Scope"
-  allowed_values "Single","Shared"
-  type "string"
-end
-
-parameter "param_savings_threshold" do
-  category "RI"
-  label "Net Savings Threshold"
-  description "Specify the minimum net savings that should result in a recommendation"
-  default 100
-  type "number"
-end
-
 parameter "param_email" do
   type "list"
-  label "Email addresses to notify"
-  description "Email addresses of the recipients you wish to notify"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
 end
 
 parameter "param_azure_endpoint" do
   type "string"
+  category "Policy Settings"
   label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
   allowed_values "management.azure.com", "management.chinacloudapi.cn"
   default "management.azure.com"
 end
 
-parameter "param_subscription_allowed_list" do
-  label "Subscription Allowed List"
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation."
+  min_value 0
+  default 0
+end
+
+parameter "param_subscriptions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Subscriptions"
+  description "Allow or Deny entered Subscriptions."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_subscriptions_list" do
   type "list"
-  description "Allowed Subscriptions, if empty, all subscriptions will be checked"
+  category "Filters"
+  label "Allow/Deny Subscriptions List"
+  description "A list of allowed or denied Subscription IDs/names. Leave blank to check all Subscriptions."
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. Leave blank to check all regions."
+  default []
+end
+
+parameter "param_days" do
+  type "string"
+  category "Reservation Settings"
+  label "Look Back Period"
+  description "Number of days of prior usage to analyze."
+  default "Last 30 Days"
+  allowed_values "Last 7 Days", "Last 30 Days", "Last 60 Days"
+end
+
+parameter "param_service" do
+  type "list"
+  category "Reservation Settings"
+  label "Resource Types"
+  description "Types of resources to provide recommendations for. Items can be removed by clicking X to the right of the name."
+  default ["Virtual Machines", "SQL Databases", "PostgreSQL", "Managed Disks", "MySQL", "Red Hat", "MariaDB", "Redis Cache", "CosmosDB", "SQL Data Warehouse", "SUSE Linux", "App Service", "Block Blob", "Azure Data Explorer", "VMware CloudSimple"]
+  allowed_values ["Virtual Machines", "SQL Databases", "PostgreSQL", "Managed Disks", "MySQL", "Red Hat", "MariaDB", "Redis Cache", "CosmosDB", "SQL Data Warehouse", "SUSE Linux", "App Service", "Block Blob", "Azure Data Explorer", "VMware CloudSimple"]
+end
+
+parameter "param_term" do
+  type "string"
+  category "Reservation Settings"
+  label "Reservation Term"
+  description "Length of reservation term to provide recommendations for."
+  default "1 Year"
+  allowed_values "1 Year", "3 Year"
+end
+
+parameter "param_scope" do
+  type "string"
+  category "Reservation Settings"
+  label "Reservation Scope"
+  description "The scope to provide recommendations for."
+  default "Single"
+  allowed_values "Single", "Shared"
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-#authenticate with Azure
-credentials "azure_auth" do
+credentials "auth_azure" do
   schemes "oauth2"
   label "Azure"
   description "Select the Azure Resource Manager Credential from the list."
   tags "provider=azure_rm"
 end
 
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
 ###############################################################################
 # Pagination
 ###############################################################################
 
-pagination "azure_pagination" do
+pagination "pagination_azure" do
   get_page_marker do
     body_path "nextLink"
   end
@@ -108,13 +146,210 @@ pagination "azure_pagination" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
-datasource "ds_subscriptions" do
+# Table to convert human-readable services to the ones expected by Azure API
+datasource "ds_service_table" do
+  run_script $js_service_table
+end
+
+script "js_service_table", type:"javascript" do
+  result "result"
+  code <<-EOS
+  result = {
+    "Virtual Machines": "VirtualMachines",
+    "SQL Databases": "SQLDatabases",
+    "PostgreSQL": "PostgreSQL",
+    "Managed Disks": "ManagedDisk",
+    "MySQL": "MySQL",
+    "Red Hat": "RedHat",
+    "MariaDB": "MariaDB",
+    "Redis Cache": "RedisCache",
+    "CosmosDB": "CosmosDB",
+    "SQL Data Warehouse": "SqlDataWarehouse",
+    "SUSE Linux": "SUSELinux",
+    "App Service": "AppService",
+    "Block Blob": "BlockBlob",
+    "Azure Data Explorer": "AzureDataExplorer",
+    "VMware CloudSimple": "VMwareCloudSimple"
+  }
+EOS
+end
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
   request do
-    auth $azure_auth
-    pagination $azure_pagination
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Gather local currency info
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency_target" do
+  run_script $js_currency_target, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency_target", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  // Default to USD if currency is not found
+  result = ds_currency_reference['USD']
+
+  if (ds_currency_code['value'] != undefined && ds_currency_reference[ds_currency_code['value']] != undefined) {
+    result = ds_currency_reference[ds_currency_code['value']]
+  }
+EOS
+end
+
+datasource "ds_azure_billing_accounts" do
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path "/providers/Microsoft.Billing/billingAccounts"
+    query "api-version", "2019-10-01-preview"
+    header "User-Agent", "RS Policies"
+    ignore_status [400, 401, 402, 403, 404, 405, 409, 422]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "type", jmes_path(col_item, "type")
+      field "billingProfiles", jmes_path(col_item, "properties.billingProfiles")
+      field "currency", jmes_path(col_item, "properties.enrollmentDetails.currency")
+    end
+  end
+end
+
+datasource "ds_azure_currency_code" do
+  run_script $js_azure_currency_code, $ds_azure_billing_accounts, $ds_currency_target
+end
+
+script "js_azure_currency_code", type:"javascript" do
+  parameters "ds_azure_billing_accounts", "ds_currency_target"
+  result "result"
+  code <<-EOS
+  // Default to currency in Flexera org if API call fails
+  result = { code: ds_currency_target['code'] }
+
+  _.each(ds_azure_billing_accounts, function(account) {
+    if (typeof(account['currency']) == 'string') {
+      result['code'] = account['currency']
+    } else {
+      if (typeof(account['billingProfiles']) == 'object') {
+        _.each(account['billingProfiles'], function(profile) {
+          if (typeof(profile['properties']) == 'object') {
+            if (typeof(profile['properties']['currency']) == 'string') {
+              result['code'] = profile['properties']['currency']
+            }
+          }
+        })
+      }
+    }
+  })
+EOS
+end
+
+# Branching logic:
+# This datasource returns an empty array if the source and target currency are the same.
+# This prevents ds_currency_conversion from running if it's not needed.
+datasource "ds_conditional_currency_conversion" do
+  run_script $js_conditional_currency_conversion, $ds_currency_target, $ds_azure_currency_code
+end
+
+script "js_conditional_currency_conversion", type: "javascript" do
+  parameters "ds_currency_target", "ds_azure_currency_code"
+  result "result"
+  code <<-EOS
+  result = []
+  // Make the request only if the target currency is not same as source
+  if (ds_currency_target['code'] != ds_azure_currency_code['code']) {
+    result = [1]
+  }
+EOS
+end
+
+datasource "ds_currency_conversion" do
+  # Only make a request if the target currency is not same as source currency
+  iterate $ds_conditional_currency_conversion
+  request do
+    host "api.xe-auth.flexeraeng.com"
+    path "/prod/{proxy+}"
+    query "from", val($ds_azure_currency_code, 'code')
+    query "to", val($ds_currency_target, 'code')
+    query "amount", "1"
+    # Ignore currency conversion if API has issues
+    ignore_status [400, 404, 502]
+  end
+  result do
+    encoding "json"
+    field "from", jmes_path(response, "from")
+    field "to", jmes_path(response, "to")
+    field "amount", jmes_path(response, "amount")
+    field "year", jmes_path(response, "year")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_target, $ds_currency_conversion
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_target", "ds_currency_conversion"
+  result "result"
+  code <<-EOS
+  result = ds_currency_target
+  result['exchange_rate'] = 1
+
+  if (ds_currency_conversion.length > 0) {
+    currency_code = ds_currency_target['code']
+    current_month = parseInt(new Date().toISOString().split('-')[1])
+
+    conversion_block = _.find(ds_currency_conversion[0]['to'][currency_code], function(item) {
+      return item['month'] == current_month
+    })
+
+    if (conversion_block != undefined) {
+      result['exchange_rate'] = conversion_block['monthlyAverage']
+    }
+  }
+EOS
+end
+
+datasource "ds_azure_subscriptions" do
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
     host $param_azure_endpoint
     path "/subscriptions/"
     query "api-version","2020-01-01"
@@ -123,255 +358,348 @@ datasource "ds_subscriptions" do
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "subscriptionId", jmes_path(col_item,"subscriptionId")
-      field "subscriptionName", jmes_path(col_item,"displayName")
+      field "id", jmes_path(col_item, "subscriptionId")
+      field "name", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
     end
   end
 end
 
-datasource "ds_filtered_subscriptions" do
-  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_allowed_list
+datasource "ds_azure_subscriptions_filtered" do
+  run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
 end
 
-datasource "ds_ri_types" do
-  run_script $js_ri_types, $param_type, $ds_filtered_subscriptions, $param_scope
+script "js_azure_subscriptions_filtered", type: "javascript" do
+  parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
+  result "result"
+  code <<-EOS
+  if (param_subscriptions_list.length > 0) {
+    result = _.filter(ds_azure_subscriptions, function(subscription) {
+      include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
+
+      if (param_subscriptions_allow_or_deny == "Deny") {
+        include_subscription = !include_subscription
+      }
+
+      return include_subscription
+    })
+  } else {
+    result = ds_azure_subscriptions
+  }
+EOS
+end
+
+datasource "ds_ri_requests" do
+  run_script $js_ri_requests, $ds_azure_subscriptions_filtered, $ds_service_table, $param_service, $param_scope
+end
+
+script "js_ri_requests", type: "javascript" do
+  parameters "ds_azure_subscriptions_filtered", "ds_service_table", "param_service", "param_scope"
+  result "result"
+  code <<-EOS
+  result = []
+
+  if (param_scope == "Shared") {
+    _.each(param_service, function(service) {
+      result.push({
+        service: ds_service_table[service],
+        subscriptionId: ds_azure_subscriptions_filtered[0]['id'],
+        subscriptionName: ds_azure_subscriptions_filtered[0]['name']
+      })
+    })
+  } else {
+    _.each(ds_azure_subscriptions_filtered, function(subscription) {
+      _.each(param_service, function(service) {
+        result.push({
+          service: ds_service_table[service],
+          subscriptionId: subscription['id'],
+          subscriptionName: subscription['name']
+        })
+      })
+    })
+  }
+EOS
 end
 
 datasource "ds_ri_recommendations" do
-  iterate $ds_ri_types
+  iterate $ds_ri_requests
   request do
-    run_script $js_ri_request, val(iter_item,"subscriptionId"), $param_days, $param_scope, val(iter_item,"service"), $param_azure_endpoint
+    run_script $js_ri_recommendations, val(iter_item,"service"), val(iter_item, "subscriptionId"), $param_days, $param_scope, $param_azure_endpoint
   end
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "meterId", jmes_path(col_item,"properties.meterId")
-      field "skuName", jmes_path(col_item,"sku")
-      field "term", jmes_path(col_item,"properties.term")
-      field "region", jmes_path(col_item,"location")
-      field "costWithNoRI", jmes_path(col_item,"properties.costWithNoReservedInstances")
-      field "recommendedQuantity", jmes_path(col_item,"properties.recommendedQuantity")
-      field "totalCostWithRI", jmes_path(col_item,"properties.totalCostWithReservedInstances")
-      field "netSavings", jmes_path(col_item,"properties.netSavings")
-      field "firstUsageDate", jmes_path(col_item,"properties.firstUsageDate")
-      field "scope", jmes_path(col_item,"properties.scope")
-      field "subscriptionId", val(iter_item,"subscriptionId")
-      field "service", val(iter_item,"service")
-      field "subscriptionName", val(iter_item,"subscriptionName")
-      field "instanceFlexibilityGroup", jmes_path(col_item,"properties.instanceFlexibilityGroup")
-      field "instanceFlexibilityRatio", jmes_path(col_item,"properties.instanceFlexibilityRatio")
-      field "normalizedSize", jmes_path(col_item,"properties.normalizedSize")
-      field "recommendedQuantityNormalized", jmes_path(col_item,"properties.recommendedQuantityNormalized")
-      field "lookbackPeriod", jmes_path(col_item,"properties.lookBackPeriod")
+      field "region", jmes_path(col_item, "location")
+      field "skuName", jmes_path(col_item, "sku")
+      field "kind", jmes_path(col_item, "kind")
+      field "meterId", jmes_path(col_item, "properties.meterId")
+      field "scope", jmes_path(col_item, "properties.scope")
+      field "term", jmes_path(col_item, "properties.term")
+      field "lookbackPeriod", jmes_path(col_item, "properties.lookBackPeriod")
+      field "firstUsageDate", jmes_path(col_item, "properties.firstUsageDate")
+      field "costWithNoRI", jmes_path(col_item, "properties.costWithNoReservedInstances")
+      field "recommendedQuantity", jmes_path(col_item, "properties.recommendedQuantity")
+      field "totalCostWithRI", jmes_path(col_item, "properties.totalCostWithReservedInstances")
+      field "netSavings", jmes_path(col_item, "properties.netSavings")
+      field "instanceFlexibilityGroup", jmes_path(col_item, "properties.instanceFlexibilityGroup")
+      field "instanceFlexibilityRatio", jmes_path(col_item, "properties.instanceFlexibilityRatio")
+      field "normalizedSize", jmes_path(col_item, "properties.normalizedSize")
+      field "recommendedQuantityNormalized", jmes_path(col_item, "properties.recommendedQuantityNormalized")
+      field "service", val(iter_item, "service")
+      field "subscriptionId", val(iter_item, "subscriptionId")
+      field "subscriptionName", val(iter_item, "subscriptionName")
     end
   end
 end
 
-datasource "ds_ri_normalization" do
-  run_script $js_ri_normalization, $ds_ri_recommendations, $param_term
-end
-
-###############################################################################
-# Scripts
-###############################################################################
-
-script "js_filtered_subscriptions", type: "javascript" do
-  parameters "ds_subscriptions", "param_subscription_allowed_list"
-  result "results"
-  code <<-EOS
-    var results = []
-    if ( param_subscription_allowed_list.length != 0){
-      results = []
-      _.each(param_subscription_allowed_list, function(sub){
-        var found = _.find(ds_subscriptions, function(item){
-          return item.subscriptionId == sub || item.subscriptionName.toLowerCase() == sub.toLowerCase();
-        })
-        results.push(found)
-      })
-    } else {
-      results = ds_subscriptions
-    }
-  EOS
-end
-
-script "js_ri_types", type: "javascript" do
-  parameters "param_service", "subscriptions", "param_scope"
-  result "result"
-  code <<-EOS
-    var result = []
-
-    var services = ["VirtualMachines","SQLDatabases","PostgreSQL","ManagedDisk", "MySQL", "RedHat", "MariaDB", "RedisCache", "CosmosDB", "SqlDataWarehouse", "SUSELinux", "AppService", "BlockBlob", "AzureDataExplorer", "VMwareCloudSimple"]
-    if (param_scope == "Shared") {
-      if (param_service === "All"){
-        _.each(services, function(service){
-          result.push({"service":service, "subscriptionId":subscriptions[0].subscriptionId, "subscriptionName":subscriptions[0].subscriptionName})
-        })
-      } else {
-        result.push({"service":param_service, "subscriptionId":subscriptions[0].subscriptionId, "subscriptionName":subscriptions[0].subscriptionName})
-      }
-    } else {
-      _.each(subscriptions, function(subscription){
-        if (param_service === "All"){
-          _.each(services, function(service){
-            result.push({"service":service, "subscriptionId":subscription.subscriptionId, "subscriptionName":subscription.subscriptionName})
-          })
-        } else {
-            result.push({"service":param_service, "subscriptionId":subscription.subscriptionId, "subscriptionName":subscription.subscriptionName})
-        }
-      })
-    }
-  EOS
-end
-
-script "js_ri_request", type: "javascript" do
-  parameters "subscriptionId", "param_days", "param_scope", "param_type", "param_azure_endpoint"
+script "js_ri_recommendations", type: "javascript" do
+  parameters "service", "subscriptionId", "param_days", "param_scope", "param_azure_endpoint"
   result "request"
   code <<-EOS
-    var quote_str="'"+param_days+"'";
-    var scope_str="'"+param_scope+"'";
-    var type_str="'"+param_type+"'";
-    var request = {
-      auth: "azure_auth",
-      pagination: "azure_pagination",
-      host: param_azure_endpoint,
-      /*
-        {"code":"400","message":"Cost management data is unavailable for subscription XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX. The offer MS-AZR-0243P is not supported."}
-        {"code":"404","message":"Cost Management supports only Enterprise Agreement, Web direct and Microsoft Customer Agreement offer types. Subscription XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX is not associated with a valid offer type."}
-      */
-      // Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-      ignore_status: [400,403,404],
-      path: "/subscriptions/"+subscriptionId+"/providers/Microsoft.Consumption/reservationRecommendations",
-      query_params: {
-          "api-version": "2021-10-01",
-          "$filter": "properties/resourceType eq "+ type_str +" and properties/scope eq "+ scope_str + " and properties/lookBackPeriod eq "+quote_str
-      },
-      headers: {
-          "User-Agent": "RS Policies"
-      }
+  filter = [
+    "properties/resourceType eq '", service, "' ",
+    "and properties/scope eq '", param_scope, "' ",
+    "and properties/lookBackPeriod eq '", param_days.replace(' ', '').replace(' ', ''), "'"
+  ].join('')
+
+  var request = {
+    auth: "auth_azure",
+    pagination: "pagination_azure",
+    host: param_azure_endpoint,
+    // Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status: [400, 403, 404, 422],
+    path: "/subscriptions/" +subscriptionId + "/providers/Microsoft.Consumption/reservationRecommendations",
+    query_params: {
+      "api-version": "2021-10-01",
+      "$filter": filter
+    },
+    headers: {
+      "User-Agent": "RS Policies"
     }
-  EOS
+  }
+EOS
 end
 
-script "js_ri_normalization", type: "javascript" do
-  parameters "ri_recos", "param_term"
+datasource "ds_ri_recommendations_region_filtered" do
+  run_script $js_ri_recommendations_region_filtered, $ds_ri_recommendations, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_ri_recommendations_region_filtered", type: "javascript" do
+  parameters "ds_ri_recommendations", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-EOS
-    var result = [];
-    _.each(ri_recos, function(reco){
-      if (reco.term === "P1Y"){
-        var term = "1 Year";
-      }
-      if (reco.term === "P3Y"){
-        var term = "3 Year";
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_ri_recommendations, function(recommendation) {
+      include_recommendation = _.contains(param_regions_list, recommendation['region'])
+
+      if (param_regions_allow_or_deny == "Deny") {
+        include_recommendation = !include_recommendation
       }
 
-      if ( param_term !== term ) {
-        return true
-      }
+      return include_recommendation
+    })
+  } else {
+    result = ds_ri_recommendations
+  }
+EOS
+end
+
+datasource "ds_ri_incident" do
+  run_script $js_ri_incident, $ds_ri_recommendations_region_filtered, $ds_currency, $ds_currency_conversion, $ds_azure_currency_code, $ds_azure_billing_accounts, $ds_applied_policy, $param_term, $param_days, $param_service, $param_scope, $param_min_savings
+end
+
+script "js_ri_incident", type: "javascript" do
+  parameters "ds_ri_recommendations_region_filtered", "ds_currency", "ds_currency_conversion", "ds_azure_currency_code", "ds_azure_billing_accounts", "ds_applied_policy", "param_term", "param_days", "param_service", "param_scope", "param_min_savings"
+  result "result"
+  code <<-'EOS'
+  // Used for formatting numbers to look pretty
+  function formatNumber(number, separator){
+    numString = number.toString()
+    values = numString.split(".")
+    formatted_number = ''
+
+    while (values[0].length > 3) {
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      formatted_number = separator + chunk + formatted_number
+    }
+
+    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
+    if (values[1] == undefined) { return formatted_number }
+
+    return formatted_number + "." + values[1]
+  }
+
+  result = []
+  total_savings = 0.0
+
+  exchange_rate = ds_currency['exchange_rate']
+
+  _.each(ds_ri_recommendations_region_filtered, function(recommendation) {
+    if (recommendation['kind'] == 'legacy') {
+      costWithNoRI = recommendation["costWithNoRI"]
+      totalCostWithRI = recommendation["totalCostWithRI"]
+      netSavings = recommendation["netSavings"]
+    } else {
+      costWithNoRI = recommendation["costWithNoRI"]["value"]
+      totalCostWithRI = recommendation["totalCostWithRI"]["value"]
+      netSavings = recommendation["netSavings"]["value"]
+    }
+
+    if (netSavings * exchange_rate >= param_min_savings) {
+      total_savings += netSavings * exchange_rate
+
+      costWithNoRI = Math.round(costWithNoRI * exchange_rate * 100) / 100
+      totalCostWithRI = Math.round(totalCostWithRI * exchange_rate * 100) / 100
+      netSavings = Math.round(netSavings * exchange_rate * 100) / 100
 
       result.push({
-        subscriptionId: reco["subscriptionId"],
-        subscriptionName: reco["subscriptionName"],
-        service: reco["service"],
-        skuName: reco["skuName"],
-        term: term,
-        region: reco["region"],
-        scope: reco["scope"],
-        costWithNoRI: (Math.round(reco["costWithNoRI"] * 100) / 100).toString(10),
-        recommendedQuantity: reco["recommendedQuantity"],
-        totalCostWithRI: (Math.round(reco["totalCostWithRI"] * 100) / 100).toString(10),
-        netSavings: (Math.round(reco["netSavings"] * 100) / 100).toString(10),
-        firstUsageDate: reco["firstUsageDate"]
-        meterId: reco["meterId"],
-        instanceFlexibilityGroup: reco["instanceFlexibilityGroup"],
-        instanceFlexibilityRatio: reco["instanceFlexibilityRatio"],
-        normalizedSize: reco["normalizedSize"],
-        recommendedQuantityNormalized: reco["recommendedQuantityNormalized"],
-        lookbackPeriod: reco["lookbackPeriod"]
+        accountID: recommendation["subscriptionId"],
+        accountName: recommendation["subscriptionName"],
+        service: recommendation["service"],
+        resourceType: recommendation["skuName"],
+        region: recommendation["region"],
+        scope: recommendation["scope"],
+        recommendedQuantity: recommendation["recommendedQuantity"],
+        firstUsageDate: recommendation["firstUsageDate"],
+        id: recommendation["meterId"],
+        instanceFlexibilityGroup: recommendation["instanceFlexibilityGroup"],
+        instanceFlexibilityRatio: recommendation["instanceFlexibilityRatio"],
+        normalizedSize: recommendation["normalizedSize"],
+        recommendedQuantityNormalized: recommendation["recommendedQuantityNormalized"],
+        lookbackPeriod: param_days,
+        term: param_term,
+        costWithNoRI: costWithNoRI,
+        totalCostWithRI: totalCostWithRI,
+        savings: netSavings,
+        savingsCurrency: ds_currency['symbol'],
+        policy_name: ds_applied_policy['name'],
+        total_savings: "",
+        message: ""
       })
-    })
+    }
+  })
 
-    var result = _(result)
-    .chain()
-    .sortBy(function(result){
-      return result.service;
-    }).sortBy(function(result){
-      return result.subscriptionId;
-    }).value();
+  // Messaging for currency conversion
+  currency = ds_azure_currency_code['code']
+  conversion_message = ""
 
-  EOS
+  if (ds_currency['code'] != currency && ds_currency_conversion.length > 0 && exchange_rate != 1) {
+    conversion_message = [
+      "Savings values were converted from ", currency,
+      " to ", ds_currency['code'],
+      " using an exchange rate of ", exchange_rate, ".\n\n"
+    ].join('')
+  }
+
+  if (ds_azure_billing_accounts.length == 0) {
+    conversion_message = [
+      "Unable to determine currency for savings values reported by Azure. ",
+      "Savings values are all unmodified and assumed to be in ", currency, " already. ",
+      "Please add the *Microsoft.Billing/billingAccounts/read* permission ",
+      "to your Microsoft Azure credential in order to ensure proper currency conversion.\n\n"
+    ].join('')
+  }
+
+  message = [
+    "The following settings were used when generating recommendations:\n",
+    "- Azure Services: ", param_service.join(', '), "\n",
+    "- Scope: ", param_scope, "\n",
+    "- Term: ", param_term, "\n",
+    "- Look Back Period: ", param_days, "\n",
+    "- Minimum Savings Threshold: ", param_min_savings, "\n\n"
+  ].join('')
+
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
+  empty_fields = "Empty fields indicate information that is not applicable to that particular recommendation."
+
+  savings_message = [
+    ds_currency['symbol'], ' ',
+    formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['t_separator'])
+  ].join('')
+
+  // Sort by highest savings first
+  result = _.sortBy(result, function(item) { return item['savings'] * -1 })
+
+  if (result.length > 0) {
+    result[0]['total_savings'] = savings_message
+    result[0]['message'] = conversion_message + message + disclaimer + empty_fields
+  }
+EOS
 end
 
 ###############################################################################
 # Policy
 ###############################################################################
 
-policy "azure_ri_recommendations" do
-  validate_each $ds_ri_normalization do
-    summary_template "{{ len data }} Azure Reservation Purchase Recommendations"
-    hash_include 'netSavings'
-    escalate $email
-    check lt(to_n(val(item,"netSavings")),$param_savings_threshold)
+policy "pol_azure_ri_recommendations" do
+  validate_each $ds_ri_incident do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Reserved Instances Purchase Recommendations"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
+    check lt(val(item, "savings"), 0)
+    escalate $esc_email
     export do
       resource_level false
       field "accountID" do
         label "Subscription ID"
-        path "subscriptionId"
       end
       field "accountName" do
         label "Subscription Name"
-        path "subscriptionName"
       end
       field "service" do
         label "Service"
       end
       field "resourceType" do
         label "Resource Type"
-        path "skuName"
       end
       field "region" do
-        label "Location"
+        label "Region"
       end
       field "term" do
         label "Term"
       end
-      field "savings" do
-        label "Net Savings"
-        path "netSavings"
-      end
       field "recommendedQuantity" do
         label "Recommended Quantity to Purchase"
       end
+      field "savingsCurrency" do
+        label "Currency"
+      end
       field "costWithNoRI" do
-        label "Total Current Cost (without RI)"
+        label "Current Monthly Cost"
       end
       field "totalCostWithRI" do
-        label "Total Cost if RI was purchased"
+        label "New Monthly Cost with Reservations"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
       end
       field "firstUsageDate" do
         label "First Usage Date"
       end
       field "id" do
-        label "Resource MeterID"
-        path "meterId"
-      end
-      field "instanceFlexibilityGroup" do
-        label "instanceFlexibilityGroup"
-      end
-      field "instanceFlexibilityRatio" do
-        label "instanceFlexibilityRatio"
-      end
-      field "normalizedSize" do
-        label "normalizedSize"
-      end
-      field "recommendedQuantityNormalized" do
-        label "recommendedQuantityNormalized"
+        label "Resource Meter ID"
       end
       field "scope" do
         label "Scope"
       end
+      field "instanceFlexibilityGroup" do
+        label "Flexibility Group"
+      end
+      field "instanceFlexibilityRatio" do
+        label "Flexibility Ratio"
+      end
+      field "normalizedSize" do
+        label "Normalized Resource Type"
+      end
+      field "recommendedQuantityNormalized" do
+        label "Normalized Recommended Quantity to Purchase"
+      end
       field "lookbackPeriod" do
-        label "Lookback Period"
+        label "Look Back Period"
       end
     end
   end
@@ -381,9 +709,9 @@ end
 # Escalation
 ###############################################################################
 
-escalation "email" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
-  description "Sends incident email"
+  description "Send incident email"
   email $param_email
 end

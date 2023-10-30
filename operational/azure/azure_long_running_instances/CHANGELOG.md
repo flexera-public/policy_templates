@@ -1,5 +1,15 @@
 # Changelog
 
+## v4.2
+
+- Fixed error where policy would sometimes report on stopped instances
+- Fixed minor language error in incident output
+
+## v4.1
+
+- Added `Operating System` incident field.
+- Renamed field from `osType` to `platform`
+
 ## v4.0
 
 - Several parameters altered to be more descriptive and human-readable

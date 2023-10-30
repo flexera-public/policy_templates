@@ -1,6 +1,6 @@
 # Azure Hybrid Use Benefit for Windows Server
 
-## What it does
+## What It Does
 
 This Policy Template is used to automatically apply the Azure Hybrid Use Benefit (AHUB) to all eligible Windows VMs in an Azure Subscription and provides a monthly savings value if AHUB were to be enabled.
 
@@ -9,11 +9,15 @@ This Policy Template is used to automatically apply the Azure Hybrid Use Benefit
 - The policy identifies all Windows server instances that could utilize [Azure Hybrid Use Benefit](https://azure.microsoft.com/en-us/pricing/hybrid-benefit/) but are not currently using it. It raises an incident for all applicable VMs not currently using AHUB, provides a monthly savings amount if AHUB were to be enabled, and provides the option to automatically enable AHUB on all identified instances.
 - This policy does not track licenses or availability. It is your responsibility to ensure you are not under licensed.
 
-### Policy savings details
+### Policy Savings Details
 
-The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the resource is terminated. Azure's Price List API is used to retrieve and calculate the estimated savings. The difference in hourly price between the standard price and the AHUB price is multiplied by 24 hours to get the daily savings, which is then multiplied by 30.44 (the average number of days in a month). This value is then multiplied by the current exchange rate if the Flexera organization is configured to use a currency other than U.S. Dollars.
+The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the AHUB benefit is enabled for the resource.
 
-The savings is displayed in the Estimated Monthly Savings column. The incident message detail includes the sum of each resource *Estimated Monthly Savings* as *Potential Monthly Savings*.
+- Data retrieved from the Azure Pricing API is used to determine the hourly list price of the instance type with and without AHUB. The `Estimated Monthly Savings` is calculated by taking the difference between the two prices and multiplying by 24 and then 30.44 to get a monthly price.
+- Since savings is calculated based on list prices obtained from the Azure Pricing API, they will *not* take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
+- The savings are displayed in the `Estimated Monthly Savings` column.
+- The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
+- If the Flexera organization is configured to use a currency other than USD, the savings values will be converted from USD using the exchange rate at the time that the policy executes.
 
 ## Input Parameters
 

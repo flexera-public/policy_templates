@@ -8,7 +8,7 @@ category "Cost"
 default_frequency "daily"
 tenancy "single"
 info(
-  version: "2.3",
+  version: "2.4",
   provider: "Flexera Optima",
   service: "",
   policy_set: ""
@@ -90,6 +90,7 @@ datasource "ds_new_bc_costs" do
       field "vendor_account_name", jmes_path(col_item,"dimensions.vendor_account_name")
       field "cost_amortized_unblended_adj", jmes_path(col_item,"metrics.cost_amortized_blended_adj")
       field "id", jmes_path(col_item,"dimensions.billing_center_id")
+      field "accountID", jmes_path(col_item,"dimensions.vendor_account")
     end
   end
 end
@@ -134,7 +135,7 @@ script "js_new_costs_request", type: "javascript" do
       host: rs_optima_host,
       path: "/bill-analysis/orgs/" + org_id + "/costs/aggregated",
       body_fields: {
-        "dimensions": ["billing_center_id","vendor","vendor_account_name"],
+        "dimensions": ["billing_center_id","vendor","vendor_account_name","vendor_account"],
         "granularity": "day",
         "metrics": ['cost_amortized_blended_adj'],
         "billing_center_ids": billing_center_ids,
@@ -146,7 +147,7 @@ script "js_new_costs_request", type: "javascript" do
             "dimension": "service",
             "type": "equal",
             "value": "APNFee"
-          }      
+          }
         }
       },
       headers: {
@@ -194,6 +195,7 @@ script "js_format_costs", type: "javascript" do
       new_sum: nbc.cost_amortized_unblended_adj,
       vendor: nbc.vendor,
       vendor_account_name: nbc.vendor_account_name,
+      accountID: nbc.accountID
     })
   })
 
@@ -212,6 +214,7 @@ script "js_format_costs", type: "javascript" do
         vendor: group[0].vendor,
         vendor_account_name: group[0].vendor_account_name,
         run_rate: parseFloat(runrate).toFixed(2)
+        accountID: group[0].accountID
     }
   });
 
@@ -219,7 +222,7 @@ script "js_format_costs", type: "javascript" do
     if (parseFloat(result.run_rate) <= param_threshold && parseFloat(result.run_rate) >= param_minimum_savings_threshold) {
       return result;
     }
-  }) 
+  })
 
   var formatted_data = _(checked_results).chain().sortBy(function(result) {
     return result.vendor_account_name;
@@ -253,6 +256,9 @@ policy "policy_budget_alert" do
       end
       field "vendor" do
         label "Vendor"
+      end
+      field "accountID" do
+        label "Account ID"
       end
       field "vendor_account_name" do
         label "Account Name"

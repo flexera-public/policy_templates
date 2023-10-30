@@ -1,5 +1,9 @@
 # Changelog
 
+## v7.3
+
+- Updated description of `Account Number` parameter
+
 ## v7.2
 
 - Fixed issue related to tag key/values not being populated

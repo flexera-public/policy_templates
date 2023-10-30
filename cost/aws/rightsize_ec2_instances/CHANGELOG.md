@@ -1,9 +1,17 @@
 # Changelog
 
-## v4.2
+## v4.4
 
 - Added "Stop Instance" action for Idle resources
 - Improved debugging and error handling of Policy Actions
+
+## v4.3
+
+- Fixed issue with gathering and interpreting CloudWatch metrics
+
+## v4.2
+
+- Updated description of `Account Number` parameter
 
 ## v4.1
 

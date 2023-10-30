@@ -4,6 +4,12 @@
 
 Find all Google cloud resources(disks, images, instances, snapshots, buckets, vpnGateways) missing any of the user provided labels with the option to update the resources with the missing labels.
 
+## Functional Details
+
+- The policy leverages the Google Cloud API to retrieve a list of all labelable resources across Google Cloud Projects.
+- Using the 'List of labels' parameter, the policy identifies all resources that are missing the label keys specified by the user.
+- The policy outputs resources missing the specified label keys as well as resources with the specified label keys but are missing label values.
+
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.

@@ -7,7 +7,7 @@ category "Operational"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "4.0",
+  version: "4.2",
   provider: "Azure",
   service: "Compute",
   policy_set: "Long Running Instances"
@@ -300,8 +300,9 @@ datasource "ds_azure_instances" do
       field "name", jmes_path(col_item, "name")
       field "region", jmes_path(col_item, "location")
       field "timeCreated", jmes_path(col_item, "properties.timeCreated")
-      field "osType", jmes_path(col_item, "properties.storageProfile.osDisk.osType")
+      field "platform", jmes_path(col_item, "properties.storageProfile.osDisk.osType")
       field "resourceType", jmes_path(col_item, "properties.hardwareProfile.vmSize")
+      field "provisioningState", jmes_path(col_item, "properties.provisioningState")
       field "tags", jmes_path(col_item, "tags")
       field "subscriptionId",val(iter_item, "id")
       field "subscriptionName",val(iter_item, "name")
@@ -309,16 +310,65 @@ datasource "ds_azure_instances" do
   end
 end
 
+datasource "ds_azure_instance_statuses" do
+  iterate $ds_azure_subscriptions_filtered
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Compute/virtualMachines"])
+    query "api-version", "2023-07-01"
+    query "statusOnly", "true"
+    header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "resourceId", jmes_path(col_item, "id")
+      field "statuses", jmes_path(col_item, "properties.instanceView.statuses")
+    end
+  end
+end
+
+datasource "ds_azure_instances_running" do
+  run_script $js_azure_instances_running, $ds_azure_instances, $ds_azure_instance_statuses
+end
+
+script "js_azure_instances_running", type: "javascript" do
+  parameters "ds_azure_instances", "ds_azure_instance_statuses"
+  result "result"
+  code <<-EOS
+  status_object = {}
+
+  _.each(ds_azure_instance_statuses, function(instance) {
+    id = instance['resourceId']
+    status_object[id] = instance['statuses']
+  })
+
+  result = _.filter(ds_azure_instances, function(instance) {
+    id = instance['resourceId']
+    statuses = status_object[id]
+
+    codes = []
+    if (typeof(statuses) == 'object') { codes = _.pluck(statuses, 'code') }
+
+    return _.contains(codes, "ProvisioningState/succeeded") && _.contains(codes, "PowerState/running")
+  })
+EOS
+end
+
 datasource "ds_azure_instances_tag_filtered" do
-  run_script $js_azure_instances_tag_filtered, $ds_azure_instances, $param_exclusion_tags
+  run_script $js_azure_instances_tag_filtered, $ds_azure_instances_running, $param_exclusion_tags
 end
 
 script "js_azure_instances_tag_filtered", type: "javascript" do
-  parameters "ds_azure_instances", "param_exclusion_tags"
+  parameters "ds_azure_instances_running", "param_exclusion_tags"
   result "result"
   code <<-EOS
   if (param_exclusion_tags.length > 0) {
-    result = _.reject(ds_azure_instances, function(instance) {
+    result = _.reject(ds_azure_instances_running, function(instance) {
       instance_tags = []
 
       if (typeof(instance['tags']) == 'object') {
@@ -339,7 +389,7 @@ script "js_azure_instances_tag_filtered", type: "javascript" do
       return exclude_instance
     })
   } else {
-    result = ds_azure_instances
+    result = ds_azure_instances_running
   }
 EOS
 end
@@ -398,7 +448,7 @@ script "js_long_running_instances", type: "javascript" do
         name: vm['name'],
         region: vm['region'],
         statuses: vm['statuses'],
-        osType: vm['osType'],
+        platform: vm['platform'],
         resourceType: vm['resourceType'],
         subscriptionId: vm['subscriptionId'],
         subscriptionName: vm['subscriptionName'],
@@ -564,7 +614,7 @@ script "js_long_running_instances_incident", type: "javascript" do
       resourceName: vm['name'],
       region: vm['region'],
       statuses: vm['statuses'],
-      osType: vm['osType'],
+      platform: vm['platform'],
       resourceType: vm['resourceType'],
       accountID: vm['subscriptionId'],
       accountName: vm['subscriptionName'],
@@ -606,7 +656,7 @@ script "js_long_running_instances_incident", type: "javascript" do
   if (param_minimum_age > 1) { day_noun = "days" }
 
   has_verb = "has"
-  if (long_instances_total > 1) { day_noun = "have" }
+  if (long_instances_total > 1) { has_verb = "have" }
 
   findings = [
     "Out of ", instances_total, " Azure virtual ", instance_noun, " analyzed, ",
@@ -623,7 +673,7 @@ script "js_long_running_instances_incident", type: "javascript" do
   result.push({
     id: "",                  resourceGroup: "",     resourceKind: "",
     resourceName: "",        region: "",            statuses: "",
-    osType: "",              resourceType: "",      accountID: "",
+    platform: "",            resourceType: "",      accountID: "",
     accountName: "",         tags: "",              age: "",
     status: "",              launchTime: "",        lookbackPeriod: "",
     policy_name: "",         costCurrency: "",      cost: "",
@@ -669,6 +719,9 @@ policy "pol_utilization" do
       end
       field "resourceType" do
         label "Instance Size"
+      end
+      field "platform" do
+        label "Operating System"
       end
       field "age" do
         label "Resource Age (Days)"
