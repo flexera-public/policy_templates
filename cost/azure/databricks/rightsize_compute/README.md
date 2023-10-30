@@ -67,11 +67,11 @@ This is the recommended method and enables a single Azure Service Principal to t
 
    You can get this from the Azure Portal or via Flexera } Automation } Credentials and get the Client ID for the Azure RM Credential that is being used.  The Azure SP that is used for other Flexera Azure Policy Templates can be used for the Databricks Policy Templates.
 
-2. Add Service Principal to all DB Workspace using the Client ID
+1. Add Service Principal to all DB Workspace using the Client ID
 
    Databricks Workspace } Admin Settings } Service Principal (i.e. `https://{workspaceUrl}/?#setting/accounts/servicePrincipals` )
 
-3. Grant Service Principal Permissions in DB Workspace
+1. Grant Service Principal Permissions in DB Workspace
 
    We currently recommend adding Service Principal to `admin` group so it can see all clusters and compute resources within the cluster.
 
