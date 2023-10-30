@@ -538,11 +538,10 @@ end
 script "js_chart_data", type: "javascript" do
   parameters "ds_savings_realized", "ds_applied_policy", "param_chart_type"
   result "result"
-  code <<-EOS
-  months = _.uniq(_.pluck(ds_savings_realized, 'month'))
-
-  //Create report data (Concatenate savings realized and total costs into one object/row of data)
+  code <<-'EOS'
+  // Create report data
   result = []
+  months = _.uniq(_.pluck(ds_savings_realized, 'month'))
 
   _.each(months, function(month) {
     savings_realized = 0
@@ -575,71 +574,59 @@ script "js_chart_data", type: "javascript" do
     })
   })
 
-  //Group data by Cost Dimension
-  group_by_dimension = _.groupBy(ds_savings_realized, function(data) { return data.dimension })
-
-  //Determine chart type
-  chart_type = "cht="
-  if (param_chart_type == "Grouped Bar Chart") { chart_type += "bvg" }
-  else if (param_chart_type == "Stacked Bar Chart" ) { chart_type += "bvs" }
-
-  //Create chart axis labels
-  chart_axis_labels =
-  ("chxl=1:," +
-    _.uniq(ds_savings_realized, function(sr) { return sr.month })
-    .map(function(sr){ return sr.month.substring(0,7) })
-  ).split(",").join("|")
-
-  //Create legend
-  chart_legend = "chdl="
-  var i = 0
-  for (var key in group_by_dimension) {
-    chart_legend += key
-    i++
-    if (i < _.size(group_by_dimension)) { chart_legend += "|" }
+  // Determine chart type
+  chart_table = {
+    "Grouped Bar Chart": "cht=bvg",
+    "Stacked Bar Chart": "cht=bvs"
   }
 
-  //calculate scale
-  //chart_range = ("chxr=0," +
-  max = (Math.max.apply(Math, ds_savings_realized.map(function(sr){ return sr.savings_realized }))*1.1).toFixed(2)
-  min = (Math.min.apply(Math, ds_savings_realized.map(function(sr){ return sr.savings_realized }))*0.9).toFixed(2)
+  chart_type = chart_table[param_chart_type]
+
+  // Create chart axis labels
+  sr_months = _.uniq(ds_savings_realized, function(sr) { return sr['month'] })
+  sr_months_mapped = _.map(sr_months, function(sr) { return sr['month'].substring(0,7) })
+  chart_axis_labels = ("chxl=1:," + sr_months_mapped).split(',').join('|')
+
+  // Create legend
+  chart_legend = "chdl=" + _.uniq(_.pluck(ds_savings_realized, 'dimension')).join('|')
+
+  // Calculate scale
+  costs = _.pluck(ds_savings_realized, 'cost')
+  max = (Math.max.apply(Math, costs) * 1.1).toFixed(2)
+  min = (Math.min.apply(Math, costs) * 0.9).toFixed(2)
   chart_range = "chxr=0," + min + "," + max
 
   //Create chart dataset
-  chart_data = "chd=t:"
-  var count_1 = 0
-  _.each(group_by_dimension, function(o){
-    var count_2 = 0
-    _.each(o, function(p){
-      chart_data = chart_data + p.cost
-      count_2++
-      if (count_2 < _.size(o)){ chart_data = chart_data + "," }
-    })
-    count_1++
-    if (count_1 < _.size(group_by_dimension)){ chart_data = chart_data + "|" }
+  group_by_dimension = _.groupBy(ds_savings_realized, function(data) { return data['dimension'] })
+
+  chart_data_list = []
+
+  _.each(_.keys(group_by_dimension), function(key) {
+    chart_data_list.push(_.pluck(group_by_dimension[key], 'cost').join(','))
   })
 
-  //Whole Chart object
-  chart = {
-    chart_type: encodeURI(chart_type),
-    chart_size: encodeURI("chs=999x450"),
-    chart_data: encodeURI(chart_data),
-    chart_title: encodeURI("chtt=Savings Realized On Compute Reservations For Organization"),
-    chart_image: encodeURI("chof=.png"),
-    chart_y_axis: encodeURI("chxt=y,x"),
-    chart_axis_label: encodeURI(chart_axis_labels),
-    chart_axis_format: encodeURI("chxs=0N*cUSD0sz*|1,min40"),
-    chart_line_style: encodeURI("chls=3|3|3|3|3|3|3|3|3|3|3"),
-    chart_line_color: encodeURI("chco=1f5ab8,55b81f,198038,b28600,1192e8,009d9a,005d5d,007d79"),
-    chart_data_scale: encodeURI("chds=a"),
-    chart_legend: encodeURI(chart_legend),
-    chart_legend_size: encodeURI("chdls=000000,10"),
-    chart_legend_position: encodeURI("chdlp=b")
-  }
+  chart_data = "chd=t:" + chart_data_list.join('|')
 
+  // Whole Chart object
   if (result.length > 0) {
-    result[0]["chart_dimensions"] = chart
     result[0]["policy_name"] = ds_applied_policy['name']
+
+    result[0]["chart_dimensions"] = {
+      chart_type: encodeURI(chart_type),
+      chart_size: encodeURI("chs=999x450"),
+      chart_data: encodeURI(chart_data),
+      chart_title: encodeURI("chtt=Savings Realized On Compute Reservations For Organization"),
+      chart_image: encodeURI("chof=.png"),
+      chart_y_axis: encodeURI("chxt=y,x"),
+      chart_axis_label: encodeURI(chart_axis_labels),
+      chart_axis_format: encodeURI("chxs=0N*cUSD0sz*|1,min40"),
+      chart_line_style: encodeURI("chls=3|3|3|3|3|3|3|3|3|3|3"),
+      chart_line_color: encodeURI("chco=1f5ab8,55b81f,198038,b28600,1192e8,009d9a,005d5d,007d79"),
+      chart_data_scale: encodeURI("chds=a"),
+      chart_legend: encodeURI(chart_legend),
+      chart_legend_size: encodeURI("chdls=000000,10"),
+      chart_legend_position: encodeURI("chdlp=b")
+    }
   }
 EOS
 end
