@@ -20,7 +20,7 @@ Because the virtual machine resources can often be short-lived and ephemeral, we
 
 If the lookback period is 30 days (default value), the estimated savings for a Delete is 100% the actual cost during that 30 day period for a Downsize is 50% the actual cost during that 30 day period.
 
-If the lookback period is < 30 days (1 month), we calculate what % of 30 days the lookback period is and then use that ratio to estimate the savings for a full month period (30 days).  If the actual cost during a 15day lookback period was $100, the estimated savings calculation for a Delete is `(30/15) * $100`.  In this example, a Delete would estimate $200 Potential *Monthly* Savings and a Downsize would estimate $100 Potential *Monthly* Savings.
+If the lookback period is { 30 days (1 month), we calculate what % of 30 days the lookback period is and then use that ratio to estimate the savings for a full month period (30 days).  If the actual cost during a 15day lookback period was $100, the estimated savings calculation for a Delete is `(30/15) * $100`.  In this example, a Delete would estimate $200 Potential *Monthly* Savings and a Downsize would estimate $100 Potential *Monthly* Savings.
 
 The savings is displayed in the Estimated Monthly Savings column. The incident message detail includes the sum of each resource *Estimated Monthly Savings* as *Potential Monthly Savings*.
 
@@ -30,12 +30,12 @@ The savings is displayed in the Estimated Monthly Savings column. The incident m
 
 This is required for the policy templates to be able to map each Azure Virtual Machine to a Databricks Cluster.
 
-Navigate to *Administration > Custom Tags* in Flexera and Create a new Tag Dimension
+Navigate to *Administration } Custom Tags* in Flexera and Create a new Tag Dimension
 
 | Tag Display Name | Tag Keys | Tag ID (if creating via API instead of UI) |
 | ---------------- | -------- | --- |
 | `Azure Databricks ClusterId` | `ClusterId` | `tag_azure_databricks_clusterid` |
-> *Note: These values are case-sensitive*
+} *Note: These values are case-sensitive*
 
 ### Credential configuration
 
@@ -65,31 +65,32 @@ This is the recommended method and enables a single Azure Service Principal to t
 
 1. Get Service Principal's Client ID
 
-   You can get this from the Azure Portal or via Flexera > Automation > Credentials and get the Client ID for the Azure RM Credential that is being used.  The Azure SP that is used for other Flexera Azure Policy Templates can be used for the Databricks Policy Templates.
+   You can get this from the Azure Portal or via Flexera } Automation } Credentials and get the Client ID for the Azure RM Credential that is being used.  The Azure SP that is used for other Flexera Azure Policy Templates can be used for the Databricks Policy Templates.
 
 2. Add Service Principal to all DB Workspace using the Client ID
 
-   Databricks Workspace > Admin Settings > Service Principal (i.e. `https://<workspaceUrl>/?#setting/accounts/servicePrincipals` )
+   Databricks Workspace } Admin Settings } Service Principal (i.e. `https://{workspaceUrl}/?#setting/accounts/servicePrincipals` )
 
 3. Grant Service Principal Permissions in DB Workspace
 
    We currently recommend adding Service Principal to `admin` group so it can see all clusters and compute resources within the cluster.
 
-   Databricks Workspace > Admin Settings > Groups (i.e. `https://<workspaceUrl>/?#setting/accounts/groups` )
+   Databricks Workspace } Admin Settings } Groups (i.e. `https://{workspaceUrl}/?#setting/accounts/groups` )
 
 ##### Create `OAuth2` Credential in Flexera
 
 Replace these:
 
- - `<access_token>`
- - `<flexeraProjectId>`
- - `<Credential Name>`
- - `<credentialId>`
- - `<clientId>` and `<clientSecret>`
- - `<tenantId>`
+- `{access_token}`
+- `{flexeraProjectId}`
+- `{Credential Name}`
+- `{credentialId}`
+- `{clientId}`
+- `{clientSecret}`
+- `{tenantId}`
 
 ```sh
-curl 'https://api.flexera.com/cred/v2/projects/<flexeraProjectId>/credentials/oauth2/<credentialId>' -X PUT -H 'Content-Type: application/json' -H 'Api-Version: 1.0' -H 'Authorization: Bearer <access_token>' --data-raw '{"description":"","name":"<Credential Name>","grantType":"client_credentials","tags":[{"key":"provider","value":"databricks"}],"clientCredentialsParams":{"additionalParams":{"resource":"2ff814a6-3304-4ab8-85cb-cd0e6f879c1d"},"clientId":"<clientId>","clientSecret":"<clientSecret>"},"tokenUrl":"https://login.windows.net/<tenantId>/oauth2/token"}'
+curl 'https://api.flexera.com/cred/v2/projects/{flexeraProjectId}/credentials/oauth2/{credentialId}' -X PUT -H 'Content-Type: application/json' -H 'Api-Version: 1.0' -H 'Authorization: Bearer {access_token}' --data-raw '{"description":"","name":"{Credential Name}","grantType":"client_credentials","tags":[{"key":"provider","value":"databricks"}],"clientCredentialsParams":{"additionalParams":{"resource":"2ff814a6-3304-4ab8-85cb-cd0e6f879c1d"},"clientId":"{clientId}","clientSecret":"{clientSecret}"},"tokenUrl":"https://login.windows.net/{tenantId}/oauth2/token"}'
 ```
 
 #### Option 2: Auth to Databricks using Databricks Personal Access Token
@@ -98,14 +99,14 @@ curl 'https://api.flexera.com/cred/v2/projects/<flexeraProjectId>/credentials/oa
 
 Replace these:
 
- - `<access_token>`
- - `<flexeraProjectId>`
- - `<Credential Name>`
- - `<credentialId>`
- - `<personalAccessToken>`
+- `{access_token}`
+- `{flexeraProjectId}`
+- `{Credential Name}`
+- `{credentialId}`
+- `{personalAccessToken}`
 
 ```sh
-curl 'https://api.flexera.com/cred/v2/projects/<flexeraProjectId>/credentials/oauth2/<credentialId>' -X PUT -H 'Content-Type: application/json' -H 'Api-Version: 1.0' -H 'Authorization: Bearer <access_token>' --data-raw '{"description":"","name":"<Credential Name>","field":"Authorization","location":"header","type":"Bearer","tags":[{"key":"provider","value":"databricks"}],"key":"<personalAccessToken>"}'
+curl 'https://api.flexera.com/cred/v2/projects/{flexeraProjectId}/credentials/oauth2/{credentialId}' -X PUT -H 'Content-Type: application/json' -H 'Api-Version: 1.0' -H 'Authorization: Bearer {access_token}' --data-raw '{"description":"","name":"{Credential Name}","field":"Authorization","location":"header","type":"Bearer","tags":[{"key":"provider","value":"databricks"}],"key":"{personalAccessToken}"}'
 ```
 
 ***Important*** - When creating an Applied Policy using a Databricks Personal Access Token credential, you must provide just 1 workspace identifier (Name or ID) in `param_databricks_workspace_list`.  Personal Access Tokens are workspace-scoped and a single applied policy cannot traverse multiple Databricks workspaces with a single Personal Access Token.
