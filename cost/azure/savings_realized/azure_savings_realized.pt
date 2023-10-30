@@ -83,6 +83,70 @@ datasource "ds_applied_policy" do
   end
 end
 
+# Table to convert region names from old EA connections to the new ones
+datasource "ds_region_table" do
+  run_script $js_region_table
+end
+
+script "js_region_table", type: "javascript" do
+  result "result"
+  code <<-EOS
+  result = {
+    "AE Central": "UAE Central",
+    "AE North": "UAE North",
+    "AP East": "East Asia",
+    "AP Southeast": "Southeast Asia",
+    "AU Central": "Australia Central",
+    "AU Central 2": "Australia Central 2",
+    "AU East": "Australia East",
+    "AU Southeast": "Australia Southeast",
+    "BR South": "Brazil South",
+    "BR Southeast": "Brazil Southeast",
+    "CA Central": "Canada Central",
+    "CA East": "Canada East",
+    "CH North": "China North",
+    "CH West": "China West",
+    "DE North": "Germany North",
+    "DE West Central": "Germany West Central",
+    "EU North": "North Europe",
+    "EU West": "West Europe",
+    "FR Central": "France Central",
+    "FR South": "France South",
+    "IN Central": "Central India",
+    "IN Central Jio": "Jio India Central",
+    "IN South": "South India",
+    "IN West": "West India",
+    "IN West Jio": "Jio India West",
+    "IT North": "Italy North",
+    "JA East": "Japan East",
+    "JA West": "Japan West",
+    "KR Central": "Korea Central",
+    "KR South": "Korea South",
+    "NO East": "Norway East",
+    "NO West": "Norway West",
+    "PL Central": "Poland Central",
+    "QA Central": "Qatar Central",
+    "SE Central": "Sweden Central",
+    "SE South": "Sweden South",
+    "UK South": "UK South",
+    "UK West": "UK West",
+    "US Central": "Central US",
+    "US East": "East US",
+    "US East 2": "East US 2",
+    "US North Central": "North Central US",
+    "US South Central": "South Central US",
+    "US West": "West US",
+    "US West 2": "West US 2",
+    "US West 3": "West US 3",
+    "US West Central": "West Central US",
+    "ZA North": "South Africa North",
+    "ZA West": "South Africa West",
+    "All Regions": "All Regions",
+    "Unassigned": "Unassigned"
+  }
+EOS
+end
+
 datasource "ds_billing_centers" do
   request do
     auth $auth_flexera
@@ -381,6 +445,10 @@ script "js_get_aggregated_costs", type: "javascript" do
               { "dimension": "purchase_option", "type": "equal", "value": "savings plan" }
             ]
           }
+        },
+        {
+          "type": "not",
+          "expression": { "dimension": "instance_type", "type": "equal", "value": "None" }
         }
       ]
     }
@@ -424,18 +492,32 @@ EOS
 end
 
 datasource "ds_ri_aggregated_costs" do
-  run_script $js_cost_combiner, $ds_ri_aggregated_costs_old, $ds_ri_aggregated_costs_new
+  run_script $js_cost_combiner, $ds_ri_aggregated_costs_old, $ds_ri_aggregated_costs_new, $ds_region_table
 end
 
 datasource "ds_base_aggregated_costs" do
-  run_script $js_cost_combiner, $ds_base_aggregated_costs_old, $ds_base_aggregated_costs_new
+  run_script $js_cost_combiner, $ds_base_aggregated_costs_old, $ds_base_aggregated_costs_new, $ds_region_table
 end
 
 script "js_cost_combiner", type:"javascript" do
-  parameters "ds_costs_1", "ds_costs_2"
+  parameters "ds_costs_old", "ds_costs_new", "ds_region_table"
   result "result"
   code <<-EOS
-  result = ds_costs_1.concat(ds_costs_2)
+  result = _.map(ds_costs_old, function(cost) {
+    region = cost['region']
+    if (ds_region_table[region] != undefined) { region = ds_region_table[region] }
+
+    return {
+      instance_type: cost['instance_type'],
+      usage_unit: cost['usage_unit'],
+      usage_amount: cost['usage_amount'],
+      cost: cost['cost'],
+      month: cost['month'],
+      region: region
+    }
+  })
+
+  result = result.concat(ds_costs_new)
 EOS
 end
 
@@ -470,28 +552,38 @@ script "js_savings_realized", type: "javascript" do
 
   // Calculate base cost of instance per hour across all months
   // for each instance type/region/operating system combination
-  unique_cost_instance_hours = []
+  base_aggregated_costs = {}
+
+  _.each(ds_base_aggregated_costs, function(cost) {
+    index = [cost['instance_type'], cost['region']].join('_').toLowerCase().trim()
+
+    if (base_aggregated_costs[index] == undefined) { base_aggregated_costs[index] = [] }
+
+    base_aggregated_costs[index].push(cost)
+  })
+
+  unique_cost_instance_hours = {}
 
   _.each(instance_types, function(type) {
     _.each(regions, function(region) {
       base_cost_instance_hour_total = 0
       count = 0
 
-      _.each(ds_base_aggregated_costs, function(cost){
-        if (cost['instance_type'] == type && cost['region'] == region) {
-          base_cost_instance_hour_total += (cost['cost'] / cost['usage_amount'])
+      index = [type, region].join('_').toLowerCase().trim()
+
+      if (base_aggregated_costs[index] != undefined) {
+        _.each(base_aggregated_costs[index], function(cost) {
+          base_cost_instance_hour_total += cost['cost'] / cost['usage_amount']
           count += 1
-        }
-      })
+        })
+      }
 
       avg_base_cost_instance_hour = 0
       if (count > 0) { avg_base_cost_instance_hour = base_cost_instance_hour_total / count }
 
-      unique_cost_instance_hours.push({
-        instance_type: type,
-        region: region,
-        avg_base_cost_instance_hour: avg_base_cost_instance_hour
-      })
+      index = [type, region].join('_').toLowerCase().trim()
+
+      unique_cost_instance_hours[index] = avg_base_cost_instance_hour
     })
   })
 
@@ -499,25 +591,22 @@ script "js_savings_realized", type: "javascript" do
   savings_realized_object = {}
 
   _.each(ds_ri_aggregated_costs, function(cost) {
-    _.each(unique_cost_instance_hours, function(instance_hour) {
-      if (cost['instance_type'] == instance_hour['instance_type'] && cost['region'] == instance_hour['region']) {
-        savings_realized_per_instance_hour = instance_hour['avg_base_cost_instance_hour'] - (cost['cost'] / cost['usage_amount'])
+    index = [cost['instance_type'], cost['region']].join('_').toLowerCase().trim()
+    avg_base_cost_instance_hour = unique_cost_instance_hours[index]
 
-        savings_realized = 0
-        if (cost['cost'] > 0) {
-          savings_realized = savings_realized_per_instance_hour * cost['usage_amount']
-        }
+    if (avg_base_cost_instance_hour != undefined) {
+      savings_realized_per_instance_hour = avg_base_cost_instance_hour - (cost['cost'] / cost['usage_amount'])
+      savings_realized = savings_realized_per_instance_hour * cost['usage_amount']
 
-        if (savings_realized_object[cost['month']] == undefined) { savings_realized_object[cost['month']] = 0 }
-          savings_realized_object[cost['month']] += savings_realized
-      }
-    })
+      if (savings_realized_object[cost['month']] == undefined) { savings_realized_object[cost['month']] = 0 }
+      savings_realized_object[cost['month']] += savings_realized
+    }
   })
 
   _.each(months, function(month) {
     cost = 0
-    if (typeof(savings_realized_object[cost['month']]) == 'number') {
-      cost = savings_realized_object[cost['month']]
+    if (savings_realized_object[month] != undefined) {
+      cost = savings_realized_object[month]
     }
 
     result.push({
