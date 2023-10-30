@@ -1,14 +1,14 @@
-name "Azure Idle Compute Instances Meta Parent"
+name "Azure Databricks Rightsize Compute Instances Meta Parent"
 rs_pt_ver 20180301
 type "policy"
-short_description "Applies and manages \"child\" [Azure Idle Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/idle_compute_instances) Policies."
+short_description "Applies and manages \"child\" [Azure Databricks Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/databricks/rightsize_compute) Policies."
 severity "low"
 category "Cost"
 tenancy "single"
 default_frequency "15 minutes"
 info(
   provider: "Azure",
-  version: "5.2", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "0.1.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "false"
 )
 
@@ -64,43 +64,95 @@ parameter "param_template_source" do
 end
 
 ## Child Policy Parameters
+parameter "param_databricks_workspace_list" do
+  label "Databricks Workspace Allowed List"
+  type "list"
+  description "Allowed Databricks Workspace, if empty, all workspaces will be checked"
+  default []
+end
+
 parameter "param_azure_endpoint" do
   type "string"
-  category "Policy Settings"
   label "Azure Endpoint"
-  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
   allowed_values "management.azure.com", "management.chinacloudapi.cn"
   default "management.azure.com"
 end
 
-parameter "param_cpu_average_percentage" do
+parameter "param_stats_check_both" do
   type "string"
-  label "CPU Threshold"
-  description "Average CPU threshold at which to trigger a decommission"
-  default "60"
-  allowed_pattern /^[0-9]$|^[1-9][0-9]$|^(100)$/
+  category "Statistics"
+  label "Idle/Utilized for both CPU/Memory or either"
+  description "Set whether an instance should be considered idle and/or underutilized only if both CPU and memory are under the thresholds or if either CPU or memory are under. Note: this parameter is only valid when at least one Memory Utilization threshold and one CPU Utilization threshold is NOT set to -1"
+  allowed_values "Both CPU and Memory", "Either CPU or Memory"
+  default "Either CPU or Memory"
 end
 
-parameter "param_exclusion_tag_key" do
-  category "User Inputs"
-  label "Exclusion Tag Key"
-  description "An Azure-native instance tag key to ignore instances that you don't want to consider for downsizing. Example: exclude_utilization"
+parameter "param_stats_threshold" do
   type "string"
+  category "Statistics"
+  label "Threshold Statistic"
+  description "Statistic to use when determining if an instance is idle/underutilized."
+  allowed_values "Average", "Maximum", "Minimum"
+  default "Average"
 end
 
-parameter "param_automatic_action" do
-  type "list"
-  label "Automatic Actions"
-  description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Terminate Instances"]
+parameter "param_stats_interval" do
+  type "string"
+  category "Statistics"
+  label "Statistic Interval"
+  description "Interval to use for the time span.  PT1M=1 minute, PT5M=5 minutes, PT15M=15 minutes, PT30M=30 minutes, PT1H=1 hour, PT6H=6 hours, PT12H=12 hours, P1D=1 day"
+  allowed_values "PT1M","PT5M","PT15M","PT30M","PT1H","PT6H","PT12H","P1D"
+  default "PT5M"
 end
 
-parameter "param_log_to_cm_audit_entries" do
-  type "string"
-  label "Log to CM Audit Entries"
-  description "Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left set to No on Flexera EU"
-  default "No"
-  allowed_values "Yes", "No"
+parameter "param_stats_lookback" do
+  type "number"
+  category "Statistics"
+  label "Statistic Lookback Period"
+  description "How many days back to look at utilization metrics for compute resources. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days."
+  default 30
+  min_value 1
+  max_value 30
+end
+
+parameter "param_stats_idle_threshold_cpu_value" do
+  type "number"
+  category "Statistics"
+  label "Idle Instance CPU Threshold (%)"
+  description "The CPU threshold at which to consider an instance to be 'idle' and therefore be flagged for termination. Set to -1 to ignore CPU utilization"
+  min_value -1
+  max_value 100
+  default 5
+end
+
+parameter "param_stats_idle_threshold_mem_value" do
+  type "number"
+  category "Statistics"
+  label "Idle Instance Memory Threshold (%)"
+  description "The Memory threshold at which to consider an instance to be 'idle' and therefore be flagged for termination. Set to -1 to ignore memory utilization"
+  min_value -1
+  max_value 100
+  default 5
+end
+
+parameter "param_stats_underutil_threshold_cpu_value" do
+  type "number"
+  category "Statistics"
+  label "Underutilized Instance CPU Threshold (%)"
+  description "The CPU threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing. Set to -1 to ignore CPU utilization"
+  min_value -1
+  max_value 100
+  default 40
+end
+
+parameter "param_stats_underutil_threshold_mem_value" do
+  type "number"
+  category "Statistics"
+  label "Underutilized Instance Memory Threshold (%)"
+  description "The Memory threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing. Set to -1 to ignore memory utilization"
+  min_value -1
+  max_value 100
+  default 40
 end
 
 ###############################################################################
@@ -113,9 +165,16 @@ credentials "auth_azure" do
   tags "provider=azure_rm"
 end
 
+credentials "auth_databricks" do
+  schemes "oauth2"
+  label "Credential for Azure Databricks"
+  description "Select the Credential for Azure Databricks from the list."
+  tags "provider=databricks"
+end
+
 credentials "auth_flexera" do
   schemes "oauth2"
-  label "flexera"
+  label "Flexera"
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
@@ -224,7 +283,7 @@ datasource "ds_published_child_policy_information" do
   result do
     encoding "json"
     # Select the published policy that is published by "support@flexera.com" and matches the name of the child policy template
-    collect jq(response, '.items[] | select(.name == "Azure Idle Compute Instances" and .created_by.email == "BKaraffa@flexera.com")' ) do
+    collect jq(response, '.items[] | select(.name == "Azure Databricks Rightsize Compute Instances" and .created_by.email == "BKaraffa@flexera.com")' ) do
       field "name", jmes_path(col_item, "name")
       field "href", jmes_path(col_item, "href")
       field "short_description", jmes_path(col_item, "short_description")
@@ -243,7 +302,7 @@ datasource "ds_project_child_policy_information" do
   result do
     encoding "json"
     # Select the uploaded policy that matches the name of the child policy template
-    collect jq(response, '.items[] | select(.name == "Azure Idle Compute Instances")' ) do
+    collect jq(response, '.items[] | select(.name == "Azure Databricks Rightsize Compute Instances")' ) do
       field "name", jmes_path(col_item, "name")
       field "href", jmes_path(col_item, "href")
       field "short_description", jmes_path(col_item, "short_description")
@@ -746,19 +805,40 @@ datasource "ds_child_incident_details" do
   end
 end
 
-datasource "ds_only_instances_combined_incidents" do
-  run_script $js_ds_only_instances_combined_incidents, $ds_child_incident_details
+datasource "ds_idle_instances_combined_incidents" do
+  run_script $js_ds_idle_instances_combined_incidents, $ds_child_incident_details
 end
 
-script "js_ds_only_instances_combined_incidents", type: "javascript" do
+script "js_ds_idle_instances_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-EOS
   result = []
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
-    // If the incident summary contains "Azure idle compute instances found" then include it in the filter result
-    if (s.indexOf("Azure idle compute instances found") > -1) {
+    // If the incident summary contains "Databricks compute instances that are Idle" then include it in the filter result
+    if (s.indexOf("Databricks compute instances that are Idle") > -1) {
+      _.each(incident["violation_data"], function(violation) {
+        result.push(violation);
+      });
+    }
+  });
+EOS
+end
+
+datasource "ds_underutilized_instances_combined_incidents" do
+  run_script $js_ds_underutilized_instances_combined_incidents, $ds_child_incident_details
+end
+
+script "js_ds_underutilized_instances_combined_incidents", type: "javascript" do
+  parameters "ds_child_incident_details"
+  result "result"
+  code <<-EOS
+  result = []
+  _.each(ds_child_incident_details, function(incident) {
+    s = incident["summary"];
+    // If the incident summary contains "Databricks compute instances that are underutilized" then include it in the filter result
+    if (s.indexOf("Databricks compute instances that are underutilized") > -1) {
       _.each(incident["violation_data"], function(violation) {
         result.push(violation);
       });
@@ -774,63 +854,181 @@ end
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
-    # Consolidated incident for Azure idle compute instances found
-  validate $ds_only_instances_combined_incidents do
-    summary_template "Consolidated Incident: {{ len data }} Azure idle compute instances found"
+    # Consolidated incident for Databricks compute instances that are Idle
+  validate $ds_idle_instances_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} Databricks compute instances that are Idle"
     escalate $esc_email
     check eq(size(data), 0)
     export do
       resource_level true
-      field "accountName" do
-        label "Subscription Name"
+      field "savings" do
+        label "Estimated Savings"
       end
-      field "accountID" do
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "subscriptionId" do
         label "Subscription ID"
       end
-      field "resourceID" do
-        label "Resource ID"
-      end
-      field "resourceName" do
-        label "Resource Name"
-      end
-      field "resourceKind" do
-        label "Resource Kind"
+      field "resourceGroup" do
+        label "Azure Resource Group Name"
       end
       field "region" do
-        label "Region"
-      end
-      field "savings" do
-        label "Estimated Monthly Savings"
-      end
-      field "savingsCurrency" do
-        label "Savings Currency"
-      end
-      field "cpuAverage" do
-        label "CPU Average"
-      end
-      field "resourceGroup" do
-        label "Resource Group"
-      end
-      field "tags" do
-        label "Tags"
-      end
-      field "service" do
-        label "Service"
+        label "Azure Region"
       end
       field "id" do
-        label "ID"
+        label "Azure Virtual Machine ID"
       end
-      field "lookbackPeriod" do
-        label "Lookback Period"
+      field "databricks_workspace_name" do
+        label "Databricks Workspace Name"
       end
-      field "threshold" do
-        label "Threshold"
+      field "workspaceId" do
+        label "Databricks Workspace ID"
       end
-      field "platform" do
-        label "Platform"
+      field "databricks_workspace_url" do
+        label "Databricks Workspace Url"
+      end
+      field "databricks_cluster_id" do
+        label "Databricks Cluster ID"
+      end
+      field "databricks_cluster_name" do
+        label "Databricks Cluster Name"
+      end
+      field "databricks_cluster_source" do
+        label "Databricks Cluster Source"
       end
       field "resourceType" do
-        label "Resource Type"
+        label "Instance Size"
+      end
+      field "newResourceType" do
+        label "Recommended Instance Size"
+      end
+      field "unit_cost" do
+        label "Unit Cost during Lookback Period"
+      end
+      field "total_cost" do
+        label "Total Cost during Lookback Period"
+      end
+      field "cpuMinimum" do
+        label "CPU Minimum %"
+      end
+      field "cpuAverage" do
+        label "CPU Average %"
+      end
+      field "cpuMaximum" do
+        label "CPU Maximum %"
+      end
+      field "memMinimum" do
+        label "Memory Minimum %"
+      end
+      field "memAverage" do
+        label "Memory Average %"
+      end
+      field "memMaximum" do
+        label "Memory Maximum %"
+      end
+      field "thresholdType" do
+        label "Threshold Statistic"
+      end
+      field "cpuThreshold" do
+        label "CPU Threshold"
+      end
+      field "memoryThreshold" do
+        label "Memory Threshold"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+    end
+  end
+
+  # Consolidated incident for Databricks compute instances that are underutilized
+  validate $ds_underutilized_instances_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} Databricks compute instances that are underutilized"
+    escalate $esc_email
+    check eq(size(data), 0)
+    export do
+      resource_level true
+      field "savings" do
+        label "Estimated Savings"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "subscriptionId" do
+        label "Subscription ID"
+      end
+      field "resourceGroup" do
+        label "Azure Resource Group Name"
+      end
+      field "region" do
+        label "Azure Region"
+      end
+      field "id" do
+        label "Azure Virtual Machine ID"
+      end
+      field "databricks_workspace_name" do
+        label "Databricks Workspace Name"
+      end
+      field "workspaceId" do
+        label "Databricks Workspace ID"
+      end
+      field "databricks_workspace_url" do
+        label "Databricks Workspace Url"
+      end
+      field "databricks_cluster_id" do
+        label "Databricks Cluster ID"
+      end
+      field "databricks_cluster_name" do
+        label "Databricks Cluster Name"
+      end
+      field "databricks_cluster_source" do
+        label "Databricks Cluster Source"
+      end
+      field "resourceType" do
+        label "Instance Size"
+      end
+      field "newResourceType" do
+        label "Recommended Instance Size"
+      end
+      field "unit_cost" do
+        label "Unit Cost during Lookback Period"
+      end
+      field "total_cost" do
+        label "Total Cost during Lookback Period"
+      end
+      field "cpuMinimum" do
+        label "CPU Minimum %"
+      end
+      field "cpuAverage" do
+        label "CPU Average %"
+      end
+      field "cpuMaximum" do
+        label "CPU Maximum %"
+      end
+      field "memMinimum" do
+        label "Memory Minimum %"
+      end
+      field "memAverage" do
+        label "Memory Average %"
+      end
+      field "memMaximum" do
+        label "Memory Maximum %"
+      end
+      field "thresholdType" do
+        label "Threshold Statistic"
+      end
+      field "thresholdResourceTypes" do
+        label "Threshold Resource Type"
+      end
+      field "cpuThreshold" do
+        label "CPU Threshold"
+      end
+      field "memoryThreshold" do
+        label "Memory Threshold"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
       end
     end
   end
