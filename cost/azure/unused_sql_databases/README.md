@@ -1,5 +1,9 @@
 # Azure Unused SQL Databases
 
+## Deprecated
+
+This policy is no longer being updated. The [Azure Rightsize SQL Databases](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_sql_instances/) policy now includes this functionality and is the recommended policy for getting unused SQL recommendations.
+
 ## What it does
 
 This Policy template checks for Azure SQL Databases that are unused by reviewing the DB connections and delete them after user approval.
