@@ -29,7 +29,6 @@ These templates can generate savings estimates for your environment.
 
 - [AWS Delete Unused Classic Load Balancers](./cost/aws/elb/clb_unused)
 - [AWS GP3 Upgradeable Volumes](./cost/aws/gp3_volume_upgrade)
-- [AWS Idle Compute Instances](./cost/aws/idle_compute_instances)
 - [AWS Old Snapshots](./cost/aws/old_snapshots)
 - [AWS Reserved Instances Recommendations](./cost/aws/reserved_instances/recommendations)
 - [AWS Rightsize EBS Volumes](./cost/aws/rightsize_ebs_volumes)
@@ -49,7 +48,6 @@ These templates can generate savings estimates for your environment.
 #### Azure
 
 - [Azure Hybrid Use Benefit for Windows Server](./cost/azure/hybrid_use_benefit)
-- [Azure Idle Compute Instances](./cost/azure/idle_compute_instances)
 - [Azure Old Snapshots](./cost/azure/old_snapshots)
 - [Azure Reserved Instances Recommendations](./cost/azure/reserved_instances/recommendations)
 - [Azure Rightsize Compute Instances](./cost/azure/rightsize_compute_instances)
@@ -57,7 +55,6 @@ These templates can generate savings estimates for your environment.
 - [Azure Savings Plan Recommendations](./cost/azure/savings_plan/recommendations)
 - [Azure Superseded Compute Instances](./cost/azure/superseded_instances)
 - [Azure Unused IP Addresses](./cost/azure/unused_ip_addresses)
-- [Azure Unused SQL Databases](./cost/azure/unused_sql_databases)
 - [Azure Unused Volumes](./cost/azure/unused_volumes)
 - [Turbonomic Allocate Virtual Machine Recommendations Azure](./cost/turbonomics/allocate_virtual_machines_recommendations/azure)
 - [Turbonomic Buy Reserved Instances Recommendations Azure](./cost/turbonomics/buy_reserved_instances_recommendations/azure)
@@ -72,7 +69,6 @@ These templates can generate savings estimates for your environment.
 - [Google Idle Cloud SQL Instance Recommender](./cost/google/cloud_sql_idle_instance_recommendations)
 - [Google Idle IP Address Recommender](./cost/google/idle_ip_address_recommendations)
 - [Google Idle Persistent Disk Recommender](./cost/google/idle_persistent_disk_recommendations)
-- [Google Idle VM Recommender](./cost/google/idle_vm_recommendations)
 - [Google Rightsize VM Recommender](./cost/google/rightsize_vm_recommendations)
 - [Turbonomic Allocate Virtual Machine Recommendations Google](./cost/turbonomics/allocate_virtual_machines_recommendations/gcp)
 - [Turbonomic Delete Unattached Volumes Recommendations Google](./cost/turbonomics/delete_unattached_volumes/gcp)
@@ -182,7 +178,6 @@ These templates can generate savings estimates for your environment.
 - Compute
 
   - [AWS Burstable Instance CloudWatch Utilization](./cost/aws/burstable_instance_cloudwatch_credit_utilization)
-  - [AWS Idle Compute Instances](./cost/aws/idle_compute_instances)
   - [AWS Inefficient Instance Utilization using CloudWatch](./cost/aws/instance_cloudwatch_utilization)
   - [AWS Reserved Instances Recommendations](./cost/aws/reserved_instances/recommendations)
   - [AWS Rightsize EBS Volumes](./cost/aws/rightsize_ebs_volumes)
@@ -246,7 +241,6 @@ These templates can generate savings estimates for your environment.
   - [Azure Hybrid Use Benefit for Linux Server](./cost/azure/hybrid_use_benefit_linux)
   - [Azure Hybrid Use Benefit for SQL](./cost/azure/hybrid_use_benefit_sql)
   - [Azure Hybrid Use Benefit for Windows Server](./cost/azure/hybrid_use_benefit)
-  - [Azure Idle Compute Instances](./cost/azure/idle_compute_instances)
   - [Azure Inefficient Instance Utilization using Log Analytics](./cost/azure/instances_log_analytics_utilization)
   - [Azure Reserved Instances Recommendations](./cost/azure/reserved_instances/recommendations)
   - [Azure Reserved Instances Utilization](./cost/azure/reserved_instances/utilization)
@@ -267,7 +261,6 @@ These templates can generate savings estimates for your environment.
 
   - [Azure Rightsize SQL Databases](./cost/azure/rightsize_sql_instances)
   - [Azure SQL Databases without Elastic Pools](./operational/azure/azure_sql_using_elastic_pool)
-  - [Azure Unused SQL Databases](./cost/azure/unused_sql_databases)
 
 - Storage
 
@@ -348,7 +341,6 @@ These templates can generate savings estimates for your environment.
 
   - [Google Committed Use Discount Recommender](./cost/google/cud_recommendations)
   - [Google Idle IP Address Recommender](./cost/google/idle_ip_address_recommendations)
-  - [Google Idle VM Recommender](./cost/google/idle_vm_recommendations)
   - [Google Rightsize VM Recommender](./cost/google/rightsize_vm_recommendations)
   - [Turbonomic Allocate Virtual Machine Recommendations Google](./cost/turbonomics/allocate_virtual_machines_recommendations/gcp)
   - [Turbonomic Rightsize Virtual Machines Recommendations Google](./cost/turbonomics/scale_virtual_machines_recommendations/gcp)
@@ -630,25 +622,25 @@ These templates can generate savings estimates for your environment.
 <!-- Begin Policy Template Stats -->
 <!--
 ---
-:total_count: 244
-:optimization_count: 46
+:total_count: 240
+:optimization_count: 42
 :categories:
-  Cost: 101
+  Cost: 97
   Security: 74
   Operational: 23
   Compliance: 33
   SaaS Management: 13
 :providers:
   Flexera Optima: 25
-  Google: 12
+  Google: 11
   GCE: 8
   Flexera Cloud Management: 3
-  AWS: 79
+  AWS: 78
   Flexera: 7
   Oracle: 1
   Kubecost: 2
   '': 1
-  Azure: 78
+  Azure: 76
   Azure China: 1
   Flexera ITAM: 5
   Flexera RISC: 2
@@ -661,8 +653,8 @@ These templates can generate savings estimates for your environment.
 :services:
   '': 61
   Storage: 20
-  Compute: 51
-  SQL: 15
+  Compute: 48
+  SQL: 14
   S3: 9
   RDS: 6
   EBS: 3
@@ -706,9 +698,9 @@ These templates can generate savings estimates for your environment.
   Unused Volumes: 6
   Native Recommendations: 1
   Rightsize Database Services: 1
-  Unused Database Services: 3
+  Unused Database Services: 2
   Committed Use Discount: 1
-  Idle Compute Instances: 4
+  Idle Compute Instances: 1
   Rightsize Compute Instances: 6
   Reserved Instances: 3
   Forecasting: 4
