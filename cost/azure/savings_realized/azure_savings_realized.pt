@@ -83,70 +83,6 @@ datasource "ds_applied_policy" do
   end
 end
 
-# Table to convert region names from old EA connections to the new ones
-datasource "ds_region_table" do
-  run_script $js_region_table
-end
-
-script "js_region_table", type: "javascript" do
-  result "result"
-  code <<-EOS
-  result = {
-    "AE Central": "UAE Central",
-    "AE North": "UAE North",
-    "AP East": "East Asia",
-    "AP Southeast": "Southeast Asia",
-    "AU Central": "Australia Central",
-    "AU Central 2": "Australia Central 2",
-    "AU East": "Australia East",
-    "AU Southeast": "Australia Southeast",
-    "BR South": "Brazil South",
-    "BR Southeast": "Brazil Southeast",
-    "CA Central": "Canada Central",
-    "CA East": "Canada East",
-    "CH North": "China North",
-    "CH West": "China West",
-    "DE North": "Germany North",
-    "DE West Central": "Germany West Central",
-    "EU North": "North Europe",
-    "EU West": "West Europe",
-    "FR Central": "France Central",
-    "FR South": "France South",
-    "IN Central": "Central India",
-    "IN Central Jio": "Jio India Central",
-    "IN South": "South India",
-    "IN West": "West India",
-    "IN West Jio": "Jio India West",
-    "IT North": "Italy North",
-    "JA East": "Japan East",
-    "JA West": "Japan West",
-    "KR Central": "Korea Central",
-    "KR South": "Korea South",
-    "NO East": "Norway East",
-    "NO West": "Norway West",
-    "PL Central": "Poland Central",
-    "QA Central": "Qatar Central",
-    "SE Central": "Sweden Central",
-    "SE South": "Sweden South",
-    "UK South": "UK South",
-    "UK West": "UK West",
-    "US Central": "Central US",
-    "US East": "East US",
-    "US East 2": "East US 2",
-    "US North Central": "North Central US",
-    "US South Central": "South Central US",
-    "US West": "West US",
-    "US West 2": "West US 2",
-    "US West 3": "West US 3",
-    "US West Central": "West Central US",
-    "ZA North": "South Africa North",
-    "ZA West": "South Africa West",
-    "All Regions": "All Regions",
-    "Unassigned": "Unassigned"
-  }
-EOS
-end
-
 datasource "ds_billing_centers" do
   request do
     auth $auth_flexera
@@ -189,6 +125,7 @@ script "js_filtered_bcs", type: "javascript" do
   result = _.compact(_.pluck(filtered_bcs, 'id'))
 EOS
 end
+
 
 # Gather list of bill connections from Optima data
 datasource "ds_bill_connections" do
@@ -239,10 +176,10 @@ datasource "ds_bill_connections_new" do
 end
 
 script "js_bill_connections_filter", type:"javascript" do
-  parameters "ds_bill_connections", "index"
+  parameters "bill_connections", "index"
   result "result"
   code <<-EOS
-  bill_sources = _.filter(ds_bill_connections, function(connection) {
+  bill_sources = _.filter(bill_connections, function(connection) {
     return connection['bill_source'].indexOf('azure-ea') == index
   })
 
@@ -250,9 +187,9 @@ script "js_bill_connections_filter", type:"javascript" do
 EOS
 end
 
-datasource "ds_ri_aggregated_costs_old" do
+datasource "ds_aggregated_costs_old_base" do
   request do
-    run_script $js_get_aggregated_costs, $ds_bill_connections_old, $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host, "ri_old"
+    run_script $js_get_aggregated_costs, $ds_bill_connections_old, $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host, "base"
   end
   result do
     encoding "json"
@@ -267,9 +204,9 @@ datasource "ds_ri_aggregated_costs_old" do
   end
 end
 
-datasource "ds_ri_aggregated_costs_new" do
+datasource "ds_aggregated_costs_old_ri" do
   request do
-    run_script $js_get_aggregated_costs, $ds_bill_connections_new, $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host, "ri_new"
+    run_script $js_get_aggregated_costs, $ds_bill_connections_old, $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host, "ri"
   end
   result do
     encoding "json"
@@ -284,35 +221,16 @@ datasource "ds_ri_aggregated_costs_new" do
   end
 end
 
-datasource "ds_base_aggregated_costs_old" do
+datasource "ds_aggregated_costs_new" do
   request do
-    run_script $js_get_aggregated_costs, $ds_bill_connections_old, $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host, "base_old"
+    run_script $js_get_aggregated_costs, $ds_bill_connections_new, $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host, "new"
   end
   result do
     encoding "json"
     collect jmes_path(response, "rows") do
-      field "instance_type", jmes_path(col_item, "dimensions.instance_type")
-      field "region", jmes_path(col_item, "dimensions.region")
-      field "usage_unit", jmes_path(col_item, "dimensions.usage_unit")
-      field "usage_amount", jmes_path(col_item, "metrics.usage_amount")
+      field "purchase_option", jmes_path(col_item, "dimensions.purchase_option")
       field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
-      field "month", jmes_path(col_item, "timestamp")
-    end
-  end
-end
-
-datasource "ds_base_aggregated_costs_new" do
-  request do
-    run_script $js_get_aggregated_costs, $ds_bill_connections_new, $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host, "base_new"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "rows") do
-      field "instance_type", jmes_path(col_item, "dimensions.instance_type")
-      field "region", jmes_path(col_item, "dimensions.region")
-      field "usage_unit", jmes_path(col_item, "dimensions.usage_unit")
-      field "usage_amount", jmes_path(col_item, "metrics.usage_amount")
-      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+      field "savings", jmes_path(col_item, "metrics.savings_rate_reduction_amortized_adj")
       field "month", jmes_path(col_item, "timestamp")
     end
   end
@@ -322,9 +240,45 @@ script "js_get_aggregated_costs", type: "javascript" do
   parameters "bill_sources", "ds_filtered_bcs", "start_date", "end_date", "org_id", "optima_host", "connection_type"
   result "request"
   code <<-EOS
-  // Set filters based on the type of request (RI or Base)
-  // and whether or not we're pulling costs for an old Azure EA connection or a new one
-  if (connection_type == 'ri_old') {
+  // Set filters based on the type of request
+  if (connection_type == 'base') {
+    filter = {
+      "type": "and",
+      "expressions": [
+        {
+          "type": "or",
+          "expressions": [
+            { "dimension": "service", "type": "equal", "value": "Microsoft.Compute" },
+            { "dimension": "service", "type": "equal", "value": "microsoft.compute" }
+          ]
+        },
+        {
+          "type": "not",
+          "expression": {
+            "type": "or",
+            "expressions": [
+              {
+                "dimension": "resource_type",
+                "type": "equal",
+                "value": "Virtual Machines-Reservation-Base VM"
+              },
+              {
+                "dimension": "resource_type",
+                "type": "equal",
+                "value": "virtual machines-reservation-base vm"
+              }
+            ]
+          }
+        },
+        {
+          "type": "not",
+          "expression": { "dimension": "instance_type", "type": "equal", "value": "None" }
+        }
+      ]
+    }
+  }
+
+  if (connection_type == 'ri') {
     filter = {
       "type": "and",
       "expressions": [
@@ -358,32 +312,17 @@ script "js_get_aggregated_costs", type: "javascript" do
     }
   }
 
-  if (connection_type == 'ri_new') {
+  if (connection_type == 'new') {
     filter = {
       "type": "and",
       "expressions": [
         {
           "type": "or",
           "expressions": [
-            { "dimension": "category", "type": "equal", "value": "Commitments" },
-            { "dimension": "category", "type": "equal", "value": "commitments" }
+            { "dimension": "vendor", "type": "equal", "value": "Azure"  },
+            { "dimension": "vendor", "type": "equal", "value": "azure"  }
           ]
         },
-        {
-          "type": "or",
-          "expressions": [
-            { "dimension": "purchase_option", "type": "equal", "value": "Reserved" },
-            { "dimension": "purchase_option", "type": "equal", "value": "reserved" }
-          ]
-        }
-      ]
-    }
-  }
-
-  if (connection_type == 'base_old') {
-    filter = {
-      "type": "and",
-      "expressions": [
         {
           "type": "or",
           "expressions": [
@@ -393,126 +332,38 @@ script "js_get_aggregated_costs", type: "javascript" do
         },
         {
           "type": "not",
-          "expression": {
-            "type": "or",
-            "expressions": [
-              {
-                "dimension": "resource_type",
-                "type": "equal",
-                "value": "Virtual Machines-Reservation-Base VM"
-              },
-              {
-                "dimension": "resource_type",
-                "type": "equal",
-                "value": "virtual machines-reservation-base vm"
-              }
-            ]
-          }
-        },
-        {
-          "type": "not",
           "expression": { "dimension": "instance_type", "type": "equal", "value": "None" }
         }
       ]
     }
   }
 
-  if (connection_type == 'base_new') {
-    filter = {
-      "type": "and",
-      "expressions": [
-        {
-          "type": "or",
-          "expressions": [
-            { "dimension": "service", "type": "equal", "value": "Microsoft.Compute" },
-            { "dimension": "service", "type": "equal", "value": "microsoft.compute" }
-          ]
-        },
-        {
-          "type": "not",
-          "expression": {
-            "type": "or",
-            "expressions": [
-              { "dimension": "purchase_option", "type": "equal", "value": "Reserved" },
-              { "dimension": "purchase_option", "type": "equal", "value": "reserved" },
-              { "dimension": "purchase_option", "type": "equal", "value": "Spot" },
-              { "dimension": "purchase_option", "type": "equal", "value": "spot" },
-              { "dimension": "purchase_option", "type": "equal", "value": "Savings Plan" },
-              { "dimension": "purchase_option", "type": "equal", "value": "savings plan" }
-            ]
-          }
-        },
-        {
-          "type": "not",
-          "expression": {
-            "type": "or",
-            "expressions": [
-              {
-                "dimension": "resource_type",
-                "type": "equal",
-                "value": "Virtual Machines-Reservation-Base VM"
-              },
-              {
-                "dimension": "resource_type",
-                "type": "equal",
-                "value": "virtual machines-reservation-base vm"
-              }
-            ]
-          }
-        },
-        {
-          "type": "not",
-          "expression": {
-            "type": "or",
-            "expressions": [
-              { "dimension": "category", "type": "equal", "value": "Commitments" },
-              { "dimension": "category", "type": "equal", "value": "commitments" }
-            ]
-          }
-        },
-        {
-          "type": "not",
-          "expression": { "dimension": "instance_type", "type": "equal", "value": "None" }
-        }
-      ]
-    }
-  }
-
-  // Ensure we're filtering our request to just the specific bill connections
-  bill_source_expressions = []
-
-  _.each(bill_sources, function(bill_source) {
-    bill_source_expressions.push({
-      "dimension": "bill_source",
-      "type": "equal",
-      "value": bill_source
-    })
+  // Ensure we're filtering our request to just the specific bill connection
+  bill_source_expressions = _.map(bill_sources, function(bill_source) {
+    return { "dimension": "bill_source", "type": "equal", "value": bill_source }
   })
 
   filter["expressions"].push({ "type": "or", "expressions": bill_source_expressions })
 
-  // Ensure we only pull Azure costs
-  filter["expressions"].push({
-    "type": "or",
-    "expressions": [
-      { "dimension": "vendor", "type": "equal", "value": "Azure"  },
-      { "dimension": "vendor", "type": "equal", "value": "azure"  }
-    ]
-  })
+  // Other options depending on whether the request is for the new EA connection type or not
+  dimensions = [ "purchase_option" ]
+
+  if (connection_type != 'new') {
+    dimensions = [ "instance_type", "region", "usage_unit" ]
+  }
+
+  metrics = [ "cost_amortized_unblended_adj", "savings_rate_reduction_amortized_adj" ]
+
+  if (connection_type != 'new') {
+    metrics = [ "cost_amortized_unblended_adj", "usage_amount" ]
+  }
 
   payload = {
     "billing_center_ids": ds_filtered_bcs,
     "filter": filter,
-    "dimensions": [
-      "instance_type",
-      "region",
-      "usage_unit"
-    ],
+    "dimensions": dimensions,
     "granularity": "month",
-    "metrics": [
-      "cost_amortized_unblended_adj",
-      "usage_amount"
-    ]
+    "metrics": metrics,
     "end_at": end_date,
     "start_at": start_date
   }
@@ -530,47 +381,18 @@ script "js_get_aggregated_costs", type: "javascript" do
 EOS
 end
 
-datasource "ds_ri_aggregated_costs" do
-  run_script $js_cost_combiner, $ds_ri_aggregated_costs_old, $ds_ri_aggregated_costs_new, $ds_region_table
-end
-
-datasource "ds_base_aggregated_costs" do
-  run_script $js_cost_combiner, $ds_base_aggregated_costs_old, $ds_base_aggregated_costs_new, $ds_region_table
-end
-
-script "js_cost_combiner", type:"javascript" do
-  parameters "ds_costs_old", "ds_costs_new", "ds_region_table"
-  result "result"
-  code <<-EOS
-  result = _.map(ds_costs_old, function(cost) {
-    region = cost['region']
-    if (ds_region_table[region] != undefined) { region = ds_region_table[region] }
-
-    return {
-      instance_type: cost['instance_type'],
-      usage_unit: cost['usage_unit'],
-      usage_amount: cost['usage_amount'],
-      cost: cost['cost'],
-      month: cost['month'],
-      region: region
-    }
-  })
-
-  result = result.concat(ds_costs_new)
-EOS
-end
-
 datasource "ds_savings_realized" do
-  run_script $js_savings_realized, $ds_ri_aggregated_costs, $ds_base_aggregated_costs
+  run_script $js_savings_realized, $ds_aggregated_costs_old_base, $ds_aggregated_costs_old_ri, $ds_aggregated_costs_new
 end
 
 script "js_savings_realized", type: "javascript" do
-  parameters "ds_ri_aggregated_costs", "ds_base_aggregated_costs"
+  parameters "ds_aggregated_costs_old_base", "ds_aggregated_costs_old_ri", "ds_aggregated_costs_new"
   result "result"
   code <<-'EOS'
   result = []
 
-  all_costs = ds_ri_aggregated_costs.concat(ds_base_aggregated_costs)
+  // Calculate and store savings data for old EA connections
+  all_costs = ds_aggregated_costs_old_ri.concat(ds_aggregated_costs_old_base)
 
   // Get list of Instance Types, Regions, Months
   instance_types = _.uniq(_.pluck(all_costs, 'instance_type'))
@@ -593,7 +415,7 @@ script "js_savings_realized", type: "javascript" do
   // for each instance type/region/operating system combination
   base_aggregated_costs = {}
 
-  _.each(ds_base_aggregated_costs, function(cost) {
+  _.each(ds_aggregated_costs_old_base, function(cost) {
     index = [cost['instance_type'], cost['region']].join('_').toLowerCase().trim()
 
     if (base_aggregated_costs[index] == undefined) { base_aggregated_costs[index] = [] }
@@ -629,7 +451,7 @@ script "js_savings_realized", type: "javascript" do
   // Apply cost_instance_hour to calculate savings realized
   savings_realized_object = {}
 
-  _.each(ds_ri_aggregated_costs, function(cost) {
+  _.each(ds_aggregated_costs_old_ri, function(cost) {
     index = [cost['instance_type'], cost['region']].join('_').toLowerCase().trim()
     avg_base_cost_instance_hour = unique_cost_instance_hours[index]
 
@@ -655,6 +477,50 @@ script "js_savings_realized", type: "javascript" do
     })
   })
 
+  // Calculate and store savings data for new EA connections
+
+  // Function for calculating total cost for each dimension
+  function cost_sum(cost_list, month, dimension_filter) {
+    dimension_table = {
+      "Reserved": "Reservations",
+      "Savings Plan": "Savings Plans",
+      "Spot": "Spot Instances"
+    }
+
+    if (dimension_filter != "All") {
+      entries = _.filter(entries, function(cost) { return cost['purchase_option'] == dimension_filter })
+      costs = _.pluck(entries, 'cost')
+      dimension_message = "Savings Realized On Compute " + dimension_table[dimension_filter]
+    } else {
+      entries = cost_list[month]
+      costs = _.pluck(entries, 'cost')
+      dimension_message = "Total Actual Spend On Discountable Compute"
+    }
+
+    total_savings = 0
+
+    if (costs.length > 0) {
+      total_savings = _.reduce(costs, function(memo, num) { return memo + num }, 0)
+    }
+
+    return {
+      "month": month,
+      "cost": total_savings,
+      "dimension": dimension_message
+    }
+  }
+
+  new_costs_by_month = _.groupBy(ds_aggregated_costs_new, 'month')
+
+  // Calculate costs for each month
+  _.each(_.keys(new_costs_by_month), function(month) {
+    result.push(cost_sum(new_costs_by_month, month, "All"))
+    result.push(cost_sum(new_costs_by_month, month, "Reserved"))
+    result.push(cost_sum(new_costs_by_month, month, "Savings Plan"))
+    result.push(cost_sum(new_costs_by_month, month, "Spot"))
+  })
+
+  // Sort by month
   result = _.sortBy(result, "month")
 EOS
 end
@@ -669,36 +535,61 @@ script "js_chart_data", type: "javascript" do
   code <<-'EOS'
   // Create report data
   result = []
-  months = _.uniq(_.pluck(ds_savings_realized, 'month'))
+  savings_by_month = _.groupBy(ds_savings_realized, 'month')
 
-  _.each(months, function(month) {
-    savings_realized = 0
-    total_spend = 0
-    percentage = 0
-
-    savings_realized_for_month = _.find(ds_savings_realized, function(data) {
-      return data['month'] == month && data['dimension'] == "Savings Realized On Compute Reservations"
+  _.each(_.keys(savings_by_month), function(month) {
+    total_spend_entry = _.find(savings_by_month[month], function(item) {
+      return item['dimension'] == "Total Actual Spend On Discountable Compute"
     })
 
-    if (typeof(savings_realized_for_month) == 'object') {
-      savings_realized = savings_realized_for_month['cost']
-    }
-
-    total_spend_for_month = _.find(ds_savings_realized, function(data) {
-      return data['month'] == month && data['dimension'] == "Total Actual Spend On Discountable Compute"
+    savings_realized_ri_entry  = _.find(savings_by_month[month], function(item) {
+      return item['dimension'] == "Savings Realized On Compute Reservations"
     })
 
-    if (typeof(total_spend_for_month) == 'object') {
-      total_spend = total_spend_for_month['cost']
+    savings_realized_sp_entry  = _.find(savings_by_month[month], function(item) {
+      return item['dimension'] == "Savings Realized On Compute Savings Plans"
+    })
+
+    savings_realized_spot_entry  = _.find(savings_by_month[month], function(item) {
+      return item['dimension'] == "Savings Realized On Compute Spot Instances"
+    })
+
+    total_spend_cost = 0
+    savings_realized_ri_cost = 0
+    savings_realized_sp_cost = 0
+    savings_realized_spot_cost = 0
+    percentage_ri = 0
+    percentage_sp = 0
+    percentage_spot = 0
+
+    if (total_spend_entry != undefined) {
+      total_spend_cost = total_spend_entry['cost']
     }
 
-    percentage = (savings_realized / (total_spend + savings_realized)) *100
+    if (savings_realized_ri_entry != undefined) {
+      savings_realized_ri_cost = savings_realized_ri_entry['cost']
+      percentage_ri = (savings_realized_ri_cost / (total_spend_cost)) * 100
+    }
+
+    if (savings_realized_sp_entry != undefined) {
+      savings_realized_sp_cost = savings_realized_sp_entry['cost']
+      percentage_sp = (savings_realized_sp_cost / total_spend_cost) * 100
+    }
+
+    if (savings_realized_spot_entry != undefined) {
+      savings_realized_spot_cost = savings_realized_spot_entry['cost']
+      percentage_spot = (savings_realized_spot_cost / total_spend_cost) * 100
+    }
 
     result.push({
-      "month": month.split('-')[0] + '-' + month.split('-')[1],
-      "total_spend": parseFloat(total_spend).toFixed(2),
-      "savings_realized": parseFloat(savings_realized).toFixed(2),
-      "percentage": parseFloat(percentage).toFixed(2) + "%"
+      "month": month,
+      "total_spend": parseFloat(total_spend_cost.toFixed(2)),
+      "savings_realized_ri": parseFloat(savings_realized_ri_cost.toFixed(2)),
+      "savings_realized_sp": parseFloat(savings_realized_sp_cost.toFixed(2)),
+      "savings_realized_spot": parseFloat(savings_realized_spot_cost.toFixed(2)),
+      "percentage_ri": parseFloat(percentage_ri.toFixed(2))
+      "percentage_sp": parseFloat(percentage_sp.toFixed(2))
+      "percentage_spot": parseFloat(percentage_spot.toFixed(2))
     })
   })
 
@@ -711,9 +602,8 @@ script "js_chart_data", type: "javascript" do
   chart_type = chart_table[param_chart_type]
 
   // Create chart axis labels
-  sr_months = _.uniq(ds_savings_realized, function(sr) { return sr['month'] })
-  sr_months_mapped = _.map(sr_months, function(sr) { return sr['month'].substring(0,7) })
-  chart_axis_labels = ("chxl=1:," + sr_months_mapped).split(',').join('|')
+  months_mapped = _.map(_.keys(savings_by_month), function(item) { return item.substring(0,7) })
+  chart_axis_labels = ("chxl=1:," + months_mapped).split(',').join('|')
 
   // Create legend
   chart_legend = "chdl=" + _.uniq(_.pluck(ds_savings_realized, 'dimension')).join('|')
@@ -725,12 +615,12 @@ script "js_chart_data", type: "javascript" do
   chart_range = "chxr=0," + min + "," + max
 
   //Create chart dataset
-  group_by_dimension = _.groupBy(ds_savings_realized, function(data) { return data['dimension'] })
+  savings_by_dimension = _.groupBy(ds_savings_realized, 'dimension')
 
   chart_data_list = []
 
-  _.each(_.keys(group_by_dimension), function(key) {
-    chart_data_list.push(_.pluck(group_by_dimension[key], 'cost').join(','))
+  _.each(_.keys(savings_by_dimension), function(key) {
+    chart_data_list.push(_.pluck(savings_by_dimension[key], 'cost').join(','))
   })
 
   chart_data = "chd=t:" + chart_data_list.join('|')
@@ -780,11 +670,23 @@ policy "policy_purchase_option_by_inst_type_and_region" do
       field "total_spend" do
         label "Total Actual Spend On Discountable Compute"
       end
-      field "savings_realized" do
+      field "savings_realized_ri" do
         label "Savings Realized On Compute Reservations"
       end
-      field "percentage" do
-        label "Savings Rate"
+      field "savings_realized_sp" do
+        label "Savings Realized On Compute Savings Plans"
+      end
+      field "savings_realized_spot" do
+        label "Savings Realized On Compute Spot Instances"
+      end
+      field "percentage_ri" do
+        label "Savings Rate (%) from Reservation Usage"
+      end
+      field "percentage_sp" do
+        label "Savings Rate (%) from Savings Plan Usage"
+      end
+      field "percentage_spot" do
+        label "Savings Rate (%) from Spot Instance Usage"
       end
     end
   end
