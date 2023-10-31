@@ -13,7 +13,7 @@ This policy checks all the instances in an AWS Account for CPU and Memory usage 
 
 ### Policy Savings Details
 
-The policy includes the estimated monthly savings. The estimated monthly savings is recognized for idle resources if the resource is terminated, and for underutilized resources if the resource is downsized.
+The policy includes the estimated monthly savings. The estimated monthly savings is recognized for idle resources if the resource is stopped, terminated, and for underutilized resources if the resource is downsized.
 
 - The `Estimated Monthly Savings` is calculated by multiplying the amortized cost of the resource for 1 day, as found within Flexera CCO, by 30.44, which is the average number of days in a month.
 - For idle resources, the savings is the full cost of the resource. For underutilized resources, the savings is 50% of the cost of the resource.
@@ -45,6 +45,7 @@ For example if a user selects the "Terminate Instances" action while applying th
 ## Policy Actions
 
 - Sends an email notification
+- Stop virtual machines (if idle) after approval
 - Terminate virtual machines (if idle) after approval
 - Downsize virtual machines (if underutilized but not idle) after approval
 
