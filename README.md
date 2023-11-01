@@ -508,11 +508,11 @@ These templates can generate savings estimates for your environment.
 
 - IAM
 
+  - [AWS Ensure IAM Users Receive Permissions Only Through Groups](./security/aws/iam_users_perms_via_groups_only)
   - [AWS IAM Ensure Access Keys Are Rotated](./security/aws/iam_rotate_access_keys)
   - [AWS IAM Ensure Credentials Unused For >45 days Are Disabled](./security/aws/iam_disable_45_day_creds)
   - [AWS IAM Ensure MFA Enabled For IAM Users](./security/aws/iam_mfa_enabled_for_iam_users)
   - [AWS IAM Ensure One Active Key Per IAM User](./security/aws/iam_one_active_key_per_user)
-  - [AWS IAM Ensure One Active Key Per IAM User](./security/aws/iam_users_perms_via_groups_only)
   - [AWS IAM Report Attached Admin IAM Policies](./security/aws/iam_no_admin_iam_policies_attached)
   - [AWS IAM Report Expired SSL/TLS Certificates](./security/aws/iam_expired_ssl_certs)
   - [AWS IAM Report Insufficient Password Policy](./security/aws/iam_min_password_length)
@@ -625,6 +625,8 @@ These templates can generate savings estimates for your environment.
 :categories:
   Compliance: 33
   Cost: 97
+  Operational: 23
+  SaaS Management: 13
   Security: 74
 :optimization_count: 42
 :policy_sets:
@@ -668,10 +670,10 @@ These templates can generate savings estimates for your environment.
   Savings Realized: 1
   Schedule Flexera ITAM Report: 1
   Schedule Instance: 3
-  Schedule Report: 1
+  Schedule Report: 2
   Storage Security: 1
   Superseded Compute Instances: 2
-  Tag Cardinality: 3
+  Tag Cardinality: 2
   Unlabeled Resources: 1
   Untagged Resources: 1
   Untagged resources: 1
@@ -681,9 +683,9 @@ These templates can generate savings estimates for your environment.
 :providers:
   '': 1
   AWS: 78
-  Azure: 78
+  Azure: 77
   Azure China: 1
-  Flexera: 5
+  Flexera: 6
   Flexera Cloud Management: 3
   Flexera FNMS: 1
   Flexera ITAM: 5
@@ -714,7 +716,7 @@ These templates can generate savings estimates for your environment.
   EBS: 3
   ECS: 1
   ELB: 4
-  FNMS: 1
+  FNMS: 2
   IAM: 19
   Identity: 1
   KMS: 1
@@ -733,7 +735,7 @@ These templates can generate savings estimates for your environment.
   Security: 3
   Storage: 20
   Storage Accounts: 2
-  Tags: 3
+  Tags: 2
   Usage Discount: 6
   VPC: 1
   compute: 1
