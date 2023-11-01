@@ -622,124 +622,124 @@ These templates can generate savings estimates for your environment.
 <!-- Begin Policy Template Stats -->
 <!--
 ---
-:total_count: 240
-:optimization_count: 42
 :categories:
+  Compliance: 33
   Cost: 97
   Operational: 23
   SaaS Management: 13
   Security: 74
-  Compliance: 33
-:providers:
-  Flexera Optima: 25
-  Azure: 78
-  Flexera RISC: 2
-  AWS: 78
-  Flexera: 5
-  Flexera ITAM: 5
-  Flexera Cloud Management: 3
-  Okta: 1
-  Flexera SaaS Manager: 9
-  ServiceNow: 1
-  Microsoft: 1
-  Azure China: 1
-  Oracle: 1
-  Google: 11
-  GCE: 8
-  Kubecost: 2
-  '': 1
-  GitHub: 7
-  Flexera FNMS: 1
-:services:
-  '': 61
-  Tags: 3
-  Marketplace: 2
-  AKS: 2
-  Compute: 49
-  SQL: 14
-  Lambda: 1
-  CCO: 1
-  RDS: 6
-  FNMS: 1
-  All: 2
-  Office 365: 1
-  Storage: 20
-  Storage Accounts: 2
-  Blob Store: 1
-  Common Bill Ingestion: 2
-  S3: 9
-  EBS: 3
-  ELB: 4
-  Cost Explorer: 1
-  Usage Discount: 6
-  Kubernetes: 2
-  Network Security Group: 2
-  PostgreSQL: 4
-  MySQL: 2
-  Security: 3
-  compute: 1
-  IAM: 19
-  App Service: 1
-  CloudTrail: 7
-  KMS: 1
-  DBS: 1
-  Config: 1
-  VPC: 1
-  Identity: 1
-  Policy: 1
-  ECS: 1
-  Org: 1
+:optimization_count: 42
 :policy_sets:
   '': 81
-  Tag Cardinality: 3
-  New Marketplace Products: 2
-  Database Services: 1
-  Long Running Instances: 2
-  Schedule Flexera ITAM Report: 1
-  Schedule Report: 1
-  N/A: 2
-  Unused IP Addresses: 3
-  Schedule Instance: 3
-  Savings Realized: 1
-  Unused Volumes: 6
-  Lifecycle Management: 1
-  Object Store Optimization: 3
-  Reserved Instances: 3
-  Rightsize Compute Instances: 6
-  Old Snapshots: 3
-  Inefficient Instance Usage: 2
-  Hybrid Use Benefit: 3
-  Superseded Compute Instances: 2
-  Savings Plans: 2
-  Common Bill Ingestion: 2
-  Rightsize Database Instances: 3
-  RightSize Database Services: 1
-  Unused Database Services: 2
-  Inefficient Disk Usage: 1
-  GP3 Volumes: 1
-  Savings Plan Utilization: 1
-  Reserved Instance: 2
-  Allocate VMs: 3
-  Rightsize Volumes: 2
-  Forecasting: 4
-  Native Recommendations: 1
-  Idle Compute Instances: 1
-  Committed Use Discount: 1
-  Rightsize Database Services: 1
-  Rightsize Containers: 1
-  Rightsize Clusters: 1
-  CIS: 61
-  Public Database Access: 2
-  Storage Security: 1
-  Open Buckets: 2
   AWS Config: 1
-  Untagged Resources: 1
-  Instances not running FlexNet Inventory Agent: 2
-  Long Stopped Instances: 3
+  Allocate VMs: 3
+  CIS: 61
+  Committed Use Discount: 1
+  Common Bill Ingestion: 2
+  Database Services: 1
   Disallowed Regions: 2
-  Untagged resources: 1
+  Forecasting: 4
+  GP3 Volumes: 1
+  Hybrid Use Benefit: 3
   ITAM: 4
+  Idle Compute Instances: 1
+  Inefficient Disk Usage: 1
+  Inefficient Instance Usage: 2
+  Instances not running FlexNet Inventory Agent: 2
+  Lifecycle Management: 1
+  Long Running Instances: 2
+  Long Stopped Instances: 3
+  N/A: 2
+  Native Recommendations: 1
+  New Marketplace Products: 2
+  Object Store Optimization: 3
+  Old Snapshots: 3
+  Open Buckets: 2
+  Public Database Access: 2
+  Reserved Instance: 2
+  Reserved Instances: 3
+  RightSize Database Services: 1
+  Rightsize Clusters: 1
+  Rightsize Compute Instances: 6
+  Rightsize Containers: 1
+  Rightsize Database Instances: 3
+  Rightsize Database Services: 1
+  Rightsize Volumes: 2
+  Savings Plan Utilization: 1
+  Savings Plans: 2
+  Savings Realized: 1
+  Schedule Flexera ITAM Report: 1
+  Schedule Instance: 3
+  Schedule Report: 1
+  Storage Security: 1
+  Superseded Compute Instances: 2
+  Tag Cardinality: 3
   Unlabeled Resources: 1
+  Untagged Resources: 1
+  Untagged resources: 1
+  Unused Database Services: 2
+  Unused IP Addresses: 3
+  Unused Volumes: 6
+:providers:
+  '': 1
+  AWS: 78
+  Azure: 78
+  Azure China: 1
+  Flexera: 5
+  Flexera Cloud Management: 3
+  Flexera FNMS: 1
+  Flexera ITAM: 5
+  Flexera Optima: 25
+  Flexera RISC: 2
+  Flexera SaaS Manager: 9
+  GCE: 8
+  GitHub: 7
+  Google: 11
+  Kubecost: 2
+  Microsoft: 1
+  Okta: 1
+  Oracle: 1
+  ServiceNow: 1
+:services:
+  '': 61
+  AKS: 2
+  All: 2
+  App Service: 1
+  Blob Store: 1
+  CCO: 1
+  CloudTrail: 7
+  Common Bill Ingestion: 2
+  Compute: 49
+  Config: 1
+  Cost Explorer: 1
+  DBS: 1
+  EBS: 3
+  ECS: 1
+  ELB: 4
+  FNMS: 1
+  IAM: 19
+  Identity: 1
+  KMS: 1
+  Kubernetes: 2
+  Lambda: 1
+  Marketplace: 2
+  MySQL: 2
+  Network Security Group: 2
+  Office 365: 1
+  Org: 1
+  Policy: 1
+  PostgreSQL: 4
+  RDS: 6
+  S3: 9
+  SQL: 14
+  Security: 3
+  Storage: 20
+  Storage Accounts: 2
+  Tags: 3
+  Usage Discount: 6
+  VPC: 1
+  compute: 1
+:total_count: 240
 -->
 <!-- End Policy Template Stats -->
 
