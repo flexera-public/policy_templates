@@ -407,6 +407,7 @@ These templates can generate savings estimates for your environment.
 
 - Tags
 
+  - [Azure Migrate Integration](./operational/azure/azure_migrate)
   - [Azure Tag Cardinality Report](./operational/azure/tag_cardinality)
 
 #### Flexera
@@ -417,7 +418,6 @@ These templates can generate savings estimates for your environment.
 
 - FNMS
 
-  - [Azure Migrate Integration](./operational/azure/azure_migrate)
   - [Schedule FlexNet Manager Report](./operational/fnms/schedule_fnms_reports)
 
 #### Flexera Cloud Management
@@ -511,8 +511,8 @@ These templates can generate savings estimates for your environment.
   - [AWS IAM Ensure Access Keys Are Rotated](./security/aws/iam_rotate_access_keys)
   - [AWS IAM Ensure Credentials Unused For >45 days Are Disabled](./security/aws/iam_disable_45_day_creds)
   - [AWS IAM Ensure MFA Enabled For IAM Users](./security/aws/iam_mfa_enabled_for_iam_users)
-  - [AWS IAM Ensure One Active Key Per IAM User](./security/aws/iam_one_active_key_per_user)
   - [AWS IAM Ensure One Active Key Per IAM User](./security/aws/iam_users_perms_via_groups_only)
+  - [AWS IAM Ensure One Active Key Per IAM User](./security/aws/iam_one_active_key_per_user)
   - [AWS IAM Report Attached Admin IAM Policies](./security/aws/iam_no_admin_iam_policies_attached)
   - [AWS IAM Report Expired SSL/TLS Certificates](./security/aws/iam_expired_ssl_certs)
   - [AWS IAM Report Insufficient Password Policy](./security/aws/iam_min_password_length)
@@ -625,6 +625,8 @@ These templates can generate savings estimates for your environment.
 :categories:
   Compliance: 33
   Cost: 97
+  Operational: 23
+  SaaS Management: 13
   Security: 74
 :optimization_count: 42
 :policy_sets:
