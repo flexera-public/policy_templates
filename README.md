@@ -247,6 +247,7 @@ These templates can generate savings estimates for your environment.
   - [Azure Reserved Instances Utilization MCA](./cost/azure/reserved_instances/utilization_mca)
   - [Azure Rightsize Compute Instances](./cost/azure/rightsize_compute_instances)
   - [Azure Savings Plan Recommendations](./cost/azure/savings_plan/recommendations)
+  - [Azure Savings Realized from Reservations](./cost/azure/savings_realized)
   - [Azure Schedule Instance](./cost/azure/schedule_instance)
   - [Azure Superseded Compute Instances](./cost/azure/superseded_instances)
   - [Azure Unused IP Addresses](./cost/azure/unused_ip_addresses)
@@ -289,7 +290,6 @@ These templates can generate savings estimates for your environment.
 - All
 
   - [AWS Savings Realized from Reservations](./cost/aws/savings_realized)
-  - [Azure Savings Realized from Reservations](./cost/azure/savings_realized)
 
 #### Flexera Cloud Management
 
@@ -636,11 +636,11 @@ These templates can generate savings estimates for your environment.
   GCE: 8
   Flexera Cloud Management: 3
   AWS: 78
-  Flexera: 7
+  Flexera: 6
   Oracle: 1
   Kubecost: 2
   '': 1
-  Azure: 76
+  Azure: 77
   Azure China: 1
   Flexera ITAM: 5
   Flexera RISC: 2
@@ -653,13 +653,13 @@ These templates can generate savings estimates for your environment.
 :services:
   '': 61
   Storage: 20
-  Compute: 48
+  Compute: 49
   SQL: 14
   S3: 9
   RDS: 6
   EBS: 3
   Cost Explorer: 1
-  All: 3
+  All: 2
   ELB: 4
   Common Bill Ingestion: 2
   Kubernetes: 2
@@ -709,7 +709,7 @@ These templates can generate savings estimates for your environment.
   Savings Plan Utilization: 1
   RightSize Database Services: 1
   Superseded Compute Instances: 2
-  N/A: 3
+  N/A: 2
   Inefficient Instance Usage: 2
   Inefficient Disk Usage: 1
   Common Bill Ingestion: 2
@@ -717,6 +717,7 @@ These templates can generate savings estimates for your environment.
   Rightsize Clusters: 1
   Hybrid Use Benefit: 3
   Rightsize Database Instances: 3
+  Savings Realized: 1
   Lifecycle Management: 1
   Allocate VMs: 3
   Reserved Instance: 2
