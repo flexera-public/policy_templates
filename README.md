@@ -407,6 +407,7 @@ These templates can generate savings estimates for your environment.
 
 - Tags
 
+  - [Azure Migrate Integration](./operational/azure/azure_migrate)
   - [Azure Tag Cardinality Report](./operational/azure/tag_cardinality)
 
 #### Flexera
@@ -417,7 +418,6 @@ These templates can generate savings estimates for your environment.
 
 - FNMS
 
-  - [Azure Migrate Integration](./operational/azure/azure_migrate)
   - [Schedule FlexNet Manager Report](./operational/fnms/schedule_fnms_reports)
 
 #### Flexera Cloud Management
@@ -670,10 +670,10 @@ These templates can generate savings estimates for your environment.
   Savings Realized: 1
   Schedule Flexera ITAM Report: 1
   Schedule Instance: 3
-  Schedule Report: 2
+  Schedule Report: 1
   Storage Security: 1
   Superseded Compute Instances: 2
-  Tag Cardinality: 2
+  Tag Cardinality: 3
   Unlabeled Resources: 1
   Untagged Resources: 1
   Untagged resources: 1
@@ -683,9 +683,9 @@ These templates can generate savings estimates for your environment.
 :providers:
   '': 1
   AWS: 78
-  Azure: 77
+  Azure: 78
   Azure China: 1
-  Flexera: 6
+  Flexera: 5
   Flexera Cloud Management: 3
   Flexera FNMS: 1
   Flexera ITAM: 5
@@ -716,7 +716,7 @@ These templates can generate savings estimates for your environment.
   EBS: 3
   ECS: 1
   ELB: 4
-  FNMS: 2
+  FNMS: 1
   IAM: 19
   Identity: 1
   KMS: 1
@@ -735,7 +735,7 @@ These templates can generate savings estimates for your environment.
   Security: 3
   Storage: 20
   Storage Accounts: 2
-  Tags: 2
+  Tags: 3
   Usage Discount: 6
   VPC: 1
   compute: 1
