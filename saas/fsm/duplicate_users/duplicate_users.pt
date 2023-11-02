@@ -39,15 +39,14 @@ end
 # Datasources
 ###############################################################################
 
-datasource "ds_get_host" do
-  run_script $js_get_host, rs_optima_host
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
 end
 
 datasource "ds_num_products" do
-  iterate $ds_get_host
   request do
     auth $fsm_auth
-    host val(iter_item,"host")
+    host val($ds_flexera_api_hosts, "fsm")
     verb "GET"
     scheme "https"
     path join(["/svc/orgs/", rs_org_id, "/managed-products"])
@@ -61,7 +60,6 @@ datasource "ds_num_products" do
 end
 
 datasource "ds_products" do
-  iterate $ds_get_host
   request do
     run_script $js_products, $ds_num_products, rs_org_id
   end
@@ -71,7 +69,7 @@ datasource "ds_products" do
       field "application", jmes_path(col_item, "name")
       field "id", jmes_path(col_item, "id")
       field "vendor", jmes_path(col_item, "product.vendor.name")
-      field "saas_host", val(iter_item,"host")
+      field "saas_host", val($ds_flexera_api_hosts, "fsm")
     end
   end
 end
@@ -99,7 +97,7 @@ end
 datasource "ds_product_users" do
   iterate $ds_product_num_users
   request do
-    run_script $js_product_users, val(iter_item, "totalUsers"), rs_org_id, val(iter_item, "id"), $ds_get_host
+    run_script $js_product_users, val(iter_item, "totalUsers"), rs_org_id, val(iter_item, "id"), $ds_flexera_api_hosts
   end
   result do
     encoding "json"
@@ -124,7 +122,7 @@ end
 # Scripts
 ###############################################################################
 
-script "js_get_host", type: "javascript" do
+script "js_flexera_api_hosts", type: "javascript" do
   parameters "rs_optima_host"
   result "result"
   code <<-EOS
@@ -137,13 +135,13 @@ script "js_get_host", type: "javascript" do
       flexera: "api.flexera.eu",
       fsm: "api.fsm-eu.flexeraeng.com"
     },
-    "api.optima-apac.flexeraeng.com": {
+    "api.optima-au.flexeraeng.com": {
       flexera: "api.flexera.au",
-      fsm: "api.fsm-apac.flexeraeng.com"
+      fsm: "api.fsm-au.flexeraeng.com"
     }
   }
 
-  result = [{ host: host_table[rs_optima_host]['fsm'] }]
+  result = host_table[rs_optima_host]
 EOS
 end
 
@@ -169,7 +167,7 @@ EOS
 end
 
 script "js_product_users", type: "javascript" do
-  parameters "num_items", "rs_org_id", "app_id", "ds_get_host"
+  parameters "num_items", "rs_org_id", "app_id", "ds_flexera_api_hosts"
   result "request"
   code <<-EOS
   if (num_items != null && num_items != "undefined"){
@@ -179,7 +177,7 @@ script "js_product_users", type: "javascript" do
   }
   request = {
     auth: "fsm_auth",
-    host: ds_get_host[0]["host"],
+    host: ds_flexera_api_hosts['fsm'],
     verb: "GET",
     scheme: "https",
     path: "/svc/orgs/"+rs_org_id+"/managed-products/"+app_id+"/managed-product-agents",
