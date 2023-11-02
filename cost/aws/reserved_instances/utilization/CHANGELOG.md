@@ -1,6 +1,7 @@
 # Changelog
 
 ## v2.1
+
 - Added new parameter to allow users to filter reservations by a list of specific billing centers.
 - Updated `param_utilization` parameter to have a clearer description, and to set the default utilization threshold to 100%.
 - Removed `permission` declaration block as no longer needed.
