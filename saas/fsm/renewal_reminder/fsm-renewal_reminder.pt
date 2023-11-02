@@ -7,35 +7,37 @@ severity "medium"
 category "SaaS Management"
 default_frequency "daily"
 info(
-  version: "2.7",
+  version: "3.0",
   provider: "Flexera SaaS Manager",
   service: "",
   policy_set: ""
 )
 
 ###############################################################################
-# User inputs
+# Parameters
 ###############################################################################
-
-parameter "param_days" do
-  type "number"
-  label "Upcoming Number of Days"
-  default 60
-  description "If an application renewal is due in the upcoming time period, raise an incident"
-end
 
 parameter "param_email" do
   type "list"
+  category "Policy Settings"
   label "Email addresses to notify"
-  description "Email addresses of the recipients you wish to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+  default []
+end
+
+parameter "param_days" do
+  type "number"
+  category "Policy Settings"
+  label "Upcoming Number of Days"
+  default 60
+  description "If an application renewal is due in the upcoming time period, raise an incident"
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-#authenticate with FSM
-credentials "fsm_auth" do
+credentials "auth_fsm" do
   schemes "oauth2"
   label "FSM"
   description "Select the FSM Resource Manager Credential from the list."
@@ -43,33 +45,52 @@ credentials "fsm_auth" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
-datasource "ds_get_host" do
-  run_script $js_get_host, rs_optima_host
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-au.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-au.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
 end
 
 datasource "ds_num_products" do
-  iterate $ds_get_host
   request do
-    auth $fsm_auth
-    host val(iter_item,"host")
-    verb "GET"
-    scheme "https"
+    auth $auth_fsm
+    host val($ds_flexera_api_hosts, "fsm")
     path join(["/svc/orgs/", rs_org_id, "/managed-products"])
     header "content-type", "application/json"
   end
   result do
     encoding "json"
     field "totalItems", jmes_path(response, "totalItems")
-    field "saas_host", val(iter_item,"host")
   end
 end
 
 datasource "ds_products" do
   request do
-    run_script $js_products, $ds_num_products, rs_org_id
+    run_script $js_products, $ds_num_products, $ds_flexera_api_hosts, rs_org_id
   end
   result do
     encoding "json"
@@ -87,13 +108,27 @@ datasource "ds_products" do
   end
 end
 
+script "js_products", type: "javascript" do
+  parameters "ds_num_products", "ds_flexera_api_hosts", "rs_org_id"
+  result "request"
+  code <<-EOS
+  var request = {
+    auth: "auth_fsm",
+    host: ds_flexera_api_hosts["fsm"],
+    path: "/svc/orgs/" + rs_org_id + "/managed-products",
+    headers: { "content-type": "application/json" },
+    query_params: {
+      "pageSize": ds_num_products[0]["totalItems"].toString(),
+      "includeInactive": "false"
+    }
+  }
+EOS
+end
+
 datasource "ds_licenses_summary" do
-  iterate $ds_get_host
   request do
-    auth $fsm_auth
-    host val(iter_item,"host")
-    verb "GET"
-    scheme "https"
+    auth $auth_fsm
+    host val($ds_flexera_api_hosts, "fsm")
     path join(["/svc/orgs/", rs_org_id, "/licenses/summaries"])
     header "content-type", "application/json"
   end
@@ -110,99 +145,47 @@ datasource "ds_products_with_enddate" do
   run_script $js_products_with_enddate, $ds_products, $ds_licenses_summary, $param_days
 end
 
-###############################################################################
-# Scripts
-###############################################################################
-
-script "js_get_host", type: "javascript" do
-  parameters "rs_optima_host"
-  result "result"
-  code <<-EOS
-  host_table = {
-    "api.optima.flexeraeng.com": {
-      flexera: "api.flexera.com",
-      fsm: "api.fsm.flexeraeng.com"
-    },
-    "api.optima-eu.flexeraeng.com": {
-      flexera: "api.flexera.eu",
-      fsm: "api.fsm-eu.flexeraeng.com"
-    },
-    "api.optima-apac.flexeraeng.com": {
-      flexera: "api.flexera.au",
-      fsm: "api.fsm-apac.flexeraeng.com"
-    }
-  }
-
-  result = [{ host: host_table[rs_optima_host]['fsm'] }]
-EOS
-end
-
 script "js_products_with_enddate", type: "javascript" do
   parameters "ds_products", "ds_licenses_summary", "param_days"
   result "result"
   code <<-EOS
-    var result = [];
-    var lic_enddate = {};
-    _.each(ds_licenses_summary, function(license){
-      if(license.end_date != null){
-        lic_enddate[license.lic_id]= license.end_date;
-      }
-    })
-    var end_date="";
-    _.each(ds_products, function(product){
-      _.each(product.licenses, function(license){
-        end_date=lic_enddate[license.lic_id];
-      })
-      var date = new Date();
-      date = date.setHours(24 * param_days);
-      date = new Date(date);
-      if(end_date != null){
-        var expiration_date = new Date(end_date);
-        if(expiration_date < date){
-          result.push({
-            "application":product.application
-            "pointOfContactEmail":product.pointOfContactEmail
-            "vendor":product.vendor
-            "annualCost": product.annualCost
-            "endDate":end_date
-          })
-        }
-      }
-    })
-    result = _.sortBy(result, 'endDate');
-  EOS
-end
+  result = []
+  lic_enddate = {}
 
-script "js_products", type: "javascript" do
-  parameters "ds_num_products", "rs_org_id"
-  result "request"
-  code <<-EOS
-  request = {
-    auth: "fsm_auth",
-    host: ds_num_products[0]["saas_host"].toString(),
-    verb: "GET",
-    scheme: "https",
-    path: "/svc/orgs/"+rs_org_id+"/managed-products",
-    headers: {
-      "content-type": "application/json"
-    },
-    query_params: {
-      "pageSize": ds_num_products[0]["totalItems"].toString(),
-      "includeInactive": "false"
+  _.each(ds_licenses_summary, function(license) {
+    if (license['end_date'] != null) {
+      lic_enddate[license['lic_id']] = license['end_date']
     }
-  }
+  })
+
+  end_date = ""
+
+  _.each(ds_products, function(product) {
+    _.each(product['licenses'], function(license) {
+      end_date = lic_enddate[license['lic_id']]
+    })
+
+    date = new Date()
+    date = date.setHours(24 * param_days)
+    date = new Date(date)
+
+    if (end_date != null) {
+      expiration_date = new Date(end_date)
+
+      if (expiration_date < date) {
+        result.push({
+          application: product['application'],
+          pointOfContactEmail: product['pointOfContactEmail'],
+          vendor: product['vendor'],
+          annualCost: product['annualCost'],
+          endDate: end_date
+        })
+      }
+    }
+  })
+
+  result = _.sortBy(result, 'endDate')
 EOS
-end
-
-###############################################################################
-# Escalations
-###############################################################################
-
-escalation "report_summary" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
 end
 
 ###############################################################################
@@ -211,27 +194,37 @@ end
 
 policy "policy_fsm_renewal_reminder" do
   validate $ds_products_with_enddate do
-      summary_template "{{ len data }} Expiring Applications Found"
-
-      escalate $report_summary
-      check eq(size(data), 0)
-      export do
-        field "endDate" do
-          label "Expiration Date (YYYY-MM-DD)"
-        end
-        field "vendor" do
-          label "Vendor"
-        end
-        field "id" do
-          label "Application"
-          path "application"
-        end
-        field "pointOfContactEmail" do
-          label "Point of Contact"
-        end
-        field "annualCost" do
-          label "Annual Cost"
-        end
+    summary_template "{{ len data }} Expiring Applications Found"
+    check eq(size(data), 0)
+    escalate $esc_email
+    export do
+      field "endDate" do
+        label "Expiration Date (YYYY-MM-DD)"
+      end
+      field "vendor" do
+        label "Vendor"
+      end
+      field "id" do
+        label "Application"
+        path "application"
+      end
+      field "pointOfContactEmail" do
+        label "Point of Contact"
+      end
+      field "annualCost" do
+        label "Annual Cost"
+      end
     end
   end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
 end

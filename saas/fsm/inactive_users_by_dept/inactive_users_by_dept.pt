@@ -7,7 +7,7 @@ severity "medium"
 category "SaaS Management"
 default_frequency "daily"
 info(
-  version: "2.8",
+  version: "3.0",
   provider: "Flexera SaaS Manager",
   service: "",
   policy_set: ""
@@ -17,37 +17,39 @@ info(
 # Parameters
 ###############################################################################
 
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+  default []
+end
+
 parameter "param_num_days" do
   type "number"
+  category "Policy Settings"
   label "Inactive Days Threshold"
   description "Number of inactive days to trigger an incident"
   default 60
   min_value 60
 end
 
-parameter "param_email" do
-  type "list"
-  label "Email addresses to notify"
-  description "Email addresses of the recipients you wish to notify"
-end
-
 ###############################################################################
 # Authentication
 ###############################################################################
 
-#authenticate with FSM
-credentials "fsm_auth" do
+credentials "auth_fsm" do
   schemes "oauth2"
   label "FSM"
   description "Select the FSM Resource Manager Credential from the list."
-  tags "provider=flexera"
+  tags "provider=flexera_fsm"
 end
 
 ###############################################################################
 # Pagination
 ###############################################################################
 
-pagination "pag_get_inactive_users" do
+pagination "pagination_inactive" do
   get_page_marker do
     body_path jq(response, 'if length < 10000 then null else if $marker != "" then $marker | tonumber + 1 else 2 end end')
   end
@@ -57,10 +59,9 @@ pagination "pag_get_inactive_users" do
 end
 
 ###############################################################################
-# Datasources and Scripts
+# Datasources & Scripts
 ###############################################################################
 
-#GET HOST
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
 end
@@ -91,11 +92,9 @@ end
 #GET TOTAL PRODUCT ABANDONED USERS (INACTIVE)
 datasource "ds_inactive_users" do
   request do
-    auth $fsm_auth
-    pagination $pag_get_inactive_users
+    auth $auth_fsm
+    pagination $pagination_inactive
     host val($ds_flexera_api_hosts, "fsm")
-    verb "GET"
-    scheme "https"
     path join(["/svc/orgs/", rs_org_id, "/analytics/product-abandoned-users"])
     header "content-type", "application/json"
     query "pageSize", "10000"
@@ -121,31 +120,31 @@ end
 
 #FORMAT DATA
 datasource "ds_formatted_data" do
-  run_script $js_format_data, $ds_inactive_users
+  run_script $js_formatted_data, $ds_inactive_users
 end
 
-script "js_format_data", type: "javascript" do
+script "js_formatted_data", type: "javascript" do
+  parameters "ds_inactive_users"
   result "result"
-  parameters "inactive_users"
   code <<-EOS
-  _.each(inactive_users, function(user){
-    if(user.days_since_active == 0){
-      user["days_since_active"] = "Never Active"
-    }
+  result = []
+
+  _.each(ds_inactive_users, function(user) {
+    days_since_active = user["days_since_active"]
+    if (days_since_active == 0) {  days_since_active = "Never Active" }
+
+    result.push({
+      department: user['department'],
+      location: user['location'],
+      email: user['email'],
+      first_name: user['first_name'],
+      last_name: user['last_name'],
+      managed_product_name: user['managed_product_name'],
+      total_items: user['total_items'],
+      days_since_active: days_since_active
+    })
   })
-  var result = inactive_users
-  EOS
-end
-
-###############################################################################
-# Escalations
-###############################################################################
-
-escalation "esc_report_summary" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
+EOS
 end
 
 ###############################################################################
@@ -155,9 +154,9 @@ end
 policy "policy_fsm_inactive_users_by_dept" do
   validate_each $ds_formatted_data do
     summary_template "{{ len data }} Inactive SaaS Users"
-    escalate $esc_report_summary
     check ne(val(item, "days_since_active"), "Never Active")
-    check lt(val(item,"days_since_active"),$param_num_days)
+    check lt(val(item, "days_since_active"), $param_num_days)
+    escalate $esc_email
     export do
       field "last_name" do
         label "Last Name"
@@ -182,4 +181,15 @@ policy "policy_fsm_inactive_users_by_dept" do
       end
     end
   end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
 end

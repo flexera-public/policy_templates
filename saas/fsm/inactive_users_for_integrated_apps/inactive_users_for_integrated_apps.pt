@@ -7,44 +7,46 @@ severity "low"
 category "SaaS Management"
 default_frequency "daily"
 info(
-  version: "2.2",
-  provider: "Flexera",
-  service: "All",
-  policy_set: "N/A"
+  version: "3.0",
+  provider: "Flexera SaaS Manager",
+  service: "",
+  policy_set: ""
 )
 
 ###############################################################################
 # Parameters
 ###############################################################################
 
-parameter "param_application_name" do
-  type "list"
-  label "Application Name"
-  description "Select Application Name e.g., 'AppExchange Sandbox','Office 365', 'Salesforce Sandbox'"
-end
-
 parameter "param_email" do
   type "list"
-  label "Email addresses"
+  category "Policy Settings"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+  default []
+end
+
+parameter "param_application_name" do
+  type "list"
+  category "Policy Settings"
+  label "Application Name"
+  description "Select Application Name e.g., 'AppExchange Sandbox', 'Office 365', 'Salesforce Sandbox'"
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-#AUTHENTICATE WITH FLEXERA/SAAS MANAGEMENT
-credentials "auth_rs" do
+credentials "auth_fsm" do
   schemes "oauth2"
-  label "SaaS_Management"
-  description "Select FlexeraOne OAuth2 credentials"
-  tags "provider=flexera"
+  label "FSM"
+  description "Select the FSM Resource Manager Credential from the list."
+  tags "provider=flexera_fsm"
 end
 
 ###############################################################################
-# Datasources and Scripts
+# Datasources & Scripts
 ###############################################################################
 
-#GET HOST
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
 end
@@ -72,10 +74,9 @@ script "js_flexera_api_hosts", type: "javascript" do
 EOS
 end
 
-#GET MANAGED APPLICATION LIST
 datasource "ds_managed_apps" do
   request do
-    auth $auth_rs
+    auth $auth_fsm
     host val($ds_flexera_api_hosts, "flexera")
     path join(["/saas/v1/orgs/", rs_org_id, "/managed-apps"])
   end
@@ -91,33 +92,26 @@ datasource "ds_managed_apps" do
   end
 end
 
-#IDENTIFY MANAGED APP IDS
 datasource "ds_app_id_output" do
-  run_script $js_get_app_id, $ds_managed_apps, $param_application_name
+  run_script $js_app_id_output, $ds_managed_apps, $param_application_name
 end
 
-script "js_get_app_id", type: "javascript" do
-  parameters "managed_apps","application_name"
+script "js_app_id_output", type: "javascript" do
+  parameters "ds_managed_apps", "param_application_name"
   result "result"
   code <<-EOS
-    var result = []
-    _.each(managed_apps, function(ma){
-      _.each(application_name, function(app){
-        if(ma.name === app){
-          result.push( { "application_id": ma.id } )
-        }
-      })
-    })
-  EOS
+  result = _.filter(ds_managed_apps, function(app) {
+    return _.contains(param_application_name, app['name'])
+  })
+EOS
 end
 
-#GET INTEGRATED APPLICATIONS
 datasource "ds_integrated_apps" do
   iterate $ds_app_id_output
   request do
-    auth $auth_rs
+    auth $auth_fsm
     host val($ds_flexera_api_hosts, "fsm")
-    path join(["/svc/orgs/", rs_org_id, "/sso-discovery/", val(iter_item,"application_id")])
+    path join(["/svc/orgs/", rs_org_id, "/sso-discovery/", val(iter_item, "app_id")])
     query "includeInactive", "false"
     query "includeUnmapped", "true"
     query "page", "1"
@@ -126,74 +120,58 @@ datasource "ds_integrated_apps" do
   result do
     encoding "json"
     collect jmes_path(response, "items") do
-        field "managed_product_id", jmes_path(col_item, "mappedManagedProduct.id")
-        field "managed_product_name", jmes_path(col_item, "mappedManagedProduct.name")
-        field "managed_product_children", jmes_path(col_item, "mappedManagedProduct.managedProductChildren")
+      field "managed_product_id", jmes_path(col_item, "mappedManagedProduct.id")
+      field "managed_product_name", jmes_path(col_item, "mappedManagedProduct.name")
+      field "managed_product_children", jmes_path(col_item, "mappedManagedProduct.managedProductChildren")
     end
   end
 end
 
-#FILTER OUT NULLS
 datasource "ds_integrated_apps_filtered" do
-  run_script $js_filter_nulls, $ds_integrated_apps
+  run_script $js_integrated_apps_filtered, $ds_integrated_apps
 end
 
-script "js_filter_nulls", type: "javascript" do
-  parameters "integrated_apps"
+script "js_integrated_apps_filtered", type: "javascript" do
+  parameters "ds_integrated_apps"
   result "result"
   code <<-EOS
-    var result =
-    _.filter(integrated_apps, function(ia){ return ia.managed_product_id != null })
-  EOS
+  result = _.filter(ds_integrated_apps, function(ia) { return ia['managed_product_id'] != null })
+EOS
 end
 
-#GET INTEGRATED APPLICATION USERS LIST
 datasource "ds_app_users" do
   iterate $ds_integrated_apps_filtered
   request do
-    auth $auth_rs
+    auth $auth_fsm
     host val($ds_flexera_api_hosts, "fsm")
-    path join(["/svc/orgs/", rs_org_id, "/managed-products/", val(iter_item,"managed_product_id"), "/managed-product-agents"])
+    path join(["/svc/orgs/", rs_org_id, "/managed-products/", val(iter_item, "managed_product_id"), "/managed-product-agents"])
     query "asc", "true"
     query "sort", "uniqueId"
   end
   result do
     encoding "json"
     collect jmes_path(response, "items") do
-    field "user_unique_id", jmes_path(col_item, "uniqueId")
-    field "user_first_name", jmes_path(col_item, "firstName")
-    field "user_last_name", jmes_path(col_item, "lastName")
-    field "user_email", jmes_path(col_item, "email")
-    field "user_employee_status", jmes_path(col_item, "employeeStatus")
-    field "managed_product_id", jmes_path(col_item, "managedProductId")
-    field "managed_product_name", val(iter_item,"managed_product_name")
+      field "user_unique_id", jmes_path(col_item, "uniqueId")
+      field "user_first_name", jmes_path(col_item, "firstName")
+      field "user_last_name", jmes_path(col_item, "lastName")
+      field "user_email", jmes_path(col_item, "email")
+      field "user_employee_status", jmes_path(col_item, "employeeStatus")
+      field "managed_product_id", jmes_path(col_item, "managedProductId")
+      field "managed_product_name", val(iter_item, "managed_product_name")
     end
   end
 end
 
-#FILTER FOR INACTIVE USERS
 datasource "ds_app_inactive_users" do
-  run_script $js_filter_inactive_users, $ds_app_users
+  run_script $js_app_inactive_users, $ds_app_users
 end
 
-script "js_filter_inactive_users", type: "javascript" do
-  parameters "app_users"
+script "js_app_inactive_users", type: "javascript" do
+  parameters "ds_app_users"
   result "result"
   code <<-EOS
-    var result =
-    _.filter(app_users, function(au){ return au.user_employee_status == "Inactive" })
-  EOS
-end
-
-###############################################################################
-# Escalations
-###############################################################################
-
-escalation "esc_inactive_users_report" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
+  result = _.filter(ds_app_users, function(user) { return user['user_employee_status'] == "Inactive" })
+EOS
 end
 
 ###############################################################################
@@ -204,8 +182,8 @@ policy "policy_managed_apps_inactive_users" do
   validate $ds_app_inactive_users do
     summary_template "SaaS Manager Inactive Users for Integrated Applications"
     detail_template "Report showing list of Inactive Users for Integrated Applications"
-    escalate $esc_inactive_users_report
     check eq(0,1)
+    escalate $esc_email
     export do
       resource_level false
       field "managed_product_name" do
@@ -228,4 +206,15 @@ policy "policy_managed_apps_inactive_users" do
       end
     end
   end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
 end

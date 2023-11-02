@@ -1,8 +1,9 @@
 # Changelog
 
-## v2.5
+## v3.0
 
 - Added support for APAC API endpoint
+- General code cleanup and normalization
 
 ## v2.4
 

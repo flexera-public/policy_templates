@@ -7,34 +7,36 @@ severity "medium"
 category "SaaS Management"
 default_frequency "daily"
 info(
-  version: "2.5",
+  version: "3.0",
   provider: "Flexera SaaS Manager",
   service: "",
-  policy_set: "",
+  policy_set: ""
 )
 
 ###############################################################################
-# User inputs
+# Parameters
 ###############################################################################
-
-parameter "param_category" do
-  type "string"
-  label "Department to report entitled SaaS users"
-  description "Enter Department for SaaS User Report"
-end
 
 parameter "param_email" do
   type "list"
+  category "Policy Settings"
   label "Email addresses to notify"
-  description "Email addresses of the recipients you wish to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+  default []
+end
+
+parameter "param_category" do
+  type "string"
+  category "Policy Settings"
+  label "Department to report entitled SaaS users"
+  description "Enter Department for SaaS User Report"
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-#authenticate with FSM
-credentials "fsm_auth" do
+credentials "auth_fsm" do
   schemes "oauth2"
   label "FSM"
   description "Select the FSM Resource Manager Credential from the list."
@@ -42,20 +44,40 @@ credentials "fsm_auth" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
-datasource "ds_get_host" do
-  run_script $js_get_host, rs_optima_host
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-au.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-au.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
 end
 
 datasource "ds_managed_products" do
-  iterate $ds_get_host
   request do
-    auth $fsm_auth
-    host val(iter_item,"host")
-    verb "GET"
-    scheme "https"
+    auth $auth_fsm
+    host val($ds_flexera_api_hosts, "fsm")
     path join(["/svc/orgs/", rs_org_id, "/managed-products"])
     header "content-type", "application/json"
   end
@@ -65,7 +87,6 @@ datasource "ds_managed_products" do
       field "appId", val(col_item, "id")
       field "appName", val(col_item, "name")
       field "appVendor", jmes_path(col_item, "product.vendor.name")
-      field "saas_host", val(iter_item,"host")
     end
   end
 end
@@ -73,7 +94,7 @@ end
 datasource "ds_managed_product_agents" do
   iterate $ds_managed_products
   request do
-    run_script $js_managed_product_agents, val(iter_item, "appId"), $param_category, rs_org_id, val(iter_item, "saas_host")
+    run_script $js_managed_product_agents, val(iter_item, "appId"), $ds_flexera_api_hosts, $param_category, rs_org_id
   end
   result do
     encoding "json"
@@ -90,63 +111,18 @@ datasource "ds_managed_product_agents" do
   end
 end
 
-###############################################################################
-# Scripts
-###############################################################################
-
-script "js_get_host", type: "javascript" do
-  parameters "rs_optima_host"
-  result "result"
-  code <<-EOS
-  host_table = {
-    "api.optima.flexeraeng.com": {
-      flexera: "api.flexera.com",
-      fsm: "api.fsm.flexeraeng.com"
-    },
-    "api.optima-eu.flexeraeng.com": {
-      flexera: "api.flexera.eu",
-      fsm: "api.fsm-eu.flexeraeng.com"
-    },
-    "api.optima-apac.flexeraeng.com": {
-      flexera: "api.flexera.au",
-      fsm: "api.fsm-apac.flexeraeng.com"
-    }
-  }
-
-  result = [{ host: host_table[rs_optima_host]['fsm'] }]
-EOS
-end
-
 script "js_managed_product_agents", type: "javascript" do
-  parameters "appId", "param_category", "rs_org_id", "saas_host"
+  parameters "appId", "ds_flexera_api_hosts", "param_category", "rs_org_id"
   result "request"
   code <<-EOS
-  request = {
-    auth: "fsm_auth",
-    host: saas_host,
-    verb: "GET",
-    scheme: "https",
-    path: "/svc/orgs/"+rs_org_id+"/managed-products/"+appId+"/managed-product-agents",
-    headers: {
-      "content-type": "application/json",
-    },
-    query_params: {
-      "sort": "uniqueId",
-      "deptFilter": param_category
-    }
+  var request = {
+    auth: "auth_fsm",
+    host: ds_flexera_api_hosts["fsm"],
+    path: "/svc/orgs/" + rs_org_id + "/managed-products/" + appId + "/managed-product-agents",
+    headers: { "content-type": "application/json" },
+    query_params: { "sort": "uniqueId", "deptFilter": param_category }
   }
 EOS
-end
-
-###############################################################################
-# Escalations
-###############################################################################
-
-escalation "report_summary" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
 end
 
 ###############################################################################
@@ -156,6 +132,8 @@ end
 policy "policy_dept_app_users" do
   validate $ds_managed_product_agents do
     summary_template "{{ len data }} SaaS Subscribers for {{ parameters.param_category }} Found"
+    check eq(size(data), 0)
+    escalate $esc_email
     export do
       field "appName" do
         label "Application"
@@ -176,7 +154,16 @@ policy "policy_dept_app_users" do
         label "Email"
       end
     end
-    escalate $report_summary
-    check eq(size(data), 0)
   end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
 end

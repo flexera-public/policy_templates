@@ -7,60 +7,77 @@ severity "low"
 category "SaaS Management"
 default_frequency "weekly"
 info(
-  version: "2.7",
+  version: "3.0",
   provider: "Flexera SaaS Manager",
   service: "",
   policy_set: ""
 )
 
 ###############################################################################
-# User inputs
+# Parameters
 ###############################################################################
-
-parameter "param_too_many_apps" do
-  type "number"
-  label "Excessive Number of Apps in a Single Category"
-  description "Enter an excessive number of apps per category. If a single category has N number of apps or greater then an incident will be raised."
-end
 
 parameter "param_email" do
   type "list"
+  category "Policy Settings"
   label "Email addresses to notify"
-  description "Email addresses of the recipients you wish to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+  default []
+end
+
+parameter "param_too_many_apps" do
+  type "number"
+  category "Policy Settings"
+  label "Excessive Number of Apps in a Single Category"
+  description "Enter an excessive number of apps per category. If a single category has N number of apps or greater then an incident will be raised."
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-#authenticate with FSM
-credentials "fsm_auth" do
+credentials "auth_fsm" do
   schemes "oauth2"
   label "FSM"
   description "Select the FSM Resource Manager Credential from the list."
   tags "provider=flexera_fsm"
 end
 
-
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
-datasource "ds_get_host" do
-  run_script $js_get_host, rs_optima_host
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
 end
 
-datasource "ds_filtered_apps" do
-  run_script $js_filtered_apps, $ds_managed_products, $param_too_many_apps
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-au.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-au.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
 end
 
 datasource "ds_managed_products" do
-  iterate $ds_get_host
   request do
-    auth $fsm_auth
-    host val(iter_item,"host")
-    verb "GET"
-    scheme "https"
+    auth $auth_fsm
+    host val($ds_flexera_api_hosts, "fsm")
     path join(["/svc/orgs/", rs_org_id, "/managed-products"])
     header "content-type", "application/json"
   end
@@ -74,38 +91,38 @@ datasource "ds_managed_products" do
   end
 end
 
-###############################################################################
-# Scripts
-###############################################################################
+datasource "ds_filtered_apps" do
+  run_script $js_filtered_apps, $ds_managed_products, $param_too_many_apps
+end
 
 script "js_filtered_apps", type: "javascript" do
-  parameters "apps", "param_too_many_apps"
+  parameters "ds_managed_products", "param_too_many_apps"
   result "result"
   code <<-EOS
-  var result = [];
-  var appCatArray = [];
+  result = []
+  appCatArray = []
 
-  _.each(apps, function(app){
-      currentCategory = app["category"];
+  _.each(ds_managed_products, function(app){
+      currentCategory = app["category"]
       if (appCatArray.indexOf(currentCategory) == -1){
-        appCatArray.push(currentCategory);
+        appCatArray.push(currentCategory)
       }
   })
 
   for (i = 0; i < appCatArray.length; i++) {
-    var uniqueAppCategory = appCatArray[i];
-    var categoryApps = "";
-    var count = 0;
-    _.each(apps, function(app){
-        currentApp = app["name"];
-        currentCat = app["category"];
+    uniqueAppCategory = appCatArray[i]
+    categoryApps = ""
+    count = 0
+    _.each(ds_managed_products, function(app){
+        currentApp = app["name"]
+        currentCat = app["category"]
         if (uniqueAppCategory == currentCat && uniqueAppCategory != null) {
           count++
           if (categoryApps == "") {
-            categoryApps = currentApp;
+            categoryApps = currentApp
           }
           else {
-            categoryApps = categoryApps + ", " + currentApp;
+            categoryApps = categoryApps + ", " + currentApp
           }
         }
     })
@@ -118,42 +135,8 @@ script "js_filtered_apps", type: "javascript" do
     }
   }
 
-  result = _.sortBy(result, 'appCategory');
+  result = _.sortBy(result, 'appCategory')
 EOS
-end
-
-script "js_get_host", type: "javascript" do
-  parameters "rs_optima_host"
-  result "result"
-  code <<-EOS
-  host_table = {
-    "api.optima.flexeraeng.com": {
-      flexera: "api.flexera.com",
-      fsm: "api.fsm.flexeraeng.com"
-    },
-    "api.optima-eu.flexeraeng.com": {
-      flexera: "api.flexera.eu",
-      fsm: "api.fsm-eu.flexeraeng.com"
-    },
-    "api.optima-apac.flexeraeng.com": {
-      flexera: "api.flexera.au",
-      fsm: "api.fsm-apac.flexeraeng.com"
-    }
-  }
-
-  result = [{ host: host_table[rs_optima_host]['fsm'] }]
-EOS
-end
-
-###############################################################################
-# Escalations
-###############################################################################
-
-escalation "report_summary" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
 end
 
 ###############################################################################
@@ -163,8 +146,8 @@ end
 policy "policy_fsm_excessive_apps" do
   validate $ds_filtered_apps do
     summary_template "{{ len data }} SaaS App Categories with more than {{ parameters.param_too_many_apps }} Apps"
-    escalate $report_summary
     check eq(size(data), 0)
+    escalate $esc_email
     export do
       field "appCategory" do
         label "Application Category"
@@ -174,4 +157,15 @@ policy "policy_fsm_excessive_apps" do
       end
     end
   end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
 end

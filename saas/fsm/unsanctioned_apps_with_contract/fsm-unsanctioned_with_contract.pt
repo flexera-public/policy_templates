@@ -7,28 +7,29 @@ severity "high"
 category "SaaS Management"
 default_frequency "daily"
 info(
-  version: "2.6",
+  version: "3.0",
   provider: "Flexera SaaS Manager",
   service: "",
   policy_set: ""
 )
 
 ###############################################################################
-# User inputs
+# Parameters
 ###############################################################################
 
 parameter "param_email" do
   type "list"
+  category "Policy Settings"
   label "Email addresses to notify"
-  description "Email addresses of the recipients you wish to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+  default []
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-#authenticate with FSM
-credentials "fsm_auth" do
+credentials "auth_fsm" do
   schemes "oauth2"
   label "FSM"
   description "Select the FSM Resource Manager Credential from the list."
@@ -36,33 +37,52 @@ credentials "fsm_auth" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
-datasource "ds_get_host" do
-  run_script $js_get_host, rs_optima_host
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-au.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-au.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
 end
 
 datasource "ds_num_products" do
-  iterate $ds_get_host
   request do
-    auth $fsm_auth
-    host val(iter_item,"host")
-    verb "GET"
-    scheme "https"
+    auth $auth_fsm
+    host val($ds_flexera_api_hosts, "fsm")
     path join(["/svc/orgs/", rs_org_id, "/managed-products"])
     header "content-type", "application/json"
   end
   result do
     encoding "json"
     field "totalItems", jmes_path(response, "totalItems")
-    field "saas_host", val(iter_item,"host")
   end
 end
 
 datasource "ds_products" do
   request do
-    run_script $js_products, $ds_num_products, rs_org_id
+    run_script $js_products, $ds_num_products, $ds_flexera_api_hosts, rs_org_id
   end
   result do
     encoding "json"
@@ -75,26 +95,39 @@ datasource "ds_products" do
   end
 end
 
+script "js_products", type: "javascript" do
+  parameters "ds_num_products", "ds_flexera_api_hosts", "rs_org_id"
+  result "request"
+  code <<-EOS
+  var request = {
+    auth: "auth_fsm",
+    host: ds_flexera_api_hosts["fsm"],
+    path: "/svc/orgs/" + rs_org_id + "/managed-products",
+    headers: { "content-type": "application/json" },
+    query_params: {
+      "pageSize": ds_num_products[0]["totalItems"].toString(),
+      "includeInactive": "false"
+    }
+  }
+EOS
+end
+
 datasource "ds_num_unsanctioned" do
-  iterate $ds_get_host
   request do
-    auth $fsm_auth
-    host val(iter_item,"host")
-    verb "GET"
-    scheme "https"
+    auth $auth_fsm
+    host val($ds_flexera_api_hosts, "fsm")
     path join(["/svc/orgs/", rs_org_id, "/financial-discovery"])
     header "content-type", "application/json"
   end
   result do
     encoding "json"
     field "totalItems", jmes_path(response, "totalItems")
-    field "saas_host", val(iter_item,"host")
   end
 end
 
 datasource "ds_unsanctioned" do
   request do
-    run_script $js_unsanctioned, $ds_num_unsanctioned, rs_org_id
+    run_script $js_unsanctioned, $ds_num_unsanctioned, $ds_flexera_api_hosts, rs_org_id
   end
   result do
     encoding "json"
@@ -109,89 +142,36 @@ datasource "ds_unsanctioned" do
   end
 end
 
+script "js_unsanctioned", type: "javascript" do
+  parameters "ds_num_unsanctioned", "ds_flexera_api_hosts", "rs_org_id"
+  result "request"
+  code <<-EOS
+  var request = {
+    auth: "auth_fsm",
+    host: ds_flexera_api_hosts["fsm"],
+    path: "/svc/orgs/" + rs_org_id + "/financial-discovery",
+    headers: { "content-type": "application/json" },
+    query_params: { "pageSize": ds_num_unsanctioned[0]["totalItems"].toString() }
+  }
+EOS
+end
+
 datasource "ds_format_data" do
   run_script $js_format_data, $ds_products, $ds_unsanctioned
-end
-
-###############################################################################
-# Scripts
-###############################################################################
-
-script "js_get_host", type: "javascript" do
-  parameters "rs_optima_host"
-  result "result"
-  code <<-EOS
-  host_table = {
-    "api.optima.flexeraeng.com": {
-      flexera: "api.flexera.com",
-      fsm: "api.fsm.flexeraeng.com"
-    },
-    "api.optima-eu.flexeraeng.com": {
-      flexera: "api.flexera.eu",
-      fsm: "api.fsm-eu.flexeraeng.com"
-    },
-    "api.optima-apac.flexeraeng.com": {
-      flexera: "api.flexera.au",
-      fsm: "api.fsm-apac.flexeraeng.com"
-    }
-  }
-
-  result = [{ host: host_table[rs_optima_host]['fsm'] }]
-EOS
-end
-
-script "js_products", type: "javascript" do
-  parameters "ds_num_products", "rs_org_id"
-  result "request"
-  code <<-EOS
-  request = {
-    auth: "fsm_auth",
-    host: ds_num_products[0]["saas_host"],
-    verb: "GET",
-    scheme: "https",
-    path: "/svc/orgs/"+rs_org_id+"/managed-products",
-    headers: {
-      "content-type": "application/json"
-    },
-    query_params: {
-      "pageSize": ds_num_products[0]["totalItems"].toString(),
-      "includeInactive": "false"
-    }
-  }
-EOS
-end
-
-script "js_unsanctioned", type: "javascript" do
-  parameters "ds_num_unsanctioned", "rs_org_id"
-  result "request"
-  code <<-EOS
-  request = {
-    auth: "fsm_auth",
-    host: ds_num_unsanctioned[0]["saas_host"],
-    verb: "GET",
-    scheme: "https",
-    path: "/svc/orgs/"+rs_org_id+"/financial-discovery",
-    headers: {
-      "content-type": "application/json"
-    },
-    query_params: {
-      "pageSize": ds_num_unsanctioned[0]["totalItems"].toString()
-    }
-  }
-EOS
 end
 
 script "js_format_data", type: "javascript" do
   parameters "ds_products", "ds_unsanctioned"
   result "result"
   code <<-EOS
-  var result = [];
-  var unsanctioned_product_names = _.pluck(ds_unsanctioned, 'product');
+  result = []
+  unsanctioned_product_names = _.pluck(ds_unsanctioned, 'product')
 
-  _.each(ds_products, function(prod){
-    if (_.contains(unsanctioned_product_names, prod["application"])){
-      var expenses = _.where(ds_unsanctioned, {product: prod["application"]});
-      var latest_expense = _.max(expenses, function(expense){ return expense.latestExpenseDate; });
+  _.each(ds_products, function(prod) {
+    if (_.contains(unsanctioned_product_names, prod["application"])) {
+      expenses = _.where(ds_unsanctioned, { product: prod["application"]} )
+      latest_expense = _.max(expenses, function(expense) { return expense['latestExpenseDate'] })
+
       result.push({
         product: prod["application"],
         vendor: prod["vendor"],
@@ -207,47 +187,47 @@ EOS
 end
 
 ###############################################################################
-# Escalations
-###############################################################################
-
-escalation "report_summary" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
-end
-
-###############################################################################
 # Policy
 ###############################################################################
 
 policy "policy_fsm_unsanctioned_with_contract" do
   validate $ds_format_data do
-      summary_template "{{ len data }} Unsanctioned SaaS Purchases with Existing Contracts"
-      export do
-        field "product" do
-          label "Application"
-        end
-        field "vendor" do
-          label "Vendor"
-        end
-        field "annualCost" do
-          label "Annual Contract Cost"
-        end
-        field "licensePOC" do
-          label "Contract Point of Contact"
-        end
-        field "expenseSum" do
-          label "Expense Cost"
-        end
-        field "latestExpenseDate" do
-          label "Latest Expense Date"
-        end
-        field "expensePurchaser" do
-          label "Expense Purchaser"
-        end
+    summary_template "{{ len data }} Unsanctioned SaaS Purchases with Existing Contracts"
+    check eq(size(data), 0)
+    escalate $esc_email
+    export do
+      field "product" do
+        label "Application"
       end
-      escalate $report_summary
-      check eq(size(data), 0)
+      field "vendor" do
+        label "Vendor"
+      end
+      field "annualCost" do
+        label "Annual Contract Cost"
+      end
+      field "licensePOC" do
+        label "Contract Point of Contact"
+      end
+      field "expenseSum" do
+        label "Expense Cost"
+      end
+      field "latestExpenseDate" do
+        label "Latest Expense Date"
+      end
+      field "expensePurchaser" do
+        label "Expense Purchaser"
+      end
+    end
   end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
 end
