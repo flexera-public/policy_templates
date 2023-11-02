@@ -2,7 +2,7 @@
 
 ## v2.6
 
-- Added support for APAC API endpoints
+- Added support for APAC API endpoint
 
 ## v2.5
 
