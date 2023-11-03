@@ -15,8 +15,12 @@ This policy integrates with the Flexera SaaS Manager API to retrieve inactive us
 
 This policy has the following input parameters required when launching the policy.
 
-- *Email addresses to notify* - Email addresses of the recipients you wish to notify
+- *Email Addresses* - Email addresses of the recipients you wish to notify
 - *Application Name* - Name of the managed application for which you wish to retrieve inactive users for its integrated applications.
+
+## Policy Actions
+
+- Send an email report
 
 ## Prerequisites
 
@@ -30,12 +34,8 @@ Other prerequisites:
 
 For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
 
-Provider tag value to match this policy: `flexera_fsm`
+Provider tag value to match this policy: `flexera`
 
 Required permissions in the provider:
 
 - Administrator, Application Administrator, Viewer, or Security Administrator in FSM
-
-## Policy Actions
-
-- Sends an email notification
