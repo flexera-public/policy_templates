@@ -1,6 +1,6 @@
 # SaaS Manager - Renewal Reminder
 
-## What it does
+## What It Does
 
 This policy will create an incident when Flexera SaaS Manager identifies applications whose expiration date is approaching.
 

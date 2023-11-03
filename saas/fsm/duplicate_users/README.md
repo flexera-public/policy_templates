@@ -1,6 +1,6 @@
 # SaaS Manager - Duplicate User Accounts
 
-## What it does
+## What It Does
 
 This policy will create an incident when Flexera SaaS Manager identifies duplicate user accounts within a single managed SaaS application.
 

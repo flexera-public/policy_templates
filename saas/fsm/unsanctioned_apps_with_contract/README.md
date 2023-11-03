@@ -1,6 +1,6 @@
 # SaaS Manager - Unsanctioned Applications with Existing Contract
 
-## What it does
+## What It Does
 
 This policy will create an incident when Flexera SaaS Manager identifies unsanctioned SaaS purchases for managed applications under an existing license contract.
 

@@ -1,6 +1,6 @@
 # SaaS Manager - Redundant Apps
 
-## What it does
+## What It Does
 
 This policy will create an incident when Flexera SaaS Manager identifies users entitled to SaaS apps within a specified department.
 

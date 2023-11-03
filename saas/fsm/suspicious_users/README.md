@@ -1,6 +1,6 @@
 # SaaS Manager - Suspicious Users
 
-## What it does
+## What It Does
 
 This policy will create an incident when Flexera SaaS Manager identifies suspicious users logging into SaaS applications.
 

@@ -1,6 +1,6 @@
 # SaaS Manager - Inactive Users for Integrated Applications
 
-## What it does
+## What It Does
 
 This policy retrieves inactive users for the Integrated Applications of the specified Managed SaaS Application and creates an incident with the output.
 
