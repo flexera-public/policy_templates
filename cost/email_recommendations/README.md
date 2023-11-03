@@ -18,6 +18,7 @@ This policy has the following input parameters required when launching the polic
 - *Allow/Deny Cloud Account List* - A list of allowed or denied cloud account IDs/names, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all cloud accounts.
 - *Billing Center List* - A list of Billing Center names to email recommendations for. Leave blank to include recommendations for all Billing Centers.
 - *Recommendation List* - The types of recommendations to include in the email.
+- *Policy List* - A list of catalog policy names to include recommendations for. Leave blank to include recommendations for all policies.
 
 ## Policy Actions
 
