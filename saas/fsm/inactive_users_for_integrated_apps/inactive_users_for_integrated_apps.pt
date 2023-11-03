@@ -5,7 +5,7 @@ short_description "Gets inactive users for the Integrated Applications of the sp
 long_description ""
 severity "low"
 category "SaaS Management"
-default_frequency "daily"
+default_frequency "weekly"
 info(
   version: "3.0",
   provider: "Flexera SaaS Manager",
@@ -36,16 +36,26 @@ end
 # Authentication
 ###############################################################################
 
-credentials "auth_fsm" do
+credentials "auth_flexera" do
   schemes "oauth2"
-  label "FSM"
-  description "Select the FSM Resource Manager Credential from the list."
-  tags "provider=flexera_fsm"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
 end
 
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
 
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -76,7 +86,7 @@ end
 
 datasource "ds_managed_apps" do
   request do
-    auth $auth_fsm
+    auth $auth_flexera
     host val($ds_flexera_api_hosts, "flexera")
     path join(["/saas/v1/orgs/", rs_org_id, "/managed-apps"])
   end
@@ -109,7 +119,7 @@ end
 datasource "ds_integrated_apps" do
   iterate $ds_app_id_output
   request do
-    auth $auth_fsm
+    auth $auth_flexera
     host val($ds_flexera_api_hosts, "fsm")
     path join(["/svc/orgs/", rs_org_id, "/sso-discovery/", val(iter_item, "app_id")])
     query "includeInactive", "false"
@@ -142,7 +152,7 @@ end
 datasource "ds_app_users" do
   iterate $ds_integrated_apps_filtered
   request do
-    auth $auth_fsm
+    auth $auth_flexera
     host val($ds_flexera_api_hosts, "fsm")
     path join(["/svc/orgs/", rs_org_id, "/managed-products/", val(iter_item, "managed_product_id"), "/managed-product-agents"])
     query "asc", "true"
@@ -163,14 +173,18 @@ datasource "ds_app_users" do
 end
 
 datasource "ds_app_inactive_users" do
-  run_script $js_app_inactive_users, $ds_app_users
+  run_script $js_app_inactive_users, $ds_app_users, $ds_applied_policy
 end
 
 script "js_app_inactive_users", type: "javascript" do
-  parameters "ds_app_users"
+  parameters "ds_app_users", "ds_applied_policy"
   result "result"
   code <<-EOS
   result = _.filter(ds_app_users, function(user) { return user['user_employee_status'] == "Inactive" })
+
+  if (result.length > 0) {
+    result[0]['policy_name'] = ds_applied_policy['name']
+  }
 EOS
 end
 
@@ -179,10 +193,10 @@ end
 ###############################################################################
 
 policy "policy_managed_apps_inactive_users" do
-  validate $ds_app_inactive_users do
-    summary_template "SaaS Manager Inactive Users for Integrated Applications"
+  validate_each $ds_app_inactive_users do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: SaaS Manager Inactive Users for Integrated Applications"
     detail_template "Report showing list of Inactive Users for Integrated Applications"
-    check eq(0,1)
+    check eq(0, 1)
     escalate $esc_email
     export do
       resource_level false

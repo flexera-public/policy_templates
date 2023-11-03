@@ -5,7 +5,7 @@ short_description "This policy will create an incident when Flexera SaaS Manager
 long_description ""
 severity "medium"
 category "SaaS Management"
-default_frequency "daily"
+default_frequency "weekly"
 info(
   version: "3.0",
   provider: "Flexera SaaS Manager",
@@ -38,18 +38,18 @@ end
 # Authentication
 ###############################################################################
 
-credentials "auth_fsm" do
+credentials "auth_flexera" do
   schemes "oauth2"
-  label "FSM"
-  description "Select the FSM Resource Manager Credential from the list."
-  tags "provider=flexera_fsm"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
 end
 
 ###############################################################################
 # Pagination
 ###############################################################################
 
-pagination "pagination_inactive" do
+pagination "pagination_users_inactive" do
   get_page_marker do
     body_path jq(response, 'if length < 10000 then null else if $marker != "" then $marker | tonumber + 1 else 2 end end')
   end
@@ -61,6 +61,16 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
 
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -92,8 +102,8 @@ end
 #GET TOTAL PRODUCT ABANDONED USERS (INACTIVE)
 datasource "ds_inactive_users" do
   request do
-    auth $auth_fsm
-    pagination $pagination_inactive
+    auth $auth_flexera
+    pagination $pagination_users_inactive
     host val($ds_flexera_api_hosts, "fsm")
     path join(["/svc/orgs/", rs_org_id, "/analytics/product-abandoned-users"])
     header "content-type", "application/json"
@@ -120,11 +130,11 @@ end
 
 #FORMAT DATA
 datasource "ds_formatted_data" do
-  run_script $js_formatted_data, $ds_inactive_users
+  run_script $js_formatted_data, $ds_inactive_users, $ds_applied_policy
 end
 
 script "js_formatted_data", type: "javascript" do
-  parameters "ds_inactive_users"
+  parameters "ds_inactive_users", "ds_applied_policy"
   result "result"
   code <<-EOS
   result = []
@@ -144,6 +154,10 @@ script "js_formatted_data", type: "javascript" do
       days_since_active: days_since_active
     })
   })
+
+  if (result.length > 0) {
+    result[0]['policy_name'] = ds_applied_policy['name']
+  }
 EOS
 end
 
@@ -153,7 +167,7 @@ end
 
 policy "policy_fsm_inactive_users_by_dept" do
   validate_each $ds_formatted_data do
-    summary_template "{{ len data }} Inactive SaaS Users"
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Inactive SaaS Users"
     check ne(val(item, "days_since_active"), "Never Active")
     check lt(val(item, "days_since_active"), $param_num_days)
     escalate $esc_email

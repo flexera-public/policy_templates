@@ -3,6 +3,7 @@
 ## v3.0
 
 - Added support for APAC API endpoint
+- Incident summary now includes applied policy name
 - General code cleanup and normalization
 
 ## v2.4

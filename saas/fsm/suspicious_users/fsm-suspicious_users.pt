@@ -4,7 +4,7 @@ type "policy"
 short_description "This policy will create an incident when Flexera SaaS Manager identifies suspicious users logging into SaaS applications. See the [README](https://github.com/flexera-public/policy_templates/tree/master/saas/fsm/suspicious_users/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "high"
-default_frequency "daily"
+default_frequency "weekly"
 category "SaaS Management"
 info(
   version: "3.0",
@@ -29,18 +29,18 @@ end
 # Authentication
 ###############################################################################
 
-credentials "auth_fsm" do
+credentials "auth_flexera" do
   schemes "oauth2"
-  label "FSM"
-  description "Select the FSM Resource Manager Credential from the list."
-  tags "provider=flexera_fsm"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
 end
 
 ###############################################################################
 # Pagination
 ###############################################################################
 
-pagination "pagination_suspicious" do
+pagination "pagination_users_suspicious" do
   get_page_marker do
     body_path jq(response, 'if length < 1000 then null else if $marker != "" then $marker | tonumber + 1 else 2 end end')
   end
@@ -52,6 +52,16 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
 
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -82,8 +92,8 @@ end
 
 datasource "ds_suspicious_users" do
   request do
-    auth $auth_fsm
-    pagination $pagination_suspicious
+    auth $auth_flexera
+    pagination $pagination_users_suspicious
     host val($ds_flexera_api_hosts, "fsm")
     path join(["/svc/orgs/", rs_org_id, "/activity/suspicious-agents"])
     header "content-type", "application/json"
@@ -109,11 +119,11 @@ datasource "ds_suspicious_users" do
 end
 
 datasource "ds_users_cleanup" do
-  run_script $js_users_cleanup, $ds_suspicious_users
+  run_script $js_users_cleanup, $ds_suspicious_users, $ds_applied_policy
 end
 
 script "js_users_cleanup", type: "javascript" do
-  parameters "ds_suspicious_users"
+  parameters "ds_suspicious_users", "ds_applied_policy"
   result "result"
   code <<-EOS
   result = []
@@ -149,6 +159,10 @@ script "js_users_cleanup", type: "javascript" do
       email: email
     })
   })
+
+  if (result.length > 0) {
+    result[0]['policy_name'] = ds_applied_policy['name']
+  }
 EOS
 end
 
@@ -157,9 +171,9 @@ end
 ###############################################################################
 
 policy "policy_fsm_suspicious_users" do
-  validate $ds_users_cleanup do
-    summary_template "{{ len data }} Suspicious SaaS Users Found"
-    check eq(size(data), 0)
+  validate_each $ds_users_cleanup do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Suspicious SaaS Users Found"
+    check eq(val(item, "uniqueId"), "")
     escalate $esc_email
     export do
       field "lastName" do

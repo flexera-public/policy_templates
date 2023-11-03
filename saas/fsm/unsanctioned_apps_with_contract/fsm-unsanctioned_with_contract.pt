@@ -5,7 +5,7 @@ short_description "This policy will create an incident when Flexera SaaS Manager
 long_description ""
 severity "high"
 category "SaaS Management"
-default_frequency "daily"
+default_frequency "weekly"
 info(
   version: "3.0",
   provider: "Flexera SaaS Manager",
@@ -29,16 +29,26 @@ end
 # Authentication
 ###############################################################################
 
-credentials "auth_fsm" do
+credentials "auth_flexera" do
   schemes "oauth2"
-  label "FSM"
-  description "Select the FSM Resource Manager Credential from the list."
-  tags "provider=flexera_fsm"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
 end
 
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
 
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -69,7 +79,7 @@ end
 
 datasource "ds_num_products" do
   request do
-    auth $auth_fsm
+    auth $auth_flexera
     host val($ds_flexera_api_hosts, "fsm")
     path join(["/svc/orgs/", rs_org_id, "/managed-products"])
     header "content-type", "application/json"
@@ -100,7 +110,7 @@ script "js_products", type: "javascript" do
   result "request"
   code <<-EOS
   var request = {
-    auth: "auth_fsm",
+    auth: "auth_flexera",
     host: ds_flexera_api_hosts["fsm"],
     path: "/svc/orgs/" + rs_org_id + "/managed-products",
     headers: { "content-type": "application/json" },
@@ -114,7 +124,7 @@ end
 
 datasource "ds_num_unsanctioned" do
   request do
-    auth $auth_fsm
+    auth $auth_flexera
     host val($ds_flexera_api_hosts, "fsm")
     path join(["/svc/orgs/", rs_org_id, "/financial-discovery"])
     header "content-type", "application/json"
@@ -147,7 +157,7 @@ script "js_unsanctioned", type: "javascript" do
   result "request"
   code <<-EOS
   var request = {
-    auth: "auth_fsm",
+    auth: "auth_flexera",
     host: ds_flexera_api_hosts["fsm"],
     path: "/svc/orgs/" + rs_org_id + "/financial-discovery",
     headers: { "content-type": "application/json" },
@@ -157,11 +167,11 @@ EOS
 end
 
 datasource "ds_format_data" do
-  run_script $js_format_data, $ds_products, $ds_unsanctioned
+  run_script $js_format_data, $ds_products, $ds_unsanctioned, $ds_applied_policy
 end
 
 script "js_format_data", type: "javascript" do
-  parameters "ds_products", "ds_unsanctioned"
+  parameters "ds_products", "ds_unsanctioned", "ds_applied_policy"
   result "result"
   code <<-EOS
   result = []
@@ -183,6 +193,10 @@ script "js_format_data", type: "javascript" do
       })
     }
   })
+
+  if (result.length > 0) {
+    result[0]['policy_name'] = ds_applied_policy['name']
+  }
 EOS
 end
 
@@ -191,9 +205,9 @@ end
 ###############################################################################
 
 policy "policy_fsm_unsanctioned_with_contract" do
-  validate $ds_format_data do
-    summary_template "{{ len data }} Unsanctioned SaaS Purchases with Existing Contracts"
-    check eq(size(data), 0)
+  validate_each $ds_format_data do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Unsanctioned SaaS Purchases with Existing Contracts"
+    check eq(val(item, "product"), "")
     escalate $esc_email
     export do
       field "product" do
