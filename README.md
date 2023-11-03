@@ -241,7 +241,6 @@ These templates can generate savings estimates for your environment.
   - [Azure Hybrid Use Benefit for Linux Server](./cost/azure/hybrid_use_benefit_linux)
   - [Azure Hybrid Use Benefit for SQL](./cost/azure/hybrid_use_benefit_sql)
   - [Azure Hybrid Use Benefit for Windows Server](./cost/azure/hybrid_use_benefit)
-  - [Azure Inefficient Instance Utilization using Log Analytics](./cost/azure/instances_log_analytics_utilization)
   - [Azure Reserved Instances Recommendations](./cost/azure/reserved_instances/recommendations)
   - [Azure Reserved Instances Utilization](./cost/azure/reserved_instances/utilization)
   - [Azure Reserved Instances Utilization MCA](./cost/azure/reserved_instances/utilization_mca)
@@ -624,7 +623,7 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 33
-  Cost: 97
+  Cost: 96
   Operational: 23
   SaaS Management: 13
   Security: 74
@@ -644,7 +643,7 @@ These templates can generate savings estimates for your environment.
   ITAM: 4
   Idle Compute Instances: 1
   Inefficient Disk Usage: 1
-  Inefficient Instance Usage: 2
+  Inefficient Instance Usage: 1
   Instances not running FlexNet Inventory Agent: 2
   Lifecycle Management: 1
   Long Running Instances: 2
@@ -683,7 +682,7 @@ These templates can generate savings estimates for your environment.
 :providers:
   '': 1
   AWS: 78
-  Azure: 78
+  Azure: 77
   Azure China: 1
   Flexera: 5
   Flexera Cloud Management: 3
@@ -709,7 +708,7 @@ These templates can generate savings estimates for your environment.
   CCO: 1
   CloudTrail: 7
   Common Bill Ingestion: 2
-  Compute: 49
+  Compute: 48
   Config: 1
   Cost Explorer: 1
   DBS: 1
@@ -739,7 +738,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 240
+:total_count: 239
 -->
 <!-- End Policy Template Stats -->
 
