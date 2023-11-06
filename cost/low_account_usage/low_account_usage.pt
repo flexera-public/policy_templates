@@ -85,6 +85,61 @@ datasource "ds_applied_policy" do
   end
 end
 
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
+end
+
 datasource "ds_billing_centers" do
   request do
     auth $auth_flexera
@@ -113,20 +168,18 @@ script "js_filtered_billing_centers", type: "javascript" do
   result "result"
   code <<-EOS
   if (param_billing_centers.length > 0) {
-    result = _.filter(ds_billing_centers, function(bc) {
+    bcs = _.filter(ds_billing_centers, function(bc) {
       return _.contains(param_billing_centers, bc['id']) || _.contains(param_billing_centers, bc['name']) || _.contains(param_billing_centers, bc['name'].toLowerCase())
     })
   } else {
-    result = _.filter(ds_billing_centers, function(bc) {
-      return bc['parent_id'] == null || bc['parent_id'] == undefined
-    })
+    bcs = ds_billing_centers
   }
 EOS
 end
 
 datasource "ds_new_bc_costs" do
   request do
-    run_script $js_new_bc_costs, $ds_filtered_billing_centers, $param_stats_lookback, rs_org_id, rs_optima_host
+    run_script $js_new_bc_costs, $ds_billing_centers, $param_stats_lookback, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -141,7 +194,7 @@ datasource "ds_new_bc_costs" do
 end
 
 script "js_new_bc_costs", type: "javascript" do
-  parameters "ds_filtered_billing_centers", "param_stats_lookback", "rs_org_id", "rs_optima_host"
+  parameters "ds_billing_centers", "param_stats_lookback", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
   start_date = new Date()
@@ -152,6 +205,10 @@ script "js_new_bc_costs", type: "javascript" do
   end_date.setDate(end_date.getDate() - 1)
   end_date = end_date.toISOString().split('T')[0]
 
+  parent_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
   var request = {
     auth: "auth_flexera",
     verb: "POST",
@@ -161,7 +218,7 @@ script "js_new_bc_costs", type: "javascript" do
       "dimensions": [ "billing_center_id", "vendor", "vendor_account_name", "vendor_account" ],
       "granularity": "day",
       "metrics": [ "cost_amortized_blended_adj" ],
-      "billing_center_ids": _.pluck(ds_filtered_billing_centers, 'id'),
+      "billing_center_ids": _.pluck(parent_bcs, 'id'),
       "start_at": start_date,
       "end_at": end_date,
       "filter": {
@@ -182,28 +239,30 @@ EOS
 end
 
 datasource "ds_format_costs" do
-  run_script $js_format_costs, $ds_new_bc_costs, $ds_billing_centers, $ds_applied_policy, $param_threshold, $param_min_savings, $param_stats_lookback
+  run_script $js_format_costs, $ds_new_bc_costs, $ds_billing_centers, $ds_filtered_billing_centers, $ds_applied_policy, $ds_currency, $param_threshold, $param_min_savings, $param_stats_lookback
 end
 
 script "js_format_costs", type: "javascript" do
-  parameters "ds_new_bc_costs", "ds_billing_centers", "ds_applied_policy", "param_threshold", "param_min_savings", "param_stats_lookback"
-  result "formatted_data"
+  parameters "ds_new_bc_costs", "ds_billing_centers", "ds_filtered_billing_centers", "ds_applied_policy", "ds_currency", "param_threshold", "param_min_savings", "param_stats_lookback"
+  result "result"
   code <<-EOS
-  var getDaysInMonth = function(month,year) {
-    // Here January is 1 based
-    //Day 0 is the last day in the previous month
-    return new Date(year, month, 0).getDate();
-  // Here January is 0 based
-  // return new Date(year, month+1, 0).getDate();
-  };
-  var date = new Date()
-  var numdays = getDaysInMonth(date.getUTCMonth(),date.getUTCFullYear())
-  var yesterday = new Date(new Date().setDate(new Date().getDate()-1)).getDate()
+  // Used for formatting numbers to look pretty
+  function formatNumber(number, separator){
+    numString = number.toString()
+    values = numString.split(".")
+    formatted_number = ''
 
-  var formatted_data = [];
-  var unsorted_results = [];
-  var arr_results = [];
-  var bcs = [];
+    while (values[0].length > 3) {
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      formatted_number = separator + chunk + formatted_number
+    }
+
+    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
+    if (values[1] == undefined) { return formatted_number }
+
+    return formatted_number + "." + values[1]
+  }
 
   billing_center_names = {}
 
@@ -222,44 +281,46 @@ script "js_format_costs", type: "javascript" do
     }
   })
 
-  var groups = _.groupBy(arr_results, function(value){
-    return value.bc_id + '#' + value.vendor + '#' + value.vendor_account_name;
-  });
+  grouped_costs = _.groupBy(new_bc_costs, 'vendor_account')
+  filtered_bc_names = _.pluck(ds_filtered_billing_centers, 'name')
 
-  var unsorted_results = _.map(groups, function(group){
-    var arr_new_sum = _.pluck(group, 'new_sum')
-    var summed = _.reduce(arr_new_sum, function(memo, num){ return memo + num; }, 0)
-    var monthcomplete = yesterday / numdays
-    var runrate = summed / monthcomplete
-    return {
-        name: group[0].name,
-        id: group[0].id,
-        vendor: group[0].vendor,
-        vendor_account_name: group[0].vendor_account_name,
-        run_rate: parseFloat(runrate).toFixed(2)
-        accountID: group[0].accountID
-    }
-  });
+  result = []
+  total_savings = 0.0
 
-  var checked_results = _.filter(unsorted_results, function(result){
-    if (parseFloat(result.run_rate) <= param_threshold && parseFloat(result.run_rate) >= param_min_savings) {
-      return result;
+  _.each(_.keys(grouped_costs), function(vendor_account) {
+    vendor = grouped_costs[vendor_account][0]['vendor']
+    vendor_account_name = grouped_costs[vendor_account][0]['vendor_account_name']
+
+    billing_centers = _.uniq(_.pluck(grouped_costs[vendor_account], 'billing_center_name'))
+
+    cost = _.reduce(_.pluck(grouped_costs[vendor_account], 'cost'), function(memo, num) { return memo + num }, 0)
+    daily_cost = costs / (param_stats_lookback - 1)
+    monthly_cost = daily_cost * 365.25 / 12
+
+    include_bc = false
+
+    _.each(billing_centers, function(bc) {
+      if (_.contains(filtered_bc_names, bc['name'])) { include_bc = true }
+    })
+
+    if (include_bc && cost <= param_threshold && cost >= param_min_savings) {
+      total_savings += monthly_cost
+
+      result.push({
+        vendor: vendor,
+        vendor_account: vendor_account,
+        vendor_account_name: vendor_account_name,
+        billing_centers: billing_centers.join(', '),
+        savings: monthly_cost
+      })
     }
   })
 
-  var formatted_data = _(checked_results).chain().sortBy(function(result) {
-    return result.vendor_account_name;
-  }).sortBy(function(result) {
-    return result.vendor;
-  }).value();
+  savings_message = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['separator'])
 
-  var total_sum = _.chain(formatted_data)
-  .pluck('run_rate')
-  .reduce(function(memo, num){ return memo + parseFloat(num); }, 0).value();
-  _.each(formatted_data, function(data){ return data["total_sum"] = total_sum.toFixed(2) })
-
-  if (formatted_data.length > 0) {
-    formatted_data[0]['policy_name'] = ds_applied_policy['name']
+  if (result.length > 0) {
+    result[0]['policy_name'] = ds_applied_policy['name']
+    result[0]['total_savings'] = savings_message
   }
 EOS
 end
@@ -269,17 +330,15 @@ end
 ###############################################################################
 
 policy "policy_budget_alert" do
-  validate $ds_format_costs do
-    summary_template "{{ rs_org_name }} (Org ID: {{ rs_org_id }}): Low Account Usage Detected Below {{parameters.param_threshold}} - Total Savings: {{with(index data 0)}}{{.total_sum}}{{end}}"
-    check eq(size(data), 0)
+  validate_each $ds_format_costs do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: Low Account Usage Detected Below {{parameters.param_threshold}}"
+    detail_template "Total Savings: {{ with index data 0 }}{{ .total_savings }}{{ end }}"
+    check eq(val(item, "vendor_account"), "")
     escalate $esc_email
     export do
       resource_level false
-      field "name" do
-        label "Billing Center Name"
-      end
       field "vendor" do
-        label "Vendor"
+        label "Cloud Vendor"
       end
       field "vendor_account" do
         label "Account ID"
@@ -287,8 +346,11 @@ policy "policy_budget_alert" do
       field "vendor_account_name" do
         label "Account Name"
       end
-      field "run_rate" do
-        label "Savings"
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "billing_centers" do
+        label "Associated Billing Centers"
       end
     end
   end
