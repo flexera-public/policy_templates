@@ -5,58 +5,83 @@ short_description "Analyze all account usage and determines recommend consolidat
 long_description ""
 severity "low"
 category "Cost"
-default_frequency "daily"
-tenancy "single"
+default_frequency "weekly"
 info(
-  version: "2.4",
+  version: "3.0",
   provider: "Flexera Optima",
   service: "",
   policy_set: ""
 )
 
-parameter "param_threshold" do
-  label "Low Account Spend Threshold"
-  description "Estimated run-rate below which an account should be closed or consolidated. Example: 1000.00"
-  type "number"
-  default 1000
-  min_value 1
-  max_value 1000000
-end
+###############################################################################
+# Parameters
+###############################################################################
 
 parameter "param_email" do
-  label "Email addresses"
-  description "Email addresses of the recipients you wish to notify"
   type "list"
-end
-
-parameter "param_billing_centers" do
-  label "Billing Center Name"
-  description "List of Billing Center Names to check. Leave blank to run policy against all Billing Centers"
-  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify when new incidents are created."
   default []
 end
 
-parameter "param_minimum_savings_threshold" do
-  label "Minimum Savings Threshold"
-  description "Specify the minimum monthly savings value required for a recommendation to be issued, on a per resource basis. Note: this setting applies to all recommendations. Example: 1.00"
+parameter "param_threshold" do
   type "number"
-  default 1
+  category "Policy Settings"
+  label "Low Account Spend Threshold"
+  description "Estimated run-rate below which an account should be closed or consolidated. Example: 1000.00"
+  min_value 1
+  default 1000
 end
+
+parameter "param_billing_centers" do
+  type "list"
+  category "Policy Settings"
+  label "Billing Centers"
+  description "List of Billing Center Names/IDs to check. Leave blank to run policy against all Billing Centers."
+  default []
+end
+
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation."
+  min_value 0
+  default 0
+end
+
+parameter "param_stats_lookback" do
+  type "number"
+  category "Policy Settings"
+  label "Look Back Period"
+  description "How many days back to look at billing data to determine account usage."
+  default 30
+  min_value 3
+end
+
+###############################################################################
+# Authentication
+###############################################################################
 
 credentials "auth_flexera" do
   schemes "oauth2"
-  label "flexera"
+  label "Flexera"
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
 
-datasource "ds_dimensions" do
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
   request do
     auth $auth_flexera
-    host rs_optima_host
-    path join(["/bill-analysis/orgs/",rs_org_id,"/costs/dimensions"])
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
     header "Api-Version", "1.0"
-    header "User-Agent", "RS Policies"
   end
 end
 
@@ -64,7 +89,7 @@ datasource "ds_billing_centers" do
   request do
     auth $auth_flexera
     host rs_optima_host
-    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
     query "view", "allocation_table"
@@ -72,101 +97,98 @@ datasource "ds_billing_centers" do
   result do
     encoding "json"
     collect jmes_path(response,"[*]") do
-      field "id", jmes_path(col_item,"id")
-      field "name", jmes_path(col_item,"name")
-      field "parent_id", jmes_path(col_item,"parent_id")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
     end
   end
 end
 
+datasource "ds_filtered_billing_centers" do
+  run_script $js_filtered_billing_centers, $ds_billing_centers, $param_billing_centers
+end
+
+script "js_filtered_billing_centers", type: "javascript" do
+  parameters "ds_billing_centers", "param_billing_centers"
+  result "result"
+  code <<-EOS
+  if (param_billing_centers.length > 0) {
+    result = _.filter(ds_billing_centers, function(bc) {
+      return _.contains(param_billing_centers, bc['id']) || _.contains(param_billing_centers, bc['name']) || _.contains(param_billing_centers, bc['name'].toLowerCase())
+    })
+  } else {
+    result = _.filter(ds_billing_centers, function(bc) {
+      return bc['parent_id'] == null || bc['parent_id'] == undefined
+    })
+  }
+EOS
+end
+
 datasource "ds_new_bc_costs" do
   request do
-    run_script $js_new_costs_request, rs_org_id, $ds_billing_centers, $param_billing_centers, rs_optima_host
+    run_script $js_new_bc_costs, $ds_filtered_billing_centers, $param_stats_lookback, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
     collect jmes_path(response,"rows[*]") do
       field "vendor", jmes_path(col_item, "dimensions.vendor")
-      field "vendor_account_name", jmes_path(col_item,"dimensions.vendor_account_name")
-      field "cost_amortized_unblended_adj", jmes_path(col_item,"metrics.cost_amortized_blended_adj")
-      field "id", jmes_path(col_item,"dimensions.billing_center_id")
-      field "accountID", jmes_path(col_item,"dimensions.vendor_account")
+      field "vendor_account", jmes_path(col_item, "dimensions.vendor_account")
+      field "vendor_account_name", jmes_path(col_item, "dimensions.vendor_account_name")
+      field "billing_center_id", jmes_path(col_item, "dimensions.billing_center_id")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_blended_adj")
     end
   end
 end
 
-script "js_new_costs_request", type: "javascript" do
-  parameters "org_id","ds_billing_centers", "param_billing_centers", "rs_optima_host"
+script "js_new_bc_costs", type: "javascript" do
+  parameters "ds_filtered_billing_centers", "param_stats_lookback", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
-    //https://stackoverflow.com/questions/3605214/javascript-add-leading-zeroes-to-date
-    function pad(n){return n<10 ? '0'+n : n}
-    var date = new Date();
-    var year = date.getUTCFullYear();
-    var month = (2 + date.getUTCMonth())
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - param_stats_lookback)
+  start_date = start_date.toISOString().split('T')[0]
 
-    if (month == 1){
-      var lmonth = 12;
-      var lyear = year-1 ;
-    } else {
-      var lmonth = month-1;
-      var lyear = year ;
-    }
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 1)
+  end_date = end_date.toISOString().split('T')[0]
 
-    mo = month.toString().length > 1 ? month : '0' + month;
-    lmo = lmonth.toString().length > 1 ? lmonth : '0' + lmonth;
-    var yesterday = new Date(new Date().setDate(new Date().getDate()-1)).getDate()
-    var next_month = lyear + "-" + lmo + "-" + pad(yesterday)
-    var current_month = lyear + "-" + lmo + '-01'
-
-    var billing_center_ids = []
-    if (param_billing_centers.length === 0){
-      var top_billing_centers = _.reject(ds_billing_centers, function(bc){ return bc.parent_id != null });
-      billing_center_ids = _.map(top_billing_centers, function(value, key){ return value.id });
-    } else {
-      // get array of billing center id's that match the names in param_billing_centers.
-      billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
-      billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
-    }
-
-    var request = {
-      auth: "auth_flexera",
-      verb: "POST",
-      host: rs_optima_host,
-      path: "/bill-analysis/orgs/" + org_id + "/costs/aggregated",
-      body_fields: {
-        "dimensions": ["billing_center_id","vendor","vendor_account_name","vendor_account"],
-        "granularity": "day",
-        "metrics": ['cost_amortized_blended_adj'],
-        "billing_center_ids": billing_center_ids,
-        "start_at": current_month,
-        "end_at": next_month,
-        "filter": {
-          "type": "not",
-          "expression": {
-            "dimension": "service",
-            "type": "equal",
-            "value": "APNFee"
-          }
+  var request = {
+    auth: "auth_flexera",
+    verb: "POST",
+    host: rs_optima_host,
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
+    body_fields: {
+      "dimensions": [ "billing_center_id", "vendor", "vendor_account_name", "vendor_account" ],
+      "granularity": "day",
+      "metrics": [ "cost_amortized_blended_adj" ],
+      "billing_center_ids": _.pluck(ds_filtered_billing_centers, 'id'),
+      "start_at": start_date,
+      "end_at": end_date,
+      "filter": {
+        "type": "not",
+        "expression": {
+          "dimension": "service",
+          "type": "equal",
+          "value": "APNFee"
         }
-      },
-      headers: {
-        "Api-Version": "1.0",
-        "User-Agent": "RS Policies",
       }
+    },
+    headers: {
+      "Api-Version": "1.0",
+      "User-Agent": "RS Policies",
     }
-  EOS
+  }
+EOS
 end
 
 datasource "ds_format_costs" do
-  run_script $js_format_costs, $ds_new_bc_costs, $ds_billing_centers, $param_threshold, $param_minimum_savings_threshold
+  run_script $js_format_costs, $ds_new_bc_costs, $ds_billing_centers, $ds_applied_policy, $param_threshold, $param_min_savings, $param_stats_lookback
 end
 
 script "js_format_costs", type: "javascript" do
-  parameters "new_bc_costs", "ds_billing_centers", "param_threshold", "param_minimum_savings_threshold"
+  parameters "ds_new_bc_costs", "ds_billing_centers", "ds_applied_policy", "param_threshold", "param_min_savings", "param_stats_lookback"
   result "formatted_data"
   code <<-EOS
-  //https://www.w3resource.com/javascript-exercises/javascript-date-exercise-3.php
   var getDaysInMonth = function(month,year) {
     // Here January is 1 based
     //Day 0 is the last day in the previous month
@@ -183,20 +205,21 @@ script "js_format_costs", type: "javascript" do
   var arr_results = [];
   var bcs = [];
 
-  var billing_centers = {}
-  _.each(ds_billing_centers, function(bc){
-    billing_centers[bc.id] = bc
+  billing_center_names = {}
+
+  _.each(ds_billing_centers, function(bc) {
+    billing_center_names[bc['id']] = bc['name']
   })
 
-  _.each(new_bc_costs, function(nbc){
-    arr_results.push({
-      name: billing_centers[nbc.id].name,
-      id: nbc.id,
-      new_sum: nbc.cost_amortized_unblended_adj,
-      vendor: nbc.vendor,
-      vendor_account_name: nbc.vendor_account_name,
-      accountID: nbc.accountID
-    })
+  new_bc_costs = _.map(ds_new_bc_costs, function(cost) {
+    return {
+      vendor: cost['vendor'],
+      vendor_account: cost['vendor_account'],
+      vendor_account_name: cost['vendor_account_name'],
+      billing_center_id: cost['billing_center_id'],
+      billing_center_name: billing_center_names[cost['billing_center_id']],
+      cost: cost['cost']
+    }
   })
 
   var groups = _.groupBy(arr_results, function(value){
@@ -219,7 +242,7 @@ script "js_format_costs", type: "javascript" do
   });
 
   var checked_results = _.filter(unsorted_results, function(result){
-    if (parseFloat(result.run_rate) <= param_threshold && parseFloat(result.run_rate) >= param_minimum_savings_threshold) {
+    if (parseFloat(result.run_rate) <= param_threshold && parseFloat(result.run_rate) >= param_min_savings) {
       return result;
     }
   })
@@ -234,30 +257,31 @@ script "js_format_costs", type: "javascript" do
   .pluck('run_rate')
   .reduce(function(memo, num){ return memo + parseFloat(num); }, 0).value();
   _.each(formatted_data, function(data){ return data["total_sum"] = total_sum.toFixed(2) })
+
+  if (formatted_data.length > 0) {
+    formatted_data[0]['policy_name'] = ds_applied_policy['name']
+  }
 EOS
 end
 
-escalation "esc_budget_alert" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
-end
+###############################################################################
+# Policy
+###############################################################################
 
 policy "policy_budget_alert" do
   validate $ds_format_costs do
     summary_template "{{ rs_org_name }} (Org ID: {{ rs_org_id }}): Low Account Usage Detected Below {{parameters.param_threshold}} - Total Savings: {{with(index data 0)}}{{.total_sum}}{{end}}"
-    escalate $esc_budget_alert
     check eq(size(data), 0)
+    escalate $esc_email
     export do
-      resource_level true
+      resource_level false
       field "name" do
         label "Billing Center Name"
       end
       field "vendor" do
         label "Vendor"
       end
-      field "accountID" do
+      field "vendor_account" do
         label "Account ID"
       end
       field "vendor_account_name" do
@@ -266,9 +290,17 @@ policy "policy_budget_alert" do
       field "run_rate" do
         label "Savings"
       end
-      field "id" do
-        label "Id"
-      end
     end
   end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
 end
