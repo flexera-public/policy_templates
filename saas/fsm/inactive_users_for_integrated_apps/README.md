@@ -2,11 +2,11 @@
 
 ## What It Does
 
-This policy retrieves inactive users for the Integrated Applications of the specified Managed SaaS Application and creates an incident with the output.
+This policy retrieves inactive users for the Integrated Applications of the specified Managed SaaS Applications and creates an incident with the output.
 
 ## Functional Description
 
-This policy integrates with the Flexera SaaS Manager API to retrieve inactive users for Integrated Applications of a Managed SaaS Application that facilitates this application discovery through such integration.. Therefore the following are prerequisites for this policy to execute:
+This policy integrates with the Flexera SaaS Manager API to retrieve inactive users for Integrated Applications of a Managed SaaS Application that facilitates this application discovery through such integration. Therefore the following are prerequisites for this policy to execute:
 
 - Flexera SaaS Manager implementation with HR roster connected
 - Please contact your Flexera Customer Success Manager for assistance to generate your FSM token.
@@ -15,8 +15,8 @@ This policy integrates with the Flexera SaaS Manager API to retrieve inactive us
 
 This policy has the following input parameters required when launching the policy.
 
-- *Email Addresses* - Email addresses of the recipients you wish to notify
-- *Application Name* - Name of the managed application for which you wish to retrieve inactive users for its integrated applications.
+- *Email Addresses* - Email addresses of the recipients you wish to notify.
+- *Application Name* - Name of the managed applications for which you wish to retrieve inactive users for its integrated applications. Leave empty to query all applications.
 
 ## Policy Actions
 
