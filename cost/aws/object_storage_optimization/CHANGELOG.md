@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2
+
+- Added a filter to the s3objects that will be moved to deeper or glacier storage class
+
 ## v3.1
 
 - Updated description of `Account Number` parameter
