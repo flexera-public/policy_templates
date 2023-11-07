@@ -52,7 +52,8 @@ end
 parameter "param_bucket_list" do
   type "list"
   label "Bucket list"
-  description "List only the buckets that you wish to evaluate"
+  description "A list of S3 buckets to assess objects in. Leave blank to assess all buckets."
+  default []
 end
 
 parameter "param_automatic_action" do
@@ -163,53 +164,33 @@ script "js_parse_buckets", type: "javascript" do
   result "results"
   code <<-EOS
     results = []
-    if (param_bucket_list.length > 0){
-      _.each(buckets, function (bucket, i) {
-        _.each(param_bucket_list, function (user_bucket) {
-          if (bucket.bucket_name === user_bucket){
-            if ( !buckets[i]["region"] ){
-              results.push({
-                "bucket_name": buckets[i]["bucket_name"],
-                "bucket_creation_date": buckets[i]["bucket_creation_date"],
-                "region": "us-east-1",
-                "host": "s3.amazonaws.com",
-                "tagKeyValue": ""
-              })
-            }else{
-              if(buckets[i]["region"] == "EU" ) { buckets[i]["region"] = "eu-west-1" }
-              results.push({
-                "bucket_name": buckets[i]["bucket_name"],
-                "bucket_creation_date": buckets[i]["bucket_creation_date"],
-                "region": buckets[i]["region"],
-                "host": "s3-" + buckets[i]["region"] + ".amazonaws.com",
-                "tagKeyValue": ""
-              })
-            }
-          }
-        });
-      });
-    }else{
-      for ( i = 0; i < buckets.length; i++ ) {
-        if ( !buckets[i]["region"] ){
-          results.push({
-            "bucket_name": buckets[i]["bucket_name"],
-            "bucket_creation_date": buckets[i]["bucket_creation_date"],
-            "region": "us-east-1",
-            "host": "s3.amazonaws.com",
-            "tagKeyValue": ""
-          })
-        }else{
-          if(buckets[i]["region"] == "EU" ) { buckets[i]["region"] = "eu-west-1" }
-          results.push({
-            "bucket_name": buckets[i]["bucket_name"],
-            "bucket_creation_date": buckets[i]["bucket_creation_date"],
-            "region": buckets[i]["region"],
-            "host": "s3-" + buckets[i]["region"] + ".amazonaws.com",
-            "tagKeyValue": ""
-          })
-        }
-      }
+    bucket_list = []
+    if (param_bucket_list.length > 0) {
+      bucket_list = _.filter(buckets, function(bucket){ return _.contains(param_bucket_list, bucket.bucket_name)})
+    } else {
+      bucket_list = buckets
     }
+
+    _.each(bucket_list, function (bucket, i) {
+      if ( !bucket["region"] ){
+        results.push({
+          "bucket_name": bucket["bucket_name"],
+          "bucket_creation_date": bucket["bucket_creation_date"],
+          "region": "us-east-1",
+          "host": "s3.amazonaws.com",
+          "tagKeyValue": ""
+        })
+      }else{
+        if(bucket["region"] == "EU" ) { bucket["region"] = "eu-west-1" }
+        results.push({
+          "bucket_name": bucket["bucket_name"],
+          "bucket_creation_date": bucket["bucket_creation_date"],
+          "region": bucket["region"],
+          "host": "s3-" + bucket["region"] + ".amazonaws.com",
+          "tagKeyValue": ""
+        })
+      }
+    });
   EOS
 end
 
@@ -298,7 +279,6 @@ script "js_only_last_modified_objects", type: "javascript" do
       }
     });
     results = _.sortBy(results, 'region');
-    console.log(results)
   EOS
 end
 
@@ -350,7 +330,6 @@ script "js_aws_filtered_s3_objects", type: "javascript" do
     }
 
     _.each(ds_aws_list_s3_objects_with_tags, function(s3Object){
-      console.log(s3Object)
       var tags = s3Object['tags'];
       var isTagMatched=false
       var tagKeyValue=""
