@@ -16,6 +16,7 @@ This policy has the following input parameters required when launching the polic
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
 - *Days since last modified to move to Glacier* - Move to glacier after days last modified - leave blank to skip moving
 - *Days since last modified to move to Deep Archive* - Move to glacier deep archive after days last modified- leave blank to skip moving
+- *Bucket list* - List Buckets to pointing them.
 - *Exclude Tag* - List of tags that will exclude s3 objects from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 - *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [more](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
