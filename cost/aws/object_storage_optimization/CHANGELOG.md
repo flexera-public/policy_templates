@@ -3,7 +3,7 @@
 ## v3.2
 
 - Added a filter to the S3 Objects that will be moved to deeper or glacier storage class.
-- Added a new parameter `Bucket list`.
+- Added a new parameter `Bucket List`.
 
 ## v3.1
 
