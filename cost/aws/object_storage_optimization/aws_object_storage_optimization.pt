@@ -49,6 +49,12 @@ parameter "param_exclude_tags" do
   description "List of tags that will exclude s3 objects from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'"
 end
 
+parameter "param_bucket_list" do
+  type "list"
+  label "Bucket input list"
+  description "List the buckets that you wish to include"
+end
+
 parameter "param_automatic_action" do
   type "list"
   label "Automatic Actions"
@@ -149,32 +155,59 @@ datasource "ds_aws_buckets_with_region" do
 end
 
 datasource "ds_aws_sanitized_buckets" do
-  run_script $js_parse_buckets, $ds_aws_buckets_with_region
+  run_script $js_parse_buckets, $ds_aws_buckets_with_region, $param_bucket_list
 end
 
 script "js_parse_buckets", type: "javascript" do
-  parameters "buckets"
+  parameters "buckets", "param_bucket_list"
   result "results"
   code <<-EOS
     results = []
-    for ( i = 0; i < buckets.length; i++ ) {
-      if ( !buckets[i]["region"] ){
-        results.push({
-          "bucket_name": buckets[i]["bucket_name"],
-          "bucket_creation_date": buckets[i]["bucket_creation_date"],
-          "region": "us-east-1",
-          "host": "s3.amazonaws.com",
-          "tagKeyValue": ""
-        })
-      }else{
-        if(buckets[i]["region"] == "EU" ) { buckets[i]["region"] = "eu-west-1" }
-        results.push({
-          "bucket_name": buckets[i]["bucket_name"],
-          "bucket_creation_date": buckets[i]["bucket_creation_date"],
-          "region": buckets[i]["region"],
-          "host": "s3-" + buckets[i]["region"] + ".amazonaws.com",
-          "tagKeyValue": ""
-        })
+    if (param_bucket_list.length > 0){
+      _.each(buckets, function (bucket, i) {
+        _.each(param_bucket_list, function (user_bucket) {
+          if (bucket.bucket_name === user_bucket){
+            if ( !buckets[i]["region"] ){
+              results.push({
+                "bucket_name": buckets[i]["bucket_name"],
+                "bucket_creation_date": buckets[i]["bucket_creation_date"],
+                "region": "us-east-1",
+                "host": "s3.amazonaws.com",
+                "tagKeyValue": ""
+              })
+            }else{
+              if(buckets[i]["region"] == "EU" ) { buckets[i]["region"] = "eu-west-1" }
+              results.push({
+                "bucket_name": buckets[i]["bucket_name"],
+                "bucket_creation_date": buckets[i]["bucket_creation_date"],
+                "region": buckets[i]["region"],
+                "host": "s3-" + buckets[i]["region"] + ".amazonaws.com",
+                "tagKeyValue": ""
+              })
+            }
+          }
+        });
+      });
+    }else{
+      for ( i = 0; i < buckets.length; i++ ) {
+        if ( !buckets[i]["region"] ){
+          results.push({
+            "bucket_name": buckets[i]["bucket_name"],
+            "bucket_creation_date": buckets[i]["bucket_creation_date"],
+            "region": "us-east-1",
+            "host": "s3.amazonaws.com",
+            "tagKeyValue": ""
+          })
+        }else{
+          if(buckets[i]["region"] == "EU" ) { buckets[i]["region"] = "eu-west-1" }
+          results.push({
+            "bucket_name": buckets[i]["bucket_name"],
+            "bucket_creation_date": buckets[i]["bucket_creation_date"],
+            "region": buckets[i]["region"],
+            "host": "s3-" + buckets[i]["region"] + ".amazonaws.com",
+            "tagKeyValue": ""
+          })
+        }
       }
     }
   EOS
@@ -207,19 +240,14 @@ datasource "ds_aws_list_s3_objects" do
 end
 
 datasource "ds_only_last_modified_objects" do
-  run_script $js_only_last_modified_objects, $ds_aws_list_s3_objects, $param_deep_archive_days, $param_glacier_days, $param_exclude_tags
+  run_script $js_only_last_modified_objects, $ds_aws_list_s3_objects, $param_deep_archive_days, $param_glacier_days
 end
 
 script "js_only_last_modified_objects", type: "javascript" do
-  parameters "ds_aws_list_s3_objects", "param_deep_archive_days", "param_glacier_days", "param_exclude_tags"
+  parameters "ds_aws_list_s3_objects", "param_deep_archive_days", "param_glacier_days"
   result "results"
   code <<-EOS
     results = []
-    var param_exclude_tags_lower=[];
-    for(var i=0; i < param_exclude_tags.length; i++){
-      param_exclude_tags_lower[i]=param_exclude_tags[i].toString().toLowerCase();
-    }
-
     var glacier_date = new Date();
     var deep_archive_date = new Date();
     var glacier_days_to_move = parseInt(param_glacier_days,10);
@@ -270,6 +298,7 @@ script "js_only_last_modified_objects", type: "javascript" do
       }
     });
     results = _.sortBy(results, 'region');
+    console.log(results)
   EOS
 end
 
@@ -300,6 +329,7 @@ datasource "ds_aws_list_s3_objects_with_tags" do
       field "last_modified", val(iter_item, "last_modified")
       field "object_size", val(iter_item, "object_size")
       field "host", val(iter_item, "host")
+      field "modify_storage_class_to", val(iter_item, "modify_storage_class_to")
     end
   end
 end
@@ -320,6 +350,7 @@ script "js_aws_filtered_s3_objects", type: "javascript" do
     }
 
     _.each(ds_aws_list_s3_objects_with_tags, function(s3Object){
+      console.log(s3Object)
       var tags = s3Object['tags'];
       var isTagMatched=false
       var tagKeyValue=""
@@ -345,7 +376,7 @@ script "js_aws_filtered_s3_objects", type: "javascript" do
           "object_key": s3Object["object_key"],
           "storage_class": s3Object["storage_class"],
           "last_modified": s3Object["last_modified"],
-          "modify_storage_class_to": modify_storage_class_to,
+          "modify_storage_class_to": s3Object["modify_storage_class_to"],
           "object_size": s3Object["object_size"],
           "tagKeyValue":(tagKeyValue.slice(2))
         });
