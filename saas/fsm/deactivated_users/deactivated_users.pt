@@ -54,19 +54,6 @@ credentials "auth_flexera" do
 end
 
 ###############################################################################
-# Pagination
-###############################################################################
-
-pagination "pagination_users_inactive" do
-  get_page_marker do
-    body_path jq(response, 'if length < 10000 then null else if $marker != "" then $marker | tonumber + 1 else 2 end end')
-  end
-  set_page_marker do
-    query "page"
-  end
-end
-
-###############################################################################
 # Datasources & Scripts
 ###############################################################################
 
@@ -145,7 +132,7 @@ datasource "ds_managed_apps_active" do
 end
 
 script "js_managed_apps_active", type: "javascript" do
-  parameters "ds_managed_apps"
+  parameters "ds_managed_apps", "param_applications"
   result "result"
   code <<-EOS
   if (param_applications.length > 0) {
@@ -174,6 +161,7 @@ datasource "ds_managed_apps_users" do
       field "lastName", jmes_path(col_item, "lastName")
       field "email", jmes_path(col_item, "email")
       field "uniqueId", jmes_path(col_item, "uniqueId")
+      field "activatedAt", jmes_path(col_item, "activatedAt")
       field "deactivatedAt", jmes_path(col_item, "deactivatedAt")
       field "appId", val(iter_item, "appId")
       field "appName", val(iter_item, "appName")
@@ -215,14 +203,15 @@ script "js_inactive_users", type: "javascript" do
 
       if (days_since_active >= param_num_days) {
         result.push({
-          last_name: user['last_name'],
-          first_name: user['first_name'],
+          lastName: user['lastName'],
+          firstName: user['firstName'],
           email: user['email'],
           uniqueId: user['uniqueId'],
           appId: user['appId'],
           appName: user['appName'],
           appDescription: user['appDescription'],
           appVendor: user['appVendor'],
+          activatedAt: user['activatedAt'],
           deactivatedAt: user['deactivatedAt'],
           days_since_active: days_since_active,
           policy_name: ds_applied_policy['name']
@@ -246,10 +235,10 @@ policy "policy_fsm_inactive_users" do
       field "uniqueId" do
         label "User ID"
       end
-      field "last_name" do
+      field "lastName" do
         label "Last Name"
       end
-      field "first_name" do
+      field "firstName" do
         label "First Name"
       end
       field "email" do
@@ -260,6 +249,9 @@ policy "policy_fsm_inactive_users" do
       end
       field "appVendor" do
         label "Vendor"
+      end
+      field "activatedAt" do
+        label "Activation Date"
       end
       field "deactivatedAt" do
         label "Deactivation Date"
