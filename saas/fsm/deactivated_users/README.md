@@ -1,8 +1,8 @@
-# SaaS Manager - Inactive Users By Department
+# SaaS Manager - Deactivated Users
 
 ## What It Does
 
-This policy will create an incident when Flexera SaaS Manager identifies inactive or never active users for managed applications.
+This policy will create an incident when Flexera SaaS Manager identifies deactivated users for managed applications.
 
 ## Functional Description
 

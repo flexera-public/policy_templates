@@ -2,6 +2,8 @@
 
 ## v3.0
 
+- Policy renamed to `SaaS Manager - Deactivated Users` to better reflect its functionality
+- Updated policy to use public SaaS Manager API
 - Added support for APAC API endpoint
 - Policy now uses and requires a general Flexera One credential
 - Incident summary now includes applied policy name
