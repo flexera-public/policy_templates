@@ -25,6 +25,14 @@ parameter "param_email" do
   default []
 end
 
+parameter "param_applications" do
+  type "list"
+  category "Policy Settings"
+  label "Applications"
+  description "A list of application names and/or IDs to check for deactivated users. Leave blank to check all applications."
+  default []
+end
+
 parameter "param_num_days" do
   type "number"
   category "Policy Settings"
@@ -133,16 +141,23 @@ end
 
 # Filter out inactive and invalid apps to avoid needlessly checking them
 datasource "ds_managed_apps_active" do
-  run_script $js_managed_apps_active, $ds_managed_apps
+  run_script $js_managed_apps_active, $ds_managed_apps, $param_applications
 end
 
 script "js_managed_apps_active", type: "javascript" do
   parameters "ds_managed_apps"
   result "result"
   code <<-EOS
-  result = _.filter(ds_managed_apps, function(app) {
-    return app['isActive'] == true && app['appName'] != null && app['vendorName'] != null
-  })
+  if (param_applications.length > 0) {
+    result = _.filter(ds_managed_apps, function(app) {
+      include_app = _.contains(param_applications, app['appName']) || _.contains(param_applications, app['appId'])
+      return include_app && app['isActive'] == true && app['appName'] != null && app['vendorName'] != null
+    })
+  } else {
+    result = _.filter(ds_managed_apps, function(app) {
+      return app['isActive'] == true && app['appName'] != null && app['vendorName'] != null
+    })
+  }
 EOS
 end
 
@@ -187,7 +202,7 @@ datasource "ds_inactive_users" do
 end
 
 script "js_inactive_users", type: "javascript" do
-  parameters "ds_managed_apps_users", "param_num_days"
+  parameters "ds_managed_apps_users", "ds_applied_policy", "param_num_days"
   result "result"
   code <<-EOS
   result = []
@@ -223,8 +238,8 @@ end
 ###############################################################################
 
 policy "policy_fsm_inactive_users" do
-  validate_each $ds_formatted_data do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Inactive SaaS Users"
+  validate_each $ds_inactive_users do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Deactivated SaaS Users"
     check eq(val(item, "email"), "")
     escalate $esc_email
     export do

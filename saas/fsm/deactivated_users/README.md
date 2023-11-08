@@ -13,6 +13,7 @@ This policy uses the [SaaS Management API](https://developer.flexera.com/docs/ap
 This policy has the following input parameters required when launching the policy.
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
+- *Applications* - A list of application names and/or IDs to check for deactivated users. Leave blank to check all applications.
 - *Inactive Days Threshold* - Number of days since user was deactivated to include it in the results.
 
 ## Policy Actions
