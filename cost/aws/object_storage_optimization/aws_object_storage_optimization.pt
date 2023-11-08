@@ -231,12 +231,12 @@ script "js_only_last_modified_objects", type: "javascript" do
   code <<-EOS
     var results = {
       "require_tags": [],
-      "without_tags": [],
-      "param_tags": param_exclude_tags
+      "without_tags": []
     }
-    var tagg = false
+
+    var arr = results.without_tags
     if (param_exclude_tags.length > 0){
-      tagg = true
+      arr = results.require_tags
     }
 
     var glacier_date = new Date();
@@ -274,8 +274,7 @@ script "js_only_last_modified_objects", type: "javascript" do
           }
         }
         if(modify_storage_class_to.length > 0){
-          if (tagg) {
-            results.require_tags.push({
+          var result = {
               "bucket_name": s3Object["bucket_name"],
               "region":s3Object["region"],
               "bucket_creation_date": s3Object["bucket_creation_date"],
@@ -285,21 +284,8 @@ script "js_only_last_modified_objects", type: "javascript" do
               "last_modified": s3Object["last_modified"],
               "modify_storage_class_to": modify_storage_class_to,
               "object_size": s3Object["object_size"]
-            });
-          }else{
-            results.without_tags.push({
-              "bucket_name": s3Object["bucket_name"],
-              "region":s3Object["region"],
-              "bucket_creation_date": s3Object["bucket_creation_date"],
-              "host": s3Object["host"],
-              "object_key": s3Object["object_key"],
-              "storage_class": s3Object["storage_class"],
-              "last_modified": s3Object["last_modified"],
-              "modify_storage_class_to": modify_storage_class_to,
-              "object_size": s3Object["object_size"]
-            });
           }
-
+          arr.push(result);
         }
       }
     });
@@ -329,18 +315,6 @@ script "js_without_tags", type: "javascript" do
   result "results"
   code <<-EOS
     results = s3objects.without_tags
-  EOS
-end
-
-datasource "ds_param_tags" do
-  run_script $js_param_tags, $ds_only_last_modified_objects
-end
-
-script "js_param_tags", type: "javascript" do
-  parameters "s3objects"
-  result "results"
-  code <<-EOS
-    results = s3objects.param_tags
   EOS
 end
 
@@ -377,19 +351,19 @@ datasource "ds_aws_list_s3_objects_with_tags" do
 end
 
 datasource "ds_aws_filtered_s3_objects" do
-  run_script $js_aws_filtered_s3_objects, $ds_aws_list_s3_objects_with_tags, $param_exclude_tags, $ds_get_caller_identity, $ds_without_tags, $ds_param_tags
+  run_script $js_aws_filtered_s3_objects, $ds_aws_list_s3_objects_with_tags, $param_exclude_tags, $ds_get_caller_identity, $ds_without_tags
 end
 
 #Process the response data, check for the tags and generate a list of s3 objects
 script "js_aws_filtered_s3_objects", type: "javascript" do
-  parameters "ds_aws_list_s3_objects_with_tags", "param_exclude_tags", "ds_get_caller_identity", "ds_without_tags", "ds_param_tags"
+  parameters "ds_aws_list_s3_objects_with_tags", "param_exclude_tags", "ds_get_caller_identity", "ds_without_tags"
   result "results"
   code <<-EOS
     results = [];
     var param_exclude_tags_lower=[];
-    if (ds_param_tags.length > 0) {
-      for(var i=0; i < ds_param_tags.length; i++){
-        param_exclude_tags_lower[i]=ds_param_tags[i].toString().toLowerCase();
+    if (param_exclude_tags.length > 0) {
+      for(var i=0; i < param_exclude_tags.length; i++){
+        param_exclude_tags_lower[i]=param_exclude_tags[i].toString().toLowerCase();
       }
     }
 
