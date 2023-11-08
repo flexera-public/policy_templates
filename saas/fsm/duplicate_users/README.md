@@ -12,7 +12,7 @@ This policy uses the [SaaS Management API](https://developer.flexera.com/docs/ap
 
 This policy has the following input parameters required when launching the policy.
 
-- *Email Addresses* - Email addresses of the recipients you wish to notify
+- *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 
 ## Policy Actions
 
