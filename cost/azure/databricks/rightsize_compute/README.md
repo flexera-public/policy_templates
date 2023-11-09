@@ -123,4 +123,4 @@ This Policy Template does not incur any cloud costs
 
 ### Results where `Databricks Cluster ID` == `null`
 
-These are virtual machines that the Flexera platform does not have costs for yet.. if it was launched recently then we won't be able to map it (using cost method) for up to 24hrs.
+These are virtual machines that the Flexera platform does not have costs for yet. If it were launched recently then we won't be able to map it (using cost method) for up to 24hrs.
