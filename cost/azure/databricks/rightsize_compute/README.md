@@ -30,7 +30,7 @@ The savings is displayed in the Estimated Monthly Savings column. The incident m
 
 This is required for the policy templates to be able to map each Azure Virtual Machine to a Databricks Cluster.
 
-Navigate to *Administration } Custom Tags* in Flexera and Create a new Tag Dimension
+Navigate to *Administration > Custom Tags* in Flexera and Create a new Tag Dimension
 
 | Tag Display Name | Tag Keys | Tag ID (if creating via API instead of UI) |
 | ---------------- | -------- | --- |
@@ -65,17 +65,17 @@ This is the recommended method and enables a single Azure Service Principal to t
 
 1. Get Service Principal's Client ID
 
-   You can get this from the Azure Portal or via Flexera } Automation } Credentials and get the Client ID for the Azure RM Credential that is being used.  The Azure SP that is used for other Flexera Azure Policy Templates can be used for the Databricks Policy Templates.
+   You can get this from the Azure Portal or via Flexera > Automation > Credentials and get the Client ID for the Azure RM Credential that is being used.  The Azure SP that is used for other Flexera Azure Policy Templates can be used for the Databricks Policy Templates.
 
 1. Add Service Principal to all DB Workspace using the Client ID
 
-   Databricks Workspace } Admin Settings } Service Principal (i.e. `https://{workspaceUrl}/?#setting/accounts/servicePrincipals` )
+   Databricks Workspace  Admin Settings > Service Principal (i.e. `https://{workspaceUrl}/?#setting/accounts/servicePrincipals` )
 
 1. Grant Service Principal Permissions in DB Workspace
 
    We currently recommend adding Service Principal to `admin` group so it can see all clusters and compute resources within the cluster.
 
-   Databricks Workspace } Admin Settings } Groups (i.e. `https://{workspaceUrl}/?#setting/accounts/groups` )
+   Databricks Workspace > Admin Settings > Groups (i.e. `https://{workspaceUrl}/?#setting/accounts/groups` )
 
 ##### Create `OAuth2` Credential in Flexera
 
