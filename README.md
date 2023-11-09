@@ -28,7 +28,6 @@ These templates can generate savings estimates for your environment.
 #### AWS
 
 - [AWS Delete Unused Classic Load Balancers](./cost/aws/elb/clb_unused)
-- [AWS GP3 Upgradeable Volumes](./cost/aws/gp3_volume_upgrade)
 - [AWS Old Snapshots](./cost/aws/old_snapshots)
 - [AWS Reserved Instances Recommendations](./cost/aws/reserved_instances/recommendations)
 - [AWS Rightsize EBS Volumes](./cost/aws/rightsize_ebs_volumes)
@@ -196,7 +195,6 @@ These templates can generate savings estimates for your environment.
 
 - EBS
 
-  - [AWS GP3 Upgradeable Volumes](./cost/aws/gp3_volume_upgrade)
   - [AWS Unused Volumes](./cost/aws/unused_volumes)
 
 - ELB
@@ -623,11 +621,11 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 33
-  Cost: 96
+  Cost: 95
   Operational: 23
   SaaS Management: 13
   Security: 74
-:optimization_count: 42
+:optimization_count: 41
 :policy_sets:
   '': 81
   AWS Config: 1
@@ -638,7 +636,6 @@ These templates can generate savings estimates for your environment.
   Database Services: 1
   Disallowed Regions: 2
   Forecasting: 4
-  GP3 Volumes: 1
   Hybrid Use Benefit: 3
   ITAM: 4
   Idle Compute Instances: 1
@@ -681,7 +678,7 @@ These templates can generate savings estimates for your environment.
   Unused Volumes: 6
 :providers:
   '': 1
-  AWS: 78
+  AWS: 77
   Azure: 77
   Azure China: 1
   Flexera: 5
@@ -712,7 +709,7 @@ These templates can generate savings estimates for your environment.
   Config: 1
   Cost Explorer: 1
   DBS: 1
-  EBS: 3
+  EBS: 2
   ECS: 1
   ELB: 4
   FNMS: 1
@@ -738,7 +735,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 239
+:total_count: 238
 -->
 <!-- End Policy Template Stats -->
 
