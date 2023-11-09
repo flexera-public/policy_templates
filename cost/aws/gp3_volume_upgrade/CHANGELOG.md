@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.3
+
+- Deprecated: This policy is no longer being updated. Please see policy README for more information.
+
 ## v4.2
 
 - Updated description of `Account Number` parameter
