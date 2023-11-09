@@ -1,7 +1,7 @@
-name "SaaS Manager - Inactive Users for Integrated Applications"
+name "SaaS Manager - Deactivated Users for Integrated Applications"
 rs_pt_ver 20180301
 type "policy"
-short_description "Gets inactive users for the Integrated Applications of the specified Managed SaaS Applications."
+short_description "Gets deactivated users for the Integrated Applications of the specified Managed SaaS Applications."
 long_description ""
 severity "low"
 category "SaaS Management"
@@ -25,12 +25,21 @@ parameter "param_email" do
   default []
 end
 
-parameter "param_application_name" do
+parameter "param_applications" do
   type "list"
   category "Policy Settings"
-  label "Application Name"
-  description "Select Application Name e.g., 'AppExchange Sandbox', 'Office 365', 'Salesforce Sandbox'. Leave empty to query all applications."
+  label "Applications"
+  description "A list of parent application names and/or IDs to check for deactivated users. Leave blank to check all applications."
   default []
+end
+
+parameter "param_num_days" do
+  type "number"
+  category "Policy Settings"
+  label "Inactive Days Threshold"
+  description "Number of days since user was deactivated to include it in the results."
+  min_value 0
+  default 60
 end
 
 ###############################################################################
@@ -87,112 +96,211 @@ end
 
 datasource "ds_managed_apps" do
   request do
-    auth $auth_flexera
-    host val($ds_flexera_api_hosts, "flexera")
-    path join(["/saas/v1/orgs/", rs_org_id, "/managed-apps"])
+    run_script $js_managed_apps, $ds_flexera_api_hosts, rs_org_id
   end
   result do
     encoding "json"
-    collect jmes_path(response, "values") do
-    field "id", jmes_path(col_item,"id")
-    field "vendor_name", jmes_path(col_item, "vendorName")
-    field "app_name", jmes_path(col_item, "appName")
-    field "app_id", jmes_path(col_item, "appId")
-    field "name", jmes_path(col_item, "name")
+    collect jmes_path(response, "values[*]") do
+      field "appId", jmes_path(col_item, "appId")
+      field "appName", jmes_path(col_item, "appName")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "description", jmes_path(col_item, "description")
+      field "vendorName", jmes_path(col_item, "vendorName")
+      field "isActive", jmes_path(col_item, "isActive")
+      field "relatedApps", jmes_path(col_item, "relatedApps")
     end
   end
 end
 
-datasource "ds_app_id_output" do
-  run_script $js_app_id_output, $ds_managed_apps, $param_application_name
+script "js_managed_apps", type: "javascript" do
+  parameters "ds_flexera_api_hosts", "rs_org_id"
+  result "request"
+  code <<-EOS
+  var request = {
+    auth: "auth_flexera",
+    host: ds_flexera_api_hosts["flexera"],
+    path: "/saas/v1/orgs/" + rs_org_id + "/managed-apps",
+    headers: { "content-type": "application/json" },
+    query_params: { "view": "extended" }
+  }
+EOS
 end
 
-script "js_app_id_output", type: "javascript" do
-  parameters "ds_managed_apps", "param_application_name"
+# Filter out inactive and invalid apps to avoid needlessly checking them
+datasource "ds_managed_apps_active" do
+  run_script $js_managed_apps_active, $ds_managed_apps, $param_applications
+end
+
+script "js_managed_apps_active", type: "javascript" do
+  parameters "ds_managed_apps", "param_applications"
   result "result"
   code <<-EOS
-  if (param_application_name.length > 0) {
+  if (param_applications.length > 0) {
     result = _.filter(ds_managed_apps, function(app) {
-      return _.contains(param_application_name, app['name']) && app['app_id'] != null
+      include_app = _.contains(param_applications, app['appName']) || _.contains(param_applications, app['appId'])
+      return include_app && app['isActive'] == true && app['appName'] != null && app['vendorName'] != null
     })
   } else {
     result = _.filter(ds_managed_apps, function(app) {
-      return app['app_id'] != null
+      return app['isActive'] == true && app['appName'] != null && app['vendorName'] != null
     })
   }
+EOS
+end
+
+datasource "ds_integrated_app_ids" do
+  run_script $js_integrated_app_ids, $ds_managed_apps_active
+end
+
+script "ds_integrated_app_ids", type: "javascript" do
+  parameters "ds_managed_apps_active"
+  result "result"
+  code <<-EOS
+  result = []
+
+  _.each(ds_managed_apps_active, function(managed_app) {
+    if (typeof(managed_app['relatedApps']) == 'object') {
+      _.each(managed_app['relatedApps'], function(related_app) {
+        if (related_app['relation'] == 'child') {
+          result.push({
+            parentAppId: managed_app['appId'],
+            parentAppName: managed_app['appName'],
+            id: related_app['id'],
+            href: related_app['href']
+          })
+        }
+      })
+    }
+  })
 EOS
 end
 
 datasource "ds_integrated_apps" do
-  iterate $ds_app_id_output
+  iterate $ds_integrated_app_ids
   request do
-    auth $auth_flexera
-    host val($ds_flexera_api_hosts, "fsm")
-    path join(["/svc/orgs/", rs_org_id, "/sso-discovery/", val(iter_item, "app_id")])
-    query "includeInactive", "false"
-    query "includeUnmapped", "true"
-    query "page", "1"
-    query "pageSize", "400"
-    ignore_status [400]
+    run_script $js_integrated_apps, val(iter_item, 'href'), $ds_flexera_api_hosts, rs_org_id
   end
   result do
     encoding "json"
-    collect jmes_path(response, "items") do
-      field "managed_product_id", jmes_path(col_item, "mappedManagedProduct.id")
-      field "managed_product_name", jmes_path(col_item, "mappedManagedProduct.name")
-      field "managed_product_children", jmes_path(col_item, "mappedManagedProduct.managedProductChildren")
+    collect jmes_path(response, "values[*]") do
+      field "appId", jmes_path(col_item, "appId")
+      field "appName", jmes_path(col_item, "appName")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "description", jmes_path(col_item, "description")
+      field "vendorName", jmes_path(col_item, "vendorName")
+      field "isActive", jmes_path(col_item, "isActive")
+      field "parentAppId", val(iter_item, "parentAppId")
+      field "parentAppName", val(iter_item, "parentAppName")
     end
   end
 end
 
-datasource "ds_integrated_apps_filtered" do
-  run_script $js_integrated_apps_filtered, $ds_integrated_apps
-end
-
-script "js_integrated_apps_filtered", type: "javascript" do
-  parameters "ds_integrated_apps"
-  result "result"
+script "js_integrated_apps", type: "javascript" do
+  parameters "app_href", "ds_flexera_api_hosts", "rs_org_id"
+  result "request"
   code <<-EOS
-  result = _.filter(ds_integrated_apps, function(ia) { return ia['managed_product_id'] != null })
+  var request = {
+    auth: "auth_flexera",
+    host: ds_flexera_api_hosts["flexera"],
+    path: "/saas/v1" + app_href,
+    headers: { "content-type": "application/json" },
+    query_params: { "view": "extended" }
+  }
 EOS
 end
 
-datasource "ds_app_users" do
-  iterate $ds_integrated_apps_filtered
+# Filter out inactive and invalid apps to avoid needlessly checking them
+datasource "ds_integrated_apps_active" do
+  run_script $js_integrated_apps_active, $ds_integrated_apps
+end
+
+script "js_integrated_apps_active", type: "javascript" do
+  parameters "ds_integrated_apps"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_integrated_apps, function(app) {
+    return app['isActive'] == true && app['appName'] != null && app['vendorName'] != null
+  })
+EOS
+end
+
+datasource "ds_integrated_apps_users" do
+  iterate $ds_integrated_apps_active
   request do
-    auth $auth_flexera
-    host val($ds_flexera_api_hosts, "fsm")
-    path join(["/svc/orgs/", rs_org_id, "/managed-products/", val(iter_item, "managed_product_id"), "/managed-product-agents"])
-    query "asc", "true"
-    query "sort", "uniqueId"
+    run_script $js_integrated_apps_users, val(iter_item, 'id'), $ds_flexera_api_hosts, rs_org_id
   end
   result do
     encoding "json"
-    collect jmes_path(response, "items") do
-      field "user_unique_id", jmes_path(col_item, "uniqueId")
-      field "user_first_name", jmes_path(col_item, "firstName")
-      field "user_last_name", jmes_path(col_item, "lastName")
-      field "user_email", jmes_path(col_item, "email")
-      field "user_employee_status", jmes_path(col_item, "employeeStatus")
-      field "managed_product_id", jmes_path(col_item, "managedProductId")
-      field "managed_product_name", val(iter_item, "managed_product_name")
+    collect jmes_path(response, "values[*]") do
+      field "firstName", jmes_path(col_item, "firstName")
+      field "middleName", jmes_path(col_item, "middleName")
+      field "lastName", jmes_path(col_item, "lastName")
+      field "email", jmes_path(col_item, "email")
+      field "uniqueId", jmes_path(col_item, "uniqueId")
+      field "activatedAt", jmes_path(col_item, "activatedAt")
+      field "deactivatedAt", jmes_path(col_item, "deactivatedAt")
+      field "appId", val(iter_item, "appId")
+      field "appName", val(iter_item, "appName")
+      field "appDescription", val(iter_item, "description")
+      field "appVendor", val(iter_item, "vendorName")
+      field "parentAppId", val(iter_item, "parentAppId")
+      field "parentAppName", val(iter_item, "parentAppName")
     end
   end
 end
 
-datasource "ds_app_inactive_users" do
-  run_script $js_app_inactive_users, $ds_app_users, $ds_applied_policy
+script "js_integrated_apps_users", type: "javascript" do
+  parameters "app_id", "ds_flexera_api_hosts", "rs_org_id"
+  result "request"
+  code <<-EOS
+  var request = {
+    auth: "auth_flexera",
+    host: ds_flexera_api_hosts["flexera"],
+    path: "/saas/v1/orgs/" + rs_org_id + "/managed-apps/" + app_id + "/app-users",
+    headers: { "content-type": "application/json" },
+    query_params: { "includeAll": "true" }
+  }
+EOS
 end
 
-script "js_app_inactive_users", type: "javascript" do
-  parameters "ds_app_users", "ds_applied_policy"
+datasource "ds_inactive_users" do
+  run_script $js_inactive_users, $ds_integrated_apps_users, $ds_applied_policy, $param_num_days
+end
+
+script "js_inactive_users", type: "javascript" do
+  parameters "ds_integrated_apps_users", "ds_applied_policy", "param_num_days"
   result "result"
   code <<-EOS
-  result = _.filter(ds_app_users, function(user) { return user['user_employee_status'] == "Inactive" })
+  result = []
+  today = new Date()
 
-  if (result.length > 0) {
-    result[0]['policy_name'] = ds_applied_policy['name']
-  }
+  _.each(ds_integrated_apps_users, function(user) {
+    if (typeof(user['deactivatedAt']) == 'string' && user['deactivatedAt'] != '') {
+      deactivatedAt = new Date(user['deactivatedAt'])
+      days_since_active = Math.round((today - deactivatedAt) / 1000 / 60 / 60 / 24)
+
+      if (days_since_active >= param_num_days) {
+        result.push({
+          lastName: user['lastName'],
+          firstName: user['firstName'],
+          email: user['email'],
+          uniqueId: user['uniqueId'],
+          appId: user['appId'],
+          appName: user['appName'],
+          appDescription: user['appDescription'],
+          appVendor: user['appVendor'],
+          parentAppId: user['parentAppId'],
+          parentAppName: user['parentAppName'],
+          activatedAt: user['activatedAt'],
+          deactivatedAt: user['deactivatedAt'],
+          days_since_active: days_since_active,
+          policy_name: ds_applied_policy['name']
+        })
+      }
+    }
+  })
 EOS
 end
 
@@ -200,31 +308,41 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_managed_apps_inactive_users" do
-  validate_each $ds_app_inactive_users do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: SaaS Manager Inactive Users for Integrated Applications"
-    detail_template "Report showing list of Inactive Users for Integrated Applications"
-    check eq(0, 1)
+policy "policy_fsm_inactive_users" do
+  validate_each $ds_inactive_users do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Deactivated SaaS Users on Integrated Apps"
+    check eq(val(item, "email"), "")
     escalate $esc_email
     export do
-      resource_level false
-      field "managed_product_name" do
-        label "Integrated Application Name"
-      end
-      field "user_unique_id" do
+      field "uniqueId" do
         label "User ID"
       end
-      field "user_first_name" do
-        label "First Name"
-      end
-      field "user_last_name" do
+      field "lastName" do
         label "Last Name"
       end
-      field "user_email" do
+      field "firstName" do
+        label "First Name"
+      end
+      field "email" do
         label "Email"
       end
-      field "user_employee_status" do
-        label "Employee Status"
+      field "appName" do
+        label "Application"
+      end
+      field "parentAppName" do
+        label "Parent Application"
+      end
+      field "appVendor" do
+        label "Vendor"
+      end
+      field "activatedAt" do
+        label "Activation Date"
+      end
+      field "deactivatedAt" do
+        label "Deactivation Date"
+      end
+      field "days_since_active" do
+        label "Days Since Last Active"
       end
     end
   end
