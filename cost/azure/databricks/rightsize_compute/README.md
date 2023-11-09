@@ -57,7 +57,7 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 Setting up authentication to the Azure Databricks workspaces themselves will enable getting additional metadata from the Databricks APIs (Cluster Name, Cluster Type, Cluster Tags)
 
-#### Option 1: Auth to Databricks using Azure Service Principal (Recommended)
+#### Option 1: Authenticate to Databricks using Azure Service Principal (Recommended)
 
 This is the recommended method and enables a single Azure Service Principal to traverse multiple Databricks workspaces in multiple subscriptions.
 
@@ -93,7 +93,7 @@ Replace these:
 curl 'https://api.flexera.com/cred/v2/projects/{flexeraProjectId}/credentials/oauth2/{credentialId}' -X PUT -H 'Content-Type: application/json' -H 'Api-Version: 1.0' -H 'Authorization: Bearer {access_token}' --data-raw '{"description":"","name":"{Credential Name}","grantType":"client_credentials","tags":[{"key":"provider","value":"databricks"}],"clientCredentialsParams":{"additionalParams":{"resource":"2ff814a6-3304-4ab8-85cb-cd0e6f879c1d"},"clientId":"{clientId}","clientSecret":"{clientSecret}"},"tokenUrl":"https://login.windows.net/{tenantId}/oauth2/token"}'
 ```
 
-#### Option 2: Auth to Databricks using Databricks Personal Access Token
+#### Option 2: Authenticate to Databricks using Databricks Personal Access Token
 
 ##### Create `API Key` Credential in Flexera
 
