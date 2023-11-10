@@ -262,26 +262,6 @@ script "js_filtered_subscriptions", type: "javascript" do
 EOS
 end
 
-# # Get all resource groups in each subscription
-# datasource "ds_resource_groups" do
-#   iterate $ds_filtered_subscriptions
-#   request do
-#     auth $auth_azure
-#     pagination $pagination_azure
-#     host $param_azure_endpoint
-#     path join(["/subscriptions/", val(iter_item, "subscriptionId"), "/resourcegroups"])
-#     query "api-version", "2023-07-01"
-#     header "User-Agent", "RS Policies"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "value[*]") do
-#       field "resourceGroup", jmes_path(col_item, "name")
-#       field "managedBy", jmes_path(col_item, "managedBy")
-#     end
-#   end
-# end
-
 #get filtered resource groups for databricks
 
 #get workspaces, and urls
@@ -459,7 +439,6 @@ script "js_azure_databricks_managed_vm_metrics", type: "javascript" do
   var request = {
     auth: "auth_azure",
     pagination: "pagination_azure",
-    //host: param_azure_endpoint, // TODO eval param_azure_endpoint to get the hostname for metrics.monitor..
     host: location+".metrics.monitor.azure.com",
     verb: "POST",
     path: "/subscriptions/"+subscription_id+"/metrics:getBatch",
@@ -472,18 +451,12 @@ script "js_azure_databricks_managed_vm_metrics", type: "javascript" do
       "metricNamespace": "microsoft.compute/virtualmachines",
       "metricnames": "Percentage CPU,Available Memory Bytes",
       "orderby": "average desc"
-      // "validatedimensions": "false",
-      // "filter": "Microsoft.ResourceId eq '*'"
-      // "filter": "Microsoft.ResourceGroupName in ("+JSON.stringify(resourceids).+")"
-      // "filter": "Microsoft.ResourceId eq '*'"
     },
     headers: {
       "User-Agent": "RS Policies",
       "Content-Type": "application/json"
     },
     body: JSON.stringify({ "resourceids": resources })
-    // Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-    // ignore_status: [400, 403, 404]
   }
 EOS
 end
@@ -565,55 +538,6 @@ script "js_filtered_workspace_virtualmachines", type: "javascript" do
   code <<-EOS
   var lastTick = 0; // Holds the timestamp last tick was called
   var tickCount = 0; // Holds the count tick was called
-  // var tickInterval = 10; // Only log one out of every X ticks
-  function debugLogSample(msg) {
-    // Default sinceLastTick to 0 -- we can calculate this later if we have a lastTick set
-    var sinceLastTick=0
-    // Only print one out of every 10 ticks
-    if (tickCount % 10 == 0) {
-      // Log the lastTick
-      if (lastTick > 0) {
-        sinceLastTick = Date.now() - lastTick
-      }
-      // Print debug
-      console.log("sinceLastTickMs="+sinceLastTick+" "+msg)
-      // Update lastTick
-      lastTick = Date.now()
-    }
-    // Increment tick every time
-    // Do this last so the first log printed happens on the first tick
-    tickCount = tickCount+1;
-  }
-
-  // function computeConfidenceInterval(observations, confidenceLevel, zScore) {
-  //   // Don't bother with confidence intervals if we don't have enough observations
-  //   if (observations.length == 1) {
-  //     return [observations[0], observations[0]]
-  //   }
-  //   // Calculate mean
-  //   var sum = observations.reduce(function(a, b) {
-  //       return a + b;
-  //   }, 0);
-  //   var mean = sum / observations.length;
-
-  //   // Calculate standard deviation
-  //   var squaredDiffs = observations.map(function(x) {
-  //       return Math.pow(x - mean, 2);
-  //   });
-  //   var sumOfSquaredDiffs = squaredDiffs.reduce(function(a, b) {
-  //       return a + b;
-  //   }, 0);
-  //   var variance = sumOfSquaredDiffs / (observations.length - 1);
-  //   var standardDeviation = Math.sqrt(variance);
-
-  //   // Calculate margin of error for lower and upport limit
-  //   var standardError = standardDeviation / Math.sqrt(observations.length);
-  //   var marginOfError = zScore * standardError;
-  //   return [mean - marginOfError, mean + marginOfError];
-  // }
-  // var zScore = 1.96; // for a 95% confidence interval
-  // var interval = computeConfidenceInterval(observations, confidenceLevel, zScore);
-  // console.log('The ' + (confidenceLevel * 100) + '% confidence interval is [' + interval[0] + ', ' + interval[1] + ']');
 
   var result = [];
   // Loop through all the batched metrics results
@@ -665,14 +589,6 @@ script "js_filtered_workspace_virtualmachines", type: "javascript" do
           _.each(stats_data_names, function(stat) {
             var measurements = _.compact(_.pluck(resourceMetrics.data,stat))
             if (measurements.length > 0) {
-              // var s = "tick="+tickCount+"/"+(ds_azure_databricks_managed_vm_metrics.length*vm_metrics.value.length*metricNames.timeseries.length*stats_data_names.length*measurements.length)+" resourceid="+vm_metrics.resourceid
-
-              // ci holds the Confidence Interval for the measurements and confidenceLevel
-              // s is a string used for debugging
-              // var ci = computeConfidenceInterval(measurements, confidenceLevel, zScore, s)
-              // if (typeof ci[0] != "null" && _.isNumber(ci[0])) { r["metricsForPeriod"][metricName+"_"+stat+"_p95lower"] = ci[0] }
-              // if (typeof ci[1] != "null" && _.isNumber(ci[1])) { r["metricsForPeriod"][metricName+"_"+stat+"_p95upper"] = ci[1] }
-
               switch(stat) {
                 case "minimum":
                   r["metricsForPeriod"][metricName+"_minimum"] = _.min(measurements)
@@ -712,13 +628,11 @@ script "js_filtered_workspace_virtualmachines_with_costs", type: "javascript" do
     resource_costs = _.filter(ds_databricks_workspaces_vm_costs, function(cost) {
       // check if names match using case-insensitive comparison
       // bill data sometimes makes RG uppercase, whereas the api value is lowercase
-      // console.log("finding if "+cost["resourceId"].toLowerCase()+" == "+r["resourceId"].toLowerCase())
       return cost["resourceId"].toLowerCase() == r["resourceId"].toLowerCase()
     })
 
     // Check if we found cost information for this resource
     if (resource_costs.length > 0) {
-      // console.log("resource_costs="+JSON.stringify(resource_costs))
       // If we did, add it to the result -- starting at 0
       r["total_cost"] = 0
       // Loop through the costs and add them up
@@ -815,9 +729,7 @@ script "js_databricks_workspaces_vm_costs", type: "javascript" do
   result "request"
   code <<-EOS
   subscription_id = iter_item["managedResourceGroupId"].split("/")[2]
-  // console.log("subscription_id: "+subscription_id)
   resource_group = iter_item["managedResourceGroupId"].split("/")[4]
-  // console.log("resource_group: "+resource_group)
 
   var request = {
     auth: "auth_flexera",
@@ -885,7 +797,6 @@ script "js_databricks_workspaces_vm_costs", type: "javascript" do
       'Api-Version': "1.0"
     }
   }
-  // console.log("request="+JSON.stringify(request))
 EOS
 end
 
@@ -946,71 +857,6 @@ script "js_virtualmachines_from_bill", type: "javascript" do
   EOS
 end
 
-# datasource "ds_filtered_workspace_virtualmachines_grouped_result" do
-#   run_script $js_filtered_workspace_virtualmachines_grouped_result, $ds_filtered_workspace_virtualmachines
-# end
-
-# script "js_filtered_workspace_virtualmachines_grouped_result", type: "javascript" do
-#   parameters "ds_filtered_workspace_virtualmachines"
-#   result "result"
-#   code <<-EOS
-#   var grouped_result = {}
-#   var total_cost = 0
-#   // Loop through results and group them by databricks workspace
-#   _.each(ds_filtered_workspace_virtualmachines, function(vm) {
-#     if (grouped_result[vm.databricks_workspace.workspaceId] == null) {
-#       // console.log("adding workspace: "+vm.databricks_workspace.workspaceId)
-#       grouped_result[vm.databricks_workspace.workspaceId] = {
-#         "databricks_workspace": vm.databricks_workspace,
-#         "total_cost": 0,
-#         "databricks_clusters": {}
-#       }
-#     }
-#     if (grouped_result[vm.databricks_workspace.workspaceId]["databricks_clusters"][vm.databricks_cluster_id] == null) {
-#       // console.log("adding cluster: "+vm.databricks_cluster_id)
-#       grouped_result[vm.databricks_workspace.workspaceId]["databricks_clusters"][vm.databricks_cluster_id] = {
-#         "databricks_cluster_id": vm.databricks_cluster_id,
-#         "databricks_cluster": vm.databricks_cluster,
-#         "total_cost": 0,
-#         "resources": []
-#       }
-#     }
-#     // console.log("adding resource: "+vm.resourceId+" to cluster: "+vm.databricks_cluster_id+" in workspace: "+vm.databricks_workspace.workspaceId)
-#     grouped_result[vm.databricks_workspace.workspaceId]["databricks_clusters"][vm.databricks_cluster_id]["resources"].push({
-#       "metricsForPeriod": vm.metricsForPeriod,
-#       "total_cost": vm.total_cost,
-#       "unit_cost": vm.unit_cost,
-#       "resourceType": vm.resourceType,
-#       "resourceId": vm.resourceId
-#     })
-#     if (vm.total_cost != null && vm.total_cost != undefined) {
-#       grouped_result[vm.databricks_workspace.workspaceId]["databricks_clusters"][vm.databricks_cluster_id]["total_cost"] = grouped_result[vm.databricks_workspace.workspaceId]["databricks_clusters"][vm.databricks_cluster_id]["total_cost"] + vm.total_cost
-#       grouped_result[vm.databricks_workspace.workspaceId]["total_cost"] = grouped_result[vm.databricks_workspace.workspaceId]["total_cost"] + vm.total_cost
-#       total_cost = total_cost + vm.total_cost
-#     }
-#   })
-#   var result = {
-#     databricks_workspaces: grouped_result,
-#     total_cost: total_cost,
-#     result_virtualmachines: ds_filtered_workspace_virtualmachines
-#   }
-#   EOS
-# end
-
-# datasource "ds_filtered_workspace_virtualmachines_details" do
-#   iterate $ds_filtered_workspace_virtualmachines
-#   request do
-#     auth $auth_azure
-#     pagination $pagination_azure
-#     host $param_azure_endpoint
-#     path val(iter_item, "resourceId")
-#     query "api-version", "2019-03-01"
-#     header "User-Agent", "RS Policies"
-#     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-#     ignore_status [400, 403, 404]
-#   end
-# end
-
 datasource "ds_idle_and_underutil_instances" do
   run_script $js_idle_and_underutil_instances, $param_stats_check_both, $param_stats_threshold, $param_stats_idle_threshold_cpu_value, $param_stats_underutil_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_mem_value, $ds_filtered_workspace_virtualmachines_with_costs, $ds_azure_instance_size_map
 end
@@ -1046,7 +892,7 @@ script "js_idle_and_underutil_instances", type: "javascript" do
     is_idle_mem = mem_value < param_stats_idle_threshold_mem_value
     is_underutil_mem = mem_value < param_stats_underutil_threshold_mem_value
 
-      // Determine whether we're checking for CPU, memory, or both
+    // Determine whether we're checking for CPU, memory, or both
     checking_cpu = param_stats_underutil_threshold_cpu_value != -1 || param_stats_idle_threshold_cpu_value != -1
     checking_mem = param_stats_underutil_threshold_mem_value != -1 || param_stats_idle_threshold_mem_value != -1
 
@@ -1074,7 +920,7 @@ script "js_idle_and_underutil_instances", type: "javascript" do
       if (is_idle) { // First check to see if the resource is below the lower "idle" thresholds
         vm["recommendationType"] = "Delete"
         vm["recommendationDetails"] = [
-          "Delete Azure virtual machine ", vm["resourceId"], " ",
+          "Delete Databricks Cluster "+vm["databricks_cluster_id"]+" which created Azure virtual machine ", vm["resourceId"], " ",
           "in Azure Subscription ", vm["subscriptionName"], " ",
           "(", vm["subscriptionId"], ")"
         ].join("")
@@ -1091,7 +937,7 @@ script "js_idle_and_underutil_instances", type: "javascript" do
         }
         vm["recommendationType"] = "Downsize"
         vm["recommendationDetails"] = [
-          "Resize Azure virtual machine ", vm["resourceId"], " ",
+          "Resize Databricks Cluster "+vm["databricks_cluster_id"]+" which created Azure virtual machine ", vm["resourceId"], " ",
           "in Azure Subscription ", vm["subscriptionName"], " ",
           "(", vm["subscriptionId"], ") ",
           "from ", vm["resourceType"], " ",
