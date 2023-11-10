@@ -2,7 +2,8 @@
 
 ## v3.2
 
-- Added a filter to the S3 Objects that will be moved to deeper or glacier storage class.
+- Optimized policy code to speed up execution.
+- Tags for objects are not requested if the parameter Tag exclude is empty.
 - Added a new parameter `Bucket List`.
 
 ## v3.1
