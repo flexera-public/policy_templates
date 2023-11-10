@@ -177,7 +177,15 @@ end
 # Datasources & Scripts
 ###############################################################################
 
-# Get all subscriptions
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
 
 datasource "ds_billing_centers" do
   request do
@@ -217,6 +225,7 @@ script "js_top_level_bcs", type: "javascript" do
 EOS
 end
 
+# Get all subscriptions
 datasource "ds_subscriptions" do
   request do
     auth $auth_azure
@@ -858,11 +867,11 @@ script "js_virtualmachines_from_bill", type: "javascript" do
 end
 
 datasource "ds_idle_and_underutil_instances" do
-  run_script $js_idle_and_underutil_instances, $param_stats_check_both, $param_stats_threshold, $param_stats_idle_threshold_cpu_value, $param_stats_underutil_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_mem_value, $ds_filtered_workspace_virtualmachines_with_costs, $ds_azure_instance_size_map
+  run_script $js_idle_and_underutil_instances, $param_stats_check_both, $param_stats_threshold, $param_stats_idle_threshold_cpu_value, $param_stats_underutil_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_mem_value, $ds_filtered_workspace_virtualmachines_with_costs, $ds_azure_instance_size_map, $ds_applied_policy
 end
 
 script "js_idle_and_underutil_instances", type: "javascript" do
-  parameters "param_stats_check_both", "param_stats_threshold", "param_stats_idle_threshold_cpu_value", "param_stats_underutil_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_mem_value", "ds_filtered_workspace_virtualmachines_with_costs", "ds_azure_instance_size_map"
+  parameters "param_stats_check_both", "param_stats_threshold", "param_stats_idle_threshold_cpu_value", "param_stats_underutil_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_mem_value", "ds_filtered_workspace_virtualmachines_with_costs", "ds_azure_instance_size_map", "ds_applied_policy"
   result "result"
   code <<-EOS
   underutil_total_savings = 0.0
@@ -871,7 +880,11 @@ script "js_idle_and_underutil_instances", type: "javascript" do
   underutil_list = []
   idle_list = []
 
+  applied_policy_name = ds_applied_policy["name"]
+
   _.each(ds_filtered_workspace_virtualmachines_with_costs, function(vm) {
+    // Set the Applied Policy Name which is used in the summary_template/detail_template output
+    vm["policy_name"] = applied_policy_name
     // Get the utilization metrics that we are going to use for comparison
     cpu_value = vm.metricsForPeriod["cpu_"+param_stats_threshold.toLowerCase()]
     mem_value = vm.metricsForPeriod["memory_"+param_stats_threshold.toLowerCase()+"_percent"]
@@ -997,15 +1010,15 @@ end
 
 policy "pol_databricks_optimizations" do
   validate $ds_idle_instances do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Databricks compute instances that are Idle"
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Databricks Idle Virtual Machines Found"
     detail_template <<-'EOS'
 ## Summary
 
 {{ rs_project_name }} (Account ID: {{ rs_project_id }}): Databricks Workspaces with compute resources that are Idle
 
-Found {{ len data }} Databricks compute resources that were *underutilized* during the last {{ parameters.param_stats_lookback }} days.  *Idle* compute resources are those which have **less than {{ parameters.param_stats_idle_threshold_cpu_value }}% {{ parameters.param_stats_threshold }} CPU utilization** within the last {{ parameters.param_stats_lookback }} days.
+Found {{ len data }} Databricks compute resources that were *idle* during the last {{ parameters.param_stats_lookback }} days.  *Idle* compute resources are those which have **less than {{ parameters.param_stats_idle_threshold_cpu_value }}% {{ parameters.param_stats_threshold }} CPU utilization** within the last {{ parameters.param_stats_lookback }} days.
     EOS
-    check logic_or($ds_parent_policy_terminated,    eq(0,1)    ) # For Dev Only.. Always create an incident
+    check logic_or($ds_parent_policy_terminated,    eq(0,size(data))    )
     export do
       resource_level true
       field "savings" do
@@ -1107,7 +1120,7 @@ Found {{ len data }} Databricks compute resources that were *underutilized* duri
     end
   end
   validate $ds_underutilized_instances do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Databricks compute instances that are underutilized"
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Databricks Underutilized Virtual Machines Found"
     detail_template <<-'EOS'
 ## Summary
 
@@ -1115,7 +1128,7 @@ Found {{ len data }} Databricks compute resources that were *underutilized* duri
 
 Found {{ len data }} Databricks compute resources that were *underutilized* during the last {{ parameters.param_stats_lookback }} days.  *Underutilized* compute resources are those which have **less than {{ parameters.param_stats_underutil_threshold_cpu_value }}% {{ parameters.param_stats_threshold }} CPU utilization** within the last {{ parameters.param_stats_lookback }} days.
     EOS
-    check eq(  1  ,  0  ) # For Dev Only.. Always create an incident
+    check logic_or($ds_parent_policy_terminated,    eq(0,size(data))    )
     export do
       resource_level true
       field "savings" do
