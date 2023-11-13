@@ -2,9 +2,12 @@
 
 ## v3.0
 
+- Updated policy to use public SaaS Manager API
 - Added support for APAC API endpoint
 - Policy now uses and requires a general Flexera One credential
+- Added `Applications` parameter to allow user to filter results by application
 - Incident summary now includes applied policy name
+- Incident now includes additional fields to provide more context
 - General code cleanup and normalization
 
 ## v2.6
