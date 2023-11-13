@@ -67,9 +67,9 @@ parameter "param_stats_interval" do
   type "string"
   category "Statistics"
   label "Statistic Interval"
-  description "Interval to use for the time span.  PT1M=1 minute, PT5M=5 minutes, PT15M=15 minutes, PT30M=30 minutes, PT1H=1 hour, PT6H=6 hours, PT12H=12 hours, P1D=1 day"
-  allowed_values "PT1M","PT5M","PT15M","PT30M","PT1H","PT6H","PT12H","P1D"
-  default "PT5M"
+  description "Interval to use for the time span."
+  allowed_values "1 minute", "5 minutes", "15 minutes", "30 minutes", "1 hour", "6 hours", "12 hours", "1 day"
+  default "1 day"
 end
 
 parameter "param_stats_lookback" do
@@ -323,6 +323,29 @@ script "js_databricks_workspaces_filtered", type: "javascript" do
 EOS
 end
 
+datasource "ds_param_stats_interval" do
+  run_script $js_param_stats_interval, $param_stats_interval
+end
+
+script "js_param_stats_interval", type: "javascript" do
+  parameters "param_stats_interval"
+  result "result"
+  code <<-EOS
+  // Tables to convert human-readable parameter values to their API equivalents
+  map = {
+    "1 minute": "PT1M",
+    "5 minutes": "PT5M",
+    "15 minutes": "PT15M",
+    "30 minutes": "PT30M",
+    "1 hour": "PT1H",
+    "6 hours": "PT6H",
+    "12 hours": "PT12H",
+    "1 day": "P1D"
+  }
+  result = map[param_stats_interval]
+  EOS
+end
+
 datasource "ds_lookback_time_formats" do
   run_script $js_lookback_time_formats, $param_stats_lookback
 end
@@ -430,12 +453,12 @@ end
 datasource "ds_azure_databricks_managed_vm_metrics" do
   iterate $ds_virtualmachines_from_bill
   request do
-    run_script $js_azure_databricks_managed_vm_metrics, $param_azure_endpoint, $param_stats_interval, $ds_lookback_time_formats, jq(iter_item, "[.virtualmachines[] .resourceId ]"), jq(iter_item, ".databricks_workspace.location"), jq(iter_item, ".databricks_workspace.managedResourceGroupId")
+    run_script $js_azure_databricks_managed_vm_metrics, $param_azure_endpoint, $ds_param_stats_interval, $ds_lookback_time_formats, jq(iter_item, "[.virtualmachines[] .resourceId ]"), jq(iter_item, ".databricks_workspace.location"), jq(iter_item, ".databricks_workspace.managedResourceGroupId")
   end
 end
 
 script "js_azure_databricks_managed_vm_metrics", type: "javascript" do
-  parameters "param_azure_endpoint", "param_stats_interval", "ds_lookback_time_formats", "resources", "location", "managedResourceGroupId"
+  parameters "param_azure_endpoint", "ds_param_stats_interval", "ds_lookback_time_formats", "resources", "location", "managedResourceGroupId"
   result "request"
   code <<-EOS
   // Get the Subscription
@@ -454,7 +477,7 @@ script "js_azure_databricks_managed_vm_metrics", type: "javascript" do
     query_params: {
       "api-version": "2023-03-01-preview",
       "timespan": ds_lookback_time_formats["azure_timespan"],
-      "interval": param_stats_interval,
+      "interval": ds_param_stats_interval,
       "aggregation": "minimum,average,maximum",
       "region": location,
       "metricNamespace": "microsoft.compute/virtualmachines",
