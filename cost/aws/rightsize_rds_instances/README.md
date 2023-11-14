@@ -10,6 +10,7 @@ This policy template checks for unused and underutilized RDS instances by review
 - The policy identifies all instances that have had no connections over a user-specified number of days and provides the relevant recommendation.
 - The recommendation provided for unused instances is a termination action. These instances can be terminated in an automated manner or after approval.
 - The policy identifies all instances that have CPU usage below the user-specified threshold over a user-specified number of days and provides the relevant recommendation. If the user has opted to report on both unused and underutilized instances (default), unused instances are excluded from this analysis. Average CPU utilization is the metric used for this assessment by default, but the user can choose other metrics via the `Threshold Statistic` parameter.
+- The policy filters the results by removing any instances that are already at the smallest available size for their particular region and database engine type.
 - The recommendation provided for underutilized instances is a downsize action. These instances can be downsized in an automated manner or after approval.
 
 ### Policy Savings Details
