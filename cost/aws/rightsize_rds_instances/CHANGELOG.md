@@ -6,6 +6,7 @@
 - Several parameters altered to be more descriptive and human-readable
 - Policy now reports on both unused and underutilized RDS instances
 - Policy now reports savings for both unused and underutilized RDS instance recommendations
+- Fixed issue where policy would sometimes recommend downsizing to unsupported instance types
 - Added ability to choose between different CPU metrics for assessing utilization
 - Removed deprecated "Log to CM Audit Entries" parameter
 - Added ability to only report recommendations that meet a minimum savings threshold
