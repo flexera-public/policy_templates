@@ -34,6 +34,7 @@ parameter "param_dimension_filter_includes" do
   If no include filters are provided, then all AWS Accounts are included by default.
   Most of the dimensions in Flexera can be used [default dimensions, custom tag dimensions, rule-based dimensions].  Full list of available dimensions documented in the [Bill Analysis API Docs](https://reference.rightscale.com/bill_analysis/).
   EOS
+  default []
 end
 
 parameter "param_dimension_filter_excludes" do
@@ -823,9 +824,8 @@ script "js_ds_underutil_instances_combined_incidents", type: "javascript" do
   result = []
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
-    // If the incident summary contains "AWS Underutilized EC" then include it in the filter result
-    console.log("s="+s);
-    if (s.toLowerCase().indexOf("aws underutilized ec2 instances found") > -1) {
+    // If the incident summary contains "AWS Underutilized EC2 Instances Found" then include it in the filter result
+    if (s.indexOf("AWS Underutilized EC2 Instances Found") > -1) {
       _.each(incident["violation_data"], function(violation) {
         violation["incident_id"] = incident["id"];
         result.push(violation);
@@ -846,9 +846,8 @@ script "js_ds_idle_instances_combined_incidents", type: "javascript" do
   result = []
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
-    // If the incident summary contains "aws idle ec2 instances found" then include it in the filter result
-    console.log("s="+s);
-    if (s.toLowerCase().indexOf("aws idle ec2 instances found") > -1) {
+    // If the incident summary contains "AWS Idle EC2 Instances Found" then include it in the filter result
+    if (s.indexOf("AWS Idle EC2 Instances Found") > -1) {
       _.each(incident["violation_data"], function(violation) {
         violation["incident_id"] = incident["id"];
         result.push(violation);
@@ -865,13 +864,11 @@ end
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
-    # Consolidated incident for AWS Underutilized EC
+    # Consolidated incident for AWS Underutilized EC2 Instances Found
   validate $ds_underutil_instances_combined_incidents do
     summary_template "Consolidated Incident: {{ len data }} AWS Underutilized EC2 Instances Found"
     escalate $esc_email
-    escalate $esc_downsize_instances_child
-    escalate $esc_stop_instances_child
-    escalate $esc_terminate_instances_child
+    escalate $esc_downsize_instances
     check eq(size(data), 0)
     export do
       resource_level true
@@ -977,13 +974,12 @@ policy "policy_scheduled_report" do
     end
   end
 
-  # Consolidated incident for AWS Idle EC2 Instances
+  # Consolidated incident for AWS Idle EC2 Instances Found
   validate $ds_idle_instances_combined_incidents do
     summary_template "Consolidated Incident: {{ len data }} AWS Idle EC2 Instances Found"
     escalate $esc_email
-    escalate $esc_downsize_instances_child
-    escalate $esc_stop_instances_child
-    escalate $esc_terminate_instances_child
+    escalate $esc_stop_instances
+    escalate $esc_terminate_instances
     check eq(size(data), 0)
     export do
       resource_level true
@@ -1188,42 +1184,36 @@ EOS
   end
 end
 
-# Used only for emailing the combined child incident if so desired
-escalation "esc_email" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_combined_incident_email
-end
-
-# Copied from Child Policy Template
-escalation "esc_downsize_instances_child" do
-  automatic false # Do not automatically escalate, if param is set, the child will handle automatic escalation
+# Escalation for Downsize Instances
+escalation "esc_downsize_instances" do
+  automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
   label "Downsize Instances"
   description "Approval to downsize all selected instances"
-  run "esc_downsize_instances_child", data, rs_governance_host, rs_project_id
+  run "esc_downsize_instances", data, rs_governance_host, rs_project_id
 end
-define esc_downsize_instances_child($data, $governance_host, $rs_project_id) do
+define esc_downsize_instances($data, $governance_host, $rs_project_id) do
   call child_run_action($data, $governance_host, $rs_project_id, "Downsize Instances")
 end
 
-escalation "esc_stop_instances_child" do
-  automatic false # Do not automatically escalate, if param is set, the child will handle automatic escalation
+# Escalation for Stop Instances
+escalation "esc_stop_instances" do
+  automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
   label "Stop Instances"
   description "Approval to stop all selected instances"
-  run "esc_stop_instances_child", data, rs_governance_host, rs_project_id
+  run "esc_stop_instances", data, rs_governance_host, rs_project_id
 end
-define esc_stop_instances_child($data, $governance_host, $rs_project_id) do
+define esc_stop_instances($data, $governance_host, $rs_project_id) do
   call child_run_action($data, $governance_host, $rs_project_id, "Stop Instances")
 end
 
-escalation "esc_terminate_instances_child" do
-  automatic false # Do not automatically escalate, if param is set, the child will handle automatic escalation
+# Escalation for Terminate Instances
+escalation "esc_terminate_instances" do
+  automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
   label "Terminate Instances"
   description "Approval to terminate all selected instances"
-  run "esc_terminate_instances_child", data, rs_governance_host, rs_project_id
+  run "esc_terminate_instances", data, rs_governance_host, rs_project_id
 end
-define esc_terminate_instances_child($data, $governance_host, $rs_project_id) do
+define esc_terminate_instances($data, $governance_host, $rs_project_id) do
   call child_run_action($data, $governance_host, $rs_project_id, "Terminate Instances")
 end
 
@@ -1256,6 +1246,11 @@ define child_run_action($data, $governance_host, $rs_project_id, $action_label) 
   $$debug_incidents = to_json($incidents)
 
   call runActions($incidents, $action_label, $governance_host, $rs_project_id)
+
+  # If we encountered any errors, use `raise` to mark the CWF process as errored
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
 
   # If we made it here, all actions completed successfully
   # Celebrate Success!
@@ -1347,12 +1342,6 @@ define runActions($incidents, $action_label, $governance_host, $rs_project_id) d
           raise "action_status=\""+$action_status+"\" Action did not complete as expected. action_status_json="+to_json($response)
         end
       end
-
-      # If we encountered any errors, use `raise` to mark the CWF process as errored
-      if inspect($$errors) != "null"
-        raise join($$errors,"\n")
-      end
-
       # If we made it here, the action completed successfully
       task_label("action_status=\""+$action_status+"\" Action completed successfully")
     end
@@ -1369,6 +1358,14 @@ define handle_error() do
   # We check for errors at the end, and raise them all together
   # Skip errors handled by this definition
   $_error_behavior = "skip"
+end
+
+# Used only for emailing the combined child incident if so desired
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_combined_incident_email
 end
 
 escalation "create_policies" do
