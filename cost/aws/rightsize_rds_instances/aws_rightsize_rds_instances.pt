@@ -108,6 +108,15 @@ parameter "param_stats_threshold" do
   default "Average"
 end
 
+parameter "param_downsize_timeframe" do
+  type "string"
+  category "Actions"
+  label "Downsize Timeframe"
+  description "Whether to downsize underutilized RDS instances immediately or wait until the next maintenance window."
+  allowed_values "Downsize Immediately", "Wait for Maintenance Window"
+  default "Wait for Maintenance Window"
+end
+
 parameter "param_automatic_action" do
   type "list"
   category "Actions"
@@ -1661,7 +1670,7 @@ escalation "esc_downsize_rds_instances" do
   automatic contains($param_automatic_action, "Downsize Underutilized RDS Instances")
   label "Downsize Underutilized RDS Instances"
   description "Approval to downsize all selected underutilized RDS instances"
-  run "downsize_rds_instances", data
+  run "downsize_rds_instances", data, $param_downsize_timeframe
 end
 
 escalation "esc_terminate_rds_instances" do
@@ -1675,12 +1684,12 @@ end
 # Cloud Workflow
 ###############################################################################
 
-define downsize_rds_instances($data) return $all_responses do
+define downsize_rds_instances($data, $param_downsize_timeframe) return $all_responses do
   $$all_responses = []
 
   foreach $instance in $data do
     sub on_error: handle_error() do
-      call downsize_instance($instance) retrieve $downsize_response
+      call downsize_instance($instance, $param_downsize_timeframe) retrieve $downsize_response
     end
   end
 
@@ -1703,10 +1712,23 @@ define terminate_rds_instances($data) return $all_responses do
   end
 end
 
-define downsize_instance($instance) return $response do
+define downsize_instance($instance, $param_downsize_timeframe) return $response do
   $host = "rds." + $instance["region"] + ".amazonaws.com"
   $href = "/"
   $params = "?Action=ModifyDBInstance&Version=2014-10-31&DBInstanceIdentifier=" + $instance["resourceName"] + "&DBInstanceClass=" + $instance["newResourceType"]
+
+  $query_strings = {
+    "Action": "ModifyDBInstance",
+    "Version": "2014-10-31",
+    "DBInstanceIdentifier": $instance["resourceName"],
+    "DBInstanceClass": $instance["newResourceType"]
+  }
+
+  if $param_downsize_timeframe == "Downsize Immediately"
+    $query_strings["ApplyImmediately"] = "true"
+    $params = $params + "&ApplyImmediately=true"
+  end
+
   $url = $host + $href + $params
   task_label("GET " + $url)
 
@@ -1716,12 +1738,7 @@ define downsize_instance($instance) return $response do
     verb: "get",
     host: $host,
     href: $href,
-    query_strings: {
-      "Action": "ModifyDBInstance",
-      "Version": "2014-10-31",
-      "DBInstanceIdentifier": $instance["resourceName"],
-      "DBInstanceClass": $instance["newResourceType"]
-    }
+    query_strings: $query_strings
   )
 
   task_label("GET AWS RDS instance response: " + $instance["resourceName"] + " " + to_json($response))

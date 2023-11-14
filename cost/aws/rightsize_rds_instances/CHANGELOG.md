@@ -10,6 +10,7 @@
 - Removed deprecated "Log to CM Audit Entries" parameter
 - Added ability to only report recommendations that meet a minimum savings threshold
 - Added ability to filter resources by multiple tag key:value pairs
+- Added ability to downsize instances immediately or during next maintenance window
 - Added additional context to incident description
 - Normalized incident export to be consistent with other policies
 - Added human-readable recommendation to incident export
