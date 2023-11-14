@@ -498,7 +498,7 @@ datasource "ds_rds_instances_set" do
       field "privateDnsName", xpath(col_item, "Endpoint/Address")
       field "databaseEngine", xpath(col_item, "Engine")
       field "engineVersion", xpath(col_item, "EngineVersion")
-      field "region",val(iter_item, "region")
+      field "region", val(iter_item, "region")
     end
   end
 end
@@ -1113,6 +1113,113 @@ script "js_rds_underutil_instances", type: "javascript" do
 EOS
 end
 
+# Find the available resource types for each engine/region so we can filter out invalid recommendations
+datasource "ds_rds_underutil_instance_types" do
+  run_script $js_rds_underutil_instances_types, $ds_rds_underutil_instances
+end
+
+script "js_rds_underutil_instances_types", type: "javascript" do
+  parameters "ds_rds_underutil_instances"
+  result "result"
+  code <<-'EOS'
+  result = []
+  databaseEngines = _.compact(_.uniq(_.pluck(ds_rds_underutil_instances, 'databaseEngine')))
+  regions = _.compact(_.uniq(_.pluck(ds_rds_underutil_instances, 'region')))
+
+  _.each(databaseEngines, function(databaseEngine) {
+    _.each(regions, function(region) {
+      result.push({
+        databaseEngine: databaseEngine,
+        region: region
+      })
+    })
+  })
+EOS
+end
+
+datasource "ds_rds_underutil_instance_options" do
+  iterate $ds_rds_underutil_instance_types
+  request do
+    run_script $js_rds_underutil_instance_options, val(iter_item, "databaseEngine"), val(iter_item, "region")
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeOrderableDBInstanceOptionsResponse/DescribeOrderableDBInstanceOptionsResult/OrderableDBInstanceOptions/OrderableDBInstanceOption[*]", "array") do
+      field "resourceType", xpath(col_item, "DBInstanceClass")
+      field "databaseEngine", val(iter_item, "databaseEngine")
+      field "region", val(iter_item, "region")
+    end
+  end
+end
+
+script "js_rds_underutil_instance_options", type: "javascript" do
+  parameters "databaseEngine", "region"
+  result "request"
+  code <<-EOS
+  var request = {
+    auth: "auth_aws",
+    host: "rds." + region + ".amazonaws.com",
+    verb: "GET",
+    path: "/",
+    headers: {
+      "User-Agent": "RS Policies",
+      "Content-Type": "text/xml"
+    }
+    query_params: {
+      "Action": "DescribeOrderableDBInstanceOptions",
+      "Engine": databaseEngine,
+      "Version": "2014-10-31"
+    }
+  }
+EOS
+end
+
+datasource "ds_rds_underutil_instances_cleaned" do
+  run_script $js_rds_underutil_instances_cleaned, $ds_rds_underutil_instances, $ds_rds_underutil_instance_options
+end
+
+script "js_rds_underutil_instances_cleaned", type: "javascript" do
+  parameters "ds_rds_underutil_instances", "ds_rds_underutil_instance_options"
+  result "result"
+  code <<-'EOS'
+  resourceTypeTable = {}
+
+  _.each(ds_rds_underutil_instance_options, function(option) {
+    databaseEngine = option['databaseEngine']
+    region = option['region']
+    resourceType = option['resourceType']
+
+    if (resourceTypeTable[region] == undefined) {
+      resourceTypeTable[region] = {}
+    }
+
+    if (resourceTypeTable[region][databaseEngine] == undefined) {
+      resourceTypeTable[region][databaseEngine] = []
+    }
+
+    resourceTypeTable[region][databaseEngine].push(resourceType)
+  })
+
+  result = _.filter(ds_rds_underutil_instances, function(instance) {
+    region = instance['region']
+    databaseEngine = instance['databaseEngine']
+    newResourceType = instance['newResourceType']
+
+    valid_recommendation = false
+
+    if (typeof(region) == 'string' && typeof(databaseEngine) == 'string' && typeof(newResourceType) == 'string') {
+      if (typeof(resourceTypeTable[region]) == 'object') {
+        if (typeof(resourceTypeTable[region][databaseEngine]) == 'object') {
+          valid_recommendation = _.contains(resourceTypeTable[region][databaseEngine], newResourceType)
+        }
+      }
+    }
+
+    return valid_recommendation
+  })
+EOS
+end
+
 datasource "ds_rds_idle_incident" do
   run_script $js_rds_idle_incident, $ds_rds_instances, $ds_rds_idle_instances, $ds_currency, $ds_aws_account, $ds_applied_policy, $param_stats_lookback, $param_min_savings
 end
@@ -1231,11 +1338,11 @@ EOS
 end
 
 datasource "ds_rds_underutil_incident" do
-  run_script $js_rds_underutil_incident, $ds_rds_instances, $ds_rds_underutil_instances, $ds_currency, $ds_aws_account, $ds_applied_policy, $param_stats_lookback, $param_min_savings, $param_stats_threshold, $param_stats_underutil_threshold_cpu_value
+  run_script $js_rds_underutil_incident, $ds_rds_instances, $ds_rds_underutil_instances_cleaned, $ds_currency, $ds_aws_account, $ds_applied_policy, $param_stats_lookback, $param_min_savings, $param_stats_threshold, $param_stats_underutil_threshold_cpu_value
 end
 
 script "js_rds_underutil_incident", type: "javascript" do
-  parameters "ds_rds_instances", "ds_rds_underutil_instances", "ds_currency", "ds_aws_account", "ds_applied_policy", "param_stats_lookback", "param_min_savings", "param_stats_threshold", "param_stats_underutil_threshold_cpu_value"
+  parameters "ds_rds_instances", "ds_rds_underutil_instances_cleaned", "ds_currency", "ds_aws_account", "ds_applied_policy", "param_stats_lookback", "param_min_savings", "param_stats_threshold", "param_stats_underutil_threshold_cpu_value"
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
@@ -1259,7 +1366,7 @@ script "js_rds_underutil_incident", type: "javascript" do
   result = []
   total_savings = 0.0
 
-  _.each(ds_rds_underutil_instances, function(instance) {
+  _.each(ds_rds_underutil_instances_cleaned, function(instance) {
     savings = 0.0
     if (instance['savings'] != undefined) { savings = instance['savings'] }
 
