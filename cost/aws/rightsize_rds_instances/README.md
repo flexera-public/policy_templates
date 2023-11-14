@@ -66,6 +66,7 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
   - `ec2:DescribeRegions`
   - `rds:DescribeDBInstances`
   - `rds:ListTagsForResource`
+  - `rds:DescribeOrderableDBInstanceOptions`
   - `rds:ModifyDBInstance`*
   - `rds:DeleteDBInstance`*
 
