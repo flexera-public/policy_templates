@@ -4,43 +4,42 @@ type "policy"
 short_description "This policy will create an incident when Flexera SaaS Manager identifies suspicious users logging into SaaS applications. See the [README](https://github.com/flexera-public/policy_templates/tree/master/saas/fsm/suspicious_users/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "high"
-default_frequency "weekly"
+default_frequency "daily"
 category "SaaS Management"
 info(
-  version: "3.0",
+  version: "2.6",
   provider: "Flexera SaaS Manager",
   service: "",
   policy_set: ""
 )
 
 ###############################################################################
-# Parameters
+# User inputs
 ###############################################################################
 
 parameter "param_email" do
   type "list"
-  category "Policy Settings"
-  label "Email Addresses"
-  description "Email addresses of the recipients you wish to notify when new incidents are created"
-  default []
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify"
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-credentials "auth_flexera" do
+#authenticate with FSM
+credentials "fsm_auth" do
   schemes "oauth2"
-  label "Flexera"
-  description "Select Flexera One OAuth2 credentials"
-  tags "provider=flexera"
+  label "FSM"
+  description "Select the FSM Resource Manager Credential from the list."
+  tags "provider=flexera_fsm"
 end
 
 ###############################################################################
 # Pagination
 ###############################################################################
 
-pagination "pagination_users_suspicious" do
+pagination "pag_get_suspicious_users" do
   get_page_marker do
     body_path jq(response, 'if length < 1000 then null else if $marker != "" then $marker | tonumber + 1 else 2 end end')
   end
@@ -50,51 +49,35 @@ pagination "pagination_users_suspicious" do
 end
 
 ###############################################################################
-# Datasources & Scripts
+# Datasources and Scripts
 ###############################################################################
 
-# Get applied policy metadata for use later
-datasource "ds_applied_policy" do
-  request do
-    auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
-    header "Api-Version", "1.0"
-  end
+#GET HOST
+datasource "ds_get_host" do
+  run_script $js_get_host, rs_governance_host
 end
 
-datasource "ds_flexera_api_hosts" do
-  run_script $js_flexera_api_hosts, rs_optima_host
-end
-
-script "js_flexera_api_hosts", type: "javascript" do
-  parameters "rs_optima_host"
+script "js_get_host", type: "javascript" do
+  parameters "rs_governance_host"
   result "result"
   code <<-EOS
-  host_table = {
-    "api.optima.flexeraeng.com": {
-      flexera: "api.flexera.com",
-      fsm: "api.fsm.flexeraeng.com"
-    },
-    "api.optima-eu.flexeraeng.com": {
-      flexera: "api.flexera.eu",
-      fsm: "api.fsm-eu.flexeraeng.com"
-    },
-    "api.optima-apac.flexeraeng.com": {
-      flexera: "api.flexera.au",
-      fsm: "api.fsm-apac.flexeraeng.com"
+    var result = []
+    if(rs_governance_host.indexOf(".eu") !== -1 || rs_governance_host.indexOf("-eu") !== -1){
+      result.push({ host: "api.fsm-eu.flexeraeng.com" })
+    }else{
+      result.push({ host: "api.fsm.flexeraeng.com" })
     }
-  }
-
-  result = host_table[rs_optima_host]
-EOS
+  EOS
 end
 
 datasource "ds_suspicious_users" do
+  iterate $ds_get_host
   request do
-    auth $auth_flexera
-    pagination $pagination_users_suspicious
-    host val($ds_flexera_api_hosts, "fsm")
+    auth $fsm_auth
+    pagination $pag_get_suspicious_users
+    host val(iter_item,"host")
+    verb "GET"
+    scheme "https"
     path join(["/svc/orgs/", rs_org_id, "/activity/suspicious-agents"])
     header "content-type", "application/json"
     query "page", "1"
@@ -119,51 +102,39 @@ datasource "ds_suspicious_users" do
 end
 
 datasource "ds_users_cleanup" do
-  run_script $js_users_cleanup, $ds_suspicious_users, $ds_applied_policy
+  run_script $js_users_cleanup, $ds_suspicious_users
 end
 
 script "js_users_cleanup", type: "javascript" do
-  parameters "ds_suspicious_users", "ds_applied_policy"
+  parameters "users"
   result "result"
   code <<-EOS
-  result = []
-
-  _.each(ds_suspicious_users, function(user) {
-    firstName = user['firstName']
-    if (typeof(firstName) != 'string') { firstName = '' }
-
-    lastName = user["lastName"]
-    if (typeof(lastName) != 'string') { lastName = '' }
-
-    activity_type = "Unrecognized"
-    if (user['unauthorized'] == true) { activity_type = "Unauthorized" }
-
-    email = user["email"]
-
-    if (typeof(email) != 'string') {
-      email = ""
-
-      if (typeof(user['uniqueId']) == 'string' && user['uniqueId'] != "(Unknown)") {
-        email = user['uniqueId']
+    _.each(users, function(user){
+      if (user.unauthorized == true){
+        user["activity_type"] = "Unauthorized";
+      } else {
+        user["activity_type"] = "Unrecognized";
       }
-    }
-
-    result.push({
-      uniqueId: user['uniqueId'],
-      managedProductName: user['managedProductName'],
-      recognized: user['recognized'],
-      unauthorized: user['unauthorized'],
-      firstName: firstName,
-      lastName: lastName,
-      activity_type: activity_type,
-      email: email
+      if (user.firstName == null){ user["firstName"] = "" }
+      if (user.lastName == null){ user["lastName"] = "" }
+      if (user.email == null){
+        if (user.uniqueId == "(Unknown)" || user.uniqueId == null){ user["email"] = "" }
+        else { user["email"] = user.uniqueId }
+      }
     })
-  })
+    var result = users;
+  EOS
+end
 
-  if (result.length > 0) {
-    result[0]['policy_name'] = ds_applied_policy['name']
-  }
-EOS
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "report_summary" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
 end
 
 ###############################################################################
@@ -171,10 +142,8 @@ end
 ###############################################################################
 
 policy "policy_fsm_suspicious_users" do
-  validate_each $ds_users_cleanup do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Suspicious SaaS Users Found"
-    check eq(val(item, "uniqueId"), "")
-    escalate $esc_email
+  validate $ds_users_cleanup do
+    summary_template "{{ len data }} Suspicious SaaS Users Found"
     export do
       field "lastName" do
         label "Last Name"
@@ -192,16 +161,7 @@ policy "policy_fsm_suspicious_users" do
         label "Activity Type"
       end
     end
+    escalate $report_summary
+    check eq(size(data), 0)
   end
-end
-
-###############################################################################
-# Escalations
-###############################################################################
-
-escalation "esc_email" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
 end

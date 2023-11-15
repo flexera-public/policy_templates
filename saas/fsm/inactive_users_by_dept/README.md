@@ -1,12 +1,12 @@
-# SaaS Manager - Unsanctioned Applications with Existing Contract
+# SaaS Manager - Inactive Users By Department
 
 ## What it does
 
-This policy will create an incident when Flexera SaaS Manager identifies unsanctioned SaaS purchases for managed applications under an existing license contract.
+This policy will create an incident when Flexera SaaS Manager identifies inactive or never active users for managed applications.
 
 ## Functional Description
 
-This policy integrates with the Flexera SaaS Manager API to retrieve managed SaaS applications and unsanctioned purchases. Therefore the following are prerequisites for this policy to execute:
+This policy integrates with the Flexera SaaS Manager API to retrieve SaaS Applications and will generate reminders for applications whose renewals are approaching. Therefore the following are prerequisites for this policy to execute:
 
 - Flexera SaaS Manager implementation
 - Please contact your Flexera Customer Success Manager for assistance to generate your FSM token.
@@ -15,6 +15,7 @@ This policy integrates with the Flexera SaaS Manager API to retrieve managed Saa
 
 This policy has the following input parameters required when launching the policy.
 
+- *Inactive Days Threshold* - Number of inactive days to trigger an incident
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify
 
 ## Prerequisites

@@ -1,6 +1,6 @@
 # SaaS Manager - Suspicious Users
 
-## What It Does
+## What it does
 
 This policy will create an incident when Flexera SaaS Manager identifies suspicious users logging into SaaS applications.
 
@@ -15,11 +15,7 @@ This policy integrates with the Flexera SaaS Manager API to retrieve suspicious 
 
 This policy has the following input parameters required when launching the policy.
 
-- *Email Addresses* - Email addresses of the recipients you wish to notify
-
-## Policy Actions
-
-- Send an email report
+- *Email addresses to notify* - Email addresses of the recipients you wish to notify
 
 ## Prerequisites
 
@@ -29,8 +25,12 @@ This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/Ma
 
 For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
 
-Provider tag value to match this policy: `flexera`
+Provider tag value to match this policy: `flexera_fsm`
 
 Required permissions in the provider:
 
 - Administrator, Application Administrator, Viewer, or Security Administrator in FSM
+
+## Policy Actions
+
+- Sends an email notification
