@@ -1,5 +1,12 @@
 # Changelog
 
+## v3.0
+
+- Added support for APAC API endpoint
+- Policy now uses and requires a general Flexera One credential
+- Incident summary now includes applied policy name
+- General code cleanup and normalization
+
 ## v2.6
 
 - Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`
