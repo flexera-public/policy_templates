@@ -116,9 +116,7 @@ datasource "ds_unsanctioned" do
       field "currency", jmes_path(col_item, "currency")
       field "expenseSum", jmes_path(col_item, "expenseSum")
       field "id", jmes_path(col_item, "id")
-      field "purchaser_email", jmes_path(col_item, "purchaser")
-      field "purchaser_firstName", jmes_path(col_item, "customerAgent.firstName")
-      field "purchaser_lastName", jmes_path(col_item, "customerAgent.lastName")
+      field "email", jmes_path(col_item, "purchaser")
       field "vendor", jmes_path(col_item, "vendor.name")
       field "application", jmes_path(col_item, "product.name")
       field "expenseDate", jmes_path(col_item, "latestExpenseDate")
@@ -153,41 +151,27 @@ script "js_cleanup_expenses", type: "javascript" do
   date = date.setHours(param_days * -24)
   date = new Date(date)
 
-  // returns date formatted as string: YYYY-mm-dd
-  function getFormattedDailyDate(date) {
-    year = date.getFullYear()
-    month = (1 + date.getMonth()).toString()
-    month = month.length > 1 ? month : '0' + month
-    day = date.getDate().toString()
-    day = day.length > 1 ? day : '0' + day
-    return year + '-' + month + '-' + day
-  }
-
   _.each(ds_unsanctioned, function(expense){
-    expense_date = new Date(expense["expenseDate"])
+    expenseDate = new Date(expense["expenseDate"])
 
-    if (expense_date > date) {
-      if (_.contains(param_unsanctioned_apps, expense["application"]) || _.isEmpty(param_unsanctioned_apps)) {
+    if (expenseDate > date) {
+      if (_.contains(param_unsanctioned_apps, expense["application"]) || param_unsanctioned_apps.length == 0) {
         result.push({
           active: expense["active"],
-          expenseSum: expense["currency"]+" "+expense["expenseSum"],
+          expenseSum: Number(expense["expenseSum"]),
+          currency: expense["currency"],
           id: expense["id"],
-          purchaser_email: expense["purchaser_email"],
-          purchaser_firstName: expense["purchaser_firstName"],
-          purchaser_lastName: expense["purchaser_lastName"],
+          email: expense["email"],
           vendor: expense["vendor"],
           application: expense["application"],
-          expenseDate: getFormattedDailyDate(expense_date)
+          expenseDate: expenseDate.toISOString().split('T')[0],
+          policy_name: ds_applied_policy["name"]
         })
       }
     }
   })
 
   result = _.sortBy(result, 'expenseDate').reverse()
-
-  if (result.length > 0) {
-    result[0]['policy_name'] = ds_applied_policy['name']
-  }
 EOS
 end
 
@@ -207,14 +191,17 @@ policy "policy_fsm_unsanctioned_spend" do
       field "expenseSum" do
         label "Expense Sum"
       end
-      field "vendor" do
-        label "Vendor"
+      field "currency" do
+        label "Currency"
       end
       field "application" do
         label "Application"
       end
-      field "purchaser_email" do
-        label "Purchaser"
+      field "vendor" do
+        label "Vendor"
+      end
+      field "email" do
+        label "Purchaser Email"
       end
     end
   end

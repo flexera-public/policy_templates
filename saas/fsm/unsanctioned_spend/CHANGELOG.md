@@ -5,6 +5,7 @@
 - Added support for APAC API endpoint
 - Policy now uses and requires a general Flexera One credential
 - Incident summary now includes applied policy name
+- `Expense Sum` and `Currency` are now separate incident fields
 - General code cleanup and normalization
 
 ## v2.6
