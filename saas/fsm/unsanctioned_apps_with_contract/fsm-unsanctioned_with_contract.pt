@@ -77,6 +77,60 @@ script "js_flexera_api_hosts", type: "javascript" do
 EOS
 end
 
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
+end
+
 datasource "ds_num_products" do
   request do
     auth $auth_flexera
@@ -167,11 +221,11 @@ EOS
 end
 
 datasource "ds_format_data" do
-  run_script $js_format_data, $ds_products, $ds_unsanctioned, $ds_applied_policy
+  run_script $js_format_data, $ds_products, $ds_unsanctioned, $ds_applied_policy, $ds_currency
 end
 
 script "js_format_data", type: "javascript" do
-  parameters "ds_products", "ds_unsanctioned", "ds_applied_policy"
+  parameters "ds_products", "ds_unsanctioned", "ds_applied_policy", "ds_currency"
   result "result"
   code <<-EOS
   result = []
@@ -182,21 +236,21 @@ script "js_format_data", type: "javascript" do
       expenses = _.where(ds_unsanctioned, { product: prod["application"]} )
       latest_expense = _.max(expenses, function(expense) { return expense['latestExpenseDate'] })
 
+      latestExpenseDate = new Date(latest_expense["latestExpenseDate"]).toISOString().split('T')[0]
+
       result.push({
         product: prod["application"],
         vendor: prod["vendor"],
-        annualCost: "$" + prod["annualCost"],
+        currency: ds_currency["symbol"],
+        annualCost: prod["annualCost"],
         licensePOC: prod["pointOfContactEmail"],
-        expenseSum: "$" + latest_expense["expenseSum"],
-        latestExpenseDate: Date(latest_expense["latestExpenseDate"]).toString(),
-        expensePurchaser: latest_expense["purchaser"]
+        expenseSum: latest_expense["expenseSum"],
+        latestExpenseDate: latestExpenseDate,
+        expensePurchaser: latest_expense["purchaser"],
+        policy_name: ds_applied_policy["name"]
       })
     }
   })
-
-  if (result.length > 0) {
-    result[0]['policy_name'] = ds_applied_policy['name']
-  }
 EOS
 end
 
@@ -219,11 +273,14 @@ policy "policy_fsm_unsanctioned_with_contract" do
       field "annualCost" do
         label "Annual Contract Cost"
       end
-      field "licensePOC" do
-        label "Contract Point of Contact"
-      end
       field "expenseSum" do
         label "Expense Cost"
+      end
+      field "currency" do
+        label "Currency"
+      end
+      field "licensePOC" do
+        label "Point of Contact"
       end
       field "latestExpenseDate" do
         label "Latest Expense Date"
