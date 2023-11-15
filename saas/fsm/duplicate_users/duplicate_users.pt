@@ -5,252 +5,213 @@ short_description "This policy will create an incident when Flexera SaaS Manager
 long_description ""
 severity "medium"
 category "SaaS Management"
-default_frequency "daily"
+default_frequency "weekly"
 info(
-  version: "2.5",
+  version: "3.0",
   provider: "Flexera SaaS Manager",
   service: "",
   policy_set: ""
 )
 
 ###############################################################################
-# User inputs
+# Parameters
 ###############################################################################
 
 parameter "param_email" do
   type "list"
-  label "Email addresses to notify"
-  description "Email addresses of the recipients you wish to notify"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify when new incidents are created."
+  default []
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-#authenticate with FSM
-credentials "fsm_auth" do
+credentials "auth_flexera" do
   schemes "oauth2"
-  label "FSM"
-  description "Select the FSM Resource Manager Credential from the list."
-  tags "provider=flexera_fsm"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
-datasource "ds_get_host" do
-  run_script $js_get_host, rs_governance_host
-end
-
-datasource "ds_num_products" do
-  iterate $ds_get_host
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
   request do
-    auth $fsm_auth
-    host val(iter_item,"host")
-    verb "GET"
-    scheme "https"
-    path join(["/svc/orgs/", rs_org_id, "/managed-products"])
-    header "content-type", "application/json"
-  end
-  result do
-    encoding "json"
-    field "totalItems", jmes_path(response, "totalItems")
-    field "saas_host", val(iter_item,"host")
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
   end
 end
 
-datasource "ds_products" do
-  iterate $ds_get_host
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+datasource "ds_managed_apps" do
   request do
-    run_script $js_products, $ds_num_products, rs_org_id
+    run_script $js_managed_apps, $ds_flexera_api_hosts, rs_org_id
   end
   result do
     encoding "json"
-    collect jmes_path(response, "items[*]") do
-      field "application", jmes_path(col_item, "name")
+    collect jmes_path(response, "values[*]") do
+      field "appId", jmes_path(col_item, "appId")
+      field "appName", jmes_path(col_item, "appName")
       field "id", jmes_path(col_item, "id")
-      field "vendor", jmes_path(col_item, "product.vendor.name")
-      field "saas_host", val(iter_item,"host")
+      field "name", jmes_path(col_item, "name")
+      field "description", jmes_path(col_item, "description")
+      field "vendorName", jmes_path(col_item, "vendorName")
+      field "isActive", jmes_path(col_item, "isActive")
     end
   end
 end
 
-datasource "ds_product_num_users" do
-  iterate $ds_products
-  request do
-    auth $fsm_auth
-    host val(iter_item, "saas_host")
-    verb "GET"
-    scheme "https"
-    path join(["/svc/orgs/", rs_org_id, "/managed-products"])
-    header "content-type", "application/json"
-  end
-  result do
-    encoding "json"
-    field "application", val(iter_item, "application")
-    field "id", val(iter_item, "id")
-    field "vendor", val(iter_item, "vendor")
-    field "totalItems", jmes_path(response, "totalItems")
-  end
+script "js_managed_apps", type: "javascript" do
+  parameters "ds_flexera_api_hosts", "rs_org_id"
+  result "request"
+  code <<-EOS
+  var request = {
+    auth: "auth_flexera",
+    host: ds_flexera_api_hosts["flexera"],
+    path: "/saas/v1/orgs/" + rs_org_id + "/managed-apps",
+    headers: { "content-type": "application/json" },
+    query_params: { "view": "extended" }
+  }
+EOS
 end
 
+# Filter out inactive and invalid apps to avoid needlessly checking them
+datasource "ds_managed_apps_active" do
+  run_script $js_managed_apps_active, $ds_managed_apps
+end
 
-datasource "ds_product_users" do
-  iterate $ds_product_num_users
+script "js_managed_apps_active", type: "javascript" do
+  parameters "ds_managed_apps"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_managed_apps, function(app) {
+    return app['isActive'] == true && app['appName'] != null && app['vendorName'] != null
+  })
+EOS
+end
+
+datasource "ds_managed_apps_users" do
+  iterate $ds_managed_apps_active
   request do
-    run_script $js_product_users, val(iter_item, "totalUsers"), rs_org_id, val(iter_item, "id"), $ds_get_host
+    run_script $js_managed_apps_users, val(iter_item, 'id'), $ds_flexera_api_hosts, rs_org_id
   end
   result do
     encoding "json"
-    collect jmes_path(response, "items[*]") do
-      field "email", jmes_path(col_item, "email")
+    collect jmes_path(response, "values[*]") do
       field "firstName", jmes_path(col_item, "firstName")
+      field "middleName", jmes_path(col_item, "middleName")
       field "lastName", jmes_path(col_item, "lastName")
-      field "managedProductId", jmes_path(col_item, "managedProductId")
-      field "application", val(iter_item, "application")
-      field "vendor", val(iter_item, "vendor")
-      field "userId", jmes_path(col_item, "customerAgent.id")
-      field "department", jmes_path(col_item, "department")
+      field "email", jmes_path(col_item, "email")
+      field "uniqueId", jmes_path(col_item, "uniqueId")
+      field "sku", jmes_path(col_item, "sku")
+      field "skus", jmes_path(col_item, "skus")
+      field "appId", val(iter_item, "appId")
+      field "appName", val(iter_item, "appName")
+      field "appDescription", val(iter_item, "description")
+      field "appVendor", val(iter_item, "vendorName")
     end
   end
+end
+
+script "js_managed_apps_users", type: "javascript" do
+  parameters "app_id", "ds_flexera_api_hosts", "rs_org_id"
+  result "request"
+  code <<-EOS
+  var request = {
+    auth: "auth_flexera",
+    host: ds_flexera_api_hosts["flexera"],
+    path: "/saas/v1/orgs/" + rs_org_id + "/managed-apps/" + app_id + "/app-users",
+    headers: { "content-type": "application/json" }
+  }
+EOS
 end
 
 datasource "ds_filter_users" do
-  run_script $js_filter_users, $ds_product_users
-end
-
-###############################################################################
-# Scripts
-###############################################################################
-
-script "js_get_host", type: "javascript" do
-  parameters "rs_governance_host"
-  result "result"
-  code <<-EOS
-    var result=[];
-    if(rs_governance_host.indexOf(".eu") !== -1 || rs_governance_host.indexOf("-eu") !== -1){
-      result.push({host: "api.fsm-eu.flexeraeng.com"});
-    }else{
-      result.push({host: "api.fsm.flexeraeng.com"});
-    }
-  EOS
-end
-
-script "js_products", type: "javascript" do
-  parameters "ds_num_products", "rs_org_id"
-  result "request"
-  code <<-EOS
-  request = {
-    auth: "fsm_auth",
-    host: ds_num_products[0]["saas_host"],
-    verb: "GET",
-    scheme: "https",
-    path: "/svc/orgs/"+rs_org_id+"/managed-products",
-    headers: {
-      "content-type": "application/json"
-    },
-    query_params: {
-      "pageSize": ds_num_products[0]["totalItems"].toString(),
-      "includeInactive": "false"
-    }
-  }
-EOS
-end
-
-script "js_product_users", type: "javascript" do
-  parameters "num_items", "rs_org_id", "app_id", "ds_get_host"
-  result "request"
-  code <<-EOS
-  if (num_items != null && num_items != "undefined"){
-    // skip
-  } else {
-    num_items = 1
-  }
-  request = {
-    auth: "fsm_auth",
-    host: ds_get_host[0]["host"],
-    verb: "GET",
-    scheme: "https",
-    path: "/svc/orgs/"+rs_org_id+"/managed-products/"+app_id+"/managed-product-agents",
-    headers: {
-      "content-type": "application/json"
-    },
-    query_params: {
-      "pageSize": num_items.toString(),
-      "page": "1",
-      "asc": "true",
-      "sort": "uniqueId"
-    }
-  }
-EOS
+  run_script $js_filter_users, $ds_managed_apps_users, $ds_applied_policy
 end
 
 script "js_filter_users", type: "javascript" do
-  parameters "ds_product_users"
+  parameters "ds_product_users", "ds_applied_policy"
   result "result"
   code <<-EOS
-    var result = [];
+  result = []
+  user_list = {}
 
-    var app_ids = _.uniq(_.pluck(ds_product_users, 'managedProductId'));
+  _.each(ds_product_users, function(user) {
+    // Create an identifier to find matching users with different user ids
+    firstName = "not_found"
+    lastName = "not_found"
+    email = "not_found"
+    appId = "not_found"
 
-    _.each(app_ids, function(app_id){
+    if (typeof(user['firstName']) == 'string') { firstName = user['firstName'] }
+    if (typeof(user['lastName']) == 'string') { lastName = user['lastName'] }
+    if (typeof(user['email']) == 'string') { email = user['email'] }
+    if (typeof(user['appId']) == 'string') { appId = user['appId'] }
 
-      var app_users = _.where(ds_product_users, {managedProductId: app_id});
+    identifier = [
+      firstName.toLowerCase().trim(),
+      lastName.toLowerCase().trim(),
+      email.toLowerCase().trim(),
+      appId.toLowerCase().trim()
+    ].join()
 
-      var last_names = _.uniq(_.pluck(app_users, 'lastName'));
-      _.each(last_names, function(last_name){
-        var last_name_users = _.where(app_users, {lastName: last_name});
-        if (_.size(last_name_users) > 1) {
-          // more than 1 user with this last name
-          var first_names = _.uniq(_.pluck(last_name_users, 'firstName'));
+    // Make lists containing all users with this identifier
+    if (user_list[identifier] == undefined) { user_list[identifier] = [] }
+    user_list[identifier].push(user)
+  })
 
-          _.each(first_names, function(first_name){
-            var first_name_users = _.where(last_name_users, {firstName: first_name});
-            if (_.size(first_name_users) > 1) {
-              // more than 1 user with this first name & last name
-              var departments = _.uniq(_.pluck(first_name_users, 'department'));
-              if (_.size(departments) < 2) {
-                var emails = _.uniq(_.pluck(first_name_users, 'email'));
-                if (_.size(emails) > 1){
-                  // raise incident
-                  _.each(first_name_users, function(user){result.push(user)})
-                }
-              } else {
-                // more than 1 department
-                _.each(departments, function(dept){
-                  var dept_users = _.filter(first_name_users, function(user) {return user.department == null || user.department === dept;});
-                  var emails = _.uniq(_.pluck(dept_users, 'email'));
-                  if (_.size(emails) > 1){
-                    // raise incident
-                    _.each(first_name_users, function(user){result.push(user)})
-                  } else {
-                    // more than 1 first name & last name combo, but 1 or less emails
-                    // this likely will never trigger
-                  }
-                })
-              }
-            } else {
-              // only 1 app user with this first name & last name
-            }
-          })
-        } else {
-          // only 1 app user with this last name
-        }
+  // Go through each identifier. If more than one matching user, include it in results.
+  _.each(_.keys(user_list), function(identifier) {
+    if (user_list[identifier].length > 1) {
+      result.push({
+        lastName: user_list[identifier][0]['lastName'],
+        firstName: user_list[identifier][0]['firstName'],
+        email: user_list[identifier][0]['email'],
+        appName: user_list[identifier][0]['appName'],
+        appVendor: user_list[identifier][0]['appVendor'],
+        ids: _.pluck(user_list[identifier], 'uniqueId').join(', ')
       })
-    })
+    }
+  })
+
+  // Add policy name field for incident
+  if (result.length > 0) { result[0]['policy_name'] = ds_applied_policy['name'] }
 EOS
-end
-
-###############################################################################
-# Escalations
-###############################################################################
-
-escalation "report_summary" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
 end
 
 ###############################################################################
@@ -258,29 +219,40 @@ end
 ###############################################################################
 
 policy "policy_fsm_duplicate_users" do
-  validate $ds_filter_users do
-      summary_template "{{ len data }} Duplicate Application Users Found"
-      export do
-        field "lastName" do
-          label "Last Name"
-        end
-        field "firstName" do
-          label "First Name"
-        end
-        field "email" do
-          label "Email"
-        end
-        field "application" do
-          label "Application"
-        end
-        field "vendor" do
-          label "Vendor"
-        end
-        field "department" do
-          label "Department"
-        end
+  validate_each $ds_filter_users do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Duplicate Application Users Found"
+    check eq(val(item, "email"), "")
+    escalate $esc_email
+    export do
+      field "lastName" do
+        label "Last Name"
       end
-      escalate $report_summary
-      check eq(size(data), 0)
+      field "firstName" do
+        label "First Name"
+      end
+      field "email" do
+        label "Email"
+      end
+      field "appName" do
+        label "Application"
+      end
+      field "appVendor" do
+        label "Vendor"
+      end
+      field "ids" do
+        label "User IDs"
+      end
+    end
   end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
 end
