@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.1
+
+- Corrected API issue when executing policy in APAC
+
 ## v2.0
 
 - Removed requirement for AWS credential
