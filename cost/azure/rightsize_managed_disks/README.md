@@ -10,6 +10,8 @@ Since the total cost of Standard SSDs storage depends on the size and number of 
 
 ## Functional details
 
+- It's important that you keep constant LUN numbers for your data disks because when policy retrieves metrics for them, it will only look for the latest LUN number assigned to the data disk, if this one is changed multiple times before running the policy, only the data points using the current LUN the disk has will be retrieved for analysis.
+
 ## Input parameters
 
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created.

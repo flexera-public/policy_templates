@@ -97,20 +97,11 @@ parameter "param_stats_min_used_disk_space_pct_for_downsizing" do
   default 50
 end
 
-parameter "param_stats_aggregation_for_disk_throughput" do
+parameter "param_stats_aggregation_for_disk_throughput_and_iops" do
   type "string"
   category "Statistics"
-  label "Aggregation type for determining oversized disk throughput"
-  description "Statistic to use when determining if the disk throughput is more than the disk actually uses."
-  allowed_values "Average", "Maximum"
-  default "Average"
-end
-
-parameter "param_stats_aggregation_for_disk_iops" do
-  type "string"
-  category "Statistics"
-  label "Aggregation type for determining oversized disk IOPS"
-  description "Statistic to use when determining if the disk IOPS is more than the disk actually uses."
+  label "Aggregation type for determining oversized disk throughput and IOPS"
+  description "Statistic to use when determining if the disk throughput and IOPS is more than the disk actually uses."
   allowed_values "Average", "Maximum"
   default "Average"
 end
@@ -120,7 +111,7 @@ parameter "param_stats_lookback" do
   category "Statistics"
   label "Lookback period"
   description "How many days back to look at disk IOPS and throughput data. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days."
-  default 30
+  default 7
   min_value 1
   max_value 90
 end
@@ -345,7 +336,7 @@ script "js_azure_virtual_machines_with_disks", type: "javascript" do
     var vmId = ds_azure_disks_grouped_by_vm[i].vmId
     var correspondingVm = _.find(ds_azure_virtual_machines, function(vm) { return vm.id.toLowerCase() === vmId.toLowerCase() })
     if (correspondingVm === undefined) continue;
-    var virtualMachineWithDiskData = { id: vmId, osDisk: null, dataDisks: [] }
+    var virtualMachineWithDiskData = { vmId: vmId, osDisk: null, dataDisks: [] }
     for (j in ds_azure_disks_grouped_by_vm[i].disks) {
       var disk = ds_azure_disks_grouped_by_vm[i].disks[j]
       if (correspondingVm.osDisk.managedDisk.id.toLowerCase() === disk.id.toLowerCase()) {
@@ -362,12 +353,130 @@ script "js_azure_virtual_machines_with_disks", type: "javascript" do
 EOS
 end
 
+datasource "ds_azure_virtual_machines_with_metrics" do
+  iterate $ds_azure_virtual_machines_with_disks
+  request do
+    run_script $js_azure_virtual_machines_with_metrics, val(iter_item, "vmId"), $param_azure_endpoint, $param_stats_lookback, $param_stats_aggregation_for_disk_throughput_and_iops 
+  end
+  result do
+    encoding "json"
+    field "vmId", val(iter_item, "vmId")
+    field "metrics", jmes_path(response, "value[*]") 
+  end
+end
+
+script "js_azure_virtual_machines_with_metrics", type: "javascript" do
+  parameters "vmId", "param_azure_endpoint", "param_stats_lookback", "param_stats_aggregation_for_disk_throughput_and_iops"
+  result "request"
+  code <<-EOS
+  var end_date = new Date()
+  end_date.setMilliseconds(999)
+  end_date.setSeconds(59)
+  end_date.setMinutes(59)
+  end_date.setHours(23)
+
+  var start_date = new Date()
+  start_date.setDate(start_date.getDate() - param_stats_lookback)
+  start_date.setMilliseconds(0)
+  start_date.setSeconds(0)
+  start_date.setMinutes(0)
+
+  timespan = start_date.toISOString() + "/" + end_date.toISOString()
+
+  var request = {
+    auth: "auth_azure",
+    host: param_azure_endpoint,
+    verb: "GET",
+    path: vmId + "/providers/microsoft.insights/metrics",
+    query_params: {
+      "api-version": "2018-01-01",
+      "metricnames": "OS Disk IOPS Consumed Percentage,OS Disk Bandwidth Consumed Percentage,Data Disk IOPS Consumed Percentage,Data Disk Bandwidth Consumed Percentage",
+      "timespan": timespan,
+      "$filter": "LUN eq '*'",
+      "aggregation": "Average,Maximum",
+      "interval": "FULL",
+    },
+    headers: {
+      "User-Agent": "RS Policies",
+    },
+    ignore_status: [400, 403, 404],
+  }
+EOS
+end
+
+datasource "ds_azure_disks_with_metrics" do
+  run_script $js_azure_disks_with_metrics, $ds_azure_virtual_machines_with_metrics, $ds_azure_virtual_machines_with_disks
+end
+
+script "js_azure_disks_with_metrics", type: "javascript" do
+  parameters "ds_azure_virtual_machines_with_metrics", "ds_azure_virtual_machines_with_disks"
+  result "result"
+  code <<-EOS
+  function findMetricsForDataDisk(metrics, metricName, lun) {
+    for (var i in metrics) {
+      var metric = metrics[i]
+      if (metric.name.value != metricName) continue;
+      var correspondingTs = _.find(metric.timeseries, function(ts) {
+        return (
+          ts.metadatavalues[0].name.value === "lun"
+          && parseInt(ts.metadatavalues[0].value) === lun
+        )
+      })
+      return {
+        average: correspondingTs.data[0].average,
+        maximum: correspondingTs.data[0].maximum,
+      }
+    }
+  }
+  
+  for (var i in ds_azure_virtual_machines_with_disks) {
+    var vmWithDisk = ds_azure_virtual_machines_with_disks[i]
+    var correspondingVmWithMetrics = _.find(ds_azure_virtual_machines_with_metrics, function(vmWithMt) { return vmWithMt.vmId.toLowerCase() === vmWithDisk.vmId.toLowerCase() })
+    if (correspondingVmWithMetrics === undefined) continue;
+    // OS disk
+    for (var j in correspondingVmWithMetrics.metrics) {
+      var metric = correspondingVmWithMetrics.metrics[j]
+      if (metric.name.value === "OS Disk IOPS Consumed Percentage") {
+        vmWithDisk.osDisk.iopsConsumedPctAvg = metric.timeseries[0].data[0].average
+        vmWithDisk.osDisk.iopsConsumedPctMax = metric.timeseries[0].data[0].maximum
+      }
+      if (metric.name.value === "OS Disk Bandwidth Consumed Percentage") {
+        vmWithDisk.osDisk.bandwithConsumedPctAvg = metric.timeseries[0].data[0].average
+        vmWithDisk.osDisk.bandwithConsumedPctMax = metric.timeseries[0].data[0].maximum
+      }
+    }
+    // Data disks
+    for (var j in vmWithDisk.dataDisks) {
+      var dataDisk = vmWithDisk.dataDisks[j]
+      // IOPS
+      var correspondingIopsMetrics = findMetricsForDataDisk(
+        correspondingVmWithMetrics.metrics,
+        "Data Disk IOPS Consumed Percentage",
+        dataDisk.lun
+      )
+      dataDisk.iopsConsumedPctAvg = correspondingIopsMetrics.average
+      dataDisk.iopsConsumedPctMax = correspondingIopsMetrics.maximum
+      // Bandwith
+      var correspondingBandwidthMetrics = findMetricsForDataDisk(
+        correspondingVmWithMetrics.metrics,
+        "Data Disk Bandwidth Consumed Percentage",
+        dataDisk.lun
+      )
+      dataDisk.bandwithConsumedPctAvg = correspondingBandwidthMetrics.average
+      dataDisk.bandwithConsumedPctMax = correspondingBandwidthMetrics.maximum
+    }
+  }
+
+  var result = ds_azure_virtual_machines_with_disks
+EOS
+end
+
 ###############################################################################
 # Policy
 ###############################################################################
 
 policy "pol_azure_rightsize_managed_disks" do
-  validate $ds_azure_virtual_machines_with_disks do
+  validate $ds_azure_disks_with_metrics do
     summary_template "There are {{ len data }} oversized Azure Managed Disks"
     check eq(size(data), 0)
     escalate $esc_email
