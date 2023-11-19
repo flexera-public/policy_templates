@@ -1,7 +1,7 @@
 name "Azure Rightsize Managed Disks"
 rs_pt_ver 20180301
 type "policy"
-short_description "Cheks for oversized managed disks and suggest recommendations to save money. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_disks/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Looks for oversized managed disks and suggest recommendations to save money. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_disks/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Cost"
 severity "low"
@@ -35,20 +35,94 @@ parameter "param_azure_endpoint" do
   default "management.azure.com"
 end
 
-parameter "param_subscriptions_to_check" do
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation."
+  min_value 0
+  default 0
+end
+
+parameter "param_exclusion_tags" do
   type "list"
   category "Filters"
-  label "Azure subscriptions to check"
-  description "Enter the subscription IDs that you want this policy to check for oversized managed disks."
+  label "Exclusion Tags (Key:Value)"
+  description "Cloud native tags to ignore managed disks that you don't want to consider for downsizing. Format: Key:Value"
+  allowed_pattern /(^$)|([\w]?)+\:([\w]?)+/
   default []
 end
 
-parameter "param_min_disk_space_pct_used" do
-  type "number"
+parameter "param_subscriptions_allow_or_deny" do
+  type "string"
   category "Filters"
-  label "Minimum percentage used"
-  description "Enter the minimum disk space percentage used to trigger a sizing recommendation on the managed disk."
+  label "Allow/Deny Subscriptions"
+  description "Allow or deny entered subscriptions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_subscriptions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Subscriptions List"
+  description "A list of allowed or denied ubscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+parameter "param_stats_min_used_disk_space_pct_for_downsizing" do
+  type "number"
+  category "Statistics"
+  label "Minimum used disk space percentage to consider a managed disk for downsizing"
+  description "The minimum used disk space percentage threshold at which to consider a disk to be 'oversized' and therefore be flagged for downsizing. Set to -1 for automatic mode."
+  min_value -1
+  max_value 100
   default 50
+end
+
+parameter "param_stats_aggregation_for_disk_throughput" do
+  type "string"
+  category "Statistics"
+  label "Aggregation type for determining oversized disk throughput"
+  description "Statistic to use when determining if the disk throughput is more than the disk actually uses."
+  allowed_values "Average", "Maximum"
+  default "Average"
+end
+
+parameter "param_stats_aggregation_for_disk_iops" do
+  type "string"
+  category "Statistics"
+  label "Aggregation type for determining oversized disk IOPS"
+  description "Statistic to use when determining if the disk IOPS is more than the disk actually uses."
+  allowed_values "Average", "Maximum"
+  default "Average"
+end
+
+parameter "param_stats_lookback" do
+  type "number"
+  category "Statistics"
+  label "Lookback period"
+  description "How many days back to look at disk IOPS and throughput data. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days."
+  default 30
+  min_value 1
+  max_value 90
 end
 
 ###############################################################################
@@ -62,89 +136,229 @@ credentials "auth_azure" do
   tags "provider=azure_rm"
 end
 
-credentials "auth_azure_log_analytics" do
+credentials "auth_flexera" do
   schemes "oauth2"
-  label "Azure"
-  description "Select the Azure Resource Manager Credential from the list. This needs to be created using https://api.loganalytics.io as the resource parameter."
-  tags "provider=azure_rm"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
 end
 
 ###############################################################################
 # Pagination
 ###############################################################################
 
+pagination "pagination_azure" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
 
-datasource "ds_log_analytics_workspaces" do
-  iterate $ds_subscriptions_to_check
+datasource "ds_azure_subscriptions" do
   request do
     auth $auth_azure
+    pagination $pagination_azure
     host $param_azure_endpoint
-    path join(["/subscriptions/", iter_item, "/providers/Microsoft.OperationalInsights/workspaces"])
-    query "api-version", "2022-10-01"
+    path "/subscriptions/"
+    query "api-version","2020-01-01"
     header "User-Agent", "RS Policies"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    # header "Meta-Flexera", val($ds_is_deleted, "path")
   end
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "id", jmes_path(col_item, "id")
-      field "customerId", jmes_path(col_item, "properties.customerId")
-      field "name", jmes_path(col_item, "name")
-      field "location", jmes_path(col_item, "location")
+      field "id", jmes_path(col_item, "subscriptionId")
+      field "name", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
     end
   end
 end
 
-datasource "ds_subscriptions_to_check" do
-  run_script $js_subscriptions_to_check, $param_subscriptions_to_check
+datasource "ds_azure_subscriptions_filtered" do
+  run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
 end
 
-script "js_subscriptions_to_check", type: "javascript" do
-  parameters "param_subscriptions_to_check"
-  result "subscriptions_to_check"
+script "js_azure_subscriptions_filtered", type: "javascript" do
+  parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
+  result "result"
   code <<-EOS
-  var subscriptions_to_check = param_subscriptions_to_check
+  if (param_subscriptions_list.length > 0) {
+    result = _.filter(ds_azure_subscriptions, function(subscription) {
+      include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
+
+      if (param_subscriptions_allow_or_deny == "Deny") {
+        include_subscription = !include_subscription
+      }
+
+      return include_subscription
+    })
+  } else {
+    result = ds_azure_subscriptions
+  }
 EOS
 end
 
-datasource "ds_managed_disks_usage_data" do
-  iterate $ds_log_analytics_workspaces
+datasource "ds_azure_disks" do
+  iterate $ds_azure_subscriptions_filtered
   request do
-    auth $auth_azure_log_analytics
-    host "api.loganalytics.io"
-    path join(["/v1/workspaces/", val(iter_item, "customerId"), "/query"])
-    query "query", "Perf | where TimeGenerated > ago(1d) | where ObjectName == \"LogicalDisk\" or ObjectName == \"Logical Disk\" and CounterName == \"Free Megabytes\" and InstanceName == \"/\" | summarize TotalDiskSpaceMB = max(CounterValue), UsedDiskSpaceMB = max(CounterValue) - min(CounterValue), FreespaceMB = min(CounterValue) by Computer, InstanceName"
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Compute/disks"])
+    query "api-version", "2019-07-01"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
-    collect jmes_path(response, "tables[*]") do
-      field "vm_name", jmes_path(col_item, "rows[0][0]")
-      field "filesystem", jmes_path(col_item, "rows[0][1]")
-      field "total_disk_space_mb", jmes_path(col_item, "rows[0][2]")
-      field "used_disk_space_mb", jmes_path(col_item, "rows[0][3]")
-      field "free_disk_space_mb", jmes_path(col_item, "rows[0][4]")
+    collect jmes_path(response, "value[?@.managedBy]") do
+      field "id", jmes_path(col_item, "id")
+      field "resourceName", jmes_path(col_item, "name")
+      field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
+      field "resourceType", jmes_path(col_item, "type")
+      field "region", jmes_path(col_item, "location")
+      field "tags", jmes_path(col_item, "tags")
+      field "managedBy", jmes_path(col_item, "managedBy")
+      field "provisioningState", jmes_path(col_item, "properties.provisioningState")
+      field "osType", jmes_path(col_item, "properties.osType")
+      field "state", jmes_path(col_item, "properties.diskState")
+      field "size", jmes_path(col_item, "properties.diskSizeGB")
+      field "timeCreated", jmes_path(col_item, "properties.timeCreated")
+      field "subscriptionID", val(iter_item, "id")
+      field "subscriptionName", val(iter_item, "name")
     end
   end
 end
 
-datasource "ds_oversized_managed_disks" do
-  run_script $js_oversized_managed_disks, $ds_managed_disks_usage_data, $param_min_disk_space_pct_used
+datasource "ds_azure_disks_region_filtered" do
+  run_script $js_azure_disks_region_filtered, $ds_azure_disks, $param_regions_allow_or_deny, $param_regions_list
 end
 
-script "js_oversized_managed_disks", type: "javascript" do
-  parameters "ds_managed_disks_usage_data", "param_min_disk_space_pct_used"
-  result "oversizedManagedDisks"
+script "js_azure_disks_region_filtered", type: "javascript" do
+  parameters "ds_azure_disks", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
   code <<-EOS
-  var oversizedManagedDisks = []
-  _.forEach(ds_managed_disks_usage_data, function(managedDisk) {
-    var pctUsed = managedDisk.used_disk_space_mb * 100 / managedDisk.total_disk_space_mb
-    managedDisk["used_disk_space_pct"] = pctUsed
-    if (pctUsed <= param_min_disk_space_pct_used) {
-      oversizedManagedDisks.push(managedDisk)
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_azure_disks, function(disk) {
+      include_disk = _.contains(param_regions_list, disk['region'])
+
+      if (param_regions_allow_or_deny == "Deny") {
+        include_disk = !include_disk
+      }
+
+      return include_disk
+    })
+  } else {
+    result = ds_azure_disks
+  }
+EOS
+end
+
+datasource "ds_azure_disks_tag_filtered" do
+  run_script $js_azure_disks_tag_filtered, $ds_azure_disks_region_filtered, $param_exclusion_tags
+end
+
+script "js_azure_disks_tag_filtered", type: "javascript" do
+  parameters "ds_azure_disks_region_filtered", "param_exclusion_tags"
+  result "result"
+  code <<-EOS
+  if (param_exclusion_tags.length > 0) {
+    result = _.reject(ds_azure_disks_region_filtered, function(disk) {
+      disk_tags = []
+
+      if (typeof(disk['tags']) == 'object') {
+        _.each(Object.keys(disk['tags']), function(key) {
+          disk_tags.push([key, ":", disk['tags'][key]].join(''))
+          disk_tags.push([key, ":*"].join(''))
+        })
+      }
+
+      exclude_disk = false
+
+      _.each(param_exclusion_tags, function(exclusion_tag) {
+        if (_.contains(disk_tags, exclusion_tag)) {
+          exclude_disk = true
+        }
+      })
+
+      return exclude_disk
+    })
+  } else {
+    result = ds_azure_disks_region_filtered
+  }
+EOS
+end
+
+datasource "ds_azure_disks_grouped_by_vm" do
+  run_script $js_azure_disks_grouped_by_vm, $ds_azure_disks_tag_filtered
+end
+
+script "js_azure_disks_grouped_by_vm", type: "javascript" do
+  parameters "ds_azure_disks_tag_filtered"
+  result "result"
+  code <<-EOS
+  var result = []
+  var grouped_disks = _.groupBy(ds_azure_disks_tag_filtered, 'managedBy')
+  for (var gd in grouped_disks) {
+    result.push({vmId: gd, disks: grouped_disks[gd]})
+  }
+EOS
+end
+
+datasource "ds_azure_virtual_machines" do
+  iterate $ds_azure_disks_grouped_by_vm
+  request do
+    auth $auth_azure
+    host $param_azure_endpoint
+    path val(iter_item, "vmId")
+    query "api-version", "2023-07-01"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "resourceName", jmes_path(response, "name")
+    field "osDisk", jmes_path(response, "properties.storageProfile.osDisk")
+    field "dataDisks", jmes_path(response, "properties.storageProfile.dataDisks")
+  end
+end
+
+datasource "ds_azure_virtual_machines_with_disks" do
+  run_script $js_azure_virtual_machines_with_disks, $ds_azure_disks_grouped_by_vm, $ds_azure_virtual_machines
+end
+
+script "js_azure_virtual_machines_with_disks", type: "javascript" do
+  parameters "ds_azure_disks_grouped_by_vm", "ds_azure_virtual_machines"
+  result "result"
+  code <<-EOS
+  var result = []
+  for (var i in ds_azure_disks_grouped_by_vm) {
+    var vmId = ds_azure_disks_grouped_by_vm[i].vmId
+    var correspondingVm = _.find(ds_azure_virtual_machines, function(vm) { return vm.id.toLowerCase() === vmId.toLowerCase() })
+    if (correspondingVm === undefined) continue;
+    var virtualMachineWithDiskData = { id: vmId, osDisk: null, dataDisks: [] }
+    for (j in ds_azure_disks_grouped_by_vm[i].disks) {
+      var disk = ds_azure_disks_grouped_by_vm[i].disks[j]
+      if (correspondingVm.osDisk.managedDisk.id.toLowerCase() === disk.id.toLowerCase()) {
+        virtualMachineWithDiskData.osDisk = disk
+        continue
+      }
+      var correspondingDisk = _.find(correspondingVm.dataDisks, function(dataDisk) { return dataDisk.managedDisk.id.toLowerCase() === disk.id.toLowerCase() })
+      if (correspondingDisk === undefined) continue;
+      disk.lun = correspondingDisk.lun
+      virtualMachineWithDiskData.dataDisks.push(disk)
     }
-  })
+    result.push(virtualMachineWithDiskData)
+  }
 EOS
 end
 
@@ -153,7 +367,7 @@ end
 ###############################################################################
 
 policy "pol_azure_rightsize_managed_disks" do
-  validate $ds_oversized_managed_disks do
+  validate $ds_azure_virtual_machines_with_disks do
     summary_template "There are {{ len data }} oversized Azure Managed Disks"
     check eq(size(data), 0)
     escalate $esc_email
@@ -200,3 +414,93 @@ end
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+# datasource "ds_get_policy" do
+#   request do
+#     auth $auth_flexera
+#     host rs_governance_host
+#     ignore_status [404]
+#     path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+#     header "Api-Version", "1.0"
+#   end
+#   result do
+#     encoding "json"
+#     field "id", jmes_path(response, "id")
+#   end
+# end
+
+# datasource "ds_parent_policy_terminated" do
+#   run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+# end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+# script "js_decide_if_self_terminate", type: "javascript" do
+#   parameters "found", "self_policy_id", "meta_parent_policy_id"
+#   result "result"
+#   code <<-EOS
+#   var result
+#   if (meta_parent_policy_id != "" && found.id == undefined) {
+#     result = true
+#   } else {
+#     result = false
+#   }
+#   EOS
+# end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+# script "js_make_terminate_request", type: "javascript" do
+#   parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+#   result "request"
+#   code <<-EOS
+
+#   var request = {
+#     auth:  'auth_flexera',
+#     host: rs_governance_host,
+#     path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+#     headers: {
+#       "API-Version": "1.0",
+#       "Content-Type":"application/json"
+#     },
+#   }
+
+#   if (should_delete) {
+#     request.verb = 'DELETE'
+#   }
+#   EOS
+# end
+
+# datasource "ds_terminate_self" do
+#   request do
+#     run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+#   end
+# end
+
+# datasource "ds_is_deleted" do
+#   run_script $js_check_deleted, $ds_terminate_self
+# end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+# script "js_check_deleted", type: "javascript" do
+#   parameters "response"
+#   result "result"
+#   code <<-EOS
+#   result = {"path":"/"}
+#   EOS
+# end
