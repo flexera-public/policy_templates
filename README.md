@@ -399,12 +399,12 @@ These templates can generate savings estimates for your environment.
 - Compute
 
   - [Azure Long Running Instances](./operational/azure/azure_long_running_instances)
+  - [Azure Migrate Integration](./operational/azure/azure_migrate)
   - [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks)
   - [Expiring Azure Certificates](./operational/azure/azure_certificates)
 
 - Tags
 
-  - [Azure Migrate Integration](./operational/azure/azure_migrate)
   - [Azure Tag Cardinality Report](./operational/azure/tag_cardinality)
 
 #### Flexera
@@ -643,7 +643,7 @@ These templates can generate savings estimates for your environment.
   Inefficient Instance Usage: 1
   Instances not running FlexNet Inventory Agent: 2
   Lifecycle Management: 1
-  Long Running Instances: 2
+  Long Running Instances: 3
   Long Stopped Instances: 3
   N/A: 2
   Native Recommendations: 1
@@ -669,7 +669,7 @@ These templates can generate savings estimates for your environment.
   Schedule Report: 1
   Storage Security: 1
   Superseded Compute Instances: 2
-  Tag Cardinality: 3
+  Tag Cardinality: 2
   Unlabeled Resources: 1
   Untagged Resources: 1
   Untagged resources: 1
@@ -705,7 +705,7 @@ These templates can generate savings estimates for your environment.
   CCO: 1
   CloudTrail: 7
   Common Bill Ingestion: 2
-  Compute: 48
+  Compute: 49
   Config: 1
   Cost Explorer: 1
   DBS: 1
@@ -731,7 +731,7 @@ These templates can generate savings estimates for your environment.
   Security: 3
   Storage: 20
   Storage Accounts: 2
-  Tags: 3
+  Tags: 2
   Usage Discount: 6
   VPC: 1
   compute: 1
