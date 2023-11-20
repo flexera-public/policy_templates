@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.4
+
+- Added parameter to override the AWS Pricing API Endpoint
+
 ## v4.3
 
 - Corrected API issue when executing policy in APAC
