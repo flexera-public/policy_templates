@@ -41,4 +41,4 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ## Cost
 
-This Policy Template only makes request to Flexera APIs and does not incur any cloud costs.
+This Policy Template only makes requests to Flexera APIs and does not incur any cloud costs.
