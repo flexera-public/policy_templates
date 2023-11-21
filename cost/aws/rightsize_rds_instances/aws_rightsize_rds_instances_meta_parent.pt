@@ -806,6 +806,7 @@ script "js_ds_rds_underutil_incident_combined_incidents", type: "javascript" do
     // If the incident summary contains "AWS Underutilized RDS Instances Found" then include it in the filter result
     if (s.indexOf("AWS Underutilized RDS Instances Found") > -1) {
       _.each(incident["violation_data"], function(violation) {
+        violation["incident_id"] = incident["id"];
         result.push(violation);
       });
     }
@@ -836,15 +837,26 @@ EOS
 end
 
 
-# Escalation for Update Instance
-escalation "resize_instances" do
+# Escalation for Downsize Underutilized RDS Instances
+escalation "esc_downsize_rds_instances" do
   automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
-  label "Update Instance"
-  description "Approve selected RDS RightSizing"
-  run "resize_instances", data, rs_governance_host, rs_project_id
+  label "Downsize Underutilized RDS Instances"
+  description "Approval to downsize all selected underutilized RDS instances"
+  run "esc_downsize_rds_instances", data, rs_governance_host, rs_project_id
 end
-define resize_instances($data, $governance_host, $rs_project_id) do
-  call child_run_action($data, $governance_host, $rs_project_id, "Update Instance")
+define esc_downsize_rds_instances($data, $governance_host, $rs_project_id) do
+  call child_run_action($data, $governance_host, $rs_project_id, "Downsize Underutilized RDS Instances")
+end
+
+# Escalation for Terminate Unused RDS Instances
+escalation "esc_terminate_rds_instances" do
+  automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
+  label "Terminate Unused RDS Instances"
+  description "Approval to terminate all selected unused RDS instances"
+  run "esc_terminate_rds_instances", data, rs_governance_host, rs_project_id
+end
+define esc_terminate_rds_instances($data, $governance_host, $rs_project_id) do
+  call child_run_action($data, $governance_host, $rs_project_id, "Terminate Unused RDS Instances")
 end
 
 
@@ -858,7 +870,7 @@ policy "policy_scheduled_report" do
   validate $ds_rds_underutil_incident_combined_incidents do
     summary_template "Consolidated Incident: {{ len data }} AWS Underutilized RDS Instances Found"
     escalate $esc_email
-    escalate $resize_instances
+    escalate $esc_downsize_rds_instances
     check eq(size(data), 0)
     export do
       resource_level true
@@ -940,6 +952,9 @@ policy "policy_scheduled_report" do
       field "id" do
         label "id"
       end
+      field "incident_id" do
+        label "Child Incident ID"
+      end
     end
   end
 
@@ -947,6 +962,7 @@ policy "policy_scheduled_report" do
   validate $ds_rds_idle_incident_combined_incidents do
     summary_template "Consolidated Incident: {{ len data }} AWS Unused RDS Instances Found"
     escalate $esc_email
+    escalate $esc_terminate_rds_instances
     check eq(size(data), 0)
     export do
       resource_level true
