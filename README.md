@@ -32,6 +32,7 @@ These templates can generate savings estimates for your environment.
 - [AWS Reserved Instances Recommendations](./cost/aws/reserved_instances/recommendations)
 - [AWS Rightsize EBS Volumes](./cost/aws/rightsize_ebs_volumes)
 - [AWS Rightsize EC2 Instances](./cost/aws/rightsize_ec2_instances)
+- [AWS Rightsize RDS Instances](./cost/aws/rightsize_rds_instances)
 - [AWS Savings Plan Recommendations](./cost/aws/savings_plan/recommendations)
 - [AWS Superseded EC2 Instances](./cost/aws/superseded_instances)
 - [AWS Unused IP Addresses](./cost/aws/unused_ip_addresses)
@@ -208,7 +209,7 @@ These templates can generate savings estimates for your environment.
 - RDS
 
   - [AWS RDS Instances](./cost/aws/rds_instance_license_info)
-  - [AWS Rightsize RDS Instances](./cost/aws/rds_instance_cloudwatch_utilization)
+  - [AWS Rightsize RDS Instances](./cost/aws/rightsize_rds_instances)
   - [AWS Unused RDS Instances](./cost/aws/unused_rds)
 
 - S3
@@ -625,7 +626,7 @@ These templates can generate savings estimates for your environment.
   Operational: 23
   SaaS Management: 13
   Security: 74
-:optimization_count: 41
+:optimization_count: 42
 :policy_sets:
   '': 81
   AWS Config: 1
@@ -654,11 +655,10 @@ These templates can generate savings estimates for your environment.
   Public Database Access: 2
   Reserved Instance: 2
   Reserved Instances: 3
-  RightSize Database Services: 1
   Rightsize Clusters: 1
   Rightsize Compute Instances: 6
   Rightsize Containers: 1
-  Rightsize Database Instances: 3
+  Rightsize Database Instances: 4
   Rightsize Database Services: 1
   Rightsize Volumes: 2
   Savings Plan Utilization: 1
