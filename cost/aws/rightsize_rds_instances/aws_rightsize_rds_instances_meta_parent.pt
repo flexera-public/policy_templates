@@ -1,14 +1,14 @@
 name "AWS Rightsize RDS Instances Meta Parent"
 rs_pt_ver 20180301
 type "policy"
-short_description "Applies and manages \"child\" [AWS Rightsize RDS Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rds_instance_cloudwatch_utilization) Policies."
+short_description "Applies and manages \"child\" [AWS Rightsize RDS Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_rds_instances) Policies."
 severity "low"
 category "Cost"
 tenancy "single"
 default_frequency "15 minutes"
 info(
   provider: "AWS",
-  version: "3.3", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "4.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "false"
 )
 
@@ -66,76 +66,113 @@ parameter "param_template_source" do
 end
 
 ## Child Policy Parameters
-parameter "param_allowed_regions_allow_or_deny" do
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation."
+  min_value 0
+  default 0
+end
+
+parameter "param_regions_allow_or_deny" do
   type "string"
+  category "Filters"
   label "Allow/Deny Regions"
-  description "Allow or Deny entered regions. See the README for more details"
+  description "Allow or Deny entered regions. See the README for more details."
   allowed_values "Allow", "Deny"
   default "Allow"
 end
 
-parameter "param_allowed_regions" do
+parameter "param_regions_list" do
   type "list"
-  label "Regions"
+  category "Filters"
+  label "Allow/Deny Regions List"
   allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
-  description "A list of allowed or denied regions. See the README for more details"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
 end
 
-parameter "param_avg_cpu_upsize" do
-  type "number"
-  label "Average used CPU % - Upsize threshold"
-  description "Set to -1 to ignore CPU utilization"
-  default 80
-  min_value -1
-  max_value 100
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags (Key:Value)"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:*"
+  allowed_pattern /(^$)|[\w]*\:.*/
+  default []
 end
 
-parameter "param_avg_cpu_downsize" do
-  type "number"
-  label "Average used CPU % - Downsize Threshold"
-  description "Set to -1 to ignore CPU utilization"
-  default 60
-  min_value -1
-  max_value 100
-end
-
-parameter "param_exclusion_tag_key" do
-  label "Exclusion Tag Key:Value"
-  description "AWS tag key to ignore instances. Format: Key:Value"
+parameter "param_unused_or_underutilized" do
   type "string"
+  category "Filters"
+  label "Report Unused or Underutilized"
+  description "Whether to report on unused instances, underutilized instances, or both."
+  allowed_values "Unused & Underutilized", "Unused", "Underutilized"
+  default "Unused & Underutilized"
+end
+
+parameter "param_stats_underutil_threshold_cpu_value" do
+  type "number"
+  category "Statistics"
+  label "Underutilized Instance CPU Threshold (%)"
+  description "The CPU threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing."
+  min_value 0
+  max_value 100
+  default 60
+end
+
+parameter "param_stats_lookback" do
+  type "number"
+  category "Statistics"
+  label "Statistic Lookback Period"
+  description "How many days back to look at statistical data for instances to determine if they are underutilized or unused. This value cannot be set higher than 90 because AWS does not retain metrics for longer than 90 days."
+  default 30
+  min_value 1
+  max_value 90
+end
+
+parameter "param_stats_threshold" do
+  type "string"
+  category "Statistics"
+  label "Threshold Statistic"
+  description "CPU statistic to use when determining if an instance is underutilized."
+  allowed_values "Average", "Maximum", "p99", "p95", "p90"
+  default "Average"
+end
+
+parameter "param_downsize_timeframe" do
+  type "string"
+  category "Actions"
+  label "Downsize Timeframe"
+  description "Whether to downsize underutilized RDS instances immediately or wait until the next maintenance window."
+  allowed_values "Downsize Immediately", "Wait for Maintenance Window"
+  default "Wait for Maintenance Window"
 end
 
 parameter "param_automatic_action" do
   type "list"
+  category "Actions"
   label "Automatic Actions"
-  description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Resize Instances"]
+  description "When this value is set, this policy will automatically take the selected action(s)."
+  allowed_values ["Downsize Underutilized RDS Instances", "Terminate Unused RDS Instances"]
   default []
-end
-
-parameter "param_log_to_cm_audit_entries" do
-  type "string"
-  label "Log to CM Audit Entries"
-  description "Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left set to No on Flexera EU"
-  default "No"
-  allowed_values "Yes", "No"
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 credentials "auth_aws" do
-  schemes "aws","aws_sts"
+  schemes "aws", "aws_sts"
   label "AWS"
-  description "Select the AWS Credential from the list."
+  description "Select the AWS Credential from the list"
   tags "provider=aws"
   aws_account_number $param_aws_account_number
 end
 
 credentials "auth_flexera" do
   schemes "oauth2"
-  label "flexera"
-  description "Select Flexera One OAuth2 credentials."
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
 
@@ -755,19 +792,40 @@ datasource "ds_child_incident_details" do
   end
 end
 
-datasource "ds_filtered_results_combined_incidents" do
-  run_script $js_ds_filtered_results_combined_incidents, $ds_child_incident_details
+datasource "ds_rds_underutil_incident_combined_incidents" do
+  run_script $js_ds_rds_underutil_incident_combined_incidents, $ds_child_incident_details
 end
 
-script "js_ds_filtered_results_combined_incidents", type: "javascript" do
+script "js_ds_rds_underutil_incident_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-EOS
   result = []
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
-    // If the incident summary contains "AWS RDS instances with inefficient utilization" then include it in the filter result
-    if (s.indexOf("AWS RDS instances with inefficient utilization") > -1) {
+    // If the incident summary contains "AWS Underutilized RDS Instances Found" then include it in the filter result
+    if (s.indexOf("AWS Underutilized RDS Instances Found") > -1) {
+      _.each(incident["violation_data"], function(violation) {
+        result.push(violation);
+      });
+    }
+  });
+EOS
+end
+
+datasource "ds_rds_idle_incident_combined_incidents" do
+  run_script $js_ds_rds_idle_incident_combined_incidents, $ds_child_incident_details
+end
+
+script "js_ds_rds_idle_incident_combined_incidents", type: "javascript" do
+  parameters "ds_child_incident_details"
+  result "result"
+  code <<-EOS
+  result = []
+  _.each(ds_child_incident_details, function(incident) {
+    s = incident["summary"];
+    // If the incident summary contains "AWS Unused RDS Instances Found" then include it in the filter result
+    if (s.indexOf("AWS Unused RDS Instances Found") > -1) {
       _.each(incident["violation_data"], function(violation) {
         violation["incident_id"] = incident["id"];
         result.push(violation);
@@ -796,43 +854,70 @@ end
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
-    # Consolidated incident for AWS RDS instances with inefficient utilization
-  validate $ds_filtered_results_combined_incidents do
-    summary_template "Consolidated Incident: {{ len data }} AWS RDS instances with inefficient utilization"
+    # Consolidated incident for AWS Underutilized RDS Instances Found
+  validate $ds_rds_underutil_incident_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} AWS Underutilized RDS Instances Found"
     escalate $esc_email
     escalate $resize_instances
     check eq(size(data), 0)
     export do
       resource_level true
       field "accountID" do
-        label "Account Id"
+        label "Account ID"
       end
       field "accountName" do
         label "Account Name"
       end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
       field "region" do
         label "Region"
       end
-      field "id" do
-        label "Instance Id"
+      field "state" do
+        label "State"
       end
-      field "platform" do
-        label "Platform"
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "privateDnsName" do
+        label "Private DNS Name"
       end
       field "resourceType" do
-        label "Current Instance Class"
+        label "Resource Type"
       end
       field "newResourceType" do
-        label "Recommended Instance Class"
+        label "Recommended Resource Type"
       end
-      field "availabilityZone" do
-        label "Availability Zone"
+      field "cpuMaximum" do
+        label "CPU Maximum %"
+      end
+      field "cpuMinimum" do
+        label "CPU Minimum %"
       end
       field "cpuAverage" do
         label "CPU Average %"
       end
-      field "lookbackPeriod" do
-        label "Lookback Period"
+      field "cpuP99" do
+        label "CPU p99"
+      end
+      field "cpuP95" do
+        label "CPU p95"
+      end
+      field "cpuP90" do
+        label "CPU p90"
       end
       field "databaseEngine" do
         label "Database Engine"
@@ -840,8 +925,87 @@ policy "policy_scheduled_report" do
       field "engineVersion" do
         label "Engine Version"
       end
-      field "threshold" do
-        label "CPU Threshold"
+      field "arn" do
+        label "ARN"
+      end
+      field "platform" do
+        label "Platform"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+      field "id" do
+        label "id"
+      end
+    end
+  end
+
+  # Consolidated incident for AWS Unused RDS Instances Found
+  validate $ds_rds_idle_incident_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} AWS Unused RDS Instances Found"
+    escalate $esc_email
+    check eq(size(data), 0)
+    export do
+      resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "state" do
+        label "State"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "privateDnsName" do
+        label "Private DNS Name"
+      end
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "databaseEngine" do
+        label "Database Engine"
+      end
+      field "engineVersion" do
+        label "Engine Version"
+      end
+      field "arn" do
+        label "ARN"
+      end
+      field "platform" do
+        label "Platform"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+      field "id" do
+        label "id"
       end
       field "incident_id" do
         label "Child Incident ID"
