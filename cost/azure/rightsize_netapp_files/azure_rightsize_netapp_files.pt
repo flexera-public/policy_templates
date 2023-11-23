@@ -35,11 +35,40 @@ parameter "param_azure_endpoint" do
   default "management.azure.com"
 end
 
-parameter "param_subscriptions_to_check" do
+parameter "param_stats_underutil_threshold_pool_value" do
+  type "number"
+  category "Statistics"
+  label "Underutilized NetApp Files Capacity Pool Threshold (%)"
+  description "The NetApp Files threshold at which to consider a capacity pool to be 'underutilized' and therefore be flagged for downsizing. Set to -1 to ignore capacity pool utilization"
+  min_value -1
+  max_value 100
+  default 40
+end
+
+parameter "param_stats_underutil_threshold_volume_value" do
+  type "number"
+  category "Statistics"
+  label "Underutilized NetApp Files Volume Threshold (%)"
+  description "The NetApp Files threshold at which to consider a volume to be 'underutilized' and therefore be flagged for downsizing. Set to -1 to ignore volume utilization"
+  min_value -1
+  max_value 100
+  default 40
+end
+
+parameter "param_subscriptions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Subscriptions"
+  description "Allow or Deny entered Subscriptions"
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_subscriptions_list" do
   type "list"
   category "Filters"
-  label "Azure subscriptions to check"
-  description "Enter the subscription IDs that you want this policy to check for oversized managed disks."
+  label "Allow/Deny Subscriptions List"
+  description "A list of allowed or denied Subscription IDs/names"
   default []
 end
 
@@ -58,34 +87,74 @@ end
 # Pagination
 ###############################################################################
 
+pagination "pagination_azure" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
 
-datasource "ds_subscriptions_to_check" do
-  run_script $js_subscriptions_to_check, $param_subscriptions_to_check
+datasource "ds_azure_subscriptions" do
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path "/subscriptions/"
+    query "api-version","2020-01-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "subscriptionId")
+      field "name", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
+    end
+  end
 end
 
-script "js_subscriptions_to_check", type: "javascript" do
-  parameters "param_subscriptions_to_check"
-  result "subscriptions_to_check"
+datasource "ds_azure_subscriptions_filtered" do
+  run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
+end
+
+script "js_azure_subscriptions_filtered", type: "javascript" do
+  parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
+  result "result"
   code <<-EOS
-  var subscriptions_to_check = param_subscriptions_to_check
+  if (param_subscriptions_list.length > 0) {
+    result = _.filter(ds_azure_subscriptions, function(subscription) {
+      include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
+
+      if (param_subscriptions_allow_or_deny == "Deny") {
+        include_subscription = !include_subscription
+      }
+
+      return include_subscription
+    })
+  } else {
+    result = ds_azure_subscriptions
+  }
 EOS
 end
 
 datasource "ds_resource_groups" do
-  iterate $ds_subscriptions_to_check
+  iterate $ds_azure_subscriptions_filtered
   request do
     auth $auth_azure
     host $param_azure_endpoint
-    path join(["/subscriptions/", iter_item, "/resourceGroups"])
+    path join(["/subscriptions/", val(iter_item, "id"), "/resourceGroups"])
     query "api-version", "2020-09-01"
   end
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "subscription_id", iter_item
+      field "subscription_id", val(iter_item, "id")
       field "resource_group_name", jmes_path(col_item, "name")
     end
   end
@@ -241,9 +310,11 @@ script "js_naf_oversized_pools", type: "javascript" do
       // Minimum pool size is 2 TiB (2048 GiB). If is not greater than that value, it cannot be downsized.
       if (pool.volumePoolAllocatedSize > 2048) {
         var poolConsumedPercentage = Math.round(pool.volumePoolAllocatedUsed * 100 / pool.volumePoolAllocatedSize)
-        if (poolConsumedPercentage < 50) {
-          // If recommended allocated size for pool is less than 2048, recommendation will be 2048 because of minimum size
-          var poolRecommendedSize = (pool.volumePoolAllocatedUsed*2) < 2048 ? 2048 : (pool.volumePoolAllocatedUsed*2)
+        if (poolConsumedPercentage < param_stats_underutil_threshold_pool_value) {
+          var poolRecommendedSize = Math.round(pool.volumePoolAllocatedUsed * 100 / param_stats_underutil_threshold_pool_value)
+          if (poolRecommendedSize < 2048) {
+            poolRecommendedSize = 2048
+          }
           result.push({
             resourceID: pool['naf_pool_id'],
             resourceName: pool['naf_pool_name'],
@@ -295,10 +366,13 @@ script "js_naf_oversized_volumes", type: "javascript" do
     if (volume.volume_logical_size != undefined && volume.volume_allocated_size != undefined && volume.volume_consumed_size_percentage != undefined) {
       // Minimum volume size is 100 GiB. If equals to 100, cannot be downsized.
       if (volume.volume_allocated_size > 100) {
-        // Logical volume size should be less than 50% of volume allocated size to show recommendations
-        if (volume.volume_consumed_size_percentage < 50) {
+        // Logical volume size should be less than the volume threshold of volume allocated size to show recommendations
+        if (volume.volume_consumed_size_percentage < param_stats_underutil_threshold_volume_value) {
           // If recommended allocated size for volume is less than 100, recommendation will be 100 because of minimum size
-          var recommendedVolumeAllocatedSize = (volume.volume_logical_size*2) < 100 ? 100 : (volume.volume_logical_size*2)
+          var recommendedVolumeAllocatedSize = volume.volume_logical_size * 100 / param_stats_underutil_threshold_volume_value
+          if (recommendedVolumeAllocatedSize < 100) {
+            recommendedVolumeAllocated = 100
+          }
           var recommendedPoolSize = bytesToGibibytes(volume.naf_pool_size) - (volume.volume_allocated_size - recommendedVolumeAllocatedSize)
           // If recommended pool size is less than 2 TiB, recommendation will be 2 TiB because of minimum pool size
           if (recommendedPoolSize < 2048) {
@@ -320,30 +394,6 @@ script "js_naf_oversized_volumes", type: "javascript" do
       }
     }
   })
-  /*
-  var nafVolumes = _.map(ds_naf_volume_metrics_v1, function(item) {
-    _.forEach(item.naf_volume_metrics, function(metric) {
-      var lastPointInTS = metric.timeseries[0].data[metric.timeseries[0].data.length - 1].average
-      switch (metric.name.value) {
-        case "VolumeLogicalSize":
-          item.volume_logical_size = Math.round(lastPointInTS / 1000000000) + "GB"
-          break;
-        case "VolumeAllocatedSize":
-          item.volume_allocated_size = Math.round(lastPointInTS / 1000000000) + "GB"
-          break;
-        case "VolumeConsumedSizePercentage":
-          item.volume_consumed_size_percentage = Math.round(lastPointInTS)
-          break;
-      }
-    })
-    return item
-  })
-  var oversizedNafVolumes = _.filter(nafVolumes, function(item) {
-    return item.volume_consumed_size_percentage < 50
-  })
-
-  var result = oversizedNafVolumes
-  */
 EOS
 end
 
@@ -365,19 +415,19 @@ policy "pol_azure_rightsize_netapp_files" do
         label "Resource Name"
       end
       field "poolSize" do
-        label "Pool Size"
+        label "Capacity Pool Size (GiB)"
       end
       field "poolUsed" do
-        label "Pool Used"
+        label "Capacity Pool Used (GiB)"
       end
       field "poolConsumedPercentage" do
-        label "Pool Consumed Percentage"
+        label "Capacity Pool Consumed Percentage (%)"
       end
       field "poolRecommendedSize" do
-        label "Pool Recommended Size"
+        label "Capacity Pool Recommended Size (GiB)"
       end
       field "savings" do
-        label "Savings"
+        label "Estimated Monthly Savings"
       end
       field "id" do
         label "ID"
@@ -394,31 +444,31 @@ policy "pol_azure_rightsize_netapp_files" do
         label "Resource ID"
       end
       field "resourceName" do
-        label "NetApp File Volume Name"
+        label "Resource Name"
       end
       field "volumeAllocatedSize" do
-        label "NetApp File Volume Allocated Size"
+        label "Volume Allocated Size (GiB)"
       end
       field "volumeLogicalSize" do
-        label "NetApp File Volume Logical Size"
+        label "Volume Logical Size (GiB)"
       end
       field "volumeConsumedSizePercentage" do
-        label "NetApp File Volume Consumed Size Percentage"
+        label "Volume Consumed Size Percentage (%)"
       end
       field "recommendedVolumeAllocatedSize" do
-        label "NetApp File Volume Recommended Allocated Size"
+        label "Volume Recommended Allocated Size (GiB)"
       end
       field "poolName" do
-        label "NetApp File Capacity Pool Name"
+        label "Capacity Pool Name"
       end
       field "poolSize" do
-        label "NetApp File Capacity Pool Size"
+        label "Capacity Pool Size (GiB)"
       end
       field "recommendedPoolSize" do
-        label "NetApp File Recommended Pool Size"
+        label "Capacity Pool Recommended Size (GiB)"
       end
       field "savings" do
-        label "Savings"
+        label "Estimated Monthly Savings"
       end
       field "id" do
         label "ID"
