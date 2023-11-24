@@ -404,12 +404,44 @@ script "js_azure_virtual_machines_with_metrics", type: "javascript" do
 EOS
 end
 
+datasource "ds_azure_virtual_machines_with_disk_space" do
+  run_script $js_azure_virtual_machines_with_disk_space
+end
+
+script "js_azure_virtual_machines_with_disk_space", type: "javascript" do
+  result "result"
+  code <<-EOS
+  var result = [
+    {
+        "vmId": "/subscriptions/0f84a200-3cb8-418a-b1ca-5bacb4fbfec1/resourceGroups/resource-group-2/providers/Microsoft.Compute/virtualMachines/azure-vm-1",
+        "osDisk": {
+            "id": "/subscriptions/0f84a200-3cb8-418a-b1ca-5bacb4fbfec1/resourceGroups/resource-group-2/providers/Microsoft.Compute/disks/azure-vm-1_OsDisk_1_156ae183cd2d44e5b1775e3a86515fab",
+            "diskSizeGB": 30,
+            "diskUsedGB": 4
+        },
+        "dataDisks": [
+            {
+                "id": "/subscriptions/0f84a200-3cb8-418a-b1ca-5bacb4fbfec1/resourceGroups/RESOURCE-GROUP-2/providers/Microsoft.Compute/disks/vm-1-data-disk-0",
+                "diskSizeGB": 4,
+                "diskUsedGB": 2
+            },
+            {
+                "id": "/subscriptions/0f84a200-3cb8-418a-b1ca-5bacb4fbfec1/resourceGroups/RESOURCE-GROUP-2/providers/Microsoft.Compute/disks/vm-1-data-disk-1",
+                "diskSizeGB": 32,
+                "diskUsedGB": 3
+            }
+        ]
+    }
+]
+EOS
+end
+
 datasource "ds_azure_disks_with_metrics" do
-  run_script $js_azure_disks_with_metrics, $ds_azure_virtual_machines_with_metrics, $ds_azure_virtual_machines_with_disks
+  run_script $js_azure_disks_with_metrics, $ds_azure_virtual_machines_with_metrics, $ds_azure_virtual_machines_with_disks, $ds_azure_virtual_machines_with_disk_space
 end
 
 script "js_azure_disks_with_metrics", type: "javascript" do
-  parameters "ds_azure_virtual_machines_with_metrics", "ds_azure_virtual_machines_with_disks"
+  parameters "ds_azure_virtual_machines_with_metrics", "ds_azure_virtual_machines_with_disks", "ds_azure_virtual_machines_with_disk_space"
   result "result"
   code <<-EOS
   function findMetricsForDataDisk(metrics, metricName, lun) {
@@ -428,7 +460,8 @@ script "js_azure_disks_with_metrics", type: "javascript" do
       }
     }
   }
-  
+
+  // Disk IOPS and throughput
   for (var i in ds_azure_virtual_machines_with_disks) {
     var vmWithDisk = ds_azure_virtual_machines_with_disks[i]
     var correspondingVmWithMetrics = _.find(ds_azure_virtual_machines_with_metrics, function(vmWithMt) { return vmWithMt.vmId.toLowerCase() === vmWithDisk.vmId.toLowerCase() })
@@ -464,6 +497,24 @@ script "js_azure_disks_with_metrics", type: "javascript" do
       )
       dataDisk.bandwithConsumedPctAvg = correspondingBandwidthMetrics.average
       dataDisk.bandwithConsumedPctMax = correspondingBandwidthMetrics.maximum
+    }
+  }
+
+  // Disk space
+  for (var i in ds_azure_virtual_machines_with_disks) {
+    var vmWithDisk = ds_azure_virtual_machines_with_disks[i]
+    var correspondingVmWithSpace = _.find(ds_azure_virtual_machines_with_disk_space, function(vmWithSpace) { return vmWithSpace.vmId.toLowerCase() === vmWithDisk.vmId.toLowerCase() })
+    if (correspondingVmWithSpace === undefined) continue;
+    // OS disk
+    vmWithDisk.osDisk.diskSizeGB = correspondingVmWithSpace.osDisk.diskSizeGB
+    vmWithDisk.osDisk.diskUsedGB = correspondingVmWithSpace.osDisk.diskUsedGB
+    // Data disks
+    for (var j in vmWithDisk.dataDisks) {
+      var dataDisk = vmWithDisk.dataDisks[j]
+      var correspondingDataDisk = _.find(correspondingVmWithSpace.dataDisks, function(disk) { return disk.id.toLowerCase() === dataDisk.id.toLowerCase() })
+      if (correspondingDataDisk === undefined) continue;
+      dataDisk.diskSizeGB = correspondingDataDisk.diskSizeGB
+      dataDisk.diskUsedGB = correspondingDataDisk.diskUsedGB
     }
   }
 
