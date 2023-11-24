@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 
 # Instructions for updating the price list:
 #   (1) Download the flexera-public/policy_templates repository locally.
@@ -13,6 +13,8 @@ import urllib.request
 from collections import OrderedDict
 
 logging.basicConfig(level=logging.INFO)
+
+OUTPUT_FILENAME = "azure_md_pricing.json"
 
 
 def build_url(base_url, params=None):
@@ -78,9 +80,8 @@ def main():
             disk_map.move_to_end(disk_name)
         region_price_map.move_to_end(region_name)
 
-    output_filename = "azure_md_pricing.json"
-    logging.info("Writing results to file %s", output_filename)
-    with open(output_filename, "wt", encoding="utf-8") as file:
+    logging.info("Writing results to file %s", OUTPUT_FILENAME)
+    with open(OUTPUT_FILENAME, "wt", encoding="utf-8") as file:
         json.dump(region_price_map, file, indent=2)
 
     logging.info("Done!")
