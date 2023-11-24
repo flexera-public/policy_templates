@@ -67,7 +67,7 @@ def extract_permissions_from_readme(readme_content)
     if section_start = readme_content.index(section)
 
       # Extract the text from this section
-      section_text = readme_content[section_start..]
+      section_text = readme_content[section_start..-1]
     
       credentials_section = ""
       section_text.each_line do |line|
