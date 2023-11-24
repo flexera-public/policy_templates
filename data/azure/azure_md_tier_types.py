@@ -9,6 +9,7 @@
 
 import json
 
+OUTPUT_FILENAME = "azure_md_tier_types.json"
 MANAGED_DISK_TIER_MAP = {
     "S4": {
         "sizeGiB": 32,
@@ -362,8 +363,6 @@ MANAGED_DISK_TIER_MAP = {
         "maxBurstThroughput": -1,
     },
 }
-
-OUTPUT_FILENAME = "managed_disk_tier_types.json"
 
 
 def dump_to_json_file(filename, content, indent=None):
