@@ -1,5 +1,11 @@
 # Changelog
 
+## v3.2
+
+- Optimized policy code to speed up execution.
+- Tags for objects are not requested if the parameter `Exclude Tag` is empty.
+- Added a new parameter `Bucket List`.
+
 ## v3.1
 
 - Updated description of `Account Number` parameter

@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.3
+
+- Deprecated: This policy is no longer being updated. Please see policy README for more information.
+
 ## v5.2
 
 - Corrected issue with policy, tags were being sent in an unsupported format

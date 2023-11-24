@@ -64,6 +64,11 @@ task :generate_policy_list do
       }
     end
   end
+  # Sort the file list by Policy Template Name
+  # This minimizes output diffs between runs
+  file_list = file_list.sort_by { |pt| pt[:name] }
+  # Construct final object
   policies = {"policies": file_list }
+  # Write the output JSON file to disk
   File.open('dist/active-policy-list.json', 'w') { |file| file.write(JSON.pretty_generate(policies)+"\n") }
 end

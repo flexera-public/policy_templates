@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1
+
+- Corrected API issue when executing policy in APAC
+
 ## v3.0
 
 - Policy now automatically converts savings to local currency when appropriate

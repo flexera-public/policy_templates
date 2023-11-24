@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.1
+
+- Fixed issue where policy would fail if databases were found with no SKU
+
 ## v4.0
 
 - Several parameters altered to be more descriptive and human-readable

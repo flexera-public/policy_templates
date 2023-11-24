@@ -1,5 +1,12 @@
 # Changelog
 
+## v3.6
+
+- Incident subject is now the name of the applied policy
+- Policy metadata updated to better categorize the policy
+- Additional corrections around retrieving cost data on orgs using new EA bill connection
+- Streamlined code for better readability and faster execution
+
 ## v3.5
 
 - Policy incident no longer includes extraneous information about date and time in `Month` field

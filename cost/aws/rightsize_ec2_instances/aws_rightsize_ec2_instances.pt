@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "4.3",
+  version: "4.5",
   provider: "AWS",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -143,7 +143,7 @@ parameter "param_automatic_action" do
   category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Downsize Instances", "Terminate Instances"]
+  allowed_values ["Downsize Instances", "Stop Instances", "Terminate Instances"]
   default []
 end
 
@@ -211,9 +211,9 @@ script "js_flexera_api_hosts", type: "javascript" do
       flexera: "api.flexera.eu",
       fsm: "api.fsm-eu.flexeraeng.com"
     },
-    "api.optima-au.flexeraeng.com": {
+    "api.optima-apac.flexeraeng.com": {
       flexera: "api.flexera.au",
-      fsm: "api.fsm-au.flexeraeng.com"
+      fsm: "api.fsm-apac.flexeraeng.com"
     }
   }
 
@@ -1369,6 +1369,7 @@ policy "pol_utilization" do
     EOS
     check logic_or($ds_parent_policy_terminated, ne(val(item, "recommendationType"), "Terminate"))
     escalate $esc_email
+    escalate $esc_stop_instances
     escalate $esc_terminate_instances
     hash_exclude "underutil_message", "idle_message", "underutil_total_savings", "idle_total_savings", "tags", "savings", "savingsCurrency", "cpu_maximum", "cpu_minimum", "cpu_average", "cpu_p99", "cpu_p95", "cpu_p90", "mem_maximum", "mem_minimum", "mem_average", "mem_p99", "mem_p95", "mem_p90"
     export do
@@ -1501,6 +1502,13 @@ escalation "esc_downsize_instances" do
   run "downsize_instances", data
 end
 
+escalation "esc_stop_instances" do
+  automatic contains($param_automatic_action, "Stop Instances")
+  label "Stop Instances"
+  description "Approval to stop all selected instances"
+  run "stop_instances", data
+end
+
 escalation "esc_terminate_instances" do
   automatic contains($param_automatic_action, "Terminate Instances")
   label "Terminate Instances"
@@ -1512,68 +1520,75 @@ end
 # Cloud Workflow
 ###############################################################################
 
-# Core CWF function to downsize instances
-define downsize_instances($data) return $all_responses do
-  # Change "No" to "Yes" to enable CWF debug logging
-  $log_to_cm_audit_entries = "No"
-
-  $$debug = $log_to_cm_audit_entries == "Yes"
-  $$log = []
-  $all_responses = []
-  $syslog_subject = "AWS Rightsizing Compute [Downsize]: "
-
-  call sys_log(join([$syslog_subject, "Identified Instances"]), to_s($data))
-
+# Core CWF function to stop instances
+define stop_instances($data) do
   foreach $instance in $data do
-    call get_instance_state($instance) retrieve $state_response, $initial_state
-    $all_responses << $state_response
+    sub on_error: handle_error() do
+      call get_instance_state($instance) retrieve $initial_state
 
-    if $initial_state != "terminated" && $initial_state != "pending"
-      if $initial_state != "stopped"
-        call stop_instance($instance) retrieve $stop_response
-        $all_responses << $stop_response
-      end
-
-      call resize_instance($instance) retrieve $resize_response
-      $all_responses << $resize_response
-
-      if $initial_state == "running"
-        call start_instance($instance) retrieve $start_response
-        $all_responses << $start_response
+      if $initial_state != "terminated" && $initial_state != "pending"
+        if $initial_state != "stopped"
+          call stop_instance($instance)
+        end
       end
     end
+  end
+
+  # If we encountered any errors, use `raise` to mark the CWF process as errored
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+# Core CWF function to downsize instances
+define downsize_instances($data) do
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      # Get the initial state of the instance before we take any action
+      call get_instance_state($instance) retrieve $initial_state
+      # Check to see if the instance is in a state that we can actual change instance type
+      if $initial_state != "terminated" && $initial_state != "pending"
+        # Stop the instance if it's not already stopped
+        if $initial_state != "stopped"
+          call stop_instance($instance)
+        end
+        # Resize the instance
+        call resize_instance($instance)
+        # Start the instance if it was running before we stopped it
+        if $initial_state == "running"
+          call start_instance($instance)
+        end
+      end
+    end
+  end
+
+  # If we encountered any errors, use `raise` to mark the CWF process as errored
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
   end
 end
 
 # Core CWF function to terminate instances
-define terminate_instances($data) return $all_responses do
-  # Change "No" to "Yes" to enable CWF debug logging
-  $log_to_cm_audit_entries = "No"
-
-  $$debug = $log_to_cm_audit_entries == "Yes"
-  $$log = []
-  $all_responses = []
-  $syslog_subject = "AWS Rightsizing Compute [Terminate]: "
-
-  call sys_log(join([$syslog_subject, "Identified Instances"]), to_s($data))
-
+define terminate_instances($data) do
   foreach $instance in $data do
-    call get_instance_state($instance) retrieve $state_response, $initial_state
-    $all_responses << $state_response
+    sub on_error: handle_error() do
+      call get_instance_state($instance) retrieve $initial_state
 
-    if $initial_state != "terminated" && $initial_state != "pending"
-      call terminate_instance($instance) retrieve $terminate_response
-      $all_responses << $terminate_response
+      if $initial_state != "terminated" && $initial_state != "pending"
+        call terminate_instance($instance)
+      end
     end
+  end
+
+  # If we encountered any errors, use `raise` to mark the CWF process as errored
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
   end
 end
 
 # CWF function to start an instance
 define start_instance($instance) return $response do
-  $syslog_subject = "AWS Starting Instance: "
-
-  call sys_log(join([$syslog_subject, "Instance"]), to_s($instance["id"]))
-
+  task_label("Starting Instance: " + $instance["id"])
   $response = http_request(
     auth: $$auth_aws,
     https: true,
@@ -1586,16 +1601,25 @@ define start_instance($instance) return $response do
       "InstanceId.1": $instance["id"]
     }
   )
-
-  call sys_log(join([$syslog_subject, "Responses"]), to_s($response))
+  call handle_response($response)
+  task_label("Checking for expected response code for Starting Instance: " + $instance["id"])
+  if $response["code"] != 202 && $response["code"] != 200
+    raise 'Unexpected response Starting Instance: '+to_json($response)
+  else
+    task_label("Successful Starting Instance: " + $instance["id"])
+    call get_instance_state($instance) retrieve $instance_state
+    while $instance_state != "running" do
+      call get_instance_state($instance) retrieve $instance_state
+      task_label("Waiting for Start.. Instance State: " + $instance["id"] +" "+ $instance_state)
+      sleep(10)
+    end
+    task_label("Completed Starting Instance: " + $instance["id"])
+  end
 end
 
 # CWF function to stop an instance
 define stop_instance($instance) return $response do
-  $syslog_subject = "AWS Stopping Instance: "
-
-  call sys_log(join([$syslog_subject, "Instance"]), to_s($instance["id"]))
-
+  task_label("Stopping Instance: " + $instance["id"])
   $response = http_request(
     auth: $$auth_aws,
     https: true,
@@ -1608,23 +1632,26 @@ define stop_instance($instance) return $response do
       "InstanceId.1": $instance["id"]
     }
   )
+  call handle_response($response)
 
-  $current_state = "dummy_value"
-
-  while $current_state != "stopped" do
-    sleep(30)
-    call get_instance_state($instance) retrieve $state_response, $current_state
+  task_label("Checking for expected response code for Stop Instance: " + $instance["id"])
+  if $response["code"] != 202 && $response["code"] != 200
+    raise 'Unexpected response Stop Instance: '+to_json($response)
+  else
+    task_label("Successful Stop Instance: " + $instance["id"])
+    call get_instance_state($instance) retrieve $instance_state
+    while $instance_state != "stopped" do
+      call get_instance_state($instance) retrieve $instance_state
+      task_label("Waiting for Stop.. Instance State: " + $instance["id"] +" "+ $instance_state)
+      sleep(10)
+    end
+    task_label("Completed Stop Instance: " + $instance["id"])
   end
-
-  call sys_log(join([$syslog_subject, "Responses"]), to_s($response))
 end
 
 # CWF function to resize an instance
 define resize_instance($instance) return $response do
-  $syslog_subject = "AWS Resizing Instance: "
-
-  call sys_log(join([$syslog_subject, "Instance"]), to_s($instance["id"]))
-
+  task_label("Modifying Instance Type: " + $instance["id"])
   $response = http_request(
     auth: $$auth_aws,
     https: true,
@@ -1638,23 +1665,26 @@ define resize_instance($instance) return $response do
       "InstanceType.Value": $instance["newResourceType"]
     }
   )
+  call handle_response($response)
 
-  $current_state = "dummy_value"
-
-  while $current_state != "stopped" do
-    sleep(30)
-    call get_instance_state($instance) retrieve $state_response, $current_state
+  task_label("Checking for expected response code for Modify Instance: " + $instance["id"])
+  if $response["code"] != 202 && $response["code"] != 200
+    raise 'Unexpected response Modify Instance: '+to_json($response)
+  else
+    task_label("Successful Modify Instance: " + $instance["id"])
+    call get_instance_state($instance) retrieve $instance_state
+    while $instance_state != "stopped" do
+      call get_instance_state($instance) retrieve $instance_state
+      task_label("Waiting for \"stopped\".. Instance State: " + $instance["id"] +" "+ $instance_state)
+      sleep(10)
+    end
+    task_label("Completed Modify Instance: " + $instance["id"])
   end
-
-  call sys_log(join([$syslog_subject, "Responses"]), to_s($response))
 end
 
 # CWF function to terminate an instance
 define terminate_instance($instance) return $response do
-  $syslog_subject = "AWS Terminating Instance: "
-
-  call sys_log(join([$syslog_subject, "Instance"]), to_s($instance["id"]))
-
+  task_label("Terminating Instance: " + $instance["id"])
   $response = http_request(
     auth: $$auth_aws,
     https: true,
@@ -1667,16 +1697,26 @@ define terminate_instance($instance) return $response do
       "InstanceId.1": $instance["id"]
     }
   )
+  call handle_response($response)
 
-  call sys_log(join([$syslog_subject, "Responses"]), to_s($response))
+  task_label("Checking for expected response code for Terminate Instance: " + $instance["id"])
+  if $response["code"] != 202 && $response["code"] != 200
+    raise 'Unexpected response Terminate Instance: '+to_json($response)
+  else
+    task_label("Successful Terminate Instance: " + $instance["id"])
+    call get_instance_state($instance) retrieve $instance_state
+    while $instance_state != "terminated" do
+      call get_instance_state($instance) retrieve $instance_state
+      task_label("Waiting for Terminate Instance: " + $instance["id"] +" "+ $instance_state)
+      sleep(10)
+    end
+    task_label("Completed Modify Instance: " + $instance["id"])
+  end
 end
 
 # CWF function to get the current state of an instance
-define get_instance_state($instance) return $response, $instance_state do
-  $syslog_subject = "AWS Describing Instance: "
-
-  call sys_log(join([$syslog_subject, "Instance"]), to_s($instance["id"]))
-
+define get_instance_state($instance) return $instance_state do
+  task_label("Getting Instance State: " + $instance["id"])
   $response = http_request(
     auth: $$auth_aws,
     https: true,
@@ -1690,46 +1730,28 @@ define get_instance_state($instance) return $response, $instance_state do
       "InstanceId.1": $instance["id"]
     }
   )
-
-  call sys_log(join([$syslog_subject, "Responses"]), to_s($response))
-
+  call handle_response($response)
   $instance_state = $response["body"]["DescribeInstanceStatusResponse"]["instanceStatusSet"]["item"]["instanceState"]["name"]
 end
 
-# CWF function to record information to the logs
-define sys_log($subject, $detail) do
-  # Create empty errors array if doesn't already exist
+# CWF function to handle errors
+define handle_error() do
   if !$$errors
     $$errors = []
   end
-  # Check if debug is enabled
-  if $$debug
-    # Append to global $$errors
-    # This is the suggested way to capture errors
-    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
-    # If Flexera NAM Zone, create audit_entries [to be deprecated]
-    # This is the legacy method for capturing errors and only supported on Flexera NAM
-    if $$rs_optima_host == "api.optima.flexeraeng.com"
-      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
-      $task_label = "Creating audit entry for " + $subject
-      sub task_label: $task, on_error: skip_error_and_append($task) do
-        rs_cm.audit_entries.create(
-          notify: "None",
-          audit_entry: {
-            auditee_href: @@account,
-            summary: $subject,
-            detail: $detail
-          }
-        )
-      end # End sub on_error
-    end # End if rs_optima_host
-  end # End if debug is enabled
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
 end
 
-# CWF function to handle errors
-define skip_error_and_append($subject) do
-  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
-  $_error_behavior = "skip"
+# CWF function to handle responses
+define handle_response($response) do
+  if !$$all_responses
+    $$all_responses = []
+  end
+  # Convert response object to JSON string.  Easier to interpret
+  $$all_responses << to_json($response)
 end
 
 ###############################################################################

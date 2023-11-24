@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.1
+
+- Added new parameter to allow users to filter reservations by a list of specific billing centers.
+- Updated `param_utilization` parameter to have a clearer description, and to set the default utilization threshold to 100%.
+- Removed `permission` declaration block as no longer needed.
+- Updated README title to reflect policy template name.
+- Updated "Credential Configuration" section in README to reflect the correct credentials required to run the policy.
+
 ## v2.0
 
 - Deprecated `rs` authentication (type: `rightscale`) and replaced with `auth_flexera` (type: `oauth2`).  This is a breaking change which requires a Credential for `auth_flexera` [`provider=flexera`] before the policy can be applied.  Please see docs for setting up [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm)
@@ -27,7 +35,7 @@
 
 ## v1.9
 
-- update policy name to reflect supported cloud.
+- Updated policy name to reflect supported cloud.
 
 ## v1.8
 

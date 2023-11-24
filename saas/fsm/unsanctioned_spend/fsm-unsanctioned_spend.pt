@@ -5,77 +5,109 @@ short_description "This policy will create an incident when Flexera SaaS Manager
 long_description ""
 severity "medium"
 category "SaaS Management"
-default_frequency "daily"
+default_frequency "weekly"
 info(
-  version: "2.6",
+  version: "3.0",
   provider: "Flexera SaaS Manager",
   service: "",
   policy_set: ""
 )
 
 ###############################################################################
-# User inputs
+# Parameters
 ###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+  default []
+end
 
 parameter "param_unsanctioned_apps" do
   type "list"
+  category "Policy Settings"
   label "Unsanctioned Application Names"
   description "List of SaaS Application names that the policy will target for identifying unsanctioned spend. Note: if left blank, the policy will detect all unsanctioned spend."
 end
 
 parameter "param_days" do
   type "number"
+  category "Policy Settings"
   label "Number of Days Back"
-  default 7
   description "Unsanctioned expenses discovered during this time period will raise an incident"
-end
-
-parameter "param_email" do
-  type "list"
-  label "Email addresses to notify"
-  description "Email addresses of the recipients you wish to notify"
+  default 7
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-#authenticate with FSM
-credentials "fsm_auth" do
+credentials "auth_flexera" do
   schemes "oauth2"
-  label "FSM"
-  description "Select the FSM Resource Manager Credential from the list."
-  tags "provider=flexera_fsm"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
-datasource "ds_get_host" do
-  run_script $js_get_host, rs_governance_host
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
 end
 
 datasource "ds_num_expenses" do
-  iterate $ds_get_host
   request do
-    auth $fsm_auth
-    host val(iter_item,"host")
-    verb "GET"
-    scheme "https"
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "fsm")
     path join(["/svc/orgs/", rs_org_id, "/financial-discovery"])
     header "content-type", "application/json"
   end
   result do
     encoding "json"
     field "totalItems", jmes_path(response, "totalItems")
-    field "saas_host", val(iter_item,"host")
   end
 end
 
 datasource "ds_unsanctioned" do
   request do
-    run_script $js_unsanctioned, $ds_num_expenses, rs_org_id
+    run_script $js_unsanctioned, $ds_num_expenses, $ds_flexera_api_hosts, rs_org_id
   end
   result do
     encoding "json"
@@ -84,9 +116,7 @@ datasource "ds_unsanctioned" do
       field "currency", jmes_path(col_item, "currency")
       field "expenseSum", jmes_path(col_item, "expenseSum")
       field "id", jmes_path(col_item, "id")
-      field "purchaser_email", jmes_path(col_item, "purchaser")
-      field "purchaser_firstName", jmes_path(col_item, "customerAgent.firstName")
-      field "purchaser_lastName", jmes_path(col_item, "customerAgent.lastName")
+      field "email", jmes_path(col_item, "purchaser")
       field "vendor", jmes_path(col_item, "vendor.name")
       field "application", jmes_path(col_item, "product.name")
       field "expenseDate", jmes_path(col_item, "latestExpenseDate")
@@ -94,98 +124,55 @@ datasource "ds_unsanctioned" do
   end
 end
 
-datasource "ds_cleanup_expenses" do
-  run_script $js_cleanup_expenses, $ds_unsanctioned, $param_days, $param_unsanctioned_apps
-end
-
-###############################################################################
-# Scripts
-###############################################################################
-
-script "js_get_host", type: "javascript" do
-  parameters "host"
-  result "result"
-  code <<-EOS
-    var result = [];
-    if(host.indexOf(".eu") !== -1 || host.indexOf("-eu") !== -1){
-      result.push({host: "api.fsm-eu.flexeraeng.com"});
-    }else{
-      result.push({host: "api.fsm.flexeraeng.com"});
-    }
-  EOS
-end
-
 script "js_unsanctioned", type: "javascript" do
-  parameters "ds_num_expenses", "rs_org_id"
+  parameters "ds_num_expenses", "ds_flexera_api_hosts", "rs_org_id"
   result "request"
   code <<-EOS
-  request = {
-    auth: "fsm_auth",
-    host: ds_num_expenses[0]["saas_host"],
-    verb: "GET",
-    scheme: "https",
-    path: "/svc/orgs/"+rs_org_id+"/financial-discovery",
-    headers: {
-      "content-type": "application/json"
-    },
-    query_params: {
-      "pageSize": ds_num_expenses[0]["totalItems"].toString()
-    }
+  var request = {
+    auth: "auth_flexera",
+    host: ds_flexera_api_hosts["fsm"],
+    path: "/svc/orgs/" + rs_org_id + "/financial-discovery",
+    headers: { "content-type": "application/json" },
+    query_params: { "pageSize": ds_num_expenses["totalItems"].toString() }
   }
 EOS
 end
 
+datasource "ds_cleanup_expenses" do
+  run_script $js_cleanup_expenses, $ds_unsanctioned, $ds_applied_policy, $param_days, $param_unsanctioned_apps
+end
+
 script "js_cleanup_expenses", type: "javascript" do
-  parameters "expenses", "param_days", "param_unsanctioned_apps"
+  parameters "ds_unsanctioned", "ds_applied_policy", "param_days", "param_unsanctioned_apps"
   result "result"
   code <<-EOS
-  var result = [];
-  var date = new Date();
-  date = date.setHours(-24 * param_days);
-  date = new Date(date);
+  result = []
+  date = new Date()
+  date = date.setHours(param_days * -24)
+  date = new Date(date)
 
-  // returns date formatted as string: YYYY-mm-dd
-  function getFormattedDailyDate(date) {
-    var year = date.getFullYear();
-    var month = (1 + date.getMonth()).toString();
-    month = month.length > 1 ? month : '0' + month;
-    var day = date.getDate().toString();
-    day = day.length > 1 ? day : '0' + day;
-    return year + '-' + month + '-' + day;
-  }
+  _.each(ds_unsanctioned, function(expense){
+    expenseDate = new Date(expense["expenseDate"])
 
-  _.each(expenses, function(expense){
-    var expense_date = new Date(expense["expenseDate"]);
-    if (expense_date > date){
-      if (_.contains(param_unsanctioned_apps, expense["application"]) || _.isEmpty(param_unsanctioned_apps)){
+    if (expenseDate > date) {
+      if (_.contains(param_unsanctioned_apps, expense["application"]) || param_unsanctioned_apps.length == 0) {
         result.push({
           active: expense["active"],
-          expenseSum: expense["currency"]+" "+expense["expenseSum"],
+          expenseSum: Number(expense["expenseSum"]),
+          currency: expense["currency"],
           id: expense["id"],
-          purchaser_email: expense["purchaser_email"],
-          purchaser_firstName: expense["purchaser_firstName"],
-          purchaser_lastName: expense["purchaser_lastName"],
+          email: expense["email"],
           vendor: expense["vendor"],
           application: expense["application"],
-          expenseDate: getFormattedDailyDate(expense_date)
+          expenseDate: expenseDate.toISOString().split('T')[0],
+          policy_name: ds_applied_policy["name"]
         })
       }
     }
   })
 
-  result = _.sortBy(result, 'expenseDate').reverse();
+  result = _.sortBy(result, 'expenseDate').reverse()
 EOS
-end
-
-###############################################################################
-# Escalations
-###############################################################################
-
-escalation "report_summary" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
 end
 
 ###############################################################################
@@ -193,26 +180,40 @@ end
 ###############################################################################
 
 policy "policy_fsm_unsanctioned_spend" do
-  validate $ds_cleanup_expenses do
-      summary_template "{{ len data }} Unsanctioned Expenses Found"
-      export do
-        field "expenseDate" do
-          label "Expense Date"
-        end
-        field "expenseSum" do
-          label "Expense Sum"
-        end
-        field "vendor" do
-          label "Vendor"
-        end
-        field "application" do
-          label "Application"
-        end
-        field "purchaser_email" do
-          label "Purchaser"
-        end
+  validate_each $ds_cleanup_expenses do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Unsanctioned Expenses Found"
+    check eq(val(item, "application"), "")
+    escalate $esc_email
+    export do
+      field "expenseDate" do
+        label "Expense Date"
       end
-      escalate $report_summary
-      check eq(size(data), 0)
+      field "expenseSum" do
+        label "Expense Sum"
+      end
+      field "currency" do
+        label "Currency"
+      end
+      field "application" do
+        label "Application"
+      end
+      field "vendor" do
+        label "Vendor"
+      end
+      field "email" do
+        label "Purchaser Email"
+      end
+    end
   end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
 end

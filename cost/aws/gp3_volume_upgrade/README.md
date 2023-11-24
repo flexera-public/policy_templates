@@ -1,12 +1,18 @@
 # AWS GP3 Upgradeable Volumes
 
-## What it does
+## Deprecated
+
+This policy is no longer being updated. The [AWS Rightsize EBS Volumes](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ebs_volumes/) policy should be used for these recommendations instead.
+
+Note that the above policy does not report on IO1 or IO2 volumes. These volumes are high performance volumes, so changing them to GP3 will result in a performance downgrade and may cause issues for workloads that rely on this performance.
+
+## What It Does
 
 This Policy finds GP2, IO1, or IO2 volumes in the given account and recommends them for upgrade to GP3 if that would provide savings. A Policy Incident will be created with all of volumes that fall into these criteria.
 
 Optionally, the user can specify one or more tags that if found on a volume will exclude the volume from the list.
 
-### Policy savings details
+### Policy Savings Details
 
 The policy includes the estimated savings. The estimated savings is recognized if the resource is Upgraded. It uses the AWS Pricing API to calculate the estimated savings along with the AWS Enterprise Discount Program percentage that is calculated from costs in Optima. You can also set the *AWS EDP Percentage* parameter to a non-negative number to use for the discount percentage instead. The savings are displayed in the *Estimated Monthly Savings* column. The incident detail message includes the sum of each resource *Estimated Monthly Savings* as *Total Estimated Monthly Savings*.
 
