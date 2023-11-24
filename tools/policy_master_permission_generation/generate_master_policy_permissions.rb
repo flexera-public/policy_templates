@@ -1,5 +1,6 @@
 #encoding: UTF-8
 require 'json'
+require 'fileutils'
 
 class Readme
 	attr_accessor :path, :credentials
@@ -168,7 +169,11 @@ end
 
 master_policy_permissions_doc[:values] = values
 
+# Create '.data/policy_permissions_list' directory
+permissions_list_dir = "./data/policy_permissions_list"
+FileUtils.mkdir_p(permissions_list_dir) unless Dir.exist?(permissions_list_dir)
+
 # Create JSON document in '.data/policy_permissions_list' directory
-File.open("./data/policy_permissions_list/master_policy_permissions_list.json", "w") do |f|
+File.open("#{permissions_list_dir}/master_policy_permissions_list.json", "w") do |f|
   f.write(JSON.pretty_generate(master_policy_permissions_doc))
 end
