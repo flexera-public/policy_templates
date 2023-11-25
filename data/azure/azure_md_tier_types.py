@@ -13,7 +13,7 @@ OUTPUT_FILENAME = "azure_md_tier_types.json"
 MANAGED_DISK_TIER_MAP = {
     "S4": {
         "sizeGiB": 32,
-        "tier": "S4",
+        "tier": "Standard",
         "IOPS": 500,
         "throughput": 60,
         "maxShares": -1,
@@ -22,7 +22,7 @@ MANAGED_DISK_TIER_MAP = {
     },
     "S6": {
         "sizeGiB": 64,
-        "tier": "S6",
+        "tier": "Standard",
         "IOPS": 500,
         "throughput": 60,
         "maxShares": -1,
@@ -31,7 +31,7 @@ MANAGED_DISK_TIER_MAP = {
     },
     "S10": {
         "sizeGiB": 128,
-        "tier": "S10",
+        "tier": "Standard",
         "IOPS": 500,
         "throughput": 60,
         "maxShares": -1,
@@ -40,7 +40,7 @@ MANAGED_DISK_TIER_MAP = {
     },
     "S15": {
         "sizeGiB": 256,
-        "tier": "S15",
+        "tier": "Standard",
         "IOPS": 500,
         "throughput": 60,
         "maxShares": -1,
@@ -49,7 +49,7 @@ MANAGED_DISK_TIER_MAP = {
     },
     "S20": {
         "sizeGiB": 512,
-        "tier": "S20",
+        "tier": "Standard",
         "IOPS": 500,
         "throughput": 60,
         "maxShares": 2,
@@ -58,7 +58,7 @@ MANAGED_DISK_TIER_MAP = {
     },
     "S30": {
         "sizeGiB": 1024,
-        "tier": "S30",
+        "tier": "Standard",
         "IOPS": 500,
         "throughput": 60,
         "maxShares": 5,
@@ -67,7 +67,7 @@ MANAGED_DISK_TIER_MAP = {
     },
     "S40": {
         "sizeGiB": 2048,
-        "tier": "S40",
+        "tier": "Standard",
         "IOPS": 500,
         "throughput": 60,
         "maxShares": 5,
@@ -76,7 +76,7 @@ MANAGED_DISK_TIER_MAP = {
     },
     "S50": {
         "sizeGiB": 4096,
-        "tier": "S50",
+        "tier": "Standard",
         "IOPS": 500,
         "throughput": 60,
         "maxShares": 5,
@@ -85,7 +85,7 @@ MANAGED_DISK_TIER_MAP = {
     },
     "S60": {
         "sizeGiB": 8192,
-        "tier": "S60",
+        "tier": "Standard",
         "IOPS": 1300,
         "throughput": 300,
         "maxShares": 5,
@@ -94,7 +94,7 @@ MANAGED_DISK_TIER_MAP = {
     },
     "S70": {
         "sizeGiB": 16384,
-        "tier": "S70",
+        "tier": "Standard",
         "IOPS": 2000,
         "throughput": 500,
         "maxShares": 5,
@@ -103,7 +103,7 @@ MANAGED_DISK_TIER_MAP = {
     },
     "S80": {
         "sizeGiB": 32767,
-        "tier": "S80",
+        "tier": "Standard",
         "IOPS": 2000,
         "throughput": 500,
         "maxShares": 5,
@@ -112,7 +112,7 @@ MANAGED_DISK_TIER_MAP = {
     },
     "E1": {
         "sizeGiB": 4,
-        "tier": "E1",
+        "tier": "StandardSSD",
         "IOPS": 500,
         "throughput": 60,
         "maxShares": 3,
@@ -121,7 +121,7 @@ MANAGED_DISK_TIER_MAP = {
     },
     "E2": {
         "sizeGiB": 8,
-        "tier": "E2",
+        "tier": "StandardSSD",
         "IOPS": 500,
         "throughput": 60,
         "maxShares": 3,
@@ -130,7 +130,7 @@ MANAGED_DISK_TIER_MAP = {
     },
     "E3": {
         "sizeGiB": 16,
-        "tier": "E3",
+        "tier": "StandardSSD",
         "IOPS": 500,
         "throughput": 60,
         "maxShares": 3,
@@ -139,7 +139,7 @@ MANAGED_DISK_TIER_MAP = {
     },
     "E4": {
         "sizeGiB": 32,
-        "tier": "E4",
+        "tier": "StandardSSD",
         "IOPS": 500,
         "throughput": 60,
         "maxShares": 3,
@@ -148,7 +148,7 @@ MANAGED_DISK_TIER_MAP = {
     },
     "E6": {
         "sizeGiB": 64,
-        "tier": "E6",
+        "tier": "StandardSSD",
         "IOPS": 500,
         "throughput": 60,
         "maxShares": 3,
@@ -157,7 +157,7 @@ MANAGED_DISK_TIER_MAP = {
     },
     "E10": {
         "sizeGiB": 128,
-        "tier": "E10",
+        "tier": "StandardSSD",
         "IOPS": 500,
         "throughput": 60,
         "maxShares": 3,
@@ -166,7 +166,7 @@ MANAGED_DISK_TIER_MAP = {
     },
     "E15": {
         "sizeGiB": 256,
-        "tier": "E15",
+        "tier": "StandardSSD",
         "IOPS": 500,
         "throughput": 60,
         "maxShares": 3,
@@ -175,7 +175,7 @@ MANAGED_DISK_TIER_MAP = {
     },
     "E20": {
         "sizeGiB": 512,
-        "tier": "E20",
+        "tier": "StandardSSD",
         "IOPS": 500,
         "throughput": 60,
         "maxShares": 3,
@@ -184,7 +184,7 @@ MANAGED_DISK_TIER_MAP = {
     },
     "E30": {
         "sizeGiB": 1024,
-        "tier": "E30",
+        "tier": "StandardSSD",
         "IOPS": 500,
         "throughput": 60,
         "maxShares": 5,
@@ -193,7 +193,7 @@ MANAGED_DISK_TIER_MAP = {
     },
     "E40": {
         "sizeGiB": 2048,
-        "tier": "E40",
+        "tier": "StandardSSD",
         "IOPS": 500,
         "throughput": 60,
         "maxShares": 5,
@@ -202,7 +202,7 @@ MANAGED_DISK_TIER_MAP = {
     },
     "E50": {
         "sizeGiB": 4096,
-        "tier": "E50",
+        "tier": "StandardSSD",
         "IOPS": 500,
         "throughput": 60,
         "maxShares": 5,
@@ -211,7 +211,7 @@ MANAGED_DISK_TIER_MAP = {
     },
     "E60": {
         "sizeGiB": 8192,
-        "tier": "E60",
+        "tier": "StandardSSD",
         "IOPS": 2000,
         "throughput": 400,
         "maxShares": 10,
@@ -220,7 +220,7 @@ MANAGED_DISK_TIER_MAP = {
     },
     "E70": {
         "sizeGiB": 16384,
-        "tier": "E70",
+        "tier": "StandardSSD",
         "IOPS": 4000,
         "throughput": 600,
         "maxShares": 10,
@@ -229,7 +229,7 @@ MANAGED_DISK_TIER_MAP = {
     },
     "E80": {
         "sizeGiB": 32767,
-        "tier": "E80",
+        "tier": "StandardSSD",
         "IOPS": 6000,
         "throughput": 750,
         "maxShares": 10,
@@ -238,7 +238,7 @@ MANAGED_DISK_TIER_MAP = {
     },
     "P1": {
         "sizeGiB": 4,
-        "tier": "P1",
+        "tier": "Premium",
         "IOPS": 120,
         "throughput": 25,
         "maxShares": 3,
@@ -247,7 +247,7 @@ MANAGED_DISK_TIER_MAP = {
     },
     "P2": {
         "sizeGiB": 8,
-        "tier": "P2",
+        "tier": "Premium",
         "IOPS": 120,
         "throughput": 25,
         "maxShares": 3,
@@ -256,7 +256,7 @@ MANAGED_DISK_TIER_MAP = {
     },
     "P3": {
         "sizeGiB": 16,
-        "tier": "P3",
+        "tier": "Premium",
         "IOPS": 120,
         "throughput": 25,
         "maxShares": 3,
@@ -265,7 +265,7 @@ MANAGED_DISK_TIER_MAP = {
     },
     "P4": {
         "sizeGiB": 32,
-        "tier": "P4",
+        "tier": "Premium",
         "IOPS": 120,
         "throughput": 25,
         "maxShares": 3,
@@ -274,7 +274,7 @@ MANAGED_DISK_TIER_MAP = {
     },
     "P6": {
         "sizeGiB": 64,
-        "tier": "P6",
+        "tier": "Premium",
         "IOPS": 240,
         "throughput": 50,
         "maxShares": 3,
@@ -283,7 +283,7 @@ MANAGED_DISK_TIER_MAP = {
     },
     "P10": {
         "sizeGiB": 128,
-        "tier": "P10",
+        "tier": "Premium",
         "IOPS": 500,
         "throughput": 100,
         "maxShares": 3,
@@ -292,7 +292,7 @@ MANAGED_DISK_TIER_MAP = {
     },
     "P15": {
         "sizeGiB": 256,
-        "tier": "P15",
+        "tier": "Premium",
         "IOPS": 1100,
         "throughput": 125,
         "maxShares": 3,
@@ -301,7 +301,7 @@ MANAGED_DISK_TIER_MAP = {
     },
     "P20": {
         "sizeGiB": 512,
-        "tier": "P20",
+        "tier": "Premium",
         "IOPS": 2300,
         "throughput": 150,
         "maxShares": 3,
@@ -310,7 +310,7 @@ MANAGED_DISK_TIER_MAP = {
     },
     "P30": {
         "sizeGiB": 1024,
-        "tier": "P30",
+        "tier": "Premium",
         "IOPS": 5000,
         "throughput": 200,
         "maxShares": 5,
@@ -319,7 +319,7 @@ MANAGED_DISK_TIER_MAP = {
     },
     "P40": {
         "sizeGiB": 2048,
-        "tier": "P40",
+        "tier": "Premium",
         "IOPS": 7500,
         "throughput": 250,
         "maxShares": 5,
@@ -328,7 +328,7 @@ MANAGED_DISK_TIER_MAP = {
     },
     "P50": {
         "sizeGiB": 4096,
-        "tier": "P50",
+        "tier": "Premium",
         "IOPS": 7500,
         "throughput": 250,
         "maxShares": 5,
@@ -337,7 +337,7 @@ MANAGED_DISK_TIER_MAP = {
     },
     "P60": {
         "sizeGiB": 8192,
-        "tier": "P60",
+        "tier": "Premium",
         "IOPS": 16000,
         "throughput": 500,
         "maxShares": 10,
@@ -346,7 +346,7 @@ MANAGED_DISK_TIER_MAP = {
     },
     "P70": {
         "sizeGiB": 16384,
-        "tier": "P70",
+        "tier": "Premium",
         "IOPS": 18000,
         "throughput": 750,
         "maxShares": 10,
@@ -355,7 +355,7 @@ MANAGED_DISK_TIER_MAP = {
     },
     "P80": {
         "sizeGiB": 32767,
-        "tier": "P80",
+        "tier": "Premium",
         "IOPS": 20000,
         "throughput": 900,
         "maxShares": 10,
@@ -383,45 +383,46 @@ def find_tier_downgrade(disk_tier):
         raise ValueError(f"Unknown disk tier: {disk_tier}")
 
 
-def _find_size_downgrade(disk_tier_letter, disk_size, disk_tier_map):
-    downgrade_size = round(disk_size / 2)
+def _find_size_downgrade(disk_tier_letter, disk_size_gib, disk_tier_map):
+    downgrade_size = round(disk_size_gib / 2)
     return next(
         (
-            d["tier"]
-            for d in disk_tier_map.values()
-            if d["tier"][0] == disk_tier_letter and d["sizeGiB"] == downgrade_size
+            disk_name
+            for disk_name, disk_data in disk_tier_map.items()
+            if disk_name[0] == disk_tier_letter
+            and disk_data["sizeGiB"] == downgrade_size
         ),
         None,
     )
 
 
-def find_size_downgrade(disk, disk_tier_map):
-    tier_letter = disk["tier"][0]
-    tier_number = disk["tier"][1:]
+def find_size_downgrade(disk_name, disk_size_gib, disk_tier_map):
+    tier_letter = disk_name[0]
+    tier_number = disk_name[1:]
     if tier_letter == "S":
-        disk_size = disk["sizeGiB"]
-        if disk_size == 32:
+        if disk_size_gib == 32:
             return None
-        return _find_size_downgrade(tier_letter, disk_size, disk_tier_map)
+        return _find_size_downgrade(tier_letter, disk_size_gib, disk_tier_map)
     elif tier_letter in ("E", "P"):
-        disk_size = disk["sizeGiB"]
-        if disk_size == 4:
+        if disk_size_gib == 4:
             return None
-        return _find_size_downgrade(tier_letter, disk_size, disk_tier_map)
+        return _find_size_downgrade(tier_letter, disk_size_gib, disk_tier_map)
     else:
         raise ValueError("Unknown disk tier: " + disk["tier"])
 
 
-def find_disk_downgrades(disk, disk_tier_map):
+def find_disk_downgrades(disk_name, disk_size_gib, disk_tier_map):
     return {
-        "tier": find_tier_downgrade(disk["tier"]),
-        "size": find_size_downgrade(disk, disk_tier_map),
+        "tier": find_tier_downgrade(disk_name),
+        "size": find_size_downgrade(disk_name, disk_size_gib, disk_tier_map),
     }
 
 
 def main():
-    for _, disk in MANAGED_DISK_TIER_MAP.items():
-        disk["downgrades"] = find_disk_downgrades(disk, MANAGED_DISK_TIER_MAP)
+    for disk_name, disk_data in MANAGED_DISK_TIER_MAP.items():
+        disk_data["downgrades"] = find_disk_downgrades(
+            disk_name, disk_data["sizeGiB"], MANAGED_DISK_TIER_MAP
+        )
     dump_to_json_file(OUTPUT_FILENAME, MANAGED_DISK_TIER_MAP, indent=2)
 
 
