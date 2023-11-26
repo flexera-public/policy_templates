@@ -5,7 +5,7 @@ short_description "Looks for oversized managed disks and suggest recommendations
 long_description ""
 category "Cost"
 severity "low"
-default_frequency "weekly"
+default_frequency "monthly"
 info(
   version: "0.0",
   provider: "Azure",
@@ -87,21 +87,50 @@ parameter "param_regions_list" do
   default []
 end
 
-parameter "param_stats_min_used_disk_space_pct_for_downsizing" do
+parameter "param_min_used_disk_space_pct_for_downsizing" do
   type "number"
-  category "Statistics"
+  category "Filters"
   label "Minimum used disk space percentage to consider a managed disk for downsizing"
-  description "The minimum used disk space percentage threshold at which to consider a disk to be 'oversized' and therefore be flagged for downsizing. Set to -1 for automatic mode."
+  description "The minimum used disk space percentage threshold at which to consider a disk to be 'oversized' and therefore be flagged for downsizing. Set to -1 to disable this filter."
   min_value -1
   max_value 100
   default 50
 end
 
-parameter "param_stats_aggregation_for_disk_throughput_and_iops" do
+parameter "param_min_used_disk_iops_pct_for_downsizing" do
+  type "number"
+  category "Filters"
+  label "Minimum used disk IOPS percentage to consider a managed disk for downsizing"
+  description "The minimum used disk IOPS percentage threshold at which to consider a disk to be 'oversized' and therefore be flagged for downsizing. Set to -1 to disable this filter."
+  min_value -1
+  max_value 100
+  default -1
+end
+
+parameter "param_stats_aggregation_for_disk_iops" do
   type "string"
   category "Statistics"
-  label "Aggregation type for determining oversized disk throughput and IOPS"
-  description "Statistic to use when determining if the disk throughput and IOPS is more than the disk actually uses."
+  label "Aggregation type for determining oversized disk IOPS"
+  description "Statistic to use when determining if the disk IOPS is more than the disk actually uses."
+  allowed_values "Average", "Maximum"
+  default "Average"
+end
+
+parameter "param_min_used_disk_throughput_pct_for_downsizing" do
+  type "number"
+  category "Filters"
+  label "Minimum used disk throughput percentage to consider a managed disk for downsizing"
+  description "The minimum used disk throughput percentage threshold at which to consider a disk to be 'oversized' and therefore be flagged for downsizing. Set to -1 to disable this filter."
+  min_value -1
+  max_value 100
+  default -1
+end
+
+parameter "param_stats_aggregation_for_disk_throughput" do
+  type "string"
+  category "Statistics"
+  label "Aggregation type for determining oversized disk throughput"
+  description "Statistic to use when determining if the disk throughput is more than the disk actually uses."
   allowed_values "Average", "Maximum"
   default "Average"
 end
@@ -111,7 +140,7 @@ parameter "param_stats_lookback" do
   category "Statistics"
   label "Lookback period"
   description "How many days back to look at disk IOPS and throughput data. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days."
-  default 7
+  default 30
   min_value 1
   max_value 90
 end
@@ -125,13 +154,6 @@ credentials "auth_azure" do
   label "Azure"
   description "Select the Azure Resource Manager Credential from the list."
   tags "provider=azure_rm"
-end
-
-credentials "auth_flexera" do
-  schemes "oauth2"
-  label "Flexera"
-  description "Select Flexera One OAuth2 credentials"
-  tags "provider=flexera"
 end
 
 ###############################################################################
@@ -223,6 +245,7 @@ datasource "ds_azure_disks" do
       field "state", jmes_path(col_item, "properties.diskState")
       field "size", jmes_path(col_item, "properties.diskSizeGB")
       field "timeCreated", jmes_path(col_item, "properties.timeCreated")
+      field "tier", jmes_path(col_item, "sku.name")
       field "subscriptionID", val(iter_item, "id")
       field "subscriptionName", val(iter_item, "name")
     end
@@ -356,7 +379,7 @@ end
 datasource "ds_azure_virtual_machines_with_metrics" do
   iterate $ds_azure_virtual_machines_with_disks
   request do
-    run_script $js_azure_virtual_machines_with_metrics, val(iter_item, "vmId"), $param_azure_endpoint, $param_stats_lookback, $param_stats_aggregation_for_disk_throughput_and_iops 
+    run_script $js_azure_virtual_machines_with_metrics, val(iter_item, "vmId"), $param_azure_endpoint, $param_stats_lookback
   end
   result do
     encoding "json"
@@ -366,7 +389,7 @@ datasource "ds_azure_virtual_machines_with_metrics" do
 end
 
 script "js_azure_virtual_machines_with_metrics", type: "javascript" do
-  parameters "vmId", "param_azure_endpoint", "param_stats_lookback", "param_stats_aggregation_for_disk_throughput_and_iops"
+  parameters "vmId", "param_azure_endpoint", "param_stats_lookback"
   result "request"
   code <<-EOS
   var end_date = new Date()
@@ -454,9 +477,10 @@ script "js_azure_disks_with_metrics", type: "javascript" do
           && parseInt(ts.metadatavalues[0].value) === lun
         )
       })
-      return {
-        average: correspondingTs.data[0].average,
-        maximum: correspondingTs.data[0].maximum,
+      if (correspondingTs === undefined) {
+        return { average: 0, maximum: 0 }
+      } else {
+        return { average: correspondingTs.data[0].average, maximum: correspondingTs.data[0].maximum }
       }
     }
   }
@@ -518,43 +542,296 @@ script "js_azure_disks_with_metrics", type: "javascript" do
     }
   }
 
-  var result = ds_azure_virtual_machines_with_disks
+  var disksWithMetrics = []
+  _.each(ds_azure_virtual_machines_with_disks, function(vmWithDisk) {
+    vmWithDisk.osDisk.diskType = "os"
+    disksWithMetrics.push(vmWithDisk.osDisk)
+    _.each(vmWithDisk.dataDisks, function(dataDisk) {
+      dataDisk.diskType = "data"
+      disksWithMetrics.push(dataDisk)
+    })
+  })
+
+  var result = disksWithMetrics
 EOS
 end
+
+datasource "ds_azure_disks_with_metrics_thresholds_filtered" do
+  run_script $js_azure_disks_with_metrics_thresholds_filtered, $ds_azure_disks_with_metrics, $param_min_used_disk_space_pct_for_downsizing, $param_min_used_disk_iops_pct_for_downsizing, $param_stats_aggregation_for_disk_iops, $param_min_used_disk_throughput_pct_for_downsizing, $param_stats_aggregation_for_disk_throughput
+end
+
+script "js_azure_disks_with_metrics_thresholds_filtered", type: "javascript" do
+  parameters "ds_azure_disks_with_metrics", "param_min_used_disk_space_pct_for_downsizing", "param_min_used_disk_iops_pct_for_downsizing", "param_stats_aggregation_for_disk_iops", "param_min_used_disk_throughput_pct_for_downsizing", "param_stats_aggregation_for_disk_throughput"
+  result "result"
+  code <<-EOS
+  var result = _.filter(ds_azure_disks_with_metrics, function(disk) {
+    if (param_min_used_disk_space_pct_for_downsizing != -1) {
+      var usedDiskSpacePct = disk.diskUsedGB * 100 / disk.diskSizeGB
+      if (usedDiskSpacePct > param_min_used_disk_space_pct_for_downsizing) {
+        return false
+      }
+    }
+    if (param_min_used_disk_iops_pct_for_downsizing != -1) {
+      var usedMetricPct = param_stats_aggregation_for_disk_iops === "Average" ? disk.iopsConsumedPctAvg : disk.iopsConsumedPctMax
+      if (usedMetricPct > param_min_used_disk_iops_pct_for_downsizing) {
+        return false
+      }
+    }
+    if (param_min_used_disk_throughput_pct_for_downsizing != -1) {
+      var usedMetricPct = param_stats_aggregation_for_disk_throughput === "Average" ? disk.bandwithConsumedPctAvg : disk.bandwithConsumedPctMax
+      if (usedMetricPct > param_min_used_disk_throughput_pct_for_downsizing) {
+        return false
+      }
+    }
+    return true
+  })
+EOS
+end
+
+datasource "ds_azure_md_tier_types" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/FOPTS-2005_rightsize_azure_managed_disks/data/azure/azure_md_tier_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_azure_md_pricing" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/FOPTS-2005_rightsize_azure_managed_disks/data/azure/azure_md_pricing.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_disk_rightsizing_recommendations" do
+  run_script $js_disk_rightsizing_recommendations, $ds_azure_disks_with_metrics_thresholds_filtered, $ds_azure_md_tier_types, $ds_azure_md_pricing, $param_stats_lookback, $param_min_savings, $param_min_used_disk_iops_pct_for_downsizing, $param_min_used_disk_throughput_pct_for_downsizing, $param_min_used_disk_space_pct_for_downsizing
+end
+
+script "js_disk_rightsizing_recommendations", type: "javascript" do
+  parameters "ds_azure_disks_with_metrics_thresholds_filtered", "ds_azure_md_tier_types", "ds_azure_md_pricing", "param_stats_lookback", "param_min_savings", "param_min_used_disk_iops_pct_for_downsizing", "param_min_used_disk_throughput_pct_for_downsizing", "param_min_used_disk_space_pct_for_downsizing"
+  result "result"
+  code <<-EOS
+  var hddDiskSizes = [32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32767]
+  var ssdDiskSizes = [4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32767]
+
+  function findDiskSize(diskTier, diskSizeGB) {
+    var diskSizes = null
+    switch (diskTier) {
+      case "Standard":
+        diskSizes = hddDiskSizes
+        break;
+      case "StandardSSD":
+      case "Premium":
+        diskSizes = ssdDiskSizes
+        break;
+      default:
+        throw "Only Standard HDD, Standard SSD or Premium SSD v1 disk tiers are supported."
+    }
+    for (i in diskSizes) {
+      var availableSize = diskSizes[i]
+      if (diskSizeGB <= availableSize) {
+        return availableSize
+      }
+    }
+  }
+
+  function findDiskName(diskTier, diskSizeGB) {
+    diskTier = diskTier.split("_")[0]
+    diskSizeGB = findDiskSize(diskTier, diskSizeGB)
+    for (diskName in ds_azure_md_tier_types) {
+      var diskData = ds_azure_md_tier_types[diskName]
+      if (diskData.tier === diskTier && diskData.sizeGiB === diskSizeGB) {
+        return diskName
+      }
+    }
+  }
+
+  function findDiskPrice(diskName, diskRedundancy, diskRegion) {
+    var diskPrice = diskName + "_" + diskRedundancy
+    var pricesByRegion = ds_azure_md_pricing[diskRegion]
+    if (pricesByRegion === undefined) {
+      throw "Region " + diskRegion + " not found at azure_md_pricing.json"
+    }
+    var priceData = pricesByRegion[diskPrice]
+    if (priceData === undefined) {
+      throw "Price for " + diskPrice + " not found at azure_md_pricing.json"
+    }
+    return priceData
+  }
+
+  function findFittingDiskName(currentDiskName, currentUsedGB, currentUsedIops, currentUsedThroughput) {
+    var currentDiskData = ds_azure_md_tier_types[currentDiskName]
+
+    if (currentDiskData.downgrades.size != null) {
+      var nextDiskName = currentDiskData.downgrades.size
+      var nextDiskData = ds_azure_md_tier_types[nextDiskName]
+      if (
+        currentUsedGB <= nextDiskData.sizeGiB
+        && currentUsedIops <= nextDiskData.IOPS
+        && currentUsedThroughput <= nextDiskData.throughput
+      ) return findFittingDiskName(nextDiskName, currentUsedGB, currentUsedIops, currentUsedThroughput);
+    } else if (currentDiskData.downgrades.tier != null) {
+      var nextDiskName = currentDiskData.downgrades.tier
+      var nextDiskData = ds_azure_md_tier_types[nextDiskName]
+      if (
+        currentUsedIops <= nextDiskData.IOPS
+        && currentUsedThroughput <= nextDiskData.throughput
+      ) return findFittingDiskName(nextDiskName, currentUsedGB, currentUsedIops, currentUsedThroughput);
+    }
+
+    return currentDiskName
+  }
+
+  var result = {
+    recommendations: [],
+    monthlySavings: 0,
+    raiseIncident: false,
+  }
+
+  for (i in ds_azure_disks_with_metrics_thresholds_filtered) {
+    var disk = ds_azure_disks_with_metrics_thresholds_filtered[i]
+    var currentDiskName = findDiskName(disk.tier, disk.diskSizeGB)
+    var currentDiskData = ds_azure_md_tier_types[currentDiskName]
+
+    var currentUsedIops = disk.iopsConsumedPctMax * currentDiskData.IOPS / 100
+    var currentUsedThroughput = disk.bandwithConsumedPctMax * currentDiskData.throughput / 100
+
+    var fittingDiskName = findFittingDiskName(currentDiskName, disk.diskUsedGB, currentUsedIops, currentUsedThroughput)
+    var fittingDiskData = ds_azure_md_tier_types[fittingDiskName]
+
+    if (currentDiskName === fittingDiskName) continue;
+
+    var currentDiskRedundancy = disk.tier.split("_")[1]
+    var currentDiskPrice = findDiskPrice(currentDiskName, currentDiskRedundancy, disk.region)
+    var fittingDiskPrice = findDiskPrice(fittingDiskName, currentDiskRedundancy, disk.region)
+
+    if (fittingDiskPrice.pricePerUnit >= currentDiskPrice.pricePerUnit) continue;
+
+    var monthlySavings = Math.round(currentDiskPrice.pricePerUnit - fittingDiskPrice.pricePerUnit)
+
+    result.recommendations.push({
+      accountID: disk.subscriptionID,
+      accountName: disk.subscriptionName,
+      resourceGroup: disk.resourceGroup,
+      resourceName: disk.resourceName,
+      resourceID: disk.id,
+      tags: disk.tags,
+      resourceType: currentDiskName + " " + currentDiskRedundancy + "GiB: " + currentDiskData.sizeGiB + " IOPS: " + currentDiskData.IOPS + " Throughput: " + currentDiskData.throughput,
+      resourceTypePrice: "$" + currentDiskPrice.pricePerUnit + " " + currentDiskPrice.currencyCode + " " + currentDiskPrice.unitOfMeasure,
+      newResourceType: fittingDiskName + " " + currentDiskRedundancy + "GiB: " + fittingDiskData.sizeGiB + " IOPS: " + fittingDiskData.IOPS + " Throughput: " + fittingDiskData.throughput,
+      newResourceTypePrice: "$" + fittingDiskPrice.pricePerUnit + " " + fittingDiskPrice.currencyCode + " " + fittingDiskPrice.unitOfMeasure,
+      resourceKind: disk.resourceType,
+      region: disk.region,
+      monthlySavings: monthlySavings,
+      savingsCurrency: currentDiskPrice.currencyCode,
+      iopsPctMaximum: Math.round(disk.iopsConsumedPctMax),
+      iopsPctAverage: Math.round(disk.iopsConsumedPctAvg),
+      iopsThreshold: param_min_used_disk_iops_pct_for_downsizing,
+      throughputPctMaximum: Math.round(disk.bandwithConsumedPctMax),
+      throughputPctAverage: Math.round(disk.bandwithConsumedPctAvg),
+      throughputThreshold: param_min_used_disk_throughput_pct_for_downsizing,
+      sizeGB: disk.diskSizeGB,
+      usedGBPct: Math.round(disk.diskUsedGB * 100 / disk.diskSizeGB),
+      diskSpaceThreshold: param_min_used_disk_space_pct_for_downsizing,
+      lookbackPeriod: param_stats_lookback,
+    })
+
+    result.monthlySavings += monthlySavings
+  }
+
+  result.monthlySavings = Math.round(result.monthlySavings)
+
+  if (result.monthlySavings >= param_min_savings) {
+    result.raiseIncident = true
+  }
+EOS
+end
+
 
 ###############################################################################
 # Policy
 ###############################################################################
 
 policy "pol_azure_rightsize_managed_disks" do
-  validate $ds_azure_disks_with_metrics do
-    summary_template "There are {{ len data }} oversized Azure Managed Disks"
-    check eq(size(data), 0)
+  validate $ds_disk_rightsizing_recommendations do
+    summary_template "There are {{ len data.recommendations }} oversized Azure Managed Disks, you could save ${{ data.monthlySavings }} USD!"
+    check logic_not(val(data, "raiseIncident"))
     escalate $esc_email
-    export do
+    export "recommendations" do
       resource_level true
+      field "accountID" do
+        label "subscriptionID"
+      end
+      field "accountName" do
+        label "Subscription Name"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "resourceType" do
+        label "Disk Size"
+      end
+      field "resourceTypePrice" do
+        label "Disk Price"
+      end
+      field "newResourceType" do
+        label "New Disk Size"
+      end
+      field "newResourceTypePrice" do
+        label "New Disk Price"
+      end
+      field "resourceKind" do
+        label "Resource Kind"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "monthlySavings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "iopsPctMaximum" do
+        label "IOPS Maximum %"
+      end
+      field "iopsPctAverage" do
+        label "IOPS Average %"
+      end
+      field "iopsThreshold" do
+        label "IOPS Threshold %"
+      end
+      field "throughputPctMaximum" do
+        label "Throughput Maximum %"
+      end
+      field "throughputPctAverage" do
+        label "Throughput Average %"
+      end
+      field "throughputThreshold" do
+        label "Throughput Threshold %"
+      end
+      field "sizeGB" do
+        label "Size GB"
+      end
+      field "usedGBPct" do
+        label "Used GB %"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
       field "id" do
         label "ID"
-        path "vm_name"
-      end
-      field "vm_name" do
-        label "Virtual Machine Name"
-      end
-
-      field "total_disk_space_mb" do
-        label "Total disk space in megabytes"
-      end
-
-      field "used_disk_space_mb" do
-        label "Used disk space in megabytes"
-      end
-
-      field "free_disk_space_mb" do
-        label "Free disk space in megabytes"
-      end
-
-      field "used_disk_space_pct" do
-        label "Used disk space percentage"
+        path "resourceID"
       end
     end
   end
