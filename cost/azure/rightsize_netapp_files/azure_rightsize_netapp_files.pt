@@ -282,46 +282,70 @@ datasource "ds_naf_volume_metrics" do
 end
 
 datasource "ds_naf_oversized_pools" do
-  run_script $js_naf_oversized_pools, $ds_naf_pool_metrics
+  run_script $js_naf_oversized_pools, $ds_naf_pool_metrics, $param_stats_underutil_threshold_pool_value, $ds_naf_get_costs
 end
 
 script "js_naf_oversized_pools", type: "javascript" do
-  parameters "ds_naf_pool_metrics"
+  parameters "ds_naf_pool_metrics", "param_stats_underutil_threshold_pool_value", "ds_naf_get_costs"
   result "result"
   code <<-EOS
   result = []
+  var minPoolSize = 2048
+  var maxPoolSize = 1024000
+  function getCost(poolSize) {
+    var savings = 0.0
+    if (ds_naf_get_costs[0].retailPrice != undefined) {
+      savings = poolSize * ds_naf_get_costs[0].retailPrice * 24 * 30
+    }
+    return savings
+  }
   function bytesToGibibytes(bytes) {
     return Math.round(bytes * 9.3132257461548e-10)
+  }
+  function poolCanBeResized(size, recommendedSize) {
+    if (size == minPoolSize && recommendedSize < minPoolSize) {
+      return false
+    }
+    if (size == maxPoolSize && recommendedSize > maxPoolSize) {
+      return false
+    }
+    return true
   }
   _.each(ds_naf_pool_metrics, function(pool){
     _.each(pool.naf_pool_metrics, function (metric) {
       var lastPointInTS = metric.timeseries[0].data[metric.timeseries[0].data.length - 1].average
       switch (metric.name.value) {
         case "VolumePoolAllocatedUsed":
-          pool.volumePoolAllocatedUsed = bytesToGibibytes(lastPointInTS)
+          pool.consumedSize = bytesToGibibytes(lastPointInTS)
           break;
         case "VolumePoolAllocatedSize":
-          pool.volumePoolAllocatedSize = bytesToGibibytes(lastPointInTS)
+          pool.allocatedSize = bytesToGibibytes(lastPointInTS)
           break;
       }
     })
-    // Check if capacity pool contains required metrics info
-    if (pool.volumePoolAllocatedSize != undefined && pool.volumePoolAllocatedUsed != undefined) {
-      // Minimum pool size is 2 TiB (2048 GiB). If is not greater than that value, it cannot be downsized.
-      if (pool.volumePoolAllocatedSize > 2048) {
-        var poolConsumedPercentage = Math.round(pool.volumePoolAllocatedUsed * 100 / pool.volumePoolAllocatedSize)
-        if (poolConsumedPercentage < param_stats_underutil_threshold_pool_value) {
-          var poolRecommendedSize = Math.round(pool.volumePoolAllocatedUsed * 100 / param_stats_underutil_threshold_pool_value)
-          if (poolRecommendedSize < 2048) {
-            poolRecommendedSize = 2048
+    if (pool.allocatedSize != undefined && pool.consumedSize != undefined) {
+      var poolConsumedPercentage = Math.round(pool.consumedSize * 100 / pool.allocatedSize)
+      if (poolConsumedPercentage != param_stats_underutil_threshold_pool_value) {
+        var poolRecommendedSize = Math.round(pool.consumedSize * 100 / param_stats_underutil_threshold_pool_value)
+        if (poolCanBeResized(pool.allocatedSize, poolRecommendedSize)) {
+          if (poolRecommendedSize < minPoolSize) {
+            poolRecommendedSize = minPoolSize
+          }
+          if (poolRecommendedSize > maxPoolSize) {
+            poolRecommendedSize = maxPoolSize
+          }
+          var savings = getCost(pool.allocatedSize) - getCost(poolRecommendedSize)
+          if (savings < 0) {
+            savings = 0
           }
           result.push({
             resourceID: pool['naf_pool_id'],
             resourceName: pool['naf_pool_name'],
-            poolSize: pool['volumePoolAllocatedSize'],
-            poolUsed: pool['volumePoolAllocatedUsed'],
+            poolSize: pool['allocatedSize'],
+            poolConsumed: pool['consumedSize'],
             poolConsumedPercentage: poolConsumedPercentage,
             poolRecommendedSize: poolRecommendedSize,
+            savings: parseFloat(savings.toFixed(3))
             id: pool['naf_pool_id']
           })
         }
@@ -332,22 +356,47 @@ EOS
 end
 
 datasource "ds_naf_oversized_volumes" do
-  run_script $js_naf_oversized_volumes, $ds_naf_volume_metrics
+  run_script $js_naf_oversized_volumes, $ds_naf_volume_metrics, $ds_naf_pool_metrics, $param_stats_underutil_threshold_pool_value, $param_stats_underutil_threshold_volume_value, $ds_naf_get_costs
 end
 
 script "js_naf_oversized_volumes", type: "javascript" do
-  parameters "ds_naf_volume_metrics"
+  parameters "ds_naf_volume_metrics", "ds_naf_pool_metrics", "param_stats_underutil_threshold_pool_value", "param_stats_underutil_threshold_volume_value", "ds_naf_get_costs"
   result "result"
   code <<-EOS
   result = []
+  var minPoolSize = 2048
+  var maxPoolSize = 1024000
+  var minVolSize = 100
+  var maxVolSize = 512000
+  function getCost(poolSize) {
+    var savings = 0.0
+    if (ds_naf_get_costs[0].retailPrice != undefined) {
+      savings = poolSize * ds_naf_get_costs[0].retailPrice * 24 * 30
+    }
+    return savings
+  }
   function bytesToGibibytes(bytes) {
     return Math.round(bytes * 9.3132257461548e-10)
   }
-  _.each(ds_naf_volume_metrics, function(volume) {
-    // Minimum capacity pool size is 2 TiB. If equals to that size, volume is skipped since it cannot be downsized.
-    if (bytesToGibibytes(volume.naf_pool_size) == 2048) {
-      return
+  function poolCanBeResized(size, recommendedSize) {
+    if (size == minPoolSize && recommendedSize < minPoolSize) {
+      return false
     }
+    if (size == maxPoolSize && recommendedSize > maxPoolSize) {
+      return false
+    }
+    return true
+  }
+  function volumeCanBeResized(size, recommendedSize) {
+    if (size == minVolSize && recommendedSize < minVolSize) {
+      return false
+    }
+    if (size == maxVolSize && recommendedSize > maxVolSize) {
+      return false
+    }
+    return true
+  }
+  _.each(ds_naf_volume_metrics, function(volume) {
     _.each(volume.naf_volume_metrics, function(metric) {
       var lastPointInTS = metric.timeseries[0].data[metric.timeseries[0].data.length - 1].average
       switch (metric.name.value) {
@@ -364,37 +413,82 @@ script "js_naf_oversized_volumes", type: "javascript" do
     })
     // Check if volume contains required metrics info
     if (volume.volume_logical_size != undefined && volume.volume_allocated_size != undefined && volume.volume_consumed_size_percentage != undefined) {
-      // Minimum volume size is 100 GiB. If equals to 100, cannot be downsized.
-      if (volume.volume_allocated_size > 100) {
-        // Logical volume size should be less than the volume threshold of volume allocated size to show recommendations
-        if (volume.volume_consumed_size_percentage < param_stats_underutil_threshold_volume_value) {
-          // If recommended allocated size for volume is less than 100, recommendation will be 100 because of minimum size
-          var recommendedVolumeAllocatedSize = volume.volume_logical_size * 100 / param_stats_underutil_threshold_volume_value
-          if (recommendedVolumeAllocatedSize < 100) {
-            recommendedVolumeAllocated = 100
-          }
-          var recommendedPoolSize = bytesToGibibytes(volume.naf_pool_size) - (volume.volume_allocated_size - recommendedVolumeAllocatedSize)
-          // If recommended pool size is less than 2 TiB, recommendation will be 2 TiB because of minimum pool size
-          if (recommendedPoolSize < 2048) {
-            recommendedPoolSize = 2048
-          }
-          result.push({
-            resourceID: volume['naf_volume_id'],
-            resourceName: volume['naf_volume_name'],
-            volumeAllocatedSize: volume['volume_allocated_size'],
-            volumeLogicalSize: volume['volume_logical_size'],
-            volumeConsumedSizePercentage: volume['volume_consumed_size_percentage'],
-            recommendedVolumeAllocatedSize: recommendedVolumeAllocatedSize,
-            poolName: volume['naf_pool_name'],
-            poolSize: bytesToGibibytes(volume['naf_pool_size']),
-            recommendedPoolSize: recommendedPoolSize,
-            id: volume['naf_volume_id'],
+      _.each(ds_naf_pool_metrics, function(pool){
+        if (pool.naf_pool_name == volume.naf_pool_name) {
+          _.each(pool.naf_pool_metrics, function (metric) {
+            var lastPointInTS = metric.timeseries[0].data[metric.timeseries[0].data.length - 1].average
+            switch (metric.name.value) {
+              case "VolumePoolAllocatedUsed":
+                volume.volumePoolAllocatedUsed = bytesToGibibytes(lastPointInTS)
+                break;
+              case "VolumePoolAllocatedSize":
+                volume.poolAllocatedSize = bytesToGibibytes(lastPointInTS)
+                break;
+            }
           })
+        }
+      })
+      if (volume.volumePoolAllocatedUsed != undefined && volume.poolAllocatedSize != undefined) {
+        if (volume.volume_consumed_size_percentage != param_stats_underutil_threshold_volume_value) {
+          var recommendedVolumeAllocatedSize = volume.volume_logical_size * 100 / param_stats_underutil_threshold_volume_value
+          if (volumeCanBeResized(volume.volume_allocated_size, recommendedVolumeAllocatedSize)) {
+            if (recommendedVolumeAllocatedSize < minVolSize) {
+              recommendedVolumeAllocatedSize = minVolSize
+            }
+            if (recommendedVolumeAllocatedSize > maxVolSize) {
+              recommendedVolumeAllocatedSize = maxVolSize
+            }
+            var newPoolAllocatedUsed = volume.volumePoolAllocatedUsed - (volume.volume_allocated_size - recommendedVolumeAllocatedSize)
+            var recommendedPoolSize = newPoolAllocatedUsed * 100 / param_stats_underutil_threshold_pool_value
+            if (poolCanBeResized(volume.poolAllocatedsize, recommendedPoolSize)) {
+              if (recommendedPoolSize < minPoolSize) {
+                recommendedPoolSize = minPoolSize
+              }
+              if (recommendedPoolSize > maxPoolSize) {
+                recommendedPoolSize = maxPoolSize
+              }
+              var rightsizePool = recommendedPoolSize - volume.poolAllocatedSize
+              var savings = 0.0
+              savings = getCost(volume.poolAllocatedSize) - getCost(recommendedPoolSize)
+              if (savings < 0) {
+                savings = 0
+              }
+              result.push({
+                resourceID: volume['naf_volume_id'],
+                resourceName: volume['naf_volume_name'],
+                volumeAllocatedSize: volume['volume_allocated_size'],
+                volumeLogicalSize: volume['volume_logical_size'],
+                volumeConsumedSizePercentage: volume['volume_consumed_size_percentage'],
+                recommendedVolumeAllocatedSize: recommendedVolumeAllocatedSize,
+                poolName: volume['naf_pool_name'],
+                poolSize: bytesToGibibytes(volume['naf_pool_size']),
+                recommendedRightsize: rightsizePool,
+                savings: parseFloat(savings.toFixed(3))
+                id: volume['naf_volume_id'],
+              })
+            }
+          }
         }
       }
     }
   })
 EOS
+end
+
+
+datasource "ds_naf_get_costs" do
+  request do
+    host "prices.azure.com"
+    path "/api/retail/prices"
+    query "api-version", "2021-10-01-preview"
+    query "$filter","serviceName eq 'Azure NetApp Files' and location eq 'US West' and (skuName eq 'Premium' or skuName eq 'Standard' or skuName eq 'Ultra')"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "Items[*]") do
+      field "retailPrice", jmes_path(col_item, "retailPrice")
+    end
+  end
 end
 
 ###############################################################################
@@ -417,8 +511,8 @@ policy "pol_azure_rightsize_netapp_files" do
       field "poolSize" do
         label "Capacity Pool Size (GiB)"
       end
-      field "poolUsed" do
-        label "Capacity Pool Used (GiB)"
+      field "poolConsumed" do
+        label "Capacity Pool Consumed (GiB)"
       end
       field "poolConsumedPercentage" do
         label "Capacity Pool Consumed Percentage (%)"
@@ -464,8 +558,8 @@ policy "pol_azure_rightsize_netapp_files" do
       field "poolSize" do
         label "Capacity Pool Size (GiB)"
       end
-      field "recommendedPoolSize" do
-        label "Capacity Pool Recommended Size (GiB)"
+      field "recommendedRightsize" do
+        label "Recommended Pool Rightsize (GiB)"
       end
       field "savings" do
         label "Estimated Monthly Savings"
