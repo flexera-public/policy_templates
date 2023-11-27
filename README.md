@@ -63,6 +63,10 @@ These templates can generate savings estimates for your environment.
 - [Turbonomic Rightsize Virtual Machines Recommendations Azure](./cost/turbonomics/scale_virtual_machines_recommendations/azure)
 - [Turbonomic Rightsize Virtual Volumes Recommendations Azure](./cost/turbonomics/rightsize_virtual_volumes_recommendations/azure)
 
+#### Flexera
+
+- [Email Cost Optimization Recommendations](./cost/email_recommendations)
+
 #### Google
 
 - [Google Committed Use Discount Recommender](./cost/google/cud_recommendations)
@@ -285,6 +289,8 @@ These templates can generate savings estimates for your environment.
 
 #### Flexera
 
+- [Email Cost Optimization Recommendations](./cost/email_recommendations)
+
 - All
 
   - [AWS Savings Realized from Reservations](./cost/aws/savings_realized)
@@ -448,8 +454,8 @@ These templates can generate savings estimates for your environment.
 
 #### Flexera SaaS Manager
 
+- [SaaS Manager - Deactivated Users](./saas/fsm/deactivated_users)
 - [SaaS Manager - Duplicate User Accounts](./saas/fsm/duplicate_users)
-- [SaaS Manager - Inactive Users by Department](./saas/fsm/inactive_users_by_dept)
 - [SaaS Manager - Redundant Apps](./saas/fsm/redundant_apps)
 - [SaaS Manager - Renewal Reminder](./saas/fsm/renewal_reminder)
 - [SaaS Manager - SaaS App User Report by Category](./saas/fsm/users_by_category)
@@ -622,13 +628,13 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 33
-  Cost: 95
+  Cost: 96
   Operational: 23
   SaaS Management: 13
   Security: 74
-:optimization_count: 42
+:optimization_count: 43
 :policy_sets:
-  '': 81
+  '': 82
   AWS Config: 1
   Allocate VMs: 3
   CIS: 61
@@ -681,7 +687,7 @@ These templates can generate savings estimates for your environment.
   AWS: 77
   Azure: 77
   Azure China: 1
-  Flexera: 5
+  Flexera: 6
   Flexera Cloud Management: 3
   Flexera FNMS: 1
   Flexera ITAM: 5
@@ -697,7 +703,7 @@ These templates can generate savings estimates for your environment.
   Oracle: 1
   ServiceNow: 1
 :services:
-  '': 61
+  '': 62
   AKS: 2
   All: 2
   App Service: 1
@@ -735,7 +741,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 238
+:total_count: 239
 -->
 <!-- End Policy Template Stats -->
 
