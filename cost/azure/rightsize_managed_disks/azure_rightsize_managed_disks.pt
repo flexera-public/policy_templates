@@ -243,7 +243,7 @@ datasource "ds_azure_disks" do
       field "provisioningState", jmes_path(col_item, "properties.provisioningState")
       field "osType", jmes_path(col_item, "properties.osType")
       field "state", jmes_path(col_item, "properties.diskState")
-      field "size", jmes_path(col_item, "properties.diskSizeGB")
+      field "diskSizeGB", jmes_path(col_item, "properties.diskSizeGB")
       field "timeCreated", jmes_path(col_item, "properties.timeCreated")
       field "tier", jmes_path(col_item, "sku.name")
       field "subscriptionID", val(iter_item, "id")
@@ -439,18 +439,15 @@ script "js_azure_virtual_machines_with_disk_space", type: "javascript" do
         "vmId": "/subscriptions/0f84a200-3cb8-418a-b1ca-5bacb4fbfec1/resourceGroups/resource-group-2/providers/Microsoft.Compute/virtualMachines/azure-vm-1",
         "osDisk": {
             "id": "/subscriptions/0f84a200-3cb8-418a-b1ca-5bacb4fbfec1/resourceGroups/resource-group-2/providers/Microsoft.Compute/disks/azure-vm-1_OsDisk_1_156ae183cd2d44e5b1775e3a86515fab",
-            "diskSizeGB": 30,
             "diskUsedGB": 4
         },
         "dataDisks": [
             {
                 "id": "/subscriptions/0f84a200-3cb8-418a-b1ca-5bacb4fbfec1/resourceGroups/RESOURCE-GROUP-2/providers/Microsoft.Compute/disks/vm-1-data-disk-0",
-                "diskSizeGB": 4,
                 "diskUsedGB": 2
             },
             {
                 "id": "/subscriptions/0f84a200-3cb8-418a-b1ca-5bacb4fbfec1/resourceGroups/RESOURCE-GROUP-2/providers/Microsoft.Compute/disks/vm-1-data-disk-1",
-                "diskSizeGB": 32,
                 "diskUsedGB": 3
             }
         ]
@@ -530,14 +527,12 @@ script "js_azure_disks_with_metrics", type: "javascript" do
     var correspondingVmWithSpace = _.find(ds_azure_virtual_machines_with_disk_space, function(vmWithSpace) { return vmWithSpace.vmId.toLowerCase() === vmWithDisk.vmId.toLowerCase() })
     if (correspondingVmWithSpace === undefined) continue;
     // OS disk
-    vmWithDisk.osDisk.diskSizeGB = correspondingVmWithSpace.osDisk.diskSizeGB
     vmWithDisk.osDisk.diskUsedGB = correspondingVmWithSpace.osDisk.diskUsedGB
     // Data disks
     for (var j in vmWithDisk.dataDisks) {
       var dataDisk = vmWithDisk.dataDisks[j]
       var correspondingDataDisk = _.find(correspondingVmWithSpace.dataDisks, function(disk) { return disk.id.toLowerCase() === dataDisk.id.toLowerCase() })
       if (correspondingDataDisk === undefined) continue;
-      dataDisk.diskSizeGB = correspondingDataDisk.diskSizeGB
       dataDisk.diskUsedGB = correspondingDataDisk.diskUsedGB
     }
   }
@@ -566,9 +561,11 @@ script "js_azure_disks_with_metrics_thresholds_filtered", type: "javascript" do
   code <<-EOS
   var result = _.filter(ds_azure_disks_with_metrics, function(disk) {
     if (param_min_used_disk_space_pct_for_downsizing != -1) {
-      var usedDiskSpacePct = disk.diskUsedGB * 100 / disk.diskSizeGB
-      if (usedDiskSpacePct > param_min_used_disk_space_pct_for_downsizing) {
-        return false
+      if (disk.diskUsedGB != undefined) {
+        var usedDiskSpacePct = disk.diskUsedGB * 100 / disk.diskSizeGB
+        if (usedDiskSpacePct > param_min_used_disk_space_pct_for_downsizing) {
+          return false
+        }
       }
     }
     if (param_min_used_disk_iops_pct_for_downsizing != -1) {
@@ -671,7 +668,8 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
         && currentUsedIops <= nextDiskData.IOPS
         && currentUsedThroughput <= nextDiskData.throughput
       ) return findFittingDiskName(nextDiskName, currentUsedGB, currentUsedIops, currentUsedThroughput);
-    } else if (currentDiskData.downgrades.tier != null) {
+    }
+    if (currentDiskData.downgrades.tier != null) {
       var nextDiskName = currentDiskData.downgrades.tier
       var nextDiskData = ds_azure_md_tier_types[nextDiskName]
       if (
@@ -697,7 +695,7 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
     var currentUsedIops = disk.iopsConsumedPctMax * currentDiskData.IOPS / 100
     var currentUsedThroughput = disk.bandwithConsumedPctMax * currentDiskData.throughput / 100
 
-    var fittingDiskName = findFittingDiskName(currentDiskName, disk.diskUsedGB, currentUsedIops, currentUsedThroughput)
+    var fittingDiskName = findFittingDiskName(currentDiskName, disk.diskUsedGB != undefined ? disk.diskUsedGB : disk.diskSizeGB, currentUsedIops, currentUsedThroughput)
     var fittingDiskData = ds_azure_md_tier_types[fittingDiskName]
 
     if (currentDiskName === fittingDiskName) continue;
@@ -732,7 +730,7 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
       throughputPctAverage: Math.round(disk.bandwithConsumedPctAvg),
       throughputThreshold: param_min_used_disk_throughput_pct_for_downsizing,
       sizeGB: disk.diskSizeGB,
-      usedGBPct: Math.round(disk.diskUsedGB * 100 / disk.diskSizeGB),
+      usedGBPct: disk.diskUsedGB != undefined ? Math.round(disk.diskUsedGB * 100 / disk.diskSizeGB) : "Unknown",
       diskSpaceThreshold: param_min_used_disk_space_pct_for_downsizing,
       lookbackPeriod: param_stats_lookback,
     })
