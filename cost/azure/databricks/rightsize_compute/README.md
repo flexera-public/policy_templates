@@ -20,7 +20,7 @@ Because the virtual machine resources can often be short-lived and ephemeral, we
 
 If the lookback period is 30 days (default value), the estimated savings for a Delete is 100% the actual cost during that 30 day period for a Downsize is 50% the actual cost during that 30 day period.
 
-If the lookback period is { 30 days (1 month), we calculate what % of 30 days the lookback period is and then use that ratio to estimate the savings for a full month period (30 days).  If the actual cost during a 15day lookback period was $100, the estimated savings calculation for a Delete is `(30/15) * $100`.  In this example, a Delete would estimate $200 Potential *Monthly* Savings and a Downsize would estimate $100 Potential *Monthly* Savings.
+If the lookback period is less than 30 days (1 month), we calculate what % of 30 days the lookback period is and then use that ratio to estimate the savings for a full month period (30 days).  If the actual cost during a 15-day lookback period was $100, the estimated savings calculation for a Delete is `(30/15) * $100`.  In this example, a Delete would estimate $200 Potential *Monthly* Savings and a Downsize would estimate $100 Potential *Monthly* Savings.
 
 The savings is displayed in the Estimated Monthly Savings column. The incident message detail includes the sum of each resource *Estimated Monthly Savings* as *Potential Monthly Savings*.
 
@@ -35,7 +35,8 @@ Navigate to *Administration > Custom Tags* in Flexera and Create a new Tag Dimen
 | Tag Display Name | Tag Keys | Tag ID (if creating via API instead of UI) |
 | ---------------- | -------- | --- |
 | `Azure Databricks ClusterId` | `ClusterId` | `tag_azure_databricks_clusterid` |
-} *Note: These values are case-sensitive*
+
+> *Note: These values are case-sensitive*
 
 ### Credential configuration
 
@@ -121,6 +122,6 @@ This Policy Template does not incur any cloud costs
 
 ## Other Notes
 
-### Results where `Databricks Cluster ID` == `null`
+### Results where `Databricks Cluster ID` equals `null`
 
 These are virtual machines that the Flexera platform does not have costs for yet. If it were launched recently then we won't be able to map it (using cost method) for up to 24hrs.
