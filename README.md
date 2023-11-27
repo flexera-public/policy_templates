@@ -32,6 +32,7 @@ These templates can generate savings estimates for your environment.
 - [AWS Reserved Instances Recommendations](./cost/aws/reserved_instances/recommendations)
 - [AWS Rightsize EBS Volumes](./cost/aws/rightsize_ebs_volumes)
 - [AWS Rightsize EC2 Instances](./cost/aws/rightsize_ec2_instances)
+- [AWS Rightsize RDS Instances](./cost/aws/rightsize_rds_instances)
 - [AWS Savings Plan Recommendations](./cost/aws/savings_plan/recommendations)
 - [AWS Superseded EC2 Instances](./cost/aws/superseded_instances)
 - [AWS Unused IP Addresses](./cost/aws/unused_ip_addresses)
@@ -208,7 +209,7 @@ These templates can generate savings estimates for your environment.
 - RDS
 
   - [AWS RDS Instances](./cost/aws/rds_instance_license_info)
-  - [AWS Rightsize RDS Instances](./cost/aws/rds_instance_cloudwatch_utilization)
+  - [AWS Rightsize RDS Instances](./cost/aws/rightsize_rds_instances)
   - [AWS Unused RDS Instances](./cost/aws/unused_rds)
 
 - S3
@@ -399,12 +400,12 @@ These templates can generate savings estimates for your environment.
 - Compute
 
   - [Azure Long Running Instances](./operational/azure/azure_long_running_instances)
+  - [Azure Migrate Integration](./operational/azure/azure_migrate)
   - [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks)
   - [Expiring Azure Certificates](./operational/azure/azure_certificates)
 
 - Tags
 
-  - [Azure Migrate Integration](./operational/azure/azure_migrate)
   - [Azure Tag Cardinality Report](./operational/azure/tag_cardinality)
 
 #### Flexera
@@ -625,7 +626,7 @@ These templates can generate savings estimates for your environment.
   Operational: 23
   SaaS Management: 13
   Security: 74
-:optimization_count: 41
+:optimization_count: 42
 :policy_sets:
   '': 81
   AWS Config: 1
@@ -643,7 +644,7 @@ These templates can generate savings estimates for your environment.
   Inefficient Instance Usage: 1
   Instances not running FlexNet Inventory Agent: 2
   Lifecycle Management: 1
-  Long Running Instances: 2
+  Long Running Instances: 3
   Long Stopped Instances: 3
   N/A: 2
   Native Recommendations: 1
@@ -654,11 +655,10 @@ These templates can generate savings estimates for your environment.
   Public Database Access: 2
   Reserved Instance: 2
   Reserved Instances: 3
-  RightSize Database Services: 1
   Rightsize Clusters: 1
   Rightsize Compute Instances: 6
   Rightsize Containers: 1
-  Rightsize Database Instances: 3
+  Rightsize Database Instances: 4
   Rightsize Database Services: 1
   Rightsize Volumes: 2
   Savings Plan Utilization: 1
@@ -669,7 +669,7 @@ These templates can generate savings estimates for your environment.
   Schedule Report: 1
   Storage Security: 1
   Superseded Compute Instances: 2
-  Tag Cardinality: 3
+  Tag Cardinality: 2
   Unlabeled Resources: 1
   Untagged Resources: 1
   Untagged resources: 1
@@ -705,7 +705,7 @@ These templates can generate savings estimates for your environment.
   CCO: 1
   CloudTrail: 7
   Common Bill Ingestion: 2
-  Compute: 48
+  Compute: 49
   Config: 1
   Cost Explorer: 1
   DBS: 1
@@ -731,7 +731,7 @@ These templates can generate savings estimates for your environment.
   Security: 3
   Storage: 20
   Storage Accounts: 2
-  Tags: 3
+  Tags: 2
   Usage Discount: 6
   VPC: 1
   compute: 1

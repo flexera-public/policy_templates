@@ -1,5 +1,23 @@
 # Changelog
 
+## v4.0
+
+- Added parameter to specify how far back to check instances for activity
+- Several parameters altered to be more descriptive and human-readable
+- Policy now reports on both unused and underutilized RDS instances
+- Policy now reports savings for both unused and underutilized RDS instance recommendations
+- Fixed issue where policy would sometimes recommend downsizing to unsupported instance types
+- Added ability to choose between different CPU metrics for assessing utilization
+- Removed deprecated "Log to CM Audit Entries" parameter
+- Added ability to only report recommendations that meet a minimum savings threshold
+- Added ability to filter resources by multiple tag key:value pairs
+- Added ability to downsize instances immediately or during next maintenance window
+- Added additional context to incident description
+- Normalized incident export to be consistent with other policies
+- Added human-readable recommendation to incident export
+- Policy no longer raises new escalations if savings data changed but nothing else has
+- Streamlined code for better readability and faster execution
+
 ## v3.3
 
 - Updated description of `Account Number` parameter

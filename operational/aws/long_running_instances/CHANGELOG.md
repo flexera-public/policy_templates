@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.2
+
+- Corrected API issue when executing policy in APAC
+
 ## v4.1
 
 - Updated description of `Account Number` parameter

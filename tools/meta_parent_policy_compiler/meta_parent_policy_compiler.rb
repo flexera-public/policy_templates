@@ -13,7 +13,7 @@ default_child_policy_template_files = [
   "../../cost/aws/idle_compute_instances/idle_compute_instances.pt",
   "../../cost/aws/object_storage_optimization/aws_object_storage_optimization.pt",
   "../../cost/aws/old_snapshots/aws_delete_old_snapshots.pt",
-  "../../cost/aws/rds_instance_cloudwatch_utilization/rds_instance_cloudwatch_utilization.pt",
+  "../../cost/aws/rightsize_rds_instances/aws_rightsize_rds_instances.pt",
   "../../cost/aws/rds_instance_license_info/rds_instance_license_info.pt",
   "../../cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt",
   "../../cost/aws/rightsize_ebs_volumes/aws_volumes_rightsizing.pt",
@@ -93,6 +93,40 @@ def compile_meta_parent_policy(file_path)
   # Get resource level
   resource_level = pt.scan(/^\s*resource_level (true|false)$/)
 
+  # Get escalations blocks
+  escalation_blocks_child = pt.scan(/escalation ".*?" do.*?^end/m)
+  escalation_blocks_parent = []
+  escalation_blocks_child.each do |escalation|
+    consolidated_incident_escalation_template = <<-EOL
+# Escalation for __PLACEHOLDER_FOR_CHILD_POLICY_ESC_LABEL__
+escalation "__PLACEHOLDER_FOR_CHILD_POLICY_ESC_ID__" do
+  automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
+  label "__PLACEHOLDER_FOR_CHILD_POLICY_ESC_LABEL__"
+  description "__PLACEHOLDER_FOR_CHILD_POLICY_ESC_DESCRIPTION__"
+  run "__PLACEHOLDER_FOR_CHILD_POLICY_ESC_ID__", data, rs_governance_host, rs_project_id
+end
+define __PLACEHOLDER_FOR_CHILD_POLICY_ESC_ID__($data, $governance_host, $rs_project_id) do
+  call child_run_action($data, $governance_host, $rs_project_id, "__PLACEHOLDER_FOR_CHILD_POLICY_ESC_LABEL__")
+end
+    EOL
+    # Drop any escalations related to email action
+    next if escalation.include?("email")
+    # Get Escalation ID
+    esc_id = escalation.scan(/escalation "(.*?)" do/)[0][0]
+    # Get Escalation Label
+    esc_label = escalation.scan(/label "(.*?)"/)[0][0]
+    # Get Escalation Description
+    esc_description = escalation.scan(/description "(.*?)"/)[0][0]
+    # Replace the placeholders with the values from the child policy template
+    esc = consolidated_incident_escalation_template.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_ESC_ID__", esc_id)
+    esc = esc.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_ESC_LABEL__", esc_label)
+    esc = esc.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_ESC_DESCRIPTION__", esc_description)
+    escalation_blocks_parent.push(esc)
+  end
+  # print("Escalation Blocks:\n")
+  # print(escalation_blocks_parent.join("\n---------\n"))
+  # print("\n")
+
   consolidated_incident_datasource_template = <<~EOL
   datasource "__PLACEHOLDER_FOR_CHILD_POLICY_CONSOLIDATED_INCIDENT_DATASOURCE___combined_incidents" do
     run_script $js___PLACEHOLDER_FOR_CHILD_POLICY_CONSOLIDATED_INCIDENT_DATASOURCE___combined_incidents, $ds_child_incident_details
@@ -108,6 +142,7 @@ def compile_meta_parent_policy(file_path)
       // If the incident summary contains "__PLACEHOLDER_FOR_CHILD_POLICY_RESOURCE_TYPE_NAME__" then include it in the filter result
       if (s.indexOf("__PLACEHOLDER_FOR_CHILD_POLICY_RESOURCE_TYPE_NAME__") > -1) {
         _.each(incident["violation_data"], function(violation) {
+          violation["incident_id"] = incident["id"];
           result.push(violation);
         });
       }
@@ -120,6 +155,7 @@ def compile_meta_parent_policy(file_path)
   validate $__PLACEHOLDER_FOR_CHILD_POLICY_CONSOLIDATED_INCIDENT_DATASOURCE___combined_incidents do
     summary_template "Consolidated Incident: {{ len data }} __PLACEHOLDER_FOR_CHILD_POLICY_RESOURCE_TYPE_NAME__"
     escalate $esc_email
+    __PLACEHOLDER_FOR_CHILD_POLICY_CONSOLIDATED_INCIDENT_ESCALATIONS__
     check eq(size(data), 0)
     export do
       resource_level __PLACEHOLDER_FOR_CHILD_POLICY_CONSOLIDATED_INCIDENT_RESOURCE_LEVEL__
@@ -138,6 +174,15 @@ def compile_meta_parent_policy(file_path)
     # print("Raw Validate Block:\n")
     # print(validate_block)
     # print("\n---\n")
+    # From validate block, capture the escalate lines
+    escalations_child = validate_block.scan(/escalate \$.*\n^/)
+    escalations_parent = []
+    escalations_child.each do |escalation|
+      # Drop any escalations related to email action
+      next if escalation.include?("email")
+      escalations_parent.push(escalation)
+    end
+
     # From validate block, capture the export block
     export_block = validate_block.scan(/export.*?do.*?^  end/m)
     # print("Export Block: \n")
@@ -158,12 +203,18 @@ def compile_meta_parent_policy(file_path)
       # print(export_block)
       # print("\n---\n")
     end
+    # Append the incident_id field to the fields array
+    # This holds the child policy incident ID, and can be used for actions from the meta parent
+    incident_id = "field \"incident_id\" do\n        label \"Child Incident ID\"\n      end".strip
+    fields.push(incident_id)
 
     # From each validate block, capture the summary_template and detail_template
     summary_template = validate_block.scan(/summary_template\s+\"(.*?)\"/m)
     summary_template = validate_block.scan(/summary_template\s+<<-EOS\s+(.*?)EOS/m) if summary_template.empty?
+    # print("Summary Template:\n")
+    # print(summary_template)
     # From the summary template, capture the longest string that contains only letters and spaces
-    summary_template_search_string = summary_template[0][0].scan(/[a-zA-Z\s]+/).max_by(&:length).strip
+    summary_template_search_string = summary_template[0][0].scan(/[a-zA-Z0-9 \s]+/).max_by(&:length).strip
     # print("Summary Template Search String:\n")
     # print(summary_template_search_string)
     # print("\n------------------\n")
@@ -179,6 +230,8 @@ def compile_meta_parent_policy(file_path)
     # Replace the placeholder with the Child Policy Resource Type Name
     output_ds = output_ds.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_RESOURCE_TYPE_NAME__", summary_template_search_string)
     output_incident = output_check.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_RESOURCE_TYPE_NAME__", summary_template_search_string)
+    # Replace the placeholder with the Child Policy Escalations
+    output_incident = output_incident.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_CONSOLIDATED_INCIDENT_ESCALATIONS__", escalations_parent.join("    ").rstrip)
     # Replace the placeholder with the Child Policy Consolidated Incident Fields
     output_ds = output_ds.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_CONSOLIDATED_INCIDENT_FIELDS__", fields.join("\n"))
     # Replace the placeholder with the Child Policy Consolidated Incident Datasource Block
@@ -238,6 +291,9 @@ def compile_meta_parent_policy(file_path)
   # For each check, build the consolidated incident check and datasource
   output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CONSOLIDATED_INCIDENT_CHECKS__", consolidated_incidents_checks.join("\n"))
   output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CONSOLIDATED_INCIDENT_DATASOURCES__", consolidated_indidents_datasources.join("\n"))
+
+  # For each escalation, build the consolidated incident escalation
+  output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CONSOLIDATED_INCIDENT_ESCALATIONS__", escalation_blocks_parent.join("\n"))
 
   # Write the output parent policy template to disk
   # The output file will be written to the same directory as the child policy template

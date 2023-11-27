@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.5
+
+- Corrected API issue when executing policy in APAC
+
 ## v4.4
 
 - Added "Stop Instance" action for Idle resources
