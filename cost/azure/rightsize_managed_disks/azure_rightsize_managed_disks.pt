@@ -113,7 +113,7 @@ parameter "param_stats_aggregation_for_disk_iops" do
   label "Aggregation type for determining oversized disk IOPS"
   description "Statistic to use when determining if the disk IOPS is more than the disk actually uses."
   allowed_values "Average", "Maximum"
-  default "Average"
+  default "Maximum"
 end
 
 parameter "param_min_used_disk_throughput_pct_for_downsizing" do
@@ -132,7 +132,7 @@ parameter "param_stats_aggregation_for_disk_throughput" do
   label "Aggregation type for determining oversized disk throughput"
   description "Statistic to use when determining if the disk throughput is more than the disk actually uses."
   allowed_values "Average", "Maximum"
-  default "Average"
+  default "Maximum"
 end
 
 parameter "param_stats_lookback" do
@@ -657,6 +657,38 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
     return priceData
   }
 
+  function findPremSsdV2Price(diskRegion, currentUsedGB, currentUsedIops, currentUsedThroughput) {
+    var premSsdV2Pricing = ds_azure_md_pricing[diskRegion]
+    if (premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY === undefined) { return }
+    if (currentUsedIops <= 3000 && currentUsedThroughput <= 3000) {
+      return premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY.pricePerUnit * 24 * 30 * currentUsedGB
+    }
+    var diskIopsAndThroughputDontFitInDiskSize = true
+    var suggestedDiskSize = currentUsedGB
+    var maxIops = 0
+    var maxThroughput = 0
+    while (diskIopsAndThroughputDontFit) {
+      maxIops = suggestedDiskSize * 500
+      maxThroughput = maxIops * 0.25
+      if (currentUsedIops <= maxIops && currentUsedThroughput <= maxThroughput) {
+        diskIopsAndThroughputDontFit = false
+      }
+      suggestedDiskSize += 1
+    }
+    return {
+      pricePerUnit: Math.round(
+          (premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY.pricePerUnit * 24 * 30 * suggestedDiskSize)
+        + (premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_IOPS.pricePerUnit * 24 * 30 * currentUsedIops)
+        + (premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_THROUGHPUT_MBPS.pricePerUnit * 24 * 30 * currentUsedThroughput)
+      ),
+      currencyCode: premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY.currencyCode,
+      sizeGB: suggestedDiskSize,
+      IOPS: maxIops,
+      throughput: maxThroughput,
+      unitOfMeasure: premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY.unitOfMeasure,
+    }
+  }
+
   function findFittingDiskName(currentDiskName, currentUsedGB, currentUsedIops, currentUsedThroughput) {
     var currentDiskData = ds_azure_md_tier_types[currentDiskName]
 
@@ -698,15 +730,22 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
     var fittingDiskName = findFittingDiskName(currentDiskName, disk.diskUsedGB != undefined ? disk.diskUsedGB : disk.diskSizeGB, currentUsedIops, currentUsedThroughput)
     var fittingDiskData = ds_azure_md_tier_types[fittingDiskName]
 
-    if (currentDiskName === fittingDiskName) continue;
-
     var currentDiskRedundancy = disk.tier.split("_")[1]
     var currentDiskPrice = findDiskPrice(currentDiskName, currentDiskRedundancy, disk.region)
     var fittingDiskPrice = findDiskPrice(fittingDiskName, currentDiskRedundancy, disk.region)
+    var premSsdV2Price = findPremSsdV2Price(disk.region, disk.diskUsedGB != undefined ? disk.diskUsedGB : disk.diskSizeGB, currentUsedIops, currentUsedThroughput)
 
-    if (fittingDiskPrice.pricePerUnit >= currentDiskPrice.pricePerUnit) continue;
+    if (currentDiskData.tier === "StandardSSD" && premSsdV2Price != undefined && premSsdV2Price.pricePerUnit < fittingDiskPrice.pricePerUnit) {
+      monthlySavings = currentDiskPrice.pricePerUnit - premSsdV2Price.pricePerUnit
+      newResourceType = "PremiumSSD V2" + " GiB: " + premSsdV2Price.sizeGiB + " IOPS: " + premSsdV2Price.IOPS + " Throughput: " + premSsdV2Price.throughput
+      newResourceTypePrice = "$" + premSsdV2Price.pricePerUnit + " " + premSsdV2Price.currencyCode + " " + premSsdV2Price.unitOfMeasure
 
-    var monthlySavings = Math.round(currentDiskPrice.pricePerUnit - fittingDiskPrice.pricePerUnit)
+    } else if (currentDiskName != fittingDiskName && fittingDiskPrice.pricePerUnit < currentDiskPrice.pricePerUnit) {
+      monthlySavings = currentDiskPrice.pricePerUnit - fittingDiskPrice.pricePerUnit
+      newResourceType = fittingDiskName + "_" + currentDiskRedundancy + " GiB: " + fittingDiskData.sizeGiB + " IOPS: " + fittingDiskData.IOPS + " Throughput: " + fittingDiskData.throughput
+      newResourceTypePrice = "$" + fittingDiskPrice.pricePerUnit + " " + fittingDiskPrice.currencyCode + " " + fittingDiskPrice.unitOfMeasure
+
+    } else { continue }
 
     result.recommendations.push({
       accountID: disk.subscriptionID,
@@ -715,10 +754,10 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
       resourceName: disk.resourceName,
       resourceID: disk.id,
       tags: disk.tags,
-      resourceType: currentDiskName + " " + currentDiskRedundancy + "GiB: " + currentDiskData.sizeGiB + " IOPS: " + currentDiskData.IOPS + " Throughput: " + currentDiskData.throughput,
+      resourceType: currentDiskName + "_" + currentDiskRedundancy + " GiB: " + currentDiskData.sizeGiB + " IOPS: " + currentDiskData.IOPS + " Throughput: " + currentDiskData.throughput,
       resourceTypePrice: "$" + currentDiskPrice.pricePerUnit + " " + currentDiskPrice.currencyCode + " " + currentDiskPrice.unitOfMeasure,
-      newResourceType: fittingDiskName + " " + currentDiskRedundancy + "GiB: " + fittingDiskData.sizeGiB + " IOPS: " + fittingDiskData.IOPS + " Throughput: " + fittingDiskData.throughput,
-      newResourceTypePrice: "$" + fittingDiskPrice.pricePerUnit + " " + fittingDiskPrice.currencyCode + " " + fittingDiskPrice.unitOfMeasure,
+      newResourceType: newResourceType,
+      newResourceTypePrice: newResourceTypePrice,
       resourceKind: disk.resourceType,
       region: disk.region,
       monthlySavings: monthlySavings,
@@ -738,9 +777,8 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
     result.monthlySavings += monthlySavings
   }
 
-  result.monthlySavings = Math.round(result.monthlySavings)
-
   if (result.monthlySavings >= param_min_savings) {
+    result.monthlySavings = Math.round(result.monthlySavings)
     result.raiseIncident = true
   }
 EOS
