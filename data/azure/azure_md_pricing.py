@@ -12,9 +12,41 @@ import urllib.parse
 import urllib.request
 from collections import OrderedDict
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.INFO)
 
 OUTPUT_FILENAME = "azure_md_pricing.json"
+# Below commented regions are presumed to support Premium SSDv2 but the pricing page does not
+# return pricing for those regions, that is why I comment them.
+PREMIUM_SSD_V2_SUPPORTED_REGIONS = [
+    "australiaeast",
+    "brazilsouth",
+    "canadacentral",
+    "centralindia",
+    "centralus",
+    "eastasia",
+    "eastus",
+    "eastus2",
+    # "eastus2euap",
+    "francecentral",
+    "germanywestcentral",
+    # "israelcentral",
+    "japaneast",
+    "koreacentral",
+    "northeurope",
+    "norwayeast",
+    "polandcentral",
+    "southafricanorth",
+    "southcentralus",
+    # "southcentralusstg",
+    "southeastasia",
+    "swedencentral",
+    "switzerlandnorth",
+    "uaenorth",
+    "uksouth",
+    "westeurope",
+    "westus2",
+    "westus3",
+]
 
 
 def build_url(base_url, params=None):
@@ -40,7 +72,7 @@ def main():
     base_url = "https://prices.azure.com/api/retail/prices"
     params = {
         "api-version": "2021-10-01-preview",
-        "$filter": "(productName eq 'Standard HDD Managed Disks' or productName eq 'Standard SSD Managed Disks' or productName eq 'Premium SSD Managed Disks') and priceType eq 'Consumption' and endsWith(meterName, 'Disk')",
+        "$filter": "(productName eq 'Standard HDD Managed Disks' or productName eq 'Standard SSD Managed Disks' or productName eq 'Premium SSD Managed Disks' or productName eq 'Azure Premium SSD v2') and priceType eq 'Consumption' and (endsWith(meterName, 'Disk') or productName eq 'Azure Premium SSD v2')",
     }
     api_url = build_url(base_url, params)
     while api_url is not None:
@@ -55,21 +87,31 @@ def main():
     region_price_map = OrderedDict()
     for item in items:
         region = item["armRegionName"]
-        disk_type = item["skuName"]
+        if (
+            item["skuName"] == "Premium LRS"
+            and region not in PREMIUM_SSD_V2_SUPPORTED_REGIONS
+        ):
+            continue
 
+        disk_type = (
+            item["skuName"]
+            if item["skuName"] != "Premium LRS"
+            else item["meterName"].replace("(", "").replace(")", "").upper()
+        )
         if not region in region_price_map:
             region_price_map[region] = OrderedDict()
 
         region_price_map[region][disk_type.replace(" ", "_")] = {
             "currencyCode": item["currencyCode"],
-            "sku": disk_type,
+            "sku": item["skuName"],
             "pricePerUnit": item["retailPrice"],
             "unitOfMeasure": item["unitOfMeasure"],
             "productName": item["productName"],
-            "armSkuName": item["armSkuName"],
         }
 
     def sort_by_tier(disk_type):
+        if "PROVISIONED" in disk_type:
+            return disk_type
         tier, rep = disk_type.split("_")
         tier_num = int(tier[1:])
         return tier[0] + "{:02d}".format(tier_num) + "_" + rep
