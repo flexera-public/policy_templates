@@ -4,7 +4,7 @@ type "policy"
 short_description "Checks for snapshots older than specified number of days and, optionally, deletes them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/google/old_snapshots) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 category "Cost"
 severity "low"
-default_frequency "daily"
+default_frequency "weekly"
 info(
   version: "3.0",
   provider:"Google",
@@ -141,7 +141,7 @@ end
 script "js_google_projects_filtered", type: "javascript" do
   parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_projects_list.length > 0) {
     result = _.filter(ds_google_projects, function(project) {
       include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name']) || _.contains(param_projects_list, project['number'])
@@ -197,7 +197,7 @@ end
 script "js_google_snapshots_label_filtered", type: "javascript" do
   parameters "ds_google_snapshots", "param_exclusion_labels"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_exclusion_labels.length > 0) {
     result = _.reject(ds_google_snapshots, function(snapshot) {
       snapshot_labels = []
@@ -232,7 +232,7 @@ end
 script "js_google_old_snapshots", type: "javascript" do
   parameters "ds_google_snapshots_label_filtered", "ds_applied_policy", "param_snapshot_age"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = []
 
   _.each(ds_google_snapshots_label_filtered, function(snapshot) {
@@ -256,7 +256,6 @@ script "js_google_old_snapshots", type: "javascript" do
 
       result.push({
         architecture: snapshot['architecture'],
-        creationTimestamp: snapshot['creationTimestamp'],
         size: snapshot['diskSizeGb'],
         resourceID: snapshot['id'],
         kind: snapshot['kind'],
@@ -270,6 +269,7 @@ script "js_google_old_snapshots", type: "javascript" do
         accountName: snapshot['projectName'],
         projectNumber: snapshot['projectNumber'],
         policy_name: ds_applied_policy['name'],
+        createdAt: snapshotTime.toISOString(),
         lookbackPeriod: param_snapshot_age,
         recommendationDetails: recommendationDetails,
         age: age,
@@ -279,6 +279,36 @@ script "js_google_old_snapshots", type: "javascript" do
       })
     }
   })
+
+  // Message for incident output
+  total_snapshots = ds_google_snapshots_label_filtered.length.toString()
+  total_old_snapshots = result.length.toString()
+  old_snapshots_percentage = (total_old_snapshots / total_snapshots * 100).toFixed(2).toString() + '%'
+
+  days_noun = "days"
+  if (param_snapshot_age == 1) { days_noun = "day" }
+
+  findings = [
+    "Out of ", total_snapshots, " snapshots analyzed, ",
+    total_old_snapshots, " (", old_snapshots_percentage,
+    ") are older than ", param_snapshot_age, " ", days_noun, " ",
+    "and are recommended for deletion.\n\n"
+  ].join('')
+
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+
+  result = _.sortBy(result, 'resourceName')
+  result = _.sortBy(result, 'accountID')
+
+  // Dummy item to ensure that the check statement in the policy executes at least once
+  result.push({
+    resourceID: "",
+    message: "",
+    labels: "",
+    age: ""
+  })
+
+  result[0]['message'] = findings + disclaimer
 EOS
 end
 
@@ -289,7 +319,8 @@ end
 policy "policy_old_snapshots" do
   validate_each $ds_google_old_snapshots do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Google Old Snapshots Found"
-    check logic_or($ds_parent_policy_terminated, eq(val(item, "id"), ""))
+    detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     escalate $esc_delete_snapshots
     export do
@@ -311,6 +342,9 @@ policy "policy_old_snapshots" do
       end
       field "labels" do
         label "Resource Labels"
+      end
+      field "createdAt" do
+        label "Date/Time Created"
       end
       field "age" do
         label "Age (Days)"
