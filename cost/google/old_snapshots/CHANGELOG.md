@@ -11,6 +11,7 @@
 - Added human-readable recommendation to incident export
 - Added additional fields to incident export
 - Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera One credential
 
 ## v2.12
 
