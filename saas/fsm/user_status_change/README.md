@@ -2,7 +2,7 @@
 
 ## Deprecated
 
-This policy is no longer being updated. The [SaaS Manager - Deactivated Users](https://github.com/flexera-public/policy_templates/tree/master/cost/saas/fsm/deactivated_users/) policy now includes this functionality and is the recommended policy for finding users whose status has changed.
+This policy is no longer being updated. The [SaaS Manager - Deactivated Users](https://github.com/flexera-public/policy_templates/tree/master/saas/fsm/deactivated_users/) policy now includes this functionality and is the recommended policy for finding users whose status has changed.
 
 ## What It Does
 
