@@ -742,17 +742,29 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
     var fittingDiskPrice = findDiskPrice(fittingDiskName, currentDiskRedundancy, disk.region)
     var premSsdV2Price = findPremSsdV2Price(disk.region, disk.diskUsedGB != undefined ? disk.diskUsedGB : disk.diskSizeGB, currentUsedIops, currentUsedThroughput)
 
+    // Righsizing from Premium SSD to Premium SSD v2
     if (currentDiskData.tier === "StandardSSD" && premSsdV2Price != undefined && premSsdV2Price.pricePerUnit < fittingDiskPrice.pricePerUnit) {
       monthlySavings = currentDiskPrice.pricePerUnit - premSsdV2Price.pricePerUnit
-      newResourceType = "PremiumSSD V2" + " GiB: " + premSsdV2Price.sizeGiB + " IOPS: " + premSsdV2Price.IOPS + " Throughput: " + premSsdV2Price.throughput
-      newResourceTypePrice = "$" + premSsdV2Price.pricePerUnit + " " + premSsdV2Price.currencyCode + " " + premSsdV2Price.unitOfMeasure
+      newResourceType = "Premium SSD v2"
+      newResourceTypeRedundancy = "LRS"
+      newResourceTypeGiB = premSsdV2Price.sizeGiB
+      newResourceTypeIOPS = premSsdV2Price.IOPS
+      newResourceTypeThroughput = premSsdV2Price.throughput
+      newResourceTypeMonthlyPrice = premSsdV2Price.pricePerUnit
+      newResourceTypePriceCurrency = premSsdV2Price.currencyCode
 
-    } else if (currentDiskName != fittingDiskName && fittingDiskPrice.pricePerUnit < currentDiskPrice.pricePerUnit) {
+    }
+    // Righsizing from Premium SSD to Standard SSD to Standard HDD
+    else if (currentDiskName != fittingDiskName && fittingDiskPrice.pricePerUnit < currentDiskPrice.pricePerUnit) {
       monthlySavings = currentDiskPrice.pricePerUnit - fittingDiskPrice.pricePerUnit
-      newResourceType = fittingDiskName + "_" + currentDiskRedundancy + " GiB: " + fittingDiskData.sizeGiB + " IOPS: " + fittingDiskData.IOPS + " Throughput: " + fittingDiskData.throughput
-      newResourceTypePrice = "$" + fittingDiskPrice.pricePerUnit + " " + fittingDiskPrice.currencyCode + " " + fittingDiskPrice.unitOfMeasure
-
-    } else { continue }
+      newResourceType = fittingDiskName
+      newResourceTypeRedundancy = currentDiskRedundancy
+      newResourceTypeGiB = fittingDiskData.sizeGiB
+      newResourceTypeIOPS = fittingDiskData.IOPS
+      newResourceTypeThroughput = fittingDiskData.throughput
+      newResourceTypeMonthlyPrice = fittingDiskPrice.pricePerUnit
+      newResourceTypePriceCurrency = fittingDiskPrice.currencyCode
+    } else continue;
 
     result.recommendations.push({
       accountID: disk.subscriptionID,
@@ -761,10 +773,20 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
       resourceName: disk.resourceName,
       resourceID: disk.id,
       tags: disk.tags,
-      resourceType: currentDiskName + "_" + currentDiskRedundancy + " GiB: " + currentDiskData.sizeGiB + " IOPS: " + currentDiskData.IOPS + " Throughput: " + currentDiskData.throughput,
-      resourceTypePrice: "$" + currentDiskPrice.pricePerUnit + " " + currentDiskPrice.currencyCode + " " + currentDiskPrice.unitOfMeasure,
+      resourceType: currentDiskName,
+      resourceTypeRedundancy: currentDiskRedundancy,
+      resourceTypeGiB: currentDiskData.sizeGiB,
+      resourceTypeIOPS: currentDiskData.IOPS,
+      resourceTypeThroughput: currentDiskData.throughput,
+      resourceTypeMonthlyPrice: currentDiskPrice.pricePerUnit,
+      resourceTypePriceCurrency: currentDiskPrice.currencyCode,
       newResourceType: newResourceType,
-      newResourceTypePrice: newResourceTypePrice,
+      newResourceTypeRedundancy: newResourceTypeRedundancy,
+      newResourceTypeGiB: newResourceTypeGiB,
+      newResourceTypeIOPS: newResourceTypeIOPS,
+      newResourceTypeThroughput: newResourceTypeThroughput,
+      newResourceTypeMonthlyPrice: newResourceTypeMonthlyPrice,
+      newResourceTypePriceCurrency: newResourceTypePriceCurrency,
       resourceKind: disk.resourceType,
       region: disk.region,
       monthlySavings: monthlySavings,
@@ -823,16 +845,43 @@ policy "pol_azure_rightsize_managed_disks" do
         label "Resource Tags"
       end
       field "resourceType" do
-        label "Disk Size"
+        label "Disk Type"
       end
-      field "resourceTypePrice" do
-        label "Disk Price"
+      field "resourceTypeRedundancy" do
+        label "Disk Redundancy"
+      end
+      field "resourceTypeGiB" do
+        label "Disk Capacity (GiB)"
+      end
+      field "resourceTypeIOPS" do
+        label "Disk IOPS"
+      end
+      field "resourceTypeThroughput" do
+        label "Disk Throughput (MB/s)"
+      end
+      field "resourceTypeMonthlyPrice" do
+        label "Disk Monthly Price"
       end
       field "newResourceType" do
-        label "New Disk Size"
+        label "New Disk Type"
       end
-      field "newResourceTypePrice" do
-        label "New Disk Price"
+      field "newResourceTypeRedundancy" do
+        label "New Disk Redundancy"
+      end
+      field "newResourceTypeGiB" do
+        label "New Disk Capacity (GiB)"
+      end
+      field "newResourceTypeIOPS" do
+        label "New Disk IOPS"
+      end
+      field "newResourceTypeThroughput" do
+        label "New Disk Throughput (MB/s)"
+      end
+      field "newResourceTypeMonthlyPrice" do
+        label "New Disk Monthly Price"
+      end
+      field "resourceTypePriceCurrency" do
+        label "Disk Price Currency"
       end
       field "resourceKind" do
         label "Resource Kind"
