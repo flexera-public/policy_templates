@@ -36,7 +36,6 @@ These templates can generate savings estimates for your environment.
 - [AWS Savings Plan Recommendations](./cost/aws/savings_plan/recommendations)
 - [AWS Superseded EC2 Instances](./cost/aws/superseded_instances)
 - [AWS Unused IP Addresses](./cost/aws/unused_ip_addresses)
-- [AWS Unused RDS Instances](./cost/aws/unused_rds)
 - [AWS Unused Volumes](./cost/aws/unused_volumes)
 - [Turbonomic Allocate Virtual Machine Recommendations AWS](./cost/turbonomics/allocate_virtual_machines_recommendations/aws)
 - [Turbonomic Buy Reserved Instances Recommendations AWS](./cost/turbonomics/buy_reserved_instances_recommendations/aws)
@@ -214,7 +213,6 @@ These templates can generate savings estimates for your environment.
 
   - [AWS RDS Instances](./cost/aws/rds_instance_license_info)
   - [AWS Rightsize RDS Instances](./cost/aws/rightsize_rds_instances)
-  - [AWS Unused RDS Instances](./cost/aws/unused_rds)
 
 - S3
 
@@ -462,7 +460,6 @@ These templates can generate savings estimates for your environment.
 - [SaaS Manager - Suspicious Users](./saas/fsm/suspicious_users)
 - [SaaS Manager - Unsanctioned Applications with Existing Contract](./saas/fsm/unsanctioned_apps_with_contract)
 - [SaaS Manager - Unsanctioned Spend](./saas/fsm/unsanctioned_spend)
-- [SaaS Manager - User Status Change](./saas/fsm/user_status_change)
 
 #### Microsoft
 
@@ -628,13 +625,13 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 33
-  Cost: 96
+  Cost: 95
   Operational: 23
-  SaaS Management: 13
+  SaaS Management: 12
   Security: 74
-:optimization_count: 43
+:optimization_count: 42
 :policy_sets:
-  '': 82
+  '': 81
   AWS Config: 1
   Allocate VMs: 3
   CIS: 61
@@ -679,12 +676,12 @@ These templates can generate savings estimates for your environment.
   Unlabeled Resources: 1
   Untagged Resources: 1
   Untagged resources: 1
-  Unused Database Services: 2
+  Unused Database Services: 1
   Unused IP Addresses: 3
   Unused Volumes: 6
 :providers:
   '': 1
-  AWS: 77
+  AWS: 76
   Azure: 77
   Azure China: 1
   Flexera: 6
@@ -693,7 +690,7 @@ These templates can generate savings estimates for your environment.
   Flexera ITAM: 5
   Flexera Optima: 25
   Flexera RISC: 2
-  Flexera SaaS Manager: 9
+  Flexera SaaS Manager: 8
   GCE: 8
   GitHub: 7
   Google: 11
@@ -703,7 +700,7 @@ These templates can generate savings estimates for your environment.
   Oracle: 1
   ServiceNow: 1
 :services:
-  '': 62
+  '': 61
   AKS: 2
   All: 2
   App Service: 1
@@ -731,7 +728,7 @@ These templates can generate savings estimates for your environment.
   Org: 1
   Policy: 1
   PostgreSQL: 4
-  RDS: 6
+  RDS: 5
   S3: 9
   SQL: 14
   Security: 3
@@ -741,7 +738,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 239
+:total_count: 237
 -->
 <!-- End Policy Template Stats -->
 
