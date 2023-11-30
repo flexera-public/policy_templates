@@ -1,7 +1,7 @@
-name "AWS Open Buckets"
+name "AWS Open S3 Buckets"
 rs_pt_ver 20180301
 type "policy"
-short_description "Check for buckets that are open to everyone. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/storage/aws/public_buckets) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Check for S3 buckets that are open to everyone. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/storage/aws/public_buckets) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "high"
 category "Security"
@@ -10,7 +10,7 @@ info(
   version: "3.0",
   provider: "AWS",
   service: "S3",
-  policy_set: "Open Buckets"
+  policy_set: "Open S3 Buckets"
 )
 
 ###############################################################################
@@ -282,8 +282,16 @@ datasource "ds_aws_bucket_acls" do
   result do
     encoding "xml"
     collect xpath(response, "//AccessControlPolicy", "array") do
-      field "grantee_uris", xpath(col_item, "AccessControlList/Grant/Grantee/URI", "array")
+      field "grantees" do
+        collect xpath(col_item, "AccessControlList/Grant/Grantee") do
+          field "name", xpath(col_item, "DisplayName")
+          field "email", xpath(col_item, "EmailAddress")
+          field "id", xpath(col_item, "ID")
+          field "uri", xpath(col_item, "URI")
+        end
+      end
       field "owner", xpath(col_item, "Owner/DisplayName")
+      field "owner_id", xpath(col_item, "Owner/ID")
       field "bucket_name", val(iter_item, "bucket_name")
       field "creation_date", val(iter_item, "creation_date")
       field "region", val(iter_item, "region")
@@ -315,20 +323,34 @@ script "js_aws_public_buckets", type: "javascript" do
   result "result"
   code <<-'EOS'
   open_buckets = _.filter(ds_aws_bucket_acls, function(bucket) {
-    return _.contains(bucket['grantee_uris'], "http://acs.amazonaws.com/groups/global/AllUsers")
+    uri_list = _pluck(bucket['grantees'], 'uri')
+    return _.contains(uri_list, "http://acs.amazonaws.com/groups/global/AllUsers")
   })
 
   result = _.map(open_buckets, function(bucket) {
+    recommendationDetails = [
+      "Remove public access from S3 bucket ", bucket['bucket_name'], " ",
+      "in AWS Account ", ds_aws_account['name'], " (", ds_aws_account['id'], ")"
+    ].join('')
+
+    offending_grantee = _.find(bucket['grantees'], function(grantee) {
+      return grantee['uri'] == 'http://acs.amazonaws.com/groups/global/AllUsers'
+    })
+
     return {
       id: bucket['bucket_name'],
       creation_date: bucket['creation_date'],
       region: bucket['region'],
       host: bucket['host'],
-      grantee_uris: bucket['grantee_uris'].join(' '),
       owner: bucket['owner'],
+      grantee_id: offending_grantee['id'],
+      grantee_name: offending_grantee['name'],
+      grantee_email: offending_grantee['email'],
+      grantee_uri: offending_grantee['uri'],
       policy_name: ds_applied_policy['name'],
       accountID: ds_aws_account['id'],
-      accountName: ds_aws_account['name']
+      accountName: ds_aws_account['name'],
+      recommendation: recommendationDetails
     }
   })
 
@@ -373,20 +395,26 @@ policy "pol_public_buckets" do
       field "accountName" do
         label "Account Name"
       end
-      field "region" do
-        label "Region"
-      end
       field "id" do
         label "Bucket Name"
+      end
+      field "region" do
+        label "Region"
       end
       field "creation_date" do
         label "Creation Date"
       end
-      field "grantee_uris" do
-        label "GranteeURI"
-      end
       field "owner" do
         label "Owner"
+      end
+      field "grantee_id" do
+        label "Grantee ID"
+      end
+      field "grantee_name" do
+        label "Grantee Name"
+      end
+      field "grantee_uri" do
+        label "Grantee URI"
       end
     end
   end
@@ -423,7 +451,6 @@ datasource "ds_get_policy" do
     field "id", jmes_path(response, "id")
   end
 end
-
 
 datasource "ds_parent_policy_terminated" do
   run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id

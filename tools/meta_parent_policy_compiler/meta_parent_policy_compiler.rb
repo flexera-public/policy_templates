@@ -28,6 +28,7 @@ default_child_policy_template_files = [
   "../../operational/aws/tag_cardinality/aws_tag_cardinality.pt",
   "../../security/aws/ebs_unencrypted_volumes/aws_unencrypted_volumes.pt",
   "../../security/aws/rds_publicly_accessible/aws_publicly_accessible_rds_instances.pt",
+  "../../security/storage/aws/public_buckets/aws_public_buckets.pt",
   # Azure Policy Templates
   "../../compliance/azure/azure_disallowed_regions/azure_disallowed_regions.pt",
   "../../compliance/azure/ahub_manual/azure_ahub_utilization_with_manual_entry.pt",
