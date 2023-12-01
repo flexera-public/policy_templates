@@ -1,0 +1,1408 @@
+name "Azure Databricks Rightsize Compute Instances"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks for instances that have inefficient utilization for a certain lookback period (in days). \n See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/databricks/rightsize_compute/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+severity "low"
+category "Cost"
+default_frequency "weekly"
+info(
+  version: "0.1.0",
+  provider: "Azure",
+  service: "Databricks",
+  policy_set: "Databricks",
+  recommendation_type: "Usage Reduction"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email Address"
+  description "Email addresses of the recipients you wish to notify"
+  default []
+end
+
+parameter "param_subscriptions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Subscriptions"
+  description "Allow or Deny entered Subscriptions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_subscriptions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Subscriptions List"
+  description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+parameter "param_databricks_workspace_list" do
+  label "Databricks Workspace Allowed List"
+  type "list"
+  description "Allowed Databricks Workspace. If empty, all workspaces will be checked"
+  default []
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  label "Azure Endpoint"
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_stats_check_both" do
+  type "string"
+  category "Statistics"
+  label "Idle/Utilized for both CPU/Memory or either"
+  description "Set whether an instance should be considered idle and/or underutilized only if both CPU and memory are under the thresholds or if either CPU or memory are under. Note: this parameter is only valid when at least one Memory Utilization threshold and one CPU Utilization threshold is NOT set to -1"
+  allowed_values "Both CPU and Memory", "Either CPU or Memory"
+  default "Either CPU or Memory"
+end
+
+parameter "param_stats_threshold" do
+  type "string"
+  category "Statistics"
+  label "Threshold Statistic"
+  description "Statistic to use when determining if an instance is idle/underutilized."
+  allowed_values "Average", "Maximum", "Minimum"
+  default "Average"
+end
+
+parameter "param_stats_interval" do
+  type "string"
+  category "Statistics"
+  label "Statistic Interval"
+  description "Interval to use for the time span. The time granularity value should be smaller than the selected time range to be useful, otherwise just one value is returned for the lookback period.  For more details please reference Azure Docs: https://learn.microsoft.com/en-us/azure/azure-monitor/essentials/metrics-aggregation-explained"
+  allowed_values "1 minute", "5 minutes", "15 minutes", "30 minutes", "1 hour", "6 hours", "12 hours", "1 day"
+  default "1 day"
+end
+
+parameter "param_stats_lookback" do
+  type "number"
+  category "Statistics"
+  label "Statistic Lookback Period"
+  description "How many days back to look at utilization metrics for compute resources. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days."
+  default 30
+  min_value 1
+  max_value 90
+end
+
+parameter "param_stats_idle_threshold_cpu_value" do
+  type "number"
+  category "Statistics"
+  label "Idle Instance CPU Threshold (%)"
+  description "The CPU threshold at which to consider an instance to be 'idle' and therefore be flagged for termination. Set to -1 to ignore CPU utilization"
+  min_value -1
+  max_value 100
+  default 5
+end
+
+parameter "param_stats_idle_threshold_mem_value" do
+  type "number"
+  category "Statistics"
+  label "Idle Instance Memory Threshold (%)"
+  description "The Memory threshold at which to consider an instance to be 'idle' and therefore be flagged for termination. Set to -1 to ignore memory utilization"
+  min_value -1
+  max_value 100
+  default 5
+end
+
+parameter "param_stats_underutil_threshold_cpu_value" do
+  type "number"
+  category "Statistics"
+  label "Underutilized Instance CPU Threshold (%)"
+  description "The CPU threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing. Set to -1 to ignore CPU utilization"
+  min_value -1
+  max_value 100
+  default 40
+end
+
+parameter "param_stats_underutil_threshold_mem_value" do
+  type "number"
+  category "Statistics"
+  label "Underutilized Instance Memory Threshold (%)"
+  description "The Memory threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing. Set to -1 to ignore memory utilization"
+  min_value -1
+  max_value 100
+  default 40
+end
+
+
+###############################################################################
+# Authentication
+###############################################################################
+
+# Authenticate with Azure
+credentials "auth_azure" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+credentials "auth_databricks" do
+  schemes "oauth2"
+  label "Credential for Azure Databricks"
+  description "Select the Credential for Azure Databricks from the list."
+  tags "provider=databricks"
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+
+###############################################################################
+# Pagination
+###############################################################################
+
+# Pagination support
+pagination "pagination_azure" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+pagination "pagination_databricks_events" do
+  get_page_marker do
+    body_path jq(response, ".next_page.offset")
+  end
+  set_page_marker do
+    body_field "offset"
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
+end
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-EOS
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+# Get all subscriptions
+datasource "ds_azure_subscriptions" do
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path "/subscriptions"
+    query "api-version", "2020-01-01"
+    header "User-Agent", "RS Policies"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscriptionId", jmes_path(col_item, "subscriptionId")
+      field "subscriptionName", jmes_path(col_item, "displayName")
+    end
+  end
+end
+
+datasource "ds_azure_subscriptions_filtered" do
+  run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
+end
+
+script "js_azure_subscriptions_filtered", type: "javascript" do
+  parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
+  result "result"
+  code <<-EOS
+  if (param_subscriptions_list.length > 0) {
+    result = _.filter(ds_azure_subscriptions, function(subscription) {
+      include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
+
+      if (param_subscriptions_allow_or_deny == "Deny") {
+        include_subscription = !include_subscription
+      }
+
+      return include_subscription
+    })
+  } else {
+    result = ds_azure_subscriptions
+  }
+EOS
+end
+
+#get workspaces, and urls
+datasource "ds_databricks_workspaces" do
+  iterate $ds_azure_subscriptions_filtered
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "subscriptionId"), "/providers", "/Microsoft.Databricks", "/workspaces"])
+    query "api-version", "2023-02-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscriptionId", jmes_path(iter_item, "subscriptionId")
+      field "subscriptionName", jmes_path(iter_item, "subscriptionName")
+      field "resourceId", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "location", jmes_path(col_item, "location")
+      field "workspaceId", jmes_path(col_item, "properties.workspaceId")
+      field "workspaceUrl", jmes_path(col_item, "properties.workspaceUrl")
+      field "managedResourceGroupId", jmes_path(col_item, "properties.managedResourceGroupId")
+    end
+  end
+end
+
+datasource "ds_databricks_workspaces_region_filtered" do
+  run_script $js_databricks_workspaces_region_filtered, $ds_databricks_workspaces, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_databricks_workspaces_region_filtered", type: "javascript" do
+  parameters "ds_databricks_workspaces", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_databricks_workspaces, function(item) {
+      include = _.contains(param_regions_list, item['location'])
+
+      if (param_regions_allow_or_deny == "Deny") {
+        include = !include
+      }
+
+      return include
+    })
+  } else {
+    result = ds_databricks_workspaces
+  }
+EOS
+end
+
+datasource "ds_databricks_workspaces_filtered" do
+  run_script $js_databricks_workspaces_filtered, $ds_databricks_workspaces_region_filtered, $param_databricks_workspace_list
+end
+
+script "js_databricks_workspaces_filtered", type: "javascript" do
+  parameters "ds_databricks_workspaces", "param_databricks_workspace_list"
+  result "results"
+  code <<-EOS
+  var results = []
+  if ( param_databricks_workspace_list.length != 0){
+    results = []
+    _.each(param_databricks_workspace_list, function(workspace){
+      var found = _.find(ds_databricks_workspaces, function(item){
+        return (item.workspaceId == workspace || item.name.toLowerCase() == workspace.toLowerCase());
+      })
+      results.push(found)
+    })
+  } else {
+    results = ds_databricks_workspaces
+  }
+EOS
+end
+
+datasource "ds_param_stats_interval" do
+  run_script $js_param_stats_interval, $param_stats_interval
+end
+
+script "js_param_stats_interval", type: "javascript" do
+  parameters "param_stats_interval"
+  result "result"
+  code <<-EOS
+  // Tables to convert human-readable parameter values to their API equivalents
+  map = {
+    "1 minute": "PT1M",
+    "5 minutes": "PT5M",
+    "15 minutes": "PT15M",
+    "30 minutes": "PT30M",
+    "1 hour": "PT1H",
+    "6 hours": "PT6H",
+    "12 hours": "PT12H",
+    "1 day": "P1D"
+  }
+  result = map[param_stats_interval]
+  EOS
+end
+
+datasource "ds_lookback_time_formats" do
+  run_script $js_lookback_time_formats, $param_stats_lookback
+end
+
+script "js_lookback_time_formats", type: "javascript" do
+  parameters "param_stats_lookback"
+  result "result"
+  code <<-EOS
+  // Get the "timespan" format which is needed for Azure Metrics API
+  end_date = new Date()
+  end_date.setMilliseconds(999)
+  end_date.setSeconds(59)
+  end_date.setMinutes(59)
+  end_date.setHours(23)
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - param_stats_lookback)
+  start_date.setMilliseconds(0)
+  start_date.setSeconds(0)
+  start_date.setMinutes(0)
+
+  azure_timespan = start_date.toISOString() + "/" + end_date.toISOString()
+
+  // Get the "start_at" and "end_at" format which is needed for Flexera Cost API
+  end_date = new Date()
+  end_date.setMonth(end_date.getMonth() + 1)
+  // Convert to YYYY-MM
+  end_date = end_date.toISOString().split("T")[0].split("-").slice(0,2).join("-")
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - param_stats_lookback)
+  start_date = start_date.toISOString().split("T")[0].split("-").slice(0,2).join("-")
+
+  // convert
+
+  flexera_start_at = start_date
+  flexera_end_at = end_date
+
+  // Put all the values in an object so values can be used as needed
+  result = {
+    azure_timespan: azure_timespan,
+    flexera_start_at: flexera_start_at,
+    flexera_end_at: flexera_end_at
+  }
+EOS
+end
+
+datasource "ds_azure_instance_size_map" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/data/azure/instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_azure_skus" do
+  iterate $ds_azure_subscriptions_filtered
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "subscriptionId"), "/providers/Microsoft.Compute/skus"])
+    query "api-version", "2017-09-01"
+    header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value") do
+      field "resourceType", jmes_path(col_item, "resourceType")
+      field "name", jmes_path(col_item, "name")
+      field "locations", jmes_path(col_item, "locations")
+      field "capabilities", jmes_path(col_item, "capabilities")
+      field "restrictions", jmes_path(col_item, "restrictions")
+    end
+  end
+end
+
+datasource "ds_azure_sku_memory" do
+  run_script $js_azure_sku_memory, $ds_azure_skus
+end
+
+script "js_azure_sku_memory", type: "javascript" do
+  parameters "ds_azure_skus"
+  result "result"
+  code <<-EOS
+  result = {}
+
+  _.each(ds_azure_skus, function(sku) {
+    name = sku['name'].toLowerCase()
+
+    if (result[name] == undefined && sku["resourceType"] == "virtualMachines") {
+      memory = _.find(sku['capabilities'], function(item) {
+        return item["name"] == "MemoryGB"
+      })
+
+      result[name] = memory["value"] * 1024 * 1024 * 1024
+    }
+  })
+EOS
+end
+
+datasource "ds_azure_databricks_managed_vm_metrics" do
+  iterate $ds_virtualmachines_from_bill
+  request do
+    run_script $js_azure_databricks_managed_vm_metrics, $param_azure_endpoint, $ds_param_stats_interval, $ds_lookback_time_formats, jq(iter_item, "[.virtualmachines[] .resourceId ]"), jq(iter_item, ".databricks_workspace.location"), jq(iter_item, ".databricks_workspace.managedResourceGroupId")
+  end
+end
+
+script "js_azure_databricks_managed_vm_metrics", type: "javascript" do
+  parameters "param_azure_endpoint", "ds_param_stats_interval", "ds_lookback_time_formats", "resources", "location", "managedResourceGroupId"
+  result "request"
+  code <<-EOS
+  // Get the Subscription
+  subscription_id = managedResourceGroupId.split("/")[2]
+  // Lowercase the resource ids which is what getBatch API expects
+  _.each(resources, function(r, index) {
+    resources[index] = resources[index].toLowerCase()
+  })
+
+  var request = {
+    auth: "auth_azure",
+    pagination: "pagination_azure",
+    host: location+".metrics.monitor.azure.com",
+    verb: "POST",
+    path: "/subscriptions/"+subscription_id+"/metrics:getBatch",
+    query_params: {
+      "api-version": "2023-03-01-preview",
+      "timespan": ds_lookback_time_formats["azure_timespan"],
+      "interval": ds_param_stats_interval,
+      "aggregation": "minimum,average,maximum",
+      "region": location,
+      "metricNamespace": "microsoft.compute/virtualmachines",
+      "metricnames": "Percentage CPU,Available Memory Bytes",
+      "orderby": "average desc"
+    },
+    headers: {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ "resourceids": resources })
+  }
+EOS
+end
+
+datasource "ds_databricks_clusters" do
+  iterate $ds_databricks_workspaces_filtered
+  request do
+    auth $auth_databricks
+    host val(iter_item, "workspaceUrl")
+    path "/api/2.0/clusters/list"
+    # Ignore 400 gets returned when using an AzureRM credential for the databricks credential ["Expected aud claim to be: 2ff814a6-3304-4ab8-85cb-cd0e6f879c1d, but was: https://management.azure.com"]
+    # Also ignore 401/403 if the Service Principal has the correct claim but just doesn't have access to the DB Workspace
+    ignore_status [400,401,403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "clusters[*]") do
+      field "databricks_workspace", iter_item
+      field "cluster", col_item
+    end
+  end
+end
+
+# datasource "ds_databricks_sqlwarehouses" do
+#   iterate $ds_databricks_workspaces_filtered
+#   request do
+#     auth $auth_databricks
+#     host val(iter_item, "workspaceUrl")
+#     path "/api/2.0/sql/warehouses"
+#     ignore_status [404] # 404   {"error_code":"FEATURE_DISABLED","message":"DBSQL is not supported on workspace with Standard feature tier. Please contact Databricks support."}
+#   end
+#   result do
+#     encoding "json"
+#     collect jmes_path(response, "warehouses[*]") do
+#       field "databricks_workspace", iter_item
+#       field "warehouse", col_item
+#     end
+#   end
+# end
+
+# datasource "ds_databricks_instancepools" do
+#   iterate $ds_databricks_workspaces_filtered
+#   request do
+#     auth $auth_databricks
+#     host val(iter_item, "workspaceUrl")
+#     path "/api/2.0/instance-pools/list"
+#   end
+# end
+
+# datasource "ds_databricks_clusters_events" do
+#   iterate $ds_databricks_workspaces_filtered
+#   request do
+#     auth $auth_databricks
+#     pagination $pagination_databricks_events
+#     host jq(iter_item, ".databricks_workspace.workspaceUrl")
+#     path "/api/2.0/clusters/events"
+#     verb "POST"
+#     body_field "cluster_id", jq(iter_item, ".cluster.cluster_id")
+#     body_field "event_types", ["DRIVER_HEALTHY"] # DRIVER_HEALTHY when a "driver" aka instance is started and checks-in as ready
+#     body_field "limit", 2
+#   end
+#   result do
+#     encoding "json"
+#     collect jmes_path(response, "events[*]") do
+#       field "databricks_workspace", val(iter_item, "databricks_workspace")
+#       field "cluster", val(iter_item, "cluster")
+#       field "event", col_item
+#     end
+#   end
+# end
+
+datasource "ds_filtered_workspace_virtualmachines" do
+  run_script $js_filtered_workspace_virtualmachines, $ds_databricks_workspaces_filtered, $ds_azure_databricks_managed_vm_metrics, $param_stats_threshold, $param_stats_underutil_threshold_cpu_value, $ds_databricks_workspaces_vm_costs, $ds_lookback_time_formats, $ds_databricks_clusters, $ds_azure_sku_memory
+end
+
+script "js_filtered_workspace_virtualmachines", type: "javascript" do
+  parameters "ds_databricks_workspaces", "ds_azure_databricks_managed_vm_metrics", "param_stats_threshold", "param_stats_underutil_threshold_cpu_value", "ds_databricks_workspaces_vm_costs", "ds_lookback_time_formats", "ds_databricks_clusters", "ds_azure_sku_memory"
+  result "result"
+  code <<-EOS
+  var lastTick = 0; // Holds the timestamp last tick was called
+  var tickCount = 0; // Holds the count tick was called
+
+  var result = [];
+  // Loop through all the batched metrics results
+  _.each(ds_azure_databricks_managed_vm_metrics, function(batch_result) {
+    _.each(batch_result.values, function(vm_metrics) {
+      // Each value for a result should be unique to a ResourceId (i.e. a Virtual Machine)
+      // Get some information needed for the result
+      vm_resourceId = vm_metrics.resourceid
+      databricks_workspace = _.find(ds_databricks_workspaces, function(dbws) {
+        // If the vm resource id contains the databricks workspace managed resource group (prefix of resource id), then return result
+        return vm_resourceId.toLowerCase().lastIndexOf(dbws.managedResourceGroupId.toLowerCase()) == 0
+      })
+      // Include the subscriptionId and resourceGroup in the databricks_workspace object
+      // This is needed in the result to allocate recommendations to billing centers
+      // databricks_workspace["subscriptionId"] = databricks_workspace["subscriptionId"]
+      // databricks_workspace["subscriptionName"] = databricks_workspace["subscriptionName"]
+      databricks_workspace["resourceGroup"] = databricks_workspace["resourceId"].split("/")[4]
+      // Setup placeholder result and calculation values for this resource
+      var r = {
+        "databricks_workspace": databricks_workspace,
+        "resourceId": vm_resourceId,
+        "metricsForPeriod": {
+          "timespan": ds_lookback_time_formats["azure_timespan"],
+          "memory_minimum": null,
+          "memory_average": null,
+          "memory_maximum": null,
+          "cpu_minimum": null,
+          "cpu_average": null,
+          "cpu_maximum": null
+        }
+      }
+      // Loop through the timeseries for this resource
+      // Each timeseries may has metric values if the resource was running during the time period
+      _.each(vm_metrics.value, function(metricNames) {
+        metricName = metricNames.name.value
+        switch (metricName) {
+          case "Percentage CPU":
+            metricName = "cpu"
+            break;
+          case "Available Memory Bytes":
+            metricName = "memory"
+            break;
+          default:
+            metricName = "unknown"
+        }
+        _.each(metricNames.timeseries, function(resourceMetrics, index) {
+          // Pluck metric values for timespans
+          var stats_data_names = ["minimum","average","maximum"] // convenient place to declare the stats we want to loop through
+          _.each(stats_data_names, function(stat) {
+            var measurements = _.compact(_.pluck(resourceMetrics.data,stat))
+            if (measurements.length > 0) {
+              switch(stat) {
+                case "minimum":
+                  r["metricsForPeriod"][metricName+"_minimum"] = _.min(measurements)
+                  break;
+                case "average":
+                  r["metricsForPeriod"][metricName+"_average"] = _.reduce(measurements, function(a, b){ return a + b; }, 0) / measurements.length
+                  break;
+                case "maximum":
+                  r["metricsForPeriod"][metricName+"_maximum"] = _.max(measurements)
+                  break;
+              }
+            }
+          })
+        })
+      })
+      // Add the result to the result array
+      result.push(r)
+    })
+  })
+  EOS
+end
+
+datasource "ds_filtered_workspace_virtualmachines_with_costs" do
+  run_script $js_filtered_workspace_virtualmachines_with_costs, $ds_filtered_workspace_virtualmachines, $ds_databricks_workspaces_vm_costs, $ds_databricks_clusters, $ds_azure_sku_memory, $param_stats_lookback
+end
+
+script "js_filtered_workspace_virtualmachines_with_costs", type: "javascript" do
+  parameters "ds_filtered_workspace_virtualmachines", "ds_databricks_workspaces_vm_costs", "ds_databricks_clusters", "ds_azure_sku_memory", "param_stats_lookback"
+  result "result"
+  code <<-EOS
+  var result = [];
+  _.each(ds_filtered_workspace_virtualmachines, function(r){
+    // At this point we have all the utilization data from Azure Metrics API
+    // We need to look at the data from Flexera to get cost, databricks cluster id, and cluster instance type
+
+    // Filters costs for this resources from the datasource
+    resource_costs = _.filter(ds_databricks_workspaces_vm_costs, function(cost) {
+      // check if names match using case-insensitive comparison
+      // bill data sometimes makes RG uppercase, whereas the api value is lowercase
+      return cost["resourceId"].toLowerCase() == r["resourceId"].toLowerCase()
+    })
+
+    // Check if we found cost information for this resource
+    if (resource_costs.length > 0) {
+      // If we did, add it to the result -- starting at 0
+      r["total_cost"] = 0
+      // Loop through the costs and add them up
+      _.each(resource_costs, function(cost) {
+        r["total_cost"] = r["total_cost"] + cost["cost"]
+        // Prevent divide by zero  / +Inf type errors
+        if (cost["usage_amount"] > 0) {
+          r["unit_cost"] = cost["cost"] / cost["usage_amount"]
+        }
+        r["databricks_cluster_id"] = cost["cluster_id"]
+        r["resourceType"] = cost["resourceType"]
+      })
+      // Handle case where param_stats_lookback is not 30 days (1month)
+      // The Optimization dashboard reports savings in $/month and so we need to match that unit regardless of the lookback period
+      if (param_stats_lookback != 30) {
+        // If we're not looking back 30 days, we need to calculate how much of a "month" (30days) we are looking at
+        month_fraction = param_stats_lookback / 30
+        // Now we can take the total cost for the period, and the portion of the month to estimate the total cost for the month
+        r["monthly_cost_estimate"] = r["total_cost"] / month_fraction
+      } else {
+        // If we are looking back 30 days, we will use the total_cost as the estimated savings
+        r["monthly_cost_estimate"] = r["total_cost"]
+      }
+      // Add lookbackPeriod for the resource since we have this value in memory already
+      r["lookbackPeriod"] = param_stats_lookback
+      // Now that we know the instance type, we can get the total memory from ds_azure_sku_memory
+      r["metricsForPeriod"]["memory_total"] = ds_azure_sku_memory[r["resourceType"].toLowerCase()]
+    }
+
+    // With memory_total, we can now calculate percent memory
+    if (typeof r["metricsForPeriod"]["memory_total"] == "number" && r["metricsForPeriod"]["memory_total"] > 0) {
+      if (typeof r["metricsForPeriod"]["memory_minimum"] == "number" && r["metricsForPeriod"]["memory_minimum"] > 0) {
+        r["metricsForPeriod"]["memory_minimum_percent"] = (r["metricsForPeriod"]["memory_minimum"] / r["metricsForPeriod"]["memory_total"]) * 100
+      }
+      if (typeof r["metricsForPeriod"]["memory_average"] == "number" && r["metricsForPeriod"]["memory_average"] > 0) {
+        r["metricsForPeriod"]["memory_average_percent"] = (r["metricsForPeriod"]["memory_average"] / r["metricsForPeriod"]["memory_total"]) * 100
+      }
+      if (typeof r["metricsForPeriod"]["memory_maximum"] == "number" && r["metricsForPeriod"]["memory_maximum"] > 0) {
+        r["metricsForPeriod"]["memory_maximum_percent"] = (r["metricsForPeriod"]["memory_maximum"] / r["metricsForPeriod"]["memory_total"]) * 100
+      }
+    }
+    if (typeof r["databricks_cluster_id"] === "string") {
+      // Attempt to find additional cluster metadata in ds_databricks_clusters
+      _.each(ds_databricks_clusters, function(dbc) {
+        if (dbc.cluster.cluster_id.toLowerCase() == r["databricks_cluster_id"].toLowerCase()) {
+          r["databricks_cluster"] = dbc.cluster
+        }
+      })
+    }
+
+    // For each of our metricsForPeriod, lets round to 2 decimals
+    _.each(_.keys(r["metricsForPeriod"]), function(metric) {
+      if (typeof r["metricsForPeriod"][metric] != "null" && typeof r["metricsForPeriod"][metric] != "undefined" && r["metricsForPeriod"][metric] > 0) {
+        r["metricsForPeriod"][metric] = Math.round(r["metricsForPeriod"][metric] * 100) / 100
+      }
+    })
+
+    // Rounding
+    // Total Cost to 2 digits
+    r["total_cost"] = Math.round(r["total_cost"] * 100) / 100
+    // Estimated Monthly Cost to 2 digits
+    r["monthly_cost_estimate"] = Math.round(r["monthly_cost_estimate"] * 100) / 100
+    // Unit Cost to 4 digits (portions of a penny because that's how price is publicly listed)
+    r["unit_cost"] = Math.round(r["unit_cost"] * 10000) / 10000
+
+    result.push(r)
+  })
+  EOS
+end
+
+datasource "ds_databricks_workspaces_vm_costs" do
+  iterate $ds_databricks_workspaces_filtered
+  request do
+    run_script $js_databricks_workspaces_vm_costs, iter_item, $ds_top_level_bcs, rs_org_id, rs_optima_host, $ds_lookback_time_formats
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "resourceId", jmes_path(col_item, "dimensions.resource_id")
+      field "cluster_id", jmes_path(col_item, "dimensions.tag_azure_databricks_clusterid")
+      field "usage_unit", jmes_path(col_item, "dimensions.usage_unit")
+      field "resourceType", jmes_path(col_item, "dimensions.instance_type")
+      field "region", jmes_path(col_item, "dimensions.region")
+      field "resource_group", jmes_path(col_item, "dimensions.resource_group")
+      field "vendor_account", jmes_path(col_item, "dimensions.vendor_account")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+      field "usage_amount", jmes_path(col_item, "metrics.usage_amount")
+    end
+  end
+end
+
+script "js_databricks_workspaces_vm_costs", type: "javascript" do
+  parameters "iter_item", "ds_top_level_bcs", "rs_org_id", "rs_optima_host", "ds_lookback_time_formats"
+  result "request"
+  code <<-EOS
+  subscription_id = iter_item["managedResourceGroupId"].split("/")[2]
+  resource_group = iter_item["managedResourceGroupId"].split("/")[4]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
+    body_fields: {
+      dimensions: ["resource_id","tag_azure_databricks_clusterid","usage_unit","instance_type","vendor_account","region","resource_group"],
+      granularity: "month",
+      start_at: ds_lookback_time_formats["flexera_start_at"],
+      end_at: ds_lookback_time_formats["flexera_end_at"],
+      metrics: ["cost_amortized_unblended_adj","usage_amount"],
+      billing_center_ids: ds_top_level_bcs,
+      limit: 100000,
+      filter: {
+        "type": "and",
+        "expressions": [
+          // Microsoft.Compute Service
+          {
+            "type": "or",
+            "expressions": [
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "Microsoft.Compute"
+              },
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "microsoft.compute"
+              }
+            ]
+          },
+          // Virtual Machine Resources
+          {
+            "dimension": "resource_type",
+            "type": "substring",
+            "substring": "Virtual Machines-"
+          },
+          // Vendor Account + Resource Group Filters
+          {
+            "dimension": "vendor_account",
+            "type": "equal",
+            "value": subscription_id
+          },
+          {
+            "dimension": "resource_group",
+            "type": "equal",
+            "value": resource_group
+          },
+          // Exclude Shared Cost adjustments (if exist)
+          {
+            "type": "not",
+            "expression": {
+              "dimension": "adjustment_name",
+              "type": "substring",
+              "substring": "Shared"
+            }
+          }
+        ]
+      }
+    },
+    headers: {
+      'User-Agent': "RS Policies",
+      'Api-Version': "1.0"
+    }
+  }
+EOS
+end
+
+datasource "ds_virtualmachines_from_bill" do
+  run_script $js_virtualmachines_from_bill, $ds_databricks_workspaces_vm_costs, $ds_databricks_workspaces_filtered
+end
+
+script "js_virtualmachines_from_bill", type: "javascript" do
+  parameters "ds_databricks_workspaces_vm_costs", "ds_databricks_workspaces"
+  result "result"
+  code <<-EOS
+  var result_map = {}
+  _.each(ds_databricks_workspaces_vm_costs, function(vm) {
+    vm_cost_sub = vm["resourceId"].split("/")[2] // Get the subscription ID from the resource ID
+    vm_cost_rg = vm["resourceId"].split("/")[4] // Get the resource group from the resource ID
+    vm_rg_string = "/subscriptions/"+vm_cost_sub+"/resourceGroups/"+vm_cost_rg
+    db_workspace = _.find(ds_databricks_workspaces, function(dbws) {
+      return dbws["managedResourceGroupId"].toLowerCase() == vm_rg_string.toLowerCase()
+    })
+    // only keep what we need from db_workspace
+    db_workspace = _.pick(db_workspace, ["resourceId", "resourceGroup", "workspaceId", "subscriptionId", "location", "name", "workspaceUrl","managedResourceGroupId"])
+
+    if (result_map[vm_cost_sub] == undefined || result_map[vm_cost_sub] == null) {
+      result_map[vm_cost_sub] = {}
+    }
+    if (result_map[vm_cost_sub][db_workspace.location] == undefined || result_map[vm_cost_sub][db_workspace.location] == null) {
+      result_map[vm_cost_sub][db_workspace.location] = {
+        "databricks_workspace": db_workspace,
+        "virtualmachines": []
+      }
+    }
+    result_map[vm_cost_sub][db_workspace.location]["virtualmachines"].push(vm)
+  })
+
+  // The policy evaluation expects an array, and we don't need the keys anymore so lets convert it to an array
+  result = []
+  _.each(Object.keys(result_map), function(subscriptionId) {
+    _.each(Object.keys(result_map[subscriptionId]), function(location) {
+      vm_count = result_map[subscriptionId][location]["virtualmachines"].length
+
+      // The getBatch metrics API expects groups of <=50 resources, so we need to chunk the results
+      // Using 25 as the chunk size because batch responses with PT1M can be > 8MB which is policy limit
+      chunk_size = 25
+      if (vm_count > 0 && vm_count <= chunk_size) {
+        // If less <= chunk_size, just add the result as it is
+        result.push(result_map[subscriptionId][location])
+      } else {
+        // If more than chunk_size, do the chunking
+        for (var i=0; i < vm_count; i+=chunk_size) {
+          result.push({
+            "databricks_workspace": result_map[subscriptionId][location]["databricks_workspace"],
+            "virtualmachines": result_map[subscriptionId][location]["virtualmachines"].slice(i,i+chunk_size)
+          })
+        }
+      }
+    })
+  })
+  EOS
+end
+
+datasource "ds_idle_and_underutil_instances" do
+  run_script $js_idle_and_underutil_instances, $param_stats_check_both, $param_stats_threshold, $param_stats_idle_threshold_cpu_value, $param_stats_underutil_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_mem_value, $ds_filtered_workspace_virtualmachines_with_costs, $ds_azure_instance_size_map, $ds_applied_policy
+end
+
+script "js_idle_and_underutil_instances", type: "javascript" do
+  parameters "param_stats_check_both", "param_stats_threshold", "param_stats_idle_threshold_cpu_value", "param_stats_underutil_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_mem_value", "ds_filtered_workspace_virtualmachines_with_costs", "ds_azure_instance_size_map", "ds_applied_policy"
+  result "result"
+  code <<-EOS
+  underutil_total_savings = 0.0
+  idle_total_savings = 0.0
+
+  underutil_list = []
+  idle_list = []
+
+  applied_policy_name = ds_applied_policy["name"]
+
+  _.each(ds_filtered_workspace_virtualmachines_with_costs, function(vm) {
+    // Set the Applied Policy Name which is used in the summary_template/detail_template output
+    vm["policy_name"] = applied_policy_name
+    // Get the utilization metrics that we are going to use for comparison
+    cpu_value = vm.metricsForPeriod["cpu_"+param_stats_threshold.toLowerCase()]
+    mem_value = vm.metricsForPeriod["memory_"+param_stats_threshold.toLowerCase()+"_percent"]
+
+    // Set thresholdType for output
+    vm["thresholdType"] = param_stats_threshold
+    vm["thresholdResourceTypes"] = param_stats_check_both
+
+    // Test for whether to consider the instance idle or underutilized.
+    // Assume instance is not idle or underutilized by default.
+    is_idle = false
+    is_underutil = false
+
+    // Determine if the instance is idle or underutilized for each category.
+    // Store boolean result for later use.
+    is_idle_cpu = cpu_value < param_stats_idle_threshold_cpu_value
+    is_underutil_cpu = cpu_value < param_stats_underutil_threshold_cpu_value
+    is_idle_mem = mem_value < param_stats_idle_threshold_mem_value
+    is_underutil_mem = mem_value < param_stats_underutil_threshold_mem_value
+
+    // Determine whether we're checking for CPU, memory, or both
+    checking_cpu = param_stats_underutil_threshold_cpu_value != -1 || param_stats_idle_threshold_cpu_value != -1
+    checking_mem = param_stats_underutil_threshold_mem_value != -1 || param_stats_idle_threshold_mem_value != -1
+
+    // If we're only checking CPU, simply set is_idle/is_underutil to their CPU equivalents
+    if (!checking_mem) { is_idle = is_idle_cpu }
+    if (!checking_mem) { is_underutil = is_underutil_cpu }
+
+    // If we're only checking memory, simply set is_idle/is_underutil to their memory equivalents
+    if (!checking_cpu) { is_idle = is_idle_mem }
+    if (!checking_cpu) { is_underutil = is_underutil_mem }
+
+    // If we're checking both, do an 'and' or an 'or' depending on the value of param_stats_check_both
+    if (checking_cpu && checking_mem) {
+      if (param_stats_check_both == "Both CPU and Memory") {
+        is_idle = is_idle_cpu && is_idle_mem
+        is_underutil = is_underutil_cpu && is_underutil_mem
+      } else {
+        is_idle = is_idle_cpu || is_idle_mem
+        is_underutil = is_underutil_cpu || is_underutil_mem
+      }
+    }
+
+    // Only bother doing anything if we're checking at least one metric
+    if (checking_cpu || checking_mem) {
+      if (is_idle) { // First check to see if the resource is below the lower "idle" thresholds
+        vm["recommendationType"] = "Delete"
+        vm["recommendationDetails"] = [
+          "Delete Databricks Cluster "+vm["databricks_cluster_id"]+" which created Azure virtual machine ", vm["resourceId"], " ",
+          "in Azure Subscription ", vm["subscriptionName"], " ",
+          "(", vm["subscriptionId"], ")"
+        ].join("")
+        if (typeof vm["monthly_cost_estimate"] == "number") {
+          vm["savings"] = vm["monthly_cost_estimate"] // Potential Savings from delete is the estimated monthly cost of the resource
+        }
+        vm["memoryThreshold"] = param_stats_idle_threshold_mem_value
+        vm["cpuThreshold"] = param_stats_idle_threshold_cpu_value
+        idle_list.push(vm)
+      } else if (is_underutil) { // If not idle, check see if the resource is below the lower "idle" threshold
+        // Get the downsize instance type
+        if (ds_azure_instance_size_map[vm['resourceType']]) {
+          vm["newResourceType"] = ds_azure_instance_size_map[vm['resourceType']]['down']
+        }
+        vm["recommendationType"] = "Downsize"
+        vm["recommendationDetails"] = [
+          "Resize Databricks Cluster "+vm["databricks_cluster_id"]+" which created Azure virtual machine ", vm["resourceId"], " ",
+          "in Azure Subscription ", vm["subscriptionName"], " ",
+          "(", vm["subscriptionId"], ") ",
+          "from ", vm["resourceType"], " ",
+          "to ", vm["newResourceType"]
+        ].join("")
+        if (typeof vm["monthly_cost_estimate"] == "number") {
+          vm["savings"] = vm["monthly_cost_estimate"] / 2 // Potential Savings from downsize is generally half the estimated monthly cost of current resource type
+        }
+        vm["memoryThreshold"] = param_stats_underutil_threshold_mem_value
+        vm["cpuThreshold"] = param_stats_underutil_threshold_cpu_value
+        underutil_list.push(vm)
+      }
+    }
+  })
+  result = {
+    "underutil_list": underutil_list,
+    "idle_list": idle_list
+  }
+  EOS
+end
+
+datasource "ds_underutilized_instances" do
+  run_script $js_underutilized_instances, $ds_idle_and_underutil_instances
+end
+
+script "js_underutilized_instances", type: "javascript" do
+  parameters "ds_idle_and_underutil_instances"
+  result "result"
+  code <<-EOS
+  if (typeof ds_idle_and_underutil_instances["underutil_list"] != "undefined" && ds_idle_and_underutil_instances["underutil_list"].length > 0) {
+    result = ds_idle_and_underutil_instances["underutil_list"]
+  } else {
+    result = []
+  }
+EOS
+end
+
+datasource "ds_idle_instances" do
+  run_script $js_idle_instances, $ds_idle_and_underutil_instances
+end
+
+script "js_idle_instances", type: "javascript" do
+  parameters "ds_idle_and_underutil_instances"
+  result "result"
+  code <<-EOS
+  if (typeof ds_idle_and_underutil_instances["idle_list"] != "undefined" && ds_idle_and_underutil_instances["idle_list"].length > 0) {
+    result = ds_idle_and_underutil_instances["idle_list"]
+  } else {
+    result = []
+  }
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_databricks_optimizations" do
+  validate $ds_idle_instances do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Databricks Idle Virtual Machines Found"
+    detail_template <<-'EOS'
+## Summary
+
+{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Databricks Workspaces with compute resources that are Idle
+
+Found {{ len data }} Databricks compute resources that were *idle* during the last {{ parameters.param_stats_lookback }} days.  *Idle* compute resources are those which have **less than {{ parameters.param_stats_idle_threshold_cpu_value }}% {{ parameters.param_stats_threshold }} CPU utilization** within the last {{ parameters.param_stats_lookback }} days.
+    EOS
+    check logic_or($ds_parent_policy_terminated,    eq(0,size(data))    )
+    export do
+      resource_level true
+      field "savings" do
+        label "Estimated Savings"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "subscriptionId" do
+        label "Subscription ID"
+        path "databricks_workspace.subscriptionId"
+      end
+      field "resourceGroup" do
+        label "Azure Resource Group Name"
+        path "databricks_workspace.resourceGroup"
+      end
+      field "region" do
+        label "Azure Region"
+        path "databricks_workspace.location"
+      end
+      field "id" do
+        label "Azure Virtual Machine ID"
+        path "resourceId"
+      end
+      field "databricks_workspace_name" do
+        label "Databricks Workspace Name"
+        path "databricks_workspace.name"
+      end
+      field "workspaceId" do
+        label "Databricks Workspace ID"
+        path "databricks_workspace.workspaceId"
+      end
+      field "databricks_workspace_url" do
+        label "Databricks Workspace Url"
+        path "databricks_workspace.workspaceUrl"
+      end
+      field "databricks_cluster_id" do
+        label "Databricks Cluster ID"
+        path "databricks_cluster_id"
+      end
+      field "databricks_cluster_name" do
+        label "Databricks Cluster Name"
+        path "databricks_cluster.cluster_name"
+      end
+      field "databricks_cluster_source" do
+        label "Databricks Cluster Source"
+        path "databricks_cluster.cluster_source"
+      end
+      field "resourceType" do
+        label "Instance Size"
+        path "resourceType"
+      end
+      field "newResourceType" do
+        label "Recommended Instance Size"
+      end
+      field "unit_cost" do
+        label "Unit Cost during Lookback Period"
+      end
+      field "total_cost" do
+        label "Total Cost during Lookback Period"
+        path "total_cost"
+      end
+      field "cpuMinimum" do
+        label "CPU Minimum %"
+        path "metricsForPeriod.cpu_minimum"
+      end
+      field "cpuAverage" do
+        label "CPU Average %"
+        path "metricsForPeriod.cpu_average"
+      end
+      field "cpuMaximum" do
+        label "CPU Maximum %"
+        path "metricsForPeriod.cpu_maximum"
+      end
+      field "memMinimum" do
+        label "Memory Minimum %"
+        path "metricsForPeriod.memory_minimum_percent"
+      end
+      field "memAverage" do
+        label "Memory Average %"
+        path "metricsForPeriod.memory_average_percent"
+      end
+      field "memMaximum" do
+        label "Memory Maximum %"
+        path "metricsForPeriod.memory_maximum_percent"
+      end
+      field "thresholdType" do
+        label "Threshold Statistic"
+      end
+      field "cpuThreshold" do
+        label "CPU Threshold"
+      end
+      field "memoryThreshold" do
+        label "Memory Threshold"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+    end
+  end
+  validate $ds_underutilized_instances do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Databricks Underutilized Virtual Machines Found"
+    detail_template <<-'EOS'
+## Summary
+
+{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Databricks Workspaces with compute resources that are underutilized
+
+Found {{ len data }} Databricks compute resources that were *underutilized* during the last {{ parameters.param_stats_lookback }} days.  *Underutilized* compute resources are those which have **less than {{ parameters.param_stats_underutil_threshold_cpu_value }}% {{ parameters.param_stats_threshold }} CPU utilization** within the last {{ parameters.param_stats_lookback }} days.
+    EOS
+    check logic_or($ds_parent_policy_terminated,    eq(0,size(data))    )
+    export do
+      resource_level true
+      field "savings" do
+        label "Estimated Savings"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "subscriptionId" do
+        label "Subscription ID"
+        path "databricks_workspace.subscriptionId"
+      end
+      field "resourceGroup" do
+        label "Azure Resource Group Name"
+        path "databricks_workspace.resourceGroup"
+      end
+      field "region" do
+        label "Azure Region"
+        path "databricks_workspace.location"
+      end
+      field "id" do
+        label "Azure Virtual Machine ID"
+        path "resourceId"
+      end
+      field "databricks_workspace_name" do
+        label "Databricks Workspace Name"
+        path "databricks_workspace.name"
+      end
+      field "workspaceId" do
+        label "Databricks Workspace ID"
+        path "databricks_workspace.workspaceId"
+      end
+      field "databricks_workspace_url" do
+        label "Databricks Workspace Url"
+        path "databricks_workspace.workspaceUrl"
+      end
+      field "databricks_cluster_id" do
+        label "Databricks Cluster ID"
+        path "databricks_cluster_id"
+      end
+      field "databricks_cluster_name" do
+        label "Databricks Cluster Name"
+        path "databricks_cluster.cluster_name"
+      end
+      field "databricks_cluster_source" do
+        label "Databricks Cluster Source"
+        path "databricks_cluster.cluster_source"
+      end
+      field "resourceType" do
+        label "Instance Size"
+        path "resourceType"
+      end
+      field "newResourceType" do
+        label "Recommended Instance Size"
+      end
+      field "unit_cost" do
+        label "Unit Cost during Lookback Period"
+      end
+      field "total_cost" do
+        label "Total Cost during Lookback Period"
+        path "total_cost"
+      end
+      field "cpuMinimum" do
+        label "CPU Minimum %"
+        path "metricsForPeriod.cpu_minimum"
+      end
+      field "cpuAverage" do
+        label "CPU Average %"
+        path "metricsForPeriod.cpu_average"
+      end
+      field "cpuMaximum" do
+        label "CPU Maximum %"
+        path "metricsForPeriod.cpu_maximum"
+      end
+      field "memMinimum" do
+        label "Memory Minimum %"
+        path "metricsForPeriod.memory_minimum_percent"
+      end
+      field "memAverage" do
+        label "Memory Average %"
+        path "metricsForPeriod.memory_average_percent"
+      end
+      field "memMaximum" do
+        label "Memory Maximum %"
+        path "metricsForPeriod.memory_maximum_percent"
+      end
+      field "thresholdType" do
+        label "Threshold Statistic"
+      end
+      field "thresholdResourceTypes" do
+        label "Threshold Resource Type"
+      end
+      field "cpuThreshold" do
+        label "CPU Threshold"
+      end
+      field "memoryThreshold" do
+        label "Memory Threshold"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "send_email_report" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
+end
