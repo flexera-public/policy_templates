@@ -24,10 +24,37 @@ parameter "param_email" do
   default []
 end
 
+parameter "param_subscriptions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Subscriptions"
+  description "Allow or Deny entered Subscriptions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
 parameter "param_subscriptions_list" do
-  label "Subscription Allowed List"
   type "list"
-  description "Allowed Azure Subscriptions. If empty, all subscriptions will be checked"
+  category "Filters"
+  label "Allow/Deny Subscriptions List"
+  description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
   default []
 end
 
@@ -226,7 +253,7 @@ EOS
 end
 
 # Get all subscriptions
-datasource "ds_subscriptions" do
+datasource "ds_azure_subscriptions" do
   request do
     auth $auth_azure
     pagination $pagination_azure
@@ -247,33 +274,33 @@ datasource "ds_subscriptions" do
   end
 end
 
-datasource "ds_filtered_subscriptions" do
-  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscriptions_list
+datasource "ds_azure_subscriptions_filtered" do
+  run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
 end
 
-script "js_filtered_subscriptions", type: "javascript" do
-  parameters "ds_subscriptions", "param_subscriptions_list"
-  result "results"
+script "js_azure_subscriptions_filtered", type: "javascript" do
+  parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
+  result "result"
   code <<-EOS
-  var results = []
-  if ( param_subscriptions_list.length != 0){
-    results = []
-    _.each(param_subscriptions_list, function(sub){
-      var found = _.find(ds_subscriptions, function(item){
-        return (item.subscriptionId == sub || item.subscriptionName.toLowerCase() == sub.toLowerCase());
-      })
-      results.push(found)
-    })
+  if (param_subscriptions_list.length > 0) {
+    result = _.filter(ds_azure_subscriptions, function(subscription) {
+      include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
 
+      if (param_subscriptions_allow_or_deny == "Deny") {
+        include_subscription = !include_subscription
+      }
+
+      return include_subscription
+    })
   } else {
-    results = ds_subscriptions
+    result = ds_azure_subscriptions
   }
 EOS
 end
 
 #get workspaces, and urls
 datasource "ds_databricks_workspaces" do
-  iterate $ds_filtered_subscriptions
+  iterate $ds_azure_subscriptions_filtered
   request do
     auth $auth_azure
     pagination $pagination_azure
@@ -297,10 +324,33 @@ datasource "ds_databricks_workspaces" do
   end
 end
 
-datasource "ds_databricks_workspaces_filtered" do
-  run_script $js_databricks_workspaces_filtered, $ds_databricks_workspaces, $param_databricks_workspace_list
+datasource "ds_databricks_workspaces_region_filtered" do
+  run_script $js_databricks_workspaces_region_filtered, $ds_databricks_workspaces, $param_regions_allow_or_deny, $param_regions_list
 end
 
+script "js_databricks_workspaces_region_filtered", type: "javascript" do
+  parameters "ds_databricks_workspaces", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_databricks_workspaces, function(item) {
+      include = _.contains(param_regions_list, item['location'])
+
+      if (param_regions_allow_or_deny == "Deny") {
+        include = !include
+      }
+
+      return include
+    })
+  } else {
+    result = ds_databricks_workspaces
+  }
+EOS
+end
+
+datasource "ds_databricks_workspaces_filtered" do
+  run_script $js_databricks_workspaces_filtered, $ds_databricks_workspaces_region_filtered, $param_databricks_workspace_list
+end
 
 script "js_databricks_workspaces_filtered", type: "javascript" do
   parameters "ds_databricks_workspaces", "param_databricks_workspace_list"
@@ -401,7 +451,7 @@ datasource "ds_azure_instance_size_map" do
 end
 
 datasource "ds_azure_skus" do
-  iterate $ds_filtered_subscriptions
+  iterate $ds_azure_subscriptions_filtered
   request do
     auth $auth_azure
     pagination $pagination_azure
