@@ -46,6 +46,7 @@ These templates can generate savings estimates for your environment.
 
 #### Azure
 
+- [Azure Databricks Rightsize Compute Instances](./cost/azure/databricks/rightsize_compute)
 - [Azure Hybrid Use Benefit for Windows Server](./cost/azure/hybrid_use_benefit)
 - [Azure Old Snapshots](./cost/azure/old_snapshots)
 - [Azure Reserved Instances Recommendations](./cost/azure/reserved_instances/recommendations)
@@ -253,6 +254,10 @@ These templates can generate savings estimates for your environment.
   - [Azure Unused IP Addresses](./cost/azure/unused_ip_addresses)
   - [Turbonomic Allocate Virtual Machine Recommendations Azure](./cost/turbonomics/allocate_virtual_machines_recommendations/azure)
   - [Turbonomic Rightsize Virtual Machines Recommendations Azure](./cost/turbonomics/scale_virtual_machines_recommendations/azure)
+
+- Databricks
+
+  - [Azure Databricks Rightsize Compute Instances](./cost/azure/databricks/rightsize_compute)
 
 - Marketplace
 
@@ -531,7 +536,7 @@ These templates can generate savings estimates for your environment.
 
 - S3
 
-  - [AWS Open Buckets](./security/storage/aws/public_buckets)
+  - [AWS Open S3 Buckets](./security/storage/aws/public_buckets)
   - [AWS S3 Buckets without Server Access Logging](./security/storage/aws/s3_buckets_without_server_access_logging)
   - [AWS S3 Ensure 'Block Public Access' Configured For All Buckets](./security/aws/s3_ensure_buckets_block_public_access)
   - [AWS S3 Ensure Bucket Policies Deny HTTP Requests](./security/aws/s3_buckets_deny_http)
@@ -620,11 +625,11 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 33
-  Cost: 95
+  Cost: 96
   Operational: 23
   SaaS Management: 12
   Security: 74
-:optimization_count: 42
+:optimization_count: 43
 :policy_sets:
   '': 82
   AWS Config: 1
@@ -633,6 +638,7 @@ These templates can generate savings estimates for your environment.
   Committed Use Discount: 1
   Common Bill Ingestion: 2
   Database Services: 1
+  Databricks: 1
   Disallowed Regions: 2
   Forecasting: 4
   Hybrid Use Benefit: 3
@@ -649,7 +655,8 @@ These templates can generate savings estimates for your environment.
   New Marketplace Products: 2
   Object Store Optimization: 3
   Old Snapshots: 3
-  Open Buckets: 2
+  Open Buckets: 1
+  Open S3 Buckets: 1
   Public Database Access: 2
   Reserved Instance: 2
   Reserved Instances: 3
@@ -677,7 +684,7 @@ These templates can generate savings estimates for your environment.
 :providers:
   '': 1
   AWS: 76
-  Azure: 77
+  Azure: 78
   Azure China: 1
   Flexera: 5
   Flexera Cloud Management: 3
@@ -707,6 +714,7 @@ These templates can generate savings estimates for your environment.
   Config: 1
   Cost Explorer: 1
   DBS: 1
+  Databricks: 1
   EBS: 2
   ECS: 1
   ELB: 4
@@ -733,7 +741,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 237
+:total_count: 238
 -->
 <!-- End Policy Template Stats -->
 
