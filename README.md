@@ -444,15 +444,10 @@ These templates can generate savings estimates for your environment.
 
 ### Policy Templates for SaaS Management
 
-#### Flexera
-
-- All
-
-  - [SaaS Manager - Inactive Users for Integrated Applications](./saas/fsm/inactive_users_for_integrated_apps)
-
 #### Flexera SaaS Manager
 
 - [SaaS Manager - Deactivated Users](./saas/fsm/deactivated_users)
+- [SaaS Manager - Deactivated Users for Integrated Applications](./saas/fsm/deactivated_users_for_integrated_apps)
 - [SaaS Manager - Duplicate User Accounts](./saas/fsm/duplicate_users)
 - [SaaS Manager - Redundant Apps](./saas/fsm/redundant_apps)
 - [SaaS Manager - Renewal Reminder](./saas/fsm/renewal_reminder)
@@ -631,7 +626,7 @@ These templates can generate savings estimates for your environment.
   Security: 74
 :optimization_count: 42
 :policy_sets:
-  '': 81
+  '': 82
   AWS Config: 1
   Allocate VMs: 3
   CIS: 61
@@ -649,7 +644,7 @@ These templates can generate savings estimates for your environment.
   Lifecycle Management: 1
   Long Running Instances: 3
   Long Stopped Instances: 3
-  N/A: 2
+  N/A: 1
   Native Recommendations: 1
   New Marketplace Products: 2
   Object Store Optimization: 3
@@ -684,13 +679,13 @@ These templates can generate savings estimates for your environment.
   AWS: 76
   Azure: 77
   Azure China: 1
-  Flexera: 6
+  Flexera: 5
   Flexera Cloud Management: 3
   Flexera FNMS: 1
   Flexera ITAM: 5
   Flexera Optima: 25
   Flexera RISC: 2
-  Flexera SaaS Manager: 8
+  Flexera SaaS Manager: 9
   GCE: 8
   GitHub: 7
   Google: 11
@@ -700,9 +695,9 @@ These templates can generate savings estimates for your environment.
   Oracle: 1
   ServiceNow: 1
 :services:
-  '': 61
+  '': 62
   AKS: 2
-  All: 2
+  All: 1
   App Service: 1
   Blob Store: 1
   CCO: 1
