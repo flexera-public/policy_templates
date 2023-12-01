@@ -42,6 +42,32 @@ parameter "param_cloud_provider_name" do
   default ""
 end
 
+parameter "param_backfill" do
+  type "string"
+  category "Policy Settings"
+  label "Backfill Adjustments"
+  description "Whether to add/modify currency conversion to just the current month or to backfill previous months."
+  allowed_values "Current Month", "Backfill Previous Months"
+  default "Current Month"
+end
+
+parameter "param_backfill_start_date" do
+  type "string"
+  category "Policy Settings"
+  label "Backfill Start Date"
+  description "The month and year in YYYY-MM format to backfill adjustments to. Only applicable if \"Backfill Previous Months\" is selected."
+  default ""
+end
+
+parameter "param_backfill_exchange_rate" do
+  type "string"
+  category "Policy Settings"
+  label "Backfill Exchange Rates"
+  description "Whether or not to use the current exchange rate, or the exchange rate at the time, when applying currency conversion to previous months. Only applicable if \"Backfill Previous Months\" is selected."
+  allowed_values "Current Exchange Rate", "Backdated Exchange Rate"
+  default "Backdated Exchange Rate"
+end
+
 parameter "param_currency_from" do
   type "string"
   category "Currency"
@@ -73,38 +99,115 @@ end
 # Datasources & Scripts
 ###############################################################################
 
-datasource "ds_date" do
-  run_script $js_date
+datasource "ds_rate_years" do
+  run_script $js_rate_years, $param_backfill, $param_backfill_start_date, $param_backfill_exchange_rate
 end
 
-script "js_date", type: "javascript" do
+script "js_rate_years", type: "javascript" do
+  parameters "param_backfill", "param_backfill_start_date", "param_backfill_exchange_rate"
   result "result"
   code <<-EOS
-  date = new Date()
-  current_date = date.toISOString().split("T")
-  current_month = current_date[0].split("-")[0] + "-" + current_date[0].split("-")[1]
+  result = []
 
-  date.setMonth(date.getMonth() - 1)
-  previous_date = date.toISOString().split("T")
-  previous_month = previous_date[0].split("-")[0] + "-" + previous_date[0].split("-")[1]
+  if (param_backfill == "Current Month" || param_backfill_exchange_rate == "Current Exchange Rate") {
+    result.push(new Date().toISOString().split('-')[0])
+  } else {
+    back_year = Number(new Date(param_backfill_start_date).toISOString().split('-')[0])
+    current_year = Number(new Date().toISOString().split('-')[0])
 
-  result = {
-    previousMonth: previous_month,
-    currentMonth: current_month
+    do {
+      result.push(back_year.toString())
+      back_year += 1
+    } while (back_year != current_year)
   }
 EOS
 end
 
 datasource "ds_xe_monthly_average" do
+  iterate $ds_rate_years
   request do
     host "api.xe-auth.flexeraeng.com"
     path "/prod/{proxy+}"
     query "from", $param_currency_from
     query "to", $param_currency_to
     query "amount", "1"
-    query "year", first(split(val($ds_date, "previousMonth"), "-"))
-    query "month", last(split(val($ds_date, "previousMonth"), "-"))
+    query "year", iter_item
+    query "month", "01"
   end
+  result do
+    encoding "json"
+    field "from", jmes_path(response, "from")
+    field "to", jmes_path(response, "to")
+    field "year", jmes_path(response, "year")
+  end
+end
+
+datasource "ds_exchange_rates" do
+  run_script $js_exchange_rates, $ds_xe_monthly_average, $param_currency_to
+end
+
+script "js_exchange_rates", type: "javascript" do
+  parameters "ds_xe_monthly_average", "param_currency_to"
+  result "result"
+  code <<-EOS
+  result = {}
+  currency_code = param_currency_to.toUpperCase().trim()
+
+  _.each(ds_xe_monthly_average, function(item) {
+    year = item['year'].toString()
+
+    _.each(item['to'][currency_code], function(month) {
+      month_num = month['month'].toString()
+      if (month['month'] < 10) { month_num = '0' + month_num }
+
+      if (result[year] == undefined) { result[year] = {} }
+      result[year][month_num] = month['monthlyAverage']
+    }
+  })
+EOS
+end
+
+datasource "ds_date_list" do
+  run_script $js_date_list, $param_backfill, $param_backfill_start_date
+end
+
+script "js_date_list", type: "javascript" do
+  parameters "param_backfill", "param_backfill_start_date"
+  result "result"
+  code <<-EOS
+  result = []
+
+  now_date = new Date()
+  now_date = new Date(now_date.toISOString().split("T")[0])
+  now_month = now_date.toISOString().split('-')[1]
+  now_year = now_date.toISOString().split('-')[0]
+
+  start_date = now_date
+
+  if (param_backfill == "Backfill Previous Months") {
+    start_date = new Date(param_backfill_start_date)
+  }
+
+  start_month = start_date.toISOString().split('-')[1]
+  start_year = start_date.toISOString().split('-')[0]
+
+  do {
+    result.push(start_year + '-' + start_month)
+
+    if (start_month == '12') {
+      start_year = (Number(start_year) + 1).toString()
+      start_month = '01'
+    } else {
+      start_month = Number(start_month) + 1
+
+      if (start_month < 10) {
+        start_month = '0' + start_month.toString()
+      } else {
+        start_month = start_month.toString()
+      }
+    }
+  } while (now_month != start_month && now_year != start_year)
+EOS
 end
 
 datasource "ds_current_adjustments" do
@@ -117,77 +220,85 @@ datasource "ds_current_adjustments" do
 end
 
 datasource "ds_updated_adjustments" do
-  run_script $js_update_adjustments, $ds_xe_monthly_average, $ds_current_adjustments, $ds_date, $param_cloud_provider, $param_cloud_provider_name, $param_currency_from, $param_currency_to
+  run_script $js_update_adjustments, $ds_exchange_rates, $ds_current_adjustments, $ds_date_list, $param_cloud_provider, $param_cloud_provider_name, $param_currency_from, $param_currency_to, $param_backfill_exchange_rate
 end
 
 script "js_update_adjustments", type: "javascript" do
-  parameters "ds_xe_monthly_average", "ds_adjustments", "ds_date", "param_cloud_provider", "param_cloud_provider_name", "param_currency_from", "param_currency_to"
+  parameters "ds_exchange_rates", "ds_current_adjustments", "ds_date_list", "param_cloud_provider", "param_cloud_provider_name", "param_currency_from", "param_currency_to", "param_backfill_exchange_rate"
   result "result"
   code <<-EOS
-  // Get conversion rate (monthly average)
-  conversion_rate = ds_xe_monthly_average.to[param_currency_to][0].monthlyAverage
+  now_date = new Date()
+  now_date = new Date(now_date.toISOString().split("T")[0])
+  now_month = now_date.toISOString().split('-')[1]
+  now_year = now_date.toISOString().split('-')[0]
+
+  existing_adjustment_lists = {}
+
+  _.each(ds_current_adjustments['dated_adjustment_lists'], function(list) {
+    existing_adjustment_lists[list['effective_at']] = list['adjustment_list']
+  })
+
+  // Include any existing rules for months we don't intend to modify
+  new_adjustments = _.reject(ds_current_adjustments['dated_adjustment_lists'], function(list) {
+    return _.contains(ds_date_list, list['effective_at'])
+  })
 
   // Cloud provider
   cloud_provider = param_cloud_provider
   if (param_cloud_provider == "Google Cloud") { cloud_provider = "GCP" }
   if (param_cloud_provider == "Other") { cloud_provider = param_cloud_provider_name }
-
-  // Create currency coversion adjustment rule
   new_adj_name = "Currency Conversion - " + cloud_provider
 
-  currency_conversion_rule = {
-    name: new_adj_name,
-    rules: [
-      {
-        condition: {
-          type: "dimension_equals",
-          dimension: "vendor",
-          value: cloud_provider
-        },
-        cost_multiplier: conversion_rate - 1,
-        label: param_currency_from + " to " + param_currency_to
-      }
-    ]
-  }
+  _.each(ds_date_list, function(date) {
+    year = date.split('-')[0]
+    month = date.split('-')[1]
+    existing_list = existing_adjustment_lists[date]
 
-  // Get adjustment list for current month (as this is the one that needs to be modified) if it exists
-  current_effective_at_month = ds_date['currentMonth']
-  dated_adjustment_lists = ds_adjustments['dated_adjustment_lists']
+    if (param_backfill_exchange_rate == "Backdated Exchange Rate") {
+      conversion_rate = ds_exchange_rates[year][month]
+    } else {
+      conversion_rate = ds_exchange_rates[now_year][now_month]
+    }
 
-  current_adjustment_list = _.find(dated_adjustment_lists, function(adj_list) {
-    return adj_list['effective_at'] == current_effective_at_month
+    currency_conversion_rule = {
+      name: new_adj_name,
+      rules: [
+        {
+          condition: {
+            type: "dimension_equals",
+            dimension: "vendor",
+            value: cloud_provider
+          },
+          cost_multiplier: conversion_rate - 1,
+          label: param_currency_from + " to " + param_currency_to
+        }
+      ]
+    }
+
+    adjustment_list = [ currency_conversion_rule ]
+
+    if (existing_list != undefined) {
+      // Check if a Currency Conversion adjustment rule already exists for current month
+      adj_name = _.find(existing_list, function(list) {
+        return list['name'] == new_adj_name
+      })
+
+      // Add CC rule to existing rules while filtering for existing CC rules
+      adjustment_list = _.filter(existing_list, function(list) {
+        // Return 'true' for all items if we did not find an existing CC rule
+        return list['name'] != new_adj_name || adj_name == undefined
+      })
+
+      adjustment_list.push(currency_conversion_rule)
+    }
+
+    new_adjustment_list = {
+      adjustment_list: adjustment_list,
+      effective_at: date
+    }
+
+    new_adjustments.push(new_adjustment_list)
   })
-
-  // Set new adjustment list to our currency conversion rule generated above
-  adjustment_list = [ currency_conversion_rule ]
-
-  // If adjustments exist for current month, add our rule to them
-  if (current_adjustment_list != undefined) {
-    // Check if a Currency Conversion adjustment rule already exists for current month
-    adj_name = _.find(current_adjustment_list['adjustment_list'], function(list) {
-      return list['name'] == new_adj_name
-    })
-
-    // Add CC rule to existing rules while filtering for existing CC rules
-    adjustment_list = _.filter(current_adjustment_list['adjustment_list'], function(list) {
-      // Return 'true' for all items if we did not find an existing CC rule
-      return list['name'] != new_adj_name || adj_name == undefined
-    })
-
-    adjustment_list.push(currency_conversion_rule)
-  }
-
-  new_adjustment_list = {
-    adjustment_list: adjustment_list,
-    effective_at: current_effective_at_month
-  }
-
-  // Reject adjustments for current month (if exists) from existing adjustment lists object
-  new_adjustments = _.reject(ds_adjustments['dated_adjustment_lists'], function(list) {
-    return list['effective_at'] == current_effective_at_month
-  })
-
-  new_adjustments.push(new_adjustment_list)
 
   result = { new_adjustment_list: JSON.stringify({ dated_adjustment_lists: new_adjustments }) }
 EOS
