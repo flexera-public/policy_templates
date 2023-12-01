@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.1
+
+- Changed default value of `Underutilized Instance CPU Threshold (%)` parameter to 40%.
+
 ## v4.0
 
 - Added parameter to specify how far back to check instances for activity
