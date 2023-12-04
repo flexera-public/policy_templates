@@ -99,6 +99,7 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+# Get a list of years that we need monthly exchange rates for based on parameters
 datasource "ds_rate_years" do
   run_script $js_rate_years, $param_backfill, $param_backfill_start_date, $param_backfill_exchange_rate
 end
@@ -109,10 +110,18 @@ script "js_rate_years", type: "javascript" do
   code <<-EOS
   result = []
 
-  if (param_backfill == "Current Month" || param_backfill_exchange_rate == "Current Exchange Rate") {
-    result.push(new Date().toISOString().split('-')[0])
+  // We need to get exchange rates for previous year in case current month is January and
+  // we need exchange rate info from December of the previous year
+  if (param_backfill == "Current Month" || param_backfill_exchange_rate == "Current Exchange Rate" || param_backfill_start_date == '') {
+    current_year = Number(new Date().toISOString().split('-')[0])
+    previous_year = current_year - 1
+
+    result.push(previous_year.toString())
+    result.push(current_year.toString())
   } else {
     back_year = Number(new Date(param_backfill_start_date).toISOString().split('-')[0])
+    back_year -= 1
+
     current_year = Number(new Date().toISOString().split('-')[0])
 
     do {
@@ -123,7 +132,8 @@ script "js_rate_years", type: "javascript" do
 EOS
 end
 
-datasource "ds_xe_monthly_average" do
+# Gather exchange rates for each year
+datasource "ds_xe_exchange_rates" do
   iterate $ds_rate_years
   request do
     host "api.xe-auth.flexeraeng.com"
@@ -142,57 +152,76 @@ datasource "ds_xe_monthly_average" do
   end
 end
 
+# Assemble exchange rates into a simple object that can be used later
 datasource "ds_exchange_rates" do
-  run_script $js_exchange_rates, $ds_xe_monthly_average, $param_currency_to
+  run_script $js_exchange_rates, $ds_xe_exchange_rates, $param_currency_to
 end
 
 script "js_exchange_rates", type: "javascript" do
-  parameters "ds_xe_monthly_average", "param_currency_to"
+  parameters "ds_xe_exchange_rates", "param_currency_to"
   result "result"
   code <<-EOS
   result = {}
   currency_code = param_currency_to.toUpperCase().trim()
 
-  _.each(ds_xe_monthly_average, function(item) {
-    year = item['year'].toString()
+  _.each(ds_xe_exchange_rates, function(item) {
+    year_num = item['year'].toString()
 
     _.each(item['to'][currency_code], function(month) {
       month_num = month['month'].toString()
       if (month['month'] < 10) { month_num = '0' + month_num }
+      date = [year_num, month_num].join('-')
 
-      if (result[year] == undefined) { result[year] = {} }
-      result[year][month_num] = month['monthlyAverage']
-    }
+      result[date] = month['monthlyAverage']
+    })
   })
 EOS
 end
 
-datasource "ds_date_list" do
-  run_script $js_date_list, $param_backfill, $param_backfill_start_date
+# Create a list of months in YYYY-MM format that we need to apply adjustments for
+datasource "ds_month_list" do
+  run_script $js_month_list, $param_backfill, $param_backfill_start_date
 end
 
-script "js_date_list", type: "javascript" do
+script "js_month_list", type: "javascript" do
   parameters "param_backfill", "param_backfill_start_date"
   result "result"
   code <<-EOS
   result = []
 
-  now_date = new Date()
-  now_date = new Date(now_date.toISOString().split("T")[0])
-  now_month = now_date.toISOString().split('-')[1]
-  now_year = now_date.toISOString().split('-')[0]
+  now_month = new Date().toISOString().split('-')[1]
+  now_year = new Date().toISOString().split('-')[0]
 
-  start_date = now_date
+  // Start at current month unless user has specified to backfill
+  start_date = new Date()
 
-  if (param_backfill == "Backfill Previous Months") {
+  if (param_backfill == "Backfill Previous Months" && param_backfill_start_date != '') {
     start_date = new Date(param_backfill_start_date)
   }
 
   start_month = start_date.toISOString().split('-')[1]
   start_year = start_date.toISOString().split('-')[0]
 
-  do {
-    result.push(start_year + '-' + start_month)
+  // Move back one month so that we have the previousDate value
+  // Note: Due to how JS handles date objects, we have no simple way to move forward or backwards
+  // one month that doesn't have edge cases where this fails.
+  // This is why we track the month and year as integers.
+  if (start_month == '01') {
+    start_year = (Number(start_year) - 1).toString()
+    start_month = '12'
+  } else {
+    start_month = Number(start_month) - 1
+
+    if (start_month < 10) {
+      start_month = '0' + start_month.toString()
+    } else {
+      start_month = start_month.toString()
+    }
+  }
+
+  // Iterate until we have a list with every month until current month
+  while (now_month != start_month && now_year != start_year) {
+    previousDate = start_year + '-' + start_month
 
     if (start_month == '12') {
       start_year = (Number(start_year) + 1).toString()
@@ -206,7 +235,14 @@ script "js_date_list", type: "javascript" do
         start_month = start_month.toString()
       }
     }
-  } while (now_month != start_month && now_year != start_year)
+
+    currentDate = start_year + '-' + start_month
+
+    result.push({
+      previousDate: previousDate,
+      currentDate: currentDate
+    })
+  }
 EOS
 end
 
@@ -220,17 +256,35 @@ datasource "ds_current_adjustments" do
 end
 
 datasource "ds_updated_adjustments" do
-  run_script $js_update_adjustments, $ds_exchange_rates, $ds_current_adjustments, $ds_date_list, $param_cloud_provider, $param_cloud_provider_name, $param_currency_from, $param_currency_to, $param_backfill_exchange_rate
+  run_script $js_update_adjustments, $ds_exchange_rates, $ds_current_adjustments, $ds_month_list, $param_cloud_provider, $param_cloud_provider_name, $param_currency_from, $param_currency_to, $param_backfill_exchange_rate
 end
 
 script "js_update_adjustments", type: "javascript" do
-  parameters "ds_exchange_rates", "ds_current_adjustments", "ds_date_list", "param_cloud_provider", "param_cloud_provider_name", "param_currency_from", "param_currency_to", "param_backfill_exchange_rate"
+  parameters "ds_exchange_rates", "ds_current_adjustments", "ds_month_list", "param_cloud_provider", "param_cloud_provider_name", "param_currency_from", "param_currency_to", "param_backfill_exchange_rate"
   result "result"
   code <<-EOS
   now_date = new Date()
   now_date = new Date(now_date.toISOString().split("T")[0])
   now_month = now_date.toISOString().split('-')[1]
   now_year = now_date.toISOString().split('-')[0]
+
+  previous_month = now_month
+  previous_year = now_year
+
+  if (previous_month == '01') {
+    previous_year = (Number(previous_year) - 1).toString()
+    previous_month = '12'
+  } else {
+    previous_month = Number(previous_month) - 1
+
+    if (previous_month < 10) {
+      previous_month = '0' + previous_month.toString()
+    } else {
+      previous_month = previous_month.toString()
+    }
+  }
+
+  previous_date = previous_year + '-' + previous_month
 
   existing_adjustment_lists = {}
 
@@ -240,7 +294,7 @@ script "js_update_adjustments", type: "javascript" do
 
   // Include any existing rules for months we don't intend to modify
   new_adjustments = _.reject(ds_current_adjustments['dated_adjustment_lists'], function(list) {
-    return _.contains(ds_date_list, list['effective_at'])
+    return _.contains(_.pluck(ds_month_list, 'currentDate'), list['effective_at'])
   })
 
   // Cloud provider
@@ -249,15 +303,13 @@ script "js_update_adjustments", type: "javascript" do
   if (param_cloud_provider == "Other") { cloud_provider = param_cloud_provider_name }
   new_adj_name = "Currency Conversion - " + cloud_provider
 
-  _.each(ds_date_list, function(date) {
-    year = date.split('-')[0]
-    month = date.split('-')[1]
-    existing_list = existing_adjustment_lists[date]
+  _.each(ds_month_list, function(date) {
+    existing_list = existing_adjustment_lists[date['currentDate']]
+
+    conversion_rate = ds_exchange_rates[previous_date]
 
     if (param_backfill_exchange_rate == "Backdated Exchange Rate") {
-      conversion_rate = ds_exchange_rates[year][month]
-    } else {
-      conversion_rate = ds_exchange_rates[now_year][now_month]
+      conversion_rate = ds_exchange_rates[date['previousDate']]
     }
 
     currency_conversion_rule = {
@@ -321,7 +373,7 @@ end
 # Policy
 ###############################################################################
 
-policy "pol_currency_conversion_daily_rates" do
+policy "pol_currency_conversion" do
   validate $ds_new_adjustments do
     summary_template "Currency Conversion - {{ parameters.param_cloud_provider }} - {{ parameters.param_currency_from }} to {{ parameters.param_currency_to }}"
     detail_template "Adjustments Uploaded"
