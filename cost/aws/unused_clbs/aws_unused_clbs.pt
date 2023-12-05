@@ -119,7 +119,7 @@ end
 script "js_flexera_api_hosts", type: "javascript" do
   parameters "rs_optima_host"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
       flexera: "api.flexera.com",
@@ -182,7 +182,7 @@ end
 script "js_aws_account", type:"javascript" do
   parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = _.find(ds_cloud_vendor_accounts, function(account) {
     return account['id'] == ds_get_caller_identity[0]['account']
   })
@@ -227,7 +227,7 @@ end
 script "js_top_level_bcs", type: "javascript" do
   parameters "ds_billing_centers"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   filtered_bcs = _.filter(ds_billing_centers, function(bc) {
     return bc['parent_id'] == null || bc['parent_id'] == undefined
   })
@@ -267,7 +267,7 @@ end
 script "js_currency", type:"javascript" do
   parameters "ds_currency_reference", "ds_currency_code"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   symbol = "$"
   separator = ","
 
@@ -320,7 +320,7 @@ end
 script "js_regions", type:"javascript" do
   parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   allow_deny_test = { "Allow": true, "Deny": false }
 
   if (param_regions_list.length > 0) {
@@ -341,18 +341,17 @@ datasource "ds_clbs_without_tags" do
     path "/"
     header "Accept", "application/json"
     query "Action", "DescribeLoadBalancers"
-    query "Version", "2015-12-01"
+    # Newer versions of API will not list Classic Load Balancers
+    query "Version", "2012-06-01"
   end
   result do
     encoding "json"
     collect jmes_path(response, "DescribeLoadBalancersResponse.DescribeLoadBalancersResult.LoadBalancerDescriptions[*]") do
       field "name", jmes_path(col_item, "LoadBalancerName")
       field "scheme", jmes_path(col_item, "Scheme")
-      field "vpc", jmes_path(col_item, "VpcId")
       field "created", jmes_path(col_item, "CreatedTime")
       field "dns", jmes_path(col_item, "DNSName")
-      field "state", jmes_path(col_item, "State.Code")
-      field "type", jmes_path(col_item, "Type")
+      field "vpc", jmes_path(col_item, "VPCId")
       field "zones", jmes_path(col_item, "AvailabilityZones")
       field "instances", jmes_path(col_item, "Instances[*].InstanceId")
       field "region", val(iter_item, "region")
@@ -368,7 +367,7 @@ datasource "ds_clbs" do
     path "/"
     header "Accept", "application/json"
     query "Action", "DescribeTags"
-    query "Version", "2015-12-01"
+    query "Version", "2012-06-01"
     query "LoadBalancerNames.member.1", val(iter_item, "name")
   end
   result do
@@ -382,11 +381,9 @@ datasource "ds_clbs" do
       end
       field "name", val(iter_item, "name")
       field "scheme", val(iter_item, "scheme")
-      field "vpc", val(iter_item, "vpc")
       field "created", val(iter_item, "created")
       field "dns", val(iter_item, "dns")
-      field "state", val(iter_item, "state")
-      field "type", val(iter_item, "type")
+      field "vpc", val(iter_item, "vpc")
       field "zones", val(iter_item, "zones")
       field "instances", val(iter_item, "instances")
       field "region", val(iter_item, "region")
@@ -401,7 +398,7 @@ end
 script "js_clbs_tag_filtered", type: "javascript" do
   parameters "ds_clbs", "param_exclusion_tags"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_exclusion_tags.length > 0) {
     result = _.reject(ds_clbs, function(clb) {
       clb_tags = []
@@ -437,7 +434,7 @@ datasource "ds_instances_health" do
     path "/"
     query "Action", "DescribeInstanceHealth"
     query "Version", "2012-06-01"
-    query "LoadBalancerName", val(iter_item, "loadBalancerName")
+    query "LoadBalancerName", val(iter_item, "name")
     header "Accept", "application/json"
   end
   result do
@@ -445,303 +442,322 @@ datasource "ds_instances_health" do
     collect jmes_path(response, "DescribeInstanceHealthResponse.DescribeInstanceHealthResult.InstanceStates[*]") do
       field "description", jmes_path(col_item, "Description")
       field "state", jmes_path(col_item, "State")
-      field "instanceId", jmes_path(col_item, "InstanceId")
-      field "loadBalancerName", val(iter_item, "loadBalancerName")
+      field "id", jmes_path(col_item, "InstanceId")
+      field "lb_name", val(iter_item, "loadBalancerName")
     end
   end
 end
 
-datasource "ds_unused_clb_map" do
-  run_script $js_aws_clb_filter_map, $ds_clb_list_tags,$ds_instances_health,$param_exclusion_tags
+datasource "ds_unused_clbs" do
+  run_script $js_unused_clbs, $ds_clbs_tag_filtered, $ds_instances_health
 end
 
-script "js_aws_clb_filter_map", type: "javascript" do
-  parameters "ds_clb_list_tags","ds_instances_health","param_exclusion_tags"
-  result "content"
-  code <<-EOS
-    var param_exclusion_tags_lower=[];
-    for(var j=0; j < param_exclusion_tags.length; j++){
-      param_exclusion_tags_lower[j]=param_exclusion_tags[j].toString().toLowerCase();
+script "js_unused_clbs", type: "javascript" do
+  parameters "ds_clbs_tag_filtered", "ds_instances_health"
+  result "result"
+  code <<-'EOS'
+  result = []
+  unhealthy_description = "Instance has failed at least the UnhealthyThreshold number of health checks consecutively."
+  instances_object = {}
+
+  _.each(ds_instances_health, function(instance) {
+    lb_name = instance['lb_name']
+
+    if (instances_object[lb_name] == undefined) { instances_object[lb_name] = [] }
+    instances_object[lb_name].push(instance)
+  })
+
+  _.filter(ds_clbs_tag_filtered, function(clb) {
+    name = clb['name']
+    unused = false
+
+    if (typeof(clb['instances']) != 'object') {
+      unused = true
+    } else {
+      if (clb['instances'].length == 0) { unused = true }
     }
 
-    var content=[]
-    for(var i=0; i<ds_clb_list_tags.length; i++){
-      clb=ds_clb_list_tags[i]
+    if (unused == false) {
+      if (instances_object[name] == undefined) {
+        unused = true
+      } else {
+        healthy_instance_found = false
 
-      // Constructing availabilityZones with comma separated to display in detail_template
-      var availabilityZones=clb['availabilityZones']
-      var s_availabilityZones=""
-      for(var j=0; j < availabilityZones.length; j++){
-        availabilityZone = availabilityZones[j]
-        s_availabilityZones = s_availabilityZones + ', '+ availabilityZone
-      }
-
-      // Constructing InstanceIds with comma separated to display in detail_template
-      var instancesList = clb['instancesList']
-      var s_instanceIds=""
-      for(var j=0; j < instancesList.length; j++){
-        instanceId = instancesList[j]
-        s_instanceIds = s_instanceIds + ', '+ instanceId
-      }
-
-      //Constructing Tags of individual CLB into key=value format. Check, if the tag present in entered param_exclusion_tags, ignore the CLB if the tag matches/present.
-      var tags = clb['tags']
-      var isTagMatched=false
-      var tagKeyValue=""
-      for(var j=0; j < tags.length; j++){
-        tag = tags[j]
-        if(param_exclusion_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1){
-          isTagMatched = true;
-        }
-        // Constructing tags with comma separated to display in detail_template
-        tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
-      }
-
-      //If the CLB tag does not match with entered param_exclusion_tags, then check if any instance exists in the CLB and check for instances health.
-      if(!(isTagMatched)){
-        clb_details={
-          id: clb['loadBalancerName'],
-          instanceId:(s_instanceIds.slice(2)),
-          availabilityZones:(s_availabilityZones.slice(2)),
-          tagKeyValue:(tagKeyValue.slice(2)),
-          region: clb['region'],
-          savings:"N/A"
-        }
-        if(instancesList.length > 0){
-          var isInstanceNotHealthy=false
-          // Check if the CLB has no healthy instance with state and description matches for the values mentioned below
-          var state= "OutOfService"
-          var description= "Instance has failed at least the UnhealthyThreshold number of health checks consecutively."
-          for(var k=0; k < ds_instances_health.length; k++){
-            instance= ds_instances_health[k]
-            if(((instance['loadBalancerName']) == (clb['loadBalancerName'])) && (instance['state'] == state && instance['description'] == description)){
-              isInstanceNotHealthy=true
-            }
+        _.each(instances_object[name], function(instance) {
+          if (instance['state'] != "OutOfService" || instance['description'] != unhealthy_description) {
+            healthy_instance_found = true
           }
-          if(isInstanceNotHealthy){
-            content.push(clb_details)
-          }
-        }else{
-          content.push(clb_details)
-        }
+        })
+
+        unused = !healthy_instance_found
       }
     }
-  EOS
+
+    return unused
+  })
+EOS
 end
 
-datasource "ds_clbs_costs" do
+datasource "ds_clb_costs" do
   request do
-    run_script $js_get_costs, $ds_get_caller_identity, $ds_top_level_billing_centers, rs_org_id, rs_optima_host
+    run_script $js_clb_costs, $ds_aws_account, $ds_top_level_bcs, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
     collect jmes_path(response,"rows[*]") do
-      field "resource_id", jmes_path(col_item,"dimensions.resource_id")
-      field "cost_nonamortized_unblended_adj", jmes_path(col_item,"metrics.cost_nonamortized_unblended_adj")
-      field "resource_type", jmes_path(col_item,"dimensions.resource_type")
+      field "id", jmes_path(col_item, "dimensions.resource_id")
+      field "cost", jmes_path(col_item,"metrics.cost_amortized_blended_adj")
     end
   end
 end
 
-script "js_get_costs", type:"javascript" do
-  parameters  "account_id","billing_centers","org", "optima_host"
+script "js_clb_costs", type:"javascript" do
+  parameters "ds_aws_account", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
   result "request"
-  code <<-EOS
-    // returns date formatted as string: YYYY-mm-dd
-    function getFormattedDailyDate(date) {
-      var year = date.getFullYear();
-      var month = (1 + date.getMonth()).toString();
-      month = month.length > 1 ? month : '0' + month;
-      var day = date.getDate().toString();
-      day = day.length > 1 ? day : '0' + day;
-      return year + '-' + month + '-' + day;
-    }
-    var start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 3)));
-    var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)));
-    var request = {
-      auth: "auth_flexera",
-      host: optima_host,
-      verb: "POST",
-      path: "/bill-analysis/orgs/" + org + "/costs/select",
-      body_fields: {
-        "dimensions": ["resource_id","resource_type"],
-        "granularity": "day",
-        "start_at": start_date,
-        "end_at": end_date,
-        "metrics": ["cost_nonamortized_unblended_adj"],
-        "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id})),
-        "limit": 100000,
-        "filter": {
-          "expressions": [
-            {
-              "dimension": "service",
-              "type": "equal",
-              "value": "AWSELB"
-            },
-            {
-              "dimension": "resource_type",
-              "type": "equal",
-              "value": "Load Balancer"
-            },
-            {
-              "dimension": "vendor_account",
-              "type": "equal",
-              "value": account_id[0]["account"]
-            }
-          ],
-          "type": "and"
-        }
-      },
-      headers: {
-        "User-Agent": "RS Policies",
-        "Api-Version": "1.0"
-      },
-      ignore_status: [400]
-    }
-  EOS
+  code <<-'EOS'
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split('T')[0]
+
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
+    body_fields: {
+      "dimensions": ["resource_id"],
+      "granularity": "day",
+      "start_at": start_date,
+      "end_at": end_date,
+      "metrics": ["cost_amortized_blended_adj"],
+      "billing_center_ids": ds_top_level_bcs,
+      "limit": 100000,
+      "filter": {
+        "type": "and",
+        "expressions": [
+          {
+            "dimension": "service",
+            "type": "equal",
+            "value": "AWSELB"
+          },
+          {
+            "dimension": "resource_type",
+            "type": "equal",
+            "value": "Load Balancer"
+          },
+          {
+            "dimension": "vendor_account",
+            "type": "equal",
+            "value": ds_aws_account['id']
+          }
+        ]
+      }
+    },
+    headers: {
+      "User-Agent": "RS Policies",
+      "Api-Version": "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
 end
 
-datasource "ds_clbs_cost_mapping" do
-  run_script $js_clbs_cost_mapping, $ds_unused_clb_map, $ds_clbs_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity
+datasource "ds_clb_costs_grouped" do
+  run_script $js_clb_costs_grouped, $ds_clb_costs
 end
 
-script "js_clbs_cost_mapping", type:"javascript" do
-  parameters  "clbs","clbs_cost","ds_currency_code","ds_currency_reference", "ds_billing_centers", "ds_get_caller_identity"
+script "js_clb_costs_grouped", type: "javascript" do
+  parameters "ds_clb_costs"
   result "result"
-  code <<-EOS
-  var total=0;
-  var result = {};
-  var loadbalancers = [];
-  var message='';
-  var count=0;
+  code <<-'EOS'
+  // Multiple a single day's cost by the average number of days in a month.
+  // The 0.25 is to account for leap years for extra precision.
+  cost_multiplier = 365.25 / 12
+
+  // Group cost data by resourceId for later use
+  result = {}
+
+  _.each(ds_clb_costs, function(item) {
+    id = item['id'].toLowerCase()
+
+    if (result[id] == undefined) { result[id] = 0.0 }
+    result[id] += item['cost'] * cost_multiplier
+  })
+EOS
+end
+
+datasource "ds_unused_clb_cost_mapping" do
+  run_script $js_unused_clb_cost_mapping, $ds_clbs_tag_filtered, $ds_unused_clbs, $ds_clb_costs_grouped, $ds_applied_policy, $ds_aws_account, $ds_currency, $param_min_savings
+end
+
+script "js_unused_clb_cost_mapping", type: "javascript" do
+  parameters "ds_clbs_tag_filtered", "ds_unused_clbs", "ds_clb_costs_grouped", "ds_applied_policy", "ds_aws_account", "ds_currency", "param_min_savings"
+  result "result"
+  code <<-'EOS'
+  // Used for formatting numbers to look pretty
   function formatNumber(number, separator){
-    var numString =number.toString();
-    var values=numString.split(".");
-    var result = ''
-    while (values[0].length > 3){
+    numString = number.toString()
+    values = numString.split(".")
+    formatted_number = ''
+
+    while (values[0].length > 3) {
       var chunk = values[0].substr(-3)
       values[0] = values[0].substr(0, values[0].length - 3)
-      result = separator + chunk + result
+      formatted_number = separator + chunk + formatted_number
     }
-    if (values[0].length > 0){
-      result = values[0] + result
-    }
-    if(values[1]==undefined){
-      return result;
-    }
-    return result+"."+values[1];
+
+    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
+    if (values[1] == undefined) { return formatted_number }
+
+    return formatted_number + "." + values[1]
   }
-  if(ds_billing_centers.length!=0){
-    // Put costs into a map by resource ID and only include them for resource IDs we actually need
-    var costs_by_resource_id = {};
-    _.each(clbs, function(clb) {
-      costs_by_resource_id[clb.id] = [];
-    });
-    _.each(clbs_cost, function(cost) {
-      var costs = costs_by_resource_id[cost.resource_id.replace(/^loadbalancer\\//, '')];
-      if (costs != null) {
-        costs.push(cost);
-      }
-    });
-    // Format costs with currency symbol and thousands separator
-    if( ds_currency_code['value'] !== undefined ) {
-      if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
-        var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
-        if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
-          var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
-        } else {
-          var separator = ""
-        }
-      } else {
-        var cur = ""
-        var separator = ""
-      }
-    } else {
-      var cur = "$"
-      var separator = ","
+
+  result = []
+
+  total_savings = 0.0
+
+  _.each(ds_unused_clbs, function(clb) {
+    clb_id = clb['name'].toLowerCase()
+
+    savings = 0.0
+    if (ds_clb_costs_grouped[clb_id] != undefined) {
+      savings = ds_clb_costs_grouped[clb_id]
     }
-    _.each(clbs, function(clb){
-      var cost_objects = costs_by_resource_id[clb.id];
-      if (_.size(cost_objects) > 0){
-        count++;
-        var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
-        var monthly_savings = sum*30;
-        total=total+monthly_savings;
-        loadbalancers.push({
-          accountId: ds_get_caller_identity[0]['account'],
-          id : clb['id'],
-          region : clb['region'],
-          availabilityZones : clb['availabilityZones'],
-          instanceId : clb['instanceId'],
-          tagKeyValue : clb['tagKeyValue'],
-          savings: cur + ' '+formatNumber((Math.round(monthly_savings * 100) / 100), separator),
-        })
-      } else {
-        loadbalancers.push({
-          accountId: ds_get_caller_identity[0]['account'],
-          id : clb['id'],
-          region : clb['region'],
-          availabilityZones : clb['availabilityZones'],
-          instanceId : clb['instanceId'],
-          tagKeyValue : clb['tagKeyValue'],
-          savings: "N/A",
-        })
-      }
-    })
-    if(count){
-      var total_savings=cur + ' '+formatNumber((Math.round(total * 100) / 100), separator);
-      message=message="The total estimated monthly savings are "+total_savings;
+
+    if (savings >= param_min_savings) {
+      total_savings += savings
+
+      recommendationDetails = [
+        "Delete AWS Classic Load Balancer ", clb['name'], " ",
+        "in AWS Account ", ds_aws_account['name'], " ",
+        "(", ds_aws_account['id'], ")"
+      ].join('')
+
+      tags = []
+
+      _.each(clb['tags'], function(tag) {
+        tags.push(tag['key'] + '=' + tag['value'])
+      })
+
+      created = new Date(Math.round(clb['created'] * 1000)).toISOString()
+
+      result.push({
+        accountID: ds_aws_account['id'],
+        accountName: ds_aws_account['name'],
+        resourceID: clb['name'],
+        scheme: clb['scheme'],
+        dns: clb['dns'],
+        vpc: clb['vpc'],
+        zones: clb['zones'].join(', '),
+        instances: clb['instances'],
+        region: clb['region'],
+        savings: parseFloat(savings.toFixed(3)),
+        savingsCurrency: ds_currency['symbol'],
+        policy_name: ds_applied_policy['name'],
+        created: created,
+        tags: tags.join(', '),
+        resourceType: 'Classic Load Balancer',
+        service: "ELB",
+        recommendationDetails: recommendationDetails,
+        // These are to avoid errors when we hash_exclude these fields
+        message: "",
+        total_savings: ""
+      })
     }
-    else{
-      message="The Flexera Optima system does not have any data to calculate savings for these resources";
-    }
-  }
-  else{
-    loadbalancers=clbs;
-    message="You do not have the minimum required role of billing_center_viewer to view the savings";
-  }
-  result={
-    "clbs": loadbalancers,
-    "message": message
-  };
-  EOS
+  })
+
+  // Message for incident output
+  total_clbs = ds_clbs_tag_filtered.length.toString()
+  total_unused_clbs = result.length.toString()
+  unused_clbs_percentage = (total_unused_clbs / total_clbs * 100).toFixed(2).toString() + '%'
+
+  findings = [
+    "Out of ", total_clbs, " volumes analyzed, ",
+    total_unused_clbs, " (", unused_clbs_percentage,
+    ") are unused and recommended for deletion."
+  ].join('')
+
+  total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['separator'])
+
+  // Dummy item to ensure the policy's check statement always executes at least once
+  result.push({
+    resourceID: "",
+    message: "",
+    total_savings: "",
+    tags: "",
+    savings: "",
+    savingsCurrency: ""
+  })
+
+  result[0]['message'] = findings
+  result[0]['total_savings'] = total_savings
+EOS
 end
 
 ###############################################################################
 # Policy
 ###############################################################################
 
-policy "policy_delete_unused_CLB" do
-  validate $ds_clbs_cost_mapping do
-    check eq(size(val(data, "clbs")), 0)
+policy "policy_unused_clbs" do
+  validate_each $ds_unused_clb_cost_mapping do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Unused Classic Load Balancers Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
-    escalate $esc_delete_clb
-    summary_template "AWS Account ID: {{with index data.clbs 0}}{{ .accountId }}{{end}} - {{ len data.clbs }} Unused Classic Load Balancers Found in AWS"
-    detail_template <<-EOS
-{{data.message}}
-EOS
-    export "clbs" do
+    escalate $esc_delete_clbs
+    hash_exclude "message", "total_savings", "tags", "savings", "savingsCurrency"
+    export do
       resource_level true
-      field "accountId" do
-        label "Account Id"
+      field "accountID" do
+        label "Account ID"
       end
-      field "id" do
-        label "LoadBalancer Name"
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Resource Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "resourceType" do
+        label "Resource Type"
       end
       field "region" do
         label "Region"
       end
-      field "instanceId" do
-        label "Instance ID"
-      end
-      field "availabilityZones" do
+      field "zones" do
         label "Availability Zones"
       end
-      field "tagKeyValue" do
-        label "Tag Value"
+      field "vpc" do
+        label "VPC"
+      end
+      field "created" do
+        label "Creation Date"
       end
       field "savings" do
         label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
       end
     end
   end
@@ -758,11 +774,11 @@ escalation "esc_email" do
   email $param_email
 end
 
-escalation "esc_delete_clb" do
-  automatic contains($param_automatic_action, "Delete Load balancers")
-  label "Delete CLB"
-  description "Delete selected unused CLB"
-  run "delete_CLB", data, $param_log_to_cm_audit_entries, rs_optima_host
+escalation "esc_delete_clbs" do
+  automatic contains($param_automatic_action, "Delete Classic Load Balancers")
+  label "Delete Classic Load Balancers"
+  description "Approval to delete all selected instances"
+  run "delete_CLB", data, rs_optima_host
 end
 
 ###############################################################################
@@ -770,8 +786,8 @@ end
 ###############################################################################
 
 #https://docs.aws.amazon.com/elasticloadbalancing/2012-06-01/APIReference/API_DeleteLoadBalancer.html
-define delete_CLB($data,$param_log_to_cm_audit_entries, $$rs_optima_host) return $all_responses do
-  $$debug = $param_log_to_cm_audit_entries == "Yes"
+define delete_CLB($data, $$rs_optima_host) return $all_responses do
+  $$debug = false
   $all_responses = []
   foreach $item in $data do
     sub on_error: skip do
@@ -824,4 +840,94 @@ end
 define skip_error_and_append($subject) do
   $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
   $_error_behavior = "skip"
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
 end
