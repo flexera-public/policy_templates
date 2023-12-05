@@ -441,25 +441,7 @@ end
 script "js_azure_virtual_machines_with_disk_space", type: "javascript" do
   result "result"
   code <<-EOS
-  var result = [
-    {
-        "vmId": "/subscriptions/0f84a200-3cb8-418a-b1ca-5bacb4fbfec1/resourceGroups/resource-group-2/providers/Microsoft.Compute/virtualMachines/azure-vm-1",
-        "osDisk": {
-            "id": "/subscriptions/0f84a200-3cb8-418a-b1ca-5bacb4fbfec1/resourceGroups/resource-group-2/providers/Microsoft.Compute/disks/azure-vm-1_OsDisk_1_156ae183cd2d44e5b1775e3a86515fab",
-            "diskUsedGB": 4
-        },
-        "dataDisks": [
-            {
-                "id": "/subscriptions/0f84a200-3cb8-418a-b1ca-5bacb4fbfec1/resourceGroups/RESOURCE-GROUP-2/providers/Microsoft.Compute/disks/vm-1-data-disk-0",
-                "diskUsedGB": 2
-            },
-            {
-                "id": "/subscriptions/0f84a200-3cb8-418a-b1ca-5bacb4fbfec1/resourceGroups/RESOURCE-GROUP-2/providers/Microsoft.Compute/disks/vm-1-data-disk-1",
-                "diskUsedGB": 3
-            }
-        ]
-    }
-]
+  var result = []
 EOS
 end
 
@@ -497,13 +479,24 @@ script "js_azure_disks_with_metrics", type: "javascript" do
     // OS disk
     for (var j in correspondingVmWithMetrics.metrics) {
       var metric = correspondingVmWithMetrics.metrics[j]
+      if (vmWithDisk.osDisk === null) continue;
       if (metric.name.value === "OS Disk IOPS Consumed Percentage") {
-        vmWithDisk.osDisk.iopsConsumedPctAvg = metric.timeseries[0].data[0].average
-        vmWithDisk.osDisk.iopsConsumedPctMax = metric.timeseries[0].data[0].maximum
+        try {
+          vmWithDisk.osDisk.iopsConsumedPctAvg = metric.timeseries[0].data[0].average
+          vmWithDisk.osDisk.iopsConsumedPctMax = metric.timeseries[0].data[0].maximum
+        } catch (err) {
+          vmWithDisk.osDisk.iopsConsumedPctAvg = 0
+          vmWithDisk.osDisk.iopsConsumedPctMax = 0
+        }
       }
       if (metric.name.value === "OS Disk Bandwidth Consumed Percentage") {
-        vmWithDisk.osDisk.bandwithConsumedPctAvg = metric.timeseries[0].data[0].average
-        vmWithDisk.osDisk.bandwithConsumedPctMax = metric.timeseries[0].data[0].maximum
+        try {
+          vmWithDisk.osDisk.bandwithConsumedPctAvg = metric.timeseries[0].data[0].average
+          vmWithDisk.osDisk.bandwithConsumedPctMax = metric.timeseries[0].data[0].maximum
+        } catch (err) {
+          vmWithDisk.osDisk.bandwithConsumedPctAvg = 0
+          vmWithDisk.osDisk.bandwithConsumedPctMax = 0
+        }
       }
     }
     // Data disks
@@ -534,7 +527,9 @@ script "js_azure_disks_with_metrics", type: "javascript" do
     var correspondingVmWithSpace = _.find(ds_azure_virtual_machines_with_disk_space, function(vmWithSpace) { return vmWithSpace.vmId.toLowerCase() === vmWithDisk.vmId.toLowerCase() })
     if (correspondingVmWithSpace === undefined) continue;
     // OS disk
-    vmWithDisk.osDisk.diskUsedGB = correspondingVmWithSpace.osDisk.diskUsedGB
+    if (vmWithDisk.osDisk != null) {
+      vmWithDisk.osDisk.diskUsedGB = correspondingVmWithSpace.osDisk.diskUsedGB
+    }
     // Data disks
     for (var j in vmWithDisk.dataDisks) {
       var dataDisk = vmWithDisk.dataDisks[j]
@@ -546,8 +541,11 @@ script "js_azure_disks_with_metrics", type: "javascript" do
 
   var disksWithMetrics = []
   _.each(ds_azure_virtual_machines_with_disks, function(vmWithDisk) {
-    vmWithDisk.osDisk.diskType = "os"
-    disksWithMetrics.push(vmWithDisk.osDisk)
+    if (vmWithDisk.osDisk != null) {
+      vmWithDisk.osDisk.diskType = "os"
+      // By now, we only care about data disks.
+      // disksWithMetrics.push(vmWithDisk.osDisk)
+    }
     _.each(vmWithDisk.dataDisks, function(dataDisk) {
       dataDisk.diskType = "data"
       disksWithMetrics.push(dataDisk)
@@ -674,11 +672,11 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
     var suggestedDiskSize = currentUsedGB
     var maxIops = 0
     var maxThroughput = 0
-    while (diskIopsAndThroughputDontFit) {
+    while (diskIopsAndThroughputDontFitInDiskSize) {
       maxIops = suggestedDiskSize * 500
       maxThroughput = maxIops * 0.25
       if (currentUsedIops <= maxIops && currentUsedThroughput <= maxThroughput) {
-        diskIopsAndThroughputDontFit = false
+        diskIopsAndThroughputDontFitInDiskSize = false
       }
       suggestedDiskSize += 1
     }
