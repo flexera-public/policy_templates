@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This Policy creates adjustment rules that convert the currency of the cost associated with the Cloud Vendor of choice. It utilizes xe.com to retrieve the latest exchange rates.
+This policy creates adjustment rules that convert the currency of the cost associated with the Cloud Vendor of choice. It utilizes xe.com to retrieve the latest exchange rates.
 
 ## Functional Details
 

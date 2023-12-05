@@ -107,7 +107,7 @@ end
 script "js_month_list", type: "javascript" do
   parameters "param_backfill", "param_backfill_start_date"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   // Function to take YYYY-MM formatted date and move it backwards or forwards by month
   function move_month(date_string, amount) {
     year = Number(date_string.split('-')[0])
@@ -172,7 +172,7 @@ end
 script "js_month_list_for_xe", type: "javascript" do
   parameters "ds_month_list"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   dates = _.uniq(_.pluck(ds_month_list, 'previous').concat(_.pluck(ds_month_list, 'current')))
 
   result = _.map(dates, function(date) {
@@ -209,7 +209,7 @@ end
 script "js_exchange_rates", type: "javascript" do
   parameters "ds_xe_exchange_rates", "param_currency_to"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = {}
   currency_code = param_currency_to.toUpperCase().trim()
 
@@ -237,13 +237,13 @@ datasource "ds_current_adjustments" do
 end
 
 datasource "ds_updated_adjustments" do
-  run_script $js_update_adjustments, $ds_exchange_rates, $ds_current_adjustments, $ds_month_list, $param_cloud_provider, $param_cloud_provider_name, $param_currency_from, $param_currency_to, $param_backfill_exchange_rate
+  run_script $js_update_adjustments, $ds_exchange_rates, $ds_current_adjustments, $ds_month_list, $param_cloud_provider, $param_cloud_provider_name, $param_currency_from, $param_currency_to, $param_backfill_exchange_rate, $param_backfill, $param_backfill_start_date
 end
 
 script "js_update_adjustments", type: "javascript" do
-  parameters "ds_exchange_rates", "ds_current_adjustments", "ds_month_list", "param_cloud_provider", "param_cloud_provider_name", "param_currency_from", "param_currency_to", "param_backfill_exchange_rate"
+  parameters "ds_exchange_rates", "ds_current_adjustments", "ds_month_list", "param_cloud_provider", "param_cloud_provider_name", "param_currency_from", "param_currency_to", "param_backfill_exchange_rate", "param_backfill", "param_backfill_start_date"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   // Get most recent exchange rate
   current_conversion_rate = ds_exchange_rates[ds_month_list[ds_month_list.length - 1]['previous']]
 
@@ -315,12 +315,30 @@ script "js_update_adjustments", type: "javascript" do
     new_adjustments.push(new_adjustment_list)
   })
 
-  result = { new_adjustment_list: JSON.stringify({ dated_adjustment_lists: new_adjustments }) }
+  this_month = new Date().toISOString().split('-')[0] + '-' + new Date().toISOString().split('-')[1]
+
+  message = "Adjustments applied for cloud provider " + cloud_provider + " for month of " + this_month + "."
+
+  if (param_backfill != 'Current Month' && param_backfill_start_date != '') {
+    message = "Adjustments applied for cloud provider " + cloud_provider + " from month of " + param_backfill_start_date + " to month of " + this_month + ".\n\n"
+
+    if (param_backfill_exchange_rate == 'Backdated Exchange Rate') {
+      message += "Backdated exchange rates were used for previous months."
+    } else {
+      message += "Current exchange rate was used for previous months."
+    }
+  }
+
+  result = [{
+    list: JSON.stringify({ dated_adjustment_lists: new_adjustments }),
+    message: message
+  }]
 EOS
 end
 
 # Update adjustment table to include new currency conversion adjustments
 datasource "ds_new_adjustments" do
+  iterate $ds_updated_adjustments
   request do
     auth $auth_flexera
     host rs_optima_host
@@ -328,7 +346,11 @@ datasource "ds_new_adjustments" do
     path join(["/bill-analysis/orgs/", rs_org_id, "/adjustments/"])
     header "content-type", "application/json"
     header "User-Agent", "RS Policies"
-    body val($ds_updated_adjustments, "new_adjustment_list")
+    body val(iter_item, "list")
+  end
+  result do
+    encoding "json"
+    field "message", val(iter_item, "message")
   end
 end
 
@@ -337,9 +359,9 @@ end
 ###############################################################################
 
 policy "pol_currency_conversion" do
-  validate $ds_new_adjustments do
+  validate_each $ds_new_adjustments do
     summary_template "Currency Conversion - {{ parameters.param_cloud_provider }} - {{ parameters.param_currency_from }} to {{ parameters.param_currency_to }}"
-    detail_template "Adjustments Uploaded"
+    detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
     check eq(0, 1)
   end
 end
