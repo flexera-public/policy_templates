@@ -7,62 +7,108 @@ category "Compliance"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "2.13",
+  version: "3.0",
   provider: "Azure",
-  service: "",
+  service: "Compute",
   policy_set: "Untagged Resources"
 )
 
 ###############################################################################
-# User inputs
+# Parameters
 ###############################################################################
 
 parameter "param_email" do
   type "list"
-  label "Email addresses to notify"
-  description "Email addresses of the recipients you wish to notify when new incidents are created"
+  category "Policy Settings"
+  label "Email addresses"
+  description "A list of email addresses to notify."
+  default []
 end
 
 parameter "param_azure_endpoint" do
   type "string"
+  category "Policy Settings"
   label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
   allowed_values "management.azure.com", "management.chinacloudapi.cn"
   default "management.azure.com"
 end
 
-parameter "param_subscription_allowed_list" do
-  label "Subscription Allowed List"
+parameter "param_tags" do
   type "list"
-  description "Allowed Subscriptions, if empty, all subscriptions will be checked"
+  category "Filters"
+  label "Tags (Key:Value)"
+  description "Cloud native tags to find resources with missing tags. Use Key:Value format for specific tag key/value pairs, and Key:* format to match any resource missing a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:*"
+  allowed_pattern /(^$)|[\w]*\:.*/
+  default []
 end
 
-parameter "param_tags_to_check" do
+parameter "param_subscriptions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Subscriptions"
+  description "Allow or Deny entered Subscriptions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_subscriptions_list" do
   type "list"
-  label "Tag Keys"
-  category "Azure"
-  allowed_pattern /\S/
-  description "List of tags keys e.g., 'Environment' to find resources which are not tagged by the given inputs"
-  constraint_description <<-EOS
-    This is a mandatory field.
-  EOS
+  category "Filters"
+  label "Allow/Deny Subscriptions List"
+  description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Tag Instances", "Stop Instances", "Delete Instances"]
+  default []
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-credentials "azure_auth" do
+credentials "auth_azure" do
   schemes "oauth2"
   label "Azure"
   description "Select the Azure Resource Manager Credential from the list."
   tags "provider=azure_rm"
 end
 
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
 ###############################################################################
 # Pagination
 ###############################################################################
 
-pagination "azure_pagination" do
+pagination "pagination_azure" do
   get_page_marker do
     body_path "nextLink"
   end
@@ -75,256 +121,265 @@ end
 # Datasources & Scripts
 ###############################################################################
 
-#GET LIST OF AZURE SUBSCRIPTIONS
-datasource "ds_subscriptions" do
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
   request do
-    auth $azure_auth
-    pagination $azure_pagination
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_azure_subscriptions" do
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
     host $param_azure_endpoint
     path "/subscriptions/"
-    query "api-version","2018-06-01"
+    query "api-version", "2020-01-01"
     header "User-Agent", "RS Policies"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
   end
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "subscriptionId", jmes_path(col_item,"subscriptionId")
-      field "subscriptionName", jmes_path(col_item,"displayName")
+      field "id", jmes_path(col_item, "subscriptionId")
+      field "name", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
     end
   end
 end
 
-#FILTER SUBSCRIPTIONS BY 'SUBSCRIPTION WHITELIST' PARAMETERS
-datasource "ds_filtered_subscriptions" do
-  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_allowed_list
+datasource "ds_azure_subscriptions_filtered" do
+  run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
 end
 
-script "js_filtered_subscriptions", type: "javascript" do
-  parameters "ds_subscriptions", "param_subscription_allowed_list"
-  result "results"
-  code <<-EOS
-  var results = []
-  if ( param_subscription_allowed_list.length != 0){
-    results = []
-    _.each(param_subscription_allowed_list, function(sub){
-      var found = _.find(ds_subscriptions, function(item){
-        return item.subscriptionId == sub || item.subscriptionName.toLowerCase() == sub.toLowerCase();
-      })
-      results.push(found)
+script "js_azure_subscriptions_filtered", type: "javascript" do
+  parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
+  result "result"
+  code <<-'EOS'
+  if (param_subscriptions_list.length > 0) {
+    result = _.filter(ds_azure_subscriptions, function(subscription) {
+      include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
+
+      if (param_subscriptions_allow_or_deny == "Deny") {
+        include_subscription = !include_subscription
+      }
+
+      return include_subscription
     })
   } else {
-    results = ds_subscriptions
+    result = ds_azure_subscriptions
   }
-  EOS
+EOS
 end
 
-#GET LIST OF ALL RESOURCES FOR EACH SUBSCRIPTION
-datasource "ds_azure_resources" do
-  iterate $ds_filtered_subscriptions
+datasource "ds_azure_instances" do
+  iterate $ds_azure_subscriptions_filtered
   request do
-    auth $azure_auth
-    pagination $azure_pagination
+    auth $auth_azure
+    pagination $pagination_azure
     host $param_azure_endpoint
-    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/resources"])
-    query "api-version","2020-06-01"
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Compute/virtualMachines"])
+    query "api-version", "2019-03-01"
     header "User-Agent", "RS Policies"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-    ignore_status [400,403,404]
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "subscriptionId", val(iter_item,"subscriptionId")
-      field "subscriptionName", val(iter_item,"subscriptionName")
-      field "id", jmes_path(col_item,"id")
-      field "resourceGroup", get(4,split(jmes_path(col_item,"id"),'/'))
-      field "namespace", get(6,split(jmes_path(col_item,"id"),'/'))
-      field "region", jmes_path(col_item,"location")
-      field "name", jmes_path(col_item,"name")
-      field "tags", jmes_path(col_item,"tags")
-      field "type", jmes_path(col_item,"type")
+      field "resourceId", jmes_path(col_item, "id")
+      field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
+      field "resourceKind", jmes_path(col_item, "type")
+      field "name", jmes_path(col_item, "name")
+      field "region", jmes_path(col_item, "location")
+      field "osType", jmes_path(col_item, "properties.storageProfile.osDisk.osType")
+      field "resourceType", jmes_path(col_item, "properties.hardwareProfile.vmSize")
+      field "tags", jmes_path(col_item, "tags")
+      field "subscriptionId",val(iter_item, "id")
+      field "subscriptionName",val(iter_item, "name")
     end
   end
 end
 
-#GET AZURE TAG SUPPORT DATA FROM GITHUB
-# See also: https://docs.microsoft.com/en-us/azure/azure-resource-manager/management/tag-support
-# and the original CSV: https://raw.githubusercontent.com/tfitzmac/resource-capabilities/master/tag-support.csv
-datasource "ds_tag_support" do
-  request do
-    host "raw.githubusercontent.com"
-    path "/flexera/policy_templates/master/data/azure/tag-support.csv"
-  end
-  result do
-    encoding "text"
-  end
+datasource "ds_azure_instances_region_filtered" do
+  run_script $js_azure_instances_region_filtered, $ds_azure_instances, $param_regions_allow_or_deny, $param_regions_list
 end
 
-datasource "ds_parsed_tag_support" do
-  run_script $js_parse_tag_support, $ds_tag_support
-end
-
-script "js_parse_tag_support", type: "javascript" do
-  parameters "ds_tag_support"
+script "js_azure_instances_region_filtered", type: "javascript" do
+  parameters "ds_azure_instances", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
-  code <<-EOS
-    var result = {};
-    var rows = ds_tag_support.split(/\\r?\\n/);
-    // Skip headers
-    rows.shift();
-    _.each(rows, function(row){
-      var fields = row.split(',');
-      result[(fields[0]+"/"+fields[1]).toLowerCase()] = fields[2];
-    });
-  EOS
+  code <<-'EOS'
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_azure_instances, function(vm) {
+      include_vm = _.contains(param_regions_list, vm['region'])
+
+      if (param_regions_allow_or_deny == "Deny") {
+        include_vm = !include_vm
+      }
+
+      return include_vm
+    })
+  } else {
+    result = ds_azure_instances_tag_filtered
+  }
+EOS
 end
 
-#FILTER RESOURCES BY 'TAGS TO CHECK' PARAMETER
-datasource "ds_filtered_resources" do
-  run_script $js_filter_resources, $ds_azure_resources, $param_tags_to_check, $ds_parsed_tag_support
+datasource "ds_azure_instances_missing_tags" do
+  run_script $js_azure_instances_missing_tags, $ds_azure_instances_region_filtered, $param_tags
 end
 
-script "js_filter_resources", type: "javascript" do
-  parameters "ds_azure_resources", "param_tags_to_check", "ds_parsed_tag_support"
+script "js_azure_instances_missing_tags", type: "javascript" do
+  parameters "ds_azure_instances_region_filtered", "param_tags"
   result "result"
-  code <<-EOS
-  result=[];
+  code <<-'EOS'
+  if (param_exclusion_tags.length > 0) {
+    result = _.filter(ds_azure_instances, function(vm) {
+      vm_tags = []
 
-  //Convert Tag Objects to Tag Arrays for each Resource
-  _.each(ds_azure_resources, function(resource){
-
-    //Create variable for original tag object
-    var tags = resource.tags
-    console.log("Original Tags:", tags)     //for reference
-
-    //Overwrite orginal tag object with empty tag array
-    resource["tags"] = []
-    if (!( tags == null || tags == undefined )) {
-      var tag_keys = _.keys(tags)          //list of tag keys
-      _.each(tag_keys, function(key){
-        resource.tags.push({
-          "tagKey": key,
-          "tagValue": tags[key]
+      if (typeof(vm['tags']) == 'object') {
+        _.each(Object.keys(vm['tags']), function(key) {
+          vm_tags.push([key, ":", vm['tags'][key]].join(''))
+          vm_tags.push([key, ":*"].join(''))
         })
+      }
+
+      include_vm = false
+
+      _.each(param_exclusion_tags, function(exclusion_tag) {
+        if (_.contains(vm_tags, exclusion_tag) == false) {
+          include_vm = true
+        }
+      })
+
+      return include_vm
+    })
+  } else {
+    result = []
+  }
+EOS
+end
+
+datasource "ds_missing_tags_incident" do
+  run_script $js_missing_tags_incident, $ds_azure_instances_missing_tags, $ds_applied_policy, $param_tags
+end
+
+script "js_missing_tags_incident", type: "javascript" do
+  parameters "ds_azure_instances_missing_tags", "ds_applied_policy", "param_tags"
+  result "result"
+  code <<-'EOS'
+  result = _.map(ds_azure_instances_missing_tags, function(instance) {
+    instance_tags = []
+
+    if (typeof(instance['tags']) == 'object') {
+      _.each(Object.keys(instance['tags']), function(key) {
+        instance_tags.push(key + '=' + instance['tags'][key])
       })
     }
-    console.log("Resource Name: " + resource.name, "Resource Tags:", resource.tags)     //for reference
+
+    return {
+      accountID: instance['subscriptionId'],
+      accountName: instance['subscriptionName'],
+      resourceGroup: instance['resourceGroup'],
+      resourceName: instance['name'],
+      resourceID: instance['resourceId'],
+      resourceType: instance['resourceType'],
+      resourceKind: instance['resourceKind'],
+      region: instance['region'],
+      osType: instance['osType'],
+      tags_object: instance['tags'],
+      service: 'Microsoft.Compute',
+      tags: instance_tags.join(', '),
+      policy_name: ds_applied_policy['name']
+    }
   })
 
-  //For each Resource in Resource List
-  _.each(ds_azure_resources, function(resource){
-
-    //Create a field for Missing tags
-    resource["missingTagKeys"] = []
-    resource["missingTagValues"] = []
-
-    //For each Tag in Param Tag List
-    _.each(param_tags_to_check, function(param){
-      // Find Param Tag Key in Resource Tag Array
-      current_tag = _.find(resource.tags, function(tag){ return tag.tagKey == param })
-      // If Tag Key does not exist for Resource, create Missing Tag field and set to True
-      if ( current_tag == undefined || current_tag == null) {
-        resource["isMissingTagKey"] = true
-        resource.missingTagKeys.push(param)
-      }
-      // Otherwise, if Tag Key does exist...
-      else {
-        // and if Tag Value is empty, create Missing Tag field and set to True
-        if ( current_tag.tagValue == "" || current_tag.tagValue == null ) {
-          resource["isMissingTagValue"] = true
-          resource.missingTagValues.push(param)
-        }
-      }
-    })
+  // Dummy item to ensure that the check statement in the policy executes at least once
+  result.push({
+    accountID: "",    accountName: "",   resourceGroup: "",  resourceName: "",
+    resourceID: "",   resourceType: "",  resourceKind: "",   region: "",
+    osType: "",       tags_object: "",   service: "",        tags: "",
+    policy_name: ""
   })
 
-  //Filter out all tags where isMissingTag != true
-  filtered_resources = _.filter(ds_azure_resources, function(resource){ return resource.isMissingTagKey == true || resource.isMissingTagValue == true })
+  message = ["The following Azure virtual machines are missing one or more of the following tags:\n\n"]
 
+  _.each(param_tags, function(tag) {
+    key = tag.split(':')[0]
+    value = tag.split(':')[1]
 
-  _.each(filtered_resources, function(resource){
+    message.push("- ")
+    message.push(key)
+    message.push("=")
+    message.push(value)
+    message.push("\n")
+  })
 
-    // Create string for existing Tags
-    var existing_tags = ""
-    _.each(resource.tags, function(tag){
-      if ( existing_tags == "" ) { existing_tags += tag.tagKey + "=" + tag.tagValue }
-      else { existing_tags += ", " + tag.tagKey + "=" + tag.tagValue }
-    })
+  disclaimer = "\n\nThe above settings can be modified by editing the applied policy and changing the appropriate parameters."
 
-    var tag_support=ds_parsed_tag_support[resource["type"].toLowerCase()];
-
-    if((resource["isMissingTagKey"] || resource["isMissingTagValue"])&&(tag_support!=='FALSE')){
-      result.push({
-        subscriptionId: resource["subscriptionId"],
-        subscriptionName : resource["subscriptionName"],
-        id: resource["id"],
-        region: resource["region"],
-        name: resource["name"],
-        resource_group: resource["resourceGroup"],
-        namespace: resource["namespace"],
-        resource_type: resource["type"],
-        missingTagKeys: resource["missingTagKeys"]
-        missingTagValues: resource["missingTagValues"]
-        existingTags: existing_tags,
-        tag_support: tag_support
-        })
-      }
-    })
-
-  //Sort result data
-  result = _.sortBy(result, 'subscriptionName')
-  result = _.sortBy(result, 'resource_type')
-  result = _.sortBy(result, 'name')
-  EOS
+  result[0]['message'] = message.join('') + disclaimer
+EOS
 end
+
 
 ###############################################################################
 # Policy
 ###############################################################################
 
-policy "policy_azure_resource" do
-  validate $ds_filtered_resources do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure untagged resources found."
+policy "pol_azure_missing_tags" do
+  validate_each $ds_missing_tags_incident do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Virtual Machines Missing Tags Found"
+    detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
+    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
-    escalate $esc_tag_resources
-    check eq(size(data),0)
+    escalate $esc_tag_instances
+    escalate $esc_stop_instances
+    escalate $esc_delete_instances
+    hash_exclude "message"
     export do
       resource_level true
-      field "subscriptionName" do
-        label "Subscription Name"
-      end
-      field "resource_type" do
-        label "Resource Type"
-      end
-      field "tag_support" do
-        label "Tag Support"
-      end
-      field "name" do
-        label "Resource Name"
-      end
-      field "resource_group" do
-        label "Resource Group"
-      end
-      field "region" do
-        label "Azure Region"
-      end
-      field "id" do
-        label "Resource ID"
-      end
-      field "existingTags" do
-        label "Existing Tags"
-      end
-      field "missingTagKeys" do
-        label "Missing Tags"
-      end
-      field "missingTagValues" do
-        label "Tag Keys with Missing Tag Values"
-      end
-      field "subscriptionId" do
+      field "accountID" do
         label "Subscription ID"
       end
-      field "namespace" do
-        label "Namespace"
+      field "accountName" do
+        label "Subscription Name"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "resourceType" do
+        label "Instance Size"
+      end
+      field "resourceKind" do
+        label "Resource Kind"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "osType" do
+        label "Operating System"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "ID"
+        path "resourceId"
       end
     end
   end
@@ -341,17 +396,33 @@ escalation "esc_email" do
   email $param_email
 end
 
-#ADD TAGS TO UNTAGGED RESOURCES
 escalation "esc_tag_resources" do
   automatic false
   label "Add Tags"
   description "Update tags of the selected resource"
   parameter "param_tags_to_add" do
     type "list"
-    label "Add Tags - Enter the list of tags you wish to add to the selected resource. Tags should follow 'Key=Value' format."
-    description "Enter the list of tags you wish to add to the selected resource. Tags should follow 'Key=Value' format."
+    category "Actions"
+    label "Add Tags (Key:Value)"
+    description "Cloud native tags to add to resources with missing tags. Use Key:Value format. Examples: env:production, team:finance"
+    allowed_pattern /(^$)|[\w]*\:.*/
+    default []
   end
-  run "cwf_add_tags", data, $param_tags_to_add, $param_azure_endpoint
+  run "tag_instances", data, $param_azure_endpoint, $param_tags_to_add
+end
+
+escalation "esc_stop_instances" do
+  automatic contains($param_automatic_action, "Stop Instances")
+  label "Stop Instances"
+  description "Approval to stop all selected instances"
+  run "stop_instances", data, $param_azure_endpoint
+end
+
+escalation "esc_delete_instances" do
+  automatic contains($param_automatic_action, "Delete Instances")
+  label "Delete Instances"
+  description "Approval to delete all selected instances"
+  run "delete_instances", data, $param_azure_endpoint
 end
 
 ###############################################################################
