@@ -43,6 +43,15 @@ parameter "param_min_savings" do
   default 0
 end
 
+parameter "param_loadbalancer_age" do
+  type "number"
+  category "Filters"
+  label "Load Balancer Age (Hours)"
+  description "Age, in hours, that a Classic Load Balancer needs to be to include it in the results. This is to avoid reporting on very new Classic Load Balancers that are still being configured."
+  min_value 0
+  default 1
+end
+
 parameter "param_regions_allow_or_deny" do
   type "string"
   category "Filters"
@@ -426,8 +435,30 @@ script "js_clbs_tag_filtered", type: "javascript" do
 EOS
 end
 
+datasource "ds_clbs_age_filtered" do
+  run_script $js_clbs_age_filtered, $ds_clbs_tag_filtered, $param_loadbalancer_age
+end
+
+script "js_clbs_age_filtered", type: "javascript" do
+  parameters "ds_clbs_tag_filtered", "param_loadbalancer_age"
+  result "result"
+  code <<-'EOS'
+  if (param_loadbalancer_age > 0) {
+    result = _.filter(ds_clbs_tag_filtered, function(clb) {
+      hours = param_loadbalancer_age * 3600000
+      now = new Date()
+      created = new Date(Math.round(clb['created'] * 1000))
+
+      return now - created > hours
+    })
+  } else {
+    result = ds_clbs_tag_filtered
+  }
+EOS
+end
+
 datasource "ds_instances_health" do
-  iterate $ds_clbs_tag_filtered
+  iterate $ds_clbs_age_filtered
   request do
     auth $auth_aws
     host join(["elasticloadbalancing.", val(iter_item, "region"), ".amazonaws.com"])
@@ -443,54 +474,50 @@ datasource "ds_instances_health" do
       field "description", jmes_path(col_item, "Description")
       field "state", jmes_path(col_item, "State")
       field "id", jmes_path(col_item, "InstanceId")
-      field "lb_name", val(iter_item, "loadBalancerName")
+      field "lb_name", val(iter_item, "name")
     end
   end
 end
 
-datasource "ds_unused_clbs" do
-  run_script $js_unused_clbs, $ds_clbs_tag_filtered, $ds_instances_health
+datasource "ds_instances_by_clb" do
+  run_script $js_instances_by_clb, $ds_instances_health
 end
 
-script "js_unused_clbs", type: "javascript" do
-  parameters "ds_clbs_tag_filtered", "ds_instances_health"
+script "js_instances_by_clb", type: "javascript" do
+  parameters "ds_instances_health"
   result "result"
   code <<-'EOS'
-  result = []
-  unhealthy_description = "Instance has failed at least the UnhealthyThreshold number of health checks consecutively."
-  instances_object = {}
+  result = {}
 
   _.each(ds_instances_health, function(instance) {
     lb_name = instance['lb_name']
 
-    if (instances_object[lb_name] == undefined) { instances_object[lb_name] = [] }
-    instances_object[lb_name].push(instance)
+    if (result[lb_name] == undefined) { result[lb_name] = [] }
+    result[lb_name].push(instance)
   })
+EOS
+end
 
-  _.filter(ds_clbs_tag_filtered, function(clb) {
+datasource "ds_unused_clbs" do
+  run_script $js_unused_clbs, $ds_clbs_age_filtered, $ds_instances_by_clb
+end
+
+script "js_unused_clbs", type: "javascript" do
+  parameters "ds_clbs_age_filtered", "ds_instances_by_clb"
+  result "result"
+  code <<-'EOS'
+  result = _.filter(ds_clbs_age_filtered, function(clb) {
     name = clb['name']
     unused = false
 
     if (typeof(clb['instances']) != 'object') {
       unused = true
-    } else {
-      if (clb['instances'].length == 0) { unused = true }
-    }
-
-    if (unused == false) {
-      if (instances_object[name] == undefined) {
-        unused = true
-      } else {
-        healthy_instance_found = false
-
-        _.each(instances_object[name], function(instance) {
-          if (instance['state'] != "OutOfService" || instance['description'] != unhealthy_description) {
-            healthy_instance_found = true
-          }
-        })
-
-        unused = !healthy_instance_found
-      }
+    } else if (clb['instances'].length == 0) {
+      unused = true
+    } else if (ds_instances_by_clb[name] == undefined) {
+      unused = true
+    } else if (_.contains(_.pluck(ds_instances_by_clb[name], 'state'), 'InService') == false) {
+      unused = true
     }
 
     return unused
@@ -591,11 +618,11 @@ EOS
 end
 
 datasource "ds_unused_clb_cost_mapping" do
-  run_script $js_unused_clb_cost_mapping, $ds_clbs_tag_filtered, $ds_unused_clbs, $ds_clb_costs_grouped, $ds_applied_policy, $ds_aws_account, $ds_currency, $param_min_savings
+  run_script $js_unused_clb_cost_mapping, $ds_clbs_age_filtered, $ds_unused_clbs, $ds_clb_costs_grouped, $ds_applied_policy, $ds_aws_account, $ds_currency, $param_min_savings, $param_loadbalancer_age
 end
 
 script "js_unused_clb_cost_mapping", type: "javascript" do
-  parameters "ds_clbs_tag_filtered", "ds_unused_clbs", "ds_clb_costs_grouped", "ds_applied_policy", "ds_aws_account", "ds_currency", "param_min_savings"
+  parameters "ds_clbs_age_filtered", "ds_unused_clbs", "ds_clb_costs_grouped", "ds_applied_policy", "ds_aws_account", "ds_currency", "param_min_savings", "param_loadbalancer_age"
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
@@ -653,14 +680,14 @@ script "js_unused_clb_cost_mapping", type: "javascript" do
         dns: clb['dns'],
         vpc: clb['vpc'],
         zones: clb['zones'].join(', '),
-        instances: clb['instances'],
+        instances: clb['instances'].join(', '),
         region: clb['region'],
         savings: parseFloat(savings.toFixed(3)),
         savingsCurrency: ds_currency['symbol'],
         policy_name: ds_applied_policy['name'],
         created: created,
         tags: tags.join(', '),
-        resourceType: 'Classic Load Balancer',
+        resourceType: "Classic Load Balancer",
         service: "ELB",
         recommendationDetails: recommendationDetails,
         // These are to avoid errors when we hash_exclude these fields
@@ -671,21 +698,42 @@ script "js_unused_clb_cost_mapping", type: "javascript" do
   })
 
   // Message for incident output
-  total_clbs = ds_clbs_tag_filtered.length.toString()
+  total_clbs = ds_clbs_age_filtered.length.toString()
   total_unused_clbs = result.length.toString()
   unused_clbs_percentage = (total_unused_clbs / total_clbs * 100).toFixed(2).toString() + '%'
 
+  lb_noun = "Classic Load Balancer"
+  if (total_clbs > 1) { lb_noun += "s" }
+
+  lb_verb = "is"
+  if (total_unused_clbs > 1) { lb_verb = "are" }
+
   findings = [
-    "Out of ", total_clbs, " volumes analyzed, ",
+    "Out of ", total_clbs, " AWS ", lb_noun, " analyzed, ",
     total_unused_clbs, " (", unused_clbs_percentage,
-    ") are unused and recommended for deletion."
+    ") ", lb_verb, " unused and recommended for deletion. "
   ].join('')
+
+  time_noun = "hours"
+  if (param_loadbalancer_age == 1) {time_noun = "hour" }
+
+  settings = "Results do not exclude recently created AWS Classic Load Balancers.\n\n"
+
+  if (param_loadbalancer_age != 0) {
+    settings = [
+      "AWS Classic Load Balancers older than ", param_loadbalancer_age, " ", time_noun,
+      " were excluded from the results.\n\n"
+    ].join('')
+  }
+
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
 
   total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['separator'])
 
   // Dummy item to ensure the policy's check statement always executes at least once
   result.push({
     resourceID: "",
+    instances: "",
     message: "",
     total_savings: "",
     tags: "",
@@ -693,7 +741,7 @@ script "js_unused_clb_cost_mapping", type: "javascript" do
     savingsCurrency: ""
   })
 
-  result[0]['message'] = findings
+  result[0]['message'] = findings + settings + disclaimer
   result[0]['total_savings'] = total_savings
 EOS
 end
@@ -713,7 +761,7 @@ policy "policy_unused_clbs" do
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     escalate $esc_delete_clbs
-    hash_exclude "message", "total_savings", "tags", "savings", "savingsCurrency"
+    hash_exclude "instances", "message", "total_savings", "tags", "savings", "savingsCurrency"
     export do
       resource_level true
       field "accountID" do
@@ -724,6 +772,9 @@ policy "policy_unused_clbs" do
       end
       field "resourceID" do
         label "Resource Name"
+      end
+      field "dns" do
+        label "DNS Name"
       end
       field "tags" do
         label "Resource Tags"
@@ -737,20 +788,23 @@ policy "policy_unused_clbs" do
       field "region" do
         label "Region"
       end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
       field "zones" do
         label "Availability Zones"
+      end
+      field "instances" do
+        label "Attached Instances"
       end
       field "vpc" do
         label "VPC"
       end
       field "created" do
         label "Creation Date"
-      end
-      field "savings" do
-        label "Estimated Monthly Savings"
-      end
-      field "savingsCurrency" do
-        label "Savings Currency"
       end
       field "service" do
         label "Service"
@@ -778,67 +832,64 @@ escalation "esc_delete_clbs" do
   automatic contains($param_automatic_action, "Delete Classic Load Balancers")
   label "Delete Classic Load Balancers"
   description "Approval to delete all selected instances"
-  run "delete_CLB", data, rs_optima_host
+  run "delete_clbs", data
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-#https://docs.aws.amazon.com/elasticloadbalancing/2012-06-01/APIReference/API_DeleteLoadBalancer.html
-define delete_CLB($data, $$rs_optima_host) return $all_responses do
-  $$debug = false
-  $all_responses = []
-  foreach $item in $data do
-    sub on_error: skip do
-      $response = http_request(
-        verb: "get",
-        host: join(["elasticloadbalancing.",$item["region"],".amazonaws.com"]),
-        auth: $$auth_aws,
-        href: join(["/", "?Action=DeleteLoadBalancer", "&LoadBalancerName=", $item["id"], "&Version=2012-06-01"]),
-        https: true,
-        headers:{
-          "cache-control": "no-cache",
-          "content-type": "application/json"
-        }
-      )
-      $all_responses << $response
-      call sys_log('CLB delete response',to_s($response))
+define delete_clbs($data) return $all_responses do
+  $$all_responses = []
+
+  foreach $clb in $data do
+    sub on_error: handle_error() do
+      call delete_clb($clb) retrieve $response
     end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
   end
 end
 
-define sys_log($subject, $detail) do
-  # Create empty errors array if doesn't already exist
+define delete_clb($clb) return $response do
+  $host = "elasticloadbalancing." + $clb["region"] + ".amazonaws.com"
+  $href = "/"
+  $params = "?Action=DeleteLoadBalancer&Version=2012-06-01&LoadBalancerName=" + $clb["resourceID"]
+  $url = $host + $href + $params
+  task_label("GET " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "get",
+    host: $host,
+    href: $href,
+    query_strings: {
+      "Action": "DeleteLoadBalancer",
+      "Version": "2012-06-01",
+      "LoadBalancerName": $clb["resourceID"]
+    }
+  )
+
+  task_label("GET AWS Classic Load Balancer response: " + $clb["resourceID"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response from GET AWS Classic Load Balancer: "+ $clb["resourceID"] + " " + to_json($response)
+  else
+    task_label("GET AWS Classic Load Balancer successful: " + $clb["resourceID"])
+  end
+end
+
+define handle_error() do
   if !$$errors
     $$errors = []
   end
-  # Check if debug is enabled
-  if $$debug
-    # Append to global $$errors
-    # This is the suggested way to capture errors
-    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
-    # If Flexera NAM Zone, create audit_entries [to be deprecated]
-    # This is the legacy method for capturing errors and only supported on Flexera NAM
-    if $$rs_optima_host == "api.optima.flexeraeng.com"
-      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
-      $task_label = "Creating audit entry for " + $subject
-      sub task_label: $task, on_error: skip_error_and_append($task) do
-        rs_cm.audit_entries.create(
-          notify: "None",
-          audit_entry: {
-            auditee_href: @@account,
-            summary: $subject,
-            detail: $detail
-          }
-        )
-      end # End sub on_error
-    end # End if rs_optima_host
-  end # End if debug is enabled
-end
-
-define skip_error_and_append($subject) do
-  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
   $_error_behavior = "skip"
 end
 
