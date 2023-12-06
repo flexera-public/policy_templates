@@ -94,7 +94,7 @@ parameter "param_min_used_disk_space_pct_for_downsizing" do
   description "The minimum used disk space percentage threshold at which to consider a disk to be 'oversized' and therefore be flagged for downsizing. Set to -1 to disable this filter."
   min_value -1
   max_value 100
-  default 50
+  default -1
 end
 
 parameter "param_min_used_disk_iops_pct_for_downsizing" do
@@ -364,16 +364,28 @@ script "js_azure_virtual_machines_with_disks", type: "javascript" do
   var result = []
   for (var i in ds_azure_disks_grouped_by_vm) {
     var vmId = ds_azure_disks_grouped_by_vm[i].vmId
-    var correspondingVm = _.find(ds_azure_virtual_machines, function(vm) { return vm.id.toLowerCase() === vmId.toLowerCase() })
+    try {
+      var correspondingVm = _.find(ds_azure_virtual_machines, function(vm) { return vm.id.toLowerCase() === vmId.toLowerCase() })
+    } catch(err) {
+      continue
+    }
     if (correspondingVm === undefined) continue;
     var virtualMachineWithDiskData = { vmId: vmId, osDisk: null, dataDisks: [] }
     for (j in ds_azure_disks_grouped_by_vm[i].disks) {
       var disk = ds_azure_disks_grouped_by_vm[i].disks[j]
-      if (correspondingVm.osDisk.managedDisk.id.toLowerCase() === disk.id.toLowerCase()) {
-        virtualMachineWithDiskData.osDisk = disk
+      try {
+        if (correspondingVm.osDisk.managedDisk.id.toLowerCase() === disk.id.toLowerCase()) {
+          virtualMachineWithDiskData.osDisk = disk
+          continue
+        }
+      } catch (err) {
         continue
       }
-      var correspondingDisk = _.find(correspondingVm.dataDisks, function(dataDisk) { return dataDisk.managedDisk.id.toLowerCase() === disk.id.toLowerCase() })
+      try {
+        var correspondingDisk = _.find(correspondingVm.dataDisks, function(dataDisk) { return dataDisk.managedDisk.id.toLowerCase() === disk.id.toLowerCase() })
+      } catch (err) {
+        continue
+      }
       if (correspondingDisk === undefined) continue;
       disk.lun = correspondingDisk.lun
       virtualMachineWithDiskData.dataDisks.push(disk)
@@ -479,7 +491,7 @@ script "js_azure_disks_with_metrics", type: "javascript" do
     // OS disk
     for (var j in correspondingVmWithMetrics.metrics) {
       var metric = correspondingVmWithMetrics.metrics[j]
-      if (vmWithDisk.osDisk === null) continue;
+      if (vmWithDisk.osDisk === null || vmWithDisk.osDisk === undefined) continue;
       if (metric.name.value === "OS Disk IOPS Consumed Percentage") {
         try {
           vmWithDisk.osDisk.iopsConsumedPctAvg = metric.timeseries[0].data[0].average
@@ -527,7 +539,7 @@ script "js_azure_disks_with_metrics", type: "javascript" do
     var correspondingVmWithSpace = _.find(ds_azure_virtual_machines_with_disk_space, function(vmWithSpace) { return vmWithSpace.vmId.toLowerCase() === vmWithDisk.vmId.toLowerCase() })
     if (correspondingVmWithSpace === undefined) continue;
     // OS disk
-    if (vmWithDisk.osDisk != null) {
+    if (vmWithDisk.osDisk != null && vmWithDisk.osDisk != undefined) {
       vmWithDisk.osDisk.diskUsedGB = correspondingVmWithSpace.osDisk.diskUsedGB
     }
     // Data disks
@@ -541,7 +553,7 @@ script "js_azure_disks_with_metrics", type: "javascript" do
 
   var disksWithMetrics = []
   _.each(ds_azure_virtual_machines_with_disks, function(vmWithDisk) {
-    if (vmWithDisk.osDisk != null) {
+    if (vmWithDisk.osDisk != null && vmWithDisk.osDisk != undefined) {
       vmWithDisk.osDisk.diskType = "os"
       // By now, we only care about data disks.
       // disksWithMetrics.push(vmWithDisk.osDisk)
@@ -640,7 +652,11 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
 
   function findDiskName(diskTier, diskSizeGB) {
     diskTier = diskTier.split("_")[0]
-    diskSizeGB = findDiskSize(diskTier, diskSizeGB)
+    try {
+      diskSizeGB = findDiskSize(diskTier, diskSizeGB)
+    } catch (err) {
+      return undefined
+    }
     for (diskName in ds_azure_md_tier_types) {
       var diskData = ds_azure_md_tier_types[diskName]
       if (diskData.tier === diskTier && diskData.sizeGiB === diskSizeGB) {
@@ -727,6 +743,7 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
   for (i in ds_azure_disks_with_metrics_thresholds_filtered) {
     var disk = ds_azure_disks_with_metrics_thresholds_filtered[i]
     var currentDiskName = findDiskName(disk.tier, disk.diskSizeGB)
+    if (currentDiskName === undefined) continue;
     var currentDiskData = ds_azure_md_tier_types[currentDiskName]
 
     var currentUsedIops = disk.iopsConsumedPctMax * currentDiskData.IOPS / 100
@@ -736,8 +753,12 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
     var fittingDiskData = ds_azure_md_tier_types[fittingDiskName]
 
     var currentDiskRedundancy = disk.tier.split("_")[1]
-    var currentDiskPrice = findDiskPrice(currentDiskName, currentDiskRedundancy, disk.region)
-    var fittingDiskPrice = findDiskPrice(fittingDiskName, currentDiskRedundancy, disk.region)
+    try {
+      var currentDiskPrice = findDiskPrice(currentDiskName, currentDiskRedundancy, disk.region)
+      var fittingDiskPrice = findDiskPrice(fittingDiskName, currentDiskRedundancy, disk.region)
+    } catch (err) {
+      continue
+    }
     var premSsdV2Price = findPremSsdV2Price(disk.region, disk.diskUsedGB != undefined ? disk.diskUsedGB : disk.diskSizeGB, currentUsedIops, currentUsedThroughput)
 
     // Righsizing from Premium SSD to Premium SSD v2
@@ -916,10 +937,10 @@ EOS
         label "Throughput Threshold %"
       end
       field "sizeGB" do
-        label "Size GB"
+        label "Actual Disk Size GB"
       end
       field "usedGBPct" do
-        label "Used GB %"
+        label "Actual Disk Used GB %"
       end
       field "lookbackPeriod" do
         label "Look Back Period (Days)"
