@@ -1,0 +1,547 @@
+name "Azure Untagged Resources"
+rs_pt_ver 20180301
+type "policy"
+short_description "Find all taggable Azure resources missing any of the user provided tags with the option to update the tags. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/azure_untagged_resources) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+category "Compliance"
+severity "low"
+default_frequency "weekly"
+info(
+  version: "3.0",
+  provider: "Azure",
+  service: "Compute",
+  policy_set: "Untagged Resources"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  category "Policy Settings"
+  label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_tags" do
+  type "list"
+  category "Filters"
+  label "Tags (Key:Value)"
+  description "Cloud native tags to find resources with missing tags. Use Key:Value format for specific tag key/value pairs, and Key:* format to match any resource missing a particular key, regardless of value. Examples: env:production, department:*"
+  allowed_pattern /(^$)|[\w]*\:.*/
+  default []
+end
+
+parameter "param_subscriptions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Subscriptions"
+  description "Allow or Deny entered Subscriptions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_subscriptions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Subscriptions List"
+  description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_azure" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_azure" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_azure_subscriptions" do
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path "/subscriptions/"
+    query "api-version", "2020-01-01"
+    header "User-Agent", "RS Policies"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "subscriptionId")
+      field "name", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
+    end
+  end
+end
+
+datasource "ds_azure_subscriptions_filtered" do
+  run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
+end
+
+script "js_azure_subscriptions_filtered", type: "javascript" do
+  parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
+  result "result"
+  code <<-'EOS'
+  if (param_subscriptions_list.length > 0) {
+    result = _.filter(ds_azure_subscriptions, function(subscription) {
+      include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
+
+      if (param_subscriptions_allow_or_deny == "Deny") {
+        include_subscription = !include_subscription
+      }
+
+      return include_subscription
+    })
+  } else {
+    result = ds_azure_subscriptions
+  }
+EOS
+end
+
+datasource "ds_azure_resources" do
+  iterate $ds_filtered_subscriptions
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "id"), "/resources"])
+    query "api-version", "2020-06-01"
+    header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscriptionId", val(iter_item, "id")
+      field "subscriptionName", val(iter_item, "name")
+      field "id", jmes_path(col_item,"id")
+      field "resourceGroup", get(4, split(jmes_path(col_item,"id"), '/'))
+      field "namespace", get(6, split(jmes_path(col_item,"id"), '/'))
+      field "region", jmes_path(col_item "location")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+      field "type", jmes_path(col_item, "type")
+    end
+  end
+end
+
+datasource "ds_azure_resources_region_filtered" do
+  run_script $js_azure_resources_region_filtered, $ds_azure_resources, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_azure_resources_region_filtered", type: "javascript" do
+  parameters "ds_azure_resources", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-'EOS'
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_azure_resources, function(resource) {
+      include_resource = _.contains(param_regions_list, resource['region'])
+
+      if (param_regions_allow_or_deny == "Deny") {
+        include_resource = !include_resource
+      }
+
+      return include_resource
+    })
+  } else {
+    result = ds_azure_resources
+  }
+EOS
+end
+
+datasource "ds_azure_resources_missing_tags" do
+  run_script $js_azure_resources_missing_tags, $ds_azure_resources_region_filtered, $param_tags
+end
+
+script "js_azure_resources_missing_tags", type: "javascript" do
+  parameters "ds_azure_resources_region_filtered", "param_tags"
+  result "result"
+  code <<-'EOS'
+  if (param_tags.length > 0) {
+    result = _.filter(ds_azure_resources_region_filtered, function(resource) {
+      resource_tags = []
+
+      if (typeof(resource['tags']) == 'object') {
+        _.each(Object.keys(resource['tags']), function(key) {
+          resource_tags.push([key, ":", resource['tags'][key]].join(''))
+          resource_tags.push([key, ":*"].join(''))
+        })
+      }
+
+      include_resource = false
+
+      _.each(param_tags, function(exclusion_tag) {
+        if (_.contains(resource_tags, exclusion_tag) == false) {
+          include_resource = true
+        }
+      })
+
+      return include_resource
+    })
+  } else {
+    result = []
+  }
+EOS
+end
+
+datasource "ds_missing_tags_incident" do
+  run_script $js_missing_tags_incident, $ds_azure_resources_missing_tags, $ds_applied_policy, $param_tags
+end
+
+script "js_missing_tags_incident", type: "javascript" do
+  parameters "ds_azure_resources_missing_tags", "ds_applied_policy", "param_tags"
+  result "result"
+  code <<-'EOS'
+  result = _.map(ds_azure_resources_missing_tags, function(resource) {
+    resource_tags = []
+
+    if (typeof(resource['tags']) == 'object') {
+      _.each(Object.keys(resource['tags']), function(key) {
+        resource_tags.push(key + '=' + resource['tags'][key])
+      })
+    }
+
+    return {
+      accountID: resource['subscriptionId'],
+      accountName: resource['subscriptionName'],
+      resourceGroup: resource['resourceGroup'],
+      resourceName: resource['name'],
+      resourceID: resource['id'],
+      resourceType: resource['type'],
+      region: resource['region'],
+      tags_object: resource['tags'],
+      tags: resource_tags.join(', '),
+      policy_name: ds_applied_policy['name'],
+      message: ""
+    }
+  })
+
+  // Dummy item to ensure that the check statement in the policy executes at least once
+  result.push({
+    accountID: "",    accountName: "",   resourceGroup: "",  resourceName: "",
+    resourceID: "",   resourceType: "",  region: "",         tags_object: "",
+    tags: "",         policy_name: "",   message: ""
+  })
+
+  message = ["The following Azure resources are missing one or more of the following tags:\n\n"]
+
+  _.each(param_tags, function(tag) {
+    key = tag.split(':')[0]
+    value = tag.split(':')[1]
+
+    message.push("- ")
+    message.push(key)
+    message.push("=")
+    message.push(value)
+    message.push("\n")
+  })
+
+  disclaimer = "\n\nThe above settings can be modified by editing the applied policy and changing the appropriate parameters."
+
+  result[0]['message'] = message.join('') + disclaimer
+EOS
+end
+
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_azure_missing_tags" do
+  validate_each $ds_missing_tags_incident do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Resources Missing Tags Found"
+    detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
+    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    escalate $esc_tag_instances
+    hash_exclude "message"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Subscription ID"
+      end
+      field "accountName" do
+        label "Subscription Name"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+      field "tags_object" do
+        label "Tag Object"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_tag_instances" do
+  automatic false
+  label "Add Tags"
+  description "Update tags of the selected instance"
+  parameter "param_tags_to_add" do
+    type "list"
+    category "Actions"
+    label "Add Tags (Key:Value)"
+    description "Cloud native tags to add to instances with missing tags. Use Key:Value format. Example: env:production"
+    allowed_pattern /(^$)|[\w]*\=.*/
+  end
+  run "tag_instances", data, $param_azure_endpoint, $param_tags_to_add
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define tag_instances($data, $param_azure_endpoint, $param_tags_to_add) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call tag_instance($instance, $param_azure_endpoint, $param_tags_to_add) retrieve $tag_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+define tag_instance($instance, $param_azure_endpoint, $param_tags_to_add) return $response do
+  $tags = $instance['tags_object']
+
+  if $tags == null
+    $tags = {}
+  end
+
+  foreach $tag in $param_tags_to_add do
+    $key = first(split($tag, ":"))
+    $value = last(split($tag, ":"))
+    $tags[$key] = $value
+  end
+
+  $host = $param_azure_endpoint
+  $href = $instance["id"]
+  $params = "?api-version=2023-07-01"
+  $url = $host + $href + $params
+  task_label("PATCH " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "patch",
+    host: $host,
+    href: $href,
+    query_strings: { "api-version": "2023-07-01" },
+    body: { "tags": $tags }
+  )
+
+  task_label("Patch Azure resource response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "PATCH " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response patching Azure resource: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Patch Azure resource successful: " + $instance["id"])
+  end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
+end
