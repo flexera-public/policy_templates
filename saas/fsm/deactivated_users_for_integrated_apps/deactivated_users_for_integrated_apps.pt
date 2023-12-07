@@ -1,0 +1,358 @@
+name "SaaS Manager - Deactivated Users for Integrated Applications"
+rs_pt_ver 20180301
+type "policy"
+short_description "This policy will create an incident when Flexera SaaS Manager identifies deactivated users for integrated applications. See the [README](https://github.com/flexera-public/policy_templates/tree/master/saas/fsm/deactivated_users_for_integrated_apps/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "medium"
+category "SaaS Management"
+default_frequency "weekly"
+info(
+  version: "3.0",
+  provider: "Flexera SaaS Manager",
+  service: "",
+  policy_set: ""
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify when new incidents are created."
+  default []
+end
+
+parameter "param_applications" do
+  type "list"
+  category "Policy Settings"
+  label "Applications"
+  description "A list of parent application names and/or IDs to check for deactivated users. Leave blank to check all applications."
+  default []
+end
+
+parameter "param_num_days" do
+  type "number"
+  category "Policy Settings"
+  label "Inactive Days Threshold"
+  description "Number of days since user was deactivated to include it in the results."
+  min_value 0
+  default 60
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+datasource "ds_managed_apps" do
+  request do
+    run_script $js_managed_apps, $ds_flexera_api_hosts, rs_org_id
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "appId", jmes_path(col_item, "appId")
+      field "appName", jmes_path(col_item, "appName")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "description", jmes_path(col_item, "description")
+      field "vendorName", jmes_path(col_item, "vendorName")
+      field "isActive", jmes_path(col_item, "isActive")
+      field "relatedApps", jmes_path(col_item, "relatedApps")
+    end
+  end
+end
+
+script "js_managed_apps", type: "javascript" do
+  parameters "ds_flexera_api_hosts", "rs_org_id"
+  result "request"
+  code <<-EOS
+  var request = {
+    auth: "auth_flexera",
+    host: ds_flexera_api_hosts["flexera"],
+    path: "/saas/v1/orgs/" + rs_org_id + "/managed-apps",
+    headers: { "content-type": "application/json" },
+    query_params: { "view": "extended" }
+  }
+EOS
+end
+
+# Filter out inactive and invalid apps to avoid needlessly checking them
+datasource "ds_managed_apps_active" do
+  run_script $js_managed_apps_active, $ds_managed_apps, $param_applications
+end
+
+script "js_managed_apps_active", type: "javascript" do
+  parameters "ds_managed_apps", "param_applications"
+  result "result"
+  code <<-EOS
+  if (param_applications.length > 0) {
+    result = _.filter(ds_managed_apps, function(app) {
+      include_app = _.contains(param_applications, app['appName']) || _.contains(param_applications, app['appId'])
+      return include_app && app['isActive'] == true && app['appName'] != null && app['vendorName'] != null
+    })
+  } else {
+    result = _.filter(ds_managed_apps, function(app) {
+      return app['isActive'] == true && app['appName'] != null && app['vendorName'] != null
+    })
+  }
+EOS
+end
+
+datasource "ds_integrated_app_ids" do
+  run_script $js_integrated_app_ids, $ds_managed_apps_active
+end
+
+script "js_integrated_app_ids", type: "javascript" do
+  parameters "ds_managed_apps_active"
+  result "result"
+  code <<-EOS
+  result = []
+
+  _.each(ds_managed_apps_active, function(managed_app) {
+    if (typeof(managed_app['relatedApps']) == 'object') {
+      _.each(managed_app['relatedApps'], function(related_app) {
+        if (related_app['relation'] == 'child') {
+          result.push({
+            parentAppId: managed_app['appId'],
+            parentAppName: managed_app['appName'],
+            id: related_app['id'],
+            href: related_app['href']
+          })
+        }
+      })
+    }
+  })
+EOS
+end
+
+datasource "ds_integrated_apps" do
+  iterate $ds_integrated_app_ids
+  request do
+    run_script $js_integrated_apps, val(iter_item, 'href'), $ds_flexera_api_hosts, rs_org_id
+  end
+  result do
+    encoding "json"
+    field "appId", jmes_path(response, "appId")
+    field "appName", jmes_path(response, "appName")
+    field "id", jmes_path(response, "id")
+    field "name", jmes_path(response, "name")
+    field "description", jmes_path(response, "description")
+    field "vendorName", jmes_path(response, "vendorName")
+    field "isActive", jmes_path(response, "isActive")
+    field "parentAppId", val(iter_item, "parentAppId")
+    field "parentAppName", val(iter_item, "parentAppName")
+  end
+end
+
+script "js_integrated_apps", type: "javascript" do
+  parameters "app_href", "ds_flexera_api_hosts", "rs_org_id"
+  result "request"
+  code <<-EOS
+  var request = {
+    auth: "auth_flexera",
+    host: ds_flexera_api_hosts["flexera"],
+    path: "/saas/v1" + app_href,
+    headers: { "content-type": "application/json" },
+    query_params: { "view": "extended" }
+  }
+EOS
+end
+
+# Filter out inactive and invalid apps to avoid needlessly checking them
+datasource "ds_integrated_apps_active" do
+  run_script $js_integrated_apps_active, $ds_integrated_apps
+end
+
+script "js_integrated_apps_active", type: "javascript" do
+  parameters "ds_integrated_apps"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_integrated_apps, function(app) {
+    return app['isActive'] == true && app['appName'] != null && app['vendorName'] != null
+  })
+EOS
+end
+
+datasource "ds_integrated_apps_users" do
+  iterate $ds_integrated_apps_active
+  request do
+    run_script $js_integrated_apps_users, val(iter_item, 'id'), $ds_flexera_api_hosts, rs_org_id
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "firstName", jmes_path(col_item, "firstName")
+      field "middleName", jmes_path(col_item, "middleName")
+      field "lastName", jmes_path(col_item, "lastName")
+      field "email", jmes_path(col_item, "email")
+      field "uniqueId", jmes_path(col_item, "uniqueId")
+      field "activatedAt", jmes_path(col_item, "activatedAt")
+      field "deactivatedAt", jmes_path(col_item, "deactivatedAt")
+      field "appId", val(iter_item, "appId")
+      field "appName", val(iter_item, "appName")
+      field "appDescription", val(iter_item, "description")
+      field "appVendor", val(iter_item, "vendorName")
+      field "parentAppId", val(iter_item, "parentAppId")
+      field "parentAppName", val(iter_item, "parentAppName")
+    end
+  end
+end
+
+script "js_integrated_apps_users", type: "javascript" do
+  parameters "app_id", "ds_flexera_api_hosts", "rs_org_id"
+  result "request"
+  code <<-EOS
+  var request = {
+    auth: "auth_flexera",
+    host: ds_flexera_api_hosts["flexera"],
+    path: "/saas/v1/orgs/" + rs_org_id + "/managed-apps/" + app_id + "/app-users",
+    headers: { "content-type": "application/json" },
+    query_params: { "includeAll": "true" }
+  }
+EOS
+end
+
+datasource "ds_inactive_users" do
+  run_script $js_inactive_users, $ds_integrated_apps_users, $ds_applied_policy, $param_num_days
+end
+
+script "js_inactive_users", type: "javascript" do
+  parameters "ds_integrated_apps_users", "ds_applied_policy", "param_num_days"
+  result "result"
+  code <<-EOS
+  result = []
+  today = new Date()
+
+  _.each(ds_integrated_apps_users, function(user) {
+    if (typeof(user['deactivatedAt']) == 'string' && user['deactivatedAt'] != '') {
+      deactivatedAt = new Date(user['deactivatedAt'])
+      days_since_active = Math.round((today - deactivatedAt) / 1000 / 60 / 60 / 24)
+
+      if (days_since_active >= param_num_days) {
+        result.push({
+          lastName: user['lastName'],
+          firstName: user['firstName'],
+          email: user['email'],
+          uniqueId: user['uniqueId'],
+          appId: user['appId'],
+          appName: user['appName'],
+          appDescription: user['appDescription'],
+          appVendor: user['appVendor'],
+          parentAppId: user['parentAppId'],
+          parentAppName: user['parentAppName'],
+          activatedAt: user['activatedAt'],
+          deactivatedAt: user['deactivatedAt'],
+          days_since_active: days_since_active,
+          policy_name: ds_applied_policy['name']
+        })
+      }
+    }
+  })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_fsm_inactive_users" do
+  validate_each $ds_inactive_users do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Deactivated SaaS Users on Integrated Apps"
+    check eq(val(item, "email"), "")
+    escalate $esc_email
+    export do
+      field "uniqueId" do
+        label "User ID"
+      end
+      field "lastName" do
+        label "Last Name"
+      end
+      field "firstName" do
+        label "First Name"
+      end
+      field "email" do
+        label "Email"
+      end
+      field "appName" do
+        label "Application"
+      end
+      field "parentAppName" do
+        label "Parent Application"
+      end
+      field "appVendor" do
+        label "Vendor"
+      end
+      field "activatedAt" do
+        label "Activation Date"
+      end
+      field "deactivatedAt" do
+        label "Deactivation Date"
+      end
+      field "days_since_active" do
+        label "Days Since Last Active"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end

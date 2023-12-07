@@ -27,7 +27,6 @@ These templates can generate savings estimates for your environment.
 
 #### AWS
 
-- [AWS Delete Unused Classic Load Balancers](./cost/aws/elb/clb_unused)
 - [AWS Old Snapshots](./cost/aws/old_snapshots)
 - [AWS Reserved Instances Recommendations](./cost/aws/reserved_instances/recommendations)
 - [AWS Rightsize EBS Volumes](./cost/aws/rightsize_ebs_volumes)
@@ -35,8 +34,8 @@ These templates can generate savings estimates for your environment.
 - [AWS Rightsize RDS Instances](./cost/aws/rightsize_rds_instances)
 - [AWS Savings Plan Recommendations](./cost/aws/savings_plan/recommendations)
 - [AWS Superseded EC2 Instances](./cost/aws/superseded_instances)
+- [AWS Unused Classic Load Balancers](./cost/aws/unused_clbs)
 - [AWS Unused IP Addresses](./cost/aws/unused_ip_addresses)
-- [AWS Unused RDS Instances](./cost/aws/unused_rds)
 - [AWS Unused Volumes](./cost/aws/unused_volumes)
 - [Turbonomic Allocate Virtual Machine Recommendations AWS](./cost/turbonomics/allocate_virtual_machines_recommendations/aws)
 - [Turbonomic Buy Reserved Instances Recommendations AWS](./cost/turbonomics/buy_reserved_instances_recommendations/aws)
@@ -47,6 +46,7 @@ These templates can generate savings estimates for your environment.
 
 #### Azure
 
+- [Azure Databricks Rightsize Compute Instances](./cost/azure/databricks/rightsize_compute)
 - [Azure Hybrid Use Benefit for Windows Server](./cost/azure/hybrid_use_benefit)
 - [Azure Old Snapshots](./cost/azure/old_snapshots)
 - [Azure Reserved Instances Recommendations](./cost/azure/reserved_instances/recommendations)
@@ -62,6 +62,10 @@ These templates can generate savings estimates for your environment.
 - [Turbonomic Rightsize Databases Recommendations Azure](./cost/turbonomics/rightsize_databases_recommendations/azure)
 - [Turbonomic Rightsize Virtual Machines Recommendations Azure](./cost/turbonomics/scale_virtual_machines_recommendations/azure)
 - [Turbonomic Rightsize Virtual Volumes Recommendations Azure](./cost/turbonomics/rightsize_virtual_volumes_recommendations/azure)
+
+#### Flexera
+
+- [Email Cost Optimization Recommendations](./cost/email_recommendations)
 
 #### Google
 
@@ -198,19 +202,18 @@ These templates can generate savings estimates for your environment.
 
   - [AWS Unused Volumes](./cost/aws/unused_volumes)
 
-- ELB
-
-  - [AWS Delete Unused Classic Load Balancers](./cost/aws/elb/clb_unused)
-
 - Marketplace
 
   - [AWS New Marketplace Products](./operational/aws/marketplace_new_products)
+
+- Network
+
+  - [AWS Unused Classic Load Balancers](./cost/aws/unused_clbs)
 
 - RDS
 
   - [AWS RDS Instances](./cost/aws/rds_instance_license_info)
   - [AWS Rightsize RDS Instances](./cost/aws/rightsize_rds_instances)
-  - [AWS Unused RDS Instances](./cost/aws/unused_rds)
 
 - S3
 
@@ -252,6 +255,10 @@ These templates can generate savings estimates for your environment.
   - [Turbonomic Allocate Virtual Machine Recommendations Azure](./cost/turbonomics/allocate_virtual_machines_recommendations/azure)
   - [Turbonomic Rightsize Virtual Machines Recommendations Azure](./cost/turbonomics/scale_virtual_machines_recommendations/azure)
 
+- Databricks
+
+  - [Azure Databricks Rightsize Compute Instances](./cost/azure/databricks/rightsize_compute)
+
 - Marketplace
 
   - [Azure New Marketplace Products](./operational/azure/marketplace_new_products)
@@ -284,6 +291,8 @@ These templates can generate savings estimates for your environment.
   - [Azure China Common Bill Ingestion](./cost/azure/azure_china_cbi)
 
 #### Flexera
+
+- [Email Cost Optimization Recommendations](./cost/email_recommendations)
 
 - All
 
@@ -440,23 +449,17 @@ These templates can generate savings estimates for your environment.
 
 ### Policy Templates for SaaS Management
 
-#### Flexera
-
-- All
-
-  - [SaaS Manager - Inactive Users for Integrated Applications](./saas/fsm/inactive_users_for_integrated_apps)
-
 #### Flexera SaaS Manager
 
+- [SaaS Manager - Deactivated Users](./saas/fsm/deactivated_users)
+- [SaaS Manager - Deactivated Users for Integrated Applications](./saas/fsm/deactivated_users_for_integrated_apps)
 - [SaaS Manager - Duplicate User Accounts](./saas/fsm/duplicate_users)
-- [SaaS Manager - Inactive Users by Department](./saas/fsm/inactive_users_by_dept)
 - [SaaS Manager - Redundant Apps](./saas/fsm/redundant_apps)
 - [SaaS Manager - Renewal Reminder](./saas/fsm/renewal_reminder)
 - [SaaS Manager - SaaS App User Report by Category](./saas/fsm/users_by_category)
 - [SaaS Manager - Suspicious Users](./saas/fsm/suspicious_users)
 - [SaaS Manager - Unsanctioned Applications with Existing Contract](./saas/fsm/unsanctioned_apps_with_contract)
 - [SaaS Manager - Unsanctioned Spend](./saas/fsm/unsanctioned_spend)
-- [SaaS Manager - User Status Change](./saas/fsm/user_status_change)
 
 #### Microsoft
 
@@ -533,7 +536,7 @@ These templates can generate savings estimates for your environment.
 
 - S3
 
-  - [AWS Open Buckets](./security/storage/aws/public_buckets)
+  - [AWS Open S3 Buckets](./security/storage/aws/public_buckets)
   - [AWS S3 Buckets without Server Access Logging](./security/storage/aws/s3_buckets_without_server_access_logging)
   - [AWS S3 Ensure 'Block Public Access' Configured For All Buckets](./security/aws/s3_ensure_buckets_block_public_access)
   - [AWS S3 Ensure Bucket Policies Deny HTTP Requests](./security/aws/s3_buckets_deny_http)
@@ -622,11 +625,11 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 33
-  Cost: 95
+  Cost: 96
   Operational: 23
-  SaaS Management: 13
+  SaaS Management: 12
   Security: 74
-:optimization_count: 42
+:optimization_count: 43
 :policy_sets:
   '': 81
   AWS Config: 1
@@ -635,6 +638,7 @@ These templates can generate savings estimates for your environment.
   Committed Use Discount: 1
   Common Bill Ingestion: 2
   Database Services: 1
+  Databricks: 1
   Disallowed Regions: 2
   Forecasting: 4
   Hybrid Use Benefit: 3
@@ -646,12 +650,13 @@ These templates can generate savings estimates for your environment.
   Lifecycle Management: 1
   Long Running Instances: 3
   Long Stopped Instances: 3
-  N/A: 2
+  N/A: 1
   Native Recommendations: 1
   New Marketplace Products: 2
   Object Store Optimization: 3
   Old Snapshots: 3
-  Open Buckets: 2
+  Open Buckets: 1
+  Open S3 Buckets: 1
   Public Database Access: 2
   Reserved Instance: 2
   Reserved Instances: 3
@@ -673,13 +678,14 @@ These templates can generate savings estimates for your environment.
   Unlabeled Resources: 1
   Untagged Resources: 1
   Untagged resources: 1
-  Unused Database Services: 2
+  Unused Database Services: 1
   Unused IP Addresses: 3
+  Unused Load Balancers: 1
   Unused Volumes: 6
 :providers:
   '': 1
-  AWS: 77
-  Azure: 77
+  AWS: 76
+  Azure: 78
   Azure China: 1
   Flexera: 5
   Flexera Cloud Management: 3
@@ -697,9 +703,9 @@ These templates can generate savings estimates for your environment.
   Oracle: 1
   ServiceNow: 1
 :services:
-  '': 61
+  '': 62
   AKS: 2
-  All: 2
+  All: 1
   App Service: 1
   Blob Store: 1
   CCO: 1
@@ -709,9 +715,10 @@ These templates can generate savings estimates for your environment.
   Config: 1
   Cost Explorer: 1
   DBS: 1
+  Databricks: 1
   EBS: 2
   ECS: 1
-  ELB: 4
+  ELB: 3
   FNMS: 1
   IAM: 19
   Identity: 1
@@ -720,12 +727,13 @@ These templates can generate savings estimates for your environment.
   Lambda: 1
   Marketplace: 2
   MySQL: 2
+  Network: 1
   Network Security Group: 2
   Office 365: 1
   Org: 1
   Policy: 1
   PostgreSQL: 4
-  RDS: 6
+  RDS: 5
   S3: 9
   SQL: 14
   Security: 3

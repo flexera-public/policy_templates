@@ -1,26 +1,17 @@
-name "AWS Open Buckets"
+name "AWS Open S3 Buckets"
 rs_pt_ver 20180301
 type "policy"
-short_description "Check for buckets that are open to everyone. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/storage/aws/public_buckets) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Check for S3 buckets that are open to everyone. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/storage/aws/public_buckets) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "high"
 category "Security"
+default_frequency "daily"
 info(
-  version: "2.8",
+  version: "3.0",
   provider: "AWS",
   service: "S3",
-  policy_set: "Open Buckets"
+  policy_set: "Open S3 Buckets"
 )
-
-###############################################################################
-# Permissions
-###############################################################################
-
-permission "perm_read_creds" do
-  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
-  resources "rs_cm.credentials"
-end
-
 
 ###############################################################################
 # Parameters
@@ -28,7 +19,10 @@ end
 
 parameter "param_email" do
   type "list"
-  label "Email addresses of the recipients you wish to notify"
+  category "Policy Settings"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+  default []
 end
 
 parameter "param_aws_account_number" do
@@ -39,43 +33,178 @@ parameter "param_aws_account_number" do
   default ""
 end
 
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details"
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  description "A list of allowed or denied regions. See the README for more details"
+  default []
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
 
-#authenticate with AWS
 credentials "auth_aws" do
-  schemes "aws","aws_sts"
+  schemes "aws", "aws_sts"
   label "AWS"
-  description "Select the AWS Credential from the list."
+  description "Select the AWS Credential from the list"
   tags "provider=aws"
   aws_account_number $param_aws_account_number
 end
 
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
 ###############################################################################
-# Datasources
+# Pagination
 ###############################################################################
 
-# Reference: https://docs.aws.amazon.com/AmazonS3/latest/API/RESTServiceGET.html
-datasource "aws_buckets" do
-  # This request is not paginated
+pagination "pagination_aws" do
+  get_page_marker do
+    body_path jmes_path(response, "NextToken")
+  end
+  set_page_marker do
+    body_field "NextToken"
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get AWS account info
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account", xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_get_caller_identity
+end
+
+script "js_aws_account", type:"javascript" do
+  parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
+  result "result"
+  code <<-'EOS'
+  result = _.find(ds_cloud_vendor_accounts, function(account) {
+    return account['id'] == ds_get_caller_identity[0]['account']
+  })
+
+  // This is in case the API does not return the relevant account info
+  if (result == undefined) {
+    result = {
+      id: ds_get_caller_identity[0]['account'],
+      name: "",
+      tags: {}
+    }
+  }
+EOS
+end
+
+datasource "ds_aws_buckets" do
   request do
     auth $auth_aws
     host "s3.amazonaws.com"
     path "/"
     header "User-Agent", "RS Policies"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
   end
   result do
     encoding "xml"
     collect xpath(response, "//ListAllMyBucketsResult/Buckets/Bucket", "array") do
-      field "bucket_name", xpath(col_item,"Name")
+      field "bucket_name", xpath(col_item, "Name")
       field "creation_date", xpath(col_item, "CreationDate")
     end
   end
 end
 
-datasource "aws_buckets_with_region" do
-  iterate $aws_buckets
+datasource "ds_aws_buckets_with_region" do
+  iterate $ds_aws_buckets
   request do
     auth $auth_aws
     host "s3-external-1.amazonaws.com"
@@ -85,120 +214,204 @@ datasource "aws_buckets_with_region" do
   end
   result do
     encoding "xml"
+    field "region", xpath(response, "//LocationConstraint")
     field "bucket_name", val(iter_item, "bucket_name")
     field "creation_date", val(iter_item, "creation_date")
-    field "region", xpath(response, "//LocationConstraint")
   end
 end
 
-datasource "aws_sanitized_buckets" do
-  run_script $parse_buckets, $aws_buckets_with_region
+datasource "ds_aws_sanitized_buckets" do
+  run_script $js_aws_sanitized_buckets, $ds_aws_buckets_with_region
 end
 
-script "parse_buckets", type: "javascript" do
-  parameters "buckets"
-  result "results"
-  code <<-EOS
-// This is the list of filtered buckets.
-results = []
-for ( i = 0; i < buckets.length; i++ ) {
-  if ( !buckets[i]["region"] ){
-    results.push(
-    {
-      "bucket_name": buckets[i]["bucket_name"],
-      "creation_date": buckets[i]["creation_date"],
-      "region": "us-east-1",
-      "host": "s3-external-1.amazonaws.com"
+script "js_aws_sanitized_buckets", type: "javascript" do
+  parameters "ds_aws_buckets_with_region"
+  result "result"
+  code <<-'EOS'
+  result = _.map(ds_aws_buckets_with_region, function(bucket) {
+    bucket_name = bucket['bucket_name']
+    creation_date = bucket['creation_date']
+    region = bucket['region']
+    host = ["s3-", bucket["region"], ".amazonaws.com"].join('')
+
+    if (region == 'EU') {
+      region = "eu-west-1"
+      host = "s3-eu-west-1.amazonaws.com"
     }
-    )
-  } else {
-    if ( buckets[i]["region"] == "EU" ) { buckets[i]["region"] = "eu-west-1" }
-    results.push(
-    {
-      "bucket_name": buckets[i]["bucket_name"],
-      "creation_date": buckets[i]["creation_date"],
-      "region": buckets[i]["region"],
-      "host": "s3-" + buckets[i]["region"] + ".amazonaws.com"
+
+    if (typeof(region) != 'string' || region == '' || region == 'us-east-1') {
+      region = "us-east-1"
+      host = "s3-external-1.amazonaws.com"
     }
-    )
-  }
-};
+
+    return {
+      bucket_name: bucket_name,
+      creation_date: creation_date,
+      region: region,
+      host: host
+    }
+  })
 EOS
 end
 
-# Reference: https://docs.aws.amazon.com/AmazonS3/latest/API/RESTBucketGETacl.html
-datasource "aws_bucket_acls" do
-  iterate $aws_sanitized_buckets
+datasource "ds_aws_buckets_region_filtered" do
+  run_script $js_aws_buckets_region_filtered, $ds_aws_sanitized_buckets, $param_regions_list, $param_regions_allow_or_deny
+end
+
+script "js_aws_buckets_region_filtered", type:"javascript" do
+  parameters "ds_aws_sanitized_buckets", "param_regions_list", "param_regions_allow_or_deny"
+  result "result"
+  code <<-'EOS'
+  allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_aws_sanitized_buckets, function(bucket) {
+      return _.contains(param_regions_list, bucket['region']) == allow_deny_test[param_regions_allow_or_deny]
+    })
+  } else {
+    result = ds_aws_sanitized_buckets
+  }
+EOS
+end
+
+datasource "ds_aws_bucket_acls" do
+  iterate $ds_aws_buckets_region_filtered
   request do
-    run_script $aws_bucket_acl_request, val(iter_item, "bucket_name"), val(iter_item, "host")
+    run_script $js_aws_bucket_acls, val(iter_item, "bucket_name"), val(iter_item, "host")
   end
-  #request do
-  #  auth $auth_aws
-  #  host val(iter_item,"host")
-  #  path join(["/", val(iter_item, "bucket_name")])
-  #  query "acl", ""
-  #  header "User-Agent", "RS Policies"
-  #end
   result do
     encoding "xml"
     collect xpath(response, "//AccessControlPolicy", "array") do
-      field "id", val(iter_item, "bucket_name")
+      field "grantees" do
+        collect xpath(col_item, "AccessControlList/Grant/Grantee") do
+          field "name", xpath(col_item, "DisplayName")
+          field "email", xpath(col_item, "EmailAddress")
+          field "id", xpath(col_item, "ID")
+          field "uri", xpath(col_item, "URI")
+        end
+      end
+      field "owner", xpath(col_item, "Owner/DisplayName")
+      field "owner_id", xpath(col_item, "Owner/ID")
+      field "bucket_name", val(iter_item, "bucket_name")
       field "creation_date", val(iter_item, "creation_date")
       field "region", val(iter_item, "region")
-      field "grantee_uris", xpath(col_item, "AccessControlList/Grant/Grantee/URI","array")
-      field "owner", xpath(col_item, "Owner/DisplayName")
-      field "region", val(iter_item, "region")
+      field "host", val(iter_item, "host")
     end
   end
 end
 
-###############################################################################
-# Scripts
-###############################################################################
-
-script "aws_bucket_acl_request", type: "javascript" do
+script "js_aws_bucket_acls", type: "javascript" do
   parameters "bucket_name", "host"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   request = {
     auth: "auth_aws",
     host: host,
-    path: '/' + bucket_name + '/',
-    query_params: {
-      acl: ""
-    },
-    headers: {
-      "User-Agent": "RS Policies"
-    }
+    path: ["/", bucket_name, "/"].join(''),
+    headers: { "User-Agent": "RS Policies" },
+    query_params: { acl: "" }
   }
-  EOS
+EOS
+end
+
+datasource "ds_aws_public_buckets" do
+  run_script $js_aws_public_buckets, $ds_aws_bucket_acls, $ds_aws_buckets_region_filtered, $ds_aws_account, $ds_applied_policy
+end
+
+script "js_aws_public_buckets", type: "javascript" do
+  parameters "ds_aws_bucket_acls", "ds_aws_buckets_region_filtered", "ds_aws_account", "ds_applied_policy"
+  result "result"
+  code <<-'EOS'
+  open_buckets = _.filter(ds_aws_bucket_acls, function(bucket) {
+    uri_list = _.pluck(bucket['grantees'], 'uri')
+    return _.contains(uri_list, "http://acs.amazonaws.com/groups/global/AllUsers")
+  })
+
+  result = _.map(open_buckets, function(bucket) {
+    recommendationDetails = [
+      "Remove public access from S3 bucket ", bucket['bucket_name'], " ",
+      "in AWS Account ", ds_aws_account['name'], " (", ds_aws_account['id'], ")"
+    ].join('')
+
+    offending_grantee = _.find(bucket['grantees'], function(grantee) {
+      return grantee['uri'] == 'http://acs.amazonaws.com/groups/global/AllUsers'
+    })
+
+    return {
+      id: bucket['bucket_name'],
+      creation_date: bucket['creation_date'],
+      region: bucket['region'],
+      host: bucket['host'],
+      owner: bucket['owner'],
+      grantee_id: offending_grantee['id'],
+      grantee_name: offending_grantee['name'],
+      grantee_email: offending_grantee['email'],
+      grantee_uri: offending_grantee['uri'],
+      policy_name: ds_applied_policy['name'],
+      accountID: ds_aws_account['id'],
+      accountName: ds_aws_account['name'],
+      recommendationDetails: recommendationDetails
+    }
+  })
+
+  // Message for incident output
+  total_buckets = ds_aws_buckets_region_filtered.length.toString()
+  total_public_buckets = result.length.toString()
+  public_buckets_percentage = (total_public_buckets / total_buckets * 100).toFixed(2).toString() + '%'
+
+  findings = [
+    "Out of ", total_buckets, " AWS S3 buckets analyzed, ",
+    total_public_buckets, " (", public_buckets_percentage,
+    ") are open to public access."
+  ].join('')
+
+  // Dummy item to ensure that the check statement in the policy executes at least once
+  result.push({
+    id: "",             creation_date: "",    region: "",
+    host: "",           grantee_uris: "",     owner: "",
+    policy_name: "",    accountID: "",        accountName: ""
+  })
+
+  result[0]['message'] = findings
+EOS
 end
 
 ###############################################################################
 # Policy
 ###############################################################################
 
-policy "public_buckets" do
-  validate_each $aws_bucket_acls do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Public Buckets Found in AWS"
-    escalate $report_open_buckets
-    check logic_not(contains(val(item, "grantee_uris"), "http://acs.amazonaws.com/groups/global/AllUsers"))
+policy "pol_public_buckets" do
+  validate_each $ds_aws_public_buckets do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS S3 Buckets With Public Access Found"
+    detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "id"), ""))
+    escalate $esc_email
+    hash_exclude "message", "owner"
     export do
       resource_level true
-      field "region" do
-        label "Region"
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
       end
       field "id" do
         label "Bucket Name"
       end
+      field "region" do
+        label "Region"
+      end
       field "creation_date" do
         label "Creation Date"
       end
-      field "grantee_uris" do
-        label "GranteeURI"
-      end
       field "owner" do
         label "Owner"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "grantee_uri" do
+        label "Grantee URI"
       end
     end
   end
@@ -208,9 +421,99 @@ end
 # Escalations
 ###############################################################################
 
-escalation "report_open_buckets" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
   email $param_email
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
 end

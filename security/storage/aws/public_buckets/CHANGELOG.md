@@ -1,5 +1,16 @@
 # Changelog
 
+## v3.0
+
+- Several parameters altered to be more descriptive and human-readable
+- Added ability to filter resources by region
+- Added additional context to incident description
+- Normalized incident export to be consistent with other policies
+- Added human-readable recommendation to incident export
+- Policy no longer raises new escalations if bucket owner has changed but nothing else has
+- Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera credential
+
 ## v2.8
 
 - Updated description of `Account Number` parameter
