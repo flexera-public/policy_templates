@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.1
+
+- Added parameters to allow the user to configure currency conversion for previous months
+
 ## v2.0
 
 - Removed requirement for dedicated xe.com credential
