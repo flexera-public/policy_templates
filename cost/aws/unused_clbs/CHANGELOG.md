@@ -1,5 +1,19 @@
 # Changelog
 
+## v5.0
+
+- Assessment algorithm now more consistently identifies unused Classic Load Balancers
+- Added parameter to exclude recently created Classic Load Balancers
+- Several parameters altered to be more descriptive and human-readable
+- Removed deprecated "Log to CM Audit Entries" parameter
+- Added ability to only report recommendations that meet a minimum savings threshold
+- Added ability to filter resources by multiple tag key:value pairs
+- Added additional context to incident description
+- Normalized incident export to be consistent with other policies
+- Added human-readable recommendation to incident export
+- Policy no longer raises new escalations if savings data changed but nothing else has
+- Streamlined code for better readability and faster execution
+
 ## v4.1
 
 - Updated description of `Account Number` parameter
