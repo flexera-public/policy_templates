@@ -82,8 +82,17 @@ parameter "param_automatic_action" do
   category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action."
-  allowed_values ["Tag Instances", "Power Off Instances", "Delete Instances"]
+  allowed_values ["Power Off Instances", "Delete Instances"]
   default []
+end
+
+parameter "param_skipshutdown" do
+  type "string"
+  category "Actions"
+  label "Power Off Type"
+  description "Whether to perform a graceful shutdown or a forced shutdown when powering off instances. Only applicable when taking action against instances."
+  allowed_values "Graceful", "Forced"
+  default "Graceful"
 end
 
 ###############################################################################
@@ -225,7 +234,7 @@ script "js_azure_instances_region_filtered", type: "javascript" do
       return include_vm
     })
   } else {
-    result = ds_azure_instances_tag_filtered
+    result = ds_azure_instances
   }
 EOS
 end
@@ -238,8 +247,8 @@ script "js_azure_instances_missing_tags", type: "javascript" do
   parameters "ds_azure_instances_region_filtered", "param_tags"
   result "result"
   code <<-'EOS'
-  if (param_exclusion_tags.length > 0) {
-    result = _.filter(ds_azure_instances, function(vm) {
+  if (param_tags.length > 0) {
+    result = _.filter(ds_azure_instances_region_filtered, function(vm) {
       vm_tags = []
 
       if (typeof(vm['tags']) == 'object') {
@@ -251,7 +260,7 @@ script "js_azure_instances_missing_tags", type: "javascript" do
 
       include_vm = false
 
-      _.each(param_exclusion_tags, function(exclusion_tag) {
+      _.each(param_tags, function(exclusion_tag) {
         if (_.contains(vm_tags, exclusion_tag) == false) {
           include_vm = true
         }
@@ -295,7 +304,8 @@ script "js_missing_tags_incident", type: "javascript" do
       tags_object: instance['tags'],
       service: 'Microsoft.Compute',
       tags: instance_tags.join(', '),
-      policy_name: ds_applied_policy['name']
+      policy_name: ds_applied_policy['name'],
+      message: ""
     }
   })
 
@@ -304,7 +314,7 @@ script "js_missing_tags_incident", type: "javascript" do
     accountID: "",    accountName: "",   resourceGroup: "",  resourceName: "",
     resourceID: "",   resourceType: "",  resourceKind: "",   region: "",
     osType: "",       tags_object: "",   service: "",        tags: "",
-    policy_name: ""
+    policy_name: "",  message: ""
   })
 
   message = ["The following Azure virtual machines are missing one or more of the following tags:\n\n"]
@@ -379,7 +389,7 @@ policy "pol_azure_missing_tags" do
       end
       field "id" do
         label "ID"
-        path "resourceId"
+        path "resourceID"
       end
       field "tags_object" do
         label "Tag Object"
@@ -407,9 +417,8 @@ escalation "esc_tag_instances" do
     type "list"
     category "Actions"
     label "Add Tags (Key:Value)"
-    description "Cloud native tags to add to instances with missing tags. Use Key:Value format. Examples: env:production, team:finance"
-    allowed_pattern /(^$)|[\w]*\:.*/
-    default []
+    description "Cloud native tags to add to instances with missing tags. Use Key:Value format. Example: env:production"
+    allowed_pattern /(^$)|[\w]*\=.*/
   end
   run "tag_instances", data, $param_azure_endpoint, $param_tags_to_add
 end
@@ -418,14 +427,6 @@ escalation "esc_poweroff_instances" do
   automatic contains($param_automatic_action, "Power Off Instances")
   label "Power Off Instances"
   description "Approval to power off all selected instances"
-  parameter "param_skipshutdown" do
-    type "string"
-    category "Actions"
-    label "Power Off Type"
-    description "Whether to perform a graceful shutdown or a forced shutdown when powering off instances."
-    allowed_values "Graceful", "Forced"
-    default "Graceful"
-  end
   run "poweroff_instances", data, $param_azure_endpoint, $param_skipshutdown
 end
 
@@ -456,6 +457,10 @@ end
 
 define tag_instance($instance, $param_azure_endpoint, $param_tags_to_add) return $response do
   $tags = $instance['tags_object']
+
+  if $tags == null
+    $tags = {}
+  end
 
   foreach $tag in $param_tags_to_add do
     $key = first(split($tag, ":"))
