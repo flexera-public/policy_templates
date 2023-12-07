@@ -169,7 +169,7 @@ EOS
 end
 
 datasource "ds_azure_resources" do
-  iterate $ds_filtered_subscriptions
+  iterate $ds_azure_subscriptions_filtered
   request do
     auth $auth_azure
     pagination $pagination_azure
@@ -188,7 +188,7 @@ datasource "ds_azure_resources" do
       field "id", jmes_path(col_item,"id")
       field "resourceGroup", get(4, split(jmes_path(col_item,"id"), '/'))
       field "namespace", get(6, split(jmes_path(col_item,"id"), '/'))
-      field "region", jmes_path(col_item "location")
+      field "region", jmes_path(col_item, "location")
       field "name", jmes_path(col_item, "name")
       field "tags", jmes_path(col_item, "tags")
       field "type", jmes_path(col_item, "type")
@@ -255,12 +255,59 @@ script "js_azure_resources_missing_tags", type: "javascript" do
 EOS
 end
 
+datasource "ds_azure_providers" do
+  request do
+    run_script $js_azure_providers, $ds_azure_subscriptions_filtered, $param_azure_endpoint
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "namespace", jmes_path(col_item, "namespace")
+      field "resourceTypes", jmes_path(col_item, "resourceTypes")
+    end
+  end
+end
+
+script "js_azure_providers", type: "javascript" do
+  parameters "ds_azure_subscriptions_filtered", "param_azure_endpoint"
+  result "request"
+  code <<-EOS
+  request = {
+    auth: "auth_azure",
+    pagination: "pagination_azure",
+    host: param_azure_endpoint,
+    path: ["/subscriptions/", ds_azure_subscriptions_filtered[0]['id'], "/providers"].join(''),
+    query_params: { "api-version": "2021-04-01" }
+  }
+EOS
+end
+
+datasource "ds_azure_api_versions" do
+  run_script $js_azure_api_versions, $ds_azure_providers
+end
+
+script "js_azure_api_versions", type: "javascript" do
+  parameters "ds_azure_providers"
+  result "result"
+  code <<-'EOS'
+  result = {}
+
+  _.each(ds_azure_providers, function(provider) {
+    _.each(provider['resourceTypes'], function(item) {
+      resource_type = [provider['namespace'], item['resourceType']].join('/').toLowerCase().trim()
+      result[resource_type] = item['apiVersions'][0]
+    })
+  })
+EOS
+end
+
 datasource "ds_missing_tags_incident" do
-  run_script $js_missing_tags_incident, $ds_azure_resources_missing_tags, $ds_applied_policy, $param_tags
+  run_script $js_missing_tags_incident, $ds_azure_resources_missing_tags, $ds_applied_policy, $ds_azure_api_versions, $param_tags
 end
 
 script "js_missing_tags_incident", type: "javascript" do
-  parameters "ds_azure_resources_missing_tags", "ds_applied_policy", "param_tags"
+  parameters "ds_azure_resources_missing_tags", "ds_applied_policy", "ds_azure_api_versions", "param_tags"
   result "result"
   code <<-'EOS'
   result = _.map(ds_azure_resources_missing_tags, function(resource) {
@@ -283,6 +330,7 @@ script "js_missing_tags_incident", type: "javascript" do
       tags_object: resource['tags'],
       tags: resource_tags.join(', '),
       policy_name: ds_applied_policy['name'],
+      api_version: ds_azure_api_versions[resource['type'].toLowerCase().trim()],
       message: ""
     }
   })
@@ -291,7 +339,7 @@ script "js_missing_tags_incident", type: "javascript" do
   result.push({
     accountID: "",    accountName: "",   resourceGroup: "",  resourceName: "",
     resourceID: "",   resourceType: "",  region: "",         tags_object: "",
-    tags: "",         policy_name: "",   message: ""
+    tags: "",         policy_name: "",   api_version: "",    message: ""
   })
 
   message = ["The following Azure resources are missing one or more of the following tags:\n\n"]
@@ -326,7 +374,7 @@ policy "pol_azure_missing_tags" do
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     escalate $esc_tag_instances
-    hash_exclude "message"
+    hash_exclude "message", "api_version"
     export do
       resource_level true
       field "accountID" do
@@ -352,6 +400,9 @@ policy "pol_azure_missing_tags" do
       end
       field "region" do
         label "Region"
+      end
+      field "api_version" do
+        label "Azure API Version"
       end
       field "id" do
         label "ID"
@@ -408,7 +459,7 @@ define tag_instances($data, $param_azure_endpoint, $param_tags_to_add) return $a
 end
 
 define tag_instance($instance, $param_azure_endpoint, $param_tags_to_add) return $response do
-  $tags = $instance['tags_object']
+  $tags = $instance["tags_object"]
 
   if $tags == null
     $tags = {}
@@ -422,7 +473,7 @@ define tag_instance($instance, $param_azure_endpoint, $param_tags_to_add) return
 
   $host = $param_azure_endpoint
   $href = $instance["id"]
-  $params = "?api-version=2023-07-01"
+  $params = "?api-version=" + $instance["api_version"]
   $url = $host + $href + $params
   task_label("PATCH " + $url)
 
@@ -432,7 +483,7 @@ define tag_instance($instance, $param_azure_endpoint, $param_tags_to_add) return
     verb: "patch",
     host: $host,
     href: $href,
-    query_strings: { "api-version": "2023-07-01" },
+    query_strings: { "api-version": $instance["api_version"] },
     body: { "tags": $tags }
   )
 
