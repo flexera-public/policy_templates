@@ -77,6 +77,23 @@ parameter "param_regions_list" do
   default []
 end
 
+parameter "param_resourcetypes_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Resource Types"
+  description "Allow or Deny entered resource types. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_resourcetypes_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Resource Type List"
+  description "A list of allowed or denied resource types. See the README for more details. Example: Microsoft.Compute/disks"
+  default []
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -220,18 +237,46 @@ script "js_azure_resources_region_filtered", type: "javascript" do
 EOS
 end
 
+datasource "ds_azure_resources_type_filtered" do
+  run_script $js_azure_resources_type_filtered, $ds_azure_resources_region_filtered, $param_resourcetypes_allow_or_deny, $param_resourcetypes_list
+end
+
+script "js_azure_resources_type_filtered", type: "javascript" do
+  parameters "ds_azure_resources_region_filtered", "param_resourcetypes_allow_or_deny", "param_resourcetypes_list"
+  result "result"
+  code <<-'EOS'
+  if (param_resourcetypes_list.length > 0) {
+    result = _.filter(ds_azure_resources_region_filtered, function(resource) {
+      resourcetypes_list = _.map(param_resourcetypes_list, function(type) {
+        return type.toLowerCase().trim()
+      })
+
+      include_resource = _.contains(resourcetypes_list, resource['type'].toLowerCase().trim())
+
+      if (param_resourcetypes_allow_or_deny == "Deny") {
+        include_resource = !include_resource
+      }
+
+      return include_resource
+    })
+  } else {
+    result = ds_azure_resources_region_filtered
+  }
+EOS
+end
+
 datasource "ds_azure_resources_missing_tags" do
-  run_script $js_azure_resources_missing_tags, $ds_azure_resources_region_filtered, $param_tags
+  run_script $js_azure_resources_missing_tags, $ds_azure_resources_type_filtered, $param_tags
 end
 
 script "js_azure_resources_missing_tags", type: "javascript" do
-  parameters "ds_azure_resources_region_filtered", "param_tags"
+  parameters "ds_azure_resources_type_filtered", "param_tags"
   result "result"
   code <<-'EOS'
   result = []
 
   if (param_tags.length > 0) {
-    _.each(ds_azure_resources_region_filtered, function(resource) {
+    _.each(ds_azure_resources_type_filtered, function(resource) {
       resource_tags = []
 
       if (typeof(resource['tags']) == 'object') {
@@ -368,7 +413,6 @@ script "js_missing_tags_incident", type: "javascript" do
   result[0]['message'] = message.join('') + disclaimer
 EOS
 end
-
 
 ###############################################################################
 # Policy
