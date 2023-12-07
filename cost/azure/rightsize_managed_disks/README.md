@@ -4,16 +4,14 @@
 
 This Policy Template scans all volumes in the given account and identifies any volume that meets the user-specified criteria for being oversized. The user can filter volumes based on usage percentage of capacity (GiB used), usage percentage of IOPS, usage percentage of throughput, or any combination of these. Any volumes that meet the user-specified criteria are considered oversized. If any oversized volumes are found, an incident report will show the volumes and related information. An email will be sent to the user-specified email addresses.
 
+- It is important that you keep constant LUN numbers for your data disks because when policy retrieves metrics for them, it will only look for the latest LUN number assigned to the data disk, if this one is changed multiple times before running the policy, only the data points using the current LUN the disk has will be retrieved for analysis.
+
 ### Policy Saving Details
 
 The policy includes the estimated monthly savings. The estimated monthly savings are recognized if the resource is terminated.
 
 - The `Estimated Monthly Savings` is calculated by obtaining the price of the disk per month from the Azure Pricing API.
 - The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
-
-## Functional details
-
-- It's important that you keep constant LUN numbers for your data disks because when policy retrieves metrics for them, it will only look for the latest LUN number assigned to the data disk, if this one is changed multiple times before running the policy, only the data points using the current LUN the disk has will be retrieved for analysis.
 
 ## Input parameters
 

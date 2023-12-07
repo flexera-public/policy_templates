@@ -10,7 +10,7 @@ info(
   version: "0.0",
   provider: "Azure",
   service: "Managed Disks",
-  policy_set: "Rightsize Managed Disks",
+  policy_set: "Rightsize Storage",
   recommendation_type: "Usage Reduction"
 )
 
@@ -253,6 +253,7 @@ datasource "ds_azure_disks" do
       field "diskSizeGB", jmes_path(col_item, "properties.diskSizeGB")
       field "timeCreated", jmes_path(col_item, "properties.timeCreated")
       field "tier", jmes_path(col_item, "sku.name")
+      field "service", jmes_path(col_item, "type")
       field "subscriptionID", val(iter_item, "id")
       field "subscriptionName", val(iter_item, "name")
     end
@@ -785,13 +786,20 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
       newResourceTypePriceCurrency = fittingDiskPrice.currencyCode
     } else continue;
 
+    tags = []
+    if (typeof(disk.tags) == 'object') {
+      _.each(Object.keys(disk.tags), function(key) {
+        tags.push([key, "=", disk.tags[key]].join(''))
+      })
+    }
+
     result.recommendations.push({
       accountID: disk.subscriptionID,
       accountName: disk.subscriptionName,
       resourceGroup: disk.resourceGroup,
       resourceName: disk.resourceName,
       resourceID: disk.id,
-      tags: disk.tags,
+      tags: tags,
       resourceType: currentDiskName,
       resourceTypeRedundancy: currentDiskRedundancy,
       resourceTypeGiB: currentDiskData.sizeGiB,
@@ -820,6 +828,7 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
       usedGBPct: disk.diskUsedGB != undefined ? Math.round(disk.diskUsedGB * 100 / disk.diskSizeGB) : "Unknown",
       diskSpaceThreshold: param_min_used_disk_space_pct_for_downsizing,
       lookbackPeriod: param_stats_lookback,
+      service: disk.service.split("/")[0],
     })
 
     result.monthlySavings += monthlySavings
@@ -859,6 +868,9 @@ EOS
       end
       field "resourceGroup" do
         label "Resource Group"
+      end
+      field "service" do
+        label "Service"
       end
       field "resourceName" do
         label "Resource Name"
@@ -914,8 +926,9 @@ EOS
       field "region" do
         label "Region"
       end
-      field "monthlySavings" do
+      field "savings" do
         label "Estimated Monthly Savings"
+        path "monthlySavings"
       end
       field "savingsCurrency" do
         label "Savings Currency"
@@ -923,8 +936,9 @@ EOS
       field "iopsPctMaximum" do
         label "IOPS Maximum %"
       end
-      field "iopsPctAverage" do
+      field "iopsAverage" do
         label "IOPS Average %"
+        path "iopsPctAverage"
       end
       field "iopsThreshold" do
         label "IOPS Threshold %"
