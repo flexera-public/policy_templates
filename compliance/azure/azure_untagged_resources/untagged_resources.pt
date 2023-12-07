@@ -229,7 +229,9 @@ script "js_azure_resources_missing_tags", type: "javascript" do
   result "result"
   code <<-'EOS'
   if (param_tags.length > 0) {
-    result = _.filter(ds_azure_resources_region_filtered, function(resource) {
+    result = []
+
+    _.each(ds_azure_resources_region_filtered, function(resource) {
       resource_tags = []
 
       if (typeof(resource['tags']) == 'object') {
@@ -240,14 +242,20 @@ script "js_azure_resources_missing_tags", type: "javascript" do
       }
 
       include_resource = false
+      missing_tags = []
 
       _.each(param_tags, function(exclusion_tag) {
         if (_.contains(resource_tags, exclusion_tag) == false) {
           include_resource = true
+          missing_tags.push(exclusion_tag.replace(':', '='))
         }
       })
 
-      return include_resource
+      if (include_resource) {
+        new_resource = resource
+        new_resource['missing_tags'] = missing_tags
+        result.push(new_resource)
+      }
     })
   } else {
     result = []
@@ -329,6 +337,7 @@ script "js_missing_tags_incident", type: "javascript" do
       region: resource['region'],
       tags_object: resource['tags'],
       tags: resource_tags.join(', '),
+      missing_tags: resource['missing_tags'].join(', '),
       policy_name: ds_applied_policy['name'],
       api_version: ds_azure_api_versions[resource['type'].toLowerCase().trim()],
       message: ""
@@ -339,7 +348,8 @@ script "js_missing_tags_incident", type: "javascript" do
   result.push({
     accountID: "",    accountName: "",   resourceGroup: "",  resourceName: "",
     resourceID: "",   resourceType: "",  region: "",         tags_object: "",
-    tags: "",         policy_name: "",   api_version: "",    message: ""
+    tags: "",         policy_name: "",   api_version: "",    missing_tags: "",
+    message: ""
   })
 
   message = ["The following Azure resources are missing one or more of the following tags:\n\n"]
@@ -394,6 +404,9 @@ policy "pol_azure_missing_tags" do
       end
       field "tags" do
         label "Resource Tags"
+      end
+      field "missing_tags" do
+        label "Missing Tags"
       end
       field "resourceType" do
         label "Resource Type"
