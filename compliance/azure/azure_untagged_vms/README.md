@@ -12,7 +12,7 @@ This policy template checks for virtual machines missing the user-specified tags
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy has the following input parameters required when launching the policy:
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Azure Endpoint* - The endpoint to send Azure API requests to. Recommended to leave this at default unless using this policy with Azure China.
@@ -23,6 +23,9 @@ This policy has the following input parameters required when launching the polic
 - *Tags (Key:Value)* - Cloud native tags to find resources with missing tags. Use Key:Value format for specific tag key/value pairs, and Key:\* format to match any resource missing a particular key, regardless of value. Examples: env:production, department:\*
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 - *Power Off Type* - Whether to perform a graceful shutdown or a forced shutdown when powering off instances.
+
+This policy has the following input parameters required when adding tags to resources from a raised incident:
+
 - *Add Tags (Key:Value)* - Cloud native tags to add to resources with missing tags. Use Key:Value format. Examples: env:production, team:finance
 
 ## Policy Actions
@@ -30,8 +33,8 @@ This policy has the following input parameters required when launching the polic
 The following policy actions are taken on any resources found to be out of compliance.
 
 - Sends an email notification
-- Power off Azure virtual machine after approval
-- Delete Azure virtual machine after approval
+- Power off Azure virtual machine automatically or after approval
+- Delete Azure virtual machine automatically or after approval
 - Tag Azure virtual machine after approval
 
 ## Prerequisites
