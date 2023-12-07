@@ -178,3 +178,5 @@ FileUtils.mkdir_p(permissions_list_dir) unless Dir.exist?(permissions_list_dir)
 File.open("#{permissions_list_dir}/master_policy_permissions_list.json", "w") do |f|
   f.write(JSON.pretty_generate(master_policy_permissions_doc))
 end
+
+# Add note to test
