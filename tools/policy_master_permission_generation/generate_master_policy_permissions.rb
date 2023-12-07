@@ -170,7 +170,8 @@ end
 master_policy_permissions_doc[:values] = values
 
 # Create '.data/policy_permissions_list' directory
-permissions_list_dir = "./data/policy_permissions_list"
+permissions_list_dir = "./dist"
+# permissions_list_dir = "./data/policy_permissions_list"
 FileUtils.mkdir_p(permissions_list_dir) unless Dir.exist?(permissions_list_dir)
 
 # Create JSON document in '.data/policy_permissions_list' directory
