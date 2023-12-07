@@ -1,7 +1,7 @@
-name "Azure Untagged Resources"
+name "Azure Untagged Virtual Machines"
 rs_pt_ver 20180301
 type "policy"
-short_description "Find all Azure resources missing any of the user provided tags with the option to update the resources with the missing tags. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/azure_untagged_resources) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Find all Azure virtual machines missing any of the user provided tags with the option to update the tags, power off the instance, or delete the instance. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/azure_untagged_vms) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Compliance"
 severity "low"
@@ -82,7 +82,7 @@ parameter "param_automatic_action" do
   category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action."
-  allowed_values ["Tag Instances", "Stop Instances", "Delete Instances"]
+  allowed_values ["Tag Instances", "Power Off Instances", "Delete Instances"]
   default []
 end
 
@@ -339,7 +339,7 @@ policy "pol_azure_missing_tags" do
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     escalate $esc_tag_instances
-    escalate $esc_stop_instances
+    escalate $esc_poweroff_instances
     escalate $esc_delete_instances
     hash_exclude "message"
     export do
@@ -381,6 +381,9 @@ policy "pol_azure_missing_tags" do
         label "ID"
         path "resourceId"
       end
+      field "tags_object" do
+        label "Tag Object"
+      end
     end
   end
 end
@@ -411,11 +414,19 @@ escalation "esc_tag_resources" do
   run "tag_instances", data, $param_azure_endpoint, $param_tags_to_add
 end
 
-escalation "esc_stop_instances" do
-  automatic contains($param_automatic_action, "Stop Instances")
-  label "Stop Instances"
-  description "Approval to stop all selected instances"
-  run "stop_instances", data, $param_azure_endpoint
+escalation "esc_poweroff_instances" do
+  automatic contains($param_automatic_action, "Power Off Instances")
+  label "Power Off Instances"
+  description "Approval to power off all selected instances"
+  parameter "param_skipshutdown" do
+    type "string"
+    category "Actions"
+    label "Power Off Type"
+    description "whether to perform a graceful shutdown or a forced shutdown when powering off instances."
+    allowed_values "Graceful", "Forced"
+    default "Graceful"
+  end
+  run "poweroff_instances", data, $param_azure_endpoint, $param_skipshutdown
 end
 
 escalation "esc_delete_instances" do
@@ -429,102 +440,238 @@ end
 # Cloud Workflow
 ###############################################################################
 
-define cwf_add_tags($data, $param_tags_to_add, $param_azure_endpoint) return $all_responses, $list_of_tags_to_add_foreach_data do
-  $$log = []
-  $all_responses = []
+define tag_instances($data, $param_azure_endpoint, $param_tags_to_add) return $all_responses do
+  $$all_responses = []
 
-  $subscriptionId = first($data)["subscriptionId"]
-  $$log << "SubscriptionId: "+$subscriptionId
-
-  $providers_response = http_request(
-    auth: $$azure_auth,
-    verb: "get",
-    host: $param_azure_endpoint,
-    https: true,
-    href: "/subscriptions/" + $subscriptionId +"/providers",
-    query_strings: {
-      "api-version": "2018-05-01"
-    },
-    headers: {
-      "cache-control": "no-cache",
-      "content-type": "application/json"
-    }
-  )
-  $list_of_tags_to_add_foreach_data = []
-
-  foreach $item in $data do
-    #from the above request for providers, grab the body/value
-    $providers_array = $providers_response["body"]["value"]
-    $$log << "ID: "+$item["id"]
-    $namespace = $item["namespace"]
-    $$log << "Namespace: "+$namespace
-    # Drop the provider's namespace from the resource type for example Microsoft.Compute/virtualMachines to virtualMachines
-    $resource_type = join(split($item["resource_type"], "/")[1..], "/")
-    $$log << "Resource Type: "+$resource_type
-    $namespace_obj = select($providers_array, {"namespace": $namespace})
-    if $namespace_obj == []
-      $namespace_obj = select($providers_array, {"namespace": downcase($namespace)})
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call tag_instance($instance, $param_azure_endpoint, $param_tags_to_add) retrieve $tag_response
     end
-    # Within the resourcetype array, get the resource type and the api version for example virtualMachines -> apiVersions = 2015-06-15
-    $resource_type_obj = select($namespace_obj[0]["resourceTypes"], {"resourceType": $resource_type})
-    $api_versions = $resource_type_obj[0]["apiVersions"]
-    $api_version = first($api_versions)
-    $$log << "API Version: "+$api_version
+  end
 
-    #keep the old tags
-    $old_tags_object = {}
-    $old_tags = split( $item["existingTags"], ",")
-    foreach $old_tag in $old_tags do
-      $tag_key = first(split( $old_tag, "="))
-      $tag_value = ""
-      if $tag_key != last(split( $old_tag, "="))
-        $tag_value = last(split( $old_tag, "="))
-      end
-      $old_tags_object[$tag_key] = $tag_value
-    end
-
-    #Tags that are entered as parameter to be applied
-    $filtered_tags_to_add_obj = {}
-    foreach $tag in $param_tags_to_add do
-      $tag_key_to_add = first(split( $tag, "="))
-      $tag_value_to_add = ""
-      if $tag_key_to_add != last(split( $tag, "="))
-        $tag_value_to_add = last(split( $tag, "="))
-      end
-      $filtered_tags_to_add_obj[$tag_key_to_add] = $tag_value_to_add
-    end
-
-    #Combine existing tags with tags to add
-    $list_of_tags_to_add_foreach_data = $filtered_tags_to_add_obj + $old_tags_object
-
-    #Update resource api is used to update tags
-    #https://learn.microsoft.com/en-us/rest/api/resources/resources/update
-    sub on_error: handle_error($update_resource_response) do
-      $update_resource_response = http_request(
-      auth: $$azure_auth,
-        verb: "patch",
-        host: $param_azure_endpoint,
-        https: true,
-        href: $item["id"],
-        query_strings: {
-          "api-version": $api_version
-        },
-        headers: {
-          "cache-control": "no-cache",
-          "content-type": "application/json"
-        },
-        body: {"tags": $list_of_tags_to_add_foreach_data}
-      )
-    end
-    $all_responses << $update_resource_response
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
   end
 end
 
-define handle_error($response) do
-  $status_code = $response["code"]
-  if $status_code == 404
-    $_error_behavior = "skip"
-  else
-    $_error_behavior = "raise"
+define tag_instance($instance, $param_azure_endpoint, $param_tags_to_add) return $response do
+  $tags = $instance['tags_object']
+
+  foreach $tag in $param_tags_to_add do
+    $key = first(split($tag, ":"))
+    $value = last(split($tag, ":"))
+    $tags[$key] = $value
   end
+
+  $host = $param_azure_endpoint
+  $href = $instance["id"]
+  $params = "?api-version=2023-07-01"
+  $url = $host + $href + $params
+  task_label("PATCH " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "patch",
+    host: $host,
+    href: $href,
+    query_strings: { "api-version": "2023-07-01" },
+    body: { "tags": $tags }
+  )
+
+  task_label("Patch Azure VM instance response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "PATCH " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response patching Azure VM instance: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Patch Azure VM instance successful: " + $instance["id"])
+  end
+end
+
+define poweroff_instances($data, $param_azure_endpoint, $param_skipshutdown) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call poweroff_instance($instance, $param_azure_endpoint, $param_skipshutdown) retrieve $poweroff_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+define poweroff_instance($instance, $param_azure_endpoint, $param_skipshutdown) return $response do
+  $host = $param_azure_endpoint
+  $href = $instance["id"] + "/powerOff"
+  $params = "?api-version=2023-07-01"
+  $url = $host + $href + $params
+  task_label("POST " + $url)
+
+  $query_strings = { "api-version": "2023-07-01" }
+
+  if $param_skipshutdown == "Forced"
+    $query_strings["skipShutdown"] = "true"
+    $params = $params + "&skipShutdown=true"
+  end
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "post",
+    host: $host,
+    href: $href,
+    query_strings: $query_strings
+  )
+
+  task_label("Power off Azure VM instance response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response powering off Azure VM instance: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Power off Azure VM instance successful: " + $instance["id"])
+  end
+end
+
+define delete_instances($data, $param_azure_endpoint) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call delete_instance($instance, $param_azure_endpoint) retrieve $delete_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+define delete_instance($instance, $param_azure_endpoint) return $response do
+  $host = $param_azure_endpoint
+  $href = $instance["id"]
+  $params = "?api-version=2023-07-01"
+  $url = $host + $href + $params
+  task_label("DELETE " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "delete",
+    host: $host,
+    href: $href,
+    query_strings: { "api-version": "2023-07-01" }
+  )
+
+  task_label("Delete Azure VM instance response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response deleting Azure VM instance: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Delete Azure VM instance successful: " + $instance["id"])
+  end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
 end
