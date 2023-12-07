@@ -248,7 +248,6 @@ script "js_costs_flattened", type: "javascript" do
   var unallocated_spend = 0
   rows = ds_costs_aggregated.map(function(row) {
     var flattened = {}
-    // flattened["unallocated"] = false
     _.each(row.metrics, function(value, key) {
       if (key == cost_metric[param_cost_metric]) {
         total_spend = total_spend + value
@@ -275,22 +274,63 @@ script "js_costs_flattened", type: "javascript" do
     })
     return flattened
   })
+  // Group by the dimensions
+  grouped_rows = _.groupBy(rows, function(row) {
+    var group_by = []
+    _.each(row, function(value, key) {
+      if (key != cost_metric[param_cost_metric]) {
+        group_by.push(value)
+      }
+    })
+    return group_by.join("|")
+  })
+  // Sum the cost_* metrics for each group
+  rows = []
+  _.each(grouped_rows, function(group) {
+    var row = {}
+    _.each(group, function(item) {
+      _.each(item, function(value, key) {
+        if (key != cost_metric[param_cost_metric]) {
+          row[key] = value
+        }
+      })
+    })
+    _.each(group, function(item) {
+      _.each(item, function(value, key) {
+        if (key == cost_metric[param_cost_metric]) {
+          if (!row.hasOwnProperty(key)) {
+            row[key] = 0.0
+          }
+          row[key] += value
+        }
+      })
+    })
+    rows.push(row)
+  })
+  // Free up memory
+  grouped_rows = null
   // calculate the percent_of_total now that we have the total_spend
   rows_with_total = []
   _.each(rows, function(row) {
     row[cost_metric[param_cost_metric]+"_percent_of_total"] = ((row[cost_metric[param_cost_metric]] / total_spend) * 100).toFixed(2)
     rows_with_total.push(row)
   })
+  // sort the rows by cost_*_percent_of_total metric
+  rows_with_total = _.sortBy(rows_with_total, function(row) {
+    return row[cost_metric[param_cost_metric]+"_percent_of_total"]
+  }).reverse()
   // Get the column order from the first row
   // Put any cost_* columns at the end
   columns = []
   columns_unsorted = Object.keys(rows[0]) // Reverse the order so that when we push/append them they are in their original order
   _.each(columns_unsorted, function(key) {
+    // Add the non-cost_* columns first
     if (!key.match(/^cost_.*/)) {
       columns.push(key)
     }
   })
   _.each(columns_unsorted, function(key) {
+    // Add the cost_* columns, after all other dimensions
     if (key.match(/^cost_.*/)) {
       columns.push(key)
     }
@@ -316,7 +356,7 @@ end
 
 policy "policy_scheduled_report" do
   validate $ds_costs_flattened do
-    summary_template "{{ rs_org_name }} (Org ID: {{ rs_org_id }}): Scheduled Report for Unallocated Costs"
+    summary_template "{{ rs_org_name }} (Org ID: {{ rs_org_id }}): Full Cost Scheduled Report"
     detail_template <<-EOS
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 
