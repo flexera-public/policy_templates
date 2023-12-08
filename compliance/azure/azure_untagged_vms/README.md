@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy template checks for virtual machines missing the user-specified tags. An incident is raised containing the untagged virtual machines, and the user has the option to power off, delete, or tag the virtual machines.
+This policy template checks for Azure virtual machines missing the user-specified tags. An incident is raised containing the untagged virtual machines, and the user has the option to power off, delete, or tag the virtual machines.
 
 ## Functional Details
 
@@ -41,7 +41,7 @@ The following policy actions are taken on any resources found to be out of compl
 
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
-### Credential configuration
+### Credential Configuration
 
 For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
 
