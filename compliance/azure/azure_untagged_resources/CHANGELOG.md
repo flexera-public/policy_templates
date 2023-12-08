@@ -1,5 +1,14 @@
 # Changelog
 
+## v3.0
+
+- Added ability to filter resources by either tag key or tag key:value pairs
+- Added ability to filter resources by region
+- Added ability to filter resources by Azure resource type
+- Added ability to use all filters as an allow list or a deny list
+- Added additional context to incident description
+- Streamlined code for better readability and faster execution
+
 ## v2.13
 
 - Updated `param_tags_to_check` parameter to take a list of tag keys, as opposed to a list of tag key-value pairs
