@@ -477,7 +477,7 @@ script "js_azure_disks_with_metrics", type: "javascript" do
         )
       })
       if (correspondingTs === undefined) {
-        return { average: 0, maximum: 0 }
+        return { average: -1, maximum: -1 }
       } else {
         return { average: correspondingTs.data[0].average, maximum: correspondingTs.data[0].maximum }
       }
@@ -498,8 +498,8 @@ script "js_azure_disks_with_metrics", type: "javascript" do
           vmWithDisk.osDisk.iopsConsumedPctAvg = metric.timeseries[0].data[0].average
           vmWithDisk.osDisk.iopsConsumedPctMax = metric.timeseries[0].data[0].maximum
         } catch (err) {
-          vmWithDisk.osDisk.iopsConsumedPctAvg = 0
-          vmWithDisk.osDisk.iopsConsumedPctMax = 0
+          vmWithDisk.osDisk.iopsConsumedPctAvg = -1
+          vmWithDisk.osDisk.iopsConsumedPctMax = -1
         }
       }
       if (metric.name.value === "OS Disk Bandwidth Consumed Percentage") {
@@ -507,8 +507,8 @@ script "js_azure_disks_with_metrics", type: "javascript" do
           vmWithDisk.osDisk.bandwithConsumedPctAvg = metric.timeseries[0].data[0].average
           vmWithDisk.osDisk.bandwithConsumedPctMax = metric.timeseries[0].data[0].maximum
         } catch (err) {
-          vmWithDisk.osDisk.bandwithConsumedPctAvg = 0
-          vmWithDisk.osDisk.bandwithConsumedPctMax = 0
+          vmWithDisk.osDisk.bandwithConsumedPctAvg = -1
+          vmWithDisk.osDisk.bandwithConsumedPctMax = -1
         }
       }
     }
@@ -578,6 +578,10 @@ script "js_azure_disks_with_metrics_thresholds_filtered", type: "javascript" do
   result "result"
   code <<-EOS
   var result = _.filter(ds_azure_disks_with_metrics, function(disk) {
+    // Filter the disk if we do not have IOPS and throughput data for the disk
+    if (disk.iopsConsumedPctAvg === -1 || disk.iopsConsumedPctMax === -1 || disk.bandwithConsumedPctAvg === -1 || disk.bandwithConsumedPctMax === -1) {
+      return false
+    }
     if (param_min_used_disk_space_pct_for_downsizing != -1) {
       if (disk.diskUsedGB != undefined) {
         var usedDiskSpacePct = disk.diskUsedGB * 100 / disk.diskSizeGB
@@ -816,7 +820,7 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
       newResourceTypePriceCurrency: newResourceTypePriceCurrency,
       resourceKind: disk.resourceType,
       region: disk.region,
-      monthlySavings: monthlySavings,
+      monthlySavings: monthlySavings.toFixed(2),
       savingsCurrency: currentDiskPrice.currencyCode,
       iopsPctMaximum: Math.round(disk.iopsConsumedPctMax),
       iopsPctAverage: Math.round(disk.iopsConsumedPctAvg),
@@ -835,7 +839,7 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
   }
 
   if (result.monthlySavings >= param_min_savings) {
-    result.monthlySavings = Math.round(result.monthlySavings)
+    result.monthlySavings = result.monthlySavings.toFixed(2)
     result.raiseIncident = true
   }
 EOS
@@ -955,9 +959,11 @@ EOS
       field "sizeGB" do
         label "Actual Disk Size GB"
       end
-      field "usedGBPct" do
-        label "Actual Disk Used GB %"
-      end
+      # Hide until we launch a version of the policy where the clients provide a datasource
+      # where we can take this information from.
+      # field "usedGBPct" do
+      #   label "Actual Disk Used GB %"
+      # end
       field "lookbackPeriod" do
         label "Look Back Period (Days)"
       end
