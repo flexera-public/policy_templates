@@ -8,6 +8,7 @@
 - Added ability to use all filters as an allow list or a deny list
 - Added additional context to incident description
 - Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera One credential
 
 ## v2.13
 
