@@ -409,7 +409,6 @@ These templates can generate savings estimates for your environment.
 - Compute
 
   - [Azure Long Running Instances](./operational/azure/azure_long_running_instances)
-  - [Azure Migrate Integration](./operational/azure/azure_migrate)
   - [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks)
   - [Expiring Azure Certificates](./operational/azure/azure_certificates)
 
@@ -430,6 +429,7 @@ These templates can generate savings estimates for your environment.
 #### Flexera Cloud Management
 
 - [Applied Policy Error Notification](./operational/applied_policy_error_notification)
+- [Azure Migrate Integration](./operational/azure/azure_migrate)
 
 #### Flexera ITAM
 
@@ -631,7 +631,7 @@ These templates can generate savings estimates for your environment.
   Security: 74
 :optimization_count: 43
 :policy_sets:
-  '': 81
+  '': 82
   AWS Config: 1
   Allocate VMs: 3
   CIS: 61
@@ -648,7 +648,7 @@ These templates can generate savings estimates for your environment.
   Inefficient Instance Usage: 1
   Instances not running FlexNet Inventory Agent: 2
   Lifecycle Management: 1
-  Long Running Instances: 3
+  Long Running Instances: 2
   Long Stopped Instances: 3
   N/A: 1
   Native Recommendations: 1
@@ -685,10 +685,10 @@ These templates can generate savings estimates for your environment.
 :providers:
   '': 1
   AWS: 76
-  Azure: 78
+  Azure: 77
   Azure China: 1
   Flexera: 5
-  Flexera Cloud Management: 3
+  Flexera Cloud Management: 4
   Flexera FNMS: 1
   Flexera ITAM: 5
   Flexera Optima: 25
@@ -703,7 +703,7 @@ These templates can generate savings estimates for your environment.
   Oracle: 1
   ServiceNow: 1
 :services:
-  '': 62
+  '': 63
   AKS: 2
   All: 1
   App Service: 1
@@ -711,7 +711,7 @@ These templates can generate savings estimates for your environment.
   CCO: 1
   CloudTrail: 7
   Common Bill Ingestion: 2
-  Compute: 49
+  Compute: 48
   Config: 1
   Cost Explorer: 1
   DBS: 1
