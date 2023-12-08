@@ -139,6 +139,14 @@ datasource "ds_applied_policy" do
   end
 end
 
+# Get list of resource types to filter untaggable resources from results
+datasource "ds_azure_resource_types" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera/policy_templates/master/data/azure/resource_types.json.json"
+  end
+end
+
 datasource "ds_azure_subscriptions" do
   request do
     auth $auth_azure
@@ -238,11 +246,11 @@ EOS
 end
 
 datasource "ds_azure_resources_type_filtered" do
-  run_script $js_azure_resources_type_filtered, $ds_azure_resources_region_filtered, $param_resourcetypes_allow_or_deny, $param_resourcetypes_list
+  run_script $js_azure_resources_type_filtered, $ds_azure_resources_region_filtered, $ds_azure_resource_types, $param_resourcetypes_allow_or_deny, $param_resourcetypes_list
 end
 
 script "js_azure_resources_type_filtered", type: "javascript" do
-  parameters "ds_azure_resources_region_filtered", "param_resourcetypes_allow_or_deny", "param_resourcetypes_list"
+  parameters "ds_azure_resources_region_filtered", "ds_azure_resource_types", "param_resourcetypes_allow_or_deny", "param_resourcetypes_list"
   result "result"
   code <<-'EOS'
   if (param_resourcetypes_list.length > 0) {
@@ -257,7 +265,8 @@ script "js_azure_resources_type_filtered", type: "javascript" do
         include_resource = !include_resource
       }
 
-      return include_resource
+      // Filter out resources with untaggable resource types based on our list
+      return include_resource && ds_azure_resource_types[resource['type']]['supportsTags']
     })
   } else {
     result = ds_azure_resources_region_filtered
