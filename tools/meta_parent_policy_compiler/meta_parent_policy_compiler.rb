@@ -30,6 +30,8 @@ default_child_policy_template_files = [
   "../../security/aws/rds_publicly_accessible/aws_publicly_accessible_rds_instances.pt",
   "../../security/storage/aws/public_buckets/aws_public_buckets.pt",
   # Azure Policy Templates
+  "../../compliance/azure/azure_untagged_vms/untagged_vms.pt",
+  "../../compliance/azure/azure_untagged_resources/untagged_resources.pt",
   "../../compliance/azure/azure_disallowed_regions/azure_disallowed_regions.pt",
   "../../compliance/azure/ahub_manual/azure_ahub_utilization_with_manual_entry.pt",
   "../../compliance/azure/instances_without_fnm_agent/azure_instances_not_running_flexnet_inventory_agent.pt",
