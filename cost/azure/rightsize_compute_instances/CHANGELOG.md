@@ -1,5 +1,12 @@
 # Changelog
 
+## v3.4
+
+- Fixed issue with resource count in incident subject being off by 1
+- Added ability to filter resources by tag key
+- Improved code related to incident export
+- Updated and improved code for policy actions
+
 ## v3.3
 
 - Added ability to filter resources by region

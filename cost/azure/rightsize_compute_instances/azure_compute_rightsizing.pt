@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "3.3",
+  version: "3.4",
   provider: "Azure",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -48,8 +48,8 @@ parameter "param_exclusion_tags" do
   type "list"
   category "Filters"
   label "Exclusion Tags (Key:Value)"
-  description "Cloud native tags to ignore instances that you don't want to consider for downsizing or deletion. Format: Key:Value"
-  allowed_pattern /(^$)|([\w]?)+\:([\w]?)+/
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:*"
+  allowed_pattern /(^$)|[\w]*\:.*/
   default []
 end
 
@@ -362,7 +362,7 @@ datasource "ds_azure_instances" do
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "resourceId", jmes_path(col_item, "id")
+      field "resourceID", jmes_path(col_item, "id")
       field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
       field "resourceKind", jmes_path(col_item, "type")
       field "name", jmes_path(col_item, "name")
@@ -391,6 +391,7 @@ script "js_azure_instances_tag_filtered", type: "javascript" do
       if (typeof(vm['tags']) == 'object') {
         _.each(Object.keys(vm['tags']), function(key) {
           vm_tags.push([key, ":", vm['tags'][key]].join(''))
+          vm_tags.push([key, ":*"].join(''))
         })
       }
 
@@ -485,14 +486,14 @@ end
 datasource "ds_azure_instances_metrics" do
   iterate $ds_azure_instances_region_filtered
   request do
-    run_script $js_azure_instances_metrics, val(iter_item, "resourceId"), $param_azure_endpoint, $param_stats_lookback
+    run_script $js_azure_instances_metrics, val(iter_item, "resourceID"), $param_azure_endpoint, $param_stats_lookback
   end
   result do
     encoding "json"
     field "value", val(response, "value")
     field "resourceName", val(iter_item, "name")
     field "resourceGroup", val(iter_item, "resourceGroup")
-    field "resourceId", val(iter_item, "resourceId")
+    field "resourceID", val(iter_item, "resourceID")
     field "resourceKind", val(iter_item, "resourceKind")
     field "region", val(iter_item, "region")
     field "tags", val(iter_item, "tags")
@@ -504,7 +505,7 @@ datasource "ds_azure_instances_metrics" do
 end
 
 script "js_azure_instances_metrics", type: "javascript" do
-  parameters "resourceId", "param_azure_endpoint", "param_stats_lookback"
+  parameters "resourceID", "param_azure_endpoint", "param_stats_lookback"
   result "request"
   code <<-EOS
   end_date = new Date()
@@ -526,7 +527,7 @@ script "js_azure_instances_metrics", type: "javascript" do
     pagination: "pagination_azure",
     host: param_azure_endpoint,
     verb: "GET",
-    path: resourceId + "/providers/microsoft.insights/metrics",
+    path: resourceID + "/providers/microsoft.insights/metrics",
     query_params: {
       "api-version": "2018-01-01",
       "timespan": timespan,
@@ -648,13 +649,13 @@ script "js_azure_instances_metrics_organized", type: "javascript" do
     result.push({
       resourceName: vm['resourceName'],
       resourceGroup: vm['resourceGroup'],
-      resourceId: vm['resourceId'],
+      resourceID: vm['resourceID'],
       resourceKind: vm['resourceKind'],
       region: vm['region'],
       osType: vm['osType'],
       resourceType: vm['resourceType'],
-      subscriptionId: vm['subscriptionId'],
-      subscriptionName: vm['subscriptionName'],
+      accountID: vm['subscriptionId'],
+      accountName: vm['subscriptionName'],
       tags: vm_tags.join(', '),
       cpu_minimum: parseFloat(cpu_min.toFixed(2)),
       cpu_maximum: parseFloat(cpu_max.toFixed(2)),
@@ -680,7 +681,7 @@ datasource "ds_instance_costs" do
   result do
     encoding "json"
     collect jmes_path(response, "rows[*]") do
-      field "resourceId", jmes_path(col_item, "dimensions.resource_id")
+      field "resourceID", jmes_path(col_item, "dimensions.resource_id")
       field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
     end
   end
@@ -770,7 +771,7 @@ script "js_instance_costs_grouped", type: "javascript" do
   result = {}
 
   _.each(ds_instance_costs, function(item) {
-    id = item['resourceId'].toLowerCase()
+    id = item['resourceID'].toLowerCase()
 
     if (result[id] == undefined) { result[id] = 0.0 }
     result[id] += item['cost'] * cost_multiplier
@@ -830,7 +831,7 @@ script "js_idle_and_underutil_instances", type:"javascript" do
   if (checking_cpu || checking_mem) {
     // Loop through metrics data, appending cost data
     _.each(ds_azure_instances_metrics_organized, function(instance) {
-      id = instance['resourceId'].toLowerCase()
+      id = instance['resourceID'].toLowerCase()
 
       // Assume cost is 0 unless we have cost data for the instance
       total_cost = 0.0
@@ -888,8 +889,8 @@ script "js_idle_and_underutil_instances", type:"javascript" do
 
         recommendationDetails = [
           "Delete Azure virtual machine ", instance["resourceName"], " ",
-          "in Azure Subscription ", instance["subscriptionName"], " ",
-          "(", instance["subscriptionId"], ")"
+          "in Azure Subscription ", instance["accountName"], " ",
+          "(", instance["accountID"], ")"
         ]
 
         instance["recommendationDetails"] = recommendationDetails.join('')
@@ -910,8 +911,8 @@ script "js_idle_and_underutil_instances", type:"javascript" do
 
         recommendationDetails = [
           "Resize Azure virtual machine ", instance["resourceName"], " ",
-          "in Azure Subscription ", instance["subscriptionName"], " ",
-          "(", instance["subscriptionId"], ") ",
+          "in Azure Subscription ", instance["accountName"], " ",
+          "(", instance["accountID"], ") ",
           "from ", instance["resourceType"], " ",
           "to ", instance["newResourceType"]
         ]
@@ -1069,20 +1070,11 @@ script "js_underutilized_instances", type: "javascript" do
   result "result"
   code <<-EOS
   result = [{
-    "recommendationType": "",
-    "underutil_message": "",
-    "idle_message": "",
-    "underutil_total_savings": "",
-    "idle_total_savings": "",
-    "tags": "",
-    "savings": "",
-    "savingsCurrency": "",
-    "cpu_maximum": "",
-    "cpu_minimum": "",
-    "cpu_average": "",
-    "mem_maximum": "",
-    "mem_minimum": "",
-    "mem_average": ""
+    "resourceID": "",    "recommendationType": "",       "underutil_message": "",
+    "idle_message": "",  "underutil_total_savings": "",  "idle_total_savings": "",
+    "tags": "",          "savings": "",                  "savingsCurrency": "",
+    "cpu_maximum": "",   "cpu_minimum": "",              "cpu_average": "",
+    "mem_maximum": "",   "mem_minimum": "",              "mem_average": ""
   }]
 
   result = ds_idle_and_underutil_instances["underutil_list"].concat(result)
@@ -1098,20 +1090,11 @@ script "js_idle_instances", type: "javascript" do
   result "result"
   code <<-EOS
   result = [{
-    "recommendationType": "",
-    "underutil_message": "",
-    "idle_message": "",
-    "underutil_total_savings": "",
-    "idle_total_savings": "",
-    "tags": "",
-    "savings": "",
-    "savingsCurrency": "",
-    "cpu_maximum": "",
-    "cpu_minimum": "",
-    "cpu_average": "",
-    "mem_maximum": "",
-    "mem_minimum": "",
-    "mem_average": ""
+    "resourceID": "",    "recommendationType": "",       "underutil_message": "",
+    "idle_message": "",  "underutil_total_savings": "",  "idle_total_savings": "",
+    "tags": "",          "savings": "",                  "savingsCurrency": "",
+    "cpu_maximum": "",   "cpu_minimum": "",              "cpu_average": "",
+    "mem_maximum": "",   "mem_minimum": "",              "mem_average": ""
   }]
 
   result = ds_idle_and_underutil_instances["idle_list"].concat(result)
@@ -1132,7 +1115,7 @@ policy "pol_utilization" do
     {{ with index data 0 }}{{ .underutil_message }}{{ end }}
     EOS
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
-    check logic_or($ds_parent_policy_terminated, ne(val(item, "recommendationType"), "Downsize"))
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     escalate $esc_downsize_instances
     hash_exclude "underutil_message", "idle_message", "underutil_total_savings", "idle_total_savings", "tags", "savings", "savingsCurrency", "cpu_maximum", "cpu_minimum", "cpu_average", "mem_maximum", "mem_minimum", "mem_average"
@@ -1140,11 +1123,9 @@ policy "pol_utilization" do
       resource_level true
       field "accountID" do
         label "Subscription ID"
-        path "subscriptionId"
       end
       field "accountName" do
         label "Subscription Name"
-        path "subscriptionName"
       end
       field "resourceGroup" do
         label "Resource Group"
@@ -1154,7 +1135,6 @@ policy "pol_utilization" do
       end
       field "resourceID" do
         label "Resource ID"
-        path "resourceId"
       end
       field "tags" do
         label "Resource Tags"
@@ -1224,7 +1204,7 @@ policy "pol_utilization" do
       end
       field "id" do
         label "ID"
-        path "resourceId"
+        path "resourceID"
       end
     end
   end
@@ -1236,7 +1216,7 @@ policy "pol_utilization" do
     {{ with index data 0 }}{{ .idle_message }}{{ end }}
     EOS
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
-    check logic_or($ds_parent_policy_terminated, ne(val(item, "recommendationType"), "Delete"))
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     escalate $esc_delete_instances
     hash_exclude "underutil_message", "idle_message", "underutil_total_savings", "idle_total_savings", "tags", "savings", "savingsCurrency", "cpu_maximum", "cpu_minimum", "cpu_average", "mem_maximum", "mem_minimum", "mem_average"
@@ -1244,11 +1224,9 @@ policy "pol_utilization" do
       resource_level true
       field "accountID" do
         label "Subscription ID"
-        path "subscriptionId"
       end
       field "accountName" do
         label "Subscription Name"
-        path "subscriptionName"
       end
       field "resourceGroup" do
         label "Resource Group"
@@ -1258,7 +1236,6 @@ policy "pol_utilization" do
       end
       field "resourceID" do
         label "Resource ID"
-        path "resourceId"
       end
       field "tags" do
         label "Resource Tags"
@@ -1325,7 +1302,7 @@ policy "pol_utilization" do
       end
       field "id" do
         label "ID"
-        path "resourceId"
+        path "resourceID"
       end
     end
   end
