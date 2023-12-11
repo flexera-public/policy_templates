@@ -5,7 +5,7 @@
 - Fixed issue with resource count in incident subject being off by 1
 - Fixed minor grammar issue if results only include 1 item
 - Renamed policy actions to make it clear whether they are for underutilized or idle instances
-- Added ability to filter resources by tag key
+- Added ability to filter resources by tag key via wildcard
 - Added option to power off idle instances
 - Added ability to indicate whether to do a graceful or forced shutdown when powering off instances
 - Improved code related to incident export
