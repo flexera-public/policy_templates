@@ -1,9 +1,11 @@
 # Changelog
 
-## v3.4
+## v4.0
 
 - Fixed issue with resource count in incident subject being off by 1
 - Added ability to filter resources by tag key
+- Added option to power off idle instances
+- Added ability to indicate whether to do a graceful or forced shutdown when powering off instances
 - Improved code related to incident export
 - Updated and improved code for policy actions
 

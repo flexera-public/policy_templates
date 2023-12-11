@@ -8,7 +8,7 @@ tenancy "single"
 default_frequency "15 minutes"
 info(
   provider: "Azure",
-  version: "3.3", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "4.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "false"
 )
 
@@ -88,8 +88,8 @@ parameter "param_exclusion_tags" do
   type "list"
   category "Filters"
   label "Exclusion Tags (Key:Value)"
-  description "Cloud native tags to ignore instances that you don't want to consider for downsizing or deletion. Format: Key:Value"
-  allowed_pattern /(^$)|([\w]?)+\:([\w]?)+/
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:*"
+  allowed_pattern /(^$)|[\w]*\:.*/
   default []
 end
 
@@ -183,8 +183,17 @@ parameter "param_automatic_action" do
   category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action."
-  allowed_values ["Downsize Instances", "Delete Instances"]
+  allowed_values ["Downsize Underutilized Instances", "Power Off Idle Instances", "Delete Idle Instances"]
   default []
+end
+
+parameter "param_skipshutdown" do
+  type "string"
+  category "Actions"
+  label "Power Off Type"
+  description "Whether to perform a graceful shutdown or a forced shutdown when powering off idle instances. Only applicable when taking action against instances."
+  allowed_values "Graceful", "Forced"
+  default "Graceful"
 end
 
 ###############################################################################
@@ -875,26 +884,37 @@ EOS
 end
 
 
-# Escalation for Downsize Instances
+# Escalation for Downsize Underutilized Instances
 escalation "esc_downsize_instances" do
   automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
-  label "Downsize Instances"
+  label "Downsize Underutilized Instances"
   description "Approval to downsize all selected instances"
   run "esc_downsize_instances", data, rs_governance_host, rs_project_id
 end
 define esc_downsize_instances($data, $governance_host, $rs_project_id) do
-  call child_run_action($data, $governance_host, $rs_project_id, "Downsize Instances")
+  call child_run_action($data, $governance_host, $rs_project_id, "Downsize Underutilized Instances")
 end
 
-# Escalation for Delete Instances
+# Escalation for Power Off Idle Instances
+escalation "esc_poweroff_instances" do
+  automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
+  label "Power Off Idle Instances"
+  description "Approval to power off all selected instances"
+  run "esc_poweroff_instances", data, rs_governance_host, rs_project_id
+end
+define esc_poweroff_instances($data, $governance_host, $rs_project_id) do
+  call child_run_action($data, $governance_host, $rs_project_id, "Power Off Idle Instances")
+end
+
+# Escalation for Delete Idle Instances
 escalation "esc_delete_instances" do
   automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
-  label "Delete Instances"
+  label "Delete Idle Instances"
   description "Approval to delete all selected instances"
   run "esc_delete_instances", data, rs_governance_host, rs_project_id
 end
 define esc_delete_instances($data, $governance_host, $rs_project_id) do
-  call child_run_action($data, $governance_host, $rs_project_id, "Delete Instances")
+  call child_run_action($data, $governance_host, $rs_project_id, "Delete Idle Instances")
 end
 
 
@@ -1000,6 +1020,7 @@ policy "policy_scheduled_report" do
   validate $ds_idle_instances_combined_incidents do
     summary_template "Consolidated Incident: {{ len data }} Azure Idle Virtual Machines Found"
     escalate $esc_email
+    escalate $esc_poweroff_instances
     escalate $esc_delete_instances
     check eq(size(data), 0)
     export do

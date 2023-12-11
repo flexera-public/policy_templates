@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "3.4",
+  version: "4.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -160,8 +160,17 @@ parameter "param_automatic_action" do
   category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action."
-  allowed_values ["Downsize Instances", "Delete Instances"]
+  allowed_values ["Downsize Underutilized Instances", "Power Off Idle Instances", "Delete Idle Instances"]
   default []
+end
+
+parameter "param_skipshutdown" do
+  type "string"
+  category "Actions"
+  label "Power Off Type"
+  description "Whether to perform a graceful shutdown or a forced shutdown when powering off idle instances. Only applicable when taking action against instances."
+  allowed_values "Graceful", "Forced"
+  default "Graceful"
 end
 
 ###############################################################################
@@ -1218,6 +1227,7 @@ policy "pol_utilization" do
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
+    escalate $esc_poweroff_instances
     escalate $esc_delete_instances
     hash_exclude "underutil_message", "idle_message", "underutil_total_savings", "idle_total_savings", "tags", "savings", "savingsCurrency", "cpu_maximum", "cpu_minimum", "cpu_average", "mem_maximum", "mem_minimum", "mem_average"
     export do
@@ -1320,15 +1330,22 @@ escalation "esc_email" do
 end
 
 escalation "esc_downsize_instances" do
-  automatic contains($param_automatic_action, "Downsize Instances")
-  label "Downsize Instances"
+  automatic contains($param_automatic_action, "Downsize Underutilized Instances")
+  label "Downsize Underutilized Instances"
   description "Approval to downsize all selected instances"
   run "downsize_instances", data, $param_azure_endpoint
 end
 
+escalation "esc_poweroff_instances" do
+  automatic contains($param_automatic_action, "Power Off Idle Instances")
+  label "Power Off Idle Instances"
+  description "Approval to power off all selected instances"
+  run "poweroff_instances", data, $param_azure_endpoint, $param_skipshutdown
+end
+
 escalation "esc_delete_instances" do
-  automatic contains($param_automatic_action, "Delete Instances")
-  label "Delete Instances"
+  automatic contains($param_automatic_action, "Delete Idle Instances")
+  label "Delete Idle Instances"
   description "Approval to delete all selected instances"
   run "delete_instances", data, $param_azure_endpoint
 end
@@ -1336,6 +1353,53 @@ end
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
+
+define downsize_instances($data, $param_azure_endpoint) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call downsize_instance($instance, $param_azure_endpoint) retrieve $downsize_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+define downsize_instance($instance, $param_azure_endpoint) return $response do
+  $host = $param_azure_endpoint
+  $href = $instance["id"]
+  $params = "?api-version=2023-07-01"
+  $url = $host + $href + $params
+  task_label("PATCH " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "patch",
+    host: $host,
+    href: $href,
+    query_strings: { "api-version": "2023-07-01" },
+    body: {
+      "properties":{
+        "hardwareProfile": {
+          "vmSize": $instance["recommendedVmSize"]
+        }
+      }
+    }
+  )
+
+  task_label("Patch Azure VM instance response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response patching Azure VM instance: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Patch Azure VM instance successful: " + $instance["id"])
+  end
+end
 
 define poweroff_instances($data, $param_azure_endpoint, $param_skipshutdown) return $all_responses do
   $$all_responses = []
