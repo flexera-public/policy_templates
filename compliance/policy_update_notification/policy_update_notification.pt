@@ -1,7 +1,7 @@
 name "Policy Update Notification"
 rs_pt_ver 20180301
 type "policy"
-short_description "Identifies the current version of applied policy and that of respective policy in catalog and creates an incident with the date of policy updation.See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/policy_update_notification/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Checks for applied policies that use outdated policy catalog templates. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/policy_update_notification/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "low"
 category "Compliance"
@@ -81,38 +81,37 @@ script "js_catalog_template_table", type:"javascript" do
   result = {}
 
   _.each(ds_catalog_templates, function(template) {
+    // Extract links from short description
+    short_description = template['short_description']
+    readme_index = short_description.indexOf('README')
+    readme = ''
+    changelog = ''
+
+    if (readme_index != -1) {
+      link = short_description.substr(readme_index + 8).split(')')[0]
+      if (link[link.length - 1] != '/') { link += '/' }
+
+      readme = link + 'README.md'
+      changelog = link + 'CHANGELOG.md'
+    }
+
     result[template['id']] = {
       name: template['name'],
       version: template['version'],
       update_date: template['update_date'],
-      short_description: template['short_description']
+      short_description: template['short_description'],
+      readme: readme,
+      changelog: changelog
     }
   })
 EOS
 end
 
-datasource "ds_project_details" do
-  request do
-    auth $auth_flexera
-    host "governance.rightscale.com"
-    path join(["/grs/orgs/", rs_org_id, "/projects"])
-    header "X-Api-Version", "2.0"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "[*]") do
-      field "id", jmes_path(col_item, "id")
-      field "name", jmes_path(col_item, "name")
-    end
-  end
-end
-
 datasource "ds_applied_policies" do
-  iterate $ds_project_details
   request do
     auth $auth_flexera
     host rs_governance_host
-    path join(["/api/governance/projects/", val(iter_item, "id"), "/applied_policies"])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies"])
     header "Api-Version", "1.0"
     header "view", "default"
     ignore_status [401]
@@ -124,8 +123,7 @@ datasource "ds_applied_policies" do
       field "name", jmes_path(col_item, "name")
       field "published_template_id", jmes_path(col_item, "published_template.id")
       field "version", jmes_path(col_item, "info.version")
-      field "project_id", val(iter_item, "id")
-      field "project_name", val(iter_item, "name")
+      field "project_id", rs_project_id
     end
   end
 end
@@ -160,33 +158,18 @@ script "js_update_notification", type:"javascript" do
     catalog_version = ds_catalog_template_table[template_id]['version']
 
     if (applied_version != catalog_version) {
-      // Extract links from short description
-      short_description = ds_catalog_template_table[template_id]['short_description']
-      readme_index = short_description.indexOf('README')
-      readme = ''
-      changelog = ''
-
-      if (readme_index != -1) {
-        link = short_description.substr(readme_index + 8).split(')')[0]
-        if (link[link.length - 1] != '/') { link += '/' }
-
-        readme = link + 'README.md'
-        changelog = link + 'CHANGELOG.md'
-      }
-
       result.push({
         id: policy['id'],
         name: policy['name'],
         project_id: policy['project_id'],
-        project_name: policy['project_name']
         template_id: template_id,
         template_name: ds_catalog_template_table[template_id]['name'],
         template_update_date: ds_catalog_template_table[template_id]['update_date'],
-        template_description: short_description,
+        template_description: ds_catalog_template_table[template_id]['short_description'],
+        readme: ds_catalog_template_table[template_id]['readme'],
+        changelog: ds_catalog_template_table[template_id]['changelog'],
         catalog_version: catalog_version,
         applied_version: applied_version,
-        readme: readme,
-        changelog: changelog,
         this_policy_name: ds_applied_policy['name']
       })
     }
@@ -208,9 +191,6 @@ policy "pol_update_notification" do
       resource_level false
       field "project_id" do
         label "Flexera Account ID"
-      end
-      field "project_name" do
-        label "Flexera Account Name"
       end
       field "id" do
         label "Applied Policy ID"
