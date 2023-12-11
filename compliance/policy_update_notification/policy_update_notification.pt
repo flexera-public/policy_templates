@@ -5,6 +5,7 @@ short_description "Identifies the current version of applied policy and that of 
 long_description ""
 severity "low"
 category "Compliance"
+default_frequency "weekly"
 info(
   version: "1.1",
   provider: "Flexera Cloud Management",
@@ -12,196 +13,245 @@ info(
   policy_set: ""
 )
 
-#############
+##############################################################################
 # Parameters
-#############
+##############################################################################
 
 parameter "param_email" do
   type "list"
-  label "Email addresses to notify"
-  description "Email addresses of the recipients you wish to notify when new incidents are created"
+  category "Policy Settings"
+  label "Email addresses"
+  description "A list of email addresses to notify."
+  default []
 end
 
-#################
+###############################################################################
 # Authentication
-#################
+###############################################################################
 
-auth "auth_rs", type: "rightscale"
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
 
-##############
-# Datasources
-##############
+###############################################################################
+# Datasources & Scripts
+###############################################################################
 
-datasource "ds_get_catalog_policy_templates" do
+# Gather applied policy metadata for use later
+datasource "ds_applied_policy" do
   request do
-    auth $auth_rs
-    verb "GET"
+    auth $auth_flexera
     host rs_governance_host
-    path join(["/api/governance/orgs/",rs_org_id,"/published_templates"])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_catalog_templates" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/orgs/", rs_org_id, "/published_templates"])
     header "Api-Version", "1.0"
     header "view", "extended"
   end
   result do
     encoding "json"
-    collect jmes_path(response,"items[*]") do
-      field "catalog_id", jmes_path(col_item, "id")
-      field "policy_name", jmes_path(col_item, "name")
-      field "catalog_version", jmes_path(col_item, "info.version")
-      field "policy_update_date", jmes_path(col_item, "updated_at")
+    collect jmes_path(response, "items[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "version", jmes_path(col_item, "info.version")
+      field "update_date", jmes_path(col_item, "updated_at")
       field "short_description", jmes_path(col_item, "short_description")
     end
   end
 end
 
-datasource "ds_get_project_details" do
+datasource "ds_catalog_template_table" do
+  run_script $js_catalog_template_table, $ds_catalog_templates
+end
+
+script "js_catalog_template_table", type:"javascript" do
+  parameters "ds_catalog_templates"
+  result "result"
+  code <<-'EOS'
+  result = {}
+
+  _.each(ds_catalog_templates, function(template) {
+    result[template['id']] = {
+      name: template['name'],
+      version: template['version'],
+      update_date: template['update_date'],
+      short_description: template['short_description']
+    }
+  })
+EOS
+end
+
+datasource "ds_project_details" do
   request do
-    auth $auth_rs
-    verb "GET"
+    auth $auth_flexera
     host "governance.rightscale.com"
-    path join(["/grs/orgs/",rs_org_id,"/projects"])
+    path join(["/grs/orgs/", rs_org_id, "/projects"])
     header "X-Api-Version", "2.0"
   end
   result do
     encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "project_id", jmes_path(col_item, "id")
-      field "project_name", jmes_path(col_item, "name")
+    collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
     end
   end
 end
 
-datasource "ds_get_account_details" do
-  iterate $ds_get_project_details
-    request do
-      auth $auth_rs
-      verb "GET"
-      host rs_governance_host
-      path join(["/api/governance/projects/",val(iter_item, "project_id"),"/applied_policies"])
-      header "Api-Version", "1.0"
-      header "view", "default"
-      ignore_status [401]
-    end
-    result do
-      encoding "json"
-      collect jmes_path(response,"items[*]") do
-        field "published_template_id", jmes_path(col_item, "published_template.id")
-        field "project_id", val(iter_item,"project_id")
-        field "project_name", val(iter_item,"project_name")
-        field "applied_version", jmes_path(col_item, "info.version")
+datasource "ds_applied_policies" do
+  iterate $ds_project_details
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", val(iter_item, "id"), "/applied_policies"])
+    header "Api-Version", "1.0"
+    header "view", "default"
+    ignore_status [401]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"items[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "published_template_id", jmes_path(col_item, "published_template.id")
+      field "version", jmes_path(col_item, "info.version")
+      field "project_id", val(iter_item, "id")
+      field "project_name", val(iter_item, "name")
     end
   end
 end
 
-datasource "ds_get_applied_policy_templates" do
-  run_script $js_get_applied_policy_templates, $ds_get_account_details
+datasource "ds_applied_policies_from_catalog" do
+  run_script $js_applied_policies_from_catalog, $ds_applied_policies
 end
 
-datasource "ds_get_update_notification" do
-  run_script $js_get_update_notification, $ds_get_applied_policy_templates, $ds_get_catalog_policy_templates
-end
-
-##############
-# Script
-##############
-
-script "js_get_applied_policy_templates", type:"javascript" do
-  parameters "ds_get_account_details"
-  result "content"
-  code <<-EOS
-  var content=[];
-  for(var i = 0; i < ds_get_account_details.length; i++){
-    if(ds_get_account_details[i].published_template_id != null){
-      content.push({published_template_id:ds_get_account_details[i].published_template_id, project_id:ds_get_account_details[i].project_id, project_name:ds_get_account_details[i].project_name, applied_version:ds_get_account_details[i].applied_version});
-    }
-  }
+script "js_applied_policies_from_catalog", type:"javascript" do
+  parameters "ds_applied_policies"
+  result "result"
+  code <<-'EOS'
+  result = _.filter(ds_applied_policies, function(account) {
+    return typeof(account['published_template_id']) == 'string' && account['published_template_id'] != ''
+  })
 EOS
 end
 
-script "js_get_update_notification", type:"javascript" do
-  parameters "ds_get_applied_policy_templates", "ds_get_catalog_policy_templates"
-  result "content"
-  code <<-EOS
-  var content=[];
-  var applied_temp_id;
-  var catalog_temp_id;
-  for(var i=0 ; i<ds_get_applied_policy_templates.length ; i++){
-    applied_temp_id = ds_get_applied_policy_templates[i].published_template_id;
-    for(var j=0 ; j<ds_get_catalog_policy_templates.length ; j++){
-      if(applied_temp_id == ds_get_catalog_policy_templates[j].catalog_id){
-        applied_version = ds_get_applied_policy_templates[i].applied_version;
-        catalog_version = ds_get_catalog_policy_templates[j].catalog_version;
-        if(catalog_version !== applied_version){
-          var short_description = ds_get_catalog_policy_templates[i].short_description;
-          if(short_description.indexOf("README")>-1){
-        index = short_description.indexOf("README");
-        linkString = short_description.substr(index+8);
-        descriptionLink = linkString.substr(0,linkString.indexOf(")"));
-        var length = descriptionLink.length;
-        var descriptionEnd = descriptionLink.substr(length-1);
-        if(descriptionEnd === "/"){
-          readmeLink = descriptionLink + "README.md";
-          changelogLink = descriptionLink + "CHANGELOG.md";
-        }else{
-          readmeLink = descriptionLink + "/README.md";
-          changelogLink = descriptionLink + "/CHANGELOG.md";
-        }
-        }else{
-        readmeLink = "";
-        changelogLink = "";
-        }
-        content.push({project_id:ds_get_applied_policy_templates[i].project_id, project_name:ds_get_applied_policy_templates[i].project_name, applied_version:applied_version,catalog_version:catalog_version,policy_update_date:ds_get_catalog_policy_templates[j].policy_update_date,short_description:ds_get_catalog_policy_templates[j].short_description,name:ds_get_catalog_policy_templates[j].policy_name, readmeLink:readmeLink, changelogLink:changelogLink});
-        }
+datasource "ds_update_notification" do
+  run_script $js_update_notification, $ds_applied_policies_from_catalog, $ds_catalog_template_table, $ds_applied_policy
+end
+
+script "js_update_notification", type:"javascript" do
+  parameters "ds_applied_policies_from_catalog", "ds_catalog_template_table", "ds_applied_policy"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  _.each(ds_applied_policies_from_catalog, function(policy) {
+    template_id = policy['published_template_id']
+    applied_version = policy['version']
+    catalog_version = ds_catalog_template_table[template_id]['version']
+
+    if (applied_version != catalog_version) {
+      // Extract links from short description
+      short_description = ds_catalog_template_table[template_id]['short_description']
+      readme_index = short_description.indexOf('README')
+      readme = ''
+      changelog = ''
+
+      if (readme_index != -1) {
+        link = short_description.substr(readme_index + 8).split(')')[0]
+        if (link[link.length - 1] != '/') { link += '/' }
+
+        readme = link + 'README.md'
+        changelog = link + 'CHANGELOG.md'
       }
+
+      result.push({
+        id: policy['id'],
+        name: policy['name'],
+        project_id: policy['project_id'],
+        project_name: policy['project_name']
+        template_id: template_id,
+        template_name: ds_catalog_template_table[template_id]['name'],
+        template_update_date: ds_catalog_template_table[template_id]['update_date'],
+        template_description: short_description,
+        catalog_version: catalog_version,
+        applied_version: applied_version,
+        readme: readme,
+        changelog: changelog,
+        this_policy_name: ds_applied_policy['name']
+      })
     }
-  }
+  })
 EOS
 end
 
-policy 'update_notification_policy' do
-  validate $ds_get_update_notification do
-    summary_template "Policy Version Update Notification"
-    escalate $email
-    check eq(size(data),0)
-    export "result" do
+###############################################################################
+# Policy
+###############################################################################
+
+policy 'pol_update_notification' do
+  validate_each $ds_update_notification do
+    summary_template "{{ with index data 0 }}{{ .this_policy_name }}{{ end }}: {{ len data }} Outdated Flexera Catalog Policies Found"
+    escalate $esc_email
+    check eq(val(item, "id"), "")
+    export do
       resource_level false
-      field "name" do
-        label "Policy Template Name"
-      end
-      field "catalog_version" do
-        label "Catalog Version"
-      end
-      field "applied_version" do
-        label "Applied Version"
+      field "project_id" do
+        label "Flexera Account ID"
       end
       field "project_name" do
-        label "Account Name"
+        label "Flexera Account Name"
       end
-      field "policy_update_date" do
-        label "Policy Template Date Change"
+      field "id" do
+        label "Applied Policy ID"
       end
-      field "short_description" do
-        label "Short Description"
+      field "name" do
+        label "Applied Policy Name"
       end
-      field "readmeLink" do
-        label "Readme Link"
+      field "applied_version" do
+        label "Applied Policy Version"
       end
-      field "changelogLink" do
-        label "Changelog Link"
+      field "catalog_version" do
+        label "Catalog Template Version"
       end
-      field "project_id" do
-        label "Account Id"
+      field "template_id" do
+        label "Catalog Template ID"
+      end
+      field "template_name" do
+        label "Catalog Template Name"
+      end
+      field "template_description" do
+        label "Catalog Template Description"
+      end
+      field "template_update_date" do
+        label "Catalog Template Updated Date"
+      end
+      field "readme" do
+        label "Catalog Template README"
+      end
+      field "changelog" do
+        label "Catalog Template CHANGELOG"
       end
     end
   end
 end
 
-##############
+###############################################################################
 # Escalations
-##############
+###############################################################################
 
-escalation "email" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
-  description "Sends incident email"
+  description "Send incident email"
   email $param_email
 end
