@@ -87,20 +87,20 @@ parameter "param_regions_list" do
   default []
 end
 
-parameter "param_min_used_disk_space_pct_for_downsizing" do
+parameter "param_min_used_disk_space_pct" do
   type "number"
   category "Filters"
-  label "Minimum used disk space percentage to consider a managed disk for downsizing"
+  label "Minimum used disk space percentage"
   description "The minimum used disk space percentage threshold at which to consider a disk to be 'oversized' and therefore be flagged for downsizing. Set to -1 to disable this filter."
   min_value -1
   max_value 100
   default -1
 end
 
-parameter "param_min_used_disk_iops_pct_for_downsizing" do
+parameter "param_min_used_disk_iops_pct" do
   type "number"
   category "Filters"
-  label "Minimum used disk IOPS percentage to consider a managed disk for downsizing"
+  label "Minimum used disk IOPS percentage"
   description "The minimum used disk IOPS percentage threshold at which to consider a disk to be 'oversized' and therefore be flagged for downsizing. Set to -1 to disable this filter."
   min_value -1
   max_value 100
@@ -116,10 +116,10 @@ parameter "param_stats_aggregation_for_disk_iops" do
   default "Maximum"
 end
 
-parameter "param_min_used_disk_throughput_pct_for_downsizing" do
+parameter "param_min_used_disk_throughput_pct" do
   type "number"
   category "Filters"
-  label "Minimum used disk throughput percentage to consider a managed disk for downsizing"
+  label "Minimum used disk throughput percentage"
   description "The minimum used disk throughput percentage threshold at which to consider a disk to be 'oversized' and therefore be flagged for downsizing. Set to -1 to disable this filter."
   min_value -1
   max_value 100
@@ -179,6 +179,15 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
 
 datasource "ds_azure_subscriptions" do
   request do
@@ -570,11 +579,11 @@ EOS
 end
 
 datasource "ds_azure_disks_with_metrics_thresholds_filtered" do
-  run_script $js_azure_disks_with_metrics_thresholds_filtered, $ds_azure_disks_with_metrics, $param_min_used_disk_space_pct_for_downsizing, $param_min_used_disk_iops_pct_for_downsizing, $param_stats_aggregation_for_disk_iops, $param_min_used_disk_throughput_pct_for_downsizing, $param_stats_aggregation_for_disk_throughput
+  run_script $js_azure_disks_with_metrics_thresholds_filtered, $ds_azure_disks_with_metrics, $param_min_used_disk_space_pct, $param_min_used_disk_iops_pct, $param_stats_aggregation_for_disk_iops, $param_min_used_disk_throughput_pct, $param_stats_aggregation_for_disk_throughput
 end
 
 script "js_azure_disks_with_metrics_thresholds_filtered", type: "javascript" do
-  parameters "ds_azure_disks_with_metrics", "param_min_used_disk_space_pct_for_downsizing", "param_min_used_disk_iops_pct_for_downsizing", "param_stats_aggregation_for_disk_iops", "param_min_used_disk_throughput_pct_for_downsizing", "param_stats_aggregation_for_disk_throughput"
+  parameters "ds_azure_disks_with_metrics", "param_min_used_disk_space_pct", "param_min_used_disk_iops_pct", "param_stats_aggregation_for_disk_iops", "param_min_used_disk_throughput_pct", "param_stats_aggregation_for_disk_throughput"
   result "result"
   code <<-EOS
   var result = _.filter(ds_azure_disks_with_metrics, function(disk) {
@@ -582,23 +591,23 @@ script "js_azure_disks_with_metrics_thresholds_filtered", type: "javascript" do
     if (disk.iopsConsumedPctAvg === -1 || disk.iopsConsumedPctMax === -1 || disk.bandwithConsumedPctAvg === -1 || disk.bandwithConsumedPctMax === -1) {
       return false
     }
-    if (param_min_used_disk_space_pct_for_downsizing != -1) {
+    if (param_min_used_disk_space_pct != -1) {
       if (disk.diskUsedGB != undefined) {
         var usedDiskSpacePct = disk.diskUsedGB * 100 / disk.diskSizeGB
-        if (usedDiskSpacePct > param_min_used_disk_space_pct_for_downsizing) {
+        if (usedDiskSpacePct > param_min_used_disk_space_pct) {
           return false
         }
       }
     }
-    if (param_min_used_disk_iops_pct_for_downsizing != -1) {
+    if (param_min_used_disk_iops_pct != -1) {
       var usedMetricPct = param_stats_aggregation_for_disk_iops === "Average" ? disk.iopsConsumedPctAvg : disk.iopsConsumedPctMax
-      if (usedMetricPct > param_min_used_disk_iops_pct_for_downsizing) {
+      if (usedMetricPct > param_min_used_disk_iops_pct) {
         return false
       }
     }
-    if (param_min_used_disk_throughput_pct_for_downsizing != -1) {
+    if (param_min_used_disk_throughput_pct != -1) {
       var usedMetricPct = param_stats_aggregation_for_disk_throughput === "Average" ? disk.bandwithConsumedPctAvg : disk.bandwithConsumedPctMax
-      if (usedMetricPct > param_min_used_disk_throughput_pct_for_downsizing) {
+      if (usedMetricPct > param_min_used_disk_throughput_pct) {
         return false
       }
     }
@@ -624,11 +633,11 @@ datasource "ds_azure_md_pricing" do
 end
 
 datasource "ds_disk_rightsizing_recommendations" do
-  run_script $js_disk_rightsizing_recommendations, $ds_azure_disks_with_metrics_thresholds_filtered, $ds_azure_md_tier_types, $ds_azure_md_pricing, $param_stats_lookback, $param_min_savings, $param_min_used_disk_iops_pct_for_downsizing, $param_min_used_disk_throughput_pct_for_downsizing, $param_min_used_disk_space_pct_for_downsizing
+  run_script $js_disk_rightsizing_recommendations, $ds_azure_disks_with_metrics_thresholds_filtered, $ds_azure_md_tier_types, $ds_azure_md_pricing, $param_stats_lookback, $param_min_savings, $param_min_used_disk_iops_pct, $param_min_used_disk_throughput_pct, $param_min_used_disk_space_pct, $ds_applied_policy
 end
 
 script "js_disk_rightsizing_recommendations", type: "javascript" do
-  parameters "ds_azure_disks_with_metrics_thresholds_filtered", "ds_azure_md_tier_types", "ds_azure_md_pricing", "param_stats_lookback", "param_min_savings", "param_min_used_disk_iops_pct_for_downsizing", "param_min_used_disk_throughput_pct_for_downsizing", "param_min_used_disk_space_pct_for_downsizing"
+  parameters "ds_azure_disks_with_metrics_thresholds_filtered", "ds_azure_md_tier_types", "ds_azure_md_pricing", "param_stats_lookback", "param_min_savings", "param_min_used_disk_iops_pct", "param_min_used_disk_throughput_pct", "param_min_used_disk_space_pct", "ds_applied_policy"
   result "result"
   code <<-EOS
   var hddDiskSizes = [32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32767]
@@ -743,6 +752,7 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
     recommendations: [],
     monthlySavings: 0,
     raiseIncident: false,
+    policyName: ds_applied_policy.name,
   }
 
   for (i in ds_azure_disks_with_metrics_thresholds_filtered) {
@@ -824,13 +834,13 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
       savingsCurrency: currentDiskPrice.currencyCode,
       iopsPctMaximum: Math.round(disk.iopsConsumedPctMax),
       iopsPctAverage: Math.round(disk.iopsConsumedPctAvg),
-      iopsThreshold: param_min_used_disk_iops_pct_for_downsizing,
+      iopsThreshold: param_min_used_disk_iops_pct,
       throughputPctMaximum: Math.round(disk.bandwithConsumedPctMax),
       throughputPctAverage: Math.round(disk.bandwithConsumedPctAvg),
-      throughputThreshold: param_min_used_disk_throughput_pct_for_downsizing,
+      throughputThreshold: param_min_used_disk_throughput_pct,
       sizeGB: disk.diskSizeGB,
       usedGBPct: disk.diskUsedGB != undefined ? Math.round(disk.diskUsedGB * 100 / disk.diskSizeGB) : "Unknown",
-      diskSpaceThreshold: param_min_used_disk_space_pct_for_downsizing,
+      diskSpaceThreshold: param_min_used_disk_space_pct,
       lookbackPeriod: param_stats_lookback,
       service: disk.service.split("/")[0],
     })
@@ -852,10 +862,10 @@ end
 
 policy "pol_azure_rightsize_managed_disks" do
   validate $ds_disk_rightsizing_recommendations do
-    summary_template "There are {{ len data.recommendations }} oversized Azure Managed Disks, you could save ${{ data.monthlySavings }} USD!"
+    summary_template "{{ data.policyName }}: There are {{ len data.recommendations }} oversized Azure Managed Disks, you could save ${{ data.monthlySavings }} USD!"
     detail_template <<-'EOS'
 ## Summary
-Found {{ len data.recommendations }} Azure Managed Disks that are *oversized* during the last {{ parameters.param_stats_lookback }} days. *Oversized* disks are those which have **less or equal than {{ parameters.param_min_used_disk_iops_pct_for_downsizing }}% {{ parameters.param_stats_aggregation_for_disk_iops }} IOPS utilization, less or equal than {{ parameters.param_min_used_disk_throughput_pct_for_downsizing }}% {{ parameters.param_stats_aggregation_for_disk_throughput }} throughput utilization and less or equal than {{ parameters.param_min_used_disk_space_pct_for_downsizing }}% used capacity (GiB)** within the last {{ parameters.param_stats_lookback }} days.
+Found {{ len data.recommendations }} Azure Managed Disks that are *oversized* during the last {{ parameters.param_stats_lookback }} days. *Oversized* disks are those which have **less or equal than {{ parameters.param_min_used_disk_iops_pct }}% {{ parameters.param_stats_aggregation_for_disk_iops }} IOPS utilization, less or equal than {{ parameters.param_min_used_disk_throughput_pct }}% {{ parameters.param_stats_aggregation_for_disk_throughput }} throughput utilization and less or equal than {{ parameters.param_min_used_disk_space_pct }}% used capacity (GiB)** within the last {{ parameters.param_stats_lookback }} days.
 
 **Potential Monthly Savings:** ${{ data.monthlySavings }} USD
 EOS
