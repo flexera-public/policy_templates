@@ -2,7 +2,7 @@
 
 ## What it does
 
-This Policy Template leverages the Azure Cost Management APIs ([Reservation Transactions](https://learn.microsoft.com/en-us/rest/api/consumption/reservation-transactions/list?view=rest-consumption-2023-05-01&tabs=HTTP) and [Reservation Summaries](https://learn.microsoft.com/en-us/rest/api/consumption/reservations-summaries/list?view=rest-consumption-2023-05-01&tabs=HTTP#reservationsummariesdailywithbillingaccountid)). It will notify only if utilization of a RI falls below the value specified in the `Show Reservations with utilization below this value (%)` field. It examines the RI utilization for the prior 7 days or 30 days (starting from 2 days ago) in making this determination.
+This Policy Template leverages the Azure Cost Management APIs ([Reservation Transactions](https://learn.microsoft.com/en-us/rest/api/consumption/reservation-transactions/list?view=rest-consumption-2023-05-01&tabs=HTTP) and [Reservation Summaries](https://learn.microsoft.com/en-us/rest/api/consumption/reservations-summaries/list?view=rest-consumption-2023-05-01&tabs=HTTP#reservationsummariesdailywithbillingaccountid)). It will notify only if utilization of a Reserved Instance (RI) falls below the value specified in the `Show Reservations with utilization below this value (%)` field. It examines the RI utilization for the prior 7 days or 30 days (starting from 2 days ago) in making this determination.
 
 ## Input Parameters
 
