@@ -642,6 +642,12 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
   code <<-EOS
   var hddDiskSizes = [32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32767]
   var ssdDiskSizes = [4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32767]
+  var ultraDiskSizes = [4, 8, 16, 32, 64, 128, 256, 512]
+  var ultraSize = 1024
+  while (ultraSize <= 65536) {
+    ultraDiskSizes.push(ultraSize)
+    ultraSize += 1024
+  }
 
   function findDiskSize(diskTier, diskSizeGB) {
     var diskSizes = null
@@ -653,8 +659,11 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
       case "Premium":
         diskSizes = ssdDiskSizes
         break;
+      case "Ultra":
+        diskSizes = ultraDiskSizes
+        break;
       default:
-        throw "Only Standard HDD, Standard SSD or Premium SSD v1 disk tiers are supported."
+        throw "Only Standard HDD, Standard SSD, Premium SSD v1 or Ultra disk tiers are supported."
     }
     for (i in diskSizes) {
       var availableSize = diskSizes[i]
@@ -724,6 +733,24 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
     }
   }
 
+  function findUltraPrice(diskRegion, currentUsedGB, currentUsedIops, currentUsedThroughput) {
+    var ultraPricing = ds_azure_md_pricing[diskRegion]
+    if (ultraPricing.ULTRA_LRS_PROVISIONED_CAPACITY === undefined) { return }
+    var diskSize = findDiskSize("Ultra", currentUsedGB)
+    return {
+      pricePerUnit: Math.round(
+          (ultraPricing.ULTRA_LRS_PROVISIONED_CAPACITY.pricePerUnit * 24 * 30 * diskSize)
+        + (ultraPricing.ULTRA_LRS_PROVISIONED_IOPS.pricePerUnit * 24 * 30 * diskSize)
+        + (ultraPricing.ULTRA_LRS_PROVISIONED_THROUGHPUT_MBPS.pricePerUnit * 24 * 30)
+      ),
+      currencyCode: ultraPricing.ULTRA_LRS_PROVISIONED_CAPACITY.currencyCode,
+      sizeGB: diskSize,
+      IOPS: currentUsedIops,
+      throughput: currentUsedThroughput,
+      unitOfMeasure: ultraPricing.PREMIUM_LRS_PROVISIONED_CAPACITY.unitOfMeasure,
+    }
+  }
+
   function findFittingDiskName(currentDiskName, currentUsedGB, currentUsedIops, currentUsedThroughput) {
     var currentDiskData = ds_azure_md_tier_types[currentDiskName]
 
@@ -772,12 +799,28 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
       var currentDiskPrice = findDiskPrice(currentDiskName, currentDiskRedundancy, disk.region)
       var fittingDiskPrice = findDiskPrice(fittingDiskName, currentDiskRedundancy, disk.region)
     } catch (err) {
-      continue
+      if (currentDiskData.tier != "Ultra") {
+        continue
+      }
     }
     var premSsdV2Price = findPremSsdV2Price(disk.region, disk.diskUsedGB != undefined ? disk.diskUsedGB : disk.diskSizeGB, currentUsedIops, currentUsedThroughput)
+    var ultraPrice = findUltraPrice(disk.region, disk.diskUsedGB != undefined ? disk.diskUsedGB : disk.diskSizeGB, currentUsedIops, currentUsedThroughput)
 
+    // Righsizing from Ultra to Premium SSD v2
+    if (currentDiskData.tier === "Ultra" && premSsdV2Price != undefined && ultraPrice != undefined && premSsdV2Price.pricePerUnit < ultraPrice.pricePerUnit) {
+      currentDiskPrice = { pricePerUnit: ultraPrice.pricePerUnit, currencyCode: ultraPrice.currencyCode }
+      monthlySavings = currentDiskPrice.pricePerUnit - premSsdV2Price.pricePerUnit
+      newResourceType = "Premium SSD v2"
+      newResourceTypeRedundancy = "LRS"
+      newResourceTypeGiB = premSsdV2Price.sizeGiB
+      newResourceTypeIOPS = premSsdV2Price.IOPS
+      newResourceTypeThroughput = premSsdV2Price.throughput
+      newResourceTypeMonthlyPrice = premSsdV2Price.pricePerUnit
+      newResourceTypePriceCurrency = premSsdV2Price.currencyCode
+
+    }
     // Righsizing from Premium SSD to Premium SSD v2
-    if (currentDiskData.tier === "StandardSSD" && premSsdV2Price != undefined && premSsdV2Price.pricePerUnit < fittingDiskPrice.pricePerUnit) {
+    else if (currentDiskData.tier === "StandardSSD" && premSsdV2Price != undefined && premSsdV2Price.pricePerUnit < fittingDiskPrice.pricePerUnit) {
       monthlySavings = currentDiskPrice.pricePerUnit - premSsdV2Price.pricePerUnit
       newResourceType = "Premium SSD v2"
       newResourceTypeRedundancy = "LRS"
