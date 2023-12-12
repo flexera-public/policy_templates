@@ -33,7 +33,9 @@ For example if a user selects the "Terminate Instances" action while applying th
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
 - [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
-  - `ecs:DescribeInstances`
+  - `ec2:DescribeRegions`
+  - `ec2:DescribeInstances`
+  - `ec2:TerminateInstances`*
 
   \* Only required for taking action (deletion); the policy will still function in a read-only capacity without these permissions.
 
@@ -46,7 +48,9 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
           {
               "Effect": "Allow",
               "Action": [
-                  "ecs:DescribeInstances"
+                  "ec2:DescribeRegions",
+                  "ec2:DescribeInstances",
+                  "ec2:TerminateInstances"
               ],
               "Resource": "*"
           }
