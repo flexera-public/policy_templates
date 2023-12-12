@@ -10,12 +10,6 @@ This Policy Template will send an email notifications when AWS RI Recommendation
 
 It will email the user specified in `Email addresses of the recipients you wish to notify`
 
-## Prerequisites
-
-- The following RightScale Credentials
-  - `AWS_ACCESS_KEY_ID` - The Access Key of an IAM User in the Master Payer account, which has access to Cost Explorer.
-  - `AWS_SECRET_ACCESS_KEY` - The Secret Access Key of the IAM User.
-
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
