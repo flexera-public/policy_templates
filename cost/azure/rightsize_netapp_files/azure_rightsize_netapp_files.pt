@@ -7,10 +7,10 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.1",
+  version: "1.0",
   provider: "Azure",
   service: "NetApp Files",
-  policy_set: "Rightsize NetApp Files",
+  policy_set: "Rightsize Storage",
   recommendation_type: "Usage Reduction"
 )
 
@@ -237,6 +237,7 @@ datasource "ds_resource_groups" do
     encoding "json"
     collect jmes_path(response, "value[*]") do
       field "subscription_id", val(iter_item, "id")
+      field "subscription_name", val(iter_item, "name")
       field "resource_group_name", jmes_path(col_item, "name")
     end
   end
@@ -254,6 +255,7 @@ datasource "ds_naf_accounts" do
     encoding "json"
     collect jmes_path(response, "value[*]") do
       field "subscription_id", jmes_path(iter_item, "subscription_id")
+      field "subscription_name", val(iter_item, "subscription_name")
       field "resource_group_name", jmes_path(iter_item, "resource_group_name")
       field "naf_account_name", jmes_path(col_item, "name")
     end
@@ -272,6 +274,7 @@ datasource "ds_naf_capacity_pools_v1" do
     encoding "json"
     collect jmes_path(response, "value[*]") do
       field "subscription_id", jmes_path(iter_item, "subscription_id")
+      field "subscription_name", jmes_path(iter_item, "subscription_name")
       field "resource_group_name", jmes_path(iter_item, "resource_group_name")
       field "naf_account_name", jmes_path(iter_item, "naf_account_name")
       field "naf_pool_id", jmes_path(col_item, "id")
@@ -281,6 +284,7 @@ datasource "ds_naf_capacity_pools_v1" do
       field "naf_pool_service", jmes_path(col_item, "properties.serviceLevel")
       field "naf_pool_encryption", jmes_path(col_item, "properties.encryptionType")
       field "naf_pool_cool", jmes_path(col_item, "properties.coolAccess")
+      field "naf_pool_tags", jmes_path(col_item, "tags")
     end
   end
 end
@@ -312,6 +316,7 @@ datasource "ds_naf_pool_metrics" do
   result do
     encoding "json"
     field "subscription_id", jmes_path(iter_item, "subscription_id")
+    field "subscription_name", jmes_path(iter_item, "subscription_name")
     field "resource_group_name", jmes_path(iter_item, "resource_group_name")
     field "naf_account_name", jmes_path(iter_item, "naf_account_name")
     field "naf_pool_id", jmes_path(iter_item, "naf_pool_id")
@@ -321,6 +326,7 @@ datasource "ds_naf_pool_metrics" do
     field "naf_pool_service", jmes_path(iter_item, "naf_pool_service")
     field "naf_pool_encryption", jmes_path(iter_item, "naf_pool_encryption")
     field "naf_pool_cool", jmes_path(iter_item, "naf_pool_cool")
+    field "naf_pool_tags", jmes_path(iter_item, "naf_pool_tags")
     field "naf_pool_metrics", jmes_path(response, "value[*]")
   end
 end
@@ -532,8 +538,17 @@ script "js_naf_oversized_pools", type: "javascript" do
 
             if (savings >= param_min_savings) {
               total_savings += savings
+              tags = []
+              if (typeof(pool.naf_pool_tags) == 'object') {
+                _.each(Object.keys(pool.naf_pool_tags), function(key) {
+                  tags.push([key, "=", pool.naf_pool_tags[key]].join(''))
+                })
+              }
               result.push({
+                accountID: pool['subscription_id'],
+                accountName: pool['subscription_name'],
                 resourceID: pool['naf_pool_id'],
+                resourceGroup: pool['resource_group_name'],
                 resourceName: pool['naf_pool_name'],
                 poolSize: pool['allocatedSize'],
                 poolAllocatedUsed: pool['consumedSize'],
@@ -543,7 +558,11 @@ script "js_naf_oversized_pools", type: "javascript" do
                 poolRecommendedSize: poolRecommendedSize,
                 recommendationDetails: recommendationDetails,
                 savings: parseFloat(savings.toFixed(3))
-                id: pool['naf_pool_id']
+                id: pool['naf_pool_id'],
+                region: pool['naf_pool_region'],
+                resourceType: pool['naf_pool_service'],
+                tags: tags,
+                savingsCurrency: "USD",
               })
             }
           }
@@ -731,8 +750,17 @@ script "js_naf_oversized_volumes", type: "javascript" do
 
             if (savings >= param_min_savings) {
               total_savings += savings
+              tags = []
+              if (typeof(pool.naf_pool_tags) == 'object') {
+                _.each(Object.keys(pool.naf_pool_tags), function(key) {
+                  tags.push([key, "=", pool.naf_pool_tags[key]].join(''))
+                })
+              }
               result.push({
+                accountID: pool['subscription_id'],
+                accountName: pool['subscription_name'],
                 resourceID: pool['naf_pool_id'],
+                resourceGroup: pool['resource_group_name'],
                 resourceName: pool['naf_pool_name'],
                 poolSize: pool['allocatedSize'],
                 poolAllocatedUsed: pool['consumedSize'],
@@ -745,7 +773,11 @@ script "js_naf_oversized_volumes", type: "javascript" do
                 poolRecommendedSize: poolRecommendedSize,
                 recommendationDetails: recommendationDetails,
                 savings: parseFloat(savings.toFixed(3))
-                id: pool['naf_pool_id']
+                id: pool['naf_pool_id'],
+                region: pool['naf_pool_region'],
+                resourceType: pool['naf_pool_service'],
+                tags: tags,
+                savingsCurrency: "USD",
               })
             }
           }
@@ -776,14 +808,33 @@ policy "pol_azure_rightsize_netapp_files" do
     escalate $esc_email
     export do
       resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
       field "resourceID" do
         label "Resource ID"
       end
       field "resourceName" do
         label "Resource Name"
       end
-      field "poolSize" do
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "tags" do
+        label "Tags"
+      end
+      field "size" do
         label "Capacity Pool Size (GiB)"
+        path "poolSize"
       end
       field "poolAllocatedUsed" do
         label "Capacity Pool Allocated Used (GiB)"
@@ -803,6 +854,9 @@ policy "pol_azure_rightsize_netapp_files" do
       field "savings" do
         label "Estimated Monthly Savings"
       end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
       field "recommendationDetails" do
         label "Recommendation Details"
       end
@@ -821,14 +875,33 @@ policy "pol_azure_rightsize_netapp_files" do
     escalate $esc_email
     export do
       resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
       field "resourceID" do
         label "Resource ID"
       end
       field "resourceName" do
         label "Resource Name"
       end
-      field "poolSize" do
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "tags" do
+        label "Tags"
+      end
+      field "size" do
         label "Capacity Pool Size (GiB)"
+        path "poolSize"
       end
       field "poolAllocatedUsed" do
         label "Capacity Pool Allocated Used (GiB)"
@@ -856,6 +929,9 @@ policy "pol_azure_rightsize_netapp_files" do
       end
       field "savings" do
         label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
       end
       field "recommendationDetails" do
         label "Recommendation Details"
