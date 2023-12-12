@@ -2,9 +2,9 @@
 
 ## v3.0
 
-- Updated policy to move away from Azure Legacy EA API endpoints and use the Azure Modern API endpoints due to deprecation in 2024
-- Updated credential required for policy - it now requires `azure_auth` credential due to EA Key deprecation in 2024
-- Removed `param_enrollment_id` parameter as no longer required
+- Updated policy to move away from Azure Legacy EA API endpoints and use the Azure Modern API endpoints due to EA Key deprecation in 2024
+- Updated credential required for policy - it now requires an Azure Resource Manager credential due to EA Key deprecation in 2024
+- Removed "Enrollment ID" parameter as no longer required
 - Added "Reservation Expiration Date" field to policy incident
 
 ## v2.8
