@@ -72,7 +72,7 @@ def main():
     base_url = "https://prices.azure.com/api/retail/prices"
     params = {
         "api-version": "2021-10-01-preview",
-        "$filter": "(productName eq 'Standard HDD Managed Disks' or productName eq 'Standard SSD Managed Disks' or productName eq 'Premium SSD Managed Disks' or productName eq 'Azure Premium SSD v2') and priceType eq 'Consumption' and (endsWith(meterName, 'Disk') or productName eq 'Azure Premium SSD v2')",
+        "$filter": "(productName eq 'Standard HDD Managed Disks' or productName eq 'Standard SSD Managed Disks' or productName eq 'Premium SSD Managed Disks' or productName eq 'Azure Premium SSD v2' or productName eq 'Ultra Disks') and priceType eq 'Consumption' and ((endsWith(meterName, 'Disk') or productName eq 'Azure Premium SSD v2') or (startsWith(meterName, 'Ultra') or productName eq 'Ultra Disks'))",
     }
     api_url = build_url(base_url, params)
     while api_url is not None:
@@ -95,7 +95,7 @@ def main():
 
         disk_type = (
             item["skuName"]
-            if item["skuName"] != "Premium LRS"
+            if item["skuName"] not in ("Premium LRS", "Ultra LRS")
             else item["meterName"].replace("(", "").replace(")", "").upper()
         )
         if not region in region_price_map:
