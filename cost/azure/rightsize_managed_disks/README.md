@@ -24,7 +24,6 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Allow/Deny Subscriptions List* - A list of allowed or denied Subscription IDs/names. If empty, no filtering will occur and recommendations will be produced for all subscriptions.
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
 - *Allow/Deny Regions List* - Filter results by region, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all the regions.
-- *Minimum Used Disk Space %* - The minimum used disk space percentage threshold at which to consider a disk to be 'oversized' and therefore be flagged for downsizing. **Currently this parameter is not supported by the policy due that it is not possible to get the available capacity from Azure.**
 - *Minimum Used Disk IOPS %* - The minimum used disk IOPS percentage threshold at which to consider a disk to be 'oversized' and therefore be flagged for downsizing.
 - *Aggregation Type For Disk IOPS* - Statistic to use when determining if the disk IOPS is more than the disk actually uses.
 - *Minimum Used Disk Throughput %* - The minimum used disk throughput percentage threshold at which to consider a disk to be 'oversized' and therefore be flagged for downsizing.
