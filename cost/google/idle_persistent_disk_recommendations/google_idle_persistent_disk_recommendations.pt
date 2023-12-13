@@ -548,6 +548,77 @@ script "js_recommendations", type: "javascript" do
 EOS
 end
 
+datasource "ds_recommendation_logs" do
+  iterate $ds_recommendations
+  request do
+    run_script $js_recommendation_logs, val(iter_item, 'projectId'), val(iter_item, 'resourceLink')
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "entries[*]") do
+      field "projectId", val(iter_item, "projectId")
+      field "resourceLink", val(iter_item, "resourceLink")
+      field "timestamp", jmes_path(col_item, "timestamp")
+    end
+  end
+end
+
+script "js_recommendation_logs", type: "javascript" do
+  parameters "projectId", "resourceLink"
+  result "request"
+  code <<-EOS
+  //logging.logEntries.list
+  //logging.privateLogEntries.list
+  //logging.views.access
+
+  project_id = ['projects', projectId].join('/')
+
+  filter = [
+    '"', resourceLink, '" AND ',
+    'protoPayload.methodName = "v1.compute.instances.detachDisk" AND operation.last = true'
+  ].join('')
+
+  body = {
+    "resourceNames": [ project_id ],
+    "filter": filter,
+    "pageSize": 1000
+  }
+
+  var request = {
+    auth: "auth_google",
+    pagination: "pagination_google",
+    host: "logging.googleapis.com",
+    verb: "POST",
+    ignore_status: 403,
+    path: "v2/entries:list",
+    body: JSON.stringify(body)
+  }
+EOS
+end
+
+datasource "ds_recommendation_logs_sorted" do
+  run_script $js_recommendation_logs_sorted, $ds_recommendation_logs
+end
+
+script "js_recommendation_logs_sorted", type: "javascript" do
+  parameters "ds_recommendation_logs"
+  result "result"
+  code <<-EOS
+  result = {}
+
+  _.each(ds_recommendation_logs, function(entry) {
+    resourceLink = entry['resourceLink']
+    timestamp = entry['timestamp']
+
+    if (result[resourceLink] == undefined) {
+      result[resourceLink] = timestamp
+    } else if (new Date(timestamp) > new Date(result[resourceLink])) {
+      result[resourceLink] = timestamp
+    }
+  })
+EOS
+end
+
 # Branching logic:
 # This datasource returns an empty array if the target currency is USD.
 # This prevents ds_currency_conversion from running if it's not needed.
@@ -621,11 +692,11 @@ EOS
 end
 
 datasource "ds_recommendations_incident" do
-  run_script $js_recommendations_incident, $ds_disks_region_filtered, $ds_recommendations, $ds_currency, $ds_currency_conversion, $ds_applied_policy, $param_min_savings
+  run_script $js_recommendations_incident, $ds_disks_region_filtered, $ds_recommendations, $ds_recommendation_logs_sorted, $ds_currency, $ds_currency_conversion, $ds_applied_policy, $param_min_savings
 end
 
 script "js_recommendations_incident", type:"javascript" do
-  parameters "ds_disks_region_filtered", "ds_recommendations", "ds_currency", "ds_currency_conversion", "ds_applied_policy", "param_min_savings"
+  parameters "ds_disks_region_filtered", "ds_recommendations", "ds_recommendation_logs_sorted", "ds_currency", "ds_currency_conversion", "ds_applied_policy", "param_min_savings"
   result "result"
   code <<-'EOS'
   // Function for formatting currency numbers later
