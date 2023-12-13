@@ -43,9 +43,11 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
     - `recommender.computeDiskIdleResourceRecommendations.list`
     - `resourcemanager.projects.get`
     - `compute.disks.list`
+    - `compute.snapshots.create`*
     - `compute.disks.createSnapshot`*
     - `compute.disks.delete`*
     - `compute.globalOperations.get`*
+    - `compute.zoneOperations.get`*
 
 \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
 
