@@ -2,7 +2,7 @@
 
 ## What it does
 
-This Policy Template scans all volumes in the given account and identifies any volume that meets the user-specified criteria for being oversized. The user can filter volumes based on usage percentage of capacity (GiB used), usage percentage of IOPS, usage percentage of throughput, or any combination of these. Any volumes that meet the user-specified criteria are considered oversized. If any oversized volumes are found, an incident report will show the volumes and related information. An email will be sent to the user-specified email addresses.
+This Policy Template scans all volumes in the given account and identifies any volume that meets the user-specified criteria for being oversized. The user can filter volumes based on usage percentage of IOPS, usage percentage of throughput, or any combination of these. Any volumes that meet the user-specified criteria are considered oversized. If any oversized volumes are found, an incident report will show the volumes and related information. An email will be sent to the user-specified email addresses.
 
 - It is important that you keep constant LUN numbers for your data disks because when policy retrieves metrics for them. It will only look for the latest LUN number assigned to the data disk; if changed multiple times before running the policy, only the data points using the current LUN the disk has will be retrieved for analysis.
 - Currently the policy only works for righsizing using the disk used IOPS and throughput since disk capacity (GiB) is not retrievable from Azure.
