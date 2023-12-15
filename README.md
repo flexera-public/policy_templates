@@ -412,6 +412,10 @@ These templates can generate savings estimates for your environment.
   - [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks)
   - [Expiring Azure Certificates](./operational/azure/azure_certificates)
 
+- Marketplace
+
+  - [Azure Migrate Integration](./operational/azure/azure_migrate)
+
 - Tags
 
   - [Azure Tag Cardinality Report](./operational/azure/tag_cardinality)
@@ -429,7 +433,6 @@ These templates can generate savings estimates for your environment.
 #### Flexera Cloud Management
 
 - [Applied Policy Error Notification](./operational/applied_policy_error_notification)
-- [Azure Migrate Integration](./operational/azure/azure_migrate)
 
 #### Flexera ITAM
 
@@ -631,7 +634,7 @@ These templates can generate savings estimates for your environment.
   Security: 74
 :optimization_count: 43
 :policy_sets:
-  '': 82
+  '': 81
   AWS Config: 1
   Allocate VMs: 3
   CIS: 61
@@ -652,7 +655,7 @@ These templates can generate savings estimates for your environment.
   Long Stopped Instances: 3
   N/A: 1
   Native Recommendations: 1
-  New Marketplace Products: 2
+  New Marketplace Products: 3
   Object Store Optimization: 3
   Old Snapshots: 3
   Open Buckets: 1
@@ -685,10 +688,10 @@ These templates can generate savings estimates for your environment.
 :providers:
   '': 1
   AWS: 76
-  Azure: 77
+  Azure: 78
   Azure China: 1
   Flexera: 5
-  Flexera Cloud Management: 4
+  Flexera Cloud Management: 3
   Flexera FNMS: 1
   Flexera ITAM: 5
   Flexera Optima: 25
@@ -703,7 +706,7 @@ These templates can generate savings estimates for your environment.
   Oracle: 1
   ServiceNow: 1
 :services:
-  '': 63
+  '': 62
   AKS: 2
   All: 1
   App Service: 1
@@ -725,7 +728,7 @@ These templates can generate savings estimates for your environment.
   KMS: 1
   Kubernetes: 2
   Lambda: 1
-  Marketplace: 2
+  Marketplace: 3
   MySQL: 2
   Network: 1
   Network Security Group: 2
