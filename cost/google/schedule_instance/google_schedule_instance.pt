@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "2.4",
+  version: "2.5",
   provider: "GCE",
   service: "Compute",
   policy_set:"Schedule Instance"
@@ -21,12 +21,14 @@ parameter "param_email" do
   type "list"
   label "Email addresses"
   description "A list of email addresses to notify"
+  default []
 end
 
 parameter "param_tags_to_exclude" do
   type "list"
   label "Exclusion Tags"
   description "A list of Google tags to ignore instances. Format: Key=Value"
+  default []
 end
 
 parameter "param_automatic_action" do
@@ -254,7 +256,7 @@ end
 policy "policy_schedule_instance" do
   validate $ds_filter_resources do
     summary_template "Google Schedule Instance list"
-    hash_include "next_start", "next_stop"
+    hash_exclude "id", "labels"
     escalate $esc_email
     escalate $esc_schedule_instance
     escalate $esc_terminate_instance
@@ -275,6 +277,12 @@ policy "policy_schedule_instance" do
       field "schedule" do
         label "Schedule"
       end
+      field "next_start" do
+        label "Next Start Time"
+      end
+      field "next_stop" do
+        label "Next Stop Time"
+      end
       field "labels" do
         label "Labels"
       end
@@ -288,6 +296,34 @@ end
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
+
+# CWF function to handle errors
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
+end
+
+# CWF function to capture and output logs
+define log_message($message) do
+  # Instantiate log messages array doesn't exist
+  if !$$log_messages
+    $$log_messages = []
+  end
+  # Append timestamp to message
+  $now = strftime(now(), "%Y/%m/%d %H:%M:%S")
+  $log = $now + ": " + $message
+  # Append to log messages array
+  $$log_messages << $log
+  # Update task label with current message
+  task_label($log)
+  # Aggregate all log messages into a single string which is easier to grab from UI and interpret
+  $$log_messages_string = join($$log_messages, "\n\n")
+end
 
 define schedule_instance($data, $$rs_optima_host) return $all_response do
   $all_response=[]
@@ -333,14 +369,14 @@ define schedule_instance($data, $$rs_optima_host) return $all_response do
     if $timezone != null
       call window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone) retrieve $window_active , $next_start, $next_stop
 
-      call sys_log('window_active',$window_active)
-      call sys_log('next_start',$next_start)
-      call sys_log('next_stop',$next_stop)
+      call log_message('window_active='+to_s($window_active))
+      call log_message('next_start='+to_s($next_start))
+      call log_message('next_stop='+to_s($next_stop))
 
       if ($window_active)
-        call sys_log($item['schedule'] + ' schedule window is currently active: Instances may be started.', '')
+        call log_message($item['schedule'] + ' schedule window is currently active: Instances may be started.')
       else
-        call sys_log($item['schedule'] + ' schedule window is currently in-active: Instances may be stopped.', '')
+        call log_message($item['schedule'] + ' schedule window is currently in-active: Instances may be stopped.')
       end
 
       $stoppable = /^(RUNNING|STAGING)$/
@@ -370,6 +406,10 @@ define schedule_instance($data, $$rs_optima_host) return $all_response do
       $labels_obj['next_stop']=$next_stop
       $labels_obj['schedule']=$item['schedule']
 
+      $body = {
+        "labels" : $labels_obj,
+        "labelFingerprint" : $labelFingerprint
+      }
       $response= http_post(
         auth: $$google_auth,
         url: join([$item['selfLink'], "/setLabels"]),
@@ -377,14 +417,12 @@ define schedule_instance($data, $$rs_optima_host) return $all_response do
           "cache-control": "no-cache",
           "content-type": "application/json"
         },
-        body:{
-          "labels": $labels_obj,
-          "labelFingerprint": $labelFingerprint
-        }
+        body: $body
       )
+      call log_message('req=POST '+join([$item['selfLink'], "/setLabels"])+' body='+to_json($body)+' response='+to_json($response))
       if($window_active)
         if($item['state']=~$startable)
-          call sys_log('> ' + $item['id'] + ': Starting ...', to_s($item))
+          call log_message('> ' + $item['id'] + ': Starting ... ' + to_s($item))
           sub on_error: handle_error($response) do
             $response= http_post(
               auth: $$google_auth,
@@ -394,15 +432,16 @@ define schedule_instance($data, $$rs_optima_host) return $all_response do
                 "content-type": "application/json"
               }
             )
+            call log_message('req=POST '+join([$item['selfLink'], "/start"])+' response='+to_json($response))
             $all_response << $response
           end
         else
-          call sys_log('> ' + $item['id'] + ': No action - Instance state is ' + $item['state'], '')
+          call log_message('> ' + $item['id'] + ': No action - Instance state is ' + $item['state'])
         end
       else
         if($item['state'] =~ $stoppable)
-          call sys_log('> ' + $item['id'] + ': Stopping ...', to_s($item))
-          sub on_error: handle_error($response) do
+          call log_message('> ' + $item['id'] + ': Stopping ...' + to_s($item))
+          sub on_error: handle_error() do
             $response= http_post(
               auth: $$google_auth,
               url: join([$item['selfLink'], "/stop"]),
@@ -411,24 +450,29 @@ define schedule_instance($data, $$rs_optima_host) return $all_response do
                 "content-type": "application/json"
               }
             )
-            $all_response << $response
+            call log_message('req=POST '+join([$item['selfLink'], "/stop"])+' response='+to_json($response))
           end
         else
-          call sys_log('> ' + $item['id'] + ': No action - Instance state is ' + $item['state'], '')
+          call log_message('> ' + $item['id'] + ': No action - Instance state is ' + $item['state'])
         end
       end
     # generating log for incorrect timezone format
     else
-      call sys_log('Incorrect Timezone in schedule label', to_s($item['schedule']))
+      call log_message('Incorrect Timezone in schedule label ' + to_s($item['schedule']))
     end
+  end
+
+  # If we encountered any errors, use `raise` to mark the CWF process as errored
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
   end
 end
 
 define terminate_instance($data, $$rs_optima_host) return $all_response do
   $all_response=[]
   foreach $item in $data do
-    call sys_log('> ' + $item['id'] + ': Terminating ...', to_s($item))
-    sub on_error: handle_error($response) do
+    call log_message('> ' + $item['id'] + ': Terminating ... ' + to_s($item))
+    sub on_error: handle_error() do
       $response= http_delete(
         auth: $$google_auth,
         url: $item['selfLink'],
@@ -437,8 +481,13 @@ define terminate_instance($data, $$rs_optima_host) return $all_response do
           "content-type": "application/json"
         }
       )
-      $all_response << $response
+      call log_message('req=DELETE '+$item['selfLink']+' response='+to_json($response))
     end
+  end
+
+  # If we encountered any errors, use `raise` to mark the CWF process as errored
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
   end
 end
 
@@ -453,9 +502,13 @@ define delete_schedule($data, $$rs_optima_host) return $all_response do
         $new_label[$label[0]]=$label[1];
       end
     end
-    call sys_log('> ' + $item['id'] + ': Deleting schedule Tag ...', to_s($item))
+    call log_message('> ' + $item['id'] + ': Deleting schedule Tag ... ' + to_s($item))
 
-    sub on_error: handle_error($response) do
+    sub on_error: handle_error() do
+      $body = {
+        "labels" : $new_label,
+        "labelFingerprint" : $labelFingerprint
+      }
       $response= http_post(
         auth: $$google_auth,
         url: join([$item['selfLink'], "/setLabels"]),
@@ -463,13 +516,15 @@ define delete_schedule($data, $$rs_optima_host) return $all_response do
           "cache-control": "no-cache",
           "content-type": "application/json"
         },
-        body:{
-          "labels" : $new_label,
-          "labelFingerprint" : $labelFingerprint
-        }
+        body: $body
       )
-      $all_response << $response
+      call log_message('req=POST '+join([$item['selfLink'], "/setLabels"])+' body='+to_json($body)+' response='+to_json($response))
     end
+  end
+
+  # If we encountered any errors, use `raise` to mark the CWF process as errored
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
   end
 end
 
@@ -540,8 +595,12 @@ define update_schedule($data, $param, $$rs_optima_host) return $all_response do
       $labels_obj['schedule']=$param
       $labels_obj['next_start']=$next_start
       $labels_obj['next_stop']=$next_stop
-      call sys_log('> ' + $item['id'] + ': Updating schedule Tag ...', to_s($item))
-      sub on_error: handle_error($response) do
+      call log_message('> ' + $item['id'] + ': Updating schedule Tag ...' + to_s($item))
+      sub on_error: handle_error() do
+        $body = {
+          "labels" : $labels_obj,
+          "labelFingerprint" : $labelFingerprint
+        }
         $response= http_post(
           auth: $$google_auth,
           url: join([$item['selfLink'], "/setLabels"]),
@@ -549,17 +608,19 @@ define update_schedule($data, $param, $$rs_optima_host) return $all_response do
             "cache-control": "no-cache",
             "content-type": "application/json"
           },
-          body:{
-            "labels" : $labels_obj,
-            "labelFingerprint" : $labelFingerprint
-          }
+          body: $body
         )
-        $all_response << $response
+        call log_message('req=POST '+join([$item['selfLink'], "/setLabels"])+' body='+to_json($body)+' response='+to_json($response))
       end
     # generating log for incorrect timezone format
     else
-      call sys_log('Incorrect Timezone for schedule label', to_s($param))
+      call log_message('Error: Unexpected Timezone for schedule label. ' + to_s($param))
     end
+  end
+
+  # If we encountered any errors, use `raise` to mark the CWF process as errored
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
   end
 end
 
@@ -583,8 +644,9 @@ define window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_
     }
   }
   $response = http_request($params)
+  call log_message('req=POST bjlaftw4kh.execute-api.us-east-1.amazonaws.com/production body='+to_json($body)+' response='+to_json($response))
   $body = $response['body']
-  call sys_log('window active $body', to_s($body))
+  call log_message('window active $body='+to_s($body))
 
   $window_active = to_b($body['event_active'])
   $next_start   = $body['next_start']
@@ -600,6 +662,7 @@ define get_labelfingerprint($instance) return $labelFingerprint, $labels_obj do
       "content-type": "application/json"
     }
   )
+  call log_message('req=GET '+$instance['selfLink']+' response='+to_json($response))
   $body = $response['body']
   $labelFingerprint   = $body['labelFingerprint']
   $labels_obj= $body['labels']
@@ -616,46 +679,6 @@ define get_tzlist() return $timezones do
     }
   }
   $response = http_request($params)
+  call log_message('req=GET raw.githubusercontent.com/rightscale/policy_templates/master/data/tz_database/timezones_list.json response_code='+to_s($response['code'])+' response_size='+to_s(size($response['body'])))
   $timezones = $response['body']
-end
-
-define handle_error($response) do
-  $status_code = $response["code"]
-  $syslog_subject = "Google Instance action error: "
-  call sys_log(join([$syslog_subject, $status_code]),to_s($response))
-  $_error_behavior = "skip"
-end
-
-define sys_log($subject, $detail) do
-  # Create empty errors array if doesn't already exist
-  if !$$errors
-    $$errors = []
-  end
-  # Check if debug is enabled
-  if $$debug
-    # Append to global $$errors
-    # This is the suggested way to capture errors
-    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
-    # If Flexera NAM Zone, create audit_entries [to be deprecated]
-    # This is the legacy method for capturing errors and only supported on Flexera NAM
-    if $$rs_optima_host == "api.optima.flexeraeng.com"
-      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
-      $task_label = "Creating audit entry for " + $subject
-      sub task_label: $task, on_error: skip_error_and_append($task) do
-        rs_cm.audit_entries.create(
-          notify: "None",
-          audit_entry: {
-            auditee_href: @@account,
-            summary: $subject,
-            detail: $detail
-          }
-        )
-      end # End sub on_error
-    end # End if rs_optima_host
-  end # End if debug is enabled
-end
-
-define skip_error_and_append($subject) do
-  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
-  $_error_behavior = "skip"
 end
