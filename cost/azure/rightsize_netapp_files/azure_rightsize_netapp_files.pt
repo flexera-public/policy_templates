@@ -55,6 +55,15 @@ parameter "param_stats_underutil_threshold_volume_value" do
   default 40
 end
 
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags (Key:Value)"
+  description "Cloud native tags to ignore managed disks that you don't want to consider for downsizing. Format: Key:Value"
+  allowed_pattern /(^$)|([\w]?)+\:([\w]?)+/
+  default []
+end
+
 parameter "param_subscriptions_allow_or_deny" do
   type "string"
   category "Filters"
@@ -69,6 +78,23 @@ parameter "param_subscriptions_list" do
   category "Filters"
   label "Allow/Deny Subscriptions List"
   description "A list of allowed or denied Subscription IDs/names"
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
   default []
 end
 
@@ -225,45 +251,88 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
 EOS
 end
 
-datasource "ds_resource_groups" do
+script "js_objects_region_filtered", type: "javascript" do
+  parameters "ds_objects", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_objects, function(o) {
+      include_o = _.contains(param_regions_list, o.region)
+
+      if (param_regions_allow_or_deny == "Deny") {
+        include_o = !include_o
+      }
+
+      return include_o
+    })
+  } else {
+    result = ds_objects
+  }
+EOS
+end
+
+script "js_objects_tag_filtered", type: "javascript" do
+  parameters "ds_objects", "param_exclusion_tags"
+  result "result"
+  code <<-EOS
+  if (param_exclusion_tags.length > 0) {
+    result = _.reject(ds_objects, function(o) {
+      o_tags = []
+
+      if (typeof(o['tags']) == 'object') {
+        _.each(Object.keys(o['tags']), function(key) {
+          o_tags.push([key, ":", o['tags'][key]].join(''))
+          o_tags.push([key, ":*"].join(''))
+        })
+      }
+
+      exclude_o = false
+
+      _.each(param_exclusion_tags, function(exclusion_tag) {
+        if (_.contains(o_tags, exclusion_tag)) {
+          exclude_o = true
+        }
+      })
+
+      return exclude_o
+    })
+  } else {
+    result = ds_objects
+  }
+EOS
+end
+
+datasource "ds_naf_accounts" do
   iterate $ds_azure_subscriptions_filtered
   request do
     auth $auth_azure
     host $param_azure_endpoint
-    path join(["/subscriptions/", val(iter_item, "id"), "/resourceGroups"])
-    query "api-version", "2020-09-01"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "value[*]") do
-      field "subscription_id", val(iter_item, "id")
-      field "subscription_name", val(iter_item, "name")
-      field "resource_group_name", jmes_path(col_item, "name")
-    end
-  end
-end
-
-datasource "ds_naf_accounts" do
-  iterate $ds_resource_groups
-  request do
-    auth $auth_azure
-    host $param_azure_endpoint
-    path join(["/subscriptions/", val(iter_item, "subscription_id"), "/resourceGroups/", val(iter_item, "resource_group_name"), "/providers/Microsoft.NetApp/netAppAccounts"])
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.NetApp/netAppAccounts"])
     query "api-version", "2023-05-01"
   end
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "subscription_id", jmes_path(iter_item, "subscription_id")
-      field "subscription_name", val(iter_item, "subscription_name")
-      field "resource_group_name", jmes_path(iter_item, "resource_group_name")
+      field "subscription_id", jmes_path(iter_item, "id")
+      field "subscription_name", val(iter_item, "name")
+      field "resource_group_name", get(4, split(jmes_path(col_item, "id"), "/"))
+      field "region", jmes_path(col_item, "location")
       field "naf_account_name", jmes_path(col_item, "name")
+      field "naf_account_tags", jmes_path(col_item, "tags")
     end
   end
 end
 
-datasource "ds_naf_capacity_pools_v1" do
-  iterate $ds_naf_accounts
+datasource "ds_naf_accounts_region_filtered" do
+  run_script $js_objects_region_filtered, $ds_naf_accounts, $param_regions_allow_or_deny, $param_regions_list
+end
+
+datasource "ds_naf_accounts_tag_filtered" do
+  run_script $js_objects_tag_filtered, $ds_naf_accounts_region_filtered, $param_exclusion_tags
+end
+
+datasource "ds_naf_capacity_pools" do
+  iterate $ds_naf_accounts_tag_filtered
   request do
     auth $auth_azure
     host $param_azure_endpoint
@@ -276,10 +345,10 @@ datasource "ds_naf_capacity_pools_v1" do
       field "subscription_id", jmes_path(iter_item, "subscription_id")
       field "subscription_name", jmes_path(iter_item, "subscription_name")
       field "resource_group_name", jmes_path(iter_item, "resource_group_name")
-      field "service_type", jmes_path(col_item, "type")
+      field "service_type", first(split(jmes_path(col_item, "type"), "/"))
       field "naf_account_name", jmes_path(iter_item, "naf_account_name")
       field "naf_pool_id", jmes_path(col_item, "id")
-      field "naf_pool_name", jmes_path(col_item, "name")
+      field "naf_pool_name", last(split(jmes_path(col_item, "name"), "/"))
       field "naf_pool_size", jmes_path(col_item, "properties.size")
       field "naf_pool_region", jmes_path(col_item, "location")
       field "naf_pool_service", jmes_path(col_item, "properties.serviceLevel")
@@ -290,24 +359,12 @@ datasource "ds_naf_capacity_pools_v1" do
   end
 end
 
-datasource "ds_naf_capacity_pools_v2" do
-  run_script $js_naf_capacity_pools_v2, $ds_naf_capacity_pools_v1
-end
-
-script "js_naf_capacity_pools_v2", type: "javascript" do
-  parameters "ds_naf_capacity_pools_v1"
-  result "result"
-  code <<-EOS
-  var result = _.map(ds_naf_capacity_pools_v1, function(item) {
-    item.naf_pool_name = item.naf_pool_name.split("/")[1]
-    item.service_type = item.service_type.split("/")[0]
-    return item
-  })
-EOS
+datasource "ds_naf_capacity_pools_tag_filtered" do
+  run_script $js_objects_tag_filtered, $ds_naf_capacity_pools, $param_exclusion_tags
 end
 
 datasource "ds_naf_pool_metrics" do
-  iterate $ds_naf_capacity_pools_v2
+  iterate $ds_naf_capacity_pools_tag_filtered
   request do
     auth $auth_azure
     host $param_azure_endpoint
@@ -336,7 +393,7 @@ end
 
 datasource "ds_naf_get_costs" do
   request do
-    run_script $js_naf_get_costs, $ds_naf_capacity_pools_v2
+    run_script $js_naf_get_costs, $ds_naf_capacity_pools_tag_filtered
   end
   result do
     encoding "json"
@@ -349,12 +406,12 @@ datasource "ds_naf_get_costs" do
 end
 
 script "js_naf_get_costs", type: "javascript" do
-  parameters "ds_naf_capacity_pools_v2"
+  parameters "ds_naf_capacity_pools_tag_filtered"
   result "request"
   code <<-EOS
   var locations = []
   var location = ""
-  _.each(ds_naf_capacity_pools_v2, function(pool){
+  _.each(ds_naf_capacity_pools_tag_filtered, function(pool){
     locations.push("armRegionName eq '" + pool.naf_pool_region + "'")
   })
   if (locations.length > 0) {
@@ -372,7 +429,7 @@ EOS
 end
 
 datasource "ds_naf_volumes" do
-  iterate $ds_naf_capacity_pools_v2
+  iterate $ds_naf_capacity_pools_tag_filtered
   request do
     auth $auth_azure
     host $param_azure_endpoint
@@ -396,6 +453,10 @@ datasource "ds_naf_volumes" do
       field "naf_volume_id", jmes_path(col_item, "id")
     end
   end
+end
+
+datasource "ds_naf_volumes_tag_filtered" do
+  run_script $js_objects_tag_filtered, $ds_naf_volumes, $param_exclusion_tags
 end
 
 datasource "ds_naf_volume_metrics" do
