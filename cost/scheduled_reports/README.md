@@ -1,5 +1,23 @@
 # Scheduled Report
 
+### From description
+
+This policy allows you to set up scheduled reports that will provide summaries of cloud cost across all resources in the billing centers you specify, delivered to any email addresses you specify. The policy will report the following:
+
+Chart of the selected Date Range and Billing Term of utilization based on [category](https://docs.rightscale.com/optima/reference/rightscale_dimensions.html#category).
+Daily average cost across the last week and last month.
+Total cost during previous full week (Monday-Sunday) and previous full month.
+Total cost during current (incomplete) week and month.
+
+We recommend running this policy on a weekly or monthly cadence.
+
+_Note 1: The last 3 days of data in the current week or month will contain incomplete data._
+_Note 2: The account you apply the policy to is unimportant as Optima metrics are scoped to the Org._
+
+See [README](https://github.com/flexera-public/policy_templates/tree/master/cost/scheduled_reports) for more details
+
+### END
+
 This policy allows you to set up scheduled reports that will provide summaries of cloud cost across all resources in the billing centers you specify, delivered to any email addresses you specify. The policy will report the following:
 
 Chart of the selected Date Range and Billing Term of utilization based on whichever [Reporting Dimension](https://docs.rightscale.com/optima/reference/rightscale_dimensions.html) you select (only bill data and RightScale-generated dimensions are supported).
