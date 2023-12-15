@@ -501,6 +501,29 @@ script "js_generated_report", type: "javascript" do
   parameters "ds_previous_n_month_costs", "ds_billing_centers", "ds_filtered_bcs", "ds_current_report", "ds_currency", "param_cost_metric", "param_graph_dimension", "param_date_range", "param_billing_term"
   result "report"
   code <<-'EOS'
+  // Function to take date object or YYYY-MM formatted string and move it backwards or forwards by month
+  function move_month(date_string, amount) {
+    clean_date = new Date(date_string).toISOString()
+    year = Number(clean_date.split('-')[0])
+    month = Number(clean_date.split('-')[1])
+
+    if (amount > 0) {
+      for (var i = 1; i <= amount; i++) {
+        if (month == 12) { year += 1; month = 1 }
+        if (month != 12) { month += 1 }
+      }
+    } else {
+      for (var i = -1; i >= amount; i--) {
+        if (month == 1) { year -= 1; month = 12 }
+        if (month != 1) { month -= 1 }
+      }
+    }
+
+    if (month < 10) { month = '0' + month }
+
+    return [year, month].join('-')
+  }
+
   // Set metric based on parameter
   cost_metric_table = {
     "Unamortized Unblended": "cost_nonamortized_unblended_adj",
@@ -541,9 +564,6 @@ script "js_generated_report", type: "javascript" do
   currentMonth = now.toISOString().split('-')[0] + '-' + now.toISOString().split('-')[1]
   currentMonthName = now.toLocaleString('en-US', { month: 'long' })
   totalMonth = parseInt(param_date_range)
-
-  report = {}
-  current_month_totals = []
 
   // Insert billing center names if we're reporting on that dimension.
   // Otherwise, use the data as-is.
@@ -630,129 +650,122 @@ script "js_generated_report", type: "javascript" do
   })
 
   // get unique dates
-  var previousMonths = _.unique(_.chain(collated_data).map(function (line) { return line.yearMonth }).value());
-  var stringMonths = _.unique(_.chain(collated_data).map(function (line) { return line.stringMonth }).value());
-  var stringDays = _.unique(_.chain(collated_data).map(function (line) { return line.stringDay }).value());
-  var stringWeeks = _.unique(_.chain(collated_data).map(function (line) { return line.stringWeek }).value());
+  previousMonths = _.compact(_.uniq(_.pluck(collated_data, 'yearMonth')))
+  stringMonths = _.compact(_.uniq(_.pluck(collated_data, 'stringMonth')))
+  stringDays = _.compact(_.uniq(_.pluck(collated_data, 'stringDay')))
+  stringWeeks =_.compact(_.uniq(_.pluck(collated_data, 'stringWeek')))
 
   // get current month data
-  var current_month_costs = (_.where(collated_data, { yearMonth: currentMonth }));
-  _.each(current_month_costs, function (line) { current_month_totals.push(line.cost) })
-  var current_month_total = _.reduce(current_month_totals, function (memo, num) { return memo + num; }, 0);
+  current_month_costs = _.filter(collated_data, function(item) { return item['yearMonth'] == currentMonth })
+  current_month_totals = _.pluck(current_month_costs, 'cost')
+  current_month_total = _.reduce(current_month_totals, function (memo, num) { return memo + num }, 0)
 
   // build out the chart data for the top categories
-  var chartDataArray = [];
-  if (param_billing_term === "Month") {
-    _.each(categories, function (category) {
-      var seriesData = [];
-      _.each(previousMonths, function (month) {
-        var tempTotal = _.where(collated_data, { yearMonth: month, category: category });
-        if (tempTotal.length === 0) {
-          seriesData.push("_")
-        } else {
-          seriesData.push(Math.round(tempTotal[0].cost))
-        }
+  chartDataArray = []
+
+  if (param_billing_term == "Month") {
+    _.each(categories, function(category) {
+      seriesData = []
+
+      _.each(previousMonths, function(month) {
+        tempTotal = _.where(collated_data, { yearMonth: month, category: category })
+
+        if (tempTotal.length == 0) { seriesData.push("_") }
+        if (tempTotal.length != 0) { seriesData.push(Math.round(tempTotal[0].cost)) }
       })
+
       chartDataArray.push(seriesData.join())
     })
 
     // Add the "Other" category and associated data
     if (otherData.length > 0) {
-      categories.push("Other");
-      var seriesData = [];
-      _.each(previousMonths, function (month) {
-        var tempTotal = _.where(otherData, { yearMonth: month });
-        if (tempTotal.length === 0) {
-          seriesData.push("_")
-        } else {
-          seriesData.push(Math.round(tempTotal[0].cost))
-        }
+      categories.push("Other")
+      seriesData = []
+
+      _.each(previousMonths, function(month) {
+        var tempTotal = _.where(otherData, { yearMonth: month })
+
+        if (tempTotal.length == 0) { seriesData.push("_") }
+        if (tempTotal.length != 0) { seriesData.push(Math.round(tempTotal[0].cost)) }
       })
+
       chartDataArray.push(seriesData.join())
     }
-  } else if (param_billing_term === "Day") {
-    _.each(categories, function (category) {
-      var seriesData = [];
-      _.each(stringDays, function (day) {
-        var tempTotal = _.where(collated_data, { stringDay: day, category: category });
-        if (tempTotal.length === 0) {
-          seriesData.push("_")
-        } else {
-          seriesData.push(Math.round(tempTotal[0].cost))
-        }
-      })
-      chartDataArray.push(seriesData.join())
-    })
-    // Add the "Other" category and associated data
-    if (otherData.length > 0) {
-      categories.push("Other");
-      var seriesData = [];
-      _.each(stringDays, function (day) {
-        var tempTotal = _.where(otherData, { stringDay: day });
-        if (tempTotal.length === 0) {
-          seriesData.push("_")
-        } else {
-          seriesData.push(Math.round(tempTotal[0].cost))
-        }
-      })
-      chartDataArray.push(seriesData.join())
-    }
-  } else if (param_billing_term === "Week") {
-    _.each(categories, function (category) {
-      var seriesData = [];
-      _.each(stringWeeks, function (week) {
-        var tempTotal = _.where(collated_data, { stringWeek: week, category: category });
-        if (tempTotal.length === 0) {
-          seriesData.push("_")
-        } else {
-          seriesData.push(Math.round(tempTotal[0].cost))
-        }
-      })
-      chartDataArray.push(seriesData.join())
-    })
-    // Add the "Other" category and associated data
-    if (otherData.length > 0) {
-      categories.push("Other");
-      var seriesData = [];
-      _.each(stringWeeks, function (week) {
-        var tempTotal = _.where(otherData, { stringWeek: week });
-        if (tempTotal.length === 0) {
-          seriesData.push("_")
-        } else {
-          seriesData.push(Math.round(tempTotal[0].cost))
-        }
-      })
-      chartDataArray.push(seriesData.join())
-    }
-  }
-  var chartData = "chd=a:" + chartDataArray.join('|')
-  var encodedCategories = encodeURIComponent(categories.join('|')).replace(/[(]/gi, '%28').replace(/[)]/gi, '%29');
-  if (encodedCategories.length < 1) {
-    var chartCategories = "chdl=Unknown"
-  } else {
-    var chartCategories = "chdl=" + encodedCategories
-  }
-  var chartColors = "chco=" + colors.slice(0, categories.length).join();
-  var chartXAxis = "";
-  if (param_billing_term === "Day") {
-    chartXAxis = "chxl=0:|" + stringDays.join('|');
-  } else if (param_billing_term === "Week") {
-    chartXAxis = "chxl=0:|" + stringWeeks.join('|');
-  } else {
-    chartXAxis = "chxl=0:|" + stringMonths.join('|');
-  }
-  if (param_billing_centers.length === 0) {
-    var billingCenters = "All";
-  } else {
-    var billingCenters = param_billing_centers.join()
   }
 
-  // Format costs with currency symbol and thousands separator
-  if (ds_currency_code['value'] !== undefined) {
-    var cur = ds_currency_code['value']
-  } else {
-    var cur = "USD"
+  if (param_billing_term == "Day") {
+    _.each(categories, function(category) {
+      seriesData = []
+
+      _.each(stringDays, function(day) {
+        tempTotal = _.where(collated_data, { stringDay: day, category: category })
+
+        if (tempTotal.length == 0) { seriesData.push("_") }
+        if (tempTotal.length != 0) { seriesData.push(Math.round(tempTotal[0].cost)) }
+      })
+
+      chartDataArray.push(seriesData.join())
+    })
+
+    // Add the "Other" category and associated data
+    if (otherData.length > 0) {
+      categories.push("Other")
+      seriesData = []
+
+      _.each(stringDays, function(month) {
+        var tempTotal = _.where(otherData, { stringDay: day })
+
+        if (tempTotal.length == 0) { seriesData.push("_") }
+        if (tempTotal.length != 0) { seriesData.push(Math.round(tempTotal[0].cost)) }
+      })
+
+      chartDataArray.push(seriesData.join())
+    }
   }
+
+  if (param_billing_term == "Week") {
+    _.each(categories, function(category) {
+      seriesData = []
+
+      _.each(stringWeeks, function(week) {
+        tempTotal = _.where(collated_data, { stringWeek: week, category: category })
+
+        if (tempTotal.length == 0) { seriesData.push("_") }
+        if (tempTotal.length != 0) { seriesData.push(Math.round(tempTotal[0].cost)) }
+      })
+
+      chartDataArray.push(seriesData.join())
+    })
+
+    // Add the "Other" category and associated data
+    if (otherData.length > 0) {
+      categories.push("Other")
+      seriesData = []
+
+      _.each(stringWeeks, function(week) {
+        var tempTotal = _.where(otherData, { stringWeek: week })
+
+        if (tempTotal.length == 0) { seriesData.push("_") }
+        if (tempTotal.length != 0) { seriesData.push(Math.round(tempTotal[0].cost)) }
+      })
+
+      chartDataArray.push(seriesData.join())
+    }
+  }
+
+  chartData = "chd=a:" + chartDataArray.join('|')
+  chartColors = "chco=" + colors.slice(0, categories.length).join()
+
+  encodedCategories = encodeURIComponent(categories.join('|')).replace(/[(]/gi, '%28').replace(/[)]/gi, '%29')
+  if (encodedCategories.length < 1)  { chartCategories = "chdl=Unknown" }
+  if (encodedCategories.length >= 1) { chartCategories = "chdl=" + encodedCategories }
+
+  if (param_billing_term == "Month") { chartXAxis = "chxl=0:|" + stringMonths.join('|') }
+  if (param_billing_term == "Day")   { chartXAxis = "chxl=0:|" + stringDays.join('|')   }
+  if (param_billing_term == "Week")  { chartXAxis = "chxl=0:|" + stringWeeks.join('|')  }
+
+  if (param_billing_centers.length == 0) { billingCenters = "All" }
+  if (param_billing_centers.length != 0) { billingCenters = param_billing_centers.join() }
 
   report = {
     currentMonthName: currentMonthName,
@@ -769,7 +782,7 @@ script "js_generated_report", type: "javascript" do
     chartExtension: encodeURI('chof=.png'),
     chartKeyLocation: encodeURI('chdlp=b'),
     currentSpend: Math.round(current_month_total),
-    currencyCode: cur,
+    currencyCode: ds_currency['symbol'],
     reportData: ds_current_report,
     dataPresent: previous_n_month_costs.length
   }
