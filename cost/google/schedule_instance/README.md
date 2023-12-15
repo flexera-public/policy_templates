@@ -64,6 +64,7 @@ Provider tag value to match this policy: `gce`
 Required permissions in the provider:
 
 - The `compute.instances.list` permission
+- The `compute.instances.get` permission
 - The `compute.instances.delete` permission
 - The `compute.instances.setLabels` permission
 - The `compute.instances.start` permission

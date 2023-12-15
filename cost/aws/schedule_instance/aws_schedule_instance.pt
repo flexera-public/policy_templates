@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "4.1",
+  version: "4.2",
   provider: "AWS",
   service: "Compute",
   policy_set:"Schedule Instance"
@@ -341,7 +341,7 @@ end
 policy "policy_schedule_instance" do
   validate $ds_filter_resources do
     summary_template "AWS Account ID: {{with index data 0}}{{ .accountId }}{{end}} - Schedule Instance list"
-    hash_include "next_start", "next_stop"
+    hash_exclude "tags"
     escalate $esc_email
     escalate $esc_schedule_instance
     escalate $esc_terminate_instance
@@ -366,6 +366,12 @@ policy "policy_schedule_instance" do
       field "schedule" do
         label "Schedule"
       end
+      field "next_start" do
+        label "Next Start"
+      end
+      field "next_stop" do
+        label "Next Stop"
+      end
       field "tags" do
         label "Tags"
       end
@@ -377,8 +383,36 @@ end
 # Cloud Workflow
 ###############################################################################
 
-define schedule_instance($data, $$rs_optima_host) return $all_response do
-  foreach $item in $data do
+# CWF function to handle errors
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
+end
+
+# CWF function to capture and output logs
+define log_message($message) do
+  # Instantiate log messages array doesn't exist
+  if !$$log_messages
+    $$log_messages = []
+  end
+  # Append timestamp to message
+  $now = strftime(now(), "%Y/%m/%d %H:%M:%S")
+  $log = $now + ": " + $message
+  # Append to log messages array
+  $$log_messages << $log
+  # Update task label with current message
+  task_label($log)
+  # Aggregate all log messages into a single string which is easier to grab from UI and interpret
+  $$log_messages_string = join($$log_messages, "\n\n")
+end
+
+define schedule_instance($data, $$rs_optima_host) do
+  foreach $item in $data on_error: handle_error() do
     $rule = split($item['schedule'],';')[1]
     $time_range = split($item['schedule'],';')[0]
     $start_time = split($time_range,'-')[0]
@@ -401,14 +435,14 @@ define schedule_instance($data, $$rs_optima_host) return $all_response do
     end
     call window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone) retrieve $window_active , $next_start, $next_stop
 
-    call sys_log('window_active',$window_active)
-    call sys_log('next_start',$next_start)
-    call sys_log('next_stop',$next_stop)
+    call log_message('window_active='+to_s($window_active))
+    call log_message('next_start='+to_s($next_start))
+    call log_message('next_stop='+to_s($next_stop))
 
     if ($window_active)
-      call sys_log($item['schedule'] + ' schedule window is currently active: Instances may be started.', '')
+      call log_message($item['schedule'] + ' schedule window is currently active: Instances may be started.')
     else
-      call sys_log($item['schedule'] + ' schedule window is currently in-active: Instances may be stopped.', '')
+      call log_message($item['schedule'] + ' schedule window is currently in-active: Instances may be stopped.')
     end
 
     $stoppable = /^(running|pending)$/
@@ -432,10 +466,13 @@ define schedule_instance($data, $$rs_optima_host) return $all_response do
         "Version": "2016-11-15"
       }
     )
+    call log_message("req=GET "+join(["ec2.", $item['region'], ".amazonaws.com"])+"/?Action=CreateTags resp="+to_json($response))
     if($window_active)
       if($item['state']=~$startable)
-        call sys_log('> ' + $item['id'] + ': Starting ...', to_s($item))
-        sub on_error: skip do
+        $retry_count=0
+        $max_retry=10
+        while ($item['state']=~$startable && $retry_count < $max_retry) do
+          call log_message($item['id'] + ': Starting ... '+ to_s($item))
           $response= http_request(
             auth: $$auth_aws,
             host: join(["ec2.", $item['region'], ".amazonaws.com"]),
@@ -448,83 +485,126 @@ define schedule_instance($data, $$rs_optima_host) return $all_response do
               "Version":"2016-11-15"
             }
           )
-          $all_response << $response
+          call log_message("req=GET "+join(["ec2.", $item['region'], ".amazonaws.com"])+"/?Action=StartInstances resp="+to_json($response))
+          # Sleep 3 seconds to allow AWS to process the request
+          sleep(3)
+          # Update the item state after making the start request
+          call aws_ec2_describe_instance($item) retrieve $response
+          $item['state'] = $response['body']['DescribeInstancesResponse']['reservationSet']['item']['instancesSet']['item']['instanceState']['name']
+          call log_message($item['id'] + ': State is '+ $item['state'])
+          $retry_count = $retry_count + 1
+          # Check if we have gone over our retry limit
+          if ($item['state']=~$startable)
+            if($retry_count >= $max_retry)
+              raise "Max retry count reached attempting to start instance " + $item['id'] + ".  This is not expected. Last known state is " + $item['state']
+            else
+              $sleep_time = ($retry_count * 1) # Incremental backoff each time we retry.. 1 second for each retry attempt
+              call log_message($item['id'] + ': State is '+ $item['state'] + "... Sleeping for " + to_s($sleep_time) + " seconds .. Retry count is " + to_s($retry_count) + "/" + to_s($max_retry))
+              sleep($sleep_time)
+            end
+          end
         end
+        call log_message($item['id'] + ': Start Successfully - Instance state is ' + $item['state'])
       else
-        call sys_log('> ' + $item['id'] + ': No action - Instance state is ' + $item['state'], '')
+        call log_message($item['id'] + ': No action - Instance state is ' + $item['state'])
       end
     else
       if($item['state'] =~ $stoppable)
-        call sys_log('> ' + $item['id'] + ': Stopping ...', to_s($item))
-        sub on_error: skip do
-          $response= http_request(
-            auth: $$auth_aws,
-            host: join(["ec2.", $item['region'], ".amazonaws.com"]),
-            href: "/",
-            https: true,
-            verb: "get",
-            query_strings:{
-              "Action": "StopInstances",
-              "InstanceId.1":$item['id'],
-              "Version":"2016-11-15"
-            }
-          )
-          $all_response << $response
-        end
+        call log_message($item['id'] + ': Stopping ... ' + to_s($item))
+        $response= http_request(
+          auth: $$auth_aws,
+          host: join(["ec2.", $item['region'], ".amazonaws.com"]),
+          href: "/",
+          https: true,
+          verb: "get",
+          query_strings:{
+            "Action": "StopInstances",
+            "InstanceId.1":$item['id'],
+            "Version":"2016-11-15"
+          }
+        )
+        call log_message("req=GET "+join(["ec2.", $item['region'], ".amazonaws.com"])+"/?Action=StopInstances resp="+to_json($response))
       else
-        call sys_log('> ' + $item['id'] + ': No action - Instance state is ' + $item['state'], '')
+        call log_message($item['id'] + ': No action - Instance state is ' + $item['state'])
       end
     end
   end
-end
 
-define terminate_instance($data, $$rs_optima_host) return $all_response do
-  foreach $item in $data do
-    call sys_log('> ' + $item['id'] + ': Terminating ...', to_s($item))
-    sub on_error: skip do
-      $response= http_request(
-        auth: $$auth_aws,
-        host: join(["ec2.", $item['region'], ".amazonaws.com"]),
-        href: "/",
-        https: true,
-        verb: "get",
-        query_strings:{
-          "Action": "TerminateInstances",
-          "InstanceId.1":$item['id'],
-          "Version":"2016-11-15"
-        }
-      )
-      $all_response << $response
-    end
+  # If we encountered any errors, use `raise` to mark the CWF process as errored
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
   end
 end
 
-define delete_schedule($data, $$rs_optima_host) return $all_response do
-  foreach $item in $data do
-    call sys_log('> ' + $item['id'] + ': Deleting schedule Tag ...', to_s($item))
-    sub on_error: skip do
-      $response= http_request(
-        auth: $$auth_aws,
-        host: join(["ec2.", $item['region'], ".amazonaws.com"]),
-        href: "/",
-        https: true,
-        verb: "get",
-        query_strings:{
-          "Action": "DeleteTags",
-          "ResourceId.1": $item['id'],
-          "Tag.1.Key": "schedule",
-          "Tag.2.Key": "next_start",
-          "Tag.3.Key": "next_stop",
-          "Version": "2016-11-15"
-        }
-      )
-      $all_response << $response
-    end
+define terminate_instance($data, $$rs_optima_host) do
+  foreach $item in $data on_error: handle_error() do
+    call log_message($item['id'] + ': Terminating ...' + to_s($item))
+    $response= http_request(
+      auth: $$auth_aws,
+      host: join(["ec2.", $item['region'], ".amazonaws.com"]),
+      href: "/",
+      https: true,
+      verb: "get",
+      query_strings:{
+        "Action": "TerminateInstances",
+        "InstanceId.1":$item['id'],
+        "Version":"2016-11-15"
+      }
+    )
+    call log_message("req=GET "+join(["ec2.", $item['region'], ".amazonaws.com"])+"/?Action=TerminateInstances resp="+to_json($response))
+  end
+
+  # If we encountered any errors, use `raise` to mark the CWF process as errored
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
   end
 end
 
-define update_schedule($data, $param, $$rs_optima_host) return $all_response do
-  foreach $item in $data do
+define aws_ec2_describe_instance($item) return $response do
+  $response= http_request(
+    auth: $$auth_aws,
+    host: join(["ec2.", $item['region'], ".amazonaws.com"]),
+    href: "/",
+    https: true,
+    verb: "get",
+    query_strings:{
+      "Action": "DescribeInstances",
+      "InstanceId.1": $item['id'],
+      "Version": "2016-11-15"
+    }
+  )
+  call log_message("req=GET "+join(["ec2.", $item['region'], ".amazonaws.com"])+"/?Action=DescribeInstances resp="+to_json($response))
+end
+
+define delete_schedule($data, $$rs_optima_host) do
+  foreach $item in $data on_error: handle_error() do
+    call log_message($item['id'] + ': Deleting schedule Tag ... '+to_s($item))
+    $response= http_request(
+      auth: $$auth_aws,
+      host: join(["ec2.", $item['region'], ".amazonaws.com"]),
+      href: "/",
+      https: true,
+      verb: "get",
+      query_strings:{
+        "Action": "DeleteTags",
+        "ResourceId.1": $item['id'],
+        "Tag.1.Key": "schedule",
+        "Tag.2.Key": "next_start",
+        "Tag.3.Key": "next_stop",
+        "Version": "2016-11-15"
+      }
+    )
+    call log_message("req=GET "+join(["ec2.", $item['region'], ".amazonaws.com"])+"/?Action=DeleteTags resp="+to_json($response))
+  end
+
+  # If we encountered any errors, use `raise` to mark the CWF process as errored
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+define update_schedule($data, $param, $$rs_optima_host) do
+  foreach $item in $data on_error: handle_error() do
     $rule = split($param,';')[1]
     $time_range = split($param,';')[0]
     $start_time = split($time_range,'-')[0]
@@ -546,33 +626,36 @@ define update_schedule($data, $param, $$rs_optima_host) return $all_response do
       $timezone = "UTC"
     end
     call window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone) retrieve $window_active , $next_start, $next_stop
-    call sys_log('> ' + $item['id'] + ': Updating schedule Tag ...', to_s($item))
-    sub on_error: skip do
-      $response= http_request(
-        auth: $$auth_aws,
-        host: join(["ec2.", $item['region'], ".amazonaws.com"]),
-        href: "/",
-        https: true,
-        verb: "get",
-        query_strings:{
-          "Action": "CreateTags",
-          "ResourceId.1": $item['id'],
-          "Tag.1.Key": "next_start",
-          "Tag.1.Value": $next_start,
-          "Tag.2.Key": "next_stop",
-          "Tag.2.Value": $next_stop,
-          "Tag.3.Key": 'schedule',
-          "Tag.3.Value": join([$start_hour, ":", $start_minute, "-", $stop_hour, ":", $stop_minute, ";",$rule, ";", $timezone]),
-          "Version": "2016-11-15"
-        }
-      )
-      $all_response << $response
-    end
+    call log_message($item['id'] + ': Updating schedule Tag ... ' + to_s($item))
+    $response= http_request(
+      auth: $$auth_aws,
+      host: join(["ec2.", $item['region'], ".amazonaws.com"]),
+      href: "/",
+      https: true,
+      verb: "get",
+      query_strings:{
+        "Action": "CreateTags",
+        "ResourceId.1": $item['id'],
+        "Tag.1.Key": "next_start",
+        "Tag.1.Value": $next_start,
+        "Tag.2.Key": "next_stop",
+        "Tag.2.Value": $next_stop,
+        "Tag.3.Key": 'schedule',
+        "Tag.3.Value": join([$start_hour, ":", $start_minute, "-", $stop_hour, ":", $stop_minute, ";",$rule, ";", $timezone]),
+        "Version": "2016-11-15"
+      }
+    )
+    call log_message("req=GET "+join(["ec2.", $item['region'], ".amazonaws.com"])+"/?Action=CreateTags resp="+to_json($response))
+  end
+
+  # If we encountered any errors, use `raise` to mark the CWF process as errored
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
   end
 end
 
 define window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $tz) return $window_active, $next_start, $next_stop do
-  $params = {
+  $request = {
     verb: 'post',
     host: 'bjlaftw4kh.execute-api.us-east-1.amazonaws.com',
     https: true,
@@ -590,49 +673,14 @@ define window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_
       'tz': $tz
     }
   }
-  call sys_log('window active $params', to_s($params))
-  $response = http_request($params)
-  call sys_log('window active $response', to_s($response))
+  $response = http_request($request)
+  call log_message("req="+to_json($request)+" resp="+to_json($response))
+
   $body = $response['body']
-  call sys_log('window active $body', to_s($body))
 
   $window_active = to_b($body['event_active'])
   $next_start   = $body['next_start']
   $next_stop    = $body['next_stop']
-end
-
-define sys_log($subject, $detail) do
-  # Create empty errors array if doesn't already exist
-  if !$$errors
-    $$errors = []
-  end
-  # Check if debug is enabled
-  if $$debug
-    # Append to global $$errors
-    # This is the suggested way to capture errors
-    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
-    # If Flexera NAM Zone, create audit_entries [to be deprecated]
-    # This is the legacy method for capturing errors and only supported on Flexera NAM
-    if $$rs_optima_host == "api.optima.flexeraeng.com"
-      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
-      $task_label = "Creating audit entry for " + $subject
-      sub task_label: $task, on_error: skip_error_and_append($task) do
-        rs_cm.audit_entries.create(
-          notify: "None",
-          audit_entry: {
-            auditee_href: @@account,
-            summary: $subject,
-            detail: $detail
-          }
-        )
-      end # End sub on_error
-    end # End if rs_optima_host
-  end # End if debug is enabled
-end
-
-define skip_error_and_append($subject) do
-  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
-  $_error_behavior = "skip"
 end
 
 ###############################################################################
