@@ -575,25 +575,17 @@ end
 script "js_recommendation_logs", type: "javascript" do
   parameters "projectId", "resourceLink"
   result "request"
-  code <<-EOS
-  //logging.logEntries.list
-  //logging.privateLogEntries.list
-  //logging.views.access
-
-  corrected_link = "https://www.googleapis.com/compute/v1/" + resourceLink.replace("//compute.googleapis.com/", "")
-
+  code <<-'EOS'
   project_id = ['projects', projectId].join('/')
+  zone = resourceLink.split('/')[6]
+  name = resourceLink.split('/')[8]
 
   filter = [
-    '"', corrected_link, '" AND ',
-    'protoPayload.methodName = "v1.compute.instances.detachDisk" AND operation.last = true'
+    "\"", projectId, "\" AND ",
+    "\"", zone, "\" AND ",
+    "\"", name, "\" AND ",
+    "protoPayload.methodName = \"v1.compute.instances.detachDisk\""
   ].join('')
-
-  body = {
-    "resourceNames": [ project_id ],
-    "filter": filter,
-    "pageSize": 1000
-  }
 
   var request = {
     auth: "auth_google",
@@ -602,7 +594,11 @@ script "js_recommendation_logs", type: "javascript" do
     verb: "POST",
     ignore_status: 403,
     path: "v2/entries:list",
-    body: JSON.stringify(body)
+    body_fields: {
+      "resourceNames": [ project_id ],
+      "filter": filter,
+      "pageSize": 1000
+    }
   }
 EOS
 end
@@ -618,7 +614,9 @@ script "js_recommendation_logs_sorted", type: "javascript" do
   result = {}
 
   _.each(ds_recommendation_logs, function(entry) {
-    resourceLink = entry['resourceLink']
+    resourceLink = entry['resourceLink'].replace("//compute.googleapis.com/", "")
+    resourceLink = "https://www.googleapis.com/compute/v1/" + resourceLink
+
     timestamp = entry['timestamp']
 
     if (result[resourceLink] == undefined) {
