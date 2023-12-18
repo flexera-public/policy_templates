@@ -38,7 +38,7 @@ parameter "param_graph_dimension" do
   type "string"
   category "Policy Settings"
   label "Graph Dimension"
-  description "Select which dimension you'd like to be broken out on the graph in the report. Select 'Custom' to specify the name of a custom dimension, such as a Custom Tag or Custom Rule-Based Dimension."
+  description "Select which dimension you'd like to be broken out on the graph in the report. Select 'Custom' to specify the name of a custom dimension, such as a Custom Tag or Custom Rule-Based Dimension, or the name of any dimension not on the list."
   allowed_values "Custom", "Category", "Billing Centers", "Instance Type", "Region", "Resource Group", "Resource Type", "Service", "Usage Type", "Usage Unit", "Cloud Vendor", "Cloud Vendor Account", "Cloud Vendor Account Name"
   default "Category"
 end
@@ -46,9 +46,27 @@ end
 parameter "param_custom_dimension" do
   type "string"
   category "Policy Settings"
-  label "Custom Dimension"
-  description "Specify the internal name of the custom dimension you want to break costs out by. Only applicable if 'Custom' is selected for the Graph Dimension. Examples: rbd_environment, tag_cost_owner, bill_source"
+  label "Custom Graph Dimension"
+  description "Specify the name of the custom dimension you want to break costs out by. Spelling and capitalization must match what is shown in the Flexera CCO platform. Only applicable if 'Custom' is selected for the Graph Dimension."
   default ""
+end
+
+parameter "param_filter_dimensions" do
+  type "list"
+  category "Policy Settings"
+  label "Filter Dimensions"
+  description "Specify the names of the dimensions you wish to filter the costs by along with their values in dimension=value format. Spelling and capitalization must match what is shown in the Flexera CCO platform. Examples: Environment=Production, Cost Owner=John Doe"
+  allowed_pattern /^[^=]+=[^=]+$/
+  default []
+end
+
+parameter "param_filter_functionality" do
+  type "string"
+  category "Policy Settings"
+  label "Filter Functionality"
+  description "Whether to filter for costs that meet all of the criteria specified in 'Filter Dimensions' or costs that meet any of the criteria. Only applicable if at least two values are entered for 'Filter Dimensions'"
+  allowed_values "All", "Any"
+  default "All"
 end
 
 parameter "param_date_range" do
@@ -157,24 +175,45 @@ datasource "ds_cost_dimensions" do
   end
 end
 
+datasource "ds_cost_dimension_table" do
+  run_script $js_cost_dimension_table, $ds_cost_dimensions
+end
+
+script "js_cost_dimension_table", type: "javascript" do
+  parameters "ds_cost_dimensions"
+  result "result"
+  code <<-EOS
+  result = {}
+
+  _.each(ds_cost_dimensions, function(item) {
+    result[item['name']] = item['id']
+  })
+EOS
+end
+
 datasource "ds_graph_dimension" do
-  run_script $js_graph_dimension, $ds_cost_dimensions, $ds_data_tables, $param_graph_dimension, $param_custom_dimension
+  run_script $js_graph_dimension, $ds_cost_dimension_table, $ds_data_tables, $param_graph_dimension, $param_custom_dimension
 end
 
 script "js_graph_dimension", type: "javascript" do
-  parameters "ds_cost_dimensions", "ds_data_tables", "param_graph_dimension", "param_custom_dimension"
+  parameters "ds_cost_dimension_table", "ds_data_tables", "param_graph_dimension", "param_custom_dimension"
   result "result"
   code <<-EOS
+  result = { id: "category", name: "Category" }
+
   if (param_graph_dimension == 'Custom') {
-    cost_dimensions = {}
+    id = ds_cost_dimension_table[param_custom_dimension]
 
-    _.each(ds_cost_dimensions, function(item) {
-      cost_dimensions[item['id']] = item['name']
-    })
+    // Attempt to correct for possible user error when entering dimension names
+    if (id == undefined) { id = ds_cost_dimension_table[param_custom_dimension.trim()] }
+    if (id == undefined) { id = ds_cost_dimension_table[param_custom_dimension.toLowerCase()] }
+    if (id == undefined) { id = ds_cost_dimension_table[param_custom_dimension.toLowerCase().trim()] }
 
-    result = {
-      id: param_custom_dimension,
-      name: cost_dimensions[param_custom_dimension]
+    if (id != undefined) {
+      result = {
+        id: ds_cost_dimension_table[param_custom_dimension],
+        name: param_custom_dimension
+      }
     }
   } else {
     result = {
@@ -299,12 +338,12 @@ script "js_currency", type:"javascript" do
 EOS
 end
 
-datasource "ds_n_month_cost_request_list" do
-  run_script $js_n_month_cost_request_list, $ds_filtered_bcs, $ds_graph_dimension, $ds_data_tables, $param_cost_metric, $param_date_range, $param_billing_term
+datasource "ds_cost_request_list" do
+  run_script $js_cost_request_list, $ds_filtered_bcs, $ds_graph_dimension, $ds_cost_dimension_table, $ds_data_tables, $param_cost_metric, $param_date_range, $param_billing_term, $param_filter_dimensions, $param_filter_functionality
 end
 
-script "js_n_month_cost_request_list", type: "javascript" do
-  parameters "ds_filtered_bcs", "ds_graph_dimension", "ds_data_tables", "param_cost_metric", "param_date_range", "param_billing_term"
+script "js_cost_request_list", type: "javascript" do
+  parameters "ds_filtered_bcs", "ds_graph_dimension", "ds_cost_dimension_table", "ds_data_tables", "param_cost_metric", "param_date_range", "param_billing_term", "param_filter_dimensions", "param_filter_functionality"
   result "result"
   code <<-EOS
   // Function to take date object or YYYY-MM formatted string and move it backwards or forwards by month
@@ -336,6 +375,33 @@ script "js_n_month_cost_request_list", type: "javascript" do
     return [year, month].join('-')
   }
 
+  // Configure cost filters if specified by user
+  filter = null
+  filter_expressions = []
+  boolean_table = { 'Any': 'or', 'All': 'and' }
+
+  _.each(param_filter_dimensions, function(item) {
+    key = item.split('=')[0]
+    value = item.split('=')[1]
+    dimension_id = ds_cost_dimension_table[key]
+
+    // Attempt to correct for possible user error when entering dimension names
+    if (dimension_id == undefined) { dimension_id = ds_cost_dimension_table[key.trim()] }
+    if (dimension_id == undefined) { dimension_id = ds_cost_dimension_table[key.toLowerCase()] }
+    if (dimension_id == undefined) { dimension_id = ds_cost_dimension_table[key.toLowerCase().trim()] }
+
+    if (dimension_id != undefined) {
+      filter_expressions.push({ type: "equal", dimension: dimension_id, value: value })
+    }
+  })
+
+  if (filter_expressions.length > 0) {
+    filter = {
+      "type": boolean_table[param_filter_functionality],
+      "expressions": filter_expressions
+    }
+  }
+
   result = []
   totalMonth = parseInt(param_date_range)
   dimensions = [ ds_graph_dimension['id'] ]
@@ -348,34 +414,42 @@ script "js_n_month_cost_request_list", type: "javascript" do
       start_at = move_month(start_at, -i) + '-01'
       end_at = move_month(start_at, 1) + '-01'
 
-      result.push({
+      request = {
         "billing_center_ids": billing_center_ids,
         "dimensions": dimensions,
         "metrics": metrics,
         "granularity": "day",
         "start_at": start_at,
         "end_at": end_at
-      })
+      }
+
+      if (filter != null) { request['filter'] = filter }
+
+      result.push(request)
     }
   } else {
     end_at = new Date().toISOString()
     end_at = move_month(end_at, 1)
     start_at = move_month(end_at, -totalMonth)
 
-    result.push({
+    request = {
       "billing_center_ids": billing_center_ids,
       "dimensions": dimensions,
       "metrics": metrics,
       "granularity": "month",
       "start_at": start_at,
       "end_at": end_at
-    })
+    }
+
+    if (filter != null) { request['filter'] = filter }
+
+    result.push(request)
   }
 EOS
 end
 
-datasource "ds_previous_n_month_costs" do
-  iterate $ds_n_month_cost_request_list
+datasource "ds_pulled_costs" do
+  iterate $ds_cost_request_list
   request do
     auth $auth_flexera
     host rs_optima_host
@@ -401,11 +475,11 @@ datasource "ds_previous_n_month_costs" do
 end
 
 datasource "ds_collated_data" do
-  run_script $js_collated_data, $ds_previous_n_month_costs, $ds_billing_centers, $ds_graph_dimension, $ds_data_tables, $ds_currency, $param_cost_metric, $param_billing_term
+  run_script $js_collated_data, $ds_pulled_costs, $ds_billing_centers, $ds_graph_dimension, $ds_data_tables, $ds_currency, $param_cost_metric, $param_billing_term
 end
 
 script "js_collated_data", type: "javascript" do
-  parameters "ds_previous_n_month_costs", "ds_billing_centers", "ds_graph_dimension", "ds_data_tables", "ds_currency", "param_cost_metric", "param_billing_term"
+  parameters "ds_pulled_costs", "ds_billing_centers", "ds_graph_dimension", "ds_data_tables", "ds_currency", "param_cost_metric", "param_billing_term"
   result "result"
   code <<-'EOS'
   // Set metric based on parameters
@@ -417,10 +491,10 @@ script "js_collated_data", type: "javascript" do
 
   // Insert billing center names if we're reporting on that dimension.
   // Otherwise, use the data as-is.
-  previous_n_month_costs = ds_previous_n_month_costs
+  pulled_costs = ds_pulled_costs
 
   if (ds_graph_dimension['id'] == "billing_center_id") {
-    previous_n_month_costs = _.map(previous_n_month_costs, function(row) {
+    pulled_costs = _.map(pulled_costs, function(row) {
       return {
         dimensions: {
           billing_center_id: row['dimensions']['billing_center_id'],
@@ -432,14 +506,14 @@ script "js_collated_data", type: "javascript" do
     })
   }
 
-  // Collate the previous_n_month_costs data.
+  // Collate the pulled_costs data.
   // Variables are mostly for keeping track of weeks to insert weekly data.
   result = []
   count = -1
   tempDayNo = 0
   stringWeek = ""
 
-  _.each(previous_n_month_costs, function(row) {
+  _.each(pulled_costs, function(row) {
     timestamp = new Date(row['timestamp'])
     day = timestamp.toISOString().split('-')[2].split('T')[0]
     year = timestamp.toISOString().split('-')[0]
