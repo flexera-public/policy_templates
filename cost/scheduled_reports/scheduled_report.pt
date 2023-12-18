@@ -38,9 +38,17 @@ parameter "param_graph_dimension" do
   type "string"
   category "Policy Settings"
   label "Graph Dimension"
-  description "Select which dimension you'd like to be broken out on the graph in the report."
-  allowed_values "Category", "Billing Centers", "Instance Type", "Region", "Resource Group", "Resource Type", "Service", "Usage Type", "Usage Unit", "Cloud Vendor", "Cloud Vendor Account", "Cloud Vendor Account Name"
+  description "Select which dimension you'd like to be broken out on the graph in the report. Select 'Custom' to specify the name of a custom dimension, such as a Custom Tag or Custom Rule-Based Dimension."
+  allowed_values "Custom", "Category", "Billing Centers", "Instance Type", "Region", "Resource Group", "Resource Type", "Service", "Usage Type", "Usage Unit", "Cloud Vendor", "Cloud Vendor Account", "Cloud Vendor Account Name"
   default "Category"
+end
+
+parameter "param_custom_dimension" do
+  type "string"
+  category "Policy Settings"
+  label "Custom Dimension"
+  description "Specify the internal name of the custom dimension you want to break costs out by. Only applicable if 'Custom' is selected for the Graph Dimension. Examples: rbd_environment, tag_cost_owner"
+  default ""
 end
 
 parameter "param_date_range" do
@@ -111,7 +119,8 @@ script "js_data_tables", type:"javascript" do
       "Usage Unit": "usage_unit",
       "Cloud Vendor": "vendor",
       "Cloud Vendor Account": "vendor_account",
-      "Cloud Vendor Account Name": "vendor_account_name"
+      "Cloud Vendor Account Name": "vendor_account_name",
+      "Custom": ""
     },
     graph_colors: [
       'D05A5A', 'F78741', 'FCC419', '007D76', '37AA77', '92DA71',
@@ -126,6 +135,52 @@ script "js_data_tables", type:"javascript" do
       'None', 'January', 'February', 'March', 'April', 'May', 'June',
       'July', 'August', 'September', 'October', 'November', 'December'
     ]
+  }
+EOS
+end
+
+# Store details about graph dimension in datasource
+datasource "ds_cost_dimensions" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/costs/dimensions"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "dimensions[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "type", jmes_path(col_item, "type")
+    end
+  end
+end
+
+datasource "ds_graph_dimension" do
+  run_script $js_graph_dimension, $ds_cost_dimensions, $ds_data_tables, $param_graph_dimension, $param_custom_dimension
+end
+
+script "js_graph_dimension", type: "javascript" do
+  parameters "ds_cost_dimensions", "ds_data_tables", "param_graph_dimension", "param_custom_dimension"
+  result "result"
+  code <<-EOS
+  if (param_graph_dimension == 'Custom') {
+    cost_dimensions = {}
+
+    _.each(ds_cost_dimensions, function(item) {
+      cost_dimensions[item['id']] = item['name']
+    })
+
+    result = {
+      id: param_custom_dimension,
+      name: cost_dimensions[param_custom_dimension]
+    }
+  } else {
+    result = {
+      id: ds_data_tables['dimensions'][param_graph_dimension],
+      name: param_graph_dimension
+    }
   }
 EOS
 end
@@ -244,191 +299,12 @@ script "js_currency", type:"javascript" do
 EOS
 end
 
-datasource "ds_current_week_costs" do
-  request do
-    run_script $js_get_costs, $ds_filtered_bcs, $ds_data_tables, $param_cost_metric, rs_org_id, rs_optima_host, "current_week"
-  end
-end
-
-datasource "ds_previous_week_costs" do
-  request do
-    run_script $js_get_costs, $ds_filtered_bcs, $ds_data_tables, $param_cost_metric, rs_org_id, rs_optima_host, "previous_week"
-  end
-end
-
-datasource "ds_current_month_costs" do
-  request do
-    run_script $js_get_costs, $ds_filtered_bcs, $ds_data_tables, $param_cost_metric, rs_org_id, rs_optima_host, "current_month"
-  end
-end
-
-datasource "ds_previous_month_costs" do
-  request do
-    run_script $js_get_costs, $ds_filtered_bcs, $ds_data_tables, $param_cost_metric, rs_org_id, rs_optima_host, "previous_month"
-  end
-end
-
-script "js_get_costs", type: "javascript" do
-  parameters "ds_filtered_bcs", "ds_data_tables", "param_cost_metric", "rs_org_id", "rs_optima_host", "time_period"
-  result "request"
-  code <<-EOS
-  // Function to take date object or YYYY-MM formatted string and move it backwards or forwards by month
-  function move_month(date_string, amount) {
-    clean_date = new Date(date_string).toISOString()
-    year = Number(clean_date.split('-')[0])
-    month = Number(clean_date.split('-')[1])
-
-    if (amount > 0) {
-      for (var i = 1; i <= amount; i++) {
-        if (month == 12) {
-          year += 1; month = 1
-        } else {
-          month += 1
-        }
-      }
-    } else {
-      for (var i = -1; i >= amount; i--) {
-        if (month == 1) {
-          year -= 1; month = 12
-        } else {
-          month -= 1
-        }
-      }
-    }
-
-    if (month < 10) { month = '0' + month }
-
-    return [year, month].join('-')
-  }
-
-  billing_center_ids = _.pluck(ds_filtered_bcs, 'id')
-
-  if (time_period == 'current_week' || time_period == 'previous_week') {
-    start_at = new Date()
-    if (time_period == 'previous_week') { start_at.setDate(start_at.getDate() - 7) }
-    if (start_at.getDay() || 7 != 1) { start_at.setHours(-24 * ((start_at.getDay() || 7) - 1)) }
-    start_at = start_at.toISOString().split('T')[0]
-
-    today = new Date()
-    if (time_period == 'previous_week') { today.setDate(today.getDate() - 7) }
-    end_at = new Date(today.setDate((today.getDate() + (6 + (8 - today.getDay())) % 7)))
-    end_at.setDate(end_at.getDate() + 1)
-    end_at = end_at.toISOString().split('T')[0]
-  }
-
-  if (time_period == 'current_month' || time_period == 'previous_month') {
-    start_at = new Date().toISOString()
-    start_at = start_at.split('-')[0] + '-' + start_at.split('-')[1]
-    if (time_period == 'previous_month') { start_at = move_month(start_at, -1) }
-    end_at = move_month(start_at, 1)
-
-    start_at += "-01"
-    end_at += "-01"
-  }
-
-  body = {
-    dimensions: [],
-    granularity: "day",
-    start_at: start_at,
-    end_at: end_at,
-    metrics: [ ds_data_tables['cost_metrics'][param_cost_metric] ],
-    billing_center_ids: billing_center_ids
-  }
-
-  var request = {
-    auth: "auth_flexera",
-    host: rs_optima_host,
-    verb: "POST",
-    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
-    headers: {
-      "API-Version": "1.0",
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(body)
-  }
-EOS
-end
-
-datasource "ds_report_data" do
-  run_script $js_report_data, $ds_current_week_costs, $ds_previous_week_costs, $ds_current_month_costs, $ds_previous_month_costs, $ds_data_tables, $ds_currency, $param_cost_metric
-end
-
-script "js_report_data", type: "javascript" do
-  parameters "ds_current_week_costs", "ds_previous_week_costs", "ds_current_month_costs", "ds_previous_month_costs", "ds_data_tables", "ds_currency", "param_cost_metric"
-  result "report"
-  code <<-EOS
-  // Function to return the total_costs of a cost list
-  function total_costs(cost_list) {
-    total = 0.0
-    _.each(cost_list['rows'], function(row) { total += row['metrics'][metric] })
-    return total
-  }
-
-  // Function to format cost numbers
-  function format_cost(number, separator) {
-    numString = number.toString()
-    formatted_number = ''
-
-    while (numString.length > 3) {
-      chunk = numString.substr(-3)
-      numString = numString.substr(0, numString.length - 3)
-      formatted_number = separator + chunk + formatted_number
-    }
-
-    if (numString.length > 0) { formatted_number = numString + formatted_number }
-
-    return formatted_number
-  }
-
-  metric = ds_data_tables['cost_metrics'][param_cost_metric]
-
-  current_week_total = total_costs(ds_current_week_costs)
-  previous_week_total = total_costs(ds_previous_week_costs)
-  current_month_total = total_costs(ds_current_month_costs)
-  previous_month_total = total_costs(ds_previous_month_costs)
-
-  weekly_avg = 0.0
-  if (ds_current_week_costs['rows'].length > 0) {
-    weekly_avg = (current_week_total + previous_week_total) / (7 + ds_current_week_costs['rows'].length)
-  }
-
-  monthly_avg = 0.0
-  if (ds_current_month_costs['rows'].length > 0) {
-    days_this_month = ds_current_month_costs['rows'].length
-    days_last_month = ds_previous_month_costs['rows'].length
-    monthly_avg = (current_month_total + previous_month_total) / (days_last_month + days_this_month)
-  }
-
-  weekly_change = 0.0
-  if (current_week_total > 0) {
-    weekly_change = Number((current_week_total - previous_week_total) / previous_week_total * 100).toFixed(1)
-  }
-
-  monthly_change = 0.0
-  if (current_month_total > 0) {
-    monthly_change = Number(( current_month_total - previous_month_total) / previous_month_total * 100).toFixed(1)
-  }
-
-  cw_total = ds_currency['symbol'] + ' ' + format_cost(Math.round(current_week_total), ds_currency['separator'])
-  pw_total = ds_currency['symbol'] + ' ' + format_cost(Math.round(previous_week_total), ds_currency['separator'])
-  week_avg = ds_currency['symbol'] + ' ' + format_cost(Math.round(weekly_avg), ds_currency['separator'])
-  cm_total = ds_currency['symbol'] + ' ' + format_cost(Math.round(current_month_total), ds_currency['separator'])
-  pm_total = ds_currency['symbol'] + ' ' + format_cost(Math.round(previous_month_total), ds_currency['separator'])
-  month_avg = ds_currency['symbol'] + ' ' + format_cost(Math.round(monthly_avg), ds_currency['separator'])
-
-  var report = [
-    { range: 'Weekly', current: cw_total, previous: pw_total, avg: week_avg, change: weekly_change },
-    { range: 'Monthly', current: cm_total, previous: pm_total, avg: month_avg, change: monthly_change }
-  ]
-EOS
-end
-
 datasource "ds_n_month_cost_request_list" do
-  run_script $js_n_month_cost_request_list, $ds_filtered_bcs, $ds_data_tables, $param_cost_metric, $param_graph_dimension, $param_date_range, $param_billing_term
+  run_script $js_n_month_cost_request_list, $ds_filtered_bcs, $ds_graph_dimension, $ds_data_tables, $param_cost_metric, $param_date_range, $param_billing_term
 end
 
 script "js_n_month_cost_request_list", type: "javascript" do
-  parameters "ds_filtered_bcs", "ds_data_tables", "param_cost_metric", "param_graph_dimension", "param_date_range", "param_billing_term"
+  parameters "ds_filtered_bcs", "ds_graph_dimension", "ds_data_tables", "param_cost_metric", "param_date_range", "param_billing_term"
   result "result"
   code <<-EOS
   // Function to take date object or YYYY-MM formatted string and move it backwards or forwards by month
@@ -462,7 +338,7 @@ script "js_n_month_cost_request_list", type: "javascript" do
 
   result = []
   totalMonth = parseInt(param_date_range)
-  dimensions = [ ds_data_tables['dimensions'][param_graph_dimension] ]
+  dimensions = [ ds_graph_dimension['id'] ]
   metrics = [ ds_data_tables['cost_metrics'][param_cost_metric] ]
   billing_center_ids = _.pluck(ds_filtered_bcs, 'id')
 
@@ -525,16 +401,15 @@ datasource "ds_previous_n_month_costs" do
 end
 
 datasource "ds_collated_data" do
-  run_script $js_collated_data, $ds_previous_n_month_costs, $ds_billing_centers, $ds_data_tables, $param_graph_dimension, $param_cost_metric
+  run_script $js_collated_data, $ds_previous_n_month_costs, $ds_billing_centers, $ds_graph_dimension, $ds_data_tables, $ds_currency, $param_cost_metric, $param_billing_term
 end
 
 script "js_collated_data", type: "javascript" do
-  parameters "ds_previous_n_month_costs", "ds_billing_centers", "ds_data_tables", "param_graph_dimension", "param_cost_metric"
+  parameters "ds_previous_n_month_costs", "ds_billing_centers", "ds_graph_dimension", "ds_data_tables", "ds_currency", "param_cost_metric", "param_billing_term"
   result "result"
   code <<-'EOS'
-  // Set metric and dimension based on parameters
+  // Set metric based on parameters
   metric = ds_data_tables['cost_metrics'][param_cost_metric]
-  dimension = ds_data_tables['dimensions'][param_graph_dimension]
 
   // Create table for finding billing center names based on id
   bc_names = {}
@@ -544,7 +419,7 @@ script "js_collated_data", type: "javascript" do
   // Otherwise, use the data as-is.
   previous_n_month_costs = ds_previous_n_month_costs
 
-  if (dimension == "billing_center_id") {
+  if (ds_graph_dimension['id'] == "billing_center_id") {
     previous_n_month_costs = _.map(previous_n_month_costs, function(row) {
       return {
         dimensions: {
@@ -567,11 +442,15 @@ script "js_collated_data", type: "javascript" do
   _.each(previous_n_month_costs, function(row) {
     timestamp = new Date(row['timestamp'])
     day = timestamp.toISOString().split('-')[2].split('T')[0]
-    month_name = ds_data_tables['months_short'][Number(timestamp.toISOString().split('-')[1])]
+    year = timestamp.toISOString().split('-')[0]
+    month = timestamp.toISOString().split('-')[1]
+    stringMonth = ds_data_tables['months_short'][Number(timestamp.toISOString().split('-')[1])]
+    longMonth = ds_data_tables['months_long'][Number(timestamp.toISOString().split('-')[1])]
+    stringDay = stringMonth + "-" + day
 
     if (count == -1) {
       tempDayNo = day
-      stringWeek = month_name + "-" + day
+      stringWeek = stringMonth + "-" + day
       count = 0
     }
 
@@ -581,37 +460,48 @@ script "js_collated_data", type: "javascript" do
     }
 
     if (count >= 7) {
-      stringWeek = month_name + "-" + day
+      stringWeek = stringMonth + "-" + day
       count = 0
     }
 
-    category = dimension
+    category = ds_graph_dimension['id']
     if (category == "billing_center_id") { category = "billing_center_name" }
 
+    if (param_billing_term == 'Day') { timeUnit = timestamp.toISOString().split('T')[0] }
+
+    if (param_billing_term == 'Month') { timeUnit = [year, month].join('-') }
+
+    if (param_billing_term == 'Week') {
+      weekMonth = ds_data_tables['months_short'].indexOf(stringWeek.split('-')[0])
+      if (weekMonth < 10) { weekMonth = '0' + weekMonth }
+      weekDay = stringWeek.split('-')[1]
+
+      timeUnit = [year, weekMonth, weekDay].join('-')
+    }
+
     result.push({
-      stringMonth: month_name,
-      stringDay: month_name + "-" + day,
+      stringMonth: stringMonth,
+      stringDay: stringDay,
       stringWeek: stringWeek,
+      timeUnit: timeUnit,
       yearMonth: timestamp.toISOString().split('-')[0] + '-' + timestamp.toISOString().split('-')[1],
       category: row['dimensions'][category],
-      cost: row['metrics'][metric]
+      cost: row['metrics'][metric],
+      displayCost: Number(row['metrics'][metric].toFixed(3)),
+      currency: ds_currency['symbol']
     })
   })
 EOS
 end
 
 datasource "ds_generated_report" do
-  run_script $js_generated_report, $ds_report_data, $ds_collated_data, $ds_data_tables, $ds_currency, $ds_applied_policy, $param_cost_metric, $param_graph_dimension, $param_date_range, $param_billing_term, $param_billing_centers
+  run_script $js_generated_report, $ds_collated_data, $ds_graph_dimension, $ds_data_tables, $ds_currency, $ds_applied_policy, $param_cost_metric, $param_date_range, $param_billing_term, $param_billing_centers
 end
 
 script "js_generated_report", type: "javascript" do
-  parameters "ds_report_data", "ds_collated_data", "ds_data_tables", "ds_currency", "ds_applied_policy", "param_cost_metric", "param_graph_dimension", "param_date_range", "param_billing_term", "param_billing_centers"
+  parameters "ds_collated_data", "ds_graph_dimension", "ds_data_tables", "ds_currency", "ds_applied_policy", "param_cost_metric", "param_date_range", "param_billing_term", "param_billing_centers"
   result "result"
   code <<-'EOS'
-  // Set metric and dimension based on parameters
-  metric = ds_data_tables['cost_metrics'][param_cost_metric]
-  dimension = ds_data_tables['dimensions'][param_graph_dimension]
-
   // Prepare date information for later use
   now = new Date()
   currentMonth = now.toISOString().split('-')[0] + '-' + now.toISOString().split('-')[1]
@@ -716,7 +606,7 @@ script "js_generated_report", type: "javascript" do
       categories.push("Other")
       seriesData = []
 
-      _.each(stringDays, function(month) {
+      _.each(stringDays, function(day) {
         var tempTotal = _.where(otherData, { stringDay: day })
 
         if (tempTotal.length == 0) { seriesData.push("_") }
@@ -787,8 +677,9 @@ script "js_generated_report", type: "javascript" do
     chartKeyLocation: encodeURI('chdlp=b'),
     currentSpend: Math.round(current_month_total),
     currencyCode: ds_currency['symbol'],
-    reportData: ds_report_data,
+    reportData: ds_collated_data,
     dataPresent: ds_collated_data.length,
+    graphDimension: ds_graph_dimension['name'],
     policyName: ds_applied_policy['name']
   }
 EOS
@@ -805,7 +696,7 @@ policy "policy_scheduled_report" do
 # Full Cost Report for {{ rs_org_name }} - {{ data.currentMonthName }}
 ## Billing Centers: {{ data.billingCenters }}
 ### Cost Metric: {{ parameters.param_cost_metric }}
-### Chart Dimension: {{ parameters.param_graph_dimension }}
+### Chart Dimension: {{ data.graphDimension }}
 ### Bill Currency: {{ data.currencyCode }}
 ### Date Range: {{ parameters.param_date_range }}
 ### Billing Term: {{ parameters.param_billing_term }}
@@ -818,17 +709,17 @@ ___
     check eq(val(data, "dataPresent"), 0)
     escalate $esc_email
     export "reportData" do
-      field "range" do
-        label "Range"
+      field "timeUnit" do
+        label "Date"
       end
-      field "avg" do
-        label "Daily Average"
+      field "category" do
+        label "Dimension Value"
       end
-      field "previous" do
-        label "Previous"
+      field "displayCost" do
+        label "Cost"
       end
-      field "current" do
-        label "Current (Incomplete)"
+      field "currency" do
+        label "Currency"
       end
     end
   end
