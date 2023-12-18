@@ -34,7 +34,7 @@ parameter "param_cost_metric" do
   default "Unamortized Unblended"
 end
 
-parameter "param_graph_dimension" do
+parameter "param_dimension_graph" do
   type "string"
   category "Policy Settings"
   label "Graph Dimension"
@@ -43,7 +43,7 @@ parameter "param_graph_dimension" do
   default "Category"
 end
 
-parameter "param_custom_dimension" do
+parameter "param_dimension_graph_custom" do
   type "string"
   category "Policy Settings"
   label "Custom Graph Dimension"
@@ -51,7 +51,7 @@ parameter "param_custom_dimension" do
   default ""
 end
 
-parameter "param_filter_dimensions" do
+parameter "param_dimension_filter" do
   type "list"
   category "Policy Settings"
   label "Filter Dimensions"
@@ -60,7 +60,7 @@ parameter "param_filter_dimensions" do
   default []
 end
 
-parameter "param_filter_functionality" do
+parameter "param_dimension_filter_boolean" do
   type "string"
   category "Policy Settings"
   label "Filter Functionality"
@@ -192,33 +192,33 @@ EOS
 end
 
 datasource "ds_graph_dimension" do
-  run_script $js_graph_dimension, $ds_cost_dimension_table, $ds_data_tables, $param_graph_dimension, $param_custom_dimension
+  run_script $js_graph_dimension, $ds_cost_dimension_table, $ds_data_tables, $param_dimension_graph, $param_dimension_graph_custom
 end
 
 script "js_graph_dimension", type: "javascript" do
-  parameters "ds_cost_dimension_table", "ds_data_tables", "param_graph_dimension", "param_custom_dimension"
+  parameters "ds_cost_dimension_table", "ds_data_tables", "param_dimension_graph", "param_dimension_graph_custom"
   result "result"
   code <<-EOS
   result = { id: "category", name: "Category" }
 
-  if (param_graph_dimension == 'Custom') {
-    id = ds_cost_dimension_table[param_custom_dimension]
+  if (param_dimension_graph == 'Custom') {
+    id = ds_cost_dimension_table[param_dimension_graph_custom]
 
     // Attempt to correct for possible user error when entering dimension names
-    if (id == undefined) { id = ds_cost_dimension_table[param_custom_dimension.trim()] }
-    if (id == undefined) { id = ds_cost_dimension_table[param_custom_dimension.toLowerCase()] }
-    if (id == undefined) { id = ds_cost_dimension_table[param_custom_dimension.toLowerCase().trim()] }
+    if (id == undefined) { id = ds_cost_dimension_table[param_dimension_graph_custom.trim()] }
+    if (id == undefined) { id = ds_cost_dimension_table[param_dimension_graph_custom.toLowerCase()] }
+    if (id == undefined) { id = ds_cost_dimension_table[param_dimension_graph_custom.toLowerCase().trim()] }
 
     if (id != undefined) {
       result = {
-        id: ds_cost_dimension_table[param_custom_dimension],
-        name: param_custom_dimension
+        id: ds_cost_dimension_table[param_dimension_graph_custom],
+        name: param_dimension_graph_custom
       }
     }
   } else {
     result = {
-      id: ds_data_tables['dimensions'][param_graph_dimension],
-      name: param_graph_dimension
+      id: ds_data_tables['dimensions'][param_dimension_graph],
+      name: param_dimension_graph
     }
   }
 EOS
@@ -339,11 +339,11 @@ EOS
 end
 
 datasource "ds_cost_request_list" do
-  run_script $js_cost_request_list, $ds_filtered_bcs, $ds_graph_dimension, $ds_cost_dimension_table, $ds_data_tables, $param_cost_metric, $param_date_range, $param_billing_term, $param_filter_dimensions, $param_filter_functionality
+  run_script $js_cost_request_list, $ds_filtered_bcs, $ds_graph_dimension, $ds_cost_dimension_table, $ds_data_tables, $param_cost_metric, $param_date_range, $param_billing_term, $param_dimension_filter, $param_dimension_filter_boolean
 end
 
 script "js_cost_request_list", type: "javascript" do
-  parameters "ds_filtered_bcs", "ds_graph_dimension", "ds_cost_dimension_table", "ds_data_tables", "param_cost_metric", "param_date_range", "param_billing_term", "param_filter_dimensions", "param_filter_functionality"
+  parameters "ds_filtered_bcs", "ds_graph_dimension", "ds_cost_dimension_table", "ds_data_tables", "param_cost_metric", "param_date_range", "param_billing_term", "param_dimension_filter", "param_dimension_filter_boolean"
   result "result"
   code <<-EOS
   // Function to take date object or YYYY-MM formatted string and move it backwards or forwards by month
@@ -376,11 +376,11 @@ script "js_cost_request_list", type: "javascript" do
   }
 
   // Configure cost filters if specified by user
-  filter = null
+  filter = {}
   filter_expressions = []
   boolean_table = { 'Any': 'or', 'All': 'and' }
 
-  _.each(param_filter_dimensions, function(item) {
+  _.each(param_dimension_filter, function(item) {
     key = item.split('=')[0]
     value = item.split('=')[1]
     dimension_id = ds_cost_dimension_table[key]
@@ -399,7 +399,7 @@ script "js_cost_request_list", type: "javascript" do
 
   if (filter_expressions.length > 1) {
     filter = {
-      "type": boolean_table[param_filter_functionality],
+      "type": boolean_table[param_dimension_filter_boolean],
       "expressions": filter_expressions
     }
   }
@@ -417,36 +417,30 @@ script "js_cost_request_list", type: "javascript" do
       start_at = move_month(start_at, -i) + '-01'
       end_at = move_month(start_at, 1) + '-01'
 
-      request = {
+      result.push({
         "billing_center_ids": billing_center_ids,
         "dimensions": dimensions,
+        "filter": filter,
         "metrics": metrics,
         "granularity": "day",
         "start_at": start_at,
         "end_at": end_at
-      }
-
-      if (filter != null) { request['filter'] = filter }
-
-      result.push(request)
+      })
     }
   } else {
     end_at = new Date().toISOString()
     end_at = move_month(end_at, 1)
     start_at = move_month(end_at, -totalMonth)
 
-    request = {
+    result.push({
       "billing_center_ids": billing_center_ids,
       "dimensions": dimensions,
+      "filter": filter,
       "metrics": metrics,
       "granularity": "month",
       "start_at": start_at,
       "end_at": end_at
-    }
-
-    if (filter != null) { request['filter'] = filter }
-
-    result.push(request)
+    })
   }
 EOS
 end
@@ -465,6 +459,7 @@ datasource "ds_pulled_costs" do
     body_field "start_at", val(iter_item, "start_at")
     body_field "end_at", val(iter_item, "end_at")
     body_field "metrics", val(iter_item, "metrics")
+    body_field "filter", val(iter_item, "filter")
     body_field "billing_center_ids", val(iter_item, "billing_center_ids")
   end
   result do
@@ -572,11 +567,11 @@ EOS
 end
 
 datasource "ds_generated_report" do
-  run_script $js_generated_report, $ds_collated_data, $ds_graph_dimension, $ds_data_tables, $ds_currency, $ds_applied_policy, $param_cost_metric, $param_date_range, $param_billing_term, $param_billing_centers, $param_filter_dimensions, $param_filter_functionality
+  run_script $js_generated_report, $ds_collated_data, $ds_graph_dimension, $ds_data_tables, $ds_currency, $ds_applied_policy, $param_cost_metric, $param_date_range, $param_billing_term, $param_billing_centers, $param_dimension_filter, $param_dimension_filter_boolean
 end
 
 script "js_generated_report", type: "javascript" do
-  parameters "ds_collated_data", "ds_graph_dimension", "ds_data_tables", "ds_currency", "ds_applied_policy", "param_cost_metric", "param_date_range", "param_billing_term", "param_billing_centers", "param_filter_dimensions", "param_filter_functionality"
+  parameters "ds_collated_data", "ds_graph_dimension", "ds_data_tables", "ds_currency", "ds_applied_policy", "param_cost_metric", "param_date_range", "param_billing_term", "param_billing_centers", "param_dimension_filter", "param_dimension_filter_boolean"
   result "result"
   code <<-'EOS'
   // Prepare date information for later use
@@ -740,13 +735,13 @@ script "js_generated_report", type: "javascript" do
 
   filterMessage = "Filter: None"
 
-  if (param_filter_dimensions.length > 0) {
-    if (param_filter_functionality == 'All') {
-      filterMessage = "Filter (All): "
-      filterMessage += param_filter_dimensions.join(', ')
+  if (param_dimension_filter.length > 0) {
+    if (param_dimension_filter_boolean == 'All') {
+      filterMessage = "**Filter (All):** "
+      filterMessage += param_dimension_filter.join(', ')
     } else {
-      filterMessage = "Filter (Any): "
-      filterMessage += param_filter_dimensions.join(', ')
+      filterMessage = "**Filter (Any):** "
+      filterMessage += param_dimension_filter.join(', ')
     }
   }
 
@@ -770,6 +765,7 @@ script "js_generated_report", type: "javascript" do
     dataPresent: ds_collated_data.length,
     graphDimension: ds_graph_dimension['name'],
     policyName: ds_applied_policy['name'],
+    today: new Date().toISOString().split('T')[0],
     filterMessage: filterMessage
   }
 EOS
@@ -781,21 +777,20 @@ end
 
 policy "policy_scheduled_report" do
   validate $ds_generated_report do
-    summary_template "{{ data.policyName }}"
+    summary_template "{{ data.policyName }}: {{ rs_org_name }} (Organization ID: {{ rs_org_id }})"
     detail_template <<-EOS
-# Full Cost Report for {{ rs_org_name }} - {{ data.currentMonthName }}
-## Billing Centers: {{ data.billingCenters }}
-### Cost Metric: {{ parameters.param_cost_metric }}
-### Graph Dimension: {{ data.graphDimension }}
-### {{ data.filterMessage }}
-### Bill Currency: {{ data.currencyCode }}
-### Date Range: {{ parameters.param_date_range }}
-### Billing Term: {{ parameters.param_billing_term }}
+# Cost Report for {{ rs_org_name }} (Organization ID: {{ rs_org_id }})
+**Date Created: {{ data.today }}
+**Billing Centers: {{ data.billingCenters }}
+**Cost Metric: {{ parameters.param_cost_metric }}
+**Graph Dimension: {{ data.graphDimension }}
+{{ data.filterMessage }}
+**Bill Currency:** {{ data.currencyCode }}
+**Date Range:** {{ parameters.param_date_range }}
+**Billing Term:** {{ parameters.param_billing_term }}
 ![Spending Overview Chart](https://image-charts.com/chart?{{ data.chartType }}&{{ data.chartSize }}&{{ data.chartTitle }}&{{ data.chartAxis }}&{{ data.chartXAxis }}&{{ data.chartAxisFormat }}&{{ data.chartData }}&{{ data.chartCategories }}&{{ data.chartColors }}&{{ data.chartKeyLocation }}&{{ data.chartExtension }} "Spending Overview Chart")
-### For more detailed cost information, see [Tabular View](https://app.flexera.com/orgs/{{ rs_org_id }}/optima/tabular-view).
+### For more detailed cost information, see [Dashboards](https://app.flexera.com/orgs/{{ rs_org_id }}/optima/dashboards) or [Tabular View](https://app.flexera.com/orgs/{{ rs_org_id }}/optima/tabular-view).
 For more information on this report, please view the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/scheduled_reports).
-___
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
     EOS
     check eq(val(data, "dataPresent"), 0)
     escalate $esc_email
