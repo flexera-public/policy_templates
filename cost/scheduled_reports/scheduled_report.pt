@@ -117,7 +117,15 @@ script "js_data_tables", type:"javascript" do
       'D05A5A', 'F78741', 'FCC419', '007D76', '37AA77', '92DA71',
       '0F77B3', '7BACD1', 'BCC7E1', 'B80C83', 'E06C96', 'FBB3BB',
       '5F3DC4', '00A2F3', '99E9F2', '5C940D', '8EBF45', 'C0EB75'
-    ]
+    ],
+    months_short: [
+      'None', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ],
+    months_long: [
+      'None', 'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ],
   }
 EOS
 end
@@ -341,11 +349,11 @@ script "js_get_costs", type: "javascript" do
 EOS
 end
 
-datasource "ds_current_report" do
-  run_script $js_current_report, $ds_current_week_costs, $ds_previous_week_costs, $ds_current_month_costs, $ds_previous_month_costs, $ds_data_tables, $ds_currency, $param_cost_metric
+datasource "ds_report_data" do
+  run_script $js_report_data, $ds_current_week_costs, $ds_previous_week_costs, $ds_current_month_costs, $ds_previous_month_costs, $ds_data_tables, $ds_currency, $param_cost_metric
 end
 
-script "js_current_report", type: "javascript" do
+script "js_report_data", type: "javascript" do
   parameters "ds_current_week_costs", "ds_previous_week_costs", "ds_current_month_costs", "ds_previous_month_costs", "ds_data_tables", "ds_currency", "param_cost_metric"
   result "report"
   code <<-EOS
@@ -558,21 +566,22 @@ script "js_collated_data", type: "javascript" do
 
   _.each(previous_n_month_costs, function(row) {
     timestamp = new Date(row['timestamp'])
-    month_name = timestamp.toLocaleString('en-US', { month: 'short' })
+    day = timestamp.toISOString().split('-')[2].split('T')[0]
+    month_name = ds_data_tables['months_short'][Number(timestamp.toISOString().split('-')[1])]
 
     if (count == -1) {
-      tempDayNo = timestamp.getDate()
-      stringWeek = month_name + "-" + timestamp.getDate()
+      tempDayNo = day
+      stringWeek = month_name + "-" + day
       count = 0
     }
 
-    if (timestamp.getDate() != tempDayNo) {
-      tempDayNo = timestamp.getDate()
+    if (day != tempDayNo) {
+      tempDayNo = day
       count++
     }
 
     if (count >= 7) {
-      stringWeek = month_name + "-" + timestamp.getDate()
+      stringWeek = month_name + "-" + day
       count = 0
     }
 
@@ -581,7 +590,7 @@ script "js_collated_data", type: "javascript" do
 
     result.push({
       stringMonth: month_name,
-      stringDay: month_name + "-" + timestamp.getDate(),
+      stringDay: month_name + "-" + day,
       stringWeek: stringWeek,
       yearMonth: timestamp.toISOString().split('-')[0] + '-' + timestamp.toISOString().split('-')[1],
       category: row['dimensions'][category],
@@ -592,11 +601,11 @@ EOS
 end
 
 datasource "ds_generated_report" do
-  run_script $js_generated_report, $ds_previous_n_month_costs, $ds_current_report, $ds_collated_data, $ds_data_tables, $ds_currency, $param_cost_metric, $param_graph_dimension, $param_date_range, $param_billing_term, $param_billing_centers
+  run_script $js_generated_report, $ds_report_data, $ds_collated_data, $ds_data_tables, $ds_currency, $param_cost_metric, $param_graph_dimension, $param_date_range, $param_billing_term, $param_billing_centers
 end
 
 script "js_generated_report", type: "javascript" do
-  parameters "ds_previous_n_month_costs", "ds_current_report", "ds_collated_data", "ds_data_tables", "ds_currency", "param_cost_metric", "param_graph_dimension", "param_date_range", "param_billing_term", "param_billing_centers"
+  parameters "ds_report_data", "ds_collated_data", "ds_data_tables", "ds_currency", "param_cost_metric", "param_graph_dimension", "param_date_range", "param_billing_term", "param_billing_centers"
   result "result"
   code <<-'EOS'
   // Set metric and dimension based on parameters
@@ -606,7 +615,8 @@ script "js_generated_report", type: "javascript" do
   // Prepare date information for later use
   now = new Date()
   currentMonth = now.toISOString().split('-')[0] + '-' + now.toISOString().split('-')[1]
-  currentMonthName = now.toLocaleString('en-US', { month: 'long' })
+  currentMonthName = ds_data_tables['months_long'][Number(now.toISOString().split('-')[1])]
+
   totalMonth = parseInt(param_date_range)
 
   // Top 10 categories
@@ -777,7 +787,7 @@ script "js_generated_report", type: "javascript" do
     chartKeyLocation: encodeURI('chdlp=b'),
     currentSpend: Math.round(current_month_total),
     currencyCode: ds_currency['symbol'],
-    reportData: ds_current_report,
+    reportData: ds_report_data,
     dataPresent: ds_collated_data.length
   }
 EOS
@@ -799,12 +809,12 @@ policy "policy_scheduled_report" do
 ### Date Range: {{ parameters.param_date_range }}
 ### Billing Term: {{ parameters.param_billing_term }}
 ![Spending Overview Chart](https://image-charts.com/chart?{{ data.chartType }}&{{ data.chartSize }}&{{ data.chartTitle }}&{{ data.chartAxis }}&{{ data.chartXAxis }}&{{ data.chartAxisFormat }}&{{ data.chartData }}&{{ data.chartCategories }}&{{ data.chartColors }}&{{ data.chartKeyLocation }}&{{ data.chartExtension }} "Spending Overview Chart")
-### For more detailed cost information, visit [Optima](https://analytics.rightscale.com/orgs/{{ rs_org_id }}/dashboard).
+### For more detailed cost information, see [Tabular View](https://app.flexera.com/orgs/{{ rs_org_id }}/optima/tabular-view).
 For more information on this report, please view the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/scheduled_reports).
 ___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
     EOS
-    check eq(val(data, "dataPresent"),0)
+    check eq(val(data, "dataPresent"), 0)
     escalate $esc_email
     export "reportData" do
       field "range" do
