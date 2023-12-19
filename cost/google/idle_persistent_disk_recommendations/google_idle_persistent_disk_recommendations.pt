@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "3.0",
+  version: "3.1",
   provider:"Google",
   service: "Storage",
   policy_set: "Unused Volumes",
@@ -24,6 +24,16 @@ parameter "param_email" do
   label "Email Addresses"
   description "A list of email addresses to notify."
   default []
+end
+
+parameter "param_unattached_days" do
+  type "number"
+  category "Policy Settings"
+  label "Days Unattached"
+  description "The number of days since the disk was last attached to an instance to include it in the results. Cannot be set to less than 15 days because Google does not produce recommendations for disks that have been idle for < 15 days."
+  default 15
+  min_value 15
+  max_value 90
 end
 
 parameter "param_min_savings" do
@@ -406,7 +416,7 @@ script "js_disks", type: "javascript" do
           projectId: response['projectId'],
           projectName: response['projectName'],
           projectNumber: response['projectNumber'],
-          age: age,
+          age: Math.round(age),
           zone: zone,
           region: region,
           type: type
@@ -548,6 +558,82 @@ script "js_recommendations", type: "javascript" do
 EOS
 end
 
+datasource "ds_recommendation_logs" do
+  iterate $ds_recommendations
+  request do
+    run_script $js_recommendation_logs, val(iter_item, 'projectId'), val(iter_item, 'resourceLink')
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "entries[*]") do
+      field "projectId", val(iter_item, "projectId")
+      field "resourceLink", val(iter_item, "resourceLink")
+      field "timestamp", jmes_path(col_item, "timestamp")
+    end
+  end
+end
+
+script "js_recommendation_logs", type: "javascript" do
+  parameters "projectId", "resourceLink"
+  result "request"
+  code <<-'EOS'
+  project_id = ['projects', projectId].join('/')
+  zone = resourceLink.split('/')[6]
+  name = resourceLink.split('/')[8]
+
+  startTime = new Date()
+  startTime.setDate(startTime.getDate() - 90)
+  startTime = startTime.toISOString()
+
+  filter = [
+    "\"", projectId, "\" AND ",
+    "\"", zone, "\" AND ",
+    "\"", name, "\" AND ",
+    "timestamp >= \"", startTime, "\" AND ",
+    "protoPayload.methodName = \"v1.compute.instances.detachDisk\""
+  ].join('')
+
+  var request = {
+    auth: "auth_google",
+    pagination: "pagination_google",
+    host: "logging.googleapis.com",
+    verb: "POST",
+    ignore_status: [400, 401, 402, 403, 404, 405, 406, 407, 408, 409, 410],
+    path: "v2/entries:list",
+    body_fields: {
+      "resourceNames": [ project_id ],
+      "filter": filter,
+      "pageSize": 1000
+    }
+  }
+EOS
+end
+
+datasource "ds_recommendation_logs_sorted" do
+  run_script $js_recommendation_logs_sorted, $ds_recommendation_logs
+end
+
+script "js_recommendation_logs_sorted", type: "javascript" do
+  parameters "ds_recommendation_logs"
+  result "result"
+  code <<-EOS
+  result = {}
+
+  _.each(ds_recommendation_logs, function(entry) {
+    resourceLink = entry['resourceLink'].replace("//compute.googleapis.com/", "")
+    resourceLink = "https://www.googleapis.com/compute/v1/" + resourceLink
+
+    timestamp = entry['timestamp']
+
+    if (result[resourceLink] == undefined) {
+      result[resourceLink] = timestamp
+    } else if (new Date(timestamp) > new Date(result[resourceLink])) {
+      result[resourceLink] = timestamp
+    }
+  })
+EOS
+end
+
 # Branching logic:
 # This datasource returns an empty array if the target currency is USD.
 # This prevents ds_currency_conversion from running if it's not needed.
@@ -621,11 +707,11 @@ EOS
 end
 
 datasource "ds_recommendations_incident" do
-  run_script $js_recommendations_incident, $ds_disks_region_filtered, $ds_recommendations, $ds_currency, $ds_currency_conversion, $ds_applied_policy, $param_min_savings
+  run_script $js_recommendations_incident, $ds_disks_region_filtered, $ds_recommendations, $ds_recommendation_logs_sorted, $ds_currency, $ds_currency_conversion, $ds_applied_policy, $param_min_savings, $param_unattached_days
 end
 
 script "js_recommendations_incident", type:"javascript" do
-  parameters "ds_disks_region_filtered", "ds_recommendations", "ds_currency", "ds_currency_conversion", "ds_applied_policy", "param_min_savings"
+  parameters "ds_disks_region_filtered", "ds_recommendations", "ds_recommendation_logs_sorted", "ds_currency", "ds_currency_conversion", "ds_applied_policy", "param_min_savings", "param_unattached_days"
   result "result"
   code <<-'EOS'
   // Function for formatting currency numbers later
@@ -678,7 +764,17 @@ script "js_recommendations_incident", type:"javascript" do
         if (duration != 0) { savings = (costUnits + costNanos * Math.pow(10, -9)) / duration * ds_currency['exchange_rate'] }
       }
 
-      if (savings >= param_min_savings) {
+      detach_date = null
+      days_unattached = null
+
+      if (ds_recommendation_logs_sorted[disk['selfLink']] != undefined) {
+        detach_date = new Date(ds_recommendation_logs_sorted[disk['selfLink']])
+        today = new Date()
+        time_difference = today.getTime() - detach_date.getTime()
+        days_unattached = Math.round(time_difference / (1000 * 3600 * 24))
+      }
+
+      if (savings >= param_min_savings && (days_unattached == null || days_unattached >= param_unattached_days)) {
         total_savings += savings
 
         labels = []
@@ -712,6 +808,7 @@ script "js_recommendations_incident", type:"javascript" do
           recommenderSubtype: recommendation['recommenderSubtype'],
           state: recommendation['state'],
           policy_name: ds_applied_policy['name'],
+          days_unattached: days_unattached,
           tags: labels.join(', '),
           savings: parseFloat(savings.toFixed(3)),
           savingsCurrency: ds_currency['symbol'],
@@ -745,7 +842,14 @@ script "js_recommendations_incident", type:"javascript" do
   findings = [
     "Out of ", total_disks , " ", disk_noun, " analyzed, ",
     total_unused_disks, " (", unused_disks_percentage,
-    ") ", disk_verb, " idle and recommended for deletion.\n\n"
+    ") ", disk_verb, " idle and recommended for deletion. "
+  ].join('')
+
+  settings = [
+    "Disks detached or created less than ", param_unattached_days, " days ago ",
+    "are not included in the results. Disks with no value for the Days Unattached field ",
+    "have either never been attached to an instance or were detached > 90 days ago. ",
+    "This setting can be adjusted when editing or applying the policy.\n\n"
   ].join('')
 
   disclaimer = "Recommendations are generated by Google Cloud. Please refer to Google's documentation if different recommendations are desired."
@@ -761,11 +865,11 @@ script "js_recommendations_incident", type:"javascript" do
     primaryImpactCategory: "",    recommendationDetails: "",    recommenderSubtype: "",
     state: "",                    policy_name: "",              tags: "",
     savings: "",                  savingsCurrency: "",          service: "",
-    total_savings: "",            message: ""
+    total_savings: "",            message: "",                  days_unattached: ""
   })
 
   result[0]['total_savings'] = savings_message
-  result[0]['message'] = findings + disclaimer
+  result[0]['message'] = findings + settings + disclaimer
 EOS
 end
 
@@ -819,6 +923,9 @@ policy "policy_recommendations" do
       end
       field "creationTime" do
         label "Created At"
+      end
+      field "days_unattached" do
+        label "Days Unattached"
       end
       field "age" do
         label "Age (Days)"
