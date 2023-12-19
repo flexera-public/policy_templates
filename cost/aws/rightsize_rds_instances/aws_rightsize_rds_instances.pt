@@ -685,7 +685,7 @@ script "js_cloudwatch_idle_queries", type: "javascript" do
   _.each(ds_rds_instances_to_check, function(resource) {
     query = {
       // Replace `-` with `_` in the Id to avoid CloudWatch API error
-      "Id": resource['name'].replace(/\-/g, '_') + "_" + metric + "_" + statistic,
+      "Id": resource['name'].split('-').join('_') + "_" + metric + "_" + statistic,
       "Label": resource['name'] + " " + metric + " " + statistic,
       "MetricStat": {
         "Metric": {
@@ -798,21 +798,22 @@ script "js_rds_idle_instances", type: "javascript" do
   cloudwatch_activity = {}
 
   _.each(ds_cloudwatch_idle_data, function(item) {
-    instanceId = item['label'].split(' ')[0].toLowerCase()
+    instance_name = item['label'].split(' ')[0].toLowerCase()
 
-    if (cloudwatch_activity[instanceId] == undefined) {
-      cloudwatch_activity[instanceId] = 0
+    if (cloudwatch_activity[instance_name] == undefined) {
+      cloudwatch_activity[instance_name] = 0
     }
 
     if (typeof(item['values']) == 'object') {
       _.each(item['values'], function(value) {
-        cloudwatch_activity[instanceId] += value
+        cloudwatch_activity[instance_name] += value
       })
     }
   })
 
   _.each(ds_rds_instances_to_check, function(instance) {
-    instanceId = instance['instanceId'].toLowerCase()
+    cloudwatch_name = instance['name'].split('-').join('_').toLowerCase()
+    instance_activity = cloudwatch_activity[cloudwatch_name]
     savings_name = "db:" + instance['name'].toLowerCase()
     savings = 0.0
 
@@ -820,7 +821,7 @@ script "js_rds_idle_instances", type: "javascript" do
       savings = ds_instance_costs_grouped[savings_name]
     }
 
-    if (cloudwatch_activity[instanceId] == undefined || cloudwatch_activity[instanceId] == 0) {
+    if (instance_activity == undefined || instance_activity == 0) {
       result.push({
         instanceId: instance['instanceId'],
         instanceArn: instance['instanceArn'],
@@ -877,7 +878,7 @@ script "js_cloudwatch_underutil_queries", type: "javascript" do
     _.each(statistics, function(statistic) {
       query = {
         // Replace `-` with `_` in the Id to avoid CloudWatch API error
-        "Id": resource['name'].replace(/\-/g, '_') + "_" + metric + "_" + statistic,
+        "Id": resource['name'].split('-').join('_') + "_" + metric + "_" + statistic,
         "Label": resource['name'] + " " + metric + " " + statistic,
         "MetricStat": {
           "Metric": {
@@ -1006,7 +1007,7 @@ script "js_cloudwatch_underutil_sorted", type: "javascript" do
 
     // Recreate instance name now that we've removed the above.
     // We can't simply grab the first item because the instance name may have underscores in it
-    instance_name = id_parts.join('_')
+    instance_name = id_parts.join('_').toLowerCase()
 
     // Grabbing index 0 SHOULD be safe because we should only get one result.
     // Just in case AWS slices the data weirdly and returns 2 results, we make
@@ -1035,7 +1036,7 @@ script "js_rds_nonidle_instances_with_metrics", type: "javascript" do
   _.each(ds_rds_nonidle_instances, function(instance) {
     region = instance['region']
     id = instance['instanceId']
-    cloudwatch_name = instance['name'].split('-').join('_')
+    cloudwatch_name = instance['name'].split('-').join('_').toLowerCase()
     resourceType = instance['resourceType']
     newResourceType = null
 
