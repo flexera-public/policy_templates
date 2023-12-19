@@ -4,7 +4,7 @@
 
 This policy pulls cost data from Flexera CCO in order to email a report summarizing that data. The report includes a graph showing costs over time as well as a table with the data the graph is built from. The user can alter the contents of the report via parameters.
 
-Note: Any cost data that is less than 3 days old will be incomplete. This is because cloud cost data is not imported into Flexera CCO in real time.
+*Note: Any cost data that is less than 3 days old will be incomplete. This is because cloud cost data is not imported into Flexera CCO in real time.*
 
 ## Input Parameters
 
