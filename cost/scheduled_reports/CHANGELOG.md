@@ -2,7 +2,7 @@
 
 ## v3.0
 
-- Added ability ro specify custom dimensions for the graph in the report
+- Added ability to specify custom dimensions for the graph in the report
 - Added ability to filter costs in report by any user-specified dimension
 - Incident table now shows the raw data used to create the graph in the report
 - Streamlined code for better readability and faster execution
