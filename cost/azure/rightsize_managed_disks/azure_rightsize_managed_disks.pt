@@ -634,13 +634,13 @@ datasource "ds_azure_md_pricing" do
 end
 
 datasource "ds_disk_rightsizing_recommendations" do
-  run_script $js_disk_rightsizing_recommendations, $ds_azure_disks_with_metrics_thresholds_filtered, $ds_azure_md_tier_types, $ds_azure_md_pricing, $param_stats_lookback, $param_min_savings, $param_min_used_disk_iops_pct, $param_min_used_disk_throughput_pct, $ds_min_used_disk_space_pct, $ds_applied_policy
+  run_script $js_disk_rightsizing_recommendations, $ds_azure_disks_with_metrics_thresholds_filtered, $ds_azure_md_tier_types, $ds_azure_md_pricing, $param_stats_lookback, $param_min_savings, $param_min_used_disk_iops_pct, $param_min_used_disk_throughput_pct, $ds_min_used_disk_space_pct, $param_stats_aggregation_for_disk_iops, $param_stats_aggregation_for_disk_throughput, $ds_applied_policy
 end
 
 script "js_disk_rightsizing_recommendations", type: "javascript" do
-  parameters "ds_azure_disks_with_metrics_thresholds_filtered", "ds_azure_md_tier_types", "ds_azure_md_pricing", "param_stats_lookback", "param_min_savings", "param_min_used_disk_iops_pct", "param_min_used_disk_throughput_pct", "ds_min_used_disk_space_pct", "ds_applied_policy"
+  parameters "ds_azure_disks_with_metrics_thresholds_filtered", "ds_azure_md_tier_types", "ds_azure_md_pricing", "param_stats_lookback", "param_min_savings", "param_min_used_disk_iops_pct", "param_min_used_disk_throughput_pct", "ds_min_used_disk_space_pct", "param_stats_aggregation_for_disk_iops", "param_stats_aggregation_for_disk_throughput", "ds_applied_policy"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   var hddDiskSizes = [32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32767]
   var ssdDiskSizes = [4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32767]
   var ultraDiskSizes = [4, 8, 16, 32, 64, 128, 256, 512]
@@ -706,7 +706,7 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
     var premSsdV2Pricing = ds_azure_md_pricing[diskRegion]
     if (premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY === undefined) { return }
     if (currentUsedIops <= 3000 && currentUsedThroughput <= 3000) {
-      return premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY.pricePerUnit * 24 * 30 * currentUsedGB
+      return premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY.pricePerUnit * 720 * currentUsedGB
     }
     var diskIopsAndThroughputDontFitInDiskSize = true
     var suggestedDiskSize = currentUsedGB
@@ -722,9 +722,9 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
     }
     return {
       pricePerUnit: Math.round(
-          (premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY.pricePerUnit * 24 * 30 * suggestedDiskSize)
-        + (premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_IOPS.pricePerUnit * 24 * 30 * currentUsedIops)
-        + (premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_THROUGHPUT_MBPS.pricePerUnit * 24 * 30 * currentUsedThroughput)
+          (premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY.pricePerUnit * 720 * suggestedDiskSize)
+        + (premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_IOPS.pricePerUnit * 720 * currentUsedIops)
+        + (premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_THROUGHPUT_MBPS.pricePerUnit * 720 * currentUsedThroughput)
       ),
       currencyCode: premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY.currencyCode,
       sizeGB: suggestedDiskSize,
@@ -740,9 +740,9 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
     var diskSize = findDiskSize("Ultra", currentUsedGB)
     return {
       pricePerUnit: Math.round(
-          (ultraPricing.ULTRA_LRS_PROVISIONED_CAPACITY.pricePerUnit * 24 * 30 * diskSize)
-        + (ultraPricing.ULTRA_LRS_PROVISIONED_IOPS.pricePerUnit * 24 * 30 * diskSize)
-        + (ultraPricing.ULTRA_LRS_PROVISIONED_THROUGHPUT_MBPS.pricePerUnit * 24 * 30)
+          (ultraPricing.ULTRA_LRS_PROVISIONED_CAPACITY.pricePerUnit * 720 * diskSize)
+        + (ultraPricing.ULTRA_LRS_PROVISIONED_IOPS.pricePerUnit * 720 * diskSize)
+        + (ultraPricing.ULTRA_LRS_PROVISIONED_THROUGHPUT_MBPS.pricePerUnit * 720)
       ),
       currencyCode: ultraPricing.ULTRA_LRS_PROVISIONED_CAPACITY.currencyCode,
       sizeGB: diskSize,
@@ -776,12 +776,8 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
     return currentDiskName
   }
 
-  var result = {
-    recommendations: [],
-    monthlySavings: 0,
-    raiseIncident: false,
-    policyName: ds_applied_policy.name,
-  }
+  var recommendations = []
+  var totalMonthlySavings = 0
 
   for (i in ds_azure_disks_with_metrics_thresholds_filtered) {
     var disk = ds_azure_disks_with_metrics_thresholds_filtered[i]
@@ -851,7 +847,7 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
       })
     }
 
-    result.recommendations.push({
+    recommendations.push({
       accountID: disk.subscriptionID,
       accountName: disk.subscriptionName,
       resourceGroup: disk.resourceGroup,
@@ -889,13 +885,42 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
       service: disk.service.split("/")[0],
     })
 
-    result.monthlySavings += monthlySavings
+    totalMonthlySavings += monthlySavings
   }
 
-  if (result.monthlySavings >= param_min_savings) {
-    result.monthlySavings = result.monthlySavings.toFixed(2)
-    result.raiseIncident = true
+  if (totalMonthlySavings >= param_min_savings) {
+    monthlySavings = monthlySavings.toFixed(2)
+
+    recommendations[0].message = "Oversized disks are those that meet the following conditions within the last " + param_stats_lookback + " day(s):\n\n"
+    if (param_min_used_disk_iops_pct != -1) {
+      recommendations[0].message += "- Less or equal than " + param_min_used_disk_iops_pct.toString() + "% " + param_stats_aggregation_for_disk_iops.toString() + " IOPS utilization\n"
+    }
+    if (param_min_used_disk_throughput_pct != -1) {
+      recommendations[0].message += "- Less or equal than " + param_min_used_disk_throughput_pct.toString() + "% " + param_stats_aggregation_for_disk_throughput.toString() + " throughput utilization\n"
+    }
+    if (ds_min_used_disk_space_pct != -1) {
+      recommendations[0].message += "- Less or equal than " + ds_min_used_disk_space_pct.toString() + "% used capacity (GiB)\n"
+    }
+    if (param_min_used_disk_iops_pct == -1 && param_min_used_disk_throughput_pct == -1 && ds_min_used_disk_space_pct == -1) {
+      recommendations[0].message += "- This policy was applied with **Minimum used disk IOPS percentage** and **Minimum used disk throughput percentage** set to -1, so any disk having any IOPS or throughput usage percentage is considered oversized\n"
+    }
+    recommendations[0].message += "\nThe above settings can be modified by editing the applied policy and changing the appropriate parameters."
+    recommendations[0].totalSavings = totalMonthlySavings.toFixed(2)
+    recommendations[0].policyName = ds_applied_policy.name
   }
+
+  var result = recommendations.concat([
+    {
+      resourceID: "",
+      tags: "",
+      monthlySavings: "",
+      savingsCurrency: "",
+      iopsPctMaximum: "",
+      iopsPctAverage: "",
+      throughputPctMaximum: "",
+      throughputPctAverage: "",
+    }
+  ])
 EOS
 end
 
@@ -905,17 +930,17 @@ end
 ###############################################################################
 
 policy "pol_azure_rightsize_managed_disks" do
-  validate $ds_disk_rightsizing_recommendations do
-    summary_template "{{ data.policyName }}: There are {{ len data.recommendations }} oversized Azure Managed Disks, you could save ${{ data.monthlySavings }} USD!"
+  validate_each $ds_disk_rightsizing_recommendations do
+    summary_template "{{ with index data 0 }}{{ .policyName }}{{ end }}: {{ len data }} Azure Oversized Managed Disks Found"
     detail_template <<-'EOS'
-## Summary
-Found {{ len data.recommendations }} Azure Managed Disks that are *oversized* during the last {{ parameters.param_stats_lookback }} days. *Oversized* disks are those which have **less or equal than {{ parameters.param_min_used_disk_iops_pct }}% {{ parameters.param_stats_aggregation_for_disk_iops }} IOPS utilization, less or equal than {{ parameters.param_min_used_disk_throughput_pct }}% {{ parameters.param_stats_aggregation_for_disk_throughput }} throughput utilization and less or equal than {{ parameters.ds_min_used_disk_space_pct }}% used capacity (GiB)** within the last {{ parameters.param_stats_lookback }} days.
+    **Potential Monthly Savings:** {{ with index data 0 }}${{ .totalSavings }} {{ .savingsCurrency }}
 
-**Potential Monthly Savings:** ${{ data.monthlySavings }} USD
+    {{ .message }}{{ end }}
 EOS
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated.
-    check logic_or($ds_parent_policy_terminated, logic_not(val(data, "raiseIncident")))
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
+    hash_exclude "tags", "monthlySavings", "savingsCurrency", "throughputPctMaximum", "throughputPctAverage", "iopsPctMaximum", "iopsPctAverage"
     export "recommendations" do
       resource_level true
       field "accountID" do
