@@ -1,0 +1,204 @@
+name "Azure Expiring Savings Plans"
+rs_pt_ver 20180301
+type "policy"
+short_description "A policy that sends email notifications before Azure Savings Plan expire. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/azure/savings_plan/expiration) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "medium"
+category "Cost"
+default_frequency "daily"
+info(
+  version: "1.0",
+  provider: "Flexera Optima",
+  service: "",
+  policy_set: ""
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  category "Policy Settings"
+  label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_days_until_expiry" do
+  type "number"
+  category "Policy Settings"
+  label "Days Until Expiration"
+  description "The number of days before the Azure Savings Plan expires. All Savings Plans set to expire in fewer days than the specified value will be included in the report."
+  min_value 0
+  default 7
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_azure" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_azure" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_azure_savings_plans" do
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path "/providers/Microsoft.BillingBenefits/savingsPlans"
+    query "api-version", "2022-11-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "type", jmes_path(col_item, "type")
+      field "sku", jmes_path(col_item, "sku.name")
+      field "appliedScopeProperties", jmes_path(col_item, "properties.appliedScopeProperties")
+      field "appliedScopeType", jmes_path(col_item, "properties.appliedScopeType")
+      field "billingScopeId", jmes_path(col_item, "properties.billingScopeId")
+      field "billingProfileId", jmes_path(col_item, "properties.billingProfileId")
+      field "billingAccountId", jmes_path(col_item, "properties.billingAccountId")
+      field "commitment", jmes_path(col_item, "properties.commitment")
+      field "displayName", jmes_path(col_item, "properties.displayName")
+      field "displayProvisioningState", jmes_path(col_item, "properties.displayProvisioningState")
+      field "provisioningState", jmes_path(col_item, "properties.provisioningState")
+      field "renew", jmes_path(col_item, "properties.renew")
+      field "term", jmes_path(col_item, "properties.term")
+      field "userFriendlyAppliedScopeType", jmes_path(col_item, "properties.userFriendlyAppliedScopeType")
+      field "expiryDateTime", jmes_path(col_item, "properties.expiryDateTime")
+      field "purchaseDateTime", jmes_path(col_item, "properties.purchaseDateTime")
+      field "effectiveDateTime", jmes_path(col_item, "properties.effectiveDateTime")
+      field "utilization", jmes_path(col_item, "properties.utilization")
+    end
+  end
+end
+
+datasource "ds_azure_expiring_savings_plans" do
+  run_script $js_azure_expiring_savings_plans, $ds_azure_savings_plans, $ds_applied_policy, $param_days_until_expiry
+end
+
+script "js_azure_expiring_savings_plans", type: "javascript" do
+  parameters "ds_azure_savings_plans", "ds_applied_policy", "param_days_until_expiry"
+  result "result"
+  code <<-'EOS'
+  result = []
+  today = new Date()
+
+  _.each(ds_azure_savings_plans, function(sp) {
+    expirationDate = new Date(sp['expiryDateTime'])
+    daysUntilExpiration = Math.round((expirationDate - today) / 1000 / 60 / 60 / 24)
+    if (daysUntilExpiration < 0) { daysUntilExpiration = 0 }
+
+    if (daysUntilExpiration <= param_days_until_expiry) {
+      result.push({
+        id: sp['id'],
+        name: sp['name'],
+        sku: sp['sku'],
+        term: sp['term'],
+        expirationDate: expirationDate.toISOString(),
+        daysUntilExpiration: daysUntilExpiration,
+        lookbackPeriod: param_days_until_expiry,
+        policyName: ds_applied_policy['name'],
+        message: ""
+      })
+    }
+  })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_azure_expiring_savings_plans" do
+  validate_each $ds_azure_expiring_savings_plans do
+    summary_template "{{ with index data 0 }}{{ .policyName }}{{ end }}: {{ len data }} Azure Expiring Savings Plans Found"
+    detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
+    check eq(val(item, "id"), "")
+    escalate $esc_email
+    hash_exclude ""
+    export do
+      resource_level false
+      field "id" do
+        label "ID"
+      end
+      field "name" do
+        label "Name"
+      end
+      field "sku" do
+        label "SKU"
+      end
+      field "term" do
+        label "Term"
+      end
+      field "daysUntilExpiration" do
+        label "Days Until Expiration"
+      end
+      field "expirationDate" do
+        label "Expiration Date"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
