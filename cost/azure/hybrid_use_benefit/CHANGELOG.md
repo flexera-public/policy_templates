@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.1
+
+- Added the currency separator for savings message
+
 ## v4.0
 
 - Several parameters altered to be more descriptive and human-readable
