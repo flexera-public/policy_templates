@@ -157,6 +157,25 @@ script "js_data_tables", type:"javascript" do
 EOS
 end
 
+# Store the Flexera domain name for links based on region
+datasource "ds_flexera_domain" do
+  run_script $js_flexera_domain, rs_optima_host
+end
+
+script "js_flexera_domain", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  domain_table = {
+    "api.optima.flexeraeng.com": "app.flexera.com",
+    "api.optima-eu.flexeraeng.com": "app.flexera.eu",
+    "api.optima-apac.flexeraeng.com": "app.flexera.au",
+  }
+
+  result = domain_table[rs_optima_host]
+EOS
+end
+
 # Store details about graph dimension in datasource
 datasource "ds_cost_dimensions" do
   request do
@@ -601,11 +620,11 @@ EOS
 end
 
 datasource "ds_generated_report" do
-  run_script $js_generated_report, $ds_collated_data, $ds_graph_dimension, $ds_data_tables, $ds_currency, $ds_applied_policy, $param_cost_metric, $param_date_range, $param_billing_term, $param_billing_centers, $param_dimension_filter, $param_dimension_filter_boolean
+  run_script $js_generated_report, $ds_collated_data, $ds_graph_dimension, $ds_data_tables, $ds_currency, $ds_applied_policy, $ds_flexera_domain, $param_cost_metric, $param_date_range, $param_billing_term, $param_billing_centers, $param_dimension_filter, $param_dimension_filter_boolean
 end
 
 script "js_generated_report", type: "javascript" do
-  parameters "ds_collated_data", "ds_graph_dimension", "ds_data_tables", "ds_currency", "ds_applied_policy", "param_cost_metric", "param_date_range", "param_billing_term", "param_billing_centers", "param_dimension_filter", "param_dimension_filter_boolean"
+  parameters "ds_collated_data", "ds_graph_dimension", "ds_data_tables", "ds_currency", "ds_applied_policy", "ds_flexera_domain", "param_cost_metric", "param_date_range", "param_billing_term", "param_billing_centers", "param_dimension_filter", "param_dimension_filter_boolean"
   result "result"
   code <<-'EOS'
   // Prepare date information for later use
@@ -800,6 +819,7 @@ script "js_generated_report", type: "javascript" do
     graphDimension: ds_graph_dimension['name'],
     policyName: ds_applied_policy['name'],
     today: new Date().toLocaleDateString('en-us', { year: 'numeric', month: 'long', day: 'numeric'}),
+    domain: ds_flexera_domain,
     filterMessage: filterMessage
   }
 EOS
@@ -823,7 +843,7 @@ policy "policy_scheduled_report" do
 **Filter:** {{ data.filterMessage }}\\
 **Bill Currency:** {{ data.currencyCode }}\\
 ![Spending Overview Chart](https://image-charts.com/chart?{{ data.chartType }}&{{ data.chartSize }}&{{ data.chartTitle }}&{{ data.chartAxis }}&{{ data.chartXAxis }}&{{ data.chartAxisFormat }}&{{ data.chartData }}&{{ data.chartCategories }}&{{ data.chartColors }}&{{ data.chartKeyLocation }}&{{ data.chartExtension }} "Spending Overview Chart")
-### For more detailed cost information, see [Dashboards](https://app.flexera.com/orgs/{{ rs_org_id }}/optima/dashboards) or [Tabular View](https://app.flexera.com/orgs/{{ rs_org_id }}/optima/tabular-view).
+### For more detailed cost information, see [Dashboards](https://{{ data.domain }}/orgs/{{ rs_org_id }}/optima/dashboards) or [Tabular View](https://{{ data.domain }}/orgs/{{ rs_org_id }}/optima/tabular-view).
 For more information on this report, please view the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/scheduled_reports).
     EOS
     check eq(val(data, "dataPresent"), 0)
