@@ -155,6 +155,47 @@ datasource "ds_azure_resource_types" do
   end
 end
 
+# Create a table for doing tests from the user-specified tags
+datasource "ds_comparators" do
+  run_script $js_comparators, $param_tags
+end
+
+script "js_comparators", type: "javascript" do
+  parameters "param_tags"
+  result "result"
+  code <<-'EOS'
+  result = _.map(param_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+EOS
+end
+
 datasource "ds_azure_subscriptions" do
   request do
     auth $auth_azure
@@ -283,47 +324,16 @@ EOS
 end
 
 datasource "ds_azure_resources_missing_tags" do
-  run_script $js_azure_resources_missing_tags, $ds_azure_resources_type_filtered, $param_tags, $param_tags_boolean
+  run_script $js_azure_resources_missing_tags, $ds_azure_resources_type_filtered, $ds_comparators, $param_tags_boolean
 end
 
 script "js_azure_resources_missing_tags", type: "javascript" do
-  parameters "ds_azure_resources_type_filtered", "param_tags", "param_tags_boolean"
+  parameters "ds_azure_resources_type_filtered", "ds_comparators", "param_tags_boolean"
   result "result"
   code <<-'EOS'
   result = []
 
-  if (param_tags.length > 0) {
-    // Create a list containing all of the checks we intend to do
-    comparators = _.map(param_tags, function(item) {
-      if (item.indexOf('==') != -1) {
-        return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
-      }
-
-      if (item.indexOf('!=') != -1) {
-        return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
-      }
-
-      if (item.indexOf('=~') != -1) {
-        value = item.split('=~')[1]
-        regex = new RegExp(value.slice(1, value.length - 1))
-        return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
-      }
-
-      if (item.indexOf('!~') != -1) {
-        value = item.split('!~')[1]
-        regex = new RegExp(value.slice(1, value.length - 1))
-        return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
-      }
-
-      // If = is present but none of the above are, assume user error and that the user intended ==
-      if (item.indexOf('=') != -1) {
-        return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
-      }
-
-      // Assume we're just testing for a key if none of the comparators are found
-      return { comparison: 'key', key: item, value: null, string: item }
-    })
-
+  if (ds_comparators.length > 0) {
     // Check each VM for missing tags
     _.each(ds_azure_resources_type_filtered, function(resource) {
       resource_tags = resource['tags']
@@ -332,7 +342,7 @@ script "js_azure_resources_missing_tags", type: "javascript" do
       // Store a list of missing tags
       missing_tags = []
 
-      _.each(comparators, function(comparator) {
+      _.each(ds_comparators, function(comparator) {
         comparison = comparator['comparison']
         value = comparator['value']
         string = comparator['string']
@@ -352,7 +362,7 @@ script "js_azure_resources_missing_tags", type: "javascript" do
         }
       })
 
-      if (missing_tags.length == comparators.length || (missing_tags.length > 0 && param_tags_boolean == 'Any')) {
+      if (missing_tags.length == ds_comparators.length || (missing_tags.length > 0 && param_tags_boolean == 'Any')) {
         new_resource = resource
         new_resource['missing_tags'] = missing_tags
         result.push(new_resource)
