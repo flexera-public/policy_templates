@@ -22,13 +22,19 @@ This policy has the following input parameters required when launching the polic
 - *Allow/Deny Subscriptions List* - A list of allowed or denied Subscription IDs/names. If empty, no filtering will occur and recommendations will be produced for all subscriptions.
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
 - *Allow/Deny Regions List* - Filter results by region, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all the regions.
-- *Tags (Key:Value)* - Cloud native tags to find resources with missing tags. Use Key:Value format for specific tag key/value pairs, and Key:\* format to match any resource missing a particular key, regardless of value. Examples: env:production, department:\*
+- *Tags* - The policy will report resources missing the specified tags. The following formats are supported:
+  - `Key` - Find all resources missing the specified tag key.
+  - `Key==Value` - Find all resources missing the specified tag key:value pair.
+  - `Key!=Value` - Find all resources that have the specified tag key:value pair.
+  - `Key=~/Regex/` - Find all resources where the value for the specified key does not match the specified regex string.
+  - `Key!~/Regex/` - Find all resources where the value for the specified key matches the specified regex string.
+- *Any / All* - Whether to report on instances missing any of the specified tags or all of them. Only applicable if more than one value is entered in the `Tags` field.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 - *Power Off Type* - Whether to perform a graceful shutdown or a forced shutdown when powering off instances.
 
 This policy has the following input parameters required when adding tags to resources from a raised incident:
 
-- *Add Tags (Key:Value)* - Cloud native tags to add to resources with missing tags. Use Key:Value format. Examples: env:production, team:finance
+- *Add Tags (Key=Value)* - Cloud native tags to add to resources with missing tags. Use Key=Value format. Examples: env=production, team=finance
 
 ## Policy Actions
 
