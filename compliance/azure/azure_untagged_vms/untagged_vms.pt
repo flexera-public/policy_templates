@@ -37,18 +37,9 @@ end
 parameter "param_tags" do
   type "list"
   category "Filters"
-  label "Tags (Key=Value)"
-  description "Cloud native tags to find resources with missing tags. Use Key=Value format for specific tag key/value pairs, and Key= format to match any resource missing a particular key, regardless of value. Examples: env=production, department="
-  allowed_pattern /^[^=]+=[^=]*$/
-  default []
-end
-
-parameter "param_tags_regex" do
-  type "list"
-  category "Filters"
-  label "Tags [Regex] (Key=Value)"
-  description "Regex to find resources with missing tags. Regex will be tested against strings in Key=Value format. Test for strings ending in = to find resources missing keys without regard for tag value. Leave this list empty if you prefer to not use regex."
-  allowed_pattern /^[^=]+=[^=]*$/
+  label "Tags (Key=) (Key=Value) (Key=~/Regex/)"
+  description "Cloud native tags to find resources with missing tags. The policy will report resources missing these tags. Use Key=Value format for specific tag key/value pairs, Key= format to match any resource missing a particular key without regard to the value, and Key=~/regex/ to find resources missing tag values that match a regex string. Examples: costcenter=finance, department=, env=~/^(Prod|prod)/"
+  allowed_pattern /^(?!=[^=]*$)[^=]*=[^=]*$/
   default []
 end
 
@@ -258,17 +249,18 @@ EOS
 end
 
 datasource "ds_azure_instances_missing_tags" do
-  run_script $js_azure_instances_missing_tags, $ds_azure_instances_region_filtered, $param_tags, $param_tags_regex, $param_tags_boolean
+  run_script $js_azure_instances_missing_tags, $ds_azure_instances_region_filtered, $param_tags, $param_tags_boolean
 end
 
 script "js_azure_instances_missing_tags", type: "javascript" do
-  parameters "ds_azure_instances_region_filtered", "param_tags", "param_tags_regex", "param_tags_boolean"
+  parameters "ds_azure_instances_region_filtered", "param_tags", "param_tags_boolean"
   result "result"
   code <<-'EOS'
   result = []
 
   if (param_tags.length > 0) {
     _.each(ds_azure_instances_region_filtered, function(vm) {
+      // Find any missing tags that aren't using regex
       vm_tags = []
 
       if (typeof(vm['tags']) == 'object') {
@@ -278,30 +270,28 @@ script "js_azure_instances_missing_tags", type: "javascript" do
         })
       }
 
-      missing_tags = _.reject(param_tags, function(item) {
-        return _.contains(vm_tags, item)
+      plain_tags = _.filter(param_tags, function(item) { return item.indexOf('=~') == -1 })
+      missing_plain_tags = _.reject(plain_tags, function(item) { return _.contains(vm_tags, item) })
+
+      // Find any missing tags that are using regex
+      regex_tags = _.filter(param_tags, function(item) { return item.indexOf('=~') != -1 })
+      missing_regex_tags = []
+
+      _.each(regex_tags, function(item) {
+        key = item.split('=~')[0]
+        regex = new RegExp(item.split('=~')[1].slice(1, item.length - 1))
+        missing = true
+
+        if (vm['tags'][key] != undefined) { missing = !regex.test(vm['tags'][key]) }
+        if (missing) { missing_regex_tags.push(item) }
       })
 
-      missing_tags_regex = _.filter(param_tags_regex, function(item) {
-        regex = new RegExp(item)
-        tag_missing = true
+      total_tested = param_tags.length
+      total_missing = missing_plain_tags.length + missing_regex_tags.length
 
-        _.each(vm_tags, function(tag) { if (regex.test(tag)) { tag_missing = false } })
-
-        return tag_missing
-      })
-
-      missing_tags_regex = _.map(missing_tags_regex, function(item) {
-        return ['/', item, '/'].join('')
-      })
-
-      total_tested = param_tags.length + param_tags_regex.length
-      total_missing = missing_tags.length + missing_tags_regex.length
-
-      if (total_missing == total_tested || (total_missing > 0 && param_tags_boolean == 'Any') {
+      if (total_missing == total_tested || (total_missing > 0 && param_tags_boolean == 'Any')) {
         new_vm = vm
-        new_vm['missing_tags'] = missing_tags
-        new_vm['missing_tags_regex'] = missing_tags_regex
+        new_vm['missing_tags'] = missing_plain_tags.concat(missing_regex_tags)
         result.push(new_vm)
       }
     })
@@ -310,11 +300,11 @@ EOS
 end
 
 datasource "ds_missing_tags_incident" do
-  run_script $js_missing_tags_incident, $ds_azure_instances_missing_tags, $ds_applied_policy, $param_tags
+  run_script $js_missing_tags_incident, $ds_azure_instances_missing_tags, $ds_applied_policy, $param_tags, $param_tags_boolean
 end
 
 script "js_missing_tags_incident", type: "javascript" do
-  parameters "ds_azure_instances_missing_tags", "ds_applied_policy", "param_tags"
+  parameters "ds_azure_instances_missing_tags", "ds_applied_policy", "param_tags", "param_tags_boolean"
   result "result"
   code <<-'EOS'
   result = _.map(ds_azure_instances_missing_tags, function(instance) {
@@ -340,7 +330,6 @@ script "js_missing_tags_incident", type: "javascript" do
       service: 'Microsoft.Compute',
       tags: instance_tags.join(', '),
       missing_tags: instance['missing_tags'].join(', '),
-      missing_tags_regex: instance['missing_tags_regex'].join(', '),
       policy_name: ds_applied_policy['name'],
       message: ""
     }
@@ -354,22 +343,14 @@ script "js_missing_tags_incident", type: "javascript" do
     policy_name: "",  message: "",       missing_tags: ""
   })
 
-  message = ["The following Azure virtual machines are missing one or more of the following tags:\n\n"]
+  phrase = "one or more"
+  if (param_tags_boolean == 'All') { phrase = "all" }
 
-  _.each(param_tags, function(tag) {
-    key = tag.split(':')[0]
-    value = tag.split(':')[1]
+  message = ["The following Azure virtual machines are missing ", phrase, " of the following tags:\n\n"].join('')
+  tag_list = _.map(param_tags, function(tag) { return ["- ", tag, "\n"].join('') })
+  disclaimer = "\nThe above settings can be modified by editing the applied policy and changing the appropriate parameters."
 
-    message.push("- ")
-    message.push(key)
-    message.push("=")
-    message.push(value)
-    message.push("\n")
-  })
-
-  disclaimer = "\n\nThe above settings can be modified by editing the applied policy and changing the appropriate parameters."
-
-  result[0]['message'] = message.join('') + disclaimer
+  result[0]['message'] = message + tag_list + disclaimer
 EOS
 end
 
@@ -411,9 +392,6 @@ policy "pol_azure_missing_tags" do
       end
       field "missing_tags" do
         label "Missing Tags"
-      end
-      field "missing_tags_regex" do
-        label "Missing Tags (Regex)"
       end
       field "resourceType" do
         label "Instance Size"
