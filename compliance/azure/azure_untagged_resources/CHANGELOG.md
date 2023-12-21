@@ -2,7 +2,7 @@
 
 ## v3.0
 
-- Added ability to filter resources by either tag key or tag key:value pairs
+- Added ability to filter resources by tag key, tag key=value, or using regex
 - Added ability to filter resources by region
 - Added ability to filter resources by Azure resource type
 - Added ability to use all filters as an allow list or a deny list

@@ -37,10 +37,18 @@ end
 parameter "param_tags" do
   type "list"
   category "Filters"
-  label "Tags (Key:Value)"
-  description "Cloud native tags to find resources with missing tags. Use Key:Value format for specific tag key/value pairs, and Key:* format to match any resource missing a particular key, regardless of value. Examples: env:production, department:*"
-  allowed_pattern /(^$)|[\w]*\:.*/
+  label "Tags"
+  description "The policy will report resources missing the specified tags. Enter the key name to look for resources missing a key, and enter Key==Value to find resources missing a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
   default []
+end
+
+parameter "param_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Any / All"
+  description "Whether to report on instances missing any of the specified tags or all of them. Only applicable if more than one value is entered in the 'Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
 end
 
 parameter "param_resourcetypes_allow_or_deny" do
@@ -275,37 +283,76 @@ EOS
 end
 
 datasource "ds_azure_resources_missing_tags" do
-  run_script $js_azure_resources_missing_tags, $ds_azure_resources_type_filtered, $param_tags
+  run_script $js_azure_resources_missing_tags, $ds_azure_resources_type_filtered, $param_tags, $param_tags_boolean
 end
 
 script "js_azure_resources_missing_tags", type: "javascript" do
-  parameters "ds_azure_resources_type_filtered", "param_tags"
+  parameters "ds_azure_resources_type_filtered", "param_tags", "param_tags_boolean"
   result "result"
   code <<-'EOS'
   result = []
 
   if (param_tags.length > 0) {
-    _.each(ds_azure_resources_type_filtered, function(resource) {
-      resource_tags = []
-
-      if (typeof(resource['tags']) == 'object') {
-        _.each(Object.keys(resource['tags']), function(key) {
-          resource_tags.push([key, ":", resource['tags'][key]].join(''))
-          resource_tags.push([key, ":*"].join(''))
-        })
+    // Create a list containing all of the checks we intend to do
+    comparitors = _.map(param_tags, function(item) {
+      if (item.indexOf('==') != -1) {
+        return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
       }
 
-      include_resource = false
+      if (item.indexOf('!=') != -1) {
+        return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+      }
+
+      if (item.indexOf('=~') != -1) {
+        value = item.split('=~')[1]
+        regex = new RegExp(value.slice(1, value.length - 1))
+        return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+      }
+
+      if (item.indexOf('!~') != -1) {
+        value = item.split('!~')[1]
+        regex = new RegExp(value.slice(1, value.length - 1))
+        return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+      }
+
+      // If = is present but none of the above are, assume user error and that the user intended ==
+      if (item.indexOf('=') != -1) {
+        return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+      }
+
+      // Assume we're just testing for a key if none of the comparitors are found
+      return { comparison: 'key', key: item, value: null, string: item }
+    })
+
+    // Check each VM for missing tags
+    _.each(ds_azure_resources_type_filtered, function(resource) {
+      resource_tags = resource['tags']
+      if (typeof(resource_tags) != 'object') { resource_tags = {} }
+
+      // Store a list of missing tags
       missing_tags = []
 
-      _.each(param_tags, function(tag) {
-        if (_.contains(resource_tags, tag) == false) {
-          include_resource = true
-          missing_tags.push(tag.replace(':', '='))
+      _.each(comparitors, function(comparitor) {
+        comparison = comparitor['comparison']
+        value = comparitor['value']
+        string = comparitor['string']
+        resource_tag = resource_tags[comparitor['key']]
+
+        if (comparison == 'key' && resource_tag == undefined) { missing_tags.push(string) }
+        if (comparison == '==' && resource_tag != value) { missing_tags.push(string) }
+        if (comparison == '!=' && resource_tag == value) { missing_tags.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_tag == undefined) { missing_tags.push(string) }
+          if (resource_tag != undefined && !value.test(resource_tag)) { missing_tags.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_tag != undefined && value.test(resource_tag)) { missing_tags.push(string) }
         }
       })
 
-      if (include_resource) {
+      if (missing_tags.length == comparitors.length || (missing_tags.length > 0 && param_tags_boolean == 'Any')) {
         new_resource = resource
         new_resource['missing_tags'] = missing_tags
         result.push(new_resource)
@@ -363,11 +410,11 @@ EOS
 end
 
 datasource "ds_missing_tags_incident" do
-  run_script $js_missing_tags_incident, $ds_azure_resources_missing_tags, $ds_applied_policy, $ds_azure_api_versions, $param_tags
+  run_script $js_missing_tags_incident, $ds_azure_resources_missing_tags, $ds_applied_policy, $ds_azure_api_versions, $param_tags, $param_tags_boolean
 end
 
 script "js_missing_tags_incident", type: "javascript" do
-  parameters "ds_azure_resources_missing_tags", "ds_applied_policy", "ds_azure_api_versions", "param_tags"
+  parameters "ds_azure_resources_missing_tags", "ds_applied_policy", "ds_azure_api_versions", "param_tags", "param_tags_boolean"
   result "result"
   code <<-'EOS'
   result = _.map(ds_azure_resources_missing_tags, function(resource) {
@@ -404,22 +451,14 @@ script "js_missing_tags_incident", type: "javascript" do
     message: ""
   })
 
-  message = ["The following Azure resources are missing one or more of the following tags:\n\n"]
+  phrase = "one or more"
+  if (param_tags_boolean == "All") { phrase = "all" }
 
-  _.each(param_tags, function(tag) {
-    key = tag.split(':')[0]
-    value = tag.split(':')[1]
+  message = ["The following Azure resources are missing ", phrase, " of the following tags:\n\n"].join('')
+  tag_list = _.map(param_tags, function(tag) { return ["- ", tag, "\n"].join('') }).join('')
+  disclaimer = "\nThe above settings can be modified by editing the applied policy and changing the appropriate parameters."
 
-    message.push("- ")
-    message.push(key)
-    message.push("=")
-    message.push(value)
-    message.push("\n")
-  })
-
-  disclaimer = "\n\nThe above settings can be modified by editing the applied policy and changing the appropriate parameters."
-
-  result[0]['message'] = message.join('') + disclaimer
+  result[0]['message'] = message + tag_list + disclaimer
 EOS
 end
 
@@ -498,8 +537,8 @@ escalation "esc_tag_instances" do
     type "list"
     category "Actions"
     label "Add Tags (Key:Value)"
-    description "Cloud native tags to add to instances with missing tags. Use Key:Value format. Example: env:production"
-    allowed_pattern /(^$)|[\w]*\=.*/
+    description "Cloud native tags to add to instances with missing tags. Use Key=Value format. Example: env=production"
+    allowed_pattern /^[^=]+=[^=]+$/
   end
   run "tag_instances", data, $param_azure_endpoint, $param_tags_to_add
 end
@@ -530,8 +569,8 @@ define tag_instance($instance, $param_azure_endpoint, $param_tags_to_add) return
   end
 
   foreach $tag in $param_tags_to_add do
-    $key = first(split($tag, ":"))
-    $value = last(split($tag, ":"))
+    $key = first(split($tag, "="))
+    $value = last(split($tag, "="))
     $tags[$key] = $value
   end
 
