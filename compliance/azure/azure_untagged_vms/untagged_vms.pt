@@ -39,7 +39,7 @@ parameter "param_tags" do
   category "Filters"
   label "Tags (Key=) (Key=Value) (Key=~/Regex/)"
   description "Cloud native tags to find resources with missing tags. The policy will report resources missing these tags. Use Key=Value format for specific tag key/value pairs, Key= format to match any resource missing a particular key without regard to the value, and Key=~/regex/ to find resources missing tag values that match a regex string. Examples: costcenter=finance, department=, env=~/^(Prod|prod)/"
-  allowed_pattern /^(?!=[^=]*$)[^=]*=[^=]*$/
+  allowed_pattern /^[^=]+=[^=]*$/
   default []
 end
 
@@ -47,7 +47,7 @@ parameter "param_tags_boolean" do
   type "string"
   category "Filters"
   label "Any / All"
-  description "Whether to report on instances missing any of the specified tags or all of them. Only applicable if more than one value is entered in the 'Tags (Key=Value)' and 'Tags [Regex] (Key=Value)' fields."
+  description "Whether to report on instances missing any of the specified tags or all of them. Only applicable if more than one value is entered in the 'Tags' field."
   allowed_values "Any", "All"
   default "Any"
 end
@@ -282,7 +282,10 @@ script "js_azure_instances_missing_tags", type: "javascript" do
         regex = new RegExp(item.split('=~')[1].slice(1, item.length - 1))
         missing = true
 
-        if (vm['tags'][key] != undefined) { missing = !regex.test(vm['tags'][key]) }
+        if (typeof(vm['tags']) == 'object') {
+          if (vm['tags'][key] != undefined) { missing = !regex.test(vm['tags'][key]) }
+        }
+
         if (missing) { missing_regex_tags.push(item) }
       })
 
@@ -347,7 +350,7 @@ script "js_missing_tags_incident", type: "javascript" do
   if (param_tags_boolean == 'All') { phrase = "all" }
 
   message = ["The following Azure virtual machines are missing ", phrase, " of the following tags:\n\n"].join('')
-  tag_list = _.map(param_tags, function(tag) { return ["- ", tag, "\n"].join('') })
+  tag_list = _.map(param_tags, function(tag) { return ["- ", tag, "\n"].join('') }).join('')
   disclaimer = "\nThe above settings can be modified by editing the applied policy and changing the appropriate parameters."
 
   result[0]['message'] = message + tag_list + disclaimer
