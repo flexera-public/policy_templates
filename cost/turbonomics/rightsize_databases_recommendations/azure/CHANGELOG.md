@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.5
+
+- Added Hyperlinks for `System Details URL` incident field.
+
 ## v0.4
 
 - Added request for Turbonomic search API to know what Pricing Model are related to the Database and return Aspects for their stats request.

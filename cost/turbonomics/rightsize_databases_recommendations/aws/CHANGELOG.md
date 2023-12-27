@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.4
+
+- Added Hyperlinks for `System Details URL` incident field.
+
 ## v0.3
 
 - Added `Recommendation Created Time` incident field.

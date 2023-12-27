@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.5
+
+- Improved logging, and error capture/handling
+- Added default values for params that are not required
+
 ## v2.4
 
 - Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM

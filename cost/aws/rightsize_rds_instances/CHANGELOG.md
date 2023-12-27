@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.2
+
+- Fixed issue with incorrectly reporting on instances with hyphens or underscores in their name.
+
 ## v4.1
 
 - Changed default value of `Underutilized Instance CPU Threshold (%)` parameter to 40%.

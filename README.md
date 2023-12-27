@@ -27,7 +27,6 @@ These templates can generate savings estimates for your environment.
 
 #### AWS
 
-- [AWS Delete Unused Classic Load Balancers](./cost/aws/elb/clb_unused)
 - [AWS Old Snapshots](./cost/aws/old_snapshots)
 - [AWS Reserved Instances Recommendations](./cost/aws/reserved_instances/recommendations)
 - [AWS Rightsize EBS Volumes](./cost/aws/rightsize_ebs_volumes)
@@ -35,6 +34,7 @@ These templates can generate savings estimates for your environment.
 - [AWS Rightsize RDS Instances](./cost/aws/rightsize_rds_instances)
 - [AWS Savings Plan Recommendations](./cost/aws/savings_plan/recommendations)
 - [AWS Superseded EC2 Instances](./cost/aws/superseded_instances)
+- [AWS Unused Classic Load Balancers](./cost/aws/unused_clbs)
 - [AWS Unused IP Addresses](./cost/aws/unused_ip_addresses)
 - [AWS Unused Volumes](./cost/aws/unused_volumes)
 - [Turbonomic Allocate Virtual Machine Recommendations AWS](./cost/turbonomics/allocate_virtual_machines_recommendations/aws)
@@ -202,13 +202,13 @@ These templates can generate savings estimates for your environment.
 
   - [AWS Unused Volumes](./cost/aws/unused_volumes)
 
-- ELB
-
-  - [AWS Delete Unused Classic Load Balancers](./cost/aws/elb/clb_unused)
-
 - Marketplace
 
   - [AWS New Marketplace Products](./operational/aws/marketplace_new_products)
+
+- Network
+
+  - [AWS Unused Classic Load Balancers](./cost/aws/unused_clbs)
 
 - RDS
 
@@ -409,9 +409,12 @@ These templates can generate savings estimates for your environment.
 - Compute
 
   - [Azure Long Running Instances](./operational/azure/azure_long_running_instances)
-  - [Azure Migrate Integration](./operational/azure/azure_migrate)
   - [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks)
   - [Expiring Azure Certificates](./operational/azure/azure_certificates)
+
+- Marketplace
+
+  - [Azure Migrate Integration](./operational/azure/azure_migrate)
 
 - Tags
 
@@ -631,7 +634,7 @@ These templates can generate savings estimates for your environment.
   Security: 74
 :optimization_count: 43
 :policy_sets:
-  '': 82
+  '': 81
   AWS Config: 1
   Allocate VMs: 3
   CIS: 61
@@ -648,11 +651,11 @@ These templates can generate savings estimates for your environment.
   Inefficient Instance Usage: 1
   Instances not running FlexNet Inventory Agent: 2
   Lifecycle Management: 1
-  Long Running Instances: 3
+  Long Running Instances: 2
   Long Stopped Instances: 3
   N/A: 1
   Native Recommendations: 1
-  New Marketplace Products: 2
+  New Marketplace Products: 3
   Object Store Optimization: 3
   Old Snapshots: 3
   Open Buckets: 1
@@ -680,6 +683,7 @@ These templates can generate savings estimates for your environment.
   Untagged resources: 1
   Unused Database Services: 1
   Unused IP Addresses: 3
+  Unused Load Balancers: 1
   Unused Volumes: 6
 :providers:
   '': 1
@@ -710,22 +714,23 @@ These templates can generate savings estimates for your environment.
   CCO: 1
   CloudTrail: 7
   Common Bill Ingestion: 2
-  Compute: 49
+  Compute: 48
   Config: 1
   Cost Explorer: 1
   DBS: 1
   Databricks: 1
   EBS: 2
   ECS: 1
-  ELB: 4
+  ELB: 3
   FNMS: 1
   IAM: 19
   Identity: 1
   KMS: 1
   Kubernetes: 2
   Lambda: 1
-  Marketplace: 2
+  Marketplace: 3
   MySQL: 2
+  Network: 1
   Network Security Group: 2
   Office 365: 1
   Org: 1

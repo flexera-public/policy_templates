@@ -66,27 +66,63 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   - `ec2:CreateTags`
   - `ec2:DeleteTags`
   - `ec2:DescribeRegions`
+  - `kms:CreateGrant` `*`
+  - `kms:Decrypt` `*`
+
+  `*` Only required if using Customer Managed KMS Key on Volumes mounted by EC2 Instance(s)
 
   Example IAM Permission Policy:
 
   ```json
   {
-      "Version": "2012-10-17",
-      "Statement": [
-          {
-              "Effect": "Allow",
-              "Action": [
-                  "ec2:DescribeInstances",
-                  "ec2:StartInstances",
-                  "ec2:StopInstances",
-                  "ec2:TerminateInstances",
-                  "ec2:CreateTags"
-                  "ec2:DeleteTags",
-                  "ec2:DescribeRegions"
-              ],
-              "Resource": "*"
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Action": [
+            "ec2:DescribeInstances",
+            "ec2:StartInstances",
+            "ec2:StopInstances",
+            "ec2:TerminateInstances",
+            "ec2:CreateTags",
+            "ec2:DeleteTags",
+            "ec2:DescribeRegions",
+            "kms:CreateGrant",
+            "kms:Decrypt"
+        ],
+        "Resource": "*"
+      }
+    ]
+  }
+  ```
+
+  If Customer Managed KMS Keys are used to encrypt volumes that are mounted by the EC2 Instance then the KMS Key(s) Permission Policy needs to allow `kms:CreateGrant` and `kms:Decrypt` permissions to the IAM Role used by Flexera Policy Template.
+
+  Here's an example Statement entry for the KMS Permission Policy:
+
+  ```json
+  {
+      "Sid": "Allow use of the key",
+      "Effect": "Allow",
+      "Principal": {
+          "AWS": "arn:aws:iam::123456789012:role/FlexeraAutomationAccessRole"
+      },
+      "Action": "kms:Decrypt",
+      "Resource": "*"
+  },
+  {
+      "Sid": "Allow attachment of persistent resources",
+      "Effect": "Allow",
+      "Principal": {
+          "AWS": "arn:aws:iam::123456789012:role/FlexeraAutomationAccessRole"
+      },
+      "Action": "kms:CreateGrant",
+      "Resource": "*",
+      "Condition": {
+          "Bool": {
+              "kms:GrantIsForAWSResource": "true"
           }
-      ]
+      }
   }
   ```
 
