@@ -24,9 +24,9 @@ This policy has the following input parameters required when launching the polic
 - *Allow/Deny Regions List* - Filter results by region, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all the regions.
 - *Tags* - The policy will report resources missing the specified tags. The following formats are supported:
   - `Key` - Find all resources missing the specified tag key.
-  - `Key==Value` - Find all resources missing the specified tag key:value pair and resources missing the specified tag key.
+  - `Key==Value` - Find all resources missing the specified tag key:value pair and all resources missing the specified tag key.
   - `Key!=Value` - Find all resources that have the specified tag key:value pair.
-  - `Key=~/Regex/` - Find all resources where the value for the specified key does not match the specified regex string and resources missing the specified tag key.
+  - `Key=~/Regex/` - Find all resources where the value for the specified key does not match the specified regex string and all resources missing the specified tag key.
   - `Key!~/Regex/` - Find all resources where the value for the specified key matches the specified regex string.
 - *Any / All* - Whether to report on instances missing any of the specified tags or all of them. Only applicable if more than one value is entered in the `Tags` field.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
