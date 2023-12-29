@@ -881,31 +881,44 @@ define release_unused_ip_addresses($data) return $all_responses do
 
   foreach $instance in $data do
     sub on_error: handle_error() do
-      $$all_responses << $state_response
+      call release_unused_ip_address($instance) retrieve $release_response
 
-      if $param_snapshot_include_ami == "Yes"
-        if $instance['service'] == "EBS" && $instance['imageId'] != ""
-          call deregister_image($instance) retrieve $deregister_response
-          $$all_responses << $deregister_response
-        end
-      end
-
-      if $instance['service'] == "EBS"
-        call delete_snapshot_ec2($instance) retrieve $delete_snapshot_response
-      elsif $instance['service'] == "RDS"
-        if $instance['dbInstanceId'] != ""
-          call delete_snapshot_db_instance($instance) retrieve $delete_snapshot_response
-        elsif $instance['dbClusterId'] != ""
-          call delete_snapshot_db_cluster($instance) retrieve $delete_snapshot_response
-        end
-      end
-
-      $$all_responses << $delete_snapshot_response
+      $$all_responses << $release_response
     end
   end
 
   if inspect($$errors) != "null"
     raise join($$errors,"\n")
+  end
+end
+
+define release_unused_ip_address($instance) return $response do
+  $host = "ec2." + $instance["region"] + ".amazonaws.com"
+  $href = "/"
+  $params = "?Action=DeleteSnapshot&Version=2016-11-15&SnapshotId.1=" + strip($snapshot["resourceID"])
+  $url = $host + $href + $params
+  task_label("GET " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "get",
+    href: $href,
+    host: $host,
+    query_strings: {
+      "Action": "ReleaseAddress",
+      "Version": "2016-11-15",
+      "PublicIp": strip($snapshot["resourceID"])
+    }
+  )
+
+  task_label("Get AWS EC2 snapshot response: " + $instance["resourceID"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
+
+  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
+    raise "Unexpected response getting AWS EC2 snapshot: "+ $instance["resourceID"] + " " + to_json($response)
+  else
+    task_label("Get AWS EC2 snapshot successful: " + $instance["resourceID"])
   end
 end
 
