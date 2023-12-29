@@ -868,13 +868,46 @@ escalation "esc_release_ip_address" do
   automatic contains($param_automatic_action, "Release Unused IP Addresses")
   label "Release Unused IP Addresses"
   description "Approval to release all selected IP addresses"
-  run "release_unused_ip_addresses", data, rs_optima_host
+  run "release_unused_ip_addresses", data
 end
 
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
+
+define release_unused_ip_addresses($data) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      $$all_responses << $state_response
+
+      if $param_snapshot_include_ami == "Yes"
+        if $instance['service'] == "EBS" && $instance['imageId'] != ""
+          call deregister_image($instance) retrieve $deregister_response
+          $$all_responses << $deregister_response
+        end
+      end
+
+      if $instance['service'] == "EBS"
+        call delete_snapshot_ec2($instance) retrieve $delete_snapshot_response
+      elsif $instance['service'] == "RDS"
+        if $instance['dbInstanceId'] != ""
+          call delete_snapshot_db_instance($instance) retrieve $delete_snapshot_response
+        elsif $instance['dbClusterId'] != ""
+          call delete_snapshot_db_cluster($instance) retrieve $delete_snapshot_response
+        end
+      end
+
+      $$all_responses << $delete_snapshot_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
 
 define release_unused_ip_addresses($data, $$rs_optima_host) do
   # Change "No" to "Yes" to enable CWF debug logging
@@ -924,44 +957,14 @@ define release_unused_ip_addresses($data, $$rs_optima_host) do
   end
 end
 
-define sys_log($subject, $detail) do
-  # Create empty errors array if doesn't already exist
+define handle_error() do
   if !$$errors
     $$errors = []
   end
-  # Check if debug is enabled
-  if $$debug
-    # Append to global $$errors
-    # This is the suggested way to capture errors
-    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
-    # If Flexera NAM Zone, create audit_entries [to be deprecated]
-    # This is the legacy method for capturing errors and only supported on Flexera NAM
-    if $$rs_optima_host == "api.optima.flexeraeng.com"
-      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
-      $task_label = "Creating audit entry for " + $subject
-      sub task_label: $task, on_error: skip_error_and_append($task) do
-        rs_cm.audit_entries.create(
-          notify: "None",
-          audit_entry: {
-            auditee_href: @@account,
-            summary: $subject,
-            detail: $detail
-          }
-        )
-      end # End sub on_error
-    end # End if rs_optima_host
-  end # End if debug is enabled
-end
-
-define skip_error_and_append($subject) do
-  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
   $_error_behavior = "skip"
-end
-
-define check_response_and_append_if_error($response, $request_description, $errors) return $errors do
-  if $response["code"] > 299 || $response["code"] < 200
-    $errors << "Unexpected status code from " + $request_description + " request\n  " + to_s($response)
-  end
 end
 
 ###############################################################################
