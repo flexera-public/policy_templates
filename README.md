@@ -298,6 +298,10 @@ These templates can generate savings estimates for your environment.
 
   - [AWS Savings Realized from Reservations](./cost/aws/savings_realized)
 
+- Cloud Cost Optimization
+
+  - [Scheduled Report](./cost/scheduled_reports)
+
 #### Flexera Cloud Management
 
 - [Inefficient Instance Utilization using RightLink Add Tags](./cost/rightlink_rightsize)
@@ -322,7 +326,6 @@ These templates can generate savings estimates for your environment.
 - [Monthly Actual v. Budgeted Spend Report](./cost/budget_v_actual)
 - [New Service Usage](./cost/new_service_usage)
 - [Reserved Instance Report by Billing Center](./cost/aws/reserved_instances/report_by_bc)
-- [Scheduled Report](./cost/scheduled_reports)
 - [Vendor Commitment Forecast](./cost/forecasting/commitment_forecast)
 
 #### GCE
@@ -690,11 +693,11 @@ These templates can generate savings estimates for your environment.
   AWS: 76
   Azure: 78
   Azure China: 1
-  Flexera: 5
+  Flexera: 6
   Flexera Cloud Management: 3
   Flexera FNMS: 1
   Flexera ITAM: 5
-  Flexera Optima: 25
+  Flexera Optima: 24
   Flexera RISC: 2
   Flexera SaaS Manager: 9
   GCE: 8
@@ -706,12 +709,13 @@ These templates can generate savings estimates for your environment.
   Oracle: 1
   ServiceNow: 1
 :services:
-  '': 62
+  '': 61
   AKS: 2
   All: 1
   App Service: 1
   Blob Store: 1
   CCO: 1
+  Cloud Cost Optimization: 1
   CloudTrail: 7
   Common Bill Ingestion: 2
   Compute: 48
