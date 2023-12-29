@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "6.7",
+  version: "6.8",
   provider: "AWS",
   service: "Compute",
   policy_set: "Unused IP Addresses",
@@ -893,9 +893,29 @@ define release_unused_ip_addresses($data) return $all_responses do
 end
 
 define release_unused_ip_address($instance) return $response do
+  if $instance["domain"] == "standard"
+    $id = strip($instance["resourceID"])
+    $id_param = "PublicIp=" + $id
+    $query_strings = {
+      "Action": "ReleaseAddress",
+      "Version": "2016-11-15",
+      "PublicIp": $id
+    }
+  end
+
+  if $instance["domain"] == "vpc"
+    $id = strip($instance["allocationID"])
+    $id_param = "AllocationId=" + $id
+    $query_strings = {
+      "Action": "ReleaseAddress",
+      "Version": "2016-11-15",
+      "AllocationId": $id
+    }
+  end
+
   $host = "ec2." + $instance["region"] + ".amazonaws.com"
   $href = "/"
-  $params = "?Action=DeleteSnapshot&Version=2016-11-15&SnapshotId.1=" + strip($snapshot["resourceID"])
+  $params = "?Action=ReleaseAddress&Version=2016-11-15&" + $id_param
   $url = $host + $href + $params
   task_label("GET " + $url)
 
@@ -905,68 +925,16 @@ define release_unused_ip_address($instance) return $response do
     verb: "get",
     href: $href,
     host: $host,
-    query_strings: {
-      "Action": "ReleaseAddress",
-      "Version": "2016-11-15",
-      "PublicIp": strip($snapshot["resourceID"])
-    }
+    query_strings: $query_strings
   )
 
-  task_label("Get AWS EC2 snapshot response: " + $instance["resourceID"] + " " + to_json($response))
+  task_label("Get AWS IP Address response: " + $id + " " + to_json($response))
   $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
 
   if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
-    raise "Unexpected response getting AWS EC2 snapshot: "+ $instance["resourceID"] + " " + to_json($response)
+    raise "Unexpected response getting AWS IP Address: "+ $id + " " + to_json($response)
   else
-    task_label("Get AWS EC2 snapshot successful: " + $instance["resourceID"])
-  end
-end
-
-define release_unused_ip_addresses($data, $$rs_optima_host) do
-  # Change "No" to "Yes" to enable CWF debug logging
-  $log_to_cm_audit_entries = "No"
-
-  $$debug = $param_log_to_cm_audit_entries == "Yes"
-  $$errors = []
-  $all_responses = []
-  foreach $item in $data do
-    sub on_error: skip_error_and_append($item["id"]) do
-      if $item["domain"] == "standard"
-        $response = http_request(
-          verb: "get",
-          host: join(["ec2.", $item["region"], ".amazonaws.com"]),
-          auth: $$auth_aws,
-          href: "/",
-          query_strings:{
-            "Action": "ReleaseAddress",
-            "PublicIp": $item["id"],
-            "Version": "2016-11-15"
-          },
-          https: true
-        )
-      elsif $item["domain"] == "vpc"
-        $response = http_request(
-          verb: "get",
-          host: join(["ec2.", $item["region"], ".amazonaws.com"]),
-          auth: $$auth_aws,
-          href: "/",
-          query_strings:{
-            "Action": "ReleaseAddress",
-            "AllocationId": $item["allocationID"],
-            "Version": "2016-11-15"
-          },
-          https: true
-        )
-      end
-      call check_response_and_append_if_error($response, "Release Address " + $item["id"], $$errors) retrieve $$errors
-      $all_responses << $response
-    end
-  end
-  call sys_log("Responses", to_s($all_responses))
-  if size($$errors) > 0
-    $error = join($$errors, "\n")
-    call sys_log("Errors", $error)
-    raise $error
+    task_label("Get AWS IP Address successful: " + $id)
   end
 end
 
