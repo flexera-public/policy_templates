@@ -1,5 +1,10 @@
 # Changelog
 
+## v6.8
+
+- Policy action error logging modernized and now works as expected in EU/APAC
+- Updated description of AWS Pricing API Endpoint parameter
+
 ## v6.7
 
 - Added parameter to override the AWS Pricing API Endpoint
