@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "4.1",
+  version: "4.2",
   provider: "Azure",
   service: "SQL",
   policy_set: "Rightsize Database Instances",
@@ -1155,89 +1155,108 @@ end
 ###############################################################################
 
 define downsize_instances($data, $param_azure_endpoint) return $all_responses do
-  # Change "No" to "Yes" to enable CWF debug logging
-  $log_to_cm_audit_entries = "Yes"
+  $$all_responses = []
 
-  $$debug = $log_to_cm_audit_entries == "Yes"
-
-  $$errors = []
-  $all_responses = []
-
-  foreach $item in $data do
-    sub on_error: skip do
-      $response = http_request(
-        auth: $$auth_azure,
-        verb: "patch",
-        host: $param_azure_endpoint,
-        https: true,
-        href: $item["id"],
-        query_strings: {
-          "api-version": "2017-10-01-preview"
-        },
-        headers: {
-          "cache-control": "no-cache",
-          "content-type": "application/json"
-        },
-        body: {
-          "sku": {
-            "name": $item["skuName"],
-            "tier": $item["skuTier"],
-            "capacity": $item["newResourceType"]
-          }
-        }
-      )
-
-      call sys_log('Downsize Azure SQL Databases: ', to_s($response))
-
-      $all_responses << $response
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call downsize_instance($instance, $param_azure_endpoint) retrieve $downsize_response
     end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+define downsize_instance($instance, $param_azure_endpoint) return $response do
+  $host = $param_azure_endpoint
+  $href = $instance["id"]
+  $params = "?api-version=2017-10-01-preview"
+  $url = $host + $href + $params
+  task_label("PATCH " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "patch",
+    host: $host,
+    href: $href,
+    query_strings: { "api-version": "2017-10-01-preview" },
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json"
+    },
+    body: {
+      "sku": {
+        "name": $instance["skuName"],
+        "tier": $instance["skuTier"],
+        "capacity": $instance["newResourceType"]
+      }
+    }
+  )
+
+  task_label("Patch Azure SQL instance response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response patching Azure SQL instance: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Patch Azure SQL instance successful: " + $instance["id"])
   end
 end
 
 define delete_instances($data, $param_azure_endpoint) return $all_responses do
-  # Change "No" to "Yes" to enable CWF debug logging
-  $log_to_cm_audit_entries = "Yes"
+  $$all_responses = []
 
-  $$debug = $log_to_cm_audit_entries == "Yes"
-
-  $$errors = []
-  $all_responses = []
-
-  foreach $item in $data do
-    sub on_error: skip do
-      $response = http_request(
-        auth: $$auth_azure,
-        verb: "delete",
-        host: $param_azure_endpoint,
-        https: true,
-        href: $item["id"],
-        query_strings: {
-          "api-version": "2017-10-01-preview"
-        },
-        headers: {
-          "cache-control": "no-cache",
-          "content-type": "application/json"
-        }
-      )
-
-      call sys_log('Deleted Azure SQL Databases: ', to_s($response))
-
-      $all_responses << $response
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call delete_instance($instance, $param_azure_endpoint) retrieve $delete_response
     end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
   end
 end
 
-define sys_log($subject, $detail) do
-  if $$debug
-    rs_cm.audit_entries.create(
-      notify: "None",
-      audit_entry: {
-        auditee_href: @@account,
-        summary: $subject,
-        detail: $detail
-      }
-    )
+define delete_instance($instance, $param_azure_endpoint) return $response do
+  $host = $param_azure_endpoint
+  $href = $instance["id"]
+  $params = "?api-version=2017-10-01-preview"
+  $url = $host + $href + $params
+  task_label("DELETE " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "delete",
+    host: $host,
+    href: $href,
+    query_strings: { "api-version": "2017-10-01-preview" },
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json"
+    }
+  )
+
+  task_label("Delete Azure SQL instance response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response deleting Azure SQL instance: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Delete Azure SQL instance successful: " + $instance["id"])
   end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
 end
 
 ###############################################################################
