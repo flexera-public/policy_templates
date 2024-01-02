@@ -6,7 +6,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "6.0",
+  version: "6.1",
   provider: "Azure",
   service: "Storage",
   policy_set: "Old Snapshots",
@@ -729,79 +729,60 @@ escalation "esc_delete_snapshot" do
   automatic contains($param_automatic_action, "Delete Snapshots")
   label "Delete Snapshots"
   description "Approval to delete all selected snapshots"
-  run "delete_snapshots", data, $param_azure_endpoint, rs_optima_host
+  run "delete_snapshots", data, $param_azure_endpoint
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define delete_snapshots($data, $$param_azure_endpoint, $$rs_optima_host) return $all_responses do
-  # Change "No" to "Yes" to enable CWF debug logging
-  $log_to_cm_audit_entries = "No"
+define delete_snapshots($data, $param_azure_endpoint) return $all_responses do
+  $$all_responses = []
 
-  $$debug = $log_to_cm_audit_entries == "Yes"
-  $$errors = []
-  $status_code = ''
-  $all_responses = []
-
-  foreach $item in $data do
-    sub on_error: skip do
-      call delete_snapshot($item['resourceID'])
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call delete_snapshot($instance, $param_azure_endpoint) retrieve $delete_response
     end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
   end
 end
 
-define delete_snapshot($resourceID) do
-  $syslog_subject = "Azure delete old snapshots API response: "
+define delete_snapshot($instance, $param_azure_endpoint) return $response do
+  $host = $param_azure_endpoint
+  $href = $instance["id"]
+  $params = "?api-version=2019-07-01"
+  $url = $host + $href + $params
+  task_label("DELETE " + $url)
 
   $response = http_request(
     auth: $$auth_azure,
-    verb: "DELETE",
-    host: $$param_azure_endpoint,
     https: true,
-    href: $resourceID,
-    query_strings: {
-      "api-version": "2019-07-01"
-    }
+    verb: "delete",
+    host: $host,
+    href: $href,
+    query_strings: { "api-version": "2019-07-01" }
   )
 
-  if $delete_status != 202
-    call sys_log($syslog_subject, to_s($response))
+  task_label("Delete Azure snapshot response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response deleting Azure snapshot: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Delete Azure snapshot successful: " + $instance["id"])
   end
 end
 
-define sys_log($subject, $detail) do
-  # Create empty errors array if doesn't already exist
+define handle_error() do
   if !$$errors
     $$errors = []
   end
-  # Check if debug is enabled
-  if $$debug
-    # Append to global $$errors
-    # This is the suggested way to capture errors
-    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
-    # If Flexera NAM Zone, create audit_entries [to be deprecated]
-    # This is the legacy method for capturing errors and only supported on Flexera NAM
-    if $$rs_optima_host == "api.optima.flexeraeng.com"
-      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
-      $task_label = "Creating audit entry for " + $subject
-      sub task_label: $task, on_error: skip_error_and_append($task) do
-        rs_cm.audit_entries.create(
-          notify: "None",
-          audit_entry: {
-            auditee_href: @@account,
-            summary: $subject,
-            detail: $detail
-          }
-        )
-      end # End sub on_error
-    end # End if rs_optima_host
-  end # End if debug is enabled
-end
-
-define skip_error_and_append($subject) do
-  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
   $_error_behavior = "skip"
 end
 
