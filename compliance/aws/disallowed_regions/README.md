@@ -1,31 +1,25 @@
 # AWS Disallowed Regions
 
-## What it does
+## What It Does
 
-This policy checks all instances outside of a set of allowed regions. The user is given the option to Terminate the instance after approval.
-
-## Functional Details
-
-- The policy leverages the AWS API to check all instances that exist outside of an allowed region.
-- When an EC2 instance in disallowed region is detected, an email action is triggered automatically to notify the specified users of the incident. Users then have the option to terminate instances after manual approval if needed.
+This policy finds all AWS EC2 instances within a user-specified list of disallowed regions or outside of a user-specified list of allowed regions. An incident is raised and a report emailed containing all of the non-compliant instances, with the option to stop or terminate offending instances.
 
 ## Input Parameters
 
-- *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created.
+- *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [more](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
-- *Exclusion Tag* - List of tags that will exclude EC2 instances from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'.
-- *Allowed/Denied Regions* - Whether to treat regions parameter as allow or deny list.
-- *Regions* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
+- *Exclusion Tags (Key:Value)* - Cloud native tags to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:\* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:\*
+- *Disallow/Allow Regions* - Whether to allow or disallow the regions specified in the `Disallow/Allow Regions List` parameter. If set to "Allow", all EC2 instances outside of the listed regions will be considered out of compliance. If set to "Disallow", all EC2 instances within the listed regions will be considered out of compliance.
+- *Disallow/Allow Regions List* - A list of regions to disallow or allow.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
-Note:Refer Region column under Amazon Elastic Compute Cloud (Amazon EC2) in below link for AWS supported regions \n See the [README](https://docs.aws.amazon.com/general/latest/gr/rande.html).
-
-Also please note that the "*Automatic Actions*" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
-For example if a user selects the "Terminate Instances" action while applying the policy, all the identified instances that didn't satisfy the policy condition will be terminated.
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example, if a user selects the "Terminate Instances" action while applying the policy, all the EC2 instances that didn't satisfy the policy condition will be deleted.
 
 ## Policy Actions
 
 - Sends an email notification.
+- Stop reported instances after approval.
 - Terminate reported instances after approval.
 
 ## Prerequisites
@@ -33,11 +27,13 @@ For example if a user selects the "Terminate Instances" action while applying th
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
 - [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
+  - `sts:GetCallerIdentity`
   - `ec2:DescribeRegions`
   - `ec2:DescribeInstances`
+  - `ec2:StopInstances`*
   - `ec2:TerminateInstances`*
 
-  \* Only required for taking action (deletion); the policy will still function in a read-only capacity without these permissions.
+  \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
 
   Example IAM Permission Policy:
 
@@ -48,8 +44,10 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
           {
               "Effect": "Allow",
               "Action": [
+                  "sts:GetCallerIdentity",
                   "ec2:DescribeRegions",
                   "ec2:DescribeInstances",
+                  "ec2:StopInstances",
                   "ec2:TerminateInstances"
               ],
               "Resource": "*"
