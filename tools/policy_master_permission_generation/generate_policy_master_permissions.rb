@@ -188,6 +188,7 @@ readmes.each do |readme|
 end
 
 master_policy_permissions_doc[:values] = values
+puts values
 
 # Create '.data/policy_permissions_list' directory
 # permissions_list_dir = "./dist"
