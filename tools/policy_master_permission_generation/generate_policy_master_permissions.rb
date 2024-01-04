@@ -12,11 +12,12 @@ class Readme
 end
 
 class PolicyTemplate
-  attr_accessor :name, :path
+  attr_accessor :name, :path, :version
 
-  def initialize(name, path)
+  def initialize(name, path, version)
     @name = name
     @path = path
+    @version = version
   end
 end
 
@@ -36,8 +37,12 @@ readmes = []
 # Process Policy Template files
 pt_files.each do |file|
   pt_content = File.read(file)
-  name = pt_content.match(/name "([^"]+)"/)&.captures&.first
-  policy_templates << PolicyTemplate.new(name, file) if name
+  pt_name = pt_content.match(/name "([^"]+)"/)&.captures&.first
+  
+  pt_version_match = pt_content.match(/version:\s*\"([^\"]+)\"/)
+  pt_version = pt_version_match[1] if pt_version_match
+
+  policy_templates << PolicyTemplate.new(pt_name, file, pt_version) if pt_name
 end
 
 # Process README files
@@ -58,15 +63,14 @@ def extract_permissions_from_readme(readme_content)
     when "[**AWS Credentials**]", "[**AWS Credential**]"
       provider = "aws"
     when "[**Azure Resource Manager Credential**]"
-      provider = "azure"
+      provider = "azure_rm"
     when "[**Google Cloud Credential**]"
-      provider = "gcp"
+      provider = "gce"
     when "[**Flexera Credential**]"
       provider = "flexera"
     end
 
     if section_start = readme_content.index(section)
-
       # Extract the text from this section
       section_text = readme_content[section_start..-1]
     
@@ -80,12 +84,17 @@ def extract_permissions_from_readme(readme_content)
           credentials_section = "permissions"
         else
           line.scan(/-\s*`([^`]+)`/) do |match|
+            permission = match.first
+            read_only_permission = !permission.end_with?("*")
+            permission = permission.chomp("*")
+
+
             if credentials_section == "roles"
-              policy_credentials << { role: match.first, provider: provider,  }
+              policy_credentials << { role: permission, provider: provider, read_only: read_only_permission }
             elsif credentials_section == "permissions"
-              policy_credentials << { permission: match.first, provider: provider }
+              policy_credentials << { permission: permission, provider: provider, read_only: read_only_permission }
             else
-              policy_credentials << { permission: match.first, provider: provider }
+              policy_credentials << { permission: permission, provider: provider, read_only: read_only_permission }
             end
           end
         end
@@ -125,7 +134,8 @@ readmes.each do |readme|
 
     policy_template_details = {
       "id" => matching_template.path,
-      "name" => matching_template.name
+      "name" => matching_template.name,
+      "version" => matching_template.version
     }
 
     if readme.credentials
@@ -145,9 +155,19 @@ readmes.each do |readme|
 
         cred_values.each do |credential|
           if credential[:permission]
-            cred_permissions.push(credential[:permission])
+
+            permission_list = {
+              "name" => credential[:permission],
+              "read_only" => credential[:read_only]
+            }
+            cred_permissions.push(permission_list)
           elsif credential[:role]
-            cred_roles.push(credential[:role])
+
+            role_list = {
+              "name" => credential[:role],
+              "read_only" => credential[:read_only]
+            }
+            cred_roles.push(role_list)
           end
         end
 
