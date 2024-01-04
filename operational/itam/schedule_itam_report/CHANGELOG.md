@@ -2,7 +2,7 @@
 
 ## v0.1.2
 
-- Added a way to decode the pagination token
+- Added a filter to convert `%3D` to his corresponding `=` symbol to prevent bad api token request.
 
 ## v0.1.1
 
