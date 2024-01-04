@@ -1,4 +1,4 @@
-name "Azure Databricks Rightsize Compute Instances Meta Parent"
+name "Azure Databricks Rightsize Compute Instances Meta Parent (per Cluster)"
 rs_pt_ver 20180301
 type "policy"
 short_description "Applies and manages \"child\" [Azure Databricks Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/databricks/rightsize_compute) Policies."
@@ -65,6 +65,14 @@ parameter "param_template_source" do
   allowed_values "Published Catalog Template", "Uploaded Template"
 end
 
+parameter "param_max_batch_size" do
+  type "number"
+  label "Max Batch Size for Meta Parent Actions"
+  default 50
+  min_value 1
+  max_value 1000
+end
+
 ## Child Policy Parameters
 parameter "param_regions_allow_or_deny" do
   type "string"
@@ -83,19 +91,19 @@ parameter "param_regions_list" do
   default []
 end
 
-parameter "param_databricks_workspace_list" do
-  label "Databricks Workspace Allowed List"
-  type "list"
-  description "Allowed Databricks Workspace. If empty, all workspaces will be checked"
-  default []
-end
+# parameter "param_databricks_workspace_list" do
+#   label "Databricks Workspace Allowed List"
+#   type "list"
+#   description "Allowed Databricks Workspace. If empty, all workspaces will be checked"
+#   default []
+# end
 
-parameter "param_databricks_cluster_list" do
-  label "Databricks Cluster Allowed List"
-  type "list"
-  description "Allowed Databricks Clusters. Name or Cluster ID can be provided.  If empty, all clusters will be checked"
-  default []
-end
+# parameter "param_databricks_cluster_list" do
+#   label "Databricks Cluster Allowed List"
+#   type "list"
+#   description "Allowed Databricks Clusters. Name or Cluster ID can be provided.  If empty, all clusters will be checked"
+#   default []
+# end
 
 parameter "param_azure_endpoint" do
   type "string"
@@ -222,6 +230,33 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+#get workspaces, and urls
+datasource "ds_databricks_workspaces" do
+  iterate $ds_get_azure_subscriptions_unique
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "subscriptionID"), "/providers", "/Microsoft.Databricks", "/workspaces"])
+    query "api-version", "2023-02-01"
+    header "User-Agent", "RS Policies"
+    ignore_status [400,401,403,404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscriptionID", jmes_path(iter_item, "subscriptionID")
+      field "subscriptionName", jmes_path(iter_item, "subscriptionName")
+      field "resourceId", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "location", jmes_path(col_item, "location")
+      field "workspaceId", jmes_path(col_item, "properties.workspaceId")
+      field "workspaceUrl", jmes_path(col_item, "properties.workspaceUrl")
+      field "managedResourceGroupId", jmes_path(col_item, "properties.managedResourceGroupId")
+    end
+  end
+end
+
 # Get Applied Parent Policy Details
 datasource "ds_self_policy_information" do
   request do
@@ -250,7 +285,7 @@ script "js_child_policy_options", type: "javascript" do
   // Filter Options that are not appropriate for Child Policy
   var options = _.map(ds_self_policy_information.options, function(option){
     // param_combined_incident_email, param_dimension_filter_includes, param_dimension_filter_excludes", param_policy_schedule are exclusion to Meta Parent Policy Parameters
-    if (!_.contains(["param_combined_incident_email", "param_dimension_filter_includes", "param_dimension_filter_excludes", "param_policy_schedule", "param_template_source"], option.name)) {
+    if (!_.contains(["param_combined_incident_email", "param_dimension_filter_includes", "param_dimension_filter_excludes", "param_policy_schedule", "param_template_source","param_max_batch_size"], option.name)) {
       return { "name": option.name, "value": option.value };
     }
   });
@@ -361,19 +396,21 @@ end
 # Get the Azure subscriptions
 datasource "ds_get_azure_subscriptions" do
   request do
-    run_script $js_make_billing_center_request, rs_org_id, rs_optima_host, $ds_get_billing_centers, $param_dimension_filter_includes, $param_dimension_filter_excludes
+    run_script $js_make_billing_center_request, rs_org_id, rs_optima_host, $ds_get_billing_centers, $param_dimension_filter_includes, $param_dimension_filter_excludes, $param_stats_lookback
   end
   result do
     encoding "json"
     collect jmes_path(response,"rows[*]") do
       field "subscriptionID", jmes_path(col_item,"dimensions.vendor_account")
       field "subscriptionName", jmes_path(col_item,"dimensions.vendor_account_name")
+      field "resource_group", jmes_path(col_item,"dimensions.resource_group")
+      field "tag_azure_databricks_clusterid", jmes_path(col_item,"dimensions.tag_azure_databricks_clusterid")
     end
   end
 end
 
 script "js_make_billing_center_request", type: "javascript" do
-  parameters "rs_org_id", "rs_optima_host", "billing_centers_unformatted", "param_dimension_filter_includes", "param_dimension_filter_excludes"
+  parameters "rs_org_id", "rs_optima_host", "billing_centers_unformatted", "param_dimension_filter_includes", "param_dimension_filter_excludes", "param_stats_lookback"
   result "request"
   code <<-EOS
 
@@ -386,11 +423,11 @@ script "js_make_billing_center_request", type: "javascript" do
   finish = new Date()
   finishFormatted = finish.toJSON().split("T")[0]
   start = new Date()
-  start.setDate(start.getDate() - 30)
+  start.setDate(start.getDate() - param_stats_lookback)
   startFormatted = start.toJSON().split("T")[0]
 
   // Default dimensions and filter expressions required for meta parent policy
-  var dimensions = ["vendor_account", "vendor_account_name"];
+  var dimensions = ["vendor_account", "vendor_account_name","resource_group","tag_azure_databricks_clusterid"];
   var filter_expressions = [
     { dimension: "vendor", type: "substring", substring: "Azure" } // Use a substring type to include both "Azure" (Azure EA) and "AzureMCA-Enterprise" (Azure MCA) subscriptions
   ]
@@ -416,6 +453,14 @@ script "js_make_billing_center_request", type: "javascript" do
     dimensions.push(k);
     filter_expressions.push({ "type": "not", "expression": { "dimension": k, "type": "equal", "value": v } });
   });
+
+  // Exclude 00000000-0000-0000-0000-000000000000 (Azure EA) and 00000000-0000-0000-0000-000000000001 (Azure MCA) subscriptions
+  filter_expressions.push({ "type": "not", "expression": { "dimension": "vendor_account", "type": "equal", "value": "00000000-0000-0000-0000-000000000000" } });
+  filter_expressions.push({ "type": "not", "expression": { "dimension": "vendor_account", "type": "equal", "value": "00000000-0000-0000-0000-000000000001" } });
+  // Exclude None subscriptions
+  filter_expressions.push({ "type": "not", "expression": { "dimension": "vendor_account", "type": "equal", "value": "None" } });
+  // Exclude subscriptions/resource_groups with no databricks cluster costs
+  filter_expressions.push({ "type": "not", "expression": { "dimension": "tag_azure_databricks_clusterid", "type": "equal", "value": "None" } });
 
   // Produces a duplicate-free version of the array
   dimensions = _.uniq(dimensions);
@@ -446,6 +491,32 @@ script "js_make_billing_center_request", type: "javascript" do
     },
     body: JSON.stringify(body)
   }
+  EOS
+end
+
+datasource "ds_get_azure_subscriptions_unique" do
+  run_script $js_get_azure_subscriptions_unique, $ds_get_azure_subscriptions
+end
+
+script "js_get_azure_subscriptions_unique", type: "javascript" do
+  parameters "ds_get_azure_subscriptions"
+  result "r"
+  code <<-EOS
+  // Pluck All Subscription IDs from the list of all subscription objects
+  subscriptionIDs = _.pluck(ds_get_azure_subscriptions, "subscriptionID")
+  // Get unique subscription IDs
+  uniqueSubscriptionIDs = _.uniq(subscriptionIDs)
+  // Initialize results
+  r = []
+  // Loop through unique subscription IDs and find the subscription objects
+  _.each(uniqueSubscriptionIDs, function(subId) {
+    // Find the subscription object that matches current subscriptionID from the list of all subscriptions
+    subObject = _.find(ds_get_azure_subscriptions, function(sub) {
+      return sub.subscriptionID == subId
+    })
+    // Append the subscription object to the results containing unique subscription objects
+    r.push(subObject)
+  })
   EOS
 end
 
@@ -536,8 +607,14 @@ script "js_format_existing_policies", type: "javascript" do
     options = format_options_keyvalue(ds_get_existing_policies[x].options);
 
     subscriptionID=options["param_subscriptions_list"][0]
-    if (formatted[subscriptionID] == undefined) {
-      formatted[subscriptionID] = {
+    workspaceId=options["param_databricks_workspace_list"][0]
+    clusterId=options["param_databricks_cluster_list"][0]
+
+    // Meta Parent will create/maage 1 child policy for each unique value of childPolicyKey
+    childPolicyKey = [ subscriptionID , workspaceId , clusterId ].join(" ")
+
+    if (formatted[childPolicyKey] == undefined) {
+      formatted[childPolicyKey] = {
         "applied_policy_id":ds_get_existing_policies[x]["applied_policy_id"],
         "applied_policy_name":ds_get_existing_policies[x]["name"],
         "status":ds_get_existing_policies[x]["status"],
@@ -545,9 +622,9 @@ script "js_format_existing_policies", type: "javascript" do
         "incident": ds_format_incidents[ds_get_existing_policies[x]["applied_policy_id"]],
         "options": options
       }
-      tracking[subscriptionID] = false
+      tracking[childPolicyKey] = false
     } else {
-      current = formatted[subscriptionID]
+      current = formatted[childPolicyKey]
 
       currDate = new Date(current.updated_at)
       newDate = new Date(ds_get_existing_policies[x].updated_at)
@@ -568,7 +645,7 @@ script "js_format_existing_policies", type: "javascript" do
           "updated_at":current["updated_at"],
           "incident": current["incident"]
         })
-        formatted[subscriptionID] = {
+        formatted[childPolicyKey] = {
           "applied_policy_id":ds_get_existing_policies[x]["applied_policy_id"],
           "applied_policy_name":ds_get_existing_policies[x]["name"],
           "status":ds_get_existing_policies[x]["status"],
@@ -588,7 +665,7 @@ script "js_format_existing_policies", type: "javascript" do
 end
 
 datasource "ds_take_in_parameters" do
-  run_script $js_take_in_parameters, $ds_get_azure_subscriptions, $ds_format_self, first($ds_published_child_policy_information), first($ds_project_child_policy_information), $ds_format_existing_policies, $ds_child_policy_options, $ds_child_policy_options_map, $param_template_source, $param_policy_schedule, policy_id, f1_app_host, rs_org_id, rs_project_id
+  run_script $js_take_in_parameters, $ds_get_azure_subscriptions, $ds_format_self, first($ds_published_child_policy_information), first($ds_project_child_policy_information), $ds_format_existing_policies, $ds_child_policy_options, $ds_child_policy_options_map, $ds_databricks_workspaces, $param_template_source, $param_policy_schedule, $param_max_batch_size, policy_id, f1_app_host, rs_org_id, rs_project_id
 end
 
 # hardcode template href with id from catalog
@@ -601,7 +678,7 @@ end
 # param_exclude_tags and param_allowed_regions are arrays. I'm doing an update on the order changing but the values remaining the same.
 # If we only want to do an update on the values changing we could sort before doing the equality check.
 script "js_take_in_parameters", type: "javascript" do
-  parameters "ds_get_azure_subscriptions", "ds_format_self", "ds_published_child_policy_information", "ds_project_child_policy_information", "ds_format_existing_policies", "ds_child_policy_options", "ds_child_policy_options_map", "param_template_source", "param_policy_schedule", "meta_parent_policy_id", "f1_app_host", "rs_org_id", "rs_project_id"
+  parameters "ds_get_azure_subscriptions", "ds_format_self", "ds_published_child_policy_information", "ds_project_child_policy_information", "ds_format_existing_policies", "ds_child_policy_options", "ds_child_policy_options_map", "ds_databricks_workspaces", "param_template_source", "param_policy_schedule", "param_max_batch_size", "meta_parent_policy_id", "f1_app_host", "rs_org_id", "rs_project_id"
   result "grid_and_cwf"
   code <<-EOS
 
@@ -612,7 +689,7 @@ script "js_take_in_parameters", type: "javascript" do
     child_policy_information = ds_project_child_policy_information
   }
 
-  max_actions = 50;
+  max_actions = param_max_batch_size;
 
   grid_and_cwf={grid:[], to_create:[], to_update:[], to_delete:[], parent_policy:ds_format_self};
 
@@ -627,6 +704,7 @@ script "js_take_in_parameters", type: "javascript" do
     policy_status={
       "policy_name": ep["applied_policy_name"],
       "policy_link": applied_policy_url_prefix + ep["applied_policy_id"],
+      "policy_href": ep["applied_policy_name"] + "||" + applied_policy_url_prefix + ep["applied_policy_id"],
       "meta_policy_status": action,
       "policy_status": ep["status"],
       "policy_last_update": ep["updated_at"],
@@ -650,17 +728,30 @@ script "js_take_in_parameters", type: "javascript" do
   }
 
   for (x=0; x<ds_get_azure_subscriptions.length; x++) {
-    cur = ds_get_azure_subscriptions[x];
-    cur_subscriptionID = cur.subscriptionID;
+    // cur holds the current subscription that the workspace belongs to
+    cur = ds_get_azure_subscriptions[x]
+
+    // console.log("cur="+JSON.stringify(cur)+" ds_databricks_workspaces="+JSON.stringify(ds_databricks_workspaces))
+    // cur_workspace holds the current workspace
+    cur_workspace = _.find(ds_databricks_workspaces, function(ws){
+      return ws.managedResourceGroupId.split("resourceGroups/")[1] == cur.resource_group;
+    }) // Find the workspace object that matches current subscriptionID
+    if (typeof cur_workspace == "undefined") {
+      // use continue to skip to next iteration of loop because we can't find the databricks workspace associated with that resource group
+      continue
+    }
+    // console.log("subscriptionID="+JSON.stringify(cur.subscriptionID)+" workspaceId="+JSON.stringify(cur_workspace.workspaceId)+" clusterId="+JSON.stringify(cur.tag_azure_databricks_clusterid))
+    // Meta Parent will create/maage 1 child policy for each unique value of childPolicyKey
+    childPolicyKey = [ cur.subscriptionID , cur_workspace.workspaceId , cur.tag_azure_databricks_clusterid ].join(" ")
 
     // Name and description do not vary between create or updates so defining them here
-    name = child_policy_information.name + ": " + cur.subscriptionName + " (" + cur_subscriptionID + ") (child policy)";
-    description = child_policy_information.name + " policy applied by [" + ds_format_self.name + "](" + applied_policy_url_prefix + meta_parent_policy_id + ") to Azure Subscription **" + cur.subscriptionName +"** (`" + cur_subscriptionID + "`).  " + child_policy_information.short_description;
+    name = child_policy_information.name + ": " + cur.subscriptionName + " (" + childPolicyKey + ") (child policy)";
+    description = child_policy_information.name + " policy applied by [" + ds_format_self.name + "](" + applied_policy_url_prefix + meta_parent_policy_id + ") to Azure Subscription **" + cur.subscriptionName +"** (`" + cur.subscriptionID + "`) and Databricks Workspace "+ cur_workspace.workspaceId +".  " + child_policy_information.short_description;
 
     // Check if child policy exists for current subscription id
-    if ( ! _.contains(_.keys(ds_format_existing_policies.formatted), cur_subscriptionID) ) {
+    if ( ! _.contains(_.keys(ds_format_existing_policies.formatted), childPolicyKey) ) {
       // Child Policy does not exist and should be created
-      console.log("Child Policy for Subscription ID: "+cur_subscriptionID+" does not exist and should be created");
+      console.log("Child Policy for child policy key: "+childPolicyKey+" does not exist and should be created");
 
       // Use the options from the parent policy in "name value" list format
       options = _.toArray(ds_child_policy_options);
@@ -668,7 +759,17 @@ script "js_take_in_parameters", type: "javascript" do
       // Set param_subscriptions_list values for this child policy
       options.push({
         "name": "param_subscriptions_list",
-        "value": [cur_subscriptionID],
+        "value": [cur.subscriptionID],
+      });
+      // Set param_databricks_workspace_list values for this child policy
+      options.push({
+        "name": "param_databricks_workspace_list",
+        "value": [cur_workspace.workspaceId],
+      });
+      // Set param_databricks_workspace_list values for this child policy
+      options.push({
+        "name": "param_databricks_cluster_list",
+        "value": [cur.tag_azure_databricks_clusterid],
       });
 
       if (grid_and_cwf.to_create.length < max_actions) {
@@ -698,10 +799,10 @@ script "js_take_in_parameters", type: "javascript" do
         grid_and_cwf.grid.push(policy_status)
       }
     } else {
-      console.log("Child Policy for "+cur_subscriptionID+" does exist for current subscription ID and may need to be updated or deleted");
+      console.log("Child Policy for "+childPolicyKey+" does exist for current subscription ID and may need to be updated or deleted");
       // Child Policy does exist for current subscription ID and may need to be updated or deleted
       // Assume by default we should keep it and not update it
-      should_keep[cur_subscriptionID] = true;
+      should_keep[childPolicyKey] = true;
       should_update = false;
 
       // Use the options from the parent policy in "name value" list format
@@ -710,29 +811,38 @@ script "js_take_in_parameters", type: "javascript" do
       // Set param_subscriptions_list values for this child policy
       options.push({
         "name": "param_subscriptions_list",
-        "value": [cur_subscriptionID],
+        "value": [cur.subscriptionID],
+      });
+      // Set param_databricks_workspace_list values for this child policy
+      options.push({
+        "name": "param_databricks_workspace_list",
+        "value": [cur_workspace.workspaceId],
+      });
+      // Set param_databricks_workspace_list values for this child policy
+      options.push({
+        "name": "param_databricks_cluster_list",
+        "value": [cur.tag_azure_databricks_clusterid],
       });
 
       // Check if child policy params match parent policy params
       _.each(ds_format_self.options, function(value, key) {
         // If any child and parent param values do not match, mark the child policy as should_update
-        if ( !_.isEqual(value, ds_format_existing_policies["formatted"][cur_subscriptionID]["options"][key]) ) {
-          console.log("Child Policy Param does not match Parent Policy and should be updated. "+key+" does not match "+value+"!="+ds_format_existing_policies["formatted"][cur_subscriptionID]["options"][key]);
+        if ( !_.isEqual(value, ds_format_existing_policies["formatted"][childPolicyKey]["options"][key]) ) {
+          console.log("Child Policy Param does not match Parent Policy and should be updated. "+key+" does not match "+value+"!="+ds_format_existing_policies["formatted"][childPolicyKey]["options"][key]);
           should_update = true;
         }
       });
-
 
       if (should_update) {
         // Child policy needs to be updated
         if (grid_and_cwf.to_update.length < max_actions) {
           // Child policy needs to be updated and is within the max_actions limit
-          console.log("Child Policy needs to be updated. ds_format_existing_policies.formatted[cur_subscriptionID]="+JSON.stringify(ds_format_existing_policies.formatted[cur_subscriptionID]));
-          add_to_grid(ds_format_existing_policies.formatted[cur_subscriptionID], "updating")
-          name = ds_format_existing_policies.formatted[cur_subscriptionID].applied_policy_name
+          console.log("Child Policy needs to be updated. ds_format_existing_policies.formatted[childPolicyKey]="+JSON.stringify(ds_format_existing_policies.formatted[childPolicyKey]));
+          add_to_grid(ds_format_existing_policies.formatted[childPolicyKey], "updating")
+          name = ds_format_existing_policies.formatted[childPolicyKey].applied_policy_name
           // Add to_update
           grid_and_cwf.to_update.push({
-            "applied_policy_id": ds_format_existing_policies.formatted[cur_subscriptionID].applied_policy_id,
+            "applied_policy_id": ds_format_existing_policies.formatted[childPolicyKey].applied_policy_id,
             "name" : name,
             "description" : description,
             "credentials" : ds_format_self.credentials,
@@ -742,12 +852,12 @@ script "js_take_in_parameters", type: "javascript" do
         } else {
           // Child policy needs to be updated but is outside the max_actions limit
           // Add to grid but do not add to to_update
-          console.log("Child Policy needs to be updated. ds_format_existing_policies.formatted[cur_subscriptionID]="+JSON.stringify(ds_format_existing_policies.formatted[cur_subscriptionID]));
-          add_to_grid(ds_format_existing_policies.formatted[cur_subscriptionID], "to be updated");
+          console.log("Child Policy needs to be updated. ds_format_existing_policies.formatted[childPolicyKey]="+JSON.stringify(ds_format_existing_policies.formatted[childPolicyKey]));
+          add_to_grid(ds_format_existing_policies.formatted[childPolicyKey], "to be updated");
         }
       } else {
         // Child policy does not need to be updated
-        add_to_grid(ds_format_existing_policies.formatted[cur_subscriptionID], "running");
+        add_to_grid(ds_format_existing_policies.formatted[childPolicyKey], "running");
       }
     }
   }
@@ -888,7 +998,7 @@ policy "policy_scheduled_report" do
   validate $ds_idle_instances_combined_incidents do
     summary_template "Consolidated Incident: {{ len data }} Azure Databricks Idle Virtual Machines Found"
     escalate $esc_email
-    
+
     check eq(size(data), 0)
     export do
       resource_level true
@@ -1019,7 +1129,7 @@ policy "policy_scheduled_report" do
   validate $ds_underutilized_instances_combined_incidents do
     summary_template "Consolidated Incident: {{ len data }} Azure Databricks Underutilized Virtual Machines Found"
     escalate $esc_email
-    
+
     check eq(size(data), 0)
     export do
       resource_level true
@@ -1153,50 +1263,45 @@ policy "policy_scheduled_report" do
 The current status of Child Policies for **{{ data.parent_policy.name }}**:
 
 Total Child Applied Policies: {{ len data.grid }}
-
-| Applied Policy | Meta Child Policy Status | Policy Status | Policy Last Update | Incident | Incident State | Violation Count | Incident Last Update |
-| -------------- | ------------------------ | ------------- | ------------------ | -------- | -------------- | --------------- | -------------------- |
-{{ range data.grid -}}
-| {{- if .policy_link }} [{{ .policy_name }}]({{ .policy_link }}) {{ else }} {{ .policy_name }} {{- end }} | {{- if .meta_policy_status }} {{ .meta_policy_status }} {{ else }} No value {{- end }} | {{- if .policy_status }} {{ .policy_status }} {{ else }} No value {{- end }} | {{- if .policy_last_update }} {{ .policy_last_update }} {{ else }} No value {{- end }} | {{- if .incident_link }} [Incident]({{ .incident_link }}) {{ else }} No Incident {{- end }} | {{- if .incident_state }} {{ .incident_state }} {{ else }} No Incident {{- end }} | {{- if .incident_last_update }} {{ .incident_violation_data_count }} {{ else }} No Incident {{- end }} | {{- if .incident_last_update }} {{ .incident_last_update }} {{ else }} No Incident {{- end }} |
-{{ end -}}
-
 EOS
     check false
-    # Export Table disabled for now until UI can support URL / linking
-    # Without linking the `policy_link`, `incident_link` values are not usable directly from UI
-    # export "grid" do
-    #   resource_level true
-    #   field "id" do
-    #     label "Applied Policy ID"
-    #   end
-    #   field "policy_name" do
-    #     label "Applied Policy Name"
-    #   end
-    #   field "policy_link" do
-    #     label "Applied Policy Link"
-    #   end
-    #   field "meta_policy_status" do
-    #     label "Meta Child Policy Status"
-    #   end
-    #   field "policy_status" do
-    #     label "Policy Status"
-    #   end
-    #   field "policy_last_update" do
-    #     label "Policy Last Update"
-    #   end
-    #   field "incident_link" do
-    #     label "Incident Link"
-    #   end
-    #   field "incident_state" do
-    #     label "Incident State"
-    #   end
-    #   field "incident_violation_data_count" do
-    #     label "Incident Violation Count"
-    #   end
-    #   field "incident_last_update" do
-    #     label "Incident Last Update"
-    #   end
-    # end
+    export "grid" do
+      resource_level true
+      field "id" do
+        label "Applied Policy ID"
+      end
+      field "policy_href" do
+        label "Applied Policy Href"
+        format "link-external"
+      end
+      field "policy_name" do
+        label "Applied Policy Name"
+      end
+      field "policy_link" do
+        label "Applied Policy Link"
+      end
+      field "meta_policy_status" do
+        label "Meta Child Policy Status"
+      end
+      field "policy_status" do
+        label "Policy Status"
+      end
+      field "policy_last_update" do
+        label "Policy Last Update"
+      end
+      field "incident_link" do
+        label "Incident Link"
+      end
+      field "incident_state" do
+        label "Incident State"
+      end
+      field "incident_violation_data_count" do
+        label "Incident Violation Count"
+      end
+      field "incident_last_update" do
+        label "Incident Last Update"
+      end
+    end
   end
 
   # Create Child Policies Incident Check
