@@ -1,5 +1,9 @@
 # Changelog
 
+## v7.4
+
+- Policy action error logging modernized and now works as expected in EU/APAC
+
 ## v7.3
 
 - Corrected API issue when executing policy in APAC
