@@ -1,13 +1,13 @@
-name "Azure Untagged Resources"
+name "Azure Untagged Virtual Machines"
 rs_pt_ver 20180301
 type "policy"
-short_description "Find all taggable Azure resources missing any of the user provided tags with the option to update the tags. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/azure_untagged_resources) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Find all Azure virtual machines missing any of the user provided tags with the option to update the tags, power off the instance, or delete the instance. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/azure_untagged_vms) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Compliance"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "3.0",
+  version: "1.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Untagged Resources"
@@ -51,23 +51,6 @@ parameter "param_tags_boolean" do
   default "Any"
 end
 
-parameter "param_resourcetypes_allow_or_deny" do
-  type "string"
-  category "Filters"
-  label "Allow/Deny Resource Types"
-  description "Allow or Deny entered resource types. See the README for more details."
-  allowed_values "Allow", "Deny"
-  default "Allow"
-end
-
-parameter "param_resourcetypes_list" do
-  type "list"
-  category "Filters"
-  label "Allow/Deny Resource Type List"
-  description "A list of allowed or denied resource types. See the README for more details. Example: Microsoft.Compute/disks"
-  default []
-end
-
 parameter "param_subscriptions_allow_or_deny" do
   type "string"
   category "Filters"
@@ -100,6 +83,24 @@ parameter "param_regions_list" do
   label "Allow/Deny Regions List"
   description "A list of allowed or denied regions. See the README for more details."
   default []
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Power Off Instances", "Delete Instances"]
+  default []
+end
+
+parameter "param_skipshutdown" do
+  type "string"
+  category "Actions"
+  label "Power Off Type"
+  description "Whether to perform a graceful shutdown or a forced shutdown when powering off instances. Only applicable when taking action against instances."
+  allowed_values "Graceful", "Forced"
+  default "Graceful"
 end
 
 ###############################################################################
@@ -144,14 +145,6 @@ datasource "ds_applied_policy" do
     host rs_governance_host
     path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
     header "Api-Version", "1.0"
-  end
-end
-
-# Get list of resource types to filter untaggable resources from results
-datasource "ds_azure_resource_types" do
-  request do
-    host "raw.githubusercontent.com"
-    path "/flexera/policy_templates/master/data/azure/resource_types.json"
   end
 end
 
@@ -201,14 +194,14 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
 EOS
 end
 
-datasource "ds_azure_resources" do
+datasource "ds_azure_instances" do
   iterate $ds_azure_subscriptions_filtered
   request do
     auth $auth_azure
     pagination $pagination_azure
     host $param_azure_endpoint
-    path join(["/subscriptions/", val(iter_item, "id"), "/resources"])
-    query "api-version", "2020-06-01"
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Compute/virtualMachines"])
+    query "api-version", "2019-03-01"
     header "User-Agent", "RS Policies"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
     ignore_status [400, 403, 404]
@@ -216,78 +209,50 @@ datasource "ds_azure_resources" do
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "subscriptionId", val(iter_item, "id")
-      field "subscriptionName", val(iter_item, "name")
-      field "id", jmes_path(col_item,"id")
-      field "resourceGroup", get(4, split(jmes_path(col_item,"id"), '/'))
-      field "namespace", get(6, split(jmes_path(col_item,"id"), '/'))
-      field "region", jmes_path(col_item, "location")
+      field "resourceId", jmes_path(col_item, "id")
+      field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
+      field "resourceKind", jmes_path(col_item, "type")
       field "name", jmes_path(col_item, "name")
+      field "region", jmes_path(col_item, "location")
+      field "osType", jmes_path(col_item, "properties.storageProfile.osDisk.osType")
+      field "resourceType", jmes_path(col_item, "properties.hardwareProfile.vmSize")
       field "tags", jmes_path(col_item, "tags")
-      field "type", jmes_path(col_item, "type")
+      field "subscriptionId",val(iter_item, "id")
+      field "subscriptionName",val(iter_item, "name")
     end
   end
 end
 
-datasource "ds_azure_resources_region_filtered" do
-  run_script $js_azure_resources_region_filtered, $ds_azure_resources, $param_regions_allow_or_deny, $param_regions_list
+datasource "ds_azure_instances_region_filtered" do
+  run_script $js_azure_instances_region_filtered, $ds_azure_instances, $param_regions_allow_or_deny, $param_regions_list
 end
 
-script "js_azure_resources_region_filtered", type: "javascript" do
-  parameters "ds_azure_resources", "param_regions_allow_or_deny", "param_regions_list"
+script "js_azure_instances_region_filtered", type: "javascript" do
+  parameters "ds_azure_instances", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-'EOS'
   if (param_regions_list.length > 0) {
-    result = _.filter(ds_azure_resources, function(resource) {
-      include_resource = _.contains(param_regions_list, resource['region'])
+    result = _.filter(ds_azure_instances, function(vm) {
+      include_vm = _.contains(param_regions_list, vm['region'])
 
       if (param_regions_allow_or_deny == "Deny") {
-        include_resource = !include_resource
+        include_vm = !include_vm
       }
 
-      return include_resource
+      return include_vm
     })
   } else {
-    result = ds_azure_resources
+    result = ds_azure_instances
   }
 EOS
 end
 
-datasource "ds_azure_resources_type_filtered" do
-  run_script $js_azure_resources_type_filtered, $ds_azure_resources_region_filtered, $ds_azure_resource_types, $param_resourcetypes_allow_or_deny, $param_resourcetypes_list
+datasource "ds_azure_instances_missing_tags" do
+  run_script $js_azure_instances_missing_tags, $ds_azure_instances_region_filtered, $param_tags, $param_tags_boolean
 end
 
-script "js_azure_resources_type_filtered", type: "javascript" do
-  parameters "ds_azure_resources_region_filtered", "ds_azure_resource_types", "param_resourcetypes_allow_or_deny", "param_resourcetypes_list"
-  result "result"
-  code <<-'EOS'
-  if (param_resourcetypes_list.length > 0) {
-    result = _.filter(ds_azure_resources_region_filtered, function(resource) {
-      resourcetypes_list = _.map(param_resourcetypes_list, function(type) {
-        return type.toLowerCase().trim()
-      })
-
-      include_resource = _.contains(resourcetypes_list, resource['type'].toLowerCase().trim())
-
-      if (param_resourcetypes_allow_or_deny == "Deny") {
-        include_resource = !include_resource
-      }
-
-      // Filter out resources with untaggable resource types based on our list
-      return include_resource && ds_azure_resource_types[resource['type']]['supportsTags']
-    })
-  } else {
-    result = ds_azure_resources_region_filtered
-  }
-EOS
-end
-
-datasource "ds_azure_resources_missing_tags" do
-  run_script $js_azure_resources_missing_tags, $ds_azure_resources_type_filtered, $param_tags, $param_tags_boolean
-end
-
-script "js_azure_resources_missing_tags", type: "javascript" do
-  parameters "ds_azure_resources_type_filtered", "param_tags", "param_tags_boolean"
+script "js_azure_instances_missing_tags", type: "javascript" do
+  parameters "ds_azure_instances_region_filtered", "param_tags", "param_tags_boolean"
   result "result"
   code <<-'EOS'
   result = []
@@ -324,9 +289,9 @@ script "js_azure_resources_missing_tags", type: "javascript" do
 
   if (comparators.length > 0) {
     // Check each VM for missing tags
-    _.each(ds_azure_resources_type_filtered, function(resource) {
-      resource_tags = resource['tags']
-      if (typeof(resource_tags) != 'object') { resource_tags = {} }
+    _.each(ds_azure_instances_region_filtered, function(vm) {
+      vm_tags = vm['tags']
+      if (typeof(vm_tags) != 'object') { vm_tags = {} }
 
       // Store a list of missing tags
       missing_tags = []
@@ -335,109 +300,64 @@ script "js_azure_resources_missing_tags", type: "javascript" do
         comparison = comparator['comparison']
         value = comparator['value']
         string = comparator['string']
-        resource_tag = resource_tags[comparator['key']]
+        vm_tag = vm_tags[comparator['key']]
 
-        if (comparison == 'key' && resource_tag == undefined) { missing_tags.push(string) }
-        if (comparison == '==' && resource_tag != value) { missing_tags.push(string) }
-        if (comparison == '!=' && resource_tag == value) { missing_tags.push(string) }
+        if (comparison == 'key' && vm_tag == undefined) { missing_tags.push(string) }
+        if (comparison == '==' && vm_tag != value) { missing_tags.push(string) }
+        if (comparison == '!=' && vm_tag == value) { missing_tags.push(string) }
 
         if (comparison == '=~') {
-          if (resource_tag == undefined) { missing_tags.push(string) }
-          if (resource_tag != undefined && !value.test(resource_tag)) { missing_tags.push(string) }
+          if (vm_tag == undefined) { missing_tags.push(string) }
+          if (vm_tag != undefined && !value.test(vm_tag)) { missing_tags.push(string) }
         }
 
         if (comparison == '!~') {
-          if (resource_tag != undefined && value.test(resource_tag)) { missing_tags.push(string) }
+          if (vm_tag != undefined && value.test(vm_tag)) { missing_tags.push(string) }
         }
       })
 
       if (missing_tags.length == comparators.length || (missing_tags.length > 0 && param_tags_boolean == 'Any')) {
-        new_resource = resource
-        new_resource['missing_tags'] = missing_tags
-        result.push(new_resource)
+        new_vm = vm
+        new_vm['missing_tags'] = missing_tags
+        result.push(new_vm)
       }
     })
   }
 EOS
 end
 
-datasource "ds_azure_providers" do
-  request do
-    run_script $js_azure_providers, $ds_azure_subscriptions_filtered, $param_azure_endpoint
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "value[*]") do
-      field "id", jmes_path(col_item, "id")
-      field "namespace", jmes_path(col_item, "namespace")
-      field "resourceTypes", jmes_path(col_item, "resourceTypes")
-    end
-  end
-end
-
-script "js_azure_providers", type: "javascript" do
-  parameters "ds_azure_subscriptions_filtered", "param_azure_endpoint"
-  result "request"
-  code <<-EOS
-  request = {
-    auth: "auth_azure",
-    pagination: "pagination_azure",
-    host: param_azure_endpoint,
-    path: ["/subscriptions/", ds_azure_subscriptions_filtered[0]['id'], "/providers"].join(''),
-    query_params: { "api-version": "2021-04-01" }
-  }
-EOS
-end
-
-datasource "ds_azure_api_versions" do
-  run_script $js_azure_api_versions, $ds_azure_providers
-end
-
-script "js_azure_api_versions", type: "javascript" do
-  parameters "ds_azure_providers"
-  result "result"
-  code <<-'EOS'
-  result = {}
-
-  _.each(ds_azure_providers, function(provider) {
-    _.each(provider['resourceTypes'], function(item) {
-      resource_type = [provider['namespace'], item['resourceType']].join('/').toLowerCase().trim()
-      result[resource_type] = item['apiVersions'][0]
-    })
-  })
-EOS
-end
-
 datasource "ds_missing_tags_incident" do
-  run_script $js_missing_tags_incident, $ds_azure_resources_missing_tags, $ds_applied_policy, $ds_azure_api_versions, $param_tags, $param_tags_boolean
+  run_script $js_missing_tags_incident, $ds_azure_instances_missing_tags, $ds_applied_policy, $param_tags, $param_tags_boolean
 end
 
 script "js_missing_tags_incident", type: "javascript" do
-  parameters "ds_azure_resources_missing_tags", "ds_applied_policy", "ds_azure_api_versions", "param_tags", "param_tags_boolean"
+  parameters "ds_azure_instances_missing_tags", "ds_applied_policy", "param_tags", "param_tags_boolean"
   result "result"
   code <<-'EOS'
-  result = _.map(ds_azure_resources_missing_tags, function(resource) {
-    resource_tags = []
+  result = _.map(ds_azure_instances_missing_tags, function(instance) {
+    instance_tags = []
 
-    if (typeof(resource['tags']) == 'object') {
-      _.each(Object.keys(resource['tags']), function(key) {
-        resource_tags.push(key + '=' + resource['tags'][key])
+    if (typeof(instance['tags']) == 'object') {
+      _.each(Object.keys(instance['tags']), function(key) {
+        instance_tags.push(key + '=' + instance['tags'][key])
       })
     }
 
     return {
-      accountID: resource['subscriptionId'],
-      accountName: resource['subscriptionName'],
-      resourceGroup: resource['resourceGroup'],
-      resourceName: resource['name'],
-      resourceID: resource['id'],
-      resourceType: resource['type'],
-      region: resource['region'],
-      tags_object: resource['tags'],
-      tags: resource_tags.join(', '),
-      missing_tags: resource['missing_tags'].join(', '),
+      accountID: instance['subscriptionId'],
+      accountName: instance['subscriptionName'],
+      resourceGroup: instance['resourceGroup'],
+      resourceName: instance['name'],
+      resourceID: instance['resourceId'],
+      resourceType: instance['resourceType'],
+      resourceKind: instance['resourceKind'],
+      region: instance['region'],
+      osType: instance['osType'],
+      tags_object: instance['tags'],
+      service: 'Microsoft.Compute',
+      tags: instance_tags.join(', '),
+      missing_tags: instance['missing_tags'].join(', '),
       policy_name: ds_applied_policy['name'],
-      api_version: ds_azure_api_versions[resource['type'].toLowerCase().trim()],
       message: ""
     }
   })
@@ -445,15 +365,15 @@ script "js_missing_tags_incident", type: "javascript" do
   // Dummy item to ensure that the check statement in the policy executes at least once
   result.push({
     accountID: "",    accountName: "",   resourceGroup: "",  resourceName: "",
-    resourceID: "",   resourceType: "",  region: "",         tags_object: "",
-    tags: "",         policy_name: "",   api_version: "",    missing_tags: "",
-    message: ""
+    resourceID: "",   resourceType: "",  resourceKind: "",   region: "",
+    osType: "",       tags_object: "",   service: "",        tags: "",
+    policy_name: "",  message: "",       missing_tags: ""
   })
 
   phrase = "one or more"
   if (param_tags_boolean == "All") { phrase = "all" }
 
-  message = ["The following Azure resources are missing ", phrase, " of the following tags:\n\n"].join('')
+  message = ["The following Azure virtual machines are missing ", phrase, " of the following tags:\n\n"].join('')
   tag_list = _.map(param_tags, function(tag) { return ["- ", tag, "\n"].join('') }).join('')
   disclaimer = "\nThe above settings can be modified by editing the applied policy and changing the appropriate parameters."
 
@@ -461,19 +381,22 @@ script "js_missing_tags_incident", type: "javascript" do
 EOS
 end
 
+
 ###############################################################################
 # Policy
 ###############################################################################
 
 policy "pol_azure_missing_tags" do
   validate_each $ds_missing_tags_incident do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Resources Missing Tags Found"
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Virtual Machines Missing Tags Found"
     detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     escalate $esc_tag_instances
-    hash_exclude "message", "api_version"
+    escalate $esc_poweroff_instances
+    escalate $esc_delete_instances
+    hash_exclude "message"
     export do
       resource_level true
       field "accountID" do
@@ -498,13 +421,19 @@ policy "pol_azure_missing_tags" do
         label "Missing Tags"
       end
       field "resourceType" do
-        label "Resource Type"
+        label "Instance Size"
+      end
+      field "resourceKind" do
+        label "Resource Kind"
       end
       field "region" do
         label "Region"
       end
-      field "api_version" do
-        label "Azure API Version"
+      field "osType" do
+        label "Operating System"
+      end
+      field "service" do
+        label "Service"
       end
       field "id" do
         label "ID"
@@ -542,6 +471,20 @@ escalation "esc_tag_instances" do
   run "tag_instances", data, $param_azure_endpoint, $param_tags_to_add
 end
 
+escalation "esc_poweroff_instances" do
+  automatic contains($param_automatic_action, "Power Off Instances")
+  label "Power Off Instances"
+  description "Approval to power off all selected instances"
+  run "poweroff_instances", data, $param_azure_endpoint, $param_skipshutdown
+end
+
+escalation "esc_delete_instances" do
+  automatic contains($param_automatic_action, "Delete Instances")
+  label "Delete Instances"
+  description "Approval to delete all selected instances"
+  run "delete_instances", data, $param_azure_endpoint
+end
+
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
@@ -561,7 +504,7 @@ define tag_instances($data, $param_azure_endpoint, $param_tags_to_add) return $a
 end
 
 define tag_instance($instance, $param_azure_endpoint, $param_tags_to_add) return $response do
-  $tags = $instance["tags_object"]
+  $tags = $instance['tags_object']
 
   if $tags == null
     $tags = {}
@@ -575,7 +518,7 @@ define tag_instance($instance, $param_azure_endpoint, $param_tags_to_add) return
 
   $host = $param_azure_endpoint
   $href = $instance["id"]
-  $params = "?api-version=" + $instance["api_version"]
+  $params = "?api-version=2023-07-01"
   $url = $host + $href + $params
   task_label("PATCH " + $url)
 
@@ -585,17 +528,104 @@ define tag_instance($instance, $param_azure_endpoint, $param_tags_to_add) return
     verb: "patch",
     host: $host,
     href: $href,
-    query_strings: { "api-version": $instance["api_version"] },
+    query_strings: { "api-version": "2023-07-01" },
     body: { "tags": $tags }
   )
 
-  task_label("Patch Azure resource response: " + $instance["id"] + " " + to_json($response))
+  task_label("Patch Azure VM instance response: " + $instance["id"] + " " + to_json($response))
   $$all_responses << to_json({"req": "PATCH " + $url, "resp": $response})
 
   if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
-    raise "Unexpected response patching Azure resource: "+ $instance["id"] + " " + to_json($response)
+    raise "Unexpected response patching Azure VM instance: "+ $instance["id"] + " " + to_json($response)
   else
-    task_label("Patch Azure resource successful: " + $instance["id"])
+    task_label("Patch Azure VM instance successful: " + $instance["id"])
+  end
+end
+
+define poweroff_instances($data, $param_azure_endpoint, $param_skipshutdown) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call poweroff_instance($instance, $param_azure_endpoint, $param_skipshutdown) retrieve $poweroff_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+define poweroff_instance($instance, $param_azure_endpoint, $param_skipshutdown) return $response do
+  $host = $param_azure_endpoint
+  $href = $instance["id"] + "/powerOff"
+  $params = "?api-version=2023-07-01"
+  $url = $host + $href + $params
+  task_label("POST " + $url)
+
+  $query_strings = { "api-version": "2023-07-01" }
+
+  if $param_skipshutdown == "Forced"
+    $query_strings["skipShutdown"] = "true"
+    $params = $params + "&skipShutdown=true"
+  end
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "post",
+    host: $host,
+    href: $href,
+    query_strings: $query_strings
+  )
+
+  task_label("Power off Azure VM instance response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response powering off Azure VM instance: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Power off Azure VM instance successful: " + $instance["id"])
+  end
+end
+
+define delete_instances($data, $param_azure_endpoint) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call delete_instance($instance, $param_azure_endpoint) retrieve $delete_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+define delete_instance($instance, $param_azure_endpoint) return $response do
+  $host = $param_azure_endpoint
+  $href = $instance["id"]
+  $params = "?api-version=2023-07-01"
+  $url = $host + $href + $params
+  task_label("DELETE " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "delete",
+    host: $host,
+    href: $href,
+    query_strings: { "api-version": "2023-07-01" }
+  )
+
+  task_label("Delete Azure VM instance response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response deleting Azure VM instance: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Delete Azure VM instance successful: " + $instance["id"])
   end
 end
 

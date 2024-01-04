@@ -111,7 +111,6 @@ These templates can generate savings estimates for your environment.
 
 - [Azure Regulatory Compliance](./compliance/azure/compliance_score)
 - [Azure Tag Resources with Resource Group Name](./compliance/tags/azure_rg_tags)
-- [Azure Untagged Resources](./compliance/azure/azure_untagged_resources)
 
 - Compute
 
@@ -119,6 +118,8 @@ These templates can generate savings estimates for your environment.
   - [Azure Disallowed Regions](./compliance/azure/azure_disallowed_regions)
   - [Azure Instances not running FlexNet Inventory Agent](./compliance/azure/instances_without_fnm_agent)
   - [Azure Long Stopped Instances](./compliance/azure/azure_long_stopped_instances)
+  - [Azure Untagged Resources](./compliance/azure/azure_untagged_resources)
+  - [Azure Untagged Virtual Machines](./compliance/azure/azure_untagged_vms)
 
 - Identity
 
@@ -298,6 +299,10 @@ These templates can generate savings estimates for your environment.
 
   - [AWS Savings Realized from Reservations](./cost/aws/savings_realized)
 
+- Cloud Cost Optimization
+
+  - [Scheduled Report](./cost/scheduled_reports)
+
 #### Flexera Cloud Management
 
 - [Inefficient Instance Utilization using RightLink Add Tags](./cost/rightlink_rightsize)
@@ -322,7 +327,6 @@ These templates can generate savings estimates for your environment.
 - [Monthly Actual v. Budgeted Spend Report](./cost/budget_v_actual)
 - [New Service Usage](./cost/new_service_usage)
 - [Reserved Instance Report by Billing Center](./cost/aws/reserved_instances/report_by_bc)
-- [Scheduled Report](./cost/scheduled_reports)
 - [Vendor Commitment Forecast](./cost/forecasting/commitment_forecast)
 
 #### GCE
@@ -412,6 +416,10 @@ These templates can generate savings estimates for your environment.
   - [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks)
   - [Expiring Azure Certificates](./operational/azure/azure_certificates)
 
+- Marketplace
+
+  - [Azure Migrate Integration](./operational/azure/azure_migrate)
+
 - Tags
 
   - [Azure Tag Cardinality Report](./operational/azure/tag_cardinality)
@@ -429,7 +437,6 @@ These templates can generate savings estimates for your environment.
 #### Flexera Cloud Management
 
 - [Applied Policy Error Notification](./operational/applied_policy_error_notification)
-- [Azure Migrate Integration](./operational/azure/azure_migrate)
 
 #### Flexera ITAM
 
@@ -624,14 +631,14 @@ These templates can generate savings estimates for your environment.
 <!--
 ---
 :categories:
-  Compliance: 33
+  Compliance: 34
   Cost: 96
   Operational: 23
   SaaS Management: 12
   Security: 74
 :optimization_count: 43
 :policy_sets:
-  '': 82
+  '': 81
   AWS Config: 1
   Allocate VMs: 3
   CIS: 61
@@ -652,7 +659,7 @@ These templates can generate savings estimates for your environment.
   Long Stopped Instances: 3
   N/A: 1
   Native Recommendations: 1
-  New Marketplace Products: 2
+  New Marketplace Products: 3
   Object Store Optimization: 3
   Old Snapshots: 3
   Open Buckets: 1
@@ -676,7 +683,7 @@ These templates can generate savings estimates for your environment.
   Superseded Compute Instances: 2
   Tag Cardinality: 2
   Unlabeled Resources: 1
-  Untagged Resources: 1
+  Untagged Resources: 2
   Untagged resources: 1
   Unused Database Services: 1
   Unused IP Addresses: 3
@@ -685,13 +692,13 @@ These templates can generate savings estimates for your environment.
 :providers:
   '': 1
   AWS: 76
-  Azure: 77
+  Azure: 79
   Azure China: 1
-  Flexera: 5
-  Flexera Cloud Management: 4
+  Flexera: 6
+  Flexera Cloud Management: 3
   Flexera FNMS: 1
   Flexera ITAM: 5
-  Flexera Optima: 25
+  Flexera Optima: 24
   Flexera RISC: 2
   Flexera SaaS Manager: 9
   GCE: 8
@@ -703,15 +710,16 @@ These templates can generate savings estimates for your environment.
   Oracle: 1
   ServiceNow: 1
 :services:
-  '': 63
+  '': 60
   AKS: 2
   All: 1
   App Service: 1
   Blob Store: 1
   CCO: 1
+  Cloud Cost Optimization: 1
   CloudTrail: 7
   Common Bill Ingestion: 2
-  Compute: 48
+  Compute: 50
   Config: 1
   Cost Explorer: 1
   DBS: 1
@@ -725,7 +733,7 @@ These templates can generate savings estimates for your environment.
   KMS: 1
   Kubernetes: 2
   Lambda: 1
-  Marketplace: 2
+  Marketplace: 3
   MySQL: 2
   Network: 1
   Network Security Group: 2
@@ -743,7 +751,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 238
+:total_count: 239
 -->
 <!-- End Policy Template Stats -->
 

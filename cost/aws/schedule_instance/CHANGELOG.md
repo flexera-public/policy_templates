@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.2
+
+- Improved logging, and error capture/handling
+
 ## v4.1
 
 - Updated description of `Account Number` parameter

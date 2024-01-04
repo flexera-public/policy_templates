@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "7.4",
+  version: "7.5",
   provider: "AWS",
   service: "Storage",
   policy_set: "Old Snapshots",
@@ -1079,180 +1079,164 @@ end
 # Cloud Workflow
 ###############################################################################
 
-define delete_snapshots($data, $param_snapshot_include_ami) do
-  # Change "No" to "Yes" to enable CWF debug logging
-  $log_to_cm_audit_entries = "No"
+define delete_snapshots($data, $param_snapshot_include_ami) return $all_responses do
+  $$all_responses = []
 
-  $$debug = $log_to_cm_audit_entries == "Yes"
-  # $$errors global to append error messages from subtasks
-  $$errors = []
-
-  # Images need to be deregistered before snapshots can be deleted
-  # Check if Deregister Image parameter is enabled
-  if $param_snapshot_include_ami == "Yes"
-    # Loop through all the old snapshots and deregister the image
-    foreach $item in $data do
-      if $item['service'] == "EBS"
-        sub on_error: skip_error_and_append($item["imageId"]) do
-          # Only deregister if snapshot is mapped to an image
-          if $item['imageId'] != ""
-            call deregisterImageFromSnapshot($item["imageId"], $item["region"], $$errors) retrieve $$errors
-          end
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      if $param_snapshot_include_ami == "Yes"
+        if $instance['service'] == "EBS" && $instance['imageId'] != ""
+          call deregister_image($instance) retrieve $deregister_response
+          $$all_responses << $deregister_response
         end
       end
+
+      if $instance['service'] == "EBS"
+        call delete_snapshot_ec2($instance) retrieve $delete_snapshot_response
+      elsif $instance['service'] == "RDS"
+        if $instance['dbInstanceId'] != ""
+          call delete_snapshot_db_instance($instance) retrieve $delete_snapshot_response
+        elsif $instance['dbClusterId'] != ""
+          call delete_snapshot_db_cluster($instance) retrieve $delete_snapshot_response
+        end
+      end
+
+      $$all_responses << $delete_snapshot_response
     end
   end
 
-  # Images have been deregistered, so we can delete the snapshots
-  # Loop through all the old snapshots and delete them
-  foreach $item in $data do
-    # Run each item in it's own sub task to collect all errors for all items before raising errror
-    sub on_error: skip_error_and_append($item["id"]) do
-      if $item['service'] == "EBS"
-        call ec2_delete_snapshot($item, $$errors) retrieve $$errors
-      elsif $item['service'] == "RDS"
-        if $item['dbInstanceId'] != ""
-          call rds_delete_db_instance_snapshot($item, $$errors) retrieve $$errors
-        elsif $item['dbClusterId'] != ""
-          call rds_delete_db_cluster_snapshot($item, $$errors) retrieve $$errors
-        end
-      end
-    end
-  end
-
-  # Raise error if any errors were collected
-  if size($$errors) > 0
-    $error = join($$errors, "\n")
-    call sys_log("Errors", $error)
-    raise $error
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
   end
 end
 
-define deregisterImageFromSnapshot($image, $region, $errors) return $errors do
-  $deregister_response = http_request(
+define deregister_image($instance) return $response do
+  $host = "ec2." + $instance["region"] + ".amazonaws.com"
+  $href = "/"
+  $params = "?Action=DeregisterImage&Version=2016-11-15&ImageId=" + strip($instance["imageId"])
+  $url = $host + $href + $params
+  task_label("GET " + $url)
+
+  $response = http_request(
     auth: $$auth_aws,
     https: true,
     verb: "get",
-    host: "ec2." + $region + ".amazonaws.com",
-    href: "/",
+    href: $href,
+    host: $host,
     query_strings: {
-    "Action": "DeregisterImage",
-    "Version": "2016-11-15",
-    "ImageId": strip($image)
+      "Action": "DeregisterImage",
+      "Version": "2016-11-15",
+      "ImageId": strip($instance["imageId"])
     }
   )
-  call check_response_and_append_if_error($deregister_response, "Deregister Image", $errors) retrieve $errors
-  $deregisterResponseResult = $deregister_response["code"]
-  if $deregisterResponseResult != 200
-    call sys_log("Deregister image snapshot", to_s($deregister_response))
+
+  task_label("Get AWS EC2 image response: " + $instance["resourceID"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
+
+  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
+    raise "Unexpected response getting AWS EC2 image: "+ $instance["resourceID"] + " " + to_json($response)
+  else
+    task_label("Get AWS EC2 image successful: " + $instance["resourceID"])
   end
 end
 
-define ec2_delete_snapshot($snapshot, $errors) return $errors do
-  $delete_response = http_request(
+define delete_snapshot_ec2($instance) return $response do
+  $host = "ec2." + $instance["region"] + ".amazonaws.com"
+  $href = "/"
+  $params = "?Action=DeleteSnapshot&Version=2016-11-15&SnapshotId.1=" + strip($instance["resourceID"])
+  $url = $host + $href + $params
+  task_label("GET " + $url)
+
+  $response = http_request(
     auth: $$auth_aws,
     https: true,
     verb: "get",
-    host: "ec2." + $snapshot["region"] + ".amazonaws.com",
-    href: "/",
+    href: $href,
+    host: $host,
     query_strings: {
       "Action": "DeleteSnapshot",
       "Version": "2016-11-15",
-      "SnapshotId.1": strip($snapshot["id"])
+      "SnapshotId.1": strip($instance["resourceID"])
     }
   )
-  call check_response_and_append_if_error($delete_response, "Delete Snapshot", $errors) retrieve $errors
-  $splitResult = $delete_response["code"]
-  if $splitResult != 200
-    call sys_log("Inside ec2_delete_snapshot definition", to_s($delete_response))
+
+  task_label("Get AWS EC2 snapshot response: " + $instance["resourceID"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
+
+  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
+    raise "Unexpected response getting AWS EC2 snapshot: "+ $instance["resourceID"] + " " + to_json($response)
+  else
+    task_label("Get AWS EC2 snapshot successful: " + $instance["resourceID"])
   end
 end
 
-define rds_delete_db_instance_snapshot($snapshot, $errors) return $errors do
-  $delete_response = http_request(
+define delete_snapshot_db_instance($instance) return $response do
+  $host = "rds." + $instance["region"] + ".amazonaws.com"
+  $href = "/"
+  $params = "?Action=DeleteDBSnapshot&Version=2014-10-31&DBSnapshotIdentifier=" + strip($instance["resourceID"])
+  $url = $host + $href + $params
+  task_label("GET " + $url)
+
+  $response = http_request(
     auth: $$auth_aws,
     https: true,
     verb: "get",
-    host: 'rds.' + $snapshot["region"] + '.amazonaws.com',
-    href: "/",
-    headers: {
-      "User-Agent": "RS Policies"
-    },
+    href: $href,
+    host: $host,
     query_strings: {
-      'Action': 'DeleteDBSnapshot',
-      'Version': '2014-10-31',
-      'DBSnapshotIdentifier': strip($snapshot["id"])
+      "Action": "DeleteDBSnapshot",
+      "Version": "2014-10-31",
+      "DBSnapshotIdentifier": strip($instance["resourceID"])
     }
   )
 
-  call check_response_and_append_if_error($delete_response, "Delete Snapshot", $errors) retrieve $errors
-  $splitResult = $delete_response["code"]
-  if $splitResult != 200
-    call sys_log("Inside rds_delete_db_instance_snapshot definition", to_s($delete_response))
+  task_label("Get AWS DB instance snapshot response: " + $instance["resourceID"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
+
+  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
+    raise "Unexpected response getting AWS DB instance snapshot: "+ $instance["resourceID"] + " " + to_json($response)
+  else
+    task_label("Get AWS DB instance snapshot successful: " + $instance["resourceID"])
   end
 end
 
-define rds_delete_db_cluster_snapshot($snapshot, $errors) return $errors do
-  $delete_response = http_request(
+define delete_snapshot_db_cluster($instance) return $response do
+  $host = "rds." + $instance["region"] + ".amazonaws.com"
+  $href = "/"
+  $params = "?Action=DeleteDBClusterSnapshot&Version=2014-10-31&DBClusterSnapshotIdentifier=" + strip($instance["resourceID"])
+  $url = $host + $href + $params
+  task_label("GET " + $url)
+
+  $response = http_request(
     auth: $$auth_aws,
     https: true,
     verb: "get",
-    host: 'rds.' + $snapshot["region"] + '.amazonaws.com',
-    href: "/",
-    headers: {
-      "User-Agent": "RS Policies"
-    },
+    href: $href,
+    host: $host,
     query_strings: {
-      'Action': 'DeleteDBClusterSnapshot',
-      'Version': '2014-10-31',
-      'DBClusterSnapshotIdentifier': strip($snapshot["id"])
+      "Action": "DeleteDBClusterSnapshot",
+      "Version": "2014-10-31",
+      "DBClusterSnapshotIdentifier": strip($instance["resourceID"])
     }
   )
 
-  call check_response_and_append_if_error($delete_response, "Delete Snapshot", $errors) retrieve $errors
-  $splitResult = $delete_response["code"]
-  if $splitResult != 200
-    call sys_log("Inside rds_delete_db_cluster_snapshot definition", to_s($delete_response))
+  task_label("Get AWS DB cluster snapshot response: " + $instance["resourceID"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
+
+  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
+    raise "Unexpected response getting AWS DB cluster snapshot: "+ $instance["resourceID"] + " " + to_json($response)
+  else
+    task_label("Get AWS DB cluster snapshot successful: " + $instance["resourceID"])
   end
 end
 
-define check_response_and_append_if_error($response, $request_description, $errors) return $errors do
-  if $response["code"] > 299 || $response["code"] < 200
-    $errors << "Unexpected status code from " + $request_description + " request\n  " + to_s($response)
-  end
-end
-
-define sys_log($subject, $detail) do
-  # Create empty errors array if doesn't already exist
+define handle_error() do
   if !$$errors
     $$errors = []
   end
-  # Check if debug is enabled
-  if $$debug
-    # Append to global $$errors
-    # This is the suggested way to capture errors
-    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
-    # If Flexera NAM Zone, create audit_entries [to be deprecated]
-    # This is the legacy method for capturing errors and only supported on Flexera NAM
-    if $$rs_optima_host == "api.optima.flexeraeng.com"
-      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
-      $task_label = "Creating audit entry for " + $subject
-      sub task_label: $task, on_error: skip_error_and_append($task) do
-        rs_cm.audit_entries.create(
-          notify: "None",
-          audit_entry: {
-            auditee_href: @@account,
-            summary: $subject,
-            detail: $detail
-          }
-        )
-      end # End sub on_error
-    end # End if rs_optima_host
-  end # End if debug is enabled
-end
-
-define skip_error_and_append($subject) do
-  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
   $_error_behavior = "skip"
 end
 

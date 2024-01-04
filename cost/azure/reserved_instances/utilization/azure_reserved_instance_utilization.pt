@@ -7,7 +7,7 @@ severity "medium"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "2.8",
+  version: "3.0",
   provider: "Azure",
   service: "Compute",
   policy_set: ""
@@ -16,12 +16,6 @@ info(
 ###############################################################################
 # Parameters
 ###############################################################################
-
-# Could maybe get this from the EA key, but for now just ask for it
-parameter "param_enrollment_id" do
-  type "string"
-  label "Azure Enrollment ID"
-end
 
 parameter "param_utilization" do
   category "RI"
@@ -51,25 +45,28 @@ end
 
 parameter "param_email" do
   type "list"
-  label "Email addresses of the recipients you wish to notify"
+  category "Policy Settings"
+  label "Email addresses"
+  description "A list of email addresses to notify."
+  default []
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-credentials "azure_ea_auth" do
-  schemes "api_key"
+credentials "auth_azure" do
+  schemes "oauth2"
   label "Azure"
-  description "Select the Azure EA Credential from the list."
-  tags "provider=azure_ea"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
 end
 
 ###############################################################################
 # Pagination
 ###############################################################################
 
-pagination "azure_pagination" do
+pagination "pagination_azure" do
   get_page_marker do
     body_path "nextLink"
   end
@@ -91,57 +88,150 @@ datasource "ds_currency_reference" do
   end
 end
 
-#GET RESERVATION CHARGES DETAILS - https://docs.microsoft.com/en-us/rest/api/billing/enterprise/billing-enterprise-api-reserved-instance-charges
-datasource "ds_reservation_charges" do
+#GET LIST OF BILLING ACCOUNTS
+datasource "ds_billing_accounts" do
   request do
-    run_script $js_get_reservation_charges, $param_azure_endpoint, $param_enrollment_id
+    auth $auth_azure
+    host $param_azure_endpoint
+    path "/providers/Microsoft.Billing/billingAccounts"
+    query "api-version", "2019-10-01-preview"
   end
   result do
     encoding "json"
-    collect jmes_path(response, "[*]") do
-      field "billingFrequency", jmes_path(col_item, "billingFrequency")
-      field "purchasingEnrollment", jmes_path(col_item, "purchasingEnrollment")
-      field "currentEnrollment", jmes_path(col_item, "currentEnrollment")
-      field "skuName", jmes_path(col_item, "armSkuName")
-      field "term", jmes_path(col_item, "term")
-      field "region", jmes_path(col_item, "region")
-      field "purchasingSubscriptionGuid", jmes_path(col_item, "purchasingSubscriptionGuid")
-      field "purchasingSubscriptionName", jmes_path(col_item, "purchasingSubscriptionName")
-      field "departmentName", jmes_path(col_item, "departmentName")
-      field "costCenter", jmes_path(col_item, "costCenter")
-      field "eventDate", jmes_path(col_item, "eventDate")
-      field "eventType", jmes_path(col_item, "eventType")
-      field "reservationOrderId", jmes_path(col_item, "reservationOrderId")
-      field "reservationOrderName", jmes_path(col_item, "reservationOrderName")
-      field "quantity", jmes_path(col_item, "quantity")
-      field "amount", jmes_path(col_item, "amount")
-      field "currency", jmes_path(col_item, "currency")
-      field "description", jmes_path(col_item,"description")
+    collect jmes_path(response, "value") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "agreementType", jmes_path(col_item, "properties.agreementType")
+      field "currency", jmes_path(col_item, "enrollmentDetails.currency")
     end
   end
 end
 
-script "js_get_reservation_charges", type: "javascript" do
-  parameters "param_azure_endpoint", "param_enrollment_id"
+#GET LIST OF BILLING PROFILES (IF TYPE IS MICROSOFT CUSTOMER AGREEMENT)
+datasource "ds_billing_profiles" do
+  iterate $ds_billing_accounts
+  request do
+    auth $auth_azure
+    host $param_azure_endpoint
+    path join(["/providers/Microsoft.Billing/billingAccounts/", val(iter_item, "name"), "/billingProfiles" ])
+    query "api-version", "2020-05-01"
+    ignore_status [400]   # Required for policy to not error for EA Customers (as EA Customers do not have concept of billing profile)
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value") do
+      field "billingAccountId", val(iter_item, "id")
+      field "billingAccountName", val(iter_item, "name")
+      field "agreementType", val(iter_item, "agreementType")
+      field "billingAccountCurrency", val(iter_item, "currency")
+      field "billingProfileId", jmes_path(col_item, "id")
+      field "billingProfileName", jmes_path(col_item, "name")
+      field "billingProfileCurrency", jmes_path(col_item, "properties.currency")
+    end
+  end
+end
+
+#IDENTIFY WHETHER ENTERPRISE AGREEMENT (EA) OR MICROSOFT CUSTOMER AGREEMENT (MCA)
+datasource "ds_billing_details" do
+  run_script $js_get_billing_details, $ds_billing_profiles, $ds_billing_accounts
+end
+
+script "js_get_billing_details", type: "javascript" do
+  parameters "ds_billing_profiles", "ds_billing_accounts"
+  result "result"
+  code <<-EOS
+    result = []
+
+    console.log("Billing Accounts:", ds_billing_accounts)
+    console.log("Billing Profiles:", ds_billing_profiles)
+    _.each(ds_billing_accounts, function(acc) {
+      if (acc.agreementType == "EnterpriseAgreement") {
+        result.push({
+          "id": acc.id,
+          "name": acc.name,
+          "agreementType": acc.agreementType,
+          "currency": acc.currency
+        })
+      } else {
+        var billing_profiles = _.filter(ds_billing_profiles, function(prof) { return acc.name == prof.billingAccountName })
+        _.each(billing_profiles, function(prof) {
+          result.push({
+            "id": prof.billingProfileId,
+            "name": prof.billingProfileName,
+            "agreementType": prof.agreementType,
+            "currency": prof.billingProfileCurrency
+          })
+        })
+      }
+    })
+  EOS
+end
+
+
+
+#GET RESERVATION TRANSACTION DETAILS - https://learn.microsoft.com/en-us/rest/api/consumption/reservation-transactions/list?tabs=HTTP
+#Details on Migration from EA - https://learn.microsoft.com/en-us/azure/cost-management-billing/automate/migrate-ea-reporting-arm-apis-overview
+datasource "ds_reservation_transactions" do
+  iterate $ds_billing_details
+  request do
+    run_script $js_get_reservation_transactions, $param_azure_endpoint, val(iter_item, "id")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value") do
+      field "billingAccountId", val(iter_item, "id")
+      field "billingAccountName", val(iter_item, "name")
+      field "agreementType", val(iter_item, "agreementType")
+      field "billingFrequency", jmes_path(col_item, "properties.billingFrequency")
+      field "billingMonth", jmes_path(col_item, "properties.billingMonth")
+      field "purchasingEnrollment", jmes_path(col_item, "properties.purchasingEnrollment")
+      field "currentEnrollment", jmes_path(col_item, "properties.currentEnrollment")
+      field "skuName", jmes_path(col_item, "properties.armSkuName")
+      field "term", jmes_path(col_item, "properties.term")
+      field "region", jmes_path(col_item, "properties.region")
+      field "purchasingSubscriptionGuid", jmes_path(col_item, "properties.purchasingSubscriptionGuid")
+      field "purchasingSubscriptionName", jmes_path(col_item, "properties.purchasingSubscriptionName")
+      field "departmentName", jmes_path(col_item, "properties.departmentName")
+      field "costCenter", jmes_path(col_item, "properties.costCenter")
+      field "eventDate", jmes_path(col_item, "properties.eventDate")
+      field "eventType", jmes_path(col_item, "properties.eventType")
+      field "reservationOrderId", jmes_path(col_item, "properties.reservationOrderId")
+      field "reservationOrderName", jmes_path(col_item, "properties.reservationOrderName")
+      field "quantity", jmes_path(col_item, "properties.quantity")
+      field "amount", jmes_path(col_item, "properties.amount")
+      field "currency", jmes_path(col_item, "properties.currency")
+      field "description", jmes_path(col_item, "properties.description")
+      field "accountName", jmes_path(col_item, "properties.accountName")
+      field "accountOwnerEmail", jmes_path(col_item, "properties.accountOwnerEmail")
+      field "monetaryCommitment", jmes_path(col_item, "properties.monetaryCommitment")
+      field "overage", jmes_path(col_item, "properties.overage")
+    end
+  end
+end
+
+script "js_get_reservation_transactions", type: "javascript" do
+  parameters "param_azure_endpoint", "ds_billing_account_id"
   result "request"
   code <<-EOS
     //Get start and end date (past 30 days)
     var date = new Date()
     date.setDate(date.getDate() - 2)
     var end_date = date.toISOString().slice(0,10)
-    date.setDate(date.getDate() - 1095)
+    date.setDate(date.getDate() - 1094)
     var start_date = date.toISOString().slice(0,10)
 
-    //API request
+    //Create Filter Query Param value
+    var filter_query = "properties/eventDate ge " + start_date + " AND properties/eventDate le " + end_date
+
+    //Create API request
     var request = {
-      auth: "azure_ea_auth",
-      pagination: "azure_pagination",
-      host: "consumption.azure.com",
-      path: "/v4/enrollments/" + param_enrollment_id + "/reservationcharges",
+      auth: "auth_azure",
+      pagination: "pagination_azure",
+      host: param_azure_endpoint,
+      path: ds_billing_account_id + "/providers/Microsoft.Consumption/reservationTransactions",
       query_params: {
-        "grain": "monthly",
-        "startDate": start_date,
-        "endDate": end_date
+        "$filter": filter_query,
+        "api-version": "2023-05-01"
       },
       headers: {
         "User-Agent": "RS Policies"
@@ -151,27 +241,42 @@ script "js_get_reservation_charges", type: "javascript" do
 end
 
 #REMOVE DUPLICATE DATA
-datasource "ds_reduced_reservation_charges" do
-  run_script $js_reduce_reservation_charges_data, $ds_reservation_charges
+datasource "ds_reduced_reservation_transactions" do
+  run_script $js_reduce_reservation_transactions_data, $ds_reservation_transactions
 end
 
-script "js_reduce_reservation_charges_data", type: "javascript" do
-  parameters "ds_reservation_charges"
+script "js_reduce_reservation_transactions_data", type: "javascript" do
+  parameters "ds_reservation_transactions"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
     result = []
 
-    //get rid of reservation charges that no longer apply (if even applicable)
-    charges_grouped_by_reservation_order = _.groupBy(ds_reservation_charges, "reservationOrderId")
+    //get rid of reservation transactions that no longer apply (if even applicable)
+    charges_grouped_by_reservation_order = _.groupBy(ds_reservation_transactions, "reservationOrderId")
     reservation_orders = _.keys(charges_grouped_by_reservation_order, "reservationOrderId")
 
     var paid_to_date = []
-    _.each(reservation_orders, function(order){
+    _.each(reservation_orders, function(order) {
       var total_amount_paid = 0
       var months_paid = 0
 
+      //get the purchase date (the first event date) and expiration date for the reservation
+      var first_month = _.last(charges_grouped_by_reservation_order[order])
+      var purchase_date = first_month.eventDate
+      //console.log("First Month: " + first_month.eventDate, "Last Month: " + _.first(charges_grouped_by_reservation_order[order]).eventDate)
+      
+      var term_years = 1
+      if (first_month.term == "P3Y") {
+        term_years = 3
+      }
+      var expiration_date = new Date(purchase_date)
+      expiration_date.setFullYear(expiration_date.getFullYear() + term_years)
+      expiration_date = expiration_date.toISOString()
+      //console.log("Purchase Date: " + purchase_date, "Expiration Date: " + expiration_date, "Term: " + first_month.term)
+
       //get the monthlyAmount for the most recent date
-      var most_recent_month = _.last(charges_grouped_by_reservation_order[order])
+      var most_recent_month = _.first(_.filter(charges_grouped_by_reservation_order[order], function(ord) { return ord.eventType == "Purchase" }))
+      //var most_recent_month = _.first(charges_grouped_by_reservation_order[order])
       var monthly_amount = most_recent_month.amount
       var event_type = most_recent_month.eventType
       var quantity_purchased = most_recent_month.quantity
@@ -187,12 +292,14 @@ script "js_reduce_reservation_charges_data", type: "javascript" do
         "months": months_paid,
         "monthlyAmount": monthly_amount,
         "eventType": event_type,
-        "quantity": quantity_purchased
+        "quantity": quantity_purchased,
+        "purchaseDate": purchase_date,
+        "expirationDate": expiration_date
       })
     })
 
     //remove all duplicates
-    result = _.uniq(ds_reservation_charges, function(x){ return x.reservationOrderId })
+    result = _.uniq(ds_reservation_transactions, function(x){ return x.reservationOrderId })
 
     //enrich data with total amount paid to date, and total amount outstanding
     _.each(result, function(charge){
@@ -201,6 +308,8 @@ script "js_reduce_reservation_charges_data", type: "javascript" do
       charge["eventType"] = amount_paid.eventType
       charge["amountPaidToDate"] = parseFloat(amount_paid.totalAmount).toFixed(2)
       charge["quantity"] = amount_paid.quantity
+      charge["purchaseDate"] = amount_paid.purchaseDate
+      charge["expirationDate"] = amount_paid.expirationDate
 
       if( charge.billingFrequency == "Recurring" ){
         if (charge.term == "P1Y" ){
@@ -217,56 +326,132 @@ script "js_reduce_reservation_charges_data", type: "javascript" do
   EOS
 end
 
-#GET RESERVATION SUMMARIES (UTILIZATION) DETAILS - https://docs.microsoft.com/en-us/rest/api/billing/enterprise/billing-enterprise-api-reserved-instance-usage
+#GET INDIVIDUAL DATES WITHIN LOOKBACK PERIOD - without doing this leads to this error: "The response is too large and exceeds the maximum permissible limit. Reduce the date range in the request and try again."
+datasource "ds_lookback_period_dates" do
+  run_script $js_get_lookback_period_dates, $param_lookback_period
+end
+
+script "js_get_lookback_period_dates", type: "javascript" do
+  parameters "param_lookback_period"
+  result "result"
+  code <<-EOS
+    //Get start and end date based on lookback period parameter
+    var lookback_period = 30
+    if ( param_lookback_period == "Last 7 days" ) { 
+      lookback_period = 7 
+    } else { 
+      lookback_period = 30 
+    }
+
+    var end_date = new Date()
+    end_date.setDate(end_date.getDate() - 2)
+    var start_date = new Date()
+    start_date.setDate(start_date.getDate() - lookback_period - 2)
+    
+    //Get the Dates in the Lookback Period
+    var days_in_lookback_period = []
+    while (start_date < end_date) {
+      var next_day = new Date(start_date)
+      next_day.setDate(start_date.getDate() + 1)
+
+      days_in_lookback_period.push({
+        "startDate": start_date.toISOString().split('T')[0],
+        "endDate": next_day.toISOString().split('T')[0]
+      })
+
+      start_date = next_day
+    }
+
+    result = days_in_lookback_period
+  EOS
+end
+
+#GET BILLING ACCOUNT-LOOKBACK PERIOD COMBINATIONS REQUIRED FOR MICROSOFT AZURE RESERVATION SUMMARIES DETAILS API CALL
+datasource "ds_billing_account_lookback_period_combinations" do
+  run_script $js_get_billing_account_lookback_period_combinations, $ds_billing_details, $ds_lookback_period_dates
+end
+
+script "js_get_billing_account_lookback_period_combinations", type: "javascript" do
+  parameters "ds_billing_accounts", "ds_lookback_period_dates"
+  result "result"
+  code <<-EOS
+    result = []
+
+    //Loop through each billing account
+    _.each(ds_billing_accounts, function(ba) {
+      //Loop through each lookback period date range
+      _.each(ds_lookback_period_dates, function(range) {
+        result.push({
+          "billingAccountId": ba.id,
+          "agreementType": ba.agreementType,
+          "lookbackPeriodDateRange": range
+        })
+      })
+    })
+  EOS
+end
+
+#GET RESERVATION SUMMARIES (UTILIZATION) DETAILS - https://learn.microsoft.com/en-us/rest/api/consumption/reservations-summaries/list?view=rest-consumption-2023-05-01&tabs=HTTP#reservationsummariesdailywithbillingaccountid
 datasource "ds_reservation_summaries" do
+  iterate $ds_billing_account_lookback_period_combinations
   request do
-    run_script $js_get_reservation_summaries, $param_azure_endpoint, $param_enrollment_id, $param_lookback_period
+    run_script $js_get_reservation_summaries, $param_azure_endpoint, val(iter_item, "billingAccountId"), val(iter_item, "agreementType"), val(iter_item, "lookbackPeriodDateRange")
   end
   result do
     encoding "json"
-    collect jmes_path(response, "[*]") do
-      field "reservationOrderId", jmes_path(col_item, "reservationOrderId")
-      field "reservationId", jmes_path(col_item, "reservationId")
-      field "skuName", jmes_path(col_item, "skuName")
-      field "minUtilizationPercentage", jmes_path(col_item, "minUtilizationPercentage")
-      field "avgUtilizationPercentage", jmes_path(col_item, "avgUtilizationPercentage")
-      field "maxUtilizationPercentage", jmes_path(col_item, "maxUtilizationPercentage")
-      field "reservedHours", jmes_path(col_item, "reservedHours")
-      field "usedHours", jmes_path(col_item, "usedHours")
-      field "usageDate", jmes_path(col_item, "usageDate")
+    collect jmes_path(response, "value[*]") do
+      field "reservationSummaryId", jmes_path(col_item, "id")
+      field "reservationSummaryName", jmes_path(col_item, "name")
+      field "reservationOrderId", jmes_path(col_item, "properties.reservationOrderId")
+      field "reservationId", jmes_path(col_item, "properties.reservationId")
+      field "skuName", jmes_path(col_item, "properties.skuName")
+      field "minUtilizationPercentage", jmes_path(col_item, "properties.minUtilizationPercentage")
+      field "avgUtilizationPercentage", jmes_path(col_item, "properties.avgUtilizationPercentage")
+      field "maxUtilizationPercentage", jmes_path(col_item, "properties.maxUtilizationPercentage")
+      field "reservedHours", jmes_path(col_item, "properties.reservedHours")
+      field "usedHours", jmes_path(col_item, "properties.usedHours")
+      field "usageDate", jmes_path(col_item, "properties.usageDate")
     end
   end
 end
 
 script "js_get_reservation_summaries", type: "javascript" do
-  parameters "param_azure_endpoint", "param_enrollment_id", "param_lookback_period"
+  parameters "param_azure_endpoint", "ds_billing_account_id", "ds_agreement_type", "ds_lookback_period_date_range"
   result "request"
   code <<-EOS
-    //Get start and end date based on lookback period parameter
-    var lookback_period = 30
-    if( param_lookback_period == "Last 7 days" ){ lookback_period = 7 } else { lookback_period = 30 }
-    var date = new Date()
-    date.setDate(date.getDate() - 2)
-    var enddate = date.toISOString().slice(0,10)
-    date.setDate(date.getDate() - lookback_period)
-    var startdate = date.toISOString().slice(0,10)
-
-    var request = {
-      auth: "azure_ea_auth",
-      pagination: "azure_pagination",
-      host: "consumption.azure.com",
-      path: "/v2/enrollments/" + param_enrollment_id + "/reservationsummaries",
-      query_params: {
+    //API query params are structured differently depending on Agreement Type (MCA vs EA)
+    var query_params = {}
+    if (ds_agreement_type == "EnterpriseAgreement") {
+      //Create Filter Query Param value
+      var filter_query = "properties/usageDate ge " + ds_lookback_period_date_range.startDate + " AND properties/usageDate le " + ds_lookback_period_date_range.startDate
+      query_params = {
+        "$filter": filter_query,
         "grain": "daily",
-        "startdate": startdate,
-        "enddate": enddate
-      },
+        "api-version": "2023-05-01"
+      }
+    } else {
+      query_params = {
+        "startDate": ds_lookback_period_date_range.startDate,
+        "endDate": ds_lookback_period_date_range.startDate,
+        "grain": "daily",
+        "api-version": "2023-05-01"
+      }
+    }
+
+    //Create API Request
+    var request = {
+      auth: "auth_azure",
+      pagination: "pagination_azure",
+      host: param_azure_endpoint,
+      path: ds_billing_account_id + "/providers/Microsoft.Consumption/reservationSummaries",
+      query_params: query_params,
       headers: {
         "User-Agent": "RS Policies"
       }
     }
   EOS
 end
+
 
 #CALCULATE AVERAGE UTILIZATION OVER LOOKBACK PERIOD FOR EACH RESERVATION ORDER ID
 datasource "ds_reduced_reservation_summaries" do
@@ -277,7 +462,6 @@ script "js_reduce_reservation_summaries", type: "javascript" do
   parameters "ds_reservation_summaries"
   result "result"
   code <<-EOS
-    console.log(ds_reservation_summaries)
 
     //group utilization data by reservation order ID
     util_grouped_by_reservation_order = _.groupBy(ds_reservation_summaries, "reservationOrderId")
@@ -293,29 +477,32 @@ script "js_reduce_reservation_summaries", type: "javascript" do
       var sku_name = _.last(sorted_utilization_data).skuName
       var reservation_id = _.last(sorted_utilization_data).reservationId
 
-      _.each(util_grouped_by_reservation_order[order], function(util){
+      _.each(util_grouped_by_reservation_order[order], function(util) {
         //This If Statement catches Reservations that do not have Utilization data, such as Azure Databricks
-        if( util.reservedHours != null ){
+        if ( util.reservedHours != null ) {
           total_reserved_hours += util.reservedHours
         }
-        if (util.usedHours != null ){
+        if ( util.usedHours != null ) {
           total_used_hours += util.usedHours
         }
         days ++
       })
 
       var avg_utilization_percentage = 0
-      if (total_reserved_hours != 0){
+      var reservation_data_exists = false
+      if (total_reserved_hours != 0) {
         avg_utilization_percentage = (total_used_hours / total_reserved_hours) * 100
+        reservation_data_exists = true
       }
-
+      
       period.push({
         "reservationOrderId": order,
         "reservedHours": total_reserved_hours,
         "usedHours": total_used_hours,
         "avgUtilizationPercentage": avg_utilization_percentage,
-        "skuName": sku_name
-        "reservationId": reservation_id
+        "skuName": sku_name,
+        "reservationId": reservation_id,
+        "reservationDataExists": reservation_data_exists
       })
     })
     result = period
@@ -335,11 +522,11 @@ end
 
 #COMBINE CHARGES DETAILS AND SUMMARY DETAILS FOR RESERVATIONS
 datasource "ds_reservation_purchase_details" do
-  run_script $js_combine_reservation_details, $ds_reduced_reservation_charges, $ds_reduced_reservation_summaries, $ds_isf_ratio_csv, $ds_currency_reference, $param_utilization
+  run_script $js_combine_reservation_details, $ds_reduced_reservation_transactions, $ds_reduced_reservation_summaries, $ds_isf_ratio_csv, $ds_currency_reference, $param_utilization
 end
 
 script "js_combine_reservation_details", type: "javascript" do
-  parameters "reservation_charges_data", "reservation_summaries_data", "isf_ratio_csv", "currency_reference", "param_utilization"
+  parameters "reservation_transactions_data", "reservation_summaries_data", "isf_ratio_csv", "currency_reference", "param_utilization"
   result "all_data"
   code <<-'EOS'
 
@@ -364,11 +551,11 @@ script "js_combine_reservation_details", type: "javascript" do
 
     //format costs with currency symbol and thousands separator
     var cur = "", separator = ""
-    if ( reservation_charges_data[0].currency !== undefined ) {
-      if ( currency_reference[ reservation_charges_data[0].currency ] !== undefined ) {
-        cur = currency_reference[ reservation_charges_data[0].currency ].symbol
-        if ( currency_reference[ reservation_charges_data[0].currency ].t_separator !== undefined ) {
-          separator = currency_reference[ reservation_charges_data[0].currency ].t_separator
+    if ( _.size(reservation_transactions_data) > 0 && reservation_transactions_data[0].currency !== undefined ) {
+      if ( currency_reference[ reservation_transactions_data[0].currency ] !== undefined ) {
+        cur = currency_reference[ reservation_transactions_data[0].currency ].symbol
+        if ( currency_reference[ reservation_transactions_data[0].currency ].t_separator !== undefined ) {
+          separator = currency_reference[ reservation_transactions_data[0].currency ].t_separator
         } else {
           separator = ""
         }
@@ -384,7 +571,7 @@ script "js_combine_reservation_details", type: "javascript" do
     //convert normalization factor csv to json
     var isf_ratio_array = isf_ratio_csv.toString().split("\r\n")
     isf_ratio_array = _.rest(isf_ratio_array)
-    //console.log(isf_ratio_array)
+
     var instance_data = []
     _.each(isf_ratio_array, function(ratio){
       instance_data.push({
@@ -397,20 +584,24 @@ script "js_combine_reservation_details", type: "javascript" do
     //combine reservation charge data with reservation utilization data, and calculate total wasted spend per month
     var total_wastage = 0
 
-    _.each(reservation_charges_data, function(charge){
+    _.each(reservation_transactions_data, function(charge) {
       var summary_details = _.find(reservation_summaries_data, function(summary){
         return summary.reservationOrderId == charge.reservationOrderId
       })
 
-      if( summary_details != undefined ){
+      if ( summary_details != undefined ) {
         charge["reservationId"] = summary_details.reservationId
         charge["avgUtilizationPercentage"] = summary_details.avgUtilizationPercentage
         charge["reservedHours"] = summary_details.reservedHours
         charge["usedHours"] = summary_details.usedHours
 
-        var wastage_amount = ((100 - Number(summary_details.avgUtilizationPercentage)) / 100) * Number(charge.amount)
-        total_wastage += wastage_amount
-        charge["wastageAmount"] = parseFloat(wastage_amount).toFixed(2)
+        if ( summary_details.reservationDataExists == true ) {
+          var wastage_amount = ((100 - Number(summary_details.avgUtilizationPercentage)) / 100) * Number(charge.amount)
+          total_wastage += wastage_amount
+          charge["wastageAmount"] = parseFloat(wastage_amount).toFixed(2)
+        } else {
+          charge["wastageAmount"] = "0.00"
+        }
       } else {
         charge["reservationId"] = ""
         charge["avgUtilizationPercentage"] = ""
@@ -419,14 +610,14 @@ script "js_combine_reservation_details", type: "javascript" do
       }
     })
 
-    combined_reservation_details = _.reject(reservation_charges_data, function(data){ return data.reservationId == "" })
-    combined_reservation_details = _.reject(combined_reservation_details, function(data){ return Number(data.avgUtilizationPercentage) > param_utilization })
+    combined_reservation_details = _.reject(reservation_transactions_data, function(data) { return data.reservationId == "" })
+    combined_reservation_details = _.reject(combined_reservation_details, function(data) { return Number(data.avgUtilizationPercentage) > param_utilization })
 
     //enrich combined_reservation_details with instance family
-    _.each(combined_reservation_details, function(reservation){
-      var instance_family = _.find(instance_data, function(inst){ return reservation.skuName == inst.instance_type })           //find where instance type name matches (non-case sensitive)
+    _.each(combined_reservation_details, function(reservation) {
+      var instance_family = _.find(instance_data, function(inst) { return reservation.skuName == inst.instance_type })           //find where instance type name matches (non-case sensitive)
 
-      if( instance_family == undefined ){
+      if ( instance_family == undefined ) {
         reservation["instanceFamily"] = ""
       } else {
         reservation["instanceFamily"] = instance_family.instance_family
@@ -448,14 +639,19 @@ end
 
 policy "policy_azure_active_reserved_instances" do
   validate $ds_reservation_purchase_details do
-    summary_template "(Enrollment ID: {{parameters.param_enrollment_id}}): {{ len data.reservation_details }} active Azure Reserved Instances - {{ parameters.param_lookback_period }}"
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.reservation_details }} active Azure Reserved Instances - {{ parameters.param_lookback_period }}"
     detail_template <<-EOS
 {{data.message}}
 EOS
     escalate $esc_email
     check eq(size(val(data, "reservation_details")), 0)
     export "reservation_details" do
-      resource_level true
+    # check eq(1, 0)
+    # export do
+      resource_level false
+      field "agreementType" do
+        label "Agreement Type"
+      end
       field "reservationId" do
         label "Reservation ID"
       end
@@ -477,15 +673,18 @@ EOS
       field "quantity" do
         label "Quantity Purchased"
       end
+      field "purchaseDate" do
+        label "Reservation Purchase Date"
+      end
       field "eventDate" do
-        label "Purchase Date"
+        label "Most Recent Reservation Payment Date"
       end
       field "eventType" do
         label "Event Type"
       end
-      #field "expirationDate" do
-      #  label "Expiration Date"
-      #end
+      field "expirationDate" do
+        label "Reservation Expiration Date"
+      end
       field "avgUtilizationPercentage" do
         label "Avg. Utilizaton %"
       end
