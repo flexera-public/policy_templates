@@ -83,11 +83,17 @@ def extract_permissions_from_readme(readme_content)
         elsif line.strip == "- Permissions"
           credentials_section = "permissions"
         else
-          line.scan(/-\s*`([^`]+)`/) do |match|
-            permission = match.first
-            read_only_permission = !permission.end_with?("*")
-            permission = permission.chomp("*")
+          line.scan(/-\s*`([^`]+)`\*?/) do |match|
 
+            permission = match.first
+            puts(line.length, line.index("*"), line.include?("*"))
+
+            # Set whether permission is read-only
+            read_only_permission = true
+            if permission.end_with?("*") == true || line.include?("*") == true
+              read_only_permission = false
+            end
+            permission = permission.chomp("*")
 
             if credentials_section == "roles"
               policy_credentials << { role: permission, provider: provider, read_only: read_only_permission }
@@ -188,7 +194,7 @@ readmes.each do |readme|
 end
 
 master_policy_permissions_doc[:values] = values
-puts values
+# puts values
 
 # Create '.data/policy_permissions_list' directory
 # permissions_list_dir = "./dist"
