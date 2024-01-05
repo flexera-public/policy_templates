@@ -70,10 +70,22 @@ def extract_permissions_from_readme(readme_content)
       provider = "flexera"
     end
 
+    # If the Credential Section exists...
     if section_start = readme_content.index(section)
       # Extract the text from this section
       section_text = readme_content[section_start..-1]
+
+      # Find the line starting with '/*' to get any specific notes around permissions from the README
+      note = ""
+      section_text.each_line do |line|
+        break if line.strip.start_with?( "##", "###", "- [**") && !line.strip.start_with?(section)
+
+        if line.strip.start_with?("\\*")
+          note = line.strip.sub(/^\\\*\s*/, '')
+        end
+      end
     
+      # For each line within the Section get the list of permissions and roles and push to 'policy_credentials' object
       credentials_section = ""
       section_text.each_line do |line|
         break if line.strip.start_with?( "##", "###", "- [**") && !line.strip.start_with?(section)
@@ -84,23 +96,35 @@ def extract_permissions_from_readme(readme_content)
           credentials_section = "permissions"
         else
           line.scan(/-\s*`([^`]+)`\*?/) do |match|
-
             permission = match.first
-            puts(line.length, line.index("*"), line.include?("*"))
 
-            # Set whether permission is read-only
+            # Set whether permission is read-only, required, and/or has a description
             read_only_permission = true
-            if permission.end_with?("*") == true || line.include?("*") == true
-              read_only_permission = false
-            end
-            permission = permission.chomp("*")
+            required = true
+            if (permission.end_with?("*") == true || line.include?("*") == true) && !note.strip.empty?
+              required = false
+              if note.include?("Only required for taking action")
+                read_only_permission = false
+              end
+              
+              permission = permission.chomp("*")
 
-            if credentials_section == "roles"
-              policy_credentials << { role: permission, provider: provider, read_only: read_only_permission }
-            elsif credentials_section == "permissions"
-              policy_credentials << { permission: permission, provider: provider, read_only: read_only_permission }
+              if credentials_section == "roles"
+                policy_credentials << { role: permission, provider: provider, read_only: read_only_permission, required: required, description: note }
+              elsif credentials_section == "permissions"
+                policy_credentials << { permission: permission, provider: provider, read_only: read_only_permission, required: required, description: note }
+              else
+                policy_credentials << { permission: permission, provider: provider, read_only: read_only_permission, required: required, description: note }  
+              end
+            
             else
-              policy_credentials << { permission: permission, provider: provider, read_only: read_only_permission }
+              if credentials_section == "roles"
+                policy_credentials << { role: permission, provider: provider, read_only: read_only_permission, required: required }
+              elsif credentials_section == "permissions"
+                policy_credentials << { permission: permission, provider: provider, read_only: read_only_permission, required: required }
+              else
+                policy_credentials << { permission: permission, provider: provider, read_only: read_only_permission, required: required }  
+              end
             end
           end
         end
@@ -164,15 +188,21 @@ readmes.each do |readme|
 
             permission_list = {
               "name" => credential[:permission],
-              "read_only" => credential[:read_only]
+              "read_only" => credential[:read_only],
+              "required" => credential[:required]
             }
+            permission_list["description"] = credential[:description] if credential[:description]
+            
             cred_permissions.push(permission_list)
           elsif credential[:role]
 
             role_list = {
               "name" => credential[:role],
-              "read_only" => credential[:read_only]
+              "read_only" => credential[:read_only],
+              "required" => credential[:required]
             }
+            role_list["description"] = credential[:description] if credential[:description]
+
             cred_roles.push(role_list)
           end
         end
@@ -194,7 +224,7 @@ readmes.each do |readme|
 end
 
 master_policy_permissions_doc[:values] = values
-# puts values
+puts values
 
 # Create '.data/policy_permissions_list' directory
 # permissions_list_dir = "./dist"
