@@ -90,9 +90,9 @@ def extract_permissions_from_readme(readme_content)
       section_text.each_line do |line|
         break if line.strip.start_with?( "##", "###", "- [**") && !line.strip.start_with?(section)
 
-        if line.strip == "- Roles"
+        if line.strip == "- Roles" || line.strip == "- Role"
           credentials_section = "roles"
-        elsif line.strip == "- Permissions"
+        elsif line.strip == "- Permissions" || line.strip == "Permission"
           credentials_section = "permissions"
         else
           line.scan(/-\s*`([^`]+)`\*?/) do |match|
@@ -215,7 +215,7 @@ readmes.each do |readme|
         end
       end
 
-      policy_template_details[:providers] = cred_providers
+      policy_template_details[:providers] = cred_providers if cred_providers.any?
     end
 
     # Push each policy template permission details to the 'values' array
@@ -235,5 +235,3 @@ FileUtils.mkdir_p(permissions_list_dir) unless Dir.exist?(permissions_list_dir)
 File.open("#{permissions_list_dir}/master_policy_permissions_list.json", "w") do |f|
   f.write(JSON.pretty_generate(master_policy_permissions_doc))
 end
-
-# Add note to test
