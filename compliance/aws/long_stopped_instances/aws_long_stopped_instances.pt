@@ -279,11 +279,11 @@ datasource "ds_instance_sets" do
   end
 end
 
-datasource "ds_instances" do
-  run_script $js_instances, $ds_instance_sets, $param_exclusion_tags
+datasource "ds_instances_tag_filtered" do
+  run_script $js_instances_tag_filtered, $ds_instance_sets, $param_exclusion_tags
 end
 
-script "js_instances", type: "javascript" do
+script "js_instances_tag_filtered", type: "javascript" do
   parameters "ds_instance_sets", "param_exclusion_tags"
   result "result"
   code <<-EOS
@@ -317,6 +317,29 @@ script "js_instances", type: "javascript" do
       result = result.concat(item['instances_set'])
     }
   })
+EOS
+end
+
+datasource "ds_instances" do
+  run_script $js_instances, $ds_instances_tag_filtered, $param_stopped_days
+end
+
+script "js_instances", type: "javascript" do
+  parameters "ds_instances_tag_filtered", "param_stopped_days"
+  result "result"
+  code <<-EOS
+  if (param_stopped_days > 0) {
+    today = new Date()
+
+    result = _.filter(ds_instances_tag_filtered, function(db) {
+      created = new Date(db['launchTime'])
+      age = Math.round((today - created) / 1000 / 60 / 60 / 24)
+
+      return age >= param_stopped_days
+    })
+  } else {
+    result = ds_instances_tag_filtered
+  }
 EOS
 end
 
