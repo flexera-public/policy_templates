@@ -1,48 +1,28 @@
-name "AWS Long-stopped Instances"
+name "AWS Long Stopped EC2 Instances"
 rs_pt_ver 20180301
 type "policy"
-short_description "Check for instances that have been stopped for a long time with the option to terminates them after approval. \n See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/long_stopped_instances) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Check for EC2 instances that have been stopped for a long time with the option to terminate them after approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/long_stopped_instances) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
-category "Compliance"
-default_frequency "15 minutes"
 severity "low"
+category "Compliance"
+default_frequency "weekly"
 info(
-  version: "4.2",
+  version: "5.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Long Stopped Instances"
 )
 
 ###############################################################################
-# User inputs
+# Parameters
 ###############################################################################
-
-parameter "param_allowed_regions_allow_or_deny" do
-  type "string"
-  label "Allow/Deny Regions"
-  description "Allow or Deny entered regions. See the README for more details"
-  allowed_values "Allow", "Deny"
-  default "Allow"
-end
-
-parameter "param_allowed_regions" do
-  type "list"
-  label "Regions"
-  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
-  description "A list of allowed or denied regions. See the README for more details"
-end
 
 parameter "param_email" do
   type "list"
+  category "Policy Settings"
   label "Email addresses to notify"
-  description "Email addresses of the recipients you wish to notify when new incidents are created."
-end
-
-parameter "param_exclude_tags" do
-  type "list"
-  category "User Inputs"
-  label "Exclusion Tag"
-  description "List of tags that will exclude EC2 instances from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'."
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+  default []
 end
 
 parameter "param_aws_account_number" do
@@ -53,35 +33,64 @@ parameter "param_aws_account_number" do
   default ""
 end
 
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details"
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  description "A list of allowed or denied regions. See the README for more details"
+  default []
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags (Key:Value)"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:*"
+  allowed_pattern /(^$)|[\w]*\:.*/
+  default []
+end
+
 parameter "param_stopped_days" do
   type "number"
-  label "Stopped days"
-  description "Number of days an instance is stopped before it is added to the report."
+  category "Policy Settings"
+  label "Stopped Days"
+  description "The number of days an instance needs to be stopped to include it in the incident report."
+  default 7
+  min_value 1
+  max_value 90
 end
 
 parameter "param_automatic_action" do
   type "list"
+  category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
   allowed_values ["Terminate Instances"]
   default []
 end
 
-
 ###############################################################################
 # Authentication
 ###############################################################################
 
-#AUTHENTICATE WITH AWS
 credentials "auth_aws" do
-  schemes "aws","aws_sts"
+  schemes "aws", "aws_sts"
   label "AWS"
   description "Select the AWS Credential from the list"
   tags "provider=aws"
   aws_account_number $param_aws_account_number
 end
 
-#AUTHENTICATE WITH FLEXERA
 credentials "auth_flexera" do
   schemes "oauth2"
   label "Flexera"
@@ -93,7 +102,16 @@ end
 # Pagination
 ###############################################################################
 
-pagination "aws_pagination_xml" do
+pagination "pagination_aws" do
+  get_page_marker do
+    body_path jmes_path(response, "NextToken")
+  end
+  set_page_marker do
+    body_field "NextToken"
+  end
+end
+
+pagination "pagination_aws_xml" do
   get_page_marker do
     body_path "//DescribeInstancesResponse/nextToken"
   end
@@ -103,12 +121,107 @@ pagination "aws_pagination_xml" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
-# ds_region_list is a list of regions that are opted-in or opt-in-not-required
-datasource "ds_regions_list" do
-  # https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeRegions.html
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get AWS account info
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account", xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_get_caller_identity
+end
+
+script "js_aws_account", type:"javascript" do
+  parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+  result = _.find(ds_cloud_vendor_accounts, function(account) {
+    return account['id'] == ds_get_caller_identity[0]['account']
+  })
+
+  // This is in case the API does not return the relevant account info
+  if (result == undefined) {
+    result = {
+      id: ds_get_caller_identity[0]['account'],
+      name: "",
+      tags: {}
+    }
+  }
+EOS
+end
+
+datasource "ds_describe_regions" do
   request do
     auth $auth_aws
     verb "GET"
@@ -131,290 +244,523 @@ datasource "ds_regions_list" do
   end
 end
 
-# Get only SCP enabled regions
 datasource "ds_regions" do
-  run_script $js_regions, $param_allowed_regions, $ds_regions_list, $param_allowed_regions_allow_or_deny
+  run_script $js_regions, $ds_describe_regions, $param_regions_list, $param_regions_allow_or_deny
 end
 
-#Get the list of all EC2 Instances across all regions.
-#https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstances.html
-datasource "ds_ec2_stopped_instances_list" do
+script "js_regions", type:"javascript" do
+  parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
+  result "result"
+  code <<-EOS
+  allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_describe_regions, function(item) {
+      return _.contains(param_regions_list, item['region']) == allow_deny_test[param_regions_allow_or_deny]
+    })
+  } else {
+    result = ds_describe_regions
+  }
+EOS
+end
+
+datasource "ds_instance_sets" do
   iterate $ds_regions
   request do
     auth $auth_aws
-    pagination $aws_pagination_xml
-    verb "GET"
-    host join(["ec2.",val(iter_item,"region"),".amazonaws.com"])
-    path "/"
-    query "Action", "DescribeInstances"
-    query "Version", "2016-11-15"
-    query "Filter.1.Name", "instance-state-name"
-    query "Filter.1.Value.1", "stopped"
+    host join(['ec2.', val(iter_item, 'region'), '.amazonaws.com'])
+    path '/'
+    header 'User-Agent', 'RS Policies'
+    header 'Content-Type', 'text/xml'
+    query 'Action', 'DescribeInstances'
+    query 'Version', '2016-11-15'
+    query 'Filter.1.Name', 'instance-state-name'
+    query 'Filter.1.Value.1', 'stopped'
   end
   result do
     encoding "xml"
-    collect xpath(response, "//DescribeInstancesResponse/reservationSet/item/instancesSet/item","array") do
-      field "instance_id", xpath(col_item, "instanceId")
-      field "region", val(iter_item,"region")
-      field "instance_state", xpath(col_item, "instanceState/name")
-      field "instance_type", xpath(col_item,"instanceType")
-      field "tags" do
-        collect xpath(col_item, "tagSet/item") do
-          field "tagKey", xpath(col_item, "key")
-          field "tagValue", xpath(col_item, "value")
+    collect xpath(response, "//DescribeInstancesResponse/reservationSet/item", "array") do
+      field "instances_set" do
+        collect xpath(col_item,"instancesSet/item","array") do
+          field "region",val(iter_item, "region")
+          field "instanceId", xpath(col_item, "instanceId")
+          field "imageId", xpath(col_item, "imageId")
+          field "resourceType", xpath(col_item, "instanceType")
+          field "platform", xpath(col_item, "platformDetails")
+          field "privateDnsName", xpath(col_item, "privateDnsName")
+          field "launchTime", xpath(col_item, "launchTime")
+          field "tags" do
+            collect xpath(col_item,"tagSet/item", "array") do
+              field "key", xpath(col_item, "key")
+              field "value", xpath(col_item, "value")
+            end
+          end
         end
       end
     end
   end
 end
 
-datasource "ds_cloudwatch_cpu_usage" do
-  iterate $ds_ec2_stopped_instances_list
+datasource "ds_instances" do
+  run_script $js_instances, $ds_instance_sets, $param_exclusion_tags
+end
+
+script "js_instances", type: "javascript" do
+  parameters "ds_instance_sets", "param_exclusion_tags"
+  result "result"
+  code <<-EOS
+  result = []
+
+  _.each(ds_instance_sets, function(item) {
+    if (param_exclusion_tags.length > 0) {
+      filtered_instances = _.reject(item['instances_set'], function(instance) {
+        instance_tags = []
+
+        if (instance['tags'] != null && instance['tags'] != undefined) {
+          _.each(instance['tags'], function(tag) {
+            instance_tags.push([tag['key'], tag['value']].join(':'))
+            instance_tags.push([tag['key'], '*'].join(':'))
+          })
+        }
+
+        exclude_instance = false
+
+        _.each(param_exclusion_tags, function(exclusion_tag) {
+          if (_.contains(instance_tags, exclusion_tag)) {
+            exclude_instance = true
+          }
+        })
+
+        return exclude_instance
+      })
+
+      result = result.concat(filtered_instances)
+    } else {
+      result = result.concat(item['instances_set'])
+    }
+  })
+EOS
+end
+
+datasource "ds_cloudwatch_queries" do
+  run_script $js_cloudwatch_queries, $ds_instances, $param_stopped_days
+end
+
+script "js_cloudwatch_queries", type: "javascript" do
+  parameters "ds_instances", "param_stopped_days"
+  result "result"
+  code <<-EOS
+  // Create the various queries we're going to send to CloudWatch for each instance
+  result = {}
+
+  _.each(ds_instances, function(instance) {
+    // Make sure the queries object has an array for the region to push items to
+    if (result[instance['region']] == undefined || result[instance['region']] == null) {
+      result[instance['region']] = []
+    }
+
+    query = {
+      "Id": instance['instanceId'].replace('-', '_') + "_cpuAverage",
+      "MetricStat": {
+        "Metric": {
+          "Namespace": "AWS/EC2",
+          "MetricName": "CPUUtilization",
+          "Dimensions": [
+            { "Name": "InstanceId", "Value": instance['instanceId'] }
+          ]
+        },
+        "Period": param_stopped_days * 86400,
+        "Stat": "Average"
+      },
+      "ReturnData": true
+    }
+
+    result[instance['region']].push(query)
+  })
+EOS
+end
+
+# Combine queries into 500 item blocks so we can make bulk requests to Cloudwatch
+datasource "ds_instances_requests" do
+  run_script $js_instances_requests, $ds_cloudwatch_queries, $param_stopped_days
+end
+
+script "js_instances_requests", type: "javascript" do
+  parameters "ds_cloudwatch_queries", "param_stopped_days"
+  result "result"
+  code <<-EOS
+  // Organize the queries into discrete requests to send in.
+  // Queries are first sorted by region and then split into 500 item blocks.
+  result = []
+  query_block_size = 500
+
+  // Round down to beginning of the hour to avoid getting multiple values
+  // from CloudWatch due to how the data is sliced
+  end_date = new Date()
+  end_date.setMinutes(0, 0, 0)
+  end_date = parseInt(end_date.getTime() / 1000)
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - param_stopped_days)
+  start_date.setMinutes(0, 0, 0)
+  start_date = parseInt(start_date.getTime() / 1000)
+
+  _.each(Object.keys(ds_cloudwatch_queries), function(region) {
+    for (i = 0; i < ds_cloudwatch_queries[region].length; i += query_block_size) {
+      chunk = ds_cloudwatch_queries[region].slice(i, i + query_block_size)
+
+      result.push({
+        body: {
+          "StartTime": start_date,
+          "EndTime": end_date,
+          "MetricDataQueries": chunk
+        },
+        region: region
+      })
+    }
+  })
+EOS
+end
+
+datasource "ds_cloudwatch_data" do
+  iterate $ds_instances_requests
   request do
-    run_script $js_cloudwatch_cpu_usage, $param_stopped_days, val(iter_item, "region"), val(iter_item, "instance_id")
+    run_script $js_cloudwatch_data, val(iter_item, "region"), val(iter_item, "body")
   end
   result do
     encoding "json"
-    collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult") do
-      field "instance_id", val(iter_item, "instance_id")
-      field "datapoints", jmes_path(col_item,"Datapoints")
+    collect jmes_path(response, "MetricDataResults[*]") do
+      field "region", val(iter_item, "region")
+      field "id", jmes_path(col_item, "Id")
+      field "label", jmes_path(col_item, "Label")
+      field "values", jmes_path(col_item, "Values")
     end
   end
 end
 
-datasource "ds_list_aws_instances" do
-  run_script $js_filter_aws_instances, $ds_ec2_stopped_instances_list, $ds_cloudwatch_cpu_usage, $param_exclude_tags
-end
-
-###############################################################################
-# Scripts
-###############################################################################
-
-script "js_regions", type:"javascript" do
-  parameters "user_entered_regions", "all_regions", "regions_allow_or_deny"
-  result "regions"
+script "js_cloudwatch_data", type: "javascript" do
+  parameters "region", "body"
+  result "request"
   code <<-EOS
-    if(_.isEmpty(user_entered_regions)){
-      regions = all_regions;
-    }else{
-      //Filter unique regions
-      var uniqueRegions = _.uniq(user_entered_regions);
-      var all_regions_list = [];
-      //Filter and remove denied regions from all_regions
-      if (regions_allow_or_deny == "Deny"){
-        var all_regions = all_regions.filter(function(obj){
-          return user_entered_regions.indexOf(obj.region) === -1;
-        });
-      }
-      all_regions.forEach(function(all_region){
-        all_regions_list.push(all_region.region)
-      })
-      //Filter valid regions
-      var valid_regions = [];
-      _.map(uniqueRegions, function(uniqueRegion){
-        if(all_regions_list.indexOf(uniqueRegion) > -1){
-          valid_regions.push({"region": uniqueRegion})
-        }
-      })
+  // Slow down rate of requests to prevent
+  api_wait = 5
+  var now = new Date().getTime()
+  while(new Date().getTime() < now + (api_wait * 1000)) { /* Do nothing */ }
 
-      //Throw an error if no valid regions found
-      if (_.isEmpty(valid_regions)) {
-        regions = all_regions;
-      }else{
-        regions = valid_regions
-      }
-    }
-  EOS
-end
-
-#https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_GetMetricStatistics.html
-script "js_cloudwatch_cpu_usage", type: "javascript" do
-  result "results"
-  parameters "param_stopped_days","region","instance_id"
-  code <<-EOS
-  var start_date = new Date(new Date().setDate(new Date().getDate() - parseInt(param_stopped_days))).toISOString();
-  console.log("start_date = " + start_date);
-  var end_date = new Date().toISOString();
-  console.log("end_date = " + end_date);
-  results = {
-    "auth": "auth_aws",
-    "host": 'monitoring.'+region+'.amazonaws.com',
-    "verb": "GET",
-    "path": "/",
-    "headers": {
+  var request = {
+    auth: "auth_aws",
+    host: 'monitoring.' + region + '.amazonaws.com',
+    verb: "POST",
+    path: "/",
+    headers: {
       "User-Agent": "RS Policies",
       "Content-Type": "application/json",
-      "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
+      "x-amz-target": "GraniteServiceVersion20100801.GetMetricData",
       "Accept": "application/json",
       "Content-Encoding": "amz-1.0"
     }
-    "query_params": {
-      'Action': 'GetMetricStatistics',
-      'Version': '2010-08-01',
-      'Namespace': 'AWS/EC2',
-      'MetricName': 'CPUUtilization',
-      'Dimensions.member.1.Name': 'InstanceId',
-      'Dimensions.member.1.Value': instance_id,
-      'StartTime': start_date,
-      'EndTime': end_date,
-      'Period': "2592000",
-      'Statistics.member.1': 'Maximum',
-      'Statistics.member.2': 'Average',
-      'Statistics.member.3': 'Minimum'
-    }
+    query_params: {
+      'Action': 'GetMetricData',
+      'Version': '2010-08-01'
+    },
+    body: JSON.stringify(body)
   }
 EOS
 end
 
-script "js_filter_aws_instances", type: "javascript" do
-  parameters "ds_ec2_stopped_instances_list", "ds_cloudwatch_cpu_usage", "param_exclude_tags"
-  result "res"
+datasource "ds_cloudwatch_data_sorted" do
+  run_script $js_cloudwatch_data_sorted, $ds_cloudwatch_data
+end
+
+script "js_cloudwatch_data_sorted", type: "javascript" do
+  parameters "ds_cloudwatch_data"
+  result "result"
   code <<-EOS
-  var res = []
-  var param_exclude_tags_lower = [];
-  for (var i = 0; i < param_exclude_tags.length; i++) {
-    param_exclude_tags_lower[i] = param_exclude_tags[i].toString().toLowerCase();
-  }
-  _.each(ds_ec2_stopped_instances_list, function (instance_stopped) {
-    _.each(ds_cloudwatch_cpu_usage, function (cloudwatch_metrics) {
-      var tags = instance_stopped['tags'];
-      var is_tag_matched = false
-      var tag_key_value = ""
-      if (typeof (tags) != "undefined") {
-        for (var k = 0; k < tags.length; k++) {
-          var tag = tags[k];
-          if ((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey'] + '=' + tag['tagValue']).toLowerCase()) !== -1)) {
-            is_tag_matched = true;
-          }
-          // Constructing tags with comma separated to display in detail_template
-          if ((tag['tagValue']).length > 0) {
-            tag_key_value = tag_key_value + ', ' + tag['tagKey'] + '=' + tag['tagValue']
-          } else {
-            tag_key_value = tag_key_value + ', ' + tag['tagKey']
-          }
+  // Sort the CloudWatch data into an object with keys for regions and instance names.
+  // This eliminates the need to "double loop" later on to match it with our instances list.
+  result = {}
+
+  _.each(ds_cloudwatch_data, function(item) {
+    region = item['region']
+    instance_name = item['id'].split('_')[0] + '-' + item['id'].split('_')[1]
+
+    if (result[region] == undefined) { result[region] = {} }
+
+    result[region][instance_name] = item['values']
+  })
+EOS
+end
+
+datasource "ds_long_stopped_instances" do
+  run_script $js_long_stopped_instances, $ds_instances, $ds_cloudwatch_data_sorted, $ds_aws_account, $ds_applied_policy, $param_stopped_days
+end
+
+script "js_long_stopped_instances", type: "javascript" do
+  parameters "ds_instances", "ds_cloudwatch_data_sorted", "ds_aws_account", "ds_applied_policy", "param_stopped_days"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  _.each(ds_instances, function(instance) {
+    // Determine if instance is long stopped by seeing if it has any CPU metrics.
+    long_stopped = true
+
+    region = instance['region']
+    id = instance['instanceId']
+
+    if (ds_cloudwatch_data_sorted[region] != undefined) {
+      if (ds_cloudwatch_data_sorted[region][id] != undefined) {
+        if (ds_cloudwatch_data_sorted[region][id].length > 0) {
+          long_stopped = false
         }
       }
-      //If the EC2 instance tag does not match with entered param_exclude_tags and cloud metrics is empty,
-      if (instance_stopped["instance_id"] == cloudwatch_metrics["instance_id"] && cloudwatch_metrics['datapoints'].length == 0 && !is_tag_matched) {
-        res.push({
-          instance_id: instance_stopped['instance_id'],
-          region: instance_stopped['region'],
-          tagKeyValue: (tag_key_value.slice(1)),
-          instance_state: instance_stopped['instance_state'],
-          instance_type: instance_stopped['instance_type']
+    }
+
+    if (long_stopped) {
+      // Tidy up tags so they display nicely in the incident
+      tags = []
+      resourceName = ""
+
+      if (instance['tags'] != undefined && instance['tags'] != null) {
+        _.each(instance['tags'], function(tag) {
+          tags.push([tag['key'], tag['value']].join('='))
+          if (tag['key'].toLowerCase() == 'name') { resourceName = tag['value'] }
         })
       }
-    })
+
+      recommendationDetails = [
+        "Terminate EC2 instance ", instance['instanceId'], " ",
+        "in AWS Account ", ds_aws_account['name'], " ",
+        "(", ds_aws_account['id'], ")"
+      ].join('')
+
+      result.push({
+        platform: instance['platform'],
+        privateDnsName: instance['privateDnsName'],
+        launchTime: instance['launchTime'],
+        hostname: instance['privateDnsName'].split('.')[0],
+        resourceType: instance['resourceType'],
+        accountID: ds_aws_account['id'],
+        accountName: ds_aws_account['name'],
+        policy_name: ds_applied_policy['name']
+        tags: tags.join(', '),
+        lookbackPeriod: param_stopped_days,
+        region: region,
+        id: id,
+        resourceID: id,
+        resourceName: resourceName,
+        recommendationDetails: recommendationDetails,
+        message: ""
+        service: "EC2"
+      })
+    }
   })
-  res = _.sortBy(res, 'region');
+
+  instances_total = ds_instances.length.toString()
+  long_stopped_instances_total = result.length.toString()
+  long_stopped_percentage = (long_stopped_instances_total / instances_total * 100).toFixed(2).toString() + '%'
+
+  instance_noun = "instances"
+  if (instances_total == 1) { instance_noun = "instance" }
+
+  instance_verb = "are"
+  if (long_stopped_instances_total == 1) { instance_verb = "is" }
+
+  findings = [
+    "Out of ", instances_total, " EC2 ", instance_noun, " analyzed, ",
+    long_stopped_instances_total, " (", long_stopped_percentage,
+    ") ", instance_verb, " long stopped and recommended for termination. "
+  ].join('')
+
+  day_noun = "days"
+  if (param_stopped_days == 1) { day_noun = "day" }
+
+  analysis = [
+    "An EC2 instance is considered long stopped if it has been stopped ",
+    "for at least ", param_stopped_days, " ", day_noun, ".\n\n"
+  ].join('')
+
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+
+  // Dummy entry to ensure validation runs at least once
+  result.push({ resourceID: "", policy_name: "", message: "", tags: "" })
+
+  result[0]['message'] = findings + analysis + disclaimer
 EOS
-end
-
-###############################################################################
-# Escalations
-###############################################################################
-
-escalation "esc_report_stopped_instances" do
-  automatic true
-  label "Send Mail"
-  description "Sends incidents email"
-  email $param_email
-end
-
-escalation "esc_terminate_stopped_instances" do
-  automatic contains($param_automatic_action, "Terminate Instances")
-  label "Terminate Instances"
-  description "Terminate selected instances"
-  run "terminate_instances", data, rs_optima_host
 end
 
 ###############################################################################
 # Policy
 ###############################################################################
 
-policy "pol_list_aws_instances" do
-  validate $ds_list_aws_instances do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} AWS Instances Stopped for Over {{parameters.param_stopped_days}} Day(s)"
-    escalate $esc_report_stopped_instances
-    escalate $esc_terminate_stopped_instances
+policy "pol_long_stopped_instances" do
+  validate_each $ds_long_stopped_instances do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Long Stopped EC2 Instances Found"
+    detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
+    escalate $esc_email
+    escalate $esc_terminate_instances
+    hash_exclude "message", "tags"
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
-    check logic_or($ds_parent_policy_terminated, eq(size(data),0))
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     export do
       resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "resourceType" do
+        label "Instance Size"
+      end
       field "region" do
         label "Region"
       end
+      field "platform" do
+        label "Platform"
+      end
+      field "hostname" do
+        label "Hostname"
+      end
+      field "launchTime" do
+        label "Launch Time"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+      field "service" do
+        label "Service"
+      end
       field "id" do
-        label "Instance Id"
-        path "instance_id"
-      end
-      field "instance_type" do
-        label "Instance Type"
-      end
-      field "tagKeyValue" do
-        label "Tags"
+        label "ID"
+        path "resourceID"
       end
     end
   end
 end
 
 ###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_terminate_instances" do
+  automatic contains($param_automatic_action, "Terminate Instances")
+  label "Terminate Instances"
+  description "Approval to terminate all selected instances"
+  run "terminate_instances", data
+end
+
+###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-#https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_TerminateInstances.html
-define terminate_instances($data, $$rs_optima_host) return $all_responses do
-  $$debug=true
-  $all_responses = []
-  foreach $item in $data do
-    $response = http_request(
-      verb: "get",
-      host: join(["ec2.",$item["region"],".amazonaws.com"]),
-      auth: $$auth_aws,
-      href: join(["/", "?Action=TerminateInstances", "&InstanceId.1=", $item["id"], "&Version=2016-11-15"]),
-      https: true,
-      headers:{
-        "cache-control": "no-cache",
-        "content-type": "application/json"
-      }
-    )
-    $all_responses << $response
-    call sys_log('terminate long stopped ec2 instances response',to_s($response))
+# Core CWF function to terminate instances
+define terminate_instances($data) do
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call get_instance_state($instance) retrieve $initial_state
+
+      if $initial_state != "terminated" && $initial_state != "pending"
+        call terminate_instance($instance)
+      end
+    end
+  end
+
+  # If we encountered any errors, use `raise` to mark the CWF process as errored
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
   end
 end
 
-define sys_log($subject, $detail) do
-  # Create empty errors array if doesn't already exist
+# CWF function to terminate an instance
+define terminate_instance($instance) return $response do
+  task_label("Terminating Instance: " + $instance["id"])
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    href: "/",
+    host: "ec2." + $instance["region"] + ".amazonaws.com",
+    query_strings: {
+      "Action": "TerminateInstances",
+      "Version": "2016-11-15",
+      "InstanceId.1": $instance["id"]
+    }
+  )
+  call handle_response($response)
+
+  task_label("Checking for expected response code for Terminate Instance: " + $instance["id"])
+  if $response["code"] != 202 && $response["code"] != 200
+    raise 'Unexpected response Terminate Instance: '+to_json($response)
+  else
+    task_label("Successful Terminate Instance: " + $instance["id"])
+    call get_instance_state($instance) retrieve $instance_state
+    while $instance_state != "terminated" do
+      call get_instance_state($instance) retrieve $instance_state
+      task_label("Waiting for Terminate Instance: " + $instance["id"] +" "+ $instance_state)
+      sleep(10)
+    end
+    task_label("Completed Modify Instance: " + $instance["id"])
+  end
+end
+
+# CWF function to get the current state of an instance
+define get_instance_state($instance) return $instance_state do
+  task_label("Getting Instance State: " + $instance["id"])
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    href: "/",
+    host: "ec2." + $instance["region"] + ".amazonaws.com",
+    query_strings: {
+      "Action": "DescribeInstanceStatus",
+      "Version": "2016-11-15",
+      "IncludeAllInstances": "true",
+      "InstanceId.1": $instance["id"]
+    }
+  )
+  call handle_response($response)
+  $instance_state = $response["body"]["DescribeInstanceStatusResponse"]["instanceStatusSet"]["item"]["instanceState"]["name"]
+end
+
+# CWF function to handle errors
+define handle_error() do
   if !$$errors
     $$errors = []
   end
-  # Check if debug is enabled
-  if $$debug
-    # Append to global $$errors
-    # This is the suggested way to capture errors
-    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
-    # If Flexera NAM Zone, create audit_entries [to be deprecated]
-    # This is the legacy method for capturing errors and only supported on Flexera NAM
-    if $$rs_optima_host == "api.optima.flexeraeng.com"
-      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
-      $task_label = "Creating audit entry for " + $subject
-      sub task_label: $task, on_error: skip_error_and_append($task) do
-        rs_cm.audit_entries.create(
-          notify: "None",
-          audit_entry: {
-            auditee_href: @@account,
-            summary: $subject,
-            detail: $detail
-          }
-        )
-      end # End sub on_error
-    end # End if rs_optima_host
-  end # End if debug is enabled
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
 end
 
-define skip_error_and_append($subject) do
-  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
-  $_error_behavior = "skip"
+# CWF function to handle responses
+define handle_response($response) do
+  if !$$all_responses
+    $$all_responses = []
+  end
+  # Convert response object to JSON string.  Easier to interpret
+  $$all_responses << to_json($response)
 end
 
 ###############################################################################
