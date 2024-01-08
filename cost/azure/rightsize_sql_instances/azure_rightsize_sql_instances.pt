@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "4.2",
+  version: "4.3",
   provider: "Azure",
   service: "SQL",
   policy_set: "Rightsize Database Instances",
@@ -42,6 +42,15 @@ parameter "param_min_savings" do
   description "Minimum potential savings required to generate a recommendation"
   min_value 0
   default 0
+end
+
+parameter "param_minimum_age" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Age (Days)"
+  description "The minimum age, in days, since a SQL database was created to produce recommendations for it. Set to 0 to ignore age entirely."
+  default 0
+  min_value 0
 end
 
 parameter "param_subscriptions_allow_or_deny" do
@@ -331,6 +340,7 @@ datasource "ds_azure_sql_databases" do
       field "kind", jmes_path(col_item, "kind")
       field "sku" , jmes_path(col_item, "sku")
       field "tags", jmes_path(col_item, "tags")
+      field "createdTime", jmes_path(col_item, "createdTime")
       field "resourceGroup", get(4, split(jmes_path(col_item,"id"), "/"))
       field "subscriptionId",val(iter_item, "id")
       field "subscriptionName",val(iter_item, "name")
@@ -338,15 +348,38 @@ datasource "ds_azure_sql_databases" do
   end
 end
 
+datasource "ds_azure_sql_databases_age_filtered" do
+  run_script $js_azure_sql_databases_age_filtered, $ds_azure_sql_databases, $param_minimum_age
+end
+
+script "js_azure_sql_databases_age_filtered", type: "javascript" do
+  parameters "ds_azure_sql_databases", "param_minimum_age"
+  result "result"
+  code <<-EOS
+  if (param_minimum_age > 0) {
+    today = new Date()
+
+    result = _.filter(ds_azure_sql_databases, function(db) {
+      created = new Date(db['createdTime'])
+      age = Math.round((today - created) / 1000 / 60 / 60 / 24)
+
+      return age >= param_minimum_age
+    })
+  } else {
+    result = ds_azure_sql_databases
+  }
+EOS
+end
+
 datasource "ds_azure_sql_databases_system_filtered" do
-  run_script $js_azure_sql_databases_system_filtered, $ds_azure_sql_databases
+  run_script $js_azure_sql_databases_system_filtered, $ds_azure_sql_databases_age_filtered
 end
 
 script "js_azure_sql_databases_system_filtered", type: "javascript" do
-  parameters "ds_azure_sql_databases"
+  parameters "ds_azure_sql_databases_age_filtered"
   result "result"
   code <<-EOS
-  result = _.reject(ds_azure_sql_databases, function(db) {
+  result = _.reject(ds_azure_sql_databases_age_filtered, function(db) {
     sku_name = null
     if (typeof(db['sku']) == 'object') { sku_name = db['sku']['name'] }
 
@@ -512,6 +545,7 @@ script "js_merged_metrics", type: "javascript" do
       type: db['type'],
       sku: db['sku'],
       tags: db_tags.join(', '),
+      createdTime: db['createdTime'],
       resourceGroup: db['resourceGroup'],
       subscriptionId: db['subscriptionId'],
       subscriptionName: db['subscriptionName'],
@@ -767,6 +801,7 @@ script "js_downsize_sql_incident", type: "javascript" do
         resourceType: db['type'],
         sku: db['sku'],
         tags: db['tags'],
+        createdTime: db['createdTime'],
         resourceGroup: db['resourceGroup'],
         accountID: db['subscriptionId'],
         accountName: db['subscriptionName'],
@@ -836,7 +871,7 @@ script "js_downsize_sql_incident", type: "javascript" do
     newResourceType: "",    cpuAverage: "",            lookbackPeriod: "",
     threshold: "",          policy_name: "",           savings: "",
     savingsCurrency: "",    service: "",               platform: "",
-    total_savings: "",      message: ""
+    createdTime: "",        total_savings: "",         message: ""
   })
 
   result[0]['total_savings'] = savings_message
@@ -898,6 +933,7 @@ script "js_unused_sql_incident", type: "javascript" do
         resourceType: db['type'],
         sku: db['sku'],
         tags: db['tags'],
+        createdTime: db['createdTime'],
         resourceGroup: db['resourceGroup'],
         accountID: db['subscriptionId'],
         accountName: db['subscriptionName'],
@@ -955,7 +991,8 @@ script "js_unused_sql_incident", type: "javascript" do
     accountName: "",       recommendationType: "",    recommendationDetails: "",
     lookbackPeriod: "",    threshold: "",             policy_name: "",
     savings: "",           savingsCurrency: "",       service: "",
-    platform: "",          total_savings: "",         message: ""
+    platform: "",          createdTime: "",           total_savings: "",
+    message: ""
   })
 
   result[0]['total_savings'] = savings_message
@@ -996,6 +1033,9 @@ policy "pol_azure_sql_utilization" do
       end
       field "tags" do
         label "Resource Tags"
+      end
+      field "createdTime" do
+        label "Created At"
       end
       field "recommendationDetails" do
         label "Recommendation"
@@ -1078,6 +1118,9 @@ policy "pol_azure_sql_utilization" do
       end
       field "tags" do
         label "Resource Tags"
+      end
+      field "createdTime" do
+        label "Created At"
       end
       field "recommendationDetails" do
         label "Recommendation"
