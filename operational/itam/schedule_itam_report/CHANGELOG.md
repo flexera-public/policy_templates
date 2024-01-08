@@ -2,7 +2,7 @@
 
 ## v0.1.2
 
-- Before this change the policy wont be able to retrieve all the corresponding data because the request has an extra symbol, now a filter was applied that convert to the correct value to prevent a bad request
+- Fixed pagination bug that caused the `skipToken` query parameter to be sent with extra equal sign characters in the URL, thus making an HTTP request fail.
 
 ## v0.1.1
 
