@@ -326,6 +326,7 @@ datasource "ds_azure_sql_databases" do
     path join(["/subscriptions/", val(iter_item, "id"), "/resources"])
     query "api-version", "2019-08-01"
     query "$filter", "resourceType eq 'Microsoft.Sql/servers/databases'"
+    query "$expand", "createdTime"
     header "User-Agent", "RS Policies"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
     ignore_status [400,403,404]
@@ -747,11 +748,11 @@ EOS
 end
 
 datasource "ds_downsize_sql_incident" do
-  run_script $js_downsize_sql_incident, $ds_merged_metrics, $ds_azure_sql_databases_region_filtered, $ds_sql_costs_grouped, $ds_currency, $param_min_savings, $param_stats_lookback, $param_stats_underutil_threshold_cpu_value, $param_unused_or_underutilized
+  run_script $js_downsize_sql_incident, $ds_merged_metrics, $ds_azure_sql_databases_region_filtered, $ds_sql_costs_grouped, $ds_currency, $param_min_savings, $param_stats_lookback, $param_stats_underutil_threshold_cpu_value, $param_unused_or_underutilized, $param_minimum_age
 end
 
 script "js_downsize_sql_incident", type: "javascript" do
-  parameters "ds_merged_metrics", "ds_azure_sql_databases_region_filtered", "ds_sql_costs_grouped", "ds_currency", "param_min_savings", "param_stats_lookback", "param_stats_underutil_threshold_cpu_value", "param_unused_or_underutilized"
+  parameters "ds_merged_metrics", "ds_azure_sql_databases_region_filtered", "ds_sql_costs_grouped", "ds_currency", "param_min_savings", "param_stats_lookback", "param_stats_underutil_threshold_cpu_value", "param_unused_or_underutilized", "param_minimum_age"
   result "result"
   code <<-'EOS'
   // Function for formatting currency numbers later
@@ -848,14 +849,24 @@ script "js_downsize_sql_incident", type: "javascript" do
     context_message = [
       "An Azure SQL Database is considered underutilized if it has an average CPU usage below ",
       param_stats_underutil_threshold_cpu_value, "% for the last ", param_stats_lookback, " ", day_message,
-      ", regardless of whether it has had any connections to it in that same time period.\n\n"
+      ", regardless of whether it has had any connections to it in that same time period. "
     ].join('')
   } else {
     context_message = [
       "An Azure SQL Database is considered underutilized if it has had at least one connection to it ",
       "in the last ", param_stats_lookback, " ", day_message, " but has an average CPU usage below ",
-      param_stats_underutil_threshold_cpu_value, "% for that same time period.\n\n"
+      param_stats_underutil_threshold_cpu_value, "% for that same time period. "
     ].join('')
+  }
+
+  min_age_message = "Results were not filtered by age.\n\n"
+
+  if (param_minimum_age == 1) {
+    min_age_message = "Only Azure SQL Databases created more than 1 day ago were included in the results.\n\n"
+  }
+
+  if (param_minimum_age > 1) {
+    min_age_message = "Only Azure SQL Databases created more than " + param_minimum_age + " days ago were included in the results.\n\n"
   }
 
   disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
@@ -875,16 +886,16 @@ script "js_downsize_sql_incident", type: "javascript" do
   })
 
   result[0]['total_savings'] = savings_message
-  result[0]['message'] = findings + context_message + disclaimer
+  result[0]['message'] = findings + context_message + min_age_message + disclaimer
 EOS
 end
 
 datasource "ds_unused_sql_incident" do
-  run_script $js_unused_sql_incident, $ds_merged_metrics, $ds_azure_sql_databases_region_filtered, $ds_sql_costs_grouped, $ds_currency, $param_min_savings, $param_stats_lookback
+  run_script $js_unused_sql_incident, $ds_merged_metrics, $ds_azure_sql_databases_region_filtered, $ds_sql_costs_grouped, $ds_currency, $param_min_savings, $param_stats_lookback, $param_minimum_age
 end
 
 script "js_unused_sql_incident", type: "javascript" do
-  parameters "ds_merged_metrics", "ds_azure_sql_databases_region_filtered", "ds_sql_costs_grouped", "ds_currency", "param_min_savings", "param_stats_lookback"
+  parameters "ds_merged_metrics", "ds_azure_sql_databases_region_filtered", "ds_sql_costs_grouped", "ds_currency", "param_min_savings", "param_stats_lookback", "param_minimum_age"
   result "result"
   code <<-'EOS'
   // Function for formatting currency numbers later
@@ -976,8 +987,18 @@ script "js_unused_sql_incident", type: "javascript" do
 
   context_message = [
     "An Azure SQL Database is considered unused if it has not had any connections ",
-    "for at least ", param_stats_lookback, " ", day_message, ".\n\n"
+    "for at least ", param_stats_lookback, " ", day_message, ". "
   ].join('')
+
+  min_age_message = "Results were not filtered by age.\n\n"
+
+  if (param_minimum_age == 1) {
+    min_age_message = "Only Azure SQL Databases created more than 1 day ago were included in the results.\n\n"
+  }
+
+  if (param_minimum_age > 1) {
+    min_age_message = "Only Azure SQL Databases created more than " + param_minimum_age + " days ago were included in the results.\n\n"
+  }
 
   disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
 
@@ -996,7 +1017,7 @@ script "js_unused_sql_incident", type: "javascript" do
   })
 
   result[0]['total_savings'] = savings_message
-  result[0]['message'] = findings + context_message + disclaimer
+  result[0]['message'] = findings + context_message + min_age_message + disclaimer
 EOS
 end
 
