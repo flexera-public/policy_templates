@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.3
+
+- Added optional `Minimum Age (Days)` parameter to filter results by age
+
 ## v4.2
 
 - Policy action error logging modernized and now works as expected in EU/APAC
