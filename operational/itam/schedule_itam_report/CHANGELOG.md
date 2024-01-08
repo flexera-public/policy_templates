@@ -2,7 +2,7 @@
 
 ## v0.1.2
 
-- Fixed pagination bug that caused the `skipToken` query parameter to be sent with extra equal sign characters in the URL, thus making an HTTP request fail.
+- Fixed a pagination bug that caused an error when the policy template requested information from the IT Asset Management (ITAM) server, thus failing the execution.
 
 ## v0.1.1
 
