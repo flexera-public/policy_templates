@@ -1,13 +1,13 @@
-name "Azure Long Stopped Instances"
+name "Azure Long Stopped Compute Instances"
 rs_pt_ver 20180301
 type "policy"
-short_description "Check for instances that have been stopped for a long time with the option to terminates them after approval. \n See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/azure_long_stopped_instances) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Check for Azure virtual machines that have been stopped for a long time with the option to delete them after approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/azure_long_stopped_instances) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Compliance"
 severity "low"
-default_frequency "daily"
+default_frequency "weekly"
 info(
-  version: "3.0",
+  version: "4.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Long Stopped Instances"
@@ -19,34 +19,54 @@ info(
 
 parameter "param_email" do
   type "list"
-  label "Email List"
-  description "Email addresses of the recipients you wish to notify"
+  category "Policy Settings"
+  label "Email addresses"
+  description "A list of email addresses to notify."
+  default []
 end
 
 parameter "param_azure_endpoint" do
   type "string"
+  category "Policy Settings"
   label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
   allowed_values "management.azure.com", "management.chinacloudapi.cn"
   default "management.azure.com"
 end
 
-parameter "param_subscription_allowed_list" do
-  label "Subscription Allowed List"
-  type "list"
-  description "Allowed Subscriptions, if empty, all subscriptions will be checked"
+parameter "param_subscriptions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Subscriptions"
+  description "Allow or Deny entered Subscriptions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
 end
 
-parameter "param_numberofdays" do
-  type "string"
-  label "Days"
-  description "Threshold of days to consider an instance long running."
+parameter "param_subscriptions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Subscriptions List"
+  description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_stopped_days" do
+  type "number"
+  category "Policy Settings"
+  label "Stopped Days"
+  description "The number of days a virtual machine needs to be stopped to include it in the incident report."
+  default 7
+  min_value 1
+  max_value 90
 end
 
 parameter "param_automatic_action" do
   type "list"
+  category "Actions"
   label "Automatic Actions"
-  description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Terminate Instances"]
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Delete Instances"]
   default []
 end
 
@@ -72,7 +92,7 @@ end
 # Pagination
 ###############################################################################
 
-pagination "azure_pagination" do
+pagination "pagination_azure" do
   get_page_marker do
     body_path "nextLink"
   end
@@ -89,7 +109,7 @@ end
 datasource "ds_subscriptions" do
   request do
     auth $auth_azure
-    pagination $azure_pagination
+    pagination $pagination_azure
     host $param_azure_endpoint
     path "/subscriptions/"
     query "api-version","2019-06-01"
@@ -117,7 +137,7 @@ datasource "ds_azure_virtualmachines" do
   iterate $ds_filtered_subscriptions
   request do
     auth $auth_azure
-    pagination $azure_pagination
+    pagination $pagination_azure
     host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/virtualMachines"])
     query "api-version","2018-06-01"
@@ -142,7 +162,7 @@ datasource "ds_azure_instances" do
   iterate $ds_azure_virtualmachines
   request do
     auth $auth_azure
-    pagination $azure_pagination
+    pagination $pagination_azure
     host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/resourceGroups/", val(iter_item,"rg"), "/providers/Microsoft.Compute/virtualMachines/",val(iter_item,"name"),"/instanceView"])
     ignore_status [404]
@@ -163,7 +183,7 @@ end
 
 #filter list down to only machines that are long running
 datasource "ds_filtered_resources" do
-  run_script $js_filter_resources, $ds_azure_instances, $param_numberofdays
+  run_script $js_filter_resources, $ds_azure_instances, $param_stopped_days
 end
 
 ###############################################################################
@@ -190,7 +210,7 @@ EOS
 end
 
 script "js_filter_resources", type: "javascript" do
-  parameters "ds_azure_instances", "param_numberofdays"
+  parameters "ds_azure_instances", "param_stopped_days"
   result "result"
   code <<-EOS
   var result=[];
@@ -206,7 +226,7 @@ script "js_filter_resources", type: "javascript" do
       var nowtime = Date.now();
       var res = Math.abs(timeofevent.valueOf() - nowtime.valueOf());
       var daysElapsed = Math.ceil(res / (1000 * 3600 * 24));
-      if (daysElapsed > param_numberofdays) {
+      if (daysElapsed > param_stopped_days) {
         result.push({
           "name": instance["name"],
           "status": displayStatus,
@@ -228,7 +248,7 @@ end
 
 policy "azure_resource_policy" do
   validate $ds_filtered_resources do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure VMs in Stopped State for Over {{parameters.param_numberofdays}} Day(s)"
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure VMs in Stopped State for Over {{parameters.param_stopped_days}} Day(s)"
     escalate $email
     escalate $delete_resources
     check logic_or($ds_parent_policy_terminated, eq(size(data), 0))
