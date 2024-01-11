@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.1
+
+- Changed internal name of escalation code to ensure "Meta Policy" works as expected
+
 ## v4.0
 
 - Renamed Subscription List parameter for consistency and accuracy
