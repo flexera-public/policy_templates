@@ -275,7 +275,6 @@ script "js_azure_instances_region_filtered", type: "javascript" do
 EOS
 end
 
-#get all deeper instance data from those machines
 datasource "ds_azure_instances_with_data" do
   iterate $ds_azure_instances_region_filtered
   request do
@@ -287,7 +286,7 @@ datasource "ds_azure_instances_with_data" do
     query "api-version","2018-06-01"
     header "User-Agent", "RS Policies"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-    ignore_status [400,403,404]
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
@@ -295,7 +294,7 @@ datasource "ds_azure_instances_with_data" do
     field "resourceID", val(iter_item, "resourceID")
     field "resourceGroup", val(iter_item, "resourceGroup")
     field "resourceKind", val(iter_item, "resourceKind")
-    field "name", val(iter_item "name")
+    field "name", val(iter_item, "name")
     field "region", val(iter_item, "region")
     field "osType", val(iter_item, "osType")
     field "resourceType", val(iter_item, "resourceType")
@@ -305,41 +304,97 @@ datasource "ds_azure_instances_with_data" do
   end
 end
 
-#filter list down to only machines that are long running
 datasource "ds_long_stopped_instances" do
   run_script $js_long_stopped_instances, $ds_azure_instances_with_data, $ds_applied_policy, $param_stopped_days
 end
 
 script "js_long_stopped_instances", type: "javascript" do
-  parameters "ds_azure_instances", "ds_applied_policy", "param_stopped_days"
+  parameters "ds_azure_instances_with_data", "ds_applied_policy", "param_stopped_days"
   result "result"
-  code <<-EOS
-  var result=[];
+  code <<-'EOS'
+  result = []
+  today = new Date()
 
-  _.each(ds_azure_instances, function(instance){
-    var codes = _.pluck(instance.statuses, 'code')
-    if ( _.contains(codes, "PowerState/deallocated") ) {
-      var deallocateState = _.where(instance.statuses, {"code": "PowerState/deallocated"});
-      var displayStatus = deallocateState[0]["displayStatus"];
-      var provisionState = _.where(instance.statuses, {"code": "ProvisioningState/succeeded"});
-      var timeStopped = provisionState[0]["time"];
-      var timeofevent = new Date(timeStopped);
-      var nowtime = Date.now();
-      var res = Math.abs(timeofevent.valueOf() - nowtime.valueOf());
-      var daysElapsed = Math.ceil(res / (1000 * 3600 * 24));
-      if (daysElapsed > param_stopped_days) {
+  _.each(ds_azure_instances_with_data, function(instance) {
+    codes = _.pluck(instance['statuses'], 'code')
+
+    if (_.contains(codes, "PowerState/deallocated")) {
+      provision_state = _.where(instance.statuses, {"code": "ProvisioningState/succeeded"})
+      provision_time = new Date(provision_state[0]["time"])
+      time_stopped = Math.round((today - provision_time) / 1000 / 60 / 60 / 24)
+
+      if (time_stopped >= param_stopped_days) {
+        recommendationDetails = [
+          "Delete Azure virtual machine ", instance["resourceName"], " ",
+          "in Azure Subscription ", instance["accountName"], " ",
+          "(", instance["accountID"], ")"
+        ].join('')
+
+        instance_tags = []
+
+        if (typeof(instance['tags']) == 'object') {
+          _.each(Object.keys(instance['tags']), function(key) {
+            instance_tags.push(key + '=' + instance['tags'][key])
+          })
+        }
+
         result.push({
-          "name": instance["name"],
-          "status": displayStatus,
-          "time_stopped": timeStopped,
-          "days_elapsed": daysElapsed,
-          "resourcegroup" : instance["rg"]
-          "subscriptionId" : instance["subscriptionId"]
-          "subscriptionName" : instance["subscriptionName"]
+          accountID: instance['accountID'],
+          accountName: instance['accountName'],
+          resourceGroup: instance['resourceGroup'],
+          resourceName: instance['resourceName'],
+          resourceID: instance['resourceID'],
+          resourceType: instance['resourceType'],
+          resourceKind: instance['resourceKind'],
+          region: instance['region'],
+          osType: instance['osType'],
+          policy_name: ds_applied_policy['name'],
+          tags: instance_tags.join(', '),
+          time_stopped: time_stopped,
+          lookbackPeriod: param_stopped_days,
+          recommendationDetails: recommendationDetails,
+          service: 'Microsoft.Compute',
+          message: ''
         })
       }
     }
   })
+
+  instances_total = ds_azure_instances_with_data.length.toString()
+  long_instances_total = result.length.toString()
+  long_instances_percentage = (long_instances_total / instances_total * 100).toFixed(2).toString() + '%'
+
+  instance_noun = "machine"
+  if (instances_total > 1) { instance_noun = "machines" }
+
+  day_noun = "day"
+  if (param_stopped_days > 1) { day_noun = "days" }
+
+  has_verb = "has"
+  if (long_instances_total > 1) { has_verb = "have" }
+
+  findings = [
+    "Out of ", instances_total, " Azure virtual ", instance_noun, " analyzed, ",
+    long_instances_total, " (", long_instances_percentage,
+    ") ", has_verb, " been stopped for longer than ", param_stopped_days,
+    " ", day_noun, ".\n\n"
+  ].join('')
+
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+
+  result = _.sortBy(result, function(item) { return item['time_stopped'] * -1 })
+
+  // Add a dummy entry to ensure that the policy's check statement executes at least once
+  result.push({
+    accountID: "",         accountName: "",              resourceGroup: "",
+    resourceName: "",      resourceID: "",               resourceType: "",
+    resourceKind: "",      region: "",                   osType: "",
+    policy_name: "",       tags: "",                     time_stopped: "",
+    lookbackPeriod: "",    recommendationDetails: "",    service: "",
+    message: ""
+  })
+
+  result[0]['message'] = findings + disclaimer
 EOS
 end
 
@@ -374,6 +429,9 @@ policy "pol_long_stopped_instances" do
       end
       field "tags" do
         label "Resource Tags"
+      end
+      field "time_stopped" do
+        label "Time Stopped (Days)"
       end
       field "recommendationDetails" do
         label "Recommendation"
