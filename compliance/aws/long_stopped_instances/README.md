@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy finds AWS EC2 instances in the given account which have been stopped for more than a user-specified number of days and emails a report containing a list of the offending instances. Optionally, the policy will terminate the instances them after user approval.
+This policy finds AWS EC2 instances in the given account which have been stopped for more than a user-specified number of days and emails a report containing a list of the offending instances. Optionally, the policy will terminate the instances after user approval.
 
 ## Input Parameters
 
