@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.3
+
+- Changed internal name of escalation code to ensure "Meta Policy" works as expected
+
 ## v3.2
 
 - Optimized policy code to speed up execution.
