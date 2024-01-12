@@ -10,6 +10,8 @@
 - Normalized incident export to be consistent with other policies
 - Added human-readable recommendation to incident export
 - Streamlined code for better readability and faster execution
+- Meta policy support added
+- Policy now requires a valid Flexera credential
 
 ## v2.7
 
