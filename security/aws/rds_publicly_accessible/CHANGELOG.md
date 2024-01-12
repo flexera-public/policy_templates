@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.2
+
+- Changed internal name of escalation code to ensure "Meta Policy" works as expected
+
 ## v4.1
 
 - Updated description of `Account Number` parameter
