@@ -29,7 +29,8 @@ parameter "param_dimension_filter_includes" do
   type "list"
   label "Dimension Include Filters"
   description <<-EOS
-  Filters [`dimension_name=dimension_value` pairs] to determine which Google Projects returned by the Flexera Bill Analysis API to **INCLUDE** and be applied to.
+  Filters [`dimension_name=dimension_value` and `dimension_name=~dimension_value` pairs] to determine which Google Projects returned by the Flexera Bill Analysis API to **INCLUDE** and be applied to.
+  Use = to match the entire value and =~ to match a substring contained in the value.
   During each run this policy will select Google Projects who match **all** the filters defined and apply a child policy for each.
   If no include filters are provided, then all Google Projects are included by default.
   Most of the dimensions in Flexera can be used [default dimensions, custom tag dimensions, rule-based dimensions].  Full list of available dimensions documented in the [Bill Analysis API Docs](https://reference.rightscale.com/bill_analysis/).
@@ -41,7 +42,8 @@ parameter "param_dimension_filter_excludes" do
   type "list"
   label "Dimension Exclude Filters"
   description <<-EOS
-  Filters [`dimension_name=dimension_value` pairs] to determine which Google Projects returned by  the Flexera Bill Analysis API to **EXCLUDE** and *not* have policy applied to.
+  Filters [`dimension_name=dimension_value` and `dimension_name=~dimension_value` pairs] to determine which Google Projects returned by  the Flexera Bill Analysis API to **EXCLUDE** and *not* have policy applied to.
+  Use = to match the entire value and =~ to match a substring contained in the value.
   During each run this policy will select Google Projects who match **all** the filters defined here and excludes them from results.
   Can be used to exclude specific Google Projects [`vendor_account=123456789012`]
   Most of the dimensions in Flexera can be used [default dimensions, custom tag dimensions, rule-based dimensions].  Full list of available dimensions documented in the [Bill Analysis API Docs](https://reference.rightscale.com/bill_analysis/).
@@ -320,23 +322,49 @@ script "js_make_billing_center_request", type: "javascript" do
   // Append to default dimensions and filter expressions using parent policy params
   _.each(param_dimension_filter_includes, function (v) {
     // split key=value string
-    var split = v.split("=");
+    if (v.indexOf('=~') == -1) {
+      var split = v.split("=");
+      var type = "equal"
+    } else {
+      var split = v.split("=~");
+      var type = "substring"
+    }
+
     var k = split[0];
     var v = split[1];
+
     // append to lists
     dimensions.push(k);
-    filter_expressions.push({ dimension: k, type: "equal", value: v });
+
+    if (type == "equal") {
+      filter_expressions.push({ dimension: k, type: "equal", value: v });
+    } else {
+      filter_expressions.push({ dimension: k, type: "substring", substring: v });
+    }
   });
 
   // Append to filter expressions using exclude policy params
   _.each(param_dimension_filter_excludes, function (v) {
     // split key=value string
-    var split = v.split("=");
+    if (v.indexOf('=~') == -1) {
+      var split = v.split("=");
+      var type = "equal"
+    } else {
+      var split = v.split("=~");
+      var type = "substring"
+    }
+
     var k = split[0];
     var v = split[1];
+
     // append to lists
     dimensions.push(k);
-    filter_expressions.push({ "type": "not", "expression": { "dimension": k, "type": "equal", "value": v } });
+
+    if (type == "equal") {
+      filter_expressions.push({ "type": "not", "expression": { "dimension": k, "type": "equal", "value": v } });
+    } else {
+      filter_expressions.push({ "type": "not", "expression": { "dimension": k, "type": "substring", "substring": v } });
+    }
   });
 
   // Produces a duplicate-free version of the array
