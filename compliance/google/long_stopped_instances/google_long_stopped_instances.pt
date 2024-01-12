@@ -628,7 +628,6 @@ define delete_instances($data) return $all_responses do
 
   foreach $instance in $data do
     sub on_error: handle_error() do
-      call stop_instance($instance) retrieve $stop_response
       call delete_instance($instance) retrieve $delete_response
     end
   end
@@ -657,60 +656,6 @@ define delete_instance($instance) return $response do
     raise "Unexpected response deleting Google VM instance: "+ $instance["resourceName"] + " " + to_json($response)
   else
     task_label("Delete Google VM instance successful: " + $instance["resourceName"])
-  end
-end
-
-define stop_instance($instance) return $response do
-  task_label("POST " + $instance['selfLink'] + '/stop')
-
-  $response = http_post(
-    url: $instance['selfLink'] + '/stop',
-    auth: $$auth_google,
-    headers: {
-      "cache-control": "no-cache",
-      "content-type": "application/json"
-    }
-  )
-
-  task_label("Post Google VM instance response: " + $instance["resourceName"] + " " + to_json($response))
-  $$all_responses << to_json({"req": "POST " + $instance['selfLink'] + '/stop', "resp": $response})
-
-  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
-    raise "Unexpected response posting Google VM instance: "+ $instance["resourceName"] + " " + to_json($response)
-  else
-    task_label("Post Google VM instance successful: " + $instance["resourceName"])
-  end
-
-  sleep(5)
-  call get_instance_state($instance) retrieve $state_response, $current_state
-  sleep(5)
-
-  while $current_state != "STOPPED" && $current_state != "TERMINATED" do
-    call get_instance_state($instance) retrieve $state_response, $current_state
-    sleep(5)
-  end
-end
-
-define get_instance_state($instance) return $response, $instance_state do
-  task_label("GET " + $instance['selfLink'])
-
-  $response = http_get(
-    url: $instance['selfLink'],
-    auth: $$auth_google,
-    headers: {
-      "cache-control": "no-cache",
-      "content-type": "application/json"
-    }
-  )
-
-  task_label("Get Google VM instance response: " + $instance["resourceName"] + " " + to_json($response))
-  $$all_responses << to_json({"req": "GET " + $instance['selfLink'], "resp": $response})
-
-  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
-    raise "Unexpected response getting Google VM instance: "+ $instance["resourceName"] + " " + to_json($response)
-  else
-    task_label("Get Google VM instance successful: " + $instance["resourceName"])
-    $instance_state = $response["body"]["status"]
   end
 end
 
