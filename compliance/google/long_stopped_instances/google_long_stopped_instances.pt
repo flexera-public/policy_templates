@@ -318,28 +318,26 @@ script "js_instances", type: "javascript" do
 
   _.each(ds_get_instances, function(response) {
     _.each(response['instances'], function(instance) {
-      if (instance['status'] == "STOPPED" || instance['status'] == "TERMINATED") {
-        zone = instance['zone'].split('/')[8]
-        region = ds_zone_to_region[zone]
+      zone = instance['zone'].split('/')[8]
+      region = ds_zone_to_region[zone]
 
-        result.push({
-          id: instance['id'],
-          name: instance['name'],
-          description: instance['description'],
-          status: instance['status'],
-          selfLink: instance['selfLink'],
-          cpuPlatform: instance['cpuPlatform'],
-          machineType: instance['machineType'],
-          hostname: instance['hostname'],
-          kind: instance['kind'],
-          labels: instance['labels'],
-          projectId: response['projectId'],
-          projectName: response['projectName'],
-          projectNumber: response['projectNumber'],
-          zone: zone,
-          region: region
-        })
-      }
+      result.push({
+        id: instance['id'],
+        name: instance['name'],
+        description: instance['description'],
+        status: instance['status'],
+        selfLink: instance['selfLink'],
+        cpuPlatform: instance['cpuPlatform'],
+        machineType: instance['machineType'],
+        hostname: instance['hostname'],
+        kind: instance['kind'],
+        labels: instance['labels'],
+        projectId: response['projectId'],
+        projectName: response['projectName'],
+        projectNumber: response['projectNumber'],
+        zone: zone,
+        region: region
+      })
     })
   })
 EOS
@@ -404,8 +402,22 @@ script "js_instances_region_filtered", type: "javascript" do
 EOS
 end
 
+datasource "ds_stopped_instances" do
+  run_script $js_stopped_instances, $ds_instances_region_filtered
+end
+
+script "js_stopped_instances", type: "javascript" do
+  parameters "ds_instances_region_filtered"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_instances_region_filtered, function(instance) {
+    return instance['status'] == "STOPPED" || instance['status'] == "TERMINATED"
+  })
+EOS
+end
+
 datasource "ds_instances_with_uptime" do
-  iterate $ds_instances_region_filtered
+  iterate $ds_stopped_instances
   request do
     run_script $js_instances_with_uptime, val(iter_item, 'name'), val(iter_item, 'projectId'), $param_stopped_days
   end
@@ -447,16 +459,16 @@ EOS
 end
 
 datasource "ds_long_stopped_instances" do
-  run_script $js_long_stopped_instances, $ds_instances_region_filtered, $ds_instances_with_uptime, $ds_applied_policy, $param_stopped_days
+  run_script $js_long_stopped_instances, $ds_stopped_instances, $ds_instances_with_uptime, $ds_applied_policy, $param_stopped_days
 end
 
 script "js_long_stopped_instances", type: "javascript" do
-  parameters "ds_instances_region_filtered", "ds_instances_with_uptime", "ds_applied_policy", "param_stopped_days"
+  parameters "ds_stopped_instances", "ds_instances_with_uptime", "ds_applied_policy", "param_stopped_days"
   result "result"
   code <<-'EOS'
   unstopped_instance_ids = _.pluck(ds_instances_with_uptime, 'id')
 
-  stopped_instances = _.reject(ds_instances_region_filtered, function(instance) {
+  stopped_instances = _.reject(ds_stopped_instances, function(instance) {
     return _.contains(unstopped_instance_ids, instance['id'])
   })
 
@@ -499,7 +511,7 @@ script "js_long_stopped_instances", type: "javascript" do
     }
   })
 
-  instances_total = ds_instances_region_filtered.length.toString()
+  instances_total = ds_stopped_instances.length.toString()
   long_instances_total = result.length.toString()
   long_instances_percentage = (long_instances_total / instances_total * 100).toFixed(2).toString() + '%'
 
