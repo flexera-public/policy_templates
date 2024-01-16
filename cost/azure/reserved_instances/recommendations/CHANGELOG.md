@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1
+
+- Fixed bug where policy would not filter recommendations by term
+
 ## v3.0
 
 - Policy now automatically converts savings to local currency when appropriate
