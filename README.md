@@ -93,7 +93,7 @@ These templates can generate savings estimates for your environment.
 
   - [AWS Disallowed Regions](./compliance/aws/disallowed_regions)
   - [AWS EC2 Instances not running FlexNet Inventory Agent](./compliance/aws/instances_without_fnm_agent)
-  - [AWS Long-stopped Instances](./compliance/aws/long_stopped_instances)
+  - [AWS Long Stopped EC2 Instances](./compliance/aws/long_stopped_instances)
 
 - ECS
 
