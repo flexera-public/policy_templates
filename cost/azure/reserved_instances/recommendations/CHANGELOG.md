@@ -1,5 +1,10 @@
 # Changelog
 
+## v3.2
+
+- Fixed issue where policy execution would fail due to 429 error from Azure API
+- Added logic required for "Meta Policy" use-cases
+
 ## v3.1
 
 - Fixed bug where policy would not filter recommendations by term
