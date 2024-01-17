@@ -90,6 +90,15 @@ parameter "param_regions_allow_or_deny" do
   default "Allow"
 end
 
+parameter "param_show_size_increment_recommendations" do
+  type "string"
+  category "Filters"
+  label "Show size increment recommendations"
+  description "Choose if you want this policy to also show recommendations to increase the size of capacity pools and volumes."
+  allowed_values "Yes", "No"
+  default "No"
+end
+
 parameter "param_regions_list" do
   type "list"
   category "Filters"
@@ -363,6 +372,7 @@ datasource "ds_naf_capacity_pools" do
       field "naf_pool_service", jmes_path(col_item, "properties.serviceLevel")
       field "naf_pool_encryption", jmes_path(col_item, "properties.encryptionType")
       field "naf_pool_cool", jmes_path(col_item, "properties.coolAccess")
+      field "naf_pool_created_at", jmes_path(col_item, "systemData.createdAt")
       field "tags", jmes_path(col_item, "tags")
     end
   end
@@ -391,6 +401,7 @@ datasource "ds_naf_pool_metrics" do
     field "naf_pool_service", jmes_path(iter_item, "naf_pool_service")
     field "naf_pool_encryption", jmes_path(iter_item, "naf_pool_encryption")
     field "naf_pool_cool", jmes_path(iter_item, "naf_pool_cool")
+    field "naf_pool_created_at", jmes_path(iter_item, "naf_pool_created_at")
     field "tags", jmes_path(iter_item, "tags")
     field "naf_pool_metrics", jmes_path(response, "value[*]")
   end
@@ -489,6 +500,7 @@ datasource "ds_naf_volumes" do
       field "naf_volume_name", jmes_path(col_item, "name")
       field "naf_volume_id", jmes_path(col_item, "id")
       field "naf_usage_threshold", jmes_path(col_item, "properties.usageThreshold")
+      field "naf_volume_created_at", jmes_path(col_item, "systemData.createdAt")
       field "tags", jmes_path(col_item, "tags")
     end
   end
@@ -518,6 +530,7 @@ datasource "ds_naf_volume_metrics" do
     field "naf_volume_name", jmes_path(iter_item, "naf_volume_name")
     field "naf_volume_id", jmes_path(iter_item, "naf_volume_id")
     field "naf_usage_threshold", jmes_path(iter_item, "naf_usage_threshold")
+    field "naf_volume_created_at", jmes_path(iter_item, "naf_volume_created_at")
     field "tags", jmes_path(iter_item, "tags")
     field "naf_volume_metrics", jmes_path(response, "value[*]")
   end
@@ -556,11 +569,11 @@ EOS
 end
 
 datasource "ds_naf_oversized_pools" do
-  run_script $js_naf_oversized_pools, $ds_naf_pool_metrics, $param_stats_underutil_threshold_pool_value, $ds_naf_get_costs, $param_min_savings, $ds_currency, $param_recommendation_mode
+  run_script $js_naf_oversized_pools, $ds_naf_pool_metrics, $param_stats_underutil_threshold_pool_value, $ds_naf_get_costs, $param_min_savings, $ds_currency, $param_recommendation_mode, $param_show_size_increment_recommendations
 end
 
 script "js_naf_oversized_pools", type: "javascript" do
-  parameters "ds_naf_pool_metrics", "param_stats_underutil_threshold_pool_value", "ds_naf_get_costs", "param_min_savings", "ds_currency", "param_recommendation_mode"
+  parameters "ds_naf_pool_metrics", "param_stats_underutil_threshold_pool_value", "ds_naf_get_costs", "param_min_savings", "ds_currency", "param_recommendation_mode", "param_show_size_increment_recommendations"
   result "result"
   code <<-EOS
 
@@ -591,7 +604,13 @@ script "js_naf_oversized_pools", type: "javascript" do
     return Math.round(bytes * 9.3132257461548e-10)
   }
 
-  function poolCanBeResized(size, recommendedSize) {
+  function poolCanBeResized(size, recommendedSize, param_show_size_increment_recommendations) {
+    if (recommendedSize == size) {
+      return false
+    }
+    if (recommendedSize > size && param_show_size_increment_recommendations == "No") {
+      return false
+    }
     if (size == minPoolSize && recommendedSize < minPoolSize) {
       return false
     }
@@ -652,8 +671,8 @@ script "js_naf_oversized_pools", type: "javascript" do
       if (pool.allocatedSize != undefined && pool.consumedSize != undefined) {
         var poolConsumedPercentage = Math.round(pool.consumedSize * 100 / pool.allocatedSize)
         if (poolConsumedPercentage != param_stats_underutil_threshold_pool_value) {
-          var poolRecommendedSize = Math.round(pool.consumedSize * 100 / param_stats_underutil_threshold_pool_value)
-          if (poolCanBeResized(pool.allocatedSize, poolRecommendedSize)) {
+          var poolRecommendedSize = Math.ceil(pool.consumedSize * 100 / param_stats_underutil_threshold_pool_value)
+          if (poolCanBeResized(pool.allocatedSize, poolRecommendedSize, param_show_size_increment_recommendations)) {
             if (poolRecommendedSize < minPoolSize) {
               poolRecommendedSize = minPoolSize
             }
@@ -686,6 +705,7 @@ script "js_naf_oversized_pools", type: "javascript" do
               poolSize: pool['allocatedSize'],
               poolAllocatedUsed: pool['consumedSize'],
               poolConsumedPercentage: poolConsumedPercentage,
+              poolCreatedAt: pool['naf_pool_created_at'],
               threshold: param_stats_underutil_threshold_pool_value,
               recommendedReduction: recommendedReduction,
               poolRecommendedSize: poolRecommendedSize,
@@ -715,11 +735,11 @@ end
 
 
 datasource "ds_naf_oversized_volumes" do
-  run_script $js_naf_oversized_volumes, $ds_naf_volume_metrics, $ds_naf_pool_metrics, $param_stats_underutil_threshold_pool_value, $param_stats_underutil_threshold_volume_value, $ds_naf_get_costs, $param_min_savings, $ds_currency, $param_recommendation_mode
+  run_script $js_naf_oversized_volumes, $ds_naf_volume_metrics, $ds_naf_pool_metrics, $param_stats_underutil_threshold_pool_value, $param_stats_underutil_threshold_volume_value, $ds_naf_get_costs, $param_min_savings, $ds_currency, $param_recommendation_mode, $param_show_size_increment_recommendations
 end
 
 script "js_naf_oversized_volumes", type: "javascript" do
-  parameters "ds_naf_volume_metrics", "ds_naf_pool_metrics", "param_stats_underutil_threshold_pool_value", "param_stats_underutil_threshold_volume_value", "ds_naf_get_costs", "param_min_savings", "ds_currency", "param_recommendation_mode"
+  parameters "ds_naf_volume_metrics", "ds_naf_pool_metrics", "param_stats_underutil_threshold_pool_value", "param_stats_underutil_threshold_volume_value", "ds_naf_get_costs", "param_min_savings", "ds_currency", "param_recommendation_mode", "param_show_size_increment_recommendations"
   result "result"
   code <<-EOS
 
@@ -734,7 +754,13 @@ script "js_naf_oversized_volumes", type: "javascript" do
 
   // Functions
 
-  function poolCanBeResized(size, recommendedSize) {
+  function poolCanBeResized(size, recommendedSize, param_show_size_increment_recommendations) {
+    if (recommendedSize == size) {
+      return false
+    }
+    if (recommendedSize > size && param_show_size_increment_recommendations == "No") {
+      return false
+    }
     if (size == minPoolSize && recommendedSize < minPoolSize) {
       return false
     }
@@ -829,7 +855,7 @@ script "js_naf_oversized_volumes", type: "javascript" do
       volume.recommendedAllocatedSize = volume.volume_allocated_size
       if (volume.volume_logical_size != undefined && volume.volume_allocated_size != undefined && volume.volume_consumed_size_percentage != undefined) {
         if (volume.volume_consumed_size_percentage != param_stats_underutil_threshold_volume_value) {
-          var recommendedVolumeAllocatedSize = volume.volume_logical_size * 100 / param_stats_underutil_threshold_volume_value
+          var recommendedVolumeAllocatedSize = Math.ceil(volume.volume_logical_size * 100 / param_stats_underutil_threshold_volume_value)
           if (volumeCanBeResized(volume.volume_allocated_size, recommendedVolumeAllocatedSize)) {
             if (recommendedVolumeAllocatedSize < minVolSize) {
               recommendedVolumeAllocatedSize = minVolSize
@@ -847,7 +873,7 @@ script "js_naf_oversized_volumes", type: "javascript" do
       var recommendedPoolAllocatedUsed = 0
       _.each(ds_naf_volume_metrics, function(volume) {
         if(pool.naf_pool_id == volume.naf_pool_id) {
-          if (volume.recommendedAllocatedSize != volume.volume_allocated_size) { pool.naf_pool_volumes.push(volume) }
+          if (volume.recommendedAllocatedSize != volume.volume_allocated_size && volume.volume_logical_size != undefined) { pool.naf_pool_volumes.push(volume) }
           recommendedPoolAllocatedUsed += volume.recommendedAllocatedSize
         }
       })
@@ -867,8 +893,8 @@ script "js_naf_oversized_volumes", type: "javascript" do
         var poolConsumedPercentage = Math.round(recommendedPoolAllocatedUsed * 100 / pool.allocatedSize)
         var poolOldConsumedPercentage = Math.round(pool.consumedSize * 100 / pool.allocatedSize)
         if (poolConsumedPercentage != param_stats_underutil_threshold_pool_value) {
-          var poolRecommendedSize = Math.round(recommendedPoolAllocatedUsed * 100 / param_stats_underutil_threshold_pool_value)
-          if (poolCanBeResized(pool.allocatedSize, poolRecommendedSize)) {
+          var poolRecommendedSize = Math.ceil(recommendedPoolAllocatedUsed * 100 / param_stats_underutil_threshold_pool_value)
+          if (poolCanBeResized(pool.allocatedSize, poolRecommendedSize, param_show_size_increment_recommendations)) {
             if (poolRecommendedSize < minPoolSize) {
               poolRecommendedSize = minPoolSize
             }
@@ -883,7 +909,6 @@ script "js_naf_oversized_volumes", type: "javascript" do
             var savings = (allocatedSizeCost-recommendedSizeCost) < 0 ? 0 : (allocatedSizeCost-recommendedSizeCost)
 
             var recommendedReduction = pool.allocatedSize - poolRecommendedSize
-            var recommendationDetails = "Pool size reduction is recommended from " + pool.allocatedSize + " GiB to " + poolRecommendedSize + " GiB, that will result in " + parseFloat(savings.toFixed(3)) + " monthly savings."
 
             total_savings += savings
             tags = []
@@ -892,34 +917,41 @@ script "js_naf_oversized_volumes", type: "javascript" do
                 tags.push([key, "=", pool.tags[key]].join(''))
               })
             }
-            volumeRecommendedSizes = []
+            var firstIteration = true
             _.each(pool.naf_pool_volumes, function(vol) {
-              volumeRecommendedSizes.push([vol.naf_volume_name, "=", vol.recommendedAllocatedSize].join(""))
-            })
-            result.push({
-              accountID: pool['subscription_id'],
-              accountName: pool['subscription_name'],
-              resourceID: pool['naf_pool_id'],
-              resourceGroup: pool['resource_group_name'],
-              resourceName: pool['naf_pool_name'],
-              poolSize: pool['allocatedSize'],
-              poolAllocatedUsed: pool['consumedSize'],
-              poolOldConsumedPercentage: poolOldConsumedPercentage,
-              volumeThreshold: param_stats_underutil_threshold_volume_value,
-              recommendedPoolAllocatedUsed: recommendedPoolAllocatedUsed,
-              poolConsumedPercentage: poolConsumedPercentage,
-              threshold: param_stats_underutil_threshold_pool_value,
-              recommendedReduction: recommendedReduction,
-              poolRecommendedSize: poolRecommendedSize,
-              recommendationDetails: recommendationDetails,
-              savings: parseFloat(savings.toFixed(3))
-              id: pool['naf_pool_id'],
-              region: pool['naf_pool_region'],
-              resourceType: pool['naf_pool_service'],
-              tags: tags,
-              savingsCurrency: "USD",
-              service: pool['service_type'],
-              volumeRecommendedSizes: volumeRecommendedSizes,
+              var recommendationDetails = "Volume size reduction is recommended from " + vol.volume_allocated_size + " GiB to " + vol.recommendedAllocatedSize + " GiB."
+              result.push({
+                accountID: pool['subscription_id'],
+                accountName: pool['subscription_name'],
+                resourceID: pool['naf_pool_id'],
+                resourceGroup: pool['resource_group_name'],
+                resourceName: pool['naf_pool_name'],
+                poolSize: pool['allocatedSize'],
+                poolAllocatedUsed: pool['consumedSize'],
+                poolOldConsumedPercentage: poolOldConsumedPercentage,
+                volumeThreshold: param_stats_underutil_threshold_volume_value,
+                recommendedPoolAllocatedUsed: recommendedPoolAllocatedUsed,
+                poolConsumedPercentage: poolConsumedPercentage,
+                poolCreatedAt: pool['naf_pool_created_at'],
+                threshold: param_stats_underutil_threshold_pool_value,
+                recommendedReduction: recommendedReduction,
+                poolRecommendedSize: poolRecommendedSize,
+                recommendationDetails: recommendationDetails,
+                savings: firstIteration ? parseFloat(savings.toFixed(3)) : 0,
+                id: pool['naf_pool_id'],
+                region: pool['naf_pool_region'],
+                resourceType: pool['naf_pool_service'],
+                tags: tags,
+                savingsCurrency: "USD",
+                service: pool['service_type'],
+                volumeId: vol.naf_volume_id,
+                volumeName: vol.naf_volume_name,
+                volumeAllocatedSize: vol.volume_allocated_size,
+                volumeLogicalSize: vol.volume_logical_size,
+                volumeRecommendedSize: vol.recommendedAllocatedSize,
+                volumeCreatedAt: vol.naf_volume_created_at,
+              })
+              if (firstIteration) firstIteration = false;
             })
           }
         }
@@ -965,14 +997,17 @@ policy "pol_azure_rightsize_netapp_files" do
         label "Service"
       end
       field "resourceID" do
-        label "Resource ID"
+        label "Capacity Pool ID"
       end
       field "resourceName" do
-        label "Resource Name"
+        label "Capacity Pool Name"
       end
       field "resourceType" do
-        label "Resource Type"
+        label "Capacity Pool Type"
       end
+      # field "poolCreatedAt" do
+      #   label "Capacity Pool Creation Date"
+      # end
       field "region" do
         label "Region"
       end
@@ -1013,7 +1048,7 @@ policy "pol_azure_rightsize_netapp_files" do
     end
   end
   validate $ds_naf_oversized_volumes do
-    summary_template "There are {{ len data }} oversized Azure NetApp File Capacity Pools"
+    summary_template "There are {{ len data }} oversized Azure NetApp File Volumes"
     detail_template <<-'EOS'
     **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
     EOS
@@ -1035,14 +1070,35 @@ policy "pol_azure_rightsize_netapp_files" do
         label "Service"
       end
       field "resourceID" do
-        label "Resource ID"
+        label "Capacity Pool ID"
       end
       field "resourceName" do
-        label "Resource Name"
+        label "Capacity Pool Name"
       end
       field "resourceType" do
-        label "Resource Type"
+        label "Capacity Pool Type"
       end
+      # field "poolCreatedAt" do
+      #   label "Capacity Pool Creation Date"
+      # end
+      field "volumeId" do
+        label "Volume ID"
+      end
+      field "volumeName" do
+        label "Volume Name"
+      end
+      field "volumeAllocatedSize" do
+        label "Volume Size (GiB)"
+      end
+      field "volumeLogicalSize" do
+        label "Volume Allocated Used (GiB)"
+      end
+      field "volumeRecommendedSize" do
+        label "Recommended Volume Size (GiB)"
+      end
+      # field "volumeCreatedAt" do
+      #   label "Volume Creation Date"
+      # end
       field "region" do
         label "Region"
       end
@@ -1059,9 +1115,6 @@ policy "pol_azure_rightsize_netapp_files" do
       field "poolOldConsumedPercentage" do
         label "Capacity Pool Allocated Used Percentage (GiB)"
       end
-      field "volumeThreshold" do
-        label "Volume Logical Size Threshold (%)"
-      end
       field "recommendedPoolAllocatedUsed" do
         label "Recommended Capacity Pool Allocated Used (GiB)"
       end
@@ -1077,8 +1130,8 @@ policy "pol_azure_rightsize_netapp_files" do
       field "poolRecommendedSize" do
         label "Recommended Capacity Pool Size (GiB)"
       end
-      field "volumeRecommendedSizes" do
-        label "Recommended Capacity Volume Sizes (GiB)"
+      field "volumeThreshold" do
+        label "Volume Logical Size Threshold (%)"
       end
       field "savings" do
         label "Estimated Monthly Savings"
