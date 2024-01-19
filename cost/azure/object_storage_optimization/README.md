@@ -44,9 +44,3 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 ## Cost
 
 This Policy Template does not incur any cloud costs.
-
-## Notes
-
-1. 'Storage Blob Data Owner' permission need to be added for storage account to fetch the container/blobs list, before calling List Containers/List Blobs API's.
-1. Enter 'Standard Type' storage account with account kind type as 'StorageV2 (general purpose v2) / BlobStorage' to search for blobs.
-1. Blob with type 'PageBlob' or 'AppendBlob' will not support moving object to 'cool tier' and 'archive tier'.
