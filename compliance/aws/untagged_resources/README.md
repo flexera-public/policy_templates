@@ -44,7 +44,6 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   - `tag:TagResources`*
   - `rds:AddTagsToResources`*
 
-
   \* Only required for taking action (adding tags); the policy will still function in a read-only capacity without these permissions.
 
   Example IAM Permission Policy:
