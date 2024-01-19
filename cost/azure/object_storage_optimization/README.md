@@ -1,26 +1,26 @@
 # Azure Blob Storage Optimization
 
-## What it does
+## What It Does
 
-This Policy checks Azure Blob Storage for older objects and can move old object to the Cool or Archive tier after a given period of time.
-
-## Functional Details
-
-- This policy identifies all Azure Blob Storage objects last modified outside of the specified timeframe
-- For all objects identified as old, the user can choose to move the object to Cool or Archived tiers after user approval
+This policy checks Azure storage containers for blobs to move to the 'Cool' or 'Archive' storage tiers based on blob age. The user can opt to either delete the blobs or move them to the recommended storage tier.
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
-
-- *Storage Account* - Name of Storage account to search for blobs
-- *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
-- *Move to Cool tier after days last modified* - leave blank to skip moving
-- *Move to Archive tier after days last modified* - leave blank to skip moving
+- *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
+- *Azure Endpoint* - The endpoint to send Azure API requests to. Recommended to leave this at default unless using this policy with Azure China.
+- *Storage Account List* - A list of Azure Storage Accounts to assess blobs in. Leave blank to assess blobs in all accounts.
+- *Allow/Deny Subscriptions* - Allow or Deny entered Subscriptions to filter results.
+- *Allow/Deny Subscriptions List* - A list of allowed or denied Subscription IDs/names. Leave blank to check all Subscriptions.
+- *Allow/Deny Regions* - Allow or Deny entered regions to filter results.
+- *Allow/Deny Regions List* - A list of allowed or denied regions. Leave blank to check all Subscriptions.
+- *Exclusion Tags (Key:Value)* - Cloud native tags to ignore storage accounts that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:\* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:\*
+- *New Storage Tier* - Whether to move blobs to Cool or Archive if they meet the specified age thresholds. Select 'Both' to consider moving blobs to either one based on the specified age thresholds
+- *Cool Age Threshold (Days)* - Time in days since blob was last modified to change storage tier to Cool. Not applicable if 'Archive' is selected for New Storage Tier.
+- *Archive Age Threshold (Days)* - Time in days since blob was last modified to change storage tier to Archive. Not applicable if 'Cool' is selected for New Storage Tier.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
-Please note that the "*Automatic Actions*" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
-For example if a user selects the "Modify Blob storage" action while applying the policy, all the identified older objects can be moved to Cool or Archive tier.
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example if a user selects the "Delete Blobs" action while applying the policy, all of the blobs that didn't satisfy the policy condition will be deleted.
 
 ## Prerequisites
 
