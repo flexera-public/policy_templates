@@ -117,7 +117,7 @@ parameter "param_automatic_action" do
   category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action."
-  allowed_values ["Update Blob Storage Tier"]
+  allowed_values ["Update Blobs Storage Tier", "Delete Blobs"]
   default []
 end
 
@@ -240,6 +240,7 @@ datasource "ds_azure_storage_accounts" do
       field "name", jmes_path(col_item, "name")
       field "tags", jmes_path(col_item, "tags")
       field "blob_endpoint", jmes_path(col_item, "properties.primaryEndpoints.blob")
+      field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
       field "subscriptionID", val(iter_item, "id")
       field "subscriptionName", val(iter_item, "name")
     end
@@ -341,6 +342,7 @@ datasource "ds_azure_containers" do
     collect xpath(response, "//EnumerationResults/Containers/Container", "array") do
       field "container", xpath(col_item, "Name")
       field "region", val(iter_item, "region")
+      field "resourceGroup", val(iter_item, "resourceGroup")
       field "subscriptionID", val(iter_item, "subscriptionID")
       field "subscriptionName", val(iter_item, "subscriptionName")
       field "sa_id", val(iter_item, "id")
@@ -375,6 +377,7 @@ datasource "ds_azure_blobs" do
       field "blob_type", xpath(col_item, "Properties/BlobType")
       field "container", xpath(col_item, "Name")
       field "region", val(iter_item, "region")
+      field "resourceGroup", val(iter_item, "resourceGroup")
       field "subscriptionID", val(iter_item, "subscriptionID")
       field "subscriptionName", val(iter_item, "subscriptionName")
       field "sa_id", val(iter_item, "id")
@@ -426,6 +429,7 @@ script "js_azure_blobs_with_tier", type: "javascript" do
       blob_type: blob['blob_type'],
       container: blob['container'],
       region: blob['region'],
+      resourceGroup: blob['resourceGroup'],
       subscriptionID: blob['subscriptionID'],
       subscriptionName: blob['subscriptionName'],
       sa_id: blob['sa_id'],
@@ -445,7 +449,7 @@ datasource "ds_azure_blobs_incident" do
   run_script $js_azure_blobs_incident, $ds_azure_blobs_with_tier, $ds_applied_policy, $param_cool_tier_days, $param_archive_tier_days, $param_new_storage_tier
 end
 
-script "js_aws_s3_blobs_incident", type: "javascript" do
+script "js_azure_blobs_incident", type: "javascript" do
   parameters "ds_azure_blobs_with_tier", "ds_applied_policy", "param_cool_tier_days", "param_archive_tier_days", "param_new_storage_tier"
   result "result"
   code <<-'EOS'
@@ -465,6 +469,7 @@ script "js_aws_s3_blobs_incident", type: "javascript" do
     return {
       accountID: blob['subscriptionID'],
       accountName: blob['subscriptionName'],
+      resourceGroup: blob['resourceGroup'],
       resourceID: blob['name'],
       resourceType: blob['access_tier'],
       newResourceType: blob['new_storage_tier'],
@@ -541,34 +546,59 @@ end
 ###############################################################################
 
 policy "policy_azure_blobs_list" do
-  validate $ds_azure_filtered_blobs do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Azure Object Storage Optimization."
-    escalate $modify_accesstier_approval
-    escalate $report_blobs_list
-    check eq(size(data),0)
+  validate_each $ds_azure_blobs_incident do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Blobs Recommended For Storage Tier Change"
+    detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
+    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    escalate $esc_update
+    escalate $esc_delete
+    hash_exclude "message", "tags"
     export do
       resource_level true
-      field "id" do
+      field "accountID" do
+        label "Subscription ID"
+      end
+      field "accountName" do
+        label "Subscription Name"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "sa_name" do
+        label "Storage Account"
+      end
+      field "container" do
+        label "Container"
+      end
+      field "resourceID" do
         label "Blob Name"
-        path "blobname"
       end
-      field "containername" do
-        label "Container Name"
-      end
-      field "accesstier" do
-        label "Current Access Tier"
-      end
-      field "blobtype" do
+      field "blob_type" do
         label "Blob Type"
       end
-      field "lastmodified" do
+      field "content_type" do
+        label "Content Type"
+      end
+      field "last_modified" do
         label "Last Modified Date"
       end
-      field "modify_accesstier_to" do
-        label "Move Access Tier To"
+      field "recommendationDetails" do
+        label "Recommendation"
       end
-      field "contenttype" do
-        label "Content Type"
+      field "resourceType" do
+        label "Current Storage Class"
+      end
+      field "newResourceType" do
+        label "Recommended Storage Class"
+      end
+      field "tags" do
+        label "Storage Account Tags"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
       end
     end
   end
@@ -578,80 +608,124 @@ end
 # Escalation
 ###############################################################################
 
-escalation "report_blobs_list" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
   email $param_email
 end
 
-escalation "modify_accesstier_approval" do
-  automatic contains($param_automatic_action, "Update Blob Storage Tier")
-  label "Update Blob Storage Tier"
-  description "Update Storage tier on selected blog storage"
-  run "update_accesstier_blobs", data, $param_azure_storage_account, rs_optima_host
+escalation "esc_update" do
+  automatic contains($param_automatic_action, "Update Blobs Storage Tier")
+  label "Update Blobs Storage Tier"
+  description "Approval to update the storage tier of all selected Blobs"
+  run "update_blobs", data
+end
+
+escalation "esc_delete" do
+  automatic contains($param_automatic_action, "Delete Blobs")
+  label "Delete Blobs"
+  description "Approval to delete all selected Blobs"
+  run "delete_blobs", data
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define update_accesstier_blobs($data, $param_azure_storage_account, $$rs_optima_host) return $all_responses do
-  $$debug=true
-  $all_responses = []
-  foreach $item in $data do
-    sub on_error: skip do
-      call url_encode($item['id']) retrieve $blob_name
-      $response = http_request(
-        verb: "put",
-        host: $param_azure_storage_account,
-        auth: $$auth_azure,
-        https: true,
-        href: join([".blob.core.windows.net/", $item['containername'], "/", $blob_name, "?comp=tier"]),
-        headers: {
-          "x-ms-version": "2019-02-02",
-          "content-type": "application/json",
-          "x-ms-access-tier": $item['modify_accesstier_to']
-        }
-      )
-      $all_responses << $response
-      call sys_log('Azure blob storage optimization ',to_s($response))
+define update_blobs($data) return $all_responses do
+  $$all_responses = []
+
+  foreach $blob in $data do
+    sub on_error: handle_error() do
+      call update_blob($blob) retrieve $update_response
+      $$all_responses << $update_response
     end
   end
-end
 
-define sys_log($subject, $detail) do
-  # Create empty errors array if doesn't already exist
-  if !$$errors
-    $$errors = []
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
   end
-  # Check if debug is enabled
-  if $$debug
-    # Append to global $$errors
-    # This is the suggested way to capture errors
-    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
-    # If Flexera NAM Zone, create audit_entries [to be deprecated]
-    # This is the legacy method for capturing errors and only supported on Flexera NAM
-    if $$rs_optima_host == "api.optima.flexeraeng.com"
-      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
-      $task_label = "Creating audit entry for " + $subject
-      sub task_label: $task, on_error: skip_error_and_append($task) do
-        rs_cm.audit_entries.create(
-          notify: "None",
-          audit_entry: {
-            auditee_href: @@account,
-            summary: $subject,
-            detail: $detail
-          }
-        )
-      end # End sub on_error
-    end # End if rs_optima_host
-  end # End if debug is enabled
 end
 
-define skip_error_and_append($subject) do
-  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
-  $_error_behavior = "skip"
+define update_blob($blob) return $response do
+  call url_encode($blob['container']) retrieve $container
+  call url_encode($blob['resourceID']) retrieve $blob_name
+
+  $host = $blob['sa_name'] + '.blob.core.windows.net'
+  $href = '/' + $container + '/' + $blob_name
+  $params = "?comp=tier"
+  $url = $host + $href + $params
+  task_label("PUT " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "put",
+    href: $href,
+    host: $host,
+    query_strings: { "comp": "tier" },
+    headers: {
+      "x-ms-version": "2019-02-02",
+      "content-type": "application/json",
+      "x-ms-access-tier": $blob['newResourceType']
+    }
+  )
+
+  task_label("Put Azure Blob response: " + $url + " " + to_json($response))
+  $$all_responses << to_json({"req": "PUT " + $url, "resp": $response})
+
+  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
+    raise "Unexpected response putting Azure Blob: " + $url + " " + to_json($response)
+  else
+    task_label("Put Azure Blob successful: " + $url)
+  end
+end
+
+define delete_blobs($data) return $all_responses do
+  $$all_responses = []
+
+  foreach $blob in $data do
+    sub on_error: handle_error() do
+      call delete_blob($blob) retrieve $delete_response
+      $$all_responses << $delete_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+define delete_blob($blob) return $response do
+  call url_encode($blob['container']) retrieve $container
+  call url_encode($blob['resourceID']) retrieve $blob_name
+
+  $host = $blob['sa_name'] + '.blob.core.windows.net'
+  $href = '/' + $container + '/' + $blob_name
+  $url = $host + $href
+  task_label("DELETE " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "delete",
+    href: $href,
+    host: $host,
+    headers: {
+      "x-ms-version": "2019-02-02",
+      "content-type": "application/json"
+    }
+  )
+
+  task_label("Delete Azure Blob response: " + $url + " " + to_json($response))
+  $$all_responses << to_json({"req": "PUT " + $url, "resp": $response})
+
+  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
+    raise "Unexpected response deleting Azure Blob: " + $url + " " + to_json($response)
+  else
+    task_label("Delete Azure Blob successful: " + $url)
+  end
 end
 
 define url_encode($string) return $encoded_string do
@@ -675,4 +749,104 @@ define url_encode($string) return $encoded_string do
   $encoded_string = gsub($encoded_string, "@", "%40")
   $encoded_string = gsub($encoded_string, "[", "%5B")
   $encoded_string = gsub($encoded_string, "]", "%5D")
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
 end

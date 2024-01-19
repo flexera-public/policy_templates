@@ -39,6 +39,7 @@ default_child_policy_template_files = [
   "../../compliance/azure/azure_long_stopped_instances/long_stopped_instances_azure.pt",
   "../../cost/azure/reserved_instances/recommendations/azure_reserved_instance_recommendations.pt",
   "../../cost/azure/idle_compute_instances/azure_idle_compute_instances.pt",
+  "../../cost/azure/object_storage_optimization/azure_object_storage_optimization.pt",
   "../../cost/azure/old_snapshots/azure_delete_old_snapshots.pt",
   "../../cost/azure/rightsize_compute_instances/azure_compute_rightsizing.pt",
   "../../cost/azure/rightsize_sql_instances/azure_rightsize_sql_instances.pt",
