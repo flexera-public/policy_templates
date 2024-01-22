@@ -12,6 +12,7 @@ pt_files = [
   "./cost/aws/rightsize_rds_instances/aws_rightsize_rds_instances.pt",
   "./cost/aws/unused_ip_addresses/aws_unused_ip_addresses.pt",
   "./cost/aws/old_snapshots/aws_delete_old_snapshots.pt",
+  "./cost/aws/savings_plan/recommendations/aws_savings_plan_recommendations.pt",
   "./operational/aws/tag_cardinality/aws_tag_cardinality.pt"
 ]
 
