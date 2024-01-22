@@ -17,9 +17,11 @@ pt_files = [
   "./cost/aws/savings_plan/recommendations/aws_savings_plan_recommendations.pt",
   "./operational/aws/tag_cardinality/aws_tag_cardinality.pt",
   # Azure
+  "./cost/azure/unused_sql_databases/azure_unused_sql_databases.pt",
   "./cost/azure/rightsize_compute_instances/azure_compute_rightsizing.pt",
   "./cost/azure/unused_volumes/azure_unused_volumes.pt",
   "./cost/azure/old_snapshots/azure_delete_old_snapshots.pt",
+  "./cost/azure/unused_ip_addresses/azure_unused_ip_addresses.pt",
 ]
 
 
