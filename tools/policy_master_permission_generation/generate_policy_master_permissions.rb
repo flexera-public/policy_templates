@@ -9,6 +9,7 @@ require 'yaml'
 ##  - Ensure that the JSON file is updated with the latest permissions in the PT
 pt_files = [
   # "./cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt",
+  "./cost/aws/rightsize_rds_instances/aws_rightsize_rds_instances.pt",
 ]
 
 
