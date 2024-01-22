@@ -93,7 +93,7 @@ These templates can generate savings estimates for your environment.
 
   - [AWS Disallowed Regions](./compliance/aws/disallowed_regions)
   - [AWS EC2 Instances not running FlexNet Inventory Agent](./compliance/aws/instances_without_fnm_agent)
-  - [AWS Long-stopped Instances](./compliance/aws/long_stopped_instances)
+  - [AWS Long Stopped EC2 Instances](./compliance/aws/long_stopped_instances)
 
 - ECS
 
@@ -117,7 +117,7 @@ These templates can generate savings estimates for your environment.
   - [Azure AHUB Utilization with Manual Entry](./compliance/azure/ahub_manual)
   - [Azure Disallowed Regions](./compliance/azure/azure_disallowed_regions)
   - [Azure Instances not running FlexNet Inventory Agent](./compliance/azure/instances_without_fnm_agent)
-  - [Azure Long Stopped Instances](./compliance/azure/azure_long_stopped_instances)
+  - [Azure Long Stopped Compute Instances](./compliance/azure/azure_long_stopped_instances)
   - [Azure Untagged Resources](./compliance/azure/azure_untagged_resources)
   - [Azure Untagged Virtual Machines](./compliance/azure/azure_untagged_vms)
 

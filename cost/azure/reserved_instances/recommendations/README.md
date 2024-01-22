@@ -27,6 +27,7 @@ This policy has the following input parameters required when launching the polic
 - *Allow/Deny Regions List* - A list of allowed or denied regions. Leave blank to check all Regions.
 - *Look Back Period* - Number of days of prior usage to analyze.
 - *Resource Types* - Types of resources to provide recommendations for. Items can be removed by clicking X to the right of the name.
+  - Note: For large cloud estates, it is recommended that this policy be applied once for each resource type recommendations are desired for rather than attempting to gather all recommendations with a single applied policy.
 - *Reservation Term* - Length of reservation term to provide recommendations for. Can be set to either `1 Year` or `3 Year`
 - *Reservation Scope* - The scope to provide recommendations for. Can be set to either `Single` or `Shared`
 

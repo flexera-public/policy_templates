@@ -1,5 +1,15 @@
 # Changelog
 
+## v5.0
+
+- Several parameters altered to be more descriptive and human-readable
+- Added ability to filter resources by multiple tag key:value pairs
+- Added additional context to incident description
+- Normalized incident export to be consistent with other policies
+- Added human-readable recommendation to incident export
+- Added additional fields to incident export for additional context
+- Streamlined code for better readability and faster execution
+
 ## v4.2
 
 - Updated description of `Account Number` parameter

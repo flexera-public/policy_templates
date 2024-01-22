@@ -37,6 +37,7 @@ default_child_policy_template_files = [
   "../../compliance/azure/ahub_manual/azure_ahub_utilization_with_manual_entry.pt",
   "../../compliance/azure/instances_without_fnm_agent/azure_instances_not_running_flexnet_inventory_agent.pt",
   "../../compliance/azure/azure_long_stopped_instances/long_stopped_instances_azure.pt",
+  "../../cost/azure/reserved_instances/recommendations/azure_reserved_instance_recommendations.pt",
   "../../cost/azure/idle_compute_instances/azure_idle_compute_instances.pt",
   "../../cost/azure/old_snapshots/azure_delete_old_snapshots.pt",
   "../../cost/azure/rightsize_compute_instances/azure_compute_rightsizing.pt",

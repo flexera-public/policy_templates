@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.1
+
+- Policy action error logging modernized and now works as expected in EU/APAC
+
 ## v6.0
 
 - Several parameters altered to be more descriptive and human-readable
