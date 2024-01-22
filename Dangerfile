@@ -201,10 +201,6 @@ has_app_changes.each do |file|
   # Use regex to look for blocks that have a "datasource" and "request" section in the changes
   regex =/(^datasource.*\n.*request.*\n.*end.*\n.*end.*\n)/
   if diff && diff.patch =~ regex
-    diff.patch.each_line do |line|
-      if line =~ regex
-        warn("There was a new Datasource with request added.  Please verify the README.md has any new permissions that may be required.")
-      end
-    end
+    warn("Detected new request datasource in Policy Template.  Please verify the README.md has any new permissions that may be required.")
   end
 end
