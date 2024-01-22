@@ -25,6 +25,8 @@ pt_files = [
   "./cost/azure/savings_plan/recommendations/azure_savings_plan_recommendations.pt",
   "./cost/azure/reserved_instances/recommendations/azure_reserved_instance_recommendations.pt",
   "./operational/azure/tag_cardinality/azure_tag_cardinality.pt",
+  # Google
+  "./cost/google/rightsize_vm_recommendations/google_rightsize_vm_recommendations.pt"
 ]
 
 
