@@ -26,7 +26,8 @@ pt_files = [
   "./cost/azure/reserved_instances/recommendations/azure_reserved_instance_recommendations.pt",
   "./operational/azure/tag_cardinality/azure_tag_cardinality.pt",
   # Google
-  "./cost/google/rightsize_vm_recommendations/google_rightsize_vm_recommendations.pt"
+  "./cost/google/rightsize_vm_recommendations/google_rightsize_vm_recommendations.pt",
+  "./cost/google/idle_persistent_disk_recommendations/google_idle_persistent_disk_recommendations.pt"
 ]
 
 
