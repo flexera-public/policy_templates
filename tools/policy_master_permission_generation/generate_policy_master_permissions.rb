@@ -14,7 +14,8 @@ pt_files = [
   "./cost/aws/reserved_instances/recommendations/aws_reserved_instance_recommendations.pt",
   "./cost/aws/unused_ip_addresses/aws_unused_ip_addresses.pt",
   "./cost/aws/savings_plan/recommendations/aws_savings_plan_recommendations.pt",
-    "./operational/aws/tag_cardinality/aws_tag_cardinality.pt",
+  "./operational/aws/tag_cardinality/aws_tag_cardinality.pt",
+  "./cost/azure/unused_volumes/azure_unused_volumes.pt"
 ]
 
 
