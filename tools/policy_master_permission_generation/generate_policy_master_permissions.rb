@@ -8,7 +8,7 @@ require 'yaml'
 ## Before merging changes to this list:
 ##  - Ensure that the JSON file is updated with the latest permissions in the PT
 pt_files = [
-  # "./cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt",
+  "./cost/aws/old_snapshots/aws_delete_old_snapshots.pt",
 ]
 
 
