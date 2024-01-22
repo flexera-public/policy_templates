@@ -200,6 +200,9 @@ has_app_changes.each do |file|
   diff = git.diff_for_file(file)
   # Use regex to look for blocks that have a "datasource" and "request" section in the changes
   regex =/(^datasource.*\n.*request.*\n.*end.*\n.*end.*\n)/
+  puts "Diff Patch:"
+  puts diff.patch
+  puts "---"
   if diff && diff.patch =~ regex
     warn("Detected new request datasource in Policy Template.  Please verify the README.md has any new permissions that may be required.")
   end
