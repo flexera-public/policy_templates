@@ -199,7 +199,7 @@ has_app_changes.each do |file|
   # Get the diff to see only the new changes
   diff = git.diff_for_file(file)
   # Use regex to look for blocks that have a "datasource" and "request" section in the changes
-  regex =/(^datasource.*\n.*request.*\n.*end.*\n.*end.*\n)/
+  regex =/(\+)(datasource ).*\n(\+).*(request ).*\n(\+).*(end).*\n(\+).*(end)\n/is
   puts "Diff Patch:"
   puts diff.patch
   puts "---"
