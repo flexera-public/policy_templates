@@ -10,6 +10,7 @@ require 'yaml'
 pt_files = [
   # "./cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt",
   "./cost/aws/rightsize_rds_instances/aws_rightsize_rds_instances.pt",
+  "./cost/aws/old_snapshots/aws_delete_old_snapshots.pt",
 ]
 
 
