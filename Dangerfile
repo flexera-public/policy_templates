@@ -192,3 +192,19 @@ changed_files.each do |file|
     fail "Textlint failed on #{file}"
   end
 end
+
+# check for new datasources
+# print warning if new datasource is added to ensure the README permissions have been updated
+has_app_changes.each do |file|
+  # Get the diff to see only the new changes
+  diff = git.diff_for_file(file)
+  # Use regex to look for blocks that have a "datasource" and "request" section in the changes
+  regex =/(^datasource.*\n.*request.*\n.*end.*\n.*end.*\n)/
+  if diff && diff.patch =~ regex
+    diff.patch.each_line do |line|
+      if line =~ regex
+        warn("There was a new Datasource with request added.  Please verify the README.md has any new permissions that may be required.")
+      end
+    end
+  end
+end
