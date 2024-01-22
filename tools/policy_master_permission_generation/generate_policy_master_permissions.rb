@@ -22,6 +22,7 @@ pt_files = [
   "./cost/azure/unused_volumes/azure_unused_volumes.pt",
   "./cost/azure/old_snapshots/azure_delete_old_snapshots.pt",
   "./cost/azure/unused_ip_addresses/azure_unused_ip_addresses.pt",
+  "./cost/azure/savings_plan/recommendations/azure_savings_plan_recommendations.pt",
 ]
 
 
