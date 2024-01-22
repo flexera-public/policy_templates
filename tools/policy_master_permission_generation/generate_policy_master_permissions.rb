@@ -1,6 +1,17 @@
 #encoding: UTF-8
 require 'json'
 require 'fileutils'
+require 'yaml'
+
+# List of Policy Templates
+## Each of these policy templates should have a README file
+## Before merging changes to this list:
+##  - Ensure that the JSON file is updated with the latest permissions in the PT
+pt_files = [
+  # "./cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt",
+]
+
+
 
 class Readme
 	attr_accessor :path, :credentials
@@ -21,13 +32,10 @@ class PolicyTemplate
   end
 end
 
-# Get a list of all README and Policy Template files
-policy_categories = [ "automation", "compliance", "cost", "operational", "saas", "security" ]
-
-pt_files = Dir.glob('./**/*.pt')
 readme_files = []
-policy_categories.each do |category|
-  readme_files += Dir.glob("./#{category}/**/[Rr][Ee][Aa][Dd][Mm][Ee]*")
+pt_files.each do |pt|
+  # Get the README file for each Policy Template
+  readme_files += Dir.glob("#{File.dirname(pt)}/[Rr][Ee][Aa][Dd][Mm][Ee]*")
 end
 
 # Initialize arrays to store README array of objects and Policy Template array of objects
@@ -38,7 +46,7 @@ readmes = []
 pt_files.each do |file|
   pt_content = File.read(file)
   pt_name = pt_content.match(/name "([^"]+)"/)&.captures&.first
-  
+
   pt_version_match = pt_content.match(/version:\s*\"([^\"]+)\"/)
   pt_version = pt_version_match[1] if pt_version_match
 
@@ -84,7 +92,7 @@ def extract_permissions_from_readme(readme_content)
           note = line.strip.sub(/^\\\*\s*/, '')
         end
       end
-    
+
       # For each line within the Section get the list of permissions and roles and push to 'policy_credentials' object
       credentials_section = ""
       section_text.each_line do |line|
@@ -106,7 +114,7 @@ def extract_permissions_from_readme(readme_content)
               if note.include?("Only required for taking action")
                 read_only_permission = false
               end
-              
+
               permission = permission.chomp("*")
 
               if credentials_section == "roles"
@@ -114,16 +122,16 @@ def extract_permissions_from_readme(readme_content)
               elsif credentials_section == "permissions"
                 policy_credentials << { permission: permission, provider: provider, read_only: read_only_permission, required: required, description: note }
               else
-                policy_credentials << { permission: permission, provider: provider, read_only: read_only_permission, required: required, description: note }  
+                policy_credentials << { permission: permission, provider: provider, read_only: read_only_permission, required: required, description: note }
               end
-            
+
             else
               if credentials_section == "roles"
                 policy_credentials << { role: permission, provider: provider, read_only: read_only_permission, required: required }
               elsif credentials_section == "permissions"
                 policy_credentials << { permission: permission, provider: provider, read_only: read_only_permission, required: required }
               else
-                policy_credentials << { permission: permission, provider: provider, read_only: read_only_permission, required: required }  
+                policy_credentials << { permission: permission, provider: provider, read_only: read_only_permission, required: required }
               end
             end
           end
@@ -145,7 +153,7 @@ readme_files.each do |path|
     # if path == "./cost/google/idle_persistent_disk_recommendations/README.md"
       policy_credentials = extract_permissions_from_readme(readme_content)
     # end
-  
+
     readmes <<Readme.new(path, credentials: policy_credentials)
   rescue => e
     puts "Error processing file: #{path}"
@@ -169,7 +177,7 @@ readmes.each do |readme|
     }
 
     if readme.credentials
-      
+
       cred_providers = []
       readme.credentials.each do |cred|
         cred_providers.push({ name: cred[:provider] })
@@ -178,7 +186,7 @@ readmes.each do |readme|
 
       cred_providers.each do |provider|
         cred_values = readme.credentials.select { |cred| cred[:provider] == provider[:name] }
-        
+
         cred_permissions = []
         cred_roles = []
         cred_apis = []
@@ -192,7 +200,7 @@ readmes.each do |readme|
               "required" => credential[:required]
             }
             permission_list["description"] = credential[:description] if credential[:description]
-            
+
             cred_permissions.push(permission_list)
           elsif credential[:role]
 
@@ -234,4 +242,10 @@ FileUtils.mkdir_p(permissions_list_dir) unless Dir.exist?(permissions_list_dir)
 # Create JSON document in '.data/policy_permissions_list' directory
 File.open("#{permissions_list_dir}/master_policy_permissions_list.json", "w") do |f|
   f.write(JSON.pretty_generate(master_policy_permissions_doc))
+end
+
+# Create YAML document in '.data/policy_permissions_list' directory
+File.open("#{permissions_list_dir}/master_policy_permissions_list.yaml", "w") do |f|
+  # Write YAML document
+  f.write(master_policy_permissions_doc.to_yaml)
 end
