@@ -196,18 +196,20 @@ end
 # check for new datasources
 # print warning if new datasource is added to ensure the README permissions have been updated
 has_app_changes.each do |file|
-  # Get the diff to see only the new changes
-  diff = git.diff_for_file(file)
+  if file.end_with? ".pt"
+    # Get the diff to see only the new changes
+    diff = git.diff_for_file(file)
 
-  # Use regex to look for blocks that have a "datasource", "request", and "auth" sections of the datasource
-  # Example String:
-  #   "diff --git a/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt b/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt\nindex 14b3236f..bf6a161d 100644\n--- a/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt\n+++ b/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt\n@@ -193,6 +193,16 @@ datasource \"ds_applied_policy\" do\n   end\n end\n \n+datasource \"ds_applied_policy_test_will_be_removed_later\" do\n+  request do\n+    auth $auth_flexera\n+    host rs_governance_host\n+    path join([\"/api/governance/projects/\", rs_project_id, \"/applied_policies/\", policy_id])\n+    header \"Api-Version\", \"1.0\"\n+    header \"Test\", \"True\"\n+  end\n+end\n+\n # Get region-specific Flexera API endpoints\n datasource \"ds_flexera_api_hosts\" do\n   run_script $js_flexera_api_hosts, rs_optima_host"
-  regex = /datasource.*do(\s)+.*request.*do(\s)+.*auth.*([\s\S])+end([\s\+])+end/
-  # Print some debug info about diff patch
-  # puts "Diff Patch:"
-  # puts diff.patch
-  # puts "---"
-  if diff && diff.patch =~ regex
-    warn("Detected new request datasource in Policy Template.  Please verify the README.md has any new permissions that may be required.")
+    # Use regex to look for blocks that have a "datasource", "request", and "auth" sections of the datasource
+    # Example String:
+    #   "diff --git a/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt b/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt\nindex 14b3236f..bf6a161d 100644\n--- a/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt\n+++ b/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt\n@@ -193,6 +193,16 @@ datasource \"ds_applied_policy\" do\n   end\n end\n \n+datasource \"ds_applied_policy_test_will_be_removed_later\" do\n+  request do\n+    auth $auth_flexera\n+    host rs_governance_host\n+    path join([\"/api/governance/projects/\", rs_project_id, \"/applied_policies/\", policy_id])\n+    header \"Api-Version\", \"1.0\"\n+    header \"Test\", \"True\"\n+  end\n+end\n+\n # Get region-specific Flexera API endpoints\n datasource \"ds_flexera_api_hosts\" do\n   run_script $js_flexera_api_hosts, rs_optima_host"
+    regex = /datasource.*do(\s)+.*request.*do(\s)+.*auth.*([\s\S])+end([\s\+])+end/
+    # Print some debug info about diff patch
+    # puts "Diff Patch:"
+    # puts diff.patch
+    # puts "---"
+    if diff && diff.patch =~ regex
+      warn("Detected new request datasource in Policy Template.  Please verify the README.md has any new permissions that may be required.")
+    end
   end
 end
