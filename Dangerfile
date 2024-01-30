@@ -218,10 +218,10 @@ has_app_changes.each do |file|
     if pt_file_enabled.empty?
       # If the PT file has not been manually validated, then print an error message which will block the PR from being merged
       # This will help improve coverage as we touch more PT files
-      fail "Policy Template file has not been validated for permission generation.  Please [follow the steps documented in `tools/policy_master_permission_generation/`](https://github.com/flexera-public/policy_templates/tree/POL-918-create-master-policy-perm-list/tools/policy_master_permission_generation) to resolve this"
+      fail "Policy Template file `#{file}` has not been validated for automated permission generation.  Please [follow the steps documented in `tools/policy_master_permission_generation/`](https://github.com/flexera-public/policy_templates/tree/POL-918-create-master-policy-perm-list/tools/policy_master_permission_generation) to resolve this"
     elsif diff && diff.patch =~ regex
       # If the PT file has been manually validated, but there are new datasources, then print a warning message
-      warn("Detected new request datasource in Policy Template.  Please verify the README.md has any new permissions that may be required.")
+      warn("Detected new request datasource in Policy Template file `#{file}`.  Please verify the README.md has any new permissions that may be required.")
     end
   end
 end
