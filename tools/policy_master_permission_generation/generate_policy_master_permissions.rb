@@ -226,6 +226,10 @@ readmes.each do |readme|
   end
 end
 
+# Sort values by id
+# Opted for id over name, because sometimes the name of a PT does change but the filename (id) very rarely changes
+values.sort_by! { |value| value["id"] }
+
 master_policy_permissions_doc[:values] = values
 puts values
 
