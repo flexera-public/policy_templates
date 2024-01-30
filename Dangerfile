@@ -214,7 +214,7 @@ has_app_changes.each do |file|
     # puts "---"
 
     # First check if the PT file has been manually validated and enabled for permission generation
-    pt_file_enabled = permissions_verified_pt_file_yaml["validated_policy_templates"].select { |pt| pt["path"] == file }
+    pt_file_enabled = permissions_verified_pt_file_yaml["validated_policy_templates"].select { |pt| pt.include?(file) }
     if pt_file_enabled.empty?
       # If the PT file has not been manually validated, then print an error message which will block the PR from being merged
       # This will help improve coverage as we touch more PT files
