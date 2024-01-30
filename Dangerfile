@@ -1,4 +1,6 @@
 require 'uri'
+require 'yaml'
+
 require_relative 'tools/lib/policy_parser'
 # DangerFile
 # https://danger.systems/reference.html
@@ -195,6 +197,7 @@ end
 
 # check for new datasources
 # print warning if new datasource is added to ensure the README permissions have been updated
+permissions_verified_pt_file_yaml = YAML.load_file('tools/policy_master_permission_generation/validated_policy_templates.yaml')
 has_app_changes.each do |file|
   if file.end_with? ".pt"
     # Get the diff to see only the new changes
@@ -204,11 +207,20 @@ has_app_changes.each do |file|
     # Example String:
     #   "diff --git a/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt b/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt\nindex 14b3236f..bf6a161d 100644\n--- a/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt\n+++ b/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt\n@@ -193,6 +193,16 @@ datasource \"ds_applied_policy\" do\n   end\n end\n \n+datasource \"ds_applied_policy_test_will_be_removed_later\" do\n+  request do\n+    auth $auth_flexera\n+    host rs_governance_host\n+    path join([\"/api/governance/projects/\", rs_project_id, \"/applied_policies/\", policy_id])\n+    header \"Api-Version\", \"1.0\"\n+    header \"Test\", \"True\"\n+  end\n+end\n+\n # Get region-specific Flexera API endpoints\n datasource \"ds_flexera_api_hosts\" do\n   run_script $js_flexera_api_hosts, rs_optima_host"
     regex = /datasource.*do(\s)+.*request.*do(\s)+.*auth.*([\s\S])+end([\s\+])+end/
+
     # Print some debug info about diff patch
     # puts "Diff Patch:"
     # puts diff.patch
     # puts "---"
-    if diff && diff.patch =~ regex
+
+    # First check if the PT file has been manually validated and enabled for permission generation
+    pt_file_enabled = permissions_verified_pt_file_yaml["validated_policy_templates"].select { |pt| pt["path"] == file }
+    if pt_file_enabled.empty?
+      # If the PT file has not been manually validated, then print an error message which will block the PR from being merged
+      # This will help improve coverage as we touch more PT files
+      error("Policy Template file has not been validated for permission generation.  Please [follow the steps documented in `tools/policy_master_permission_generation/`](https://github.com/flexera-public/policy_templates/tree/POL-918-create-master-policy-perm-list/tools/policy_master_permission_generation) to resolve this")
+    elsif diff && diff.patch =~ regex
+      # If the PT file has been manually validated, but there are new datasources, then print a warning message
       warn("Detected new request datasource in Policy Template.  Please verify the README.md has any new permissions that may be required.")
     end
   end
