@@ -4,35 +4,9 @@ require 'fileutils'
 require 'yaml'
 
 # List of Policy Templates
-## Each of these policy templates should have a README file
-## Before merging changes to this list:
-##  - Ensure that the JSON file is updated with the latest permissions in the PT
-pt_files = [
-  # AWS
-  "./cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt",
-  "./cost/aws/rightsize_rds_instances/aws_rightsize_rds_instances.pt",
-  "./cost/aws/old_snapshots/aws_delete_old_snapshots.pt",
-  "./cost/aws/reserved_instances/recommendations/aws_reserved_instance_recommendations.pt",
-  "./cost/aws/unused_ip_addresses/aws_unused_ip_addresses.pt",
-  "./cost/aws/savings_plan/recommendations/aws_savings_plan_recommendations.pt",
-  "./operational/aws/tag_cardinality/aws_tag_cardinality.pt",
-  # Azure
-  "./cost/azure/unused_sql_databases/azure_unused_sql_databases.pt",
-  "./cost/azure/rightsize_compute_instances/azure_compute_rightsizing.pt",
-  "./cost/azure/unused_volumes/azure_unused_volumes.pt",
-  "./cost/azure/old_snapshots/azure_delete_old_snapshots.pt",
-  "./cost/azure/unused_ip_addresses/azure_unused_ip_addresses.pt",
-  "./cost/azure/savings_plan/recommendations/azure_savings_plan_recommendations.pt",
-  "./cost/azure/reserved_instances/recommendations/azure_reserved_instance_recommendations.pt",
-  "./operational/azure/tag_cardinality/azure_tag_cardinality.pt",
-  # Google
-  "./cost/google/rightsize_vm_recommendations/google_rightsize_vm_recommendations.pt",
-  "./cost/google/idle_persistent_disk_recommendations/google_idle_persistent_disk_recommendations.pt",
-  "./cost/google/cloud_sql_idle_instance_recommendations/google_sql_idle_instance_recommendations.pt",
-  "./cost/google/idle_ip_address_recommendations/google_idle_ip_address_recommendations.pt",
-  "./cost/google/cud_recommendations/google_committed_use_discount_recommendations.pt",
-]
-
+# Open YAML and parse validated_policy_templates[] array
+pt_files_yaml = YAML.load_file("./tools/policy_master_permission_generation/validated_policy_templates.yaml")
+pt_files = pt_files_yaml["validated_policy_templates"]
 
 class Readme
 	attr_accessor :path, :credentials
@@ -251,6 +225,10 @@ readmes.each do |readme|
     values.push(policy_template_details)
   end
 end
+
+# Sort values by id
+# Opted for id over name, because sometimes the name of a PT does change but the filename (id) very rarely changes
+values.sort_by! { |value| value["id"] }
 
 master_policy_permissions_doc[:values] = values
 puts values
