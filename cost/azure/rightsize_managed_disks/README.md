@@ -9,7 +9,7 @@ This Policy Template scans all volumes in the given account and identifies any v
 
 ### Policy Saving Details
 
-The policy includes the estimated monthly savings. The estimated monthly savings are recognized if the resource is terminated.
+The policy includes the estimated monthly savings. The estimated monthly savings are recognized if the resource is resized to the suggested size.
 
 - The `Estimated Monthly Savings` is calculated by obtaining the price of the disk per month from the Azure Pricing API.
 - The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
