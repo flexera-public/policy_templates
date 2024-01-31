@@ -1,0 +1,565 @@
+name "Budget vs Actual Spend Report"
+rs_pt_ver 20180301
+type "policy"
+short_description "This policy utilizes the Flexera Budget API to detect if budget threshold has been exceeded for a selected budget. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/budget_report_alerts/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+severity "medium"
+category "Cost"
+tenancy "single"
+default_frequency "daily"
+info(
+      version: "3.0",
+      provider: "Flexera Optima",
+      service: "",
+      policy_set: ""
+    )
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_budget_name_id" do
+  label "Budget Name or ID"
+  description "Provide the name or id of a Budget"
+  min_length 1
+  type "string"
+  constraint_description "Budget Name or ID is a required field"
+end
+
+parameter "param_threshold_percentage" do
+  label "Threshold Percentage"
+  type "number"
+  description "Percentage of budget amount to alert on"
+  default 90
+  min_value 1
+end
+
+parameter "param_type" do
+  label "Budget Alert Type"
+  type "string"
+  allowed_values "Actual Spend","Forecasted Spend"
+  description "Actual Spend alerts are based off incurred costs. Forecasted Spend alerts are based off monthly runrates."
+  default "Actual Spend"
+end
+
+parameter "param_use_groups" do
+  type "string"
+  label "Degree of Summarization"
+  allowed_values "Summarized","By dimensions"
+  default "Summarized"
+  description "Use this parameter to specify how to group the data"
+end
+
+parameter "param_filter" do
+  type "list"
+  label "Filter Group By Dimension(s)"
+  description "Enable budget tracking for specific dimensions and values. Only supports dimensions provided in the group previously defined in the budget"
+end
+
+parameter "param_unbudgeted" do
+  label "Unbudgeted spend"
+  type "string"
+  allowed_values "Exclude unbudgeted spend","Include unbudgeted spend"
+  default "Exclude unbudgeted spend"
+end
+
+parameter "param_email" do
+  label "Email addresses"
+  type "list"
+  description "A list of email addresses to notify"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response,"id")
+    field "value", jmes_path(response,"value")
+  end
+end
+
+datasource "ds_get_dimensions" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/",rs_org_id,"/costs/dimensions"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "dimensions[].{id: id, name: name, type:type}") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "type", jmes_path(col_item, "type")
+    end
+  end
+end
+
+datasource "ds_dimensions" do
+  run_script $js_filter_dimensions, $ds_get_dimensions
+end
+
+script "js_filter_dimensions", type: "javascript" do
+  parameters "ds_get_dimensions"
+  result "result"
+  code <<-EOS
+    var result = {};
+    _.each(ds_get_dimensions, function(dimension) {
+      result[dimension.id] = dimension.name;
+    });
+  EOS
+end
+
+datasource "ds_budgets" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/",rs_org_id,"/budgets"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "id", jmes_path(col_item,"id")
+      field "name", jmes_path(col_item,"name")
+      field "metric", jmes_path(col_item,"metric")
+      field "dimensions", jmes_path(col_item,"dimensions")
+      field "budgetYearMonths", jmes_path(col_item,"yearMonths")
+    end
+  end
+end
+
+datasource "ds_filtered_budgets" do
+  run_script $js_filter_budgets, $ds_budgets, $param_budget_name_id
+end
+
+script "js_filter_budgets", type: "javascript" do
+  parameters "budgets", "budget_name_id"
+  result "results"
+  code <<-EOS
+  var currDate = new Date();
+  budget_name_id = budget_name_id.trim();
+  var results =
+    _.filter(budgets, function(b){
+      b.start_date = Date.now();
+      b.end_date = 0;
+      var has_curr_month = false;
+      _.each(b.budgetYearMonths, function (yearMonth) {
+        var curr = currDate.getFullYear() + '-' + ('0' + (currDate.getMonth()+1)).slice(-2);
+        b.start_date = Math.min(b.start_date, Date.parse(yearMonth))
+        b.end_date = Math.max(b.end_date, Date.parse(yearMonth))
+        if (yearMonth == curr) {
+          has_curr_month = true;
+        }
+      })
+      return (b.name == budget_name_id || b.id == budget_name_id) && has_curr_month;
+    });
+EOS
+end
+
+datasource "ds_reports" do
+  iterate $ds_filtered_budgets
+  request do
+    run_script $js_report_request, rs_optima_host, rs_org_id, $param_use_groups, $param_unbudgeted, iter_item
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "b_id", val(iter_item, "id")
+      field "name", val(iter_item, "name")
+      field "dimensionsIDs", val(iter_item, "dimensions")
+      field "metric", val(iter_item, "metric")
+      field "timestamp", jmes_path(col_item,"timestamp")
+      field "dimensions", jmes_path(col_item,"dimensions")
+      field "budgetAmount", jmes_path(col_item,"metrics.budgetAmount")
+      field "spendAmount", jmes_path(col_item,"metrics.spendAmount")
+    end
+  end
+end
+
+script "js_report_request", type: "javascript" do
+  parameters "rs_optima_host", "org", "use_groups", "unbudgeted", "budget"
+  result "request"
+  code <<-EOS
+  var current = new Date();
+  var start_date = current.getFullYear() + '-' + ('0' + (current.getMonth()+1)).slice(-2);
+  current.setMonth(current.getMonth()+1);
+  var end_date = current.getFullYear() + '-' + ('0' + (current.getMonth()+1)).slice(-2);
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + org + "/budgets/" + budget.id + "/report",
+    body_fields: {
+      "dimensions": use_groups == "Summarized" ? [] : budget.dimensions,
+      "endAt": end_date,
+      "startAt": start_date,
+      "includeUnbudgeted": unbudgeted == "Include unbudgeted spend",
+    },
+    headers: {
+      "User-Agent": "RS Policies",
+      "Api-Version": "1.0"
+    }
+  }
+  EOS
+end
+
+datasource "ds_aggregated" do
+  run_script $js_aggregated, $ds_reports, $ds_currency_code, $ds_currency_reference, $param_threshold_percentage, $param_type, f1_app_host, $param_budget_name_id, $ds_dimensions, $param_filter
+end
+
+script "js_aggregated", type: "javascript" do
+  parameters "reports", "currency_code", "currency_reference", "threshold_percent", "param_type", "f1_app_host", "budget_name_id", "ds_dimensions", "param_filter"
+  result "results"
+  code <<-EOS
+  var results = {
+    invalid: [],
+    exceeded: [],
+    forecasted: [],
+  }
+  var ds_dimensions_inverted = _.invert(ds_dimensions);
+  var filters = {};
+  _.each(param_filter, function (filter_item) {
+    filter_item = filter_item.split("=");
+    if (filter_item.length > 1) {
+      filter_item[0] = filter_item[0].trim();
+      filters[ds_dimensions_inverted[filter_item[0]]||filter_item[0]] =
+        _.map(filter_item[1].split(","), function(val){ return val.trim() });
+    }
+  });
+
+  if (!reports || !reports.length) {
+    results.invalid.push(budget_name_id);
+  }
+  var currency = currency_code.value || '';
+  var ref = currency ? currency_reference[currency] : undefined;
+  if (ref) {
+    currency = ref.symbol || "";
+  }
+
+  function forecasted(curr) {
+    var now = new Date();
+    var day = now.getUTCDate()-1;
+    if (day < 1) {
+      return 0;
+    }
+    var days = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
+    return curr / day * days
+  }
+
+  function get_group(dimensions, dimensionsIDs) {
+    var vals = [];
+    _.each(dimensionsIDs, function (k) {
+      if (dimensions[k] && (k != "is_budgeted" || dimensionsIDs.length == 1)){
+        vals.push(dimensions[k]);
+      }
+    })
+    if (!vals.length && dimensions["is_budgeted"]) {
+      return dimensions["is_budgeted"];
+    }
+    return vals.join("|");
+  }
+
+  function get_dimm_names(dimensionsIDs) {
+    var vals = [];
+    _.each(dimensionsIDs, function (k) {
+      vals.push(ds_dimensions[k]||k);
+    })
+    return vals.join(", ");
+  }
+
+  var current = new Date();
+  var monthYear = current.getFullYear() + '-' + ('0' + (current.getMonth()+1)).slice(-2);
+  var cost_metric = {
+    "cost_nonamortized_unblended_adj": "Unamortized",
+    "cost_amortized_unblended_adj": "Amortized",
+    "cost_nonamortized_blended_adj": "Unamortized",
+    "cost_amortized_blended_adj": "Amortized"
+  }
+
+  _.each(reports, function (item) {
+    item.budgetAmount = item.budgetAmount || 0;
+    if (item.spendAmount) {
+      item.monthYear = monthYear;
+      item.forecasted = "";
+      item.currency = currency_code.value;
+      item.forecastedAmount = item.spendAmount;
+      var date = new Date(item.timestamp);
+      item.date = date.toLocaleDateString();
+      var now = new Date();
+      if (date.getFullYear() == now.getFullYear() && date.getMonth() == now.getMonth()) {
+        item.forecastedAmount = Math.round(forecasted(item.spendAmount) * 100) / 100;
+        item.forecasted = item.forecastedAmount;
+      }
+
+      item.budgetAmount = Math.round(item.budgetAmount * 100) / 100;
+      item.spendAmount = Math.round(item.spendAmount * 100) / 100;
+      item.overBudgetAmount = Math.max(0, Math.round((item.spendAmount - item.budgetAmount) * 100) / 100);
+      item.remaining = Math.round((item.budgetAmount-item.spendAmount) * 100) / 100;
+      item.overBudgetAmountForec = Math.max(0, Math.round((item.forecastedAmount - item.budgetAmount) * 100) / 100);
+      if (item.budgetAmount) {
+        item.spentPercent = Math.round(item.spendAmount / item.budgetAmount * 10000)/100
+        item.spentPercentForec = Math.round(item.forecastedAmount / item.budgetAmount * 10000)/100
+      }
+
+      // values for export
+      item.budget = item.budgetAmount;
+      item.spend = item.spendAmount;
+      item.overBudget = item.overBudgetAmount;
+      item.overBudgetForec = item.overBudgetAmountForec;
+      item.group = "";
+      item.is_budgeted = true;
+      if (item.dimensions) {
+        // filter
+        if (_.some(_.keys(item.dimensions), function (dimId) {
+          return filters[dimId] && !_.contains(filters[dimId], item.dimensions[dimId]);
+        })){
+          return;
+        }
+
+        item.group = get_group(item.dimensions, item.dimensionsIDs);
+        item.is_budgeted = !item.dimensions.is_budgeted || item.dimensions.is_budgeted === "Budgeted";
+      }
+      item.metric = cost_metric[item.metric || ''] || item.metric;
+
+      if (item.budget > 0) {
+        item.budget = currency + item.budget;
+      }
+      if (item.spend > 0) {
+        item.spend = currency + item.spend;
+      }
+      if (item.overBudget > 0) {
+        item.overBudget = currency + item.overBudget;
+      }
+      if (item.overBudgetForec > 0) {
+        item.overBudgetForec = currency + item.overBudgetForec;
+      }
+      if (item.forecasted) {
+        item.forecasted = currency + item.forecasted;
+      }
+
+      if (item.spentPercent !== undefined) {
+        var budget_percent = item.spentPercent;
+        var budget_percent_forec = item.spentPercentForec;
+        item.spentPercent += "%";
+        item.spentPercentForec += "%";
+      }
+      item.host = f1_app_host;
+      item.dimm = get_dimm_names(item.dimensionsIDs);
+
+      if ((!item.is_budgeted && item.spendAmount > 0) || item.budgetAmount) {
+        if (param_type == "Actual Spend") {
+          if (!item.is_budgeted) {
+            item.details = "Spend is unbudgeted"
+            results.exceeded.push(item);
+          } else if (item.spendAmount > item.budgetAmount) {
+            item.details = "Actual spend exceeded budget"
+            results.exceeded.push(item);
+          } else if (threshold_percent < budget_percent) {
+            item.details = "Actual spend exceeded budget threshold"
+            results.exceeded.push(item);
+          }
+        } else {
+          if (!item.is_budgeted) {
+            item.details = "Spend is unbudgeted"
+            results.forecasted.push(item);
+          } else if  (item.forecastedAmount > item.budgetAmount) {
+            item.details = "Projected spend exceeded budget"
+            results.forecasted.push(item);
+          } else if (threshold_percent < budget_percent_forec) {
+            item.details = "Projected spend exceeded budget threshold"
+            results.forecasted.push(item);
+          }
+        }
+      }
+    }
+  });
+
+  results.exceeded = _.sortBy(results.exceeded, function (item) {return item.group;})
+  results.forecasted = _.sortBy(results.forecasted, function (item) {return item.group;})
+EOS
+end
+
+datasource "ds_only_forecasted" do
+  run_script $js_only_forecasted, $ds_aggregated
+end
+
+script "js_only_forecasted", type: "javascript" do
+  parameters "arg"
+  result "results"
+  code <<-EOS
+    results = arg.forecasted
+  EOS
+end
+
+datasource "ds_only_exceeded" do
+  run_script $js_only_exceeded, $ds_aggregated
+end
+
+script "js_only_exceeded", type: "javascript" do
+  parameters "arg"
+  result "results"
+  code <<-EOS
+    results = arg.exceeded
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_budget_alert" do
+  validate $ds_aggregated do
+    summary_template "Budget Alerts: Invalid Budget Name or ID: {{parameters.param_budget_name_id}}"
+    detail_template <<-EOS
+  The following provided budget Name or ID is invalid or the budget refers to prior periods:
+  \n
+  - {{parameters.param_budget_name_id}}
+  \n
+EOS
+    escalate $esc_budget_alert
+    check eq(size(val(data, "invalid")),0)
+  end
+
+  validate $ds_only_exceeded do
+    summary_template "{{with index data 0}}{{ .name }}{{end}}: {{parameters.param_threshold_percentage}}% Budget Threshold Is Exceeded ({{ parameters.param_type }})"
+    detail_template <<-EOS
+# {{with index data 0}}{{ .name }}{{end}}: Budget Exceeded
+Budget Alert Type: **{{ parameters.param_type }}**
+
+Monthly Spend for **{{with index data 0}}{{ .monthYear }}{{end}}**
+
+Currency: **{{with index data 0}}{{ .currency }}{{end}}**
+
+Cost Metric: **{{with index data 0}}{{ .metric }}{{end}}**
+
+Dimensions: **{{with index data 0}}{{ .dimm }}{{end}}**
+
+{{ if parameters.param_filter }}
+Target Groups: \n
+{{ range parameters.param_filter }}
+  * **{{ . }}**
+{{ end }}
+{{end}}
+
+[Link to budget report in Flexera One](https://{{with index data 0}}{{ .host }}{{end}}/orgs/{{ rs_org_id }}/optima/budgets/{{with index data 0}}{{ .b_id }}{{end}})
+EOS
+    escalate $esc_budget_alert
+    check eq(size(data),0)
+    export do
+      field "group" do
+        label "Group"
+      end
+      field "budgetAmount" do
+        label "Budget"
+      end
+      field "spendAmount" do
+        label "Actual Spend"
+      end
+      field "forecastedAmount" do
+        label "Projected (prorated) Spend"
+      end
+      field "remaining" do
+        label "Remaining Amount"
+      end
+      field "spentPercent" do
+        label "% of Budget Spent"
+      end
+      field "details" do
+        label "Details"
+      end
+    end
+  end
+
+  validate $ds_only_forecasted do
+    summary_template "{{with index data 0}}{{ .name }}{{end}}: {{parameters.param_threshold_percentage}}% Budget Threshold Is Exceeded ({{ parameters.param_type }})"
+  detail_template <<-EOS
+# {{with index data 0}}{{ .name }}{{end}}: Budget Exceeded
+Budget Alert Type: **{{ parameters.param_type }}**
+
+Monthly Spend for **{{with index data 0}}{{ .monthYear }}{{end}}**
+
+Currency: **{{with index data 0}}{{ .currency }}{{end}}**
+
+Cost Metric: **{{with index data 0}}{{ .metric }}{{end}}**
+
+Dimensions: **{{with index data 0}}{{ .dimm }}{{end}}**
+
+{{ if parameters.param_filter }}
+Target Groups: \n
+{{ range parameters.param_filter }}
+  * **{{ . }}**
+{{ end }}
+{{end}}
+
+[Link to budget report in Flexera One](https://{{with index data 0}}{{ .host }}{{end}}/orgs/{{ rs_org_id }}/optima/budgets/{{with index data 0}}{{ .b_id }}{{end}})
+EOS
+    escalate $esc_budget_alert
+    check eq(size(data),0)
+    export do
+      field "group" do
+        label "Group"
+      end
+      field "budgetAmount" do
+        label "Budget"
+      end
+      field "spendAmount" do
+        label "Actual Spend"
+      end
+      field "forecastedAmount" do
+        label "Projected (prorated) Spend"
+      end
+      field "remaining" do
+        label "Remaining Amount"
+      end
+      field "spentPercent" do
+        label "% of Budget Spent"
+      end
+      field "details" do
+        label "Details"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_budget_alert" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
