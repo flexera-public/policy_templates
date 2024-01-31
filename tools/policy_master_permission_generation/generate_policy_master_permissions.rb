@@ -29,7 +29,8 @@ pt_files = [
   "./cost/google/rightsize_vm_recommendations/google_rightsize_vm_recommendations.pt",
   "./cost/google/idle_persistent_disk_recommendations/google_idle_persistent_disk_recommendations.pt",
   "./cost/google/cloud_sql_idle_instance_recommendations/google_sql_idle_instance_recommendations.pt",
-  "./cost/google/idle_ip_address_recommendations/google_idle_ip_address_recommendations.pt"
+  "./cost/google/idle_ip_address_recommendations/google_idle_ip_address_recommendations.pt",
+  "./cost/google/cud_recommendations/google_committed_use_discount_recommendations.pt",
 ]
 
 
