@@ -1,5 +1,13 @@
 # Changelog
 
+## v5.0
+
+- Added ability to filter resources by tag key, tag key==value, or using regex
+- Added ability to use all filters as an allow list or a deny list
+- Added additional context to incident description
+- Streamlined code for better readability and faster execution
+- Meta policy support added
+
 ## v4.1
 
 - Updated description of `Account Number` parameter
