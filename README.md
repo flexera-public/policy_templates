@@ -87,13 +87,12 @@ These templates can generate savings estimates for your environment.
 
 #### AWS
 
-- [AWS Untagged Resources](./compliance/aws/untagged_resources)
-
 - Compute
 
   - [AWS Disallowed Regions](./compliance/aws/disallowed_regions)
   - [AWS EC2 Instances not running FlexNet Inventory Agent](./compliance/aws/instances_without_fnm_agent)
   - [AWS Long Stopped EC2 Instances](./compliance/aws/long_stopped_instances)
+  - [AWS Untagged Resources](./compliance/aws/untagged_resources)
 
 - ECS
 
@@ -403,6 +402,7 @@ These templates can generate savings estimates for your environment.
 
 #### Azure
 
+- [Azure Migrate Integration](./operational/azure/azure_migrate)
 - [Azure Sync Tags with Optima](./operational/azure/sync_tags_with_optima)
 
 - AKS
@@ -415,10 +415,6 @@ These templates can generate savings estimates for your environment.
   - [Azure Long Running Instances](./operational/azure/azure_long_running_instances)
   - [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks)
   - [Expiring Azure Certificates](./operational/azure/azure_certificates)
-
-- Marketplace
-
-  - [Azure Migrate Integration](./operational/azure/azure_migrate)
 
 - Tags
 
@@ -638,7 +634,7 @@ These templates can generate savings estimates for your environment.
   Security: 74
 :optimization_count: 43
 :policy_sets:
-  '': 81
+  '': 82
   AWS Config: 1
   Allocate VMs: 3
   CIS: 61
@@ -659,7 +655,7 @@ These templates can generate savings estimates for your environment.
   Long Stopped Instances: 3
   N/A: 1
   Native Recommendations: 1
-  New Marketplace Products: 3
+  New Marketplace Products: 2
   Object Store Optimization: 3
   Old Snapshots: 3
   Open Buckets: 1
@@ -683,8 +679,7 @@ These templates can generate savings estimates for your environment.
   Superseded Compute Instances: 2
   Tag Cardinality: 2
   Unlabeled Resources: 1
-  Untagged Resources: 2
-  Untagged resources: 1
+  Untagged Resources: 3
   Unused Database Services: 1
   Unused IP Addresses: 3
   Unused Load Balancers: 1
@@ -719,7 +714,7 @@ These templates can generate savings estimates for your environment.
   Cloud Cost Optimization: 1
   CloudTrail: 7
   Common Bill Ingestion: 2
-  Compute: 50
+  Compute: 51
   Config: 1
   Cost Explorer: 1
   DBS: 1
@@ -733,7 +728,7 @@ These templates can generate savings estimates for your environment.
   KMS: 1
   Kubernetes: 2
   Lambda: 1
-  Marketplace: 3
+  Marketplace: 2
   MySQL: 2
   Network: 1
   Network Security Group: 2
