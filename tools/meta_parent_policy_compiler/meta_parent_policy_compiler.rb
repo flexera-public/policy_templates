@@ -9,6 +9,7 @@ default_child_policy_template_files = [
   "../../compliance/aws/disallowed_regions/aws_disallowed_regions.pt",
   "../../compliance/aws/instances_without_fnm_agent/aws_instances_not_running_flexnet_inventory_agent.pt",
   "../../compliance/aws/long_stopped_instances/aws_long_stopped_instances.pt",
+  "../../compliance/aws/untagged_resources/aws_untagged_resources.pt",
   "../../cost/aws/gp3_volume_upgrade/aws_upgrade_to_gp3_volume.pt",
   "../../cost/aws/idle_compute_instances/idle_compute_instances.pt",
   "../../cost/aws/object_storage_optimization/aws_object_storage_optimization.pt",
