@@ -462,18 +462,22 @@ script "js_byol_report", type:"javascript" do
       percentage: percentage,
       start_date: start_date,
       end_date: end_date,
-      policy_name: ds_applied_policy['name']
+      policy_name: ds_applied_policy['name'],
+      message: '',
+      peak_byol: '',
+      peak_byol_date: '',
+      peak_percentage: '',
+      peak_percentage_date: ''
     })
   })
 
-  if (result.length > 0) {
-    message = [
-      "**Date Range:** ", start_date, " -> ", end_date, "\n",
-      "**Peak Total BYOL Usage:** ", peak_byol, " VMs on ", peak_byol_date, "\n",
-      "**Peak Percentage BYOL Usage:** ", peak_percentage, "% of VMs on ", peak_percentage_date
-    ].join('')
+  result = _.sortBy(result, 'date')
 
-    result[0]['message'] = message
+  if (result.length > 0) {
+    result[0]['peak_byol'] = peak_byol
+    result[0]['peak_byol_date'] = peak_byol_date
+    result[0]['peak_percentage'] = peak_percentage
+    result[0]['peak_percentage_date'] = peak_percentage_date
   }
 EOS
 end
@@ -485,7 +489,11 @@ end
 policy "pol_byol_report" do
   validate_each $ds_byol_report do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ with index data 0 }}{{ .start_date }}{{ end }} -> {{ with index data 0 }}{{ .end_date }}{{ end }}"
-    detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
+    detail_template <<-'EOS'
+    **Date Range:** {{ with index data 0 }}{{ .start_date }}{{ end }} -> {{ with index data 0 }}{{ .end_date }}{{ end }}
+    **Peak Total BYOL Usage:** {{ with index data 0 }}{{ .peak_byol }}{{ end }} VMs on {{ with index data 0 }}{{ .peak_byol_date }}{{ end }}
+    **Peak Percentage BYOL Usage:** {{ with index data 0 }}{{ .peak_percentage }}{{ end }}% of VMs on {{ with index data 0 }}{{ .peak_percentage_date }}{{ end }}
+    EOS
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
     check logic_or($ds_parent_policy_terminated, eq(val(item, "date"), ""))
     escalate $esc_email
