@@ -10,6 +10,7 @@ This policy has the following input parameters required when launching the polic
 
 - *Effective Date* - The month and year in YYYY-MM format that you want the rules to apply. This should be left at its default value in most cases to ensure that the rules apply to all costs, including historical costs.
 - *Tag Keys* - A list of Azure Resource Group tag keys to create custom Rule-Based Dimensions for.
+- *Dimension Names* - A list of names to give the Rule-Based Dimensions in the Flexera platform. Enter names in the same order as the tag keys in the `Tag Keys` field. Dimension names will be derived from tag keys directly if this list is left empty.
 - *Subscription Fallback Rules* - Whether or not to create rules for Subscription tags as a fallback for untagged Resource Groups. These rules have the lowest priority; rules created for Resource Group tags will always take precedence.
 
 ## Prerequisites
