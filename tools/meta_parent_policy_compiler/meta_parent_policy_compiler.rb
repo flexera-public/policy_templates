@@ -55,6 +55,7 @@ default_child_policy_template_files = [
   "../../cost/azure/databricks/rightsize_compute/azure_databricks_rightsize_compute.pt",
   "../../operational/azure/azure_certificates/azure_certificates.pt",
   "../../operational/azure/azure_long_running_instances/azure_long_running_instances.pt",
+  "../../operational/azure/byol_report/azure_byol_report.pt",
   "../../operational/azure/tag_cardinality/azure_tag_cardinality.pt",
   "../../operational/azure/vms_without_managed_disks/azure_vms_without_managed_disks.pt",
   # Google Policy Templates
