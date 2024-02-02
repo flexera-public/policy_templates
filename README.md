@@ -51,6 +51,7 @@ These templates can generate savings estimates for your environment.
 - [Azure Old Snapshots](./cost/azure/old_snapshots)
 - [Azure Reserved Instances Recommendations](./cost/azure/reserved_instances/recommendations)
 - [Azure Rightsize Compute Instances](./cost/azure/rightsize_compute_instances)
+- [Azure Rightsize Managed Disks](./cost/azure/rightsize_managed_disks)
 - [Azure Rightsize SQL Databases](./cost/azure/rightsize_sql_instances)
 - [Azure Savings Plan Recommendations](./cost/azure/savings_plan/recommendations)
 - [Azure Superseded Compute Instances](./cost/azure/superseded_instances)
@@ -256,6 +257,10 @@ These templates can generate savings estimates for your environment.
 - Databricks
 
   - [Azure Databricks Rightsize Compute Instances](./cost/azure/databricks/rightsize_compute)
+
+- Managed Disks
+
+  - [Azure Rightsize Managed Disks](./cost/azure/rightsize_managed_disks)
 
 - Marketplace
 
@@ -626,11 +631,11 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 34
-  Cost: 96
+  Cost: 97
   Operational: 23
   SaaS Management: 12
   Security: 74
-:optimization_count: 43
+:optimization_count: 44
 :policy_sets:
   '': 82
   AWS Config: 1
@@ -666,6 +671,7 @@ These templates can generate savings estimates for your environment.
   Rightsize Containers: 1
   Rightsize Database Instances: 4
   Rightsize Database Services: 1
+  Rightsize Storage: 1
   Rightsize Volumes: 2
   Savings Plan Utilization: 1
   Savings Plans: 2
@@ -685,7 +691,7 @@ These templates can generate savings estimates for your environment.
 :providers:
   '': 1
   AWS: 76
-  Azure: 79
+  Azure: 80
   Azure China: 1
   Flexera: 6
   Flexera Cloud Management: 3
@@ -726,6 +732,7 @@ These templates can generate savings estimates for your environment.
   KMS: 1
   Kubernetes: 2
   Lambda: 1
+  Managed Disks: 1
   Marketplace: 2
   MySQL: 2
   Network: 1
@@ -744,7 +751,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 239
+:total_count: 240
 -->
 <!-- End Policy Template Stats -->
 
