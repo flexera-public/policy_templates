@@ -153,12 +153,6 @@ These templates can generate savings estimates for your environment.
 
 - [Billing Center Access Report](./compliance/billing_center_access_report)
 
-#### GCE
-
-- Compute
-
-  - [Google Long-stopped instances](./compliance/google/long_stopped_instances)
-
 #### GitHub
 
 - [GitHub.com Available Seats Report](./compliance/github/available_seats)
@@ -172,6 +166,10 @@ These templates can generate savings estimates for your environment.
 #### Google
 
 - [Google Unlabeled Resources](./compliance/google/unlabeled_resources)
+
+- Compute
+
+  - [Google Long Stopped VM Instances](./compliance/google/long_stopped_instances)
 
 ### Policy Templates for Cost
 
@@ -696,9 +694,9 @@ These templates can generate savings estimates for your environment.
   Flexera Optima: 24
   Flexera RISC: 2
   Flexera SaaS Manager: 9
-  GCE: 8
+  GCE: 7
   GitHub: 7
-  Google: 11
+  Google: 12
   Kubecost: 2
   Microsoft: 1
   Okta: 1
