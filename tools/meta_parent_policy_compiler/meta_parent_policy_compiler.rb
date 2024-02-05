@@ -9,6 +9,7 @@ default_child_policy_template_files = [
   "../../compliance/aws/disallowed_regions/aws_disallowed_regions.pt",
   "../../compliance/aws/instances_without_fnm_agent/aws_instances_not_running_flexnet_inventory_agent.pt",
   "../../compliance/aws/long_stopped_instances/aws_long_stopped_instances.pt",
+  "../../compliance/aws/untagged_resources/aws_untagged_resources.pt",
   "../../cost/aws/gp3_volume_upgrade/aws_upgrade_to_gp3_volume.pt",
   "../../cost/aws/idle_compute_instances/idle_compute_instances.pt",
   "../../cost/aws/object_storage_optimization/aws_object_storage_optimization.pt",
@@ -42,6 +43,7 @@ default_child_policy_template_files = [
   "../../cost/azure/object_storage_optimization/azure_object_storage_optimization.pt",
   "../../cost/azure/old_snapshots/azure_delete_old_snapshots.pt",
   "../../cost/azure/rightsize_compute_instances/azure_compute_rightsizing.pt",
+  "../../cost/azure/rightsize_managed_disks/azure_rightsize_managed_disks.pt",
   "../../cost/azure/rightsize_sql_instances/azure_rightsize_sql_instances.pt",
   "../../cost/azure/unused_ip_addresses/azure_unused_ip_addresses.pt",
   "../../cost/azure/unused_sql_databases/azure_unused_sql_databases.pt",
@@ -58,6 +60,7 @@ default_child_policy_template_files = [
   "../../operational/azure/tag_cardinality/azure_tag_cardinality.pt",
   "../../operational/azure/vms_without_managed_disks/azure_vms_without_managed_disks.pt",
   # Google Policy Templates
+  "../../compliance/google/long_stopped_instances/google_long_stopped_instances.pt",
   "../../cost/google/cloud_sql_idle_instance_recommendations/google_sql_idle_instance_recommendations.pt",
   "../../cost/google/idle_ip_address_recommendations/google_idle_ip_address_recommendations.pt",
   "../../cost/google/idle_persistent_disk_recommendations/google_idle_persistent_disk_recommendations.pt",
@@ -65,7 +68,6 @@ default_child_policy_template_files = [
   "../../cost/google/cud_recommendations/google_committed_use_discount_recommendations.pt",
   "../../cost/google/old_snapshots/google_delete_old_snapshots.pt"
 ]
-
 
 # Compile Meta Parent Policy Definition
 # This function takes a child policy template file path

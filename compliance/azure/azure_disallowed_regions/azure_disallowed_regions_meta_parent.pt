@@ -8,7 +8,7 @@ tenancy "single"
 default_frequency "15 minutes"
 info(
   provider: "Azure",
-  version: "3.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "4.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "false"
 )
 
@@ -70,23 +70,55 @@ end
 ## Child Policy Parameters
 parameter "param_azure_endpoint" do
   type "string"
+  category "Policy Settings"
   label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
   allowed_values "management.azure.com", "management.chinacloudapi.cn"
   default "management.azure.com"
 end
 
-parameter "param_approved_region" do
+parameter "param_exclusion_tags" do
   type "list"
-  label "Approved Azure Region(s)"
-  category "Azure"
+  category "Filters"
+  label "Exclusion Tags (Key:Value)"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:*"
+  allowed_pattern /(^$)|[\w]*\:.*/
+  default []
+end
+
+parameter "param_regions_disallow_or_allow" do
+  type "string"
+  category "Filters"
+  label "Disallow/Allow Regions"
+  description "Disallow or Allow entered regions. See the README for more details."
+  allowed_values "Disallow", "Allow"
+  default "Disallow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Disallow/Allow Regions List"
+  description "A list of disallowed or allowed regions. See the README for more details."
+  default []
 end
 
 parameter "param_automatic_action" do
   type "list"
+  category "Actions"
   label "Automatic Actions"
-  description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Terminate Instances"]
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Power Off Instances", "Delete Instances"]
   default []
+end
+
+parameter "param_skipshutdown" do
+  type "string"
+  category "Actions"
+  label "Power Off Type"
+  description "Whether to perform a graceful shutdown or a forced shutdown when powering off idle instances. Only applicable when taking action against instances."
+  allowed_values "Graceful", "Forced"
+  default "Graceful"
 end
 
 ###############################################################################
@@ -758,19 +790,19 @@ datasource "ds_child_incident_details" do
   end
 end
 
-datasource "filtered_resources_combined_incidents" do
-  run_script $js_filtered_resources_combined_incidents, $ds_child_incident_details
+datasource "ds_instances_in_bad_regions_combined_incidents" do
+  run_script $js_ds_instances_in_bad_regions_combined_incidents, $ds_child_incident_details
 end
 
-script "js_filtered_resources_combined_incidents", type: "javascript" do
+script "js_ds_instances_in_bad_regions_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-EOS
   result = []
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
-    // If the incident summary contains "Azure Resources out of compliance" then include it in the filter result
-    if (s.indexOf("Azure Resources out of compliance") > -1) {
+    // If the incident summary contains "Azure Virtual Machines In Disallowed Regions Found" then include it in the filter result
+    if (s.indexOf("Azure Virtual Machines In Disallowed Regions Found") > -1) {
       _.each(incident["violation_data"], function(violation) {
         violation["incident_id"] = incident["id"];
         result.push(violation);
@@ -781,15 +813,26 @@ EOS
 end
 
 
-# Escalation for Delete Resource
-escalation "delete_resources" do
+# Escalation for Power Off Instances
+escalation "esc_poweroff_instances" do
   automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
-  label "Delete Resource"
-  description "Delete the selected instance"
-  run "delete_resources", data, rs_governance_host, rs_project_id
+  label "Power Off Instances"
+  description "Approval to power off all selected instances"
+  run "esc_poweroff_instances", data, rs_governance_host, rs_project_id
 end
-define delete_resources($data, $governance_host, $rs_project_id) do
-  call child_run_action($data, $governance_host, $rs_project_id, "Delete Resource")
+define esc_poweroff_instances($data, $governance_host, $rs_project_id) do
+  call child_run_action($data, $governance_host, $rs_project_id, "Power Off Instances")
+end
+
+# Escalation for Delete Instances
+escalation "esc_delete_instances" do
+  automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
+  label "Delete Instances"
+  description "Approval to delete all selected instances"
+  run "esc_delete_instances", data, rs_governance_host, rs_project_id
+end
+define esc_delete_instances($data, $governance_host, $rs_project_id) do
+  call child_run_action($data, $governance_host, $rs_project_id, "Delete Instances")
 end
 
 
@@ -799,28 +842,53 @@ end
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
-    # Consolidated incident for Azure Resources out of compliance
-  validate $filtered_resources_combined_incidents do
-    summary_template "Consolidated Incident: {{ len data }} Azure Resources out of compliance"
+    # Consolidated incident for Azure Virtual Machines In Disallowed Regions Found
+  validate $ds_instances_in_bad_regions_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} Azure Virtual Machines In Disallowed Regions Found"
     escalate $esc_email
-    escalate $delete_resources
+    escalate $esc_poweroff_instances
+    escalate $esc_delete_instances
     check eq(size(data), 0)
     export do
       resource_level true
-      field "subscriptionName" do
+      field "accountID" do
+        label "Subscription ID"
+      end
+      field "accountName" do
         label "Subscription Name"
       end
-      field "name" do
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "resourceName" do
         label "Resource Name"
       end
-      field "region" do
-        label "Location"
-      end
-      field "id" do
+      field "resourceID" do
         label "Resource ID"
       end
-      field "managedBy" do
-        label "Managed By"
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "resourceType" do
+        label "Instance Size"
+      end
+      field "resourceKind" do
+        label "Resource Kind"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "osType" do
+        label "Operating System"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "ID"
       end
       field "incident_id" do
         label "Child Incident ID"

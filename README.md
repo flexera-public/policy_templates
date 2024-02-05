@@ -51,6 +51,7 @@ These templates can generate savings estimates for your environment.
 - [Azure Old Snapshots](./cost/azure/old_snapshots)
 - [Azure Reserved Instances Recommendations](./cost/azure/reserved_instances/recommendations)
 - [Azure Rightsize Compute Instances](./cost/azure/rightsize_compute_instances)
+- [Azure Rightsize Managed Disks](./cost/azure/rightsize_managed_disks)
 - [Azure Rightsize SQL Databases](./cost/azure/rightsize_sql_instances)
 - [Azure Savings Plan Recommendations](./cost/azure/savings_plan/recommendations)
 - [Azure Superseded Compute Instances](./cost/azure/superseded_instances)
@@ -87,13 +88,12 @@ These templates can generate savings estimates for your environment.
 
 #### AWS
 
-- [AWS Untagged Resources](./compliance/aws/untagged_resources)
-
 - Compute
 
   - [AWS Disallowed Regions](./compliance/aws/disallowed_regions)
   - [AWS EC2 Instances not running FlexNet Inventory Agent](./compliance/aws/instances_without_fnm_agent)
   - [AWS Long Stopped EC2 Instances](./compliance/aws/long_stopped_instances)
+  - [AWS Untagged Resources](./compliance/aws/untagged_resources)
 
 - ECS
 
@@ -154,12 +154,6 @@ These templates can generate savings estimates for your environment.
 
 - [Billing Center Access Report](./compliance/billing_center_access_report)
 
-#### GCE
-
-- Compute
-
-  - [Google Long-stopped instances](./compliance/google/long_stopped_instances)
-
 #### GitHub
 
 - [GitHub.com Available Seats Report](./compliance/github/available_seats)
@@ -173,6 +167,10 @@ These templates can generate savings estimates for your environment.
 #### Google
 
 - [Google Unlabeled Resources](./compliance/google/unlabeled_resources)
+
+- Compute
+
+  - [Google Long Stopped VM Instances](./compliance/google/long_stopped_instances)
 
 ### Policy Templates for Cost
 
@@ -259,6 +257,10 @@ These templates can generate savings estimates for your environment.
 - Databricks
 
   - [Azure Databricks Rightsize Compute Instances](./cost/azure/databricks/rightsize_compute)
+
+- Managed Disks
+
+  - [Azure Rightsize Managed Disks](./cost/azure/rightsize_managed_disks)
 
 - Marketplace
 
@@ -403,6 +405,7 @@ These templates can generate savings estimates for your environment.
 
 #### Azure
 
+- [Azure Migrate Integration](./operational/azure/azure_migrate)
 - [Azure Sync Tags with Optima](./operational/azure/sync_tags_with_optima)
 
 - AKS
@@ -415,10 +418,6 @@ These templates can generate savings estimates for your environment.
   - [Azure Long Running Instances](./operational/azure/azure_long_running_instances)
   - [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks)
   - [Expiring Azure Certificates](./operational/azure/azure_certificates)
-
-- Marketplace
-
-  - [Azure Migrate Integration](./operational/azure/azure_migrate)
 
 - Tags
 
@@ -632,13 +631,13 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 34
-  Cost: 96
+  Cost: 97
   Operational: 23
   SaaS Management: 12
   Security: 74
-:optimization_count: 43
+:optimization_count: 44
 :policy_sets:
-  '': 81
+  '': 82
   AWS Config: 1
   Allocate VMs: 3
   CIS: 61
@@ -659,7 +658,7 @@ These templates can generate savings estimates for your environment.
   Long Stopped Instances: 3
   N/A: 1
   Native Recommendations: 1
-  New Marketplace Products: 3
+  New Marketplace Products: 2
   Object Store Optimization: 3
   Old Snapshots: 3
   Open Buckets: 1
@@ -672,6 +671,7 @@ These templates can generate savings estimates for your environment.
   Rightsize Containers: 1
   Rightsize Database Instances: 4
   Rightsize Database Services: 1
+  Rightsize Storage: 1
   Rightsize Volumes: 2
   Savings Plan Utilization: 1
   Savings Plans: 2
@@ -683,8 +683,7 @@ These templates can generate savings estimates for your environment.
   Superseded Compute Instances: 2
   Tag Cardinality: 2
   Unlabeled Resources: 1
-  Untagged Resources: 2
-  Untagged resources: 1
+  Untagged Resources: 3
   Unused Database Services: 1
   Unused IP Addresses: 3
   Unused Load Balancers: 1
@@ -692,7 +691,7 @@ These templates can generate savings estimates for your environment.
 :providers:
   '': 1
   AWS: 76
-  Azure: 79
+  Azure: 80
   Azure China: 1
   Flexera: 6
   Flexera Cloud Management: 3
@@ -701,9 +700,9 @@ These templates can generate savings estimates for your environment.
   Flexera Optima: 24
   Flexera RISC: 2
   Flexera SaaS Manager: 9
-  GCE: 8
+  GCE: 7
   GitHub: 7
-  Google: 11
+  Google: 12
   Kubecost: 2
   Microsoft: 1
   Okta: 1
@@ -719,7 +718,7 @@ These templates can generate savings estimates for your environment.
   Cloud Cost Optimization: 1
   CloudTrail: 7
   Common Bill Ingestion: 2
-  Compute: 50
+  Compute: 51
   Config: 1
   Cost Explorer: 1
   DBS: 1
@@ -733,7 +732,8 @@ These templates can generate savings estimates for your environment.
   KMS: 1
   Kubernetes: 2
   Lambda: 1
-  Marketplace: 3
+  Managed Disks: 1
+  Marketplace: 2
   MySQL: 2
   Network: 1
   Network Security Group: 2
@@ -751,7 +751,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 239
+:total_count: 240
 -->
 <!-- End Policy Template Stats -->
 

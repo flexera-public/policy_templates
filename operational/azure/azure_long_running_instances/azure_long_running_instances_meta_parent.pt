@@ -8,7 +8,7 @@ tenancy "single"
 default_frequency "15 minutes"
 info(
   provider: "Azure",
-  version: "4.2", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "5.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "false"
 )
 
@@ -113,12 +113,21 @@ parameter "param_exclusion_tags" do
 end
 
 parameter "param_automatic_action" do
-  type "string"
+  type "list"
   category "Actions"
   label "Automatic Actions"
-  description "The policy will automatically take the selected action"
-  default "No Automatic Actions"
-  allowed_values "No Automatic Actions", "Stop Instances", "Terminate Instances"
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Power Off Instances", "Delete Instances"]
+  default []
+end
+
+parameter "param_skipshutdown" do
+  type "string"
+  category "Actions"
+  label "Power Off Type"
+  description "Whether to perform a graceful shutdown or a forced shutdown when powering off idle instances. Only applicable when taking action against instances."
+  allowed_values "Graceful", "Forced"
+  default "Graceful"
 end
 
 ###############################################################################
@@ -813,26 +822,26 @@ EOS
 end
 
 
-# Escalation for Stop Instances
-escalation "esc_stop_instances" do
+# Escalation for Power Off Instances
+escalation "esc_poweroff_instances" do
   automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
-  label "Stop Instances"
-  description "Approval to stop all selected instances"
-  run "esc_stop_instances", data, rs_governance_host, rs_project_id
+  label "Power Off Instances"
+  description "Approval to power off all selected instances"
+  run "esc_poweroff_instances", data, rs_governance_host, rs_project_id
 end
-define esc_stop_instances($data, $governance_host, $rs_project_id) do
-  call child_run_action($data, $governance_host, $rs_project_id, "Stop Instances")
+define esc_poweroff_instances($data, $governance_host, $rs_project_id) do
+  call child_run_action($data, $governance_host, $rs_project_id, "Power Off Instances")
 end
 
-# Escalation for Terminate Instances
-escalation "esc_terminate_instances" do
+# Escalation for Delete Instances
+escalation "esc_delete_instances" do
   automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
-  label "Terminate Instances"
-  description "Approval to terminate all selected instances"
-  run "esc_terminate_instances", data, rs_governance_host, rs_project_id
+  label "Delete Instances"
+  description "Approval to delete all selected instances"
+  run "esc_delete_instances", data, rs_governance_host, rs_project_id
 end
-define esc_terminate_instances($data, $governance_host, $rs_project_id) do
-  call child_run_action($data, $governance_host, $rs_project_id, "Terminate Instances")
+define esc_delete_instances($data, $governance_host, $rs_project_id) do
+  call child_run_action($data, $governance_host, $rs_project_id, "Delete Instances")
 end
 
 
@@ -846,8 +855,8 @@ policy "policy_scheduled_report" do
   validate $ds_long_running_instances_incident_combined_incidents do
     summary_template "Consolidated Incident: {{ len data }} Azure Long Running Instances Found"
     escalate $esc_email
-    escalate $esc_stop_instances
-    escalate $esc_terminate_instances
+    escalate $esc_poweroff_instances
+    escalate $esc_delete_instances
     check eq(size(data), 0)
     export do
       resource_level true

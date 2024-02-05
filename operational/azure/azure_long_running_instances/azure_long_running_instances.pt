@@ -7,7 +7,7 @@ category "Operational"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "4.2",
+  version: "5.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Long Running Instances"
@@ -87,12 +87,21 @@ parameter "param_exclusion_tags" do
 end
 
 parameter "param_automatic_action" do
-  type "string"
+  type "list"
   category "Actions"
   label "Automatic Actions"
-  description "The policy will automatically take the selected action"
-  default "No Automatic Actions"
-  allowed_values "No Automatic Actions", "Stop Instances", "Terminate Instances"
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Power Off Instances", "Delete Instances"]
+  default []
+end
+
+parameter "param_skipshutdown" do
+  type "string"
+  category "Actions"
+  label "Power Off Type"
+  description "Whether to perform a graceful shutdown or a forced shutdown when powering off idle instances. Only applicable when taking action against instances."
+  allowed_values "Graceful", "Forced"
+  default "Graceful"
 end
 
 ###############################################################################
@@ -628,7 +637,7 @@ script "js_long_running_instances_incident", type: "javascript" do
       operating_system: "",
       billing_center: "",
       purchase_option: "",
-      service: "",
+      service: "Microsoft.Compute",
       message: ""
     }
 
@@ -639,7 +648,6 @@ script "js_long_running_instances_incident", type: "javascript" do
       instance['operating_system'] = ds_instance_costs_grouped[id]['operating_system']
       instance['billing_center'] = ds_instance_costs_grouped[id]['billing_center']
       instance['purchase_option'] = ds_instance_costs_grouped[id]['purchase_option']
-      instance['service'] = ds_instance_costs_grouped[id]['service']
     }
 
     result.push(instance)
@@ -696,8 +704,8 @@ policy "pol_utilization" do
     {{ with index data 0 }}{{ .message }}{{ end }}
     EOS
     escalate $esc_email
-    escalate $esc_stop_instances
-    escalate $esc_terminate_instances
+    escalate $esc_poweroff_instances
+    escalate $esc_delete_instances
     check logic_or($ds_parent_policy_terminated, eq(val(item, "id"), ""))
     hash_exclude "tags", "cost", "costCurrency", "age", "billing_center", "lookbackPeriod", "policy_name", "message"
     export do
@@ -772,73 +780,119 @@ escalation "esc_email" do
   email $param_email
 end
 
-escalation "esc_stop_instances" do
-  automatic eq($param_automatic_action, "Stop Instances")
-  label "Stop Instances"
-  description "Approval to stop all selected instances"
-  run "stop_instances", data, $param_azure_endpoint
+escalation "esc_poweroff_instances" do
+  automatic contains($param_automatic_action, "Power Off Instances")
+  label "Power Off Instances"
+  description "Approval to power off all selected instances"
+  run "poweroff_instances", data, $param_azure_endpoint, $param_skipshutdown
 end
 
-escalation "esc_terminate_instances" do
-  automatic eq($param_automatic_action, "Terminate Instances")
-  label "Terminate Instances"
-  description "Approval to terminate all selected instances"
-  run "terminate_instances", data, $param_azure_endpoint
+escalation "esc_delete_instances" do
+  automatic contains($param_automatic_action, "Delete Instances")
+  label "Delete Instances"
+  description "Approval to delete all selected instances"
+  run "delete_instances", data, $param_azure_endpoint
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-# Workflow to power off the virtual machines
-define stop_instances($data, $param_azure_endpoint) return $all_responses do
-  $all_responses = []
+define poweroff_instances($data, $param_azure_endpoint, $param_skipshutdown) return $all_responses do
+  $$all_responses = []
 
-  foreach $item in $data do
-    sub on_error: skip do
-      $response = http_request(
-        auth: $$auth_azure,
-        verb: "POST",
-        host: $param_azure_endpoint,
-        href: join([$item['id'], "/powerOff/"]),
-        https: true,
-        query_strings: {
-          "api-version": "2022-08-01"
-        },
-        headers: {
-          "cache-control": "no-cache",
-          "content-type": "application/json"
-        }
-      )
-
-      $all_responses << $response
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call poweroff_instance($instance, $param_azure_endpoint, $param_skipshutdown) retrieve $poweroff_response
     end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
   end
 end
 
-define terminate_instances($data, $param_azure_endpoint) return $all_responses do
-  $all_responses = []
+define poweroff_instance($instance, $param_azure_endpoint, $param_skipshutdown) return $response do
+  $host = $param_azure_endpoint
+  $href = $instance["id"] + "/powerOff"
+  $params = "?api-version=2023-07-01"
+  $url = $host + $href + $params
+  task_label("POST " + $url)
 
-  foreach $item in $data do
-    sub on_error: skip do
-      $response = http_request(
-        auth: $$auth_azure,
-        verb: "DELETE",
-        host: $param_azure_endpoint,
-        href: $item['id'],
-        https: true,
-        query_strings: {
-          "api-version": "2022-08-01"
-        },
-        headers: {
-          "cache-control": "no-cache",
-          "content-type": "application/json"
-        }
-      )
+  $query_strings = { "api-version": "2023-07-01" }
 
-      $all_responses << $response
+  if $param_skipshutdown == "Forced"
+    $query_strings["skipShutdown"] = "true"
+    $params = $params + "&skipShutdown=true"
+  end
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "post",
+    host: $host,
+    href: $href,
+    query_strings: $query_strings
+  )
+
+  task_label("Power off Azure VM instance response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response powering off Azure VM instance: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Power off Azure VM instance successful: " + $instance["id"])
+  end
+end
+
+define delete_instances($data, $param_azure_endpoint) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call delete_instance($instance, $param_azure_endpoint) retrieve $delete_response
     end
   end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+define delete_instance($instance, $param_azure_endpoint) return $response do
+  $host = $param_azure_endpoint
+  $href = $instance["id"]
+  $params = "?api-version=2023-07-01"
+  $url = $host + $href + $params
+  task_label("DELETE " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "delete",
+    host: $host,
+    href: $href,
+    query_strings: { "api-version": "2023-07-01" }
+  )
+
+  task_label("Delete Azure VM instance response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response deleting Azure VM instance: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Delete Azure VM instance successful: " + $instance["id"])
+  end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
 end
 
 ###############################################################################
