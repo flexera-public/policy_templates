@@ -1,45 +1,41 @@
 # Azure Blob Storage Optimization
 
-## What it does
+## What It Does
 
-This Policy checks Azure Blob Storage for older objects and can move old object to the Cool or Archive tier after a given period of time.
-
-## Functional Details
-
-- This policy identifies all Azure Blob Storage objects last modified outside of the specified timeframe
-- For all objects identified as old, the user can choose to move the object to Cool or Archived tiers after user approval
+This policy checks Azure storage containers for blobs to move to the 'Cool' or 'Archive' storage tiers based on blob age. The user can opt to either delete the blobs or move them to the recommended storage tier.
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
-
-- *Storage Account* - Name of Storage account to search for blobs
-- *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
-- *Move to Cool tier after days last modified* - leave blank to skip moving
-- *Move to Archive tier after days last modified* - leave blank to skip moving
+- *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
+- *Azure Endpoint* - The endpoint to send Azure API requests to. Recommended to leave this at default unless using this policy with Azure China.
+- *Storage Account List* - A list of Azure Storage Accounts to assess blobs in. Leave blank to assess blobs in all accounts.
+- *Allow/Deny Subscriptions* - Allow or Deny entered Subscriptions to filter results.
+- *Allow/Deny Subscriptions List* - A list of allowed or denied Subscription IDs/names. Leave blank to check all Subscriptions.
+- *Allow/Deny Regions* - Allow or Deny entered regions to filter results.
+- *Allow/Deny Regions List* - A list of allowed or denied regions. Leave blank to check all Subscriptions.
+- *Exclusion Tags (Key:Value)* - Cloud native tags to ignore storage accounts that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:\* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:\*
+- *New Storage Tier* - Whether to move blobs to Cool or Archive if they meet the specified age thresholds. Select 'Both' to consider moving blobs to either one based on the specified age thresholds
+- *Cool Age Threshold (Days)* - Time in days since blob was last modified to change storage tier to Cool. Not applicable if 'Archive' is selected for New Storage Tier.
+- *Archive Age Threshold (Days)* - Time in days since blob was last modified to change storage tier to Archive. Not applicable if 'Cool' is selected for New Storage Tier.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
-Please note that the "*Automatic Actions*" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
-For example if a user selects the "Modify Blob storage" action while applying the policy, all the identified older objects can be moved to Cool or Archive tier.
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example if a user selects the "Delete Blobs" action while applying the policy, all of the blobs that didn't satisfy the policy condition will be deleted.
 
 ## Prerequisites
 
-This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
-### Credential configuration
+- [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:
+  - `Microsoft.Storage/storageAccounts/read`
 
-Please create separate credentials for each storage account by selecting Credential Type as OAuth2 and mention the storage account name in the Additional Parameters resource URL.
-Example resource : `https://my_azure_storage_account.blob.core.windows.net/` , replace my_azure_storage_account with the name of the storage account.
+- [**Azure Storage Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121576) (*provider=azure_storage*). Note that a credential can be made with access to several storage accounts by setting `resource` to `https://storage.azure.com` in the Additional Parameters when creating this credential in Flexera One. This credential should have the following permissions for every storage account whose blobs you want to assess:
+  - `Storage Blob Data Owner`
 
-For more details, please refer [API Usage](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm#provider-specific-credentials--azure--) to create Azure RM credentials with oauth2.
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - `billing_center_viewer`
 
-For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
-
-Provider tag value to match this policy: `azure_rm`
-
-Required permissions in the provider:
-
-- Storage Blob Data Owner
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ## Supported Clouds
 
@@ -47,10 +43,4 @@ Required permissions in the provider:
 
 ## Cost
 
-This policy does not incur any cloud costs.
-
-## Notes
-
-1. 'Storage Blob Data Owner' permission need to be added for storage account to fetch the container/blobs list, before calling List Containers/List Blobs API's.
-1. Enter 'Standard Type' storage account with account kind type as 'StorageV2 (general purpose v2) / BlobStorage' to search for blobs.
-1. Blob with type 'PageBlob' or 'AppendBlob' will not support moving object to 'cool tier' and 'archive tier'.
+This Policy Template does not incur any cloud costs.

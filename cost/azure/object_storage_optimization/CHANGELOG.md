@@ -1,5 +1,20 @@
 # Changelog
 
+## v3.0
+
+- Several parameters altered to be more descriptive and human-readable
+- Added ability to assess blobs in multiple storage accounts
+- Added ability to filter storage accounts by subscription
+- Added ability to filter storage accounts by region
+- Added ability to filter storage accounts by multiple tag key:value pairs
+- Added ability to delete blobs
+- Added additional context to incident description
+- Normalized incident export to be consistent with other policies
+- Added human-readable recommendation to incident export
+- Policy no longer raises new escalations if tag data changed but nothing else has
+- Streamlined code for better readability and faster execution
+- Policy now correctly requires both Azure Resource Manager and Azure Storage credentials
+
 ## v2.6
 
 - Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM
