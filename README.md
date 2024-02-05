@@ -233,10 +233,6 @@ These templates can generate savings estimates for your environment.
 
 #### Azure
 
-- Blob Store
-
-  - [Azure Blob Storage Optimization](./cost/azure/object_storage_optimization)
-
 - Compute
 
   - [Azure Hybrid Use Benefit for Linux Server](./cost/azure/hybrid_use_benefit_linux)
@@ -273,6 +269,7 @@ These templates can generate savings estimates for your environment.
 
 - Storage
 
+  - [Azure Blob Storage Optimization](./cost/azure/object_storage_optimization)
   - [Azure Old Snapshots](./cost/azure/old_snapshots)
   - [Azure Unused Volumes](./cost/azure/unused_volumes)
   - [Turbonomic Delete Unattached Volumes Recommendations Azure](./cost/turbonomics/delete_unattached_volumes/azure)
@@ -713,7 +710,6 @@ These templates can generate savings estimates for your environment.
   AKS: 2
   All: 1
   App Service: 1
-  Blob Store: 1
   CCO: 1
   Cloud Cost Optimization: 1
   CloudTrail: 7
@@ -745,7 +741,7 @@ These templates can generate savings estimates for your environment.
   S3: 8
   SQL: 14
   Security: 3
-  Storage: 21
+  Storage: 22
   Storage Accounts: 2
   Tags: 2
   Usage Discount: 6
