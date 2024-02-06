@@ -3,11 +3,11 @@ rs_pt_ver 20180301
 type "policy"
 short_description "This Policy Template allows you to schedule start and stop times for your instance, along with the option to terminate instance, update and delete schedule. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/schedule_instance/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
-category "Cost"
 severity "low"
+category "Cost"
 default_frequency "daily"
 info(
-  version: "4.2",
+  version: "5.0",
   provider: "AWS",
   service: "Compute",
   policy_set:"Schedule Instance"
@@ -17,25 +17,12 @@ info(
 # Parameters
 ###############################################################################
 
-parameter "param_allowed_regions_allow_or_deny" do
-  type "string"
-  label "Allow/Deny Regions"
-  description "Allow or Deny entered regions. See the README for more details"
-  allowed_values "Allow", "Deny"
-  default "Allow"
-end
-
-parameter "param_allowed_regions" do
-  type "list"
-  label "Regions"
-  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
-  description "A list of allowed or denied regions. See the README for more details"
-end
-
 parameter "param_email" do
   type "list"
-  label "Email addresses"
-  description "A list of email addresses to notify"
+  category "Policy Settings"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+  default []
 end
 
 parameter "param_aws_account_number" do
@@ -46,14 +33,36 @@ parameter "param_aws_account_number" do
   default ""
 end
 
-parameter "param_tags_to_exclude" do
+parameter "param_exclusion_tags" do
   type "list"
-  label "Exclusion Tags"
-  description "A list of AWS tags to ignore instances. Format: Key=Value"
+  category "Filters"
+  label "Exclusion Tags (Key:Value)"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:*"
+  allowed_pattern /(^$)|[\w]*\:.*/
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details"
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  description "A list of allowed or denied regions. See the README for more details"
+  default []
 end
 
 parameter "param_automatic_action" do
   type "list"
+  category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
   allowed_values ["Schedule Instances"]
@@ -65,9 +74,9 @@ end
 ###############################################################################
 
 credentials "auth_aws" do
-  schemes "aws","aws_sts"
+  schemes "aws", "aws_sts"
   label "AWS"
-  description "Select the AWS Cloud Credential from the list."
+  description "Select the AWS Credential from the list"
   tags "provider=aws"
   aws_account_number $param_aws_account_number
 end
@@ -83,9 +92,9 @@ end
 # Pagination
 ###############################################################################
 
-pagination "aws_pagination" do
+pagination "pagination_aws" do
   get_page_marker do
-    body_path "//DescribeInstancesResponse/nextToken"
+    body_path jmes_path(response, "NextToken")
   end
   set_page_marker do
     body_field "NextToken"
@@ -93,8 +102,64 @@ pagination "aws_pagination" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get AWS account info
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
 
 datasource "ds_get_caller_identity" do
   request do
@@ -109,14 +174,36 @@ datasource "ds_get_caller_identity" do
   result do
     encoding "xml"
     collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
-      field "account",xpath(col_item, "Account")
+      field "account", xpath(col_item, "Account")
     end
   end
 end
 
-# ds_region_list is a list of regions that are opted-in or opt-in-not-required
-datasource "ds_regions_list" do
-  # https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeRegions.html
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_get_caller_identity
+end
+
+script "js_aws_account", type:"javascript" do
+  parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+  result = _.find(ds_cloud_vendor_accounts, function(account) {
+    return account['id'] == ds_get_caller_identity[0]['account']
+  })
+
+  // This is in case the API does not return the relevant account info
+  if (result == undefined) {
+    result = {
+      id: ds_get_caller_identity[0]['account'],
+      name: "",
+      tags: {}
+    }
+  }
+EOS
+end
+
+
+datasource "ds_describe_regions" do
   request do
     auth $auth_aws
     verb "GET"
@@ -139,155 +226,217 @@ datasource "ds_regions_list" do
   end
 end
 
-# Get only SCP enabled regions
 datasource "ds_regions" do
-  run_script $js_regions, $param_allowed_regions, $ds_regions_list, $param_allowed_regions_allow_or_deny
+  run_script $js_regions, $ds_describe_regions, $param_regions_list, $param_regions_allow_or_deny
 end
 
-datasource "ds_get_all_instances" do
+script "js_regions", type:"javascript" do
+  parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
+  result "result"
+  code <<-EOS
+  allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_describe_regions, function(item) {
+      return _.contains(param_regions_list, item['region']) == allow_deny_test[param_regions_allow_or_deny]
+    })
+  } else {
+    result = ds_describe_regions
+  }
+EOS
+end
+
+datasource "ds_instance_sets" do
   iterate $ds_regions
   request do
     auth $auth_aws
-    pagination $aws_pagination
-    host join(["ec2.",val(iter_item, "region"),".amazonaws.com"])
-    verb "GET"
-    path "/"
-    query "Action", "DescribeInstances"
+    host join(['ec2.', val(iter_item, 'region'), '.amazonaws.com'])
+    path '/'
+    header 'User-Agent', 'RS Policies'
+    header 'Content-Type', 'text/xml'
+    query 'Action', 'DescribeInstances'
+    query 'Version', '2016-11-15'
     query "Filter.1.Name", "tag-key"
     query "Filter.1.Value.1", "schedule"
-    query "Version", "2016-11-15"
   end
   result do
     encoding "xml"
-    collect xpath(response,"//DescribeInstancesResponse/reservationSet/item/instancesSet/item") do
-      field "id", xpath(col_item,"instanceId")
-      field "state", xpath(col_item,"instanceState/name")
-      field "tags" do
-        collect xpath(col_item,"tagSet/item") do
-          field "tagKey", xpath(col_item,"key")
-          field "tagValue", xpath(col_item,"value")
+    collect xpath(response, "//DescribeInstancesResponse/reservationSet/item", "array") do
+      field "instances_set" do
+        collect xpath(col_item,"instancesSet/item", "array") do
+          field "region", val(iter_item, "region")
+          field "instanceId", xpath(col_item, "instanceId")
+          field "imageId", xpath(col_item, "imageId")
+          field "resourceType", xpath(col_item, "instanceType")
+          field "platform", xpath(col_item, "platformDetails")
+          field "privateDnsName", xpath(col_item, "privateDnsName")
+          field "launchTime", xpath(col_item, "launchTime")
+          field "state", xpath(col_item,"instanceState/name")
+          field "tags" do
+            collect xpath(col_item,"tagSet/item", "array") do
+              field "key", xpath(col_item, "key")
+              field "value", xpath(col_item, "value")
+            end
+          end
         end
       end
-      field "region", val(iter_item,"region")
     end
   end
 end
 
-datasource "ds_filter_resources" do
-  run_script $js_filter_resources, $ds_get_all_instances, $param_tags_to_exclude, $ds_get_caller_identity
+datasource "ds_instances" do
+  run_script $js_instances, $ds_instance_sets, $param_exclusion_tags
 end
 
-###############################################################################
-# Scripts
-###############################################################################
-
-script "js_regions", type:"javascript" do
-  parameters "user_entered_regions", "all_regions", "regions_allow_or_deny"
-  result "regions"
-  code <<-EOS
-    if(_.isEmpty(user_entered_regions)){
-      regions = all_regions;
-    }else{
-      //Filter unique regions
-      var uniqueRegions = _.uniq(user_entered_regions);
-      var all_regions_list = [];
-      //Filter and remove denied regions from all_regions
-      if (regions_allow_or_deny == "Deny"){
-        var all_regions = all_regions.filter(function(obj){
-          return user_entered_regions.indexOf(obj.region) === -1;
-        });
-      }
-      all_regions.forEach(function(all_region){
-        all_regions_list.push(all_region.region)
-      })
-
-      //Filter valid regions
-      var valid_regions = [];
-      _.map(uniqueRegions, function(uniqueRegion){
-        if(all_regions_list.indexOf(uniqueRegion) > -1){
-          valid_regions.push({"region": uniqueRegion})
-        }
-      })
-
-      //Throw an error if no valid regions found
-      if (_.isEmpty(valid_regions)) {
-        regions = all_regions;
-      }else{
-        regions = valid_regions
-      }
-    }
-  EOS
-end
-
-script "js_filter_resources", type: "javascript" do
-  parameters "ds_get_all_instances", "param_tags_to_exclude", "ds_get_caller_identity"
+script "js_instances", type: "javascript" do
+  parameters "ds_instance_sets", "param_exclusion_tags"
   result "result"
   code <<-EOS
-  var result=[];
-  for(var i=0;i<ds_get_all_instances.length;i++){
-    var notMatched=true;
-    var next_start=null;
-    var next_stop=null;
-    var next_start_iso=null;
-    var next_stop_iso=null;
-    var now=new Date();
-    var instance=ds_get_all_instances[i];
-    for(var j=0;j<param_tags_to_exclude.length;j++){
-      var param_lowerCase=param_tags_to_exclude[j].toLowerCase();
-      if(param_lowerCase.indexOf("=")==-1)
-      {
-        for(var k=0;k<instance.tags.length;k++){
-          var current_tag=instance.tags[k];
-          if(current_tag["tagKey"].toLowerCase()==param_lowerCase){
-            notMatched=false;
-            break;
+  result = []
+
+  _.each(ds_instance_sets, function(item) {
+    if (param_exclusion_tags.length > 0) {
+      filtered_instances = _.reject(item['instances_set'], function(instance) {
+        instance_tags = []
+
+        if (instance['tags'] != null && instance['tags'] != undefined) {
+          _.each(instance['tags'], function(tag) {
+            instance_tags.push([tag['key'], tag['value']].join(':'))
+            instance_tags.push([tag['key'], '*'].join(':'))
+          })
+        }
+
+        exclude_instance = false
+
+        _.each(param_exclusion_tags, function(exclusion_tag) {
+          if (_.contains(instance_tags, exclusion_tag)) {
+            exclude_instance = true
           }
-        }
-      }
-      else {
-        var arr=param_lowerCase.split("=");
-        for(var k=0;k<instance.tags.length;k++){
-          var current_tag=instance.tags[k];
-          if(current_tag["tagKey"].toLowerCase()==arr[0] && current_tag["tagValue"].toLowerCase()==arr[1]){
-            notMatched=false;
-            break;
-          }
-        }
-      }
-    }
-    if(notMatched){
-      var all_tags="";
-      for(var j=0;j<instance.tags.length;j++){
-        all_tags=all_tags+", "+instance.tags[j].tagKey+"="+instance.tags[j].tagValue;
-        if(instance.tags[j].tagKey== 'schedule'){
-          schedule=instance.tags[j].tagValue;
-        }
-        else if(instance.tags[j].tagKey== 'next_start'){
-          next_start=new Date(instance.tags[j].tagValue);
-          next_start_iso=next_start.toISOString();
-        }
-        else if(instance.tags[j].tagKey== 'next_stop'){
-          next_stop=new Date(instance.tags[j].tagValue);
-          next_stop_iso=next_stop.toISOString();
-        }
-      }
-      if(now > next_start || now > next_stop || next_start==null || next_stop==null){
-        result.push({
-          "accountId": ds_get_caller_identity[0]['account'],
-          "id":instance.id,
-          "state": instance.state,
-          "region": instance.region,
-          "schedule":schedule,
-          "tags":all_tags.slice(2),
-          "next_start":next_start_iso,
-          "next_stop":next_stop_iso
         })
-      }
+
+        return exclude_instance
+      })
+
+      result = result.concat(filtered_instances)
+    } else {
+      result = result.concat(item['instances_set'])
     }
-  }
-  result=_.sortBy(result, 'id');
-  result=_.sortBy(result, 'region');
-  EOS
+  })
+EOS
+end
+
+datasource "ds_instances_to_schedule" do
+  run_script $js_instances_to_schedule, $ds_instances, $ds_aws_account, $ds_applied_policy
+end
+
+script "js_instances_to_schedule", type: "javascript" do
+  parameters "ds_instances", "ds_aws_account", "ds_applied_policy"
+  result "result"
+  code <<-EOS
+  result = []
+  now = new Date()
+
+  _.each(ds_instances, function(instance) {
+    resourceName = ''
+    schedule = null
+    next_start = null
+    next_stop = null
+    tags = []
+
+    if (instance['tags'] == 'object') {
+      _.each(instance['tags'], function(item) {
+        tags.push(item['key'] + '=' + item['value'])
+        if (item['key'].toLowerCase() == 'name')       { resourceName = item['value'] }
+        if (item['key'].toLowerCase() == 'schedule')   { schedule = item['value'] }
+        if (item['key'].toLowerCase() == 'next_start') { next_start = new Date(item['value']) }
+        if (item['key'].toLowerCase() == 'next_stop')  { next_stop = new Date(item['value']) }
+      })
+    }
+
+    if (now > next_start || now > next_stop || next_start == null || next_stop == null) {
+      result.push({
+        resourceID: instance['instanceId'],
+        resourceType: instance['resourceType'],
+        region: instance['region'],
+        platform: instance['platform'],
+        state: instance['state'],
+        privateDnsName: instance['privateDnsName']
+        hostname: instance['privateDnsName'].split('.')[0],
+        accountID: ds_aws_account['id'],
+        accountName: ds_aws_account['name'],
+        policy_name: ds_applied_policy['name'],
+        resourceName: resourceName,
+        tags: tags.join(', '),
+        next_start: next_start.toISOString(),
+        next_stop: next_stop.toISOString(),
+        schedule: schedule
+      })
+    }
+  })
+
+  result = _.sortBy(result, 'id')
+  result = _.sortBy(result, 'region')
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_schedule_instance" do
+  validate_each $ds_filter_resources do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Schedule Instance List"
+    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    escalate $esc_schedule_instance
+    escalate $esc_terminate_instance
+    escalate $esc_update_schedule
+    escalate $esc_delete_schedule
+    hash_exclude "tags", "resourceName"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "state" do
+        label "Instance State"
+      end
+      field "resourceType" do
+        label "Instance Size"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "platform" do
+        label "Platform"
+      end
+      field "hostname" do
+        label "Hostname"
+      end
+      field "schedule" do
+        label "Schedule"
+      end
+      field "next_start" do
+        label "Next Start"
+      end
+      field "next_stop" do
+        label "Next Stop"
+      end
+    end
+  end
 end
 
 ###############################################################################
@@ -332,51 +481,6 @@ escalation "esc_delete_schedule" do
   label "Delete Schedule"
   description "Delete Schedule Tag"
   run "delete_schedule", data, rs_optima_host
-end
-
-###############################################################################
-# Policy
-###############################################################################
-
-policy "policy_schedule_instance" do
-  validate $ds_filter_resources do
-    summary_template "AWS Account ID: {{with index data 0}}{{ .accountId }}{{end}} - Schedule Instance list"
-    hash_exclude "tags"
-    escalate $esc_email
-    escalate $esc_schedule_instance
-    escalate $esc_terminate_instance
-    escalate $esc_update_schedule
-    escalate $esc_delete_schedule
-    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
-    check logic_or($ds_parent_policy_terminated, eq(size(data),0))
-    export do
-      resource_level true
-      field "accountId" do
-        label "Account Id"
-      end
-      field "region" do
-        label "Region"
-      end
-      field "id" do
-        label "Instance ID"
-      end
-      field "state" do
-        label "Instance State"
-      end
-      field "schedule" do
-        label "Schedule"
-      end
-      field "next_start" do
-        label "Next Start"
-      end
-      field "next_stop" do
-        label "Next Stop"
-      end
-      field "tags" do
-        label "Tags"
-      end
-    end
-  end
 end
 
 ###############################################################################
