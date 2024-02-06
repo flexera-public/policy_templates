@@ -412,10 +412,10 @@ policy "pol_schedule_instance" do
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
-    escalate $esc_schedule_instance
-    escalate $esc_terminate_instance
-    escalate $esc_update_schedule
-    escalate $esc_delete_schedule
+    escalate $esc_schedule_instances
+    escalate $esc_terminate_instances
+    escalate $esc_update_schedules
+    escalate $esc_delete_schedules
     hash_exclude "tags", "resourceName"
     export do
       resource_level true
@@ -458,6 +458,10 @@ policy "pol_schedule_instance" do
       field "next_stop" do
         label "Next Stop"
       end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
     end
   end
 end
@@ -473,21 +477,21 @@ escalation "esc_email" do
   email $param_email
 end
 
-escalation "esc_schedule_instance" do
+escalation "esc_schedule_instances" do
   automatic contains($param_automatic_action, "Schedule Instances")
   label "Schedule"
   description "Stop or Start the Instance"
-  run "schedule_instance", data, rs_optima_host
+  run "schedule_instances", data
 end
 
-escalation "esc_terminate_instance" do
-  automatic false
-  label "Terminate Instance"
-  description "Terminate or delete the Instance"
-  run "terminate_instance", data, rs_optima_host
+escalation "esc_terminate_instances" do
+  automatic contains($param_automatic_action, "Terminate Instances")
+  label "Terminate Instances"
+  description "Approval to terminate all selected instances"
+  run "terminate_instances", data
 end
 
-escalation "esc_update_schedule" do
+escalation "esc_update_schedules" do
   automatic false
   label "Update Schedule"
   description "Update the existing schedule Tag"
@@ -496,21 +500,160 @@ escalation "esc_update_schedule" do
     label "New Schedule"
     description "Provide Schedule Value"
   end
-  run "update_schedule", data, $param_schedule, rs_optima_host
+  run "update_schedules", data, $param_schedule, $param_schedule_tag
 end
 
-escalation "esc_delete_schedule" do
+escalation "esc_delete_schedules" do
   automatic false
   label "Delete Schedule"
   description "Delete Schedule Tag"
-  run "delete_schedule", data, rs_optima_host
+  run "delete_schedules", data, $param_schedule_tag
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-# CWF function to handle errors
+define terminate_instances($data) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call get_instance_state($instance) retrieve $initial_state
+
+      if $initial_state != "terminated" && $initial_state != "pending"
+        call terminate_instance($instance)
+      end
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+define terminate_instance($instance) return $response do
+  $host = "ec2." + $instance["region"] + ".amazonaws.com"
+  $href = "/"
+  $params = "?Action=TerminateInstances&Version=2016-11-15&InstanceId.1=" + $instance["id"]
+  $url = $host + $href + $params
+  task_label("POST " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    href: $href,
+    host: $host,
+    query_strings: {
+      "Action": "TerminateInstances",
+      "Version": "2016-11-15",
+      "InstanceId.1": $instance["id"]
+    }
+  )
+
+  task_label("Terminate AWS Instance response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
+
+  if $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response terminating AWS Instance: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Terminate AWS Instance successful: " + $instance["id"])
+
+    call get_instance_state($instance) retrieve $instance_state
+
+    while $instance_state != "terminated" do
+      call get_instance_state($instance) retrieve $instance_state
+      task_label("Waiting for Terminate AWS Instance: " + $instance["id"] + " " + $instance_state)
+      sleep(10)
+    end
+    task_label("Completed Terminate AWS Instance: " + $instance["id"])
+  end
+end
+
+define schedule_instances($data) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call get_instance_state($instance) retrieve $initial_state
+
+      if $initial_state != "terminated" && $initial_state != "pending"
+        call schedule_instance($instance)
+      end
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+define terminate_instance($instance) return $response do
+  $rule = split($instance['schedule'], ';')[1]
+  $time_range = split($instance['schedule'], ';')[0]
+
+  $start_time = split($time_range, '-')[0]
+  $start_hour = split($start_time, ':')[0]
+  $start_minute = split($start_time, ':')[1]
+
+  if $start_minute == null
+    $start_minute='00'
+  end
+
+  $stop_time = split($time_range, '-')[1]
+  $stop_hour = split($stop_time, ':')[0]
+  $stop_minute = split($stop_time, ':')[1]
+
+  if $stop_minute == null
+    $stop_minute='00'
+  end
+
+  $start_rule = join(["FREQ=WEEKLY;BYDAY=", $rule])
+  $stop_rule = join(["FREQ=WEEKLY;BYDAY=", $rule])
+  $timezone = split($item['schedule'], ';')[2]
+
+  if ! $timezone
+    $timezone = "UTC"
+  end
+
+  call window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone) retrieve $window_active, $next_start, $next_stop
+
+
+end
+
+define get_instance_state($instance) return $instance_state do
+  $host = "ec2." + $instance["region"] + ".amazonaws.com"
+  $href = "/"
+  $params = "?Action=DescribeInstanceStatus&Version=2016-11-15&IncludeAllInstances=true&InstanceId.1=" + $instance["id"]
+  $url = $host + $href + $params
+  task_label("POST " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    href: $href,
+    host: $host,
+    query_strings: {
+      "Action": "DescribeInstanceStatus",
+      "Version": "2016-11-15",
+      "IncludeAllInstances": "true",
+      "InstanceId.1": $instance["id"]
+    }
+  )
+
+  task_label("Get AWS Instance status response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
+
+  if $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response getting AWS Instance status: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Get AWS Instance status successful: " + $instance["id"])
+    $instance_state = $response["body"]["DescribeInstanceStatusResponse"]["instanceStatusSet"]["item"]["instanceState"]["name"]
+  end
+end
+
 define handle_error() do
   if !$$errors
     $$errors = []
@@ -521,22 +664,9 @@ define handle_error() do
   $_error_behavior = "skip"
 end
 
-# CWF function to capture and output logs
-define log_message($message) do
-  # Instantiate log messages array doesn't exist
-  if !$$log_messages
-    $$log_messages = []
-  end
-  # Append timestamp to message
-  $now = strftime(now(), "%Y/%m/%d %H:%M:%S")
-  $log = $now + ": " + $message
-  # Append to log messages array
-  $$log_messages << $log
-  # Update task label with current message
-  task_label($log)
-  # Aggregate all log messages into a single string which is easier to grab from UI and interpret
-  $$log_messages_string = join($$log_messages, "\n\n")
-end
+
+
+
 
 define schedule_instance($data, $$rs_optima_host) do
   foreach $item in $data on_error: handle_error() do
