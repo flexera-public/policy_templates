@@ -33,6 +33,30 @@ parameter "param_aws_account_number" do
   default ""
 end
 
+parameter "param_schedule_tag" do
+  type "string"
+  category "Policy Settings"
+  label "Schedule Tag Key"
+  description "Tag key that schedule information is stored in. Default is recommended for most use cases."
+  default "schedule"
+end
+
+parameter "param_next_start_tag" do
+  type "string"
+  category "Policy Settings"
+  label "Next Start Tag Key"
+  description "Tag key to use for scheduling instance to start. Default is recommended for most use cases."
+  default "next_start"
+end
+
+parameter "param_next_stop_tag" do
+  type "string"
+  category "Policy Settings"
+  label "Next Stop Tag Key"
+  description "Tag key to use for scheduling instance to stop. Default is recommended for most use cases."
+  default "next_stop"
+end
+
 parameter "param_exclusion_tags" do
   type "list"
   category "Filters"
@@ -202,7 +226,6 @@ script "js_aws_account", type:"javascript" do
 EOS
 end
 
-
 datasource "ds_describe_regions" do
   request do
     auth $auth_aws
@@ -257,7 +280,7 @@ datasource "ds_instance_sets" do
     query 'Action', 'DescribeInstances'
     query 'Version', '2016-11-15'
     query "Filter.1.Name", "tag-key"
-    query "Filter.1.Value.1", "schedule"
+    query "Filter.1.Value.1", $param_schedule_tag
   end
   result do
     encoding "xml"
@@ -326,11 +349,11 @@ EOS
 end
 
 datasource "ds_instances_to_schedule" do
-  run_script $js_instances_to_schedule, $ds_instances, $ds_aws_account, $ds_applied_policy
+  run_script $js_instances_to_schedule, $ds_instances, $ds_aws_account, $ds_applied_policy, $param_schedule_tag, $param_next_start_tag, $param_next_stop_tag
 end
 
 script "js_instances_to_schedule", type: "javascript" do
-  parameters "ds_instances", "ds_aws_account", "ds_applied_policy"
+  parameters "ds_instances", "ds_aws_account", "ds_applied_policy", "param_schedule_tag", "param_next_start_tag", "param_next_stop_tag"
   result "result"
   code <<-EOS
   result = []
@@ -346,10 +369,10 @@ script "js_instances_to_schedule", type: "javascript" do
     if (instance['tags'] == 'object') {
       _.each(instance['tags'], function(item) {
         tags.push(item['key'] + '=' + item['value'])
-        if (item['key'].toLowerCase() == 'name')       { resourceName = item['value'] }
-        if (item['key'].toLowerCase() == 'schedule')   { schedule = item['value'] }
-        if (item['key'].toLowerCase() == 'next_start') { next_start = new Date(item['value']) }
-        if (item['key'].toLowerCase() == 'next_stop')  { next_stop = new Date(item['value']) }
+        if (item['key'] == 'name')               { resourceName = item['value'] }
+        if (item['key'] == param_schedule_tag)   { schedule = item['value'] }
+        if (item['key'] == param_next_start_tag) { next_start = new Date(item['value']) }
+        if (item['key'] == param_next_stop_tag)  { next_stop = new Date(item['value']) }
       })
     }
 
