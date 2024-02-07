@@ -269,7 +269,7 @@ These templates can generate savings estimates for your environment.
 
 - Storage
 
-  - [Azure Blob Storage Optimization](./cost/azure/object_storage_optimization)
+  - [Azure Blob Storage Optimization](./cost/azure/blob_storage_optimization)
   - [Azure Old Snapshots](./cost/azure/old_snapshots)
   - [Azure Unused Volumes](./cost/azure/unused_volumes)
   - [Turbonomic Delete Unattached Volumes Recommendations Azure](./cost/turbonomics/delete_unattached_volumes/azure)
@@ -402,7 +402,6 @@ These templates can generate savings estimates for your environment.
 
 #### Azure
 
-- [Azure Migrate Integration](./operational/azure/azure_migrate)
 - [Azure Sync Tags with Optima](./operational/azure/sync_tags_with_optima)
 
 - AKS
@@ -415,6 +414,10 @@ These templates can generate savings estimates for your environment.
   - [Azure Long Running Instances](./operational/azure/azure_long_running_instances)
   - [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks)
   - [Expiring Azure Certificates](./operational/azure/azure_certificates)
+
+- SQL
+
+  - [Azure Migrate Integration](./operational/azure/azure_migrate)
 
 - Tags
 
@@ -634,13 +637,13 @@ These templates can generate savings estimates for your environment.
   Security: 74
 :optimization_count: 44
 :policy_sets:
-  '': 82
+  '': 81
   AWS Config: 1
   Allocate VMs: 3
   CIS: 61
   Committed Use Discount: 1
   Common Bill Ingestion: 2
-  Database Services: 1
+  Database Services: 2
   Databricks: 1
   Disallowed Regions: 2
   Forecasting: 4
@@ -706,7 +709,7 @@ These templates can generate savings estimates for your environment.
   Oracle: 1
   ServiceNow: 1
 :services:
-  '': 60
+  '': 59
   AKS: 2
   All: 1
   App Service: 1
@@ -739,7 +742,7 @@ These templates can generate savings estimates for your environment.
   PostgreSQL: 4
   RDS: 5
   S3: 8
-  SQL: 14
+  SQL: 15
   Security: 3
   Storage: 22
   Storage Accounts: 2
