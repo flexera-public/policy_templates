@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.3
+
+- Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.
+
 ## v4.2
 
 - Fixed issue where policy fails if an instance lacks Image Publisher metadata
