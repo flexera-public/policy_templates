@@ -38,21 +38,21 @@ end
 parameter "param_stats_underutil_threshold_pool_value" do
   type "number"
   category "Statistics"
-  label "Capacity Pool Allocated Used Threshold (%)"
-  description "The NetApp Files threshold that should be the new allocated used of a capacity pool and therefore be flagged for rightsizing."
+  label "Capacity Pool Allocated Capacity Threshold (%)"
+  description "The threshold that should be the new allocated capacity of a pool and therefore be flagged for rightsizing."
   min_value 0
   max_value 100
-  default 40
+  default 50
 end
 
 parameter "param_stats_underutil_threshold_volume_value" do
   type "number"
   category "Statistics"
   label "Volume Logical Size Threshold (%)"
-  description "The NetApp Files threshold that should be the new logical size of a volume and therefore be flagged for rightsizing."
-  min_value -1
+  description "The threshold that should be the new logical size of a volume and therefore be flagged for rightsizing."
+  min_value 0
   max_value 100
-  default 40
+  default 50
 end
 
 parameter "param_exclusion_tags" do
@@ -90,6 +90,14 @@ parameter "param_regions_allow_or_deny" do
   default "Allow"
 end
 
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
 parameter "param_show_size_increment_recommendations" do
   type "string"
   category "Filters"
@@ -97,14 +105,6 @@ parameter "param_show_size_increment_recommendations" do
   description "Choose if you want this policy to also show recommendations to increase the size of capacity pools and volumes."
   allowed_values "Yes", "No"
   default "No"
-end
-
-parameter "param_regions_list" do
-  type "list"
-  category "Filters"
-  label "Allow/Deny Regions List"
-  description "A list of allowed or denied regions. See the README for more details."
-  default []
 end
 
 parameter "param_min_savings" do
@@ -120,7 +120,7 @@ parameter "param_recommendation_mode" do
   type "string"
   category "Statistics"
   label "Recommendation mode"
-  description "Choose if resize pools with or without volumes."
+  description "Choose between scanning only pools or pools with their volumes, each will produce different recommendations."
   allowed_values "Resize Pools", "Resize Pools and Volumes"
   default "Resize Pools"
 end
@@ -130,7 +130,7 @@ parameter "param_automatic_action" do
   category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action."
-  allowed_values ["Rightsize Underutilized Pools", "Rightsize Underutilized Volumes"]
+  allowed_values ["Rightsize recommended pools and volumes"]
   default []
 end
 
@@ -712,8 +712,8 @@ script "js_naf_oversized_pools", type: "javascript" do
                 resourceID: pool['naf_pool_id'],
                 resourceGroup: pool['resource_group_name'],
                 resourceName: pool['naf_pool_name'],
-                size: gibibytesToTebibytes(pool['allocatedSize']),
-                allocatedUsed: pool['consumedSize'],
+                size: Math.round(pool['allocatedSize'] / 1024),
+                allocatedUsed: (pool['consumedSize'] / 1024).toFixed(3),
                 consumedPercentage: poolConsumedPercentage,
                 poolCreatedAt: pool['naf_pool_created_at'],
                 threshold: param_stats_underutil_threshold_pool_value,
@@ -953,11 +953,11 @@ script "js_naf_oversized_volumes", type: "javascript" do
                   resourceTier: pool['naf_pool_service'],
                   region: pool['naf_pool_region'],
                   tags: objectTagsToArrayTags(pool.tags),
-                  size: gibibytesToTebibytes(pool['allocatedSize']),
+                  size: Math.round(pool['allocatedSize'] / 1024),
                   sizeUnit: 'TiB',
-                  allocatedUsed: pool['consumedSize'],
-                  allocatedUsedUnit: 'GiB',
-                  consumedPercentage: poolConsumedPercentage,
+                  allocatedUsed: (pool['consumedSize'] / 1024).toFixed(3),
+                  allocatedUsedUnit: 'TiB',
+                  consumedPercentage: poolOldConsumedPercentage,
                   threshold: param_stats_underutil_threshold_pool_value,
                   recommendedSize: gibibytesToTebibytes(poolRecommendedSize),
                   recommendedSizeUnit: 'TiB',
@@ -1064,7 +1064,7 @@ policy "pol_azure_rightsize_netapp_files" do
         label "Size (TiB)"
       end
       field "allocatedUsed" do
-        label "Allocated Used (GiB)"
+        label "Allocated Used (TiB)"
       end
       field "consumedPercentage" do
         label "Allocated Used %"
@@ -1177,9 +1177,17 @@ escalation "esc_email" do
 end
 
 escalation "esc_rightsize_pools" do
-  automatic contains($param_automatic_action, "Rightsize Underutilized Pools")
+# Resize Pools and Volumes"
+  automatic logic_and(eq($param_automatic_action, "Rightsize recommended pools and volumes"), eq($param_recommendation_mode, "Resize Pools"))
   label "Rightsize Underutilized Pools"
   description "Approval to rightsize all the selected pools"
+  run "set_pool_sizes", data, $param_azure_endpoint
+end
+
+escalation "esc_rightsize_pools_and_volumes" do
+  automatic logic_and(eq($param_automatic_action, "Rightsize recommended pools and volumes"), eq($param_recommendation_mode, "Resize Pools and Volumes"))
+  label "Rightsize Underutilized Pools And Volumes"
+  description "Approval to rightsize all the selected pools and volumes"
   run "set_pool_sizes", data, $param_azure_endpoint
 end
 
@@ -1197,23 +1205,23 @@ define handle_error() do
   $_error_behavior = "skip"
 end
 
-define set_pool_size($pool_id, $size_TiB, $param_azure_endpoint) return $response do
+define set_pool_size($pool_id, $size_bytes, $param_azure_endpoint) return $response do
   $url = $param_azure_endpoint + $pool_id + "api-version=2023-05-01"
   task_label("PATCH" + $url)
 
-  # $response = http_request(
-  #   auth: $$auth_azure,
-  #   https: true,
-  #   verb: "patch",
-  #   host: $param_azure_endpoint,
-  #   href: $pool_id,
-  #   query_strings: { "api-version": "2023-05-01" },
-  #   body: {
-  #     "properties": {
-  #       "size": $size_TiB
-  #     }
-  #   }
-  # )
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "patch",
+    host: $param_azure_endpoint,
+    href: $pool_id,
+    query_strings: { "api-version": "2023-05-01" },
+    body: {
+      "properties": {
+        "size": $size_bytes
+      }
+    }
+  )
 
   task_label("Patch Azure NetApp capacity pool response: " + $pool_id + " " + to_json($response))
   $$all_responses << to_json({ "req": "PATCH " + $url, "resp": $response })
@@ -1230,8 +1238,9 @@ define set_pool_sizes($data, $param_azure_endpoint) return $$all_responses do
 
   foreach $pool in $data do
     sub on_error: handle_error() do
-      $recommended_size = $pool["poolRecommendedSize"] / 1024 * 1099511627776
-      call set_pool_size($pool["resourceID"], $recommended_size, $param_azure_endpoint) retrieve $set_size_response
+      # pool["recommendedSize"] is in TiB, so we need to convert it to bytes.
+      $recommended_size_bytes = $pool["recommendedSize"] * (2 ^ 40)
+      call set_pool_size($pool["resourceID"], $recommended_size_bytes, $param_azure_endpoint) retrieve $set_size_response
     end
   end
 
