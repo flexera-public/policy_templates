@@ -2,7 +2,7 @@
 
 ## v2.1
 
-- Added Deprecated description in the short description
+- Deprecating this policy as it's replaced by [the new version](../budget_v_actual_spend_report)
 
 ## v2.0
 
