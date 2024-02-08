@@ -1,4 +1,8 @@
-# Monthly Actual v. Budgeted Spend Report
+# Monthly Actual v. Budgeted Spend Report (Legacy)
+
+## Deprecated
+
+This policy is no longer being updated.
 
 ## What it does
 
@@ -8,7 +12,7 @@ This policy allows you to set up scheduled reports that will provide monthly act
 
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
-- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (_provider=flexera_) which has the following roles:
   - `billing_center_viewer`
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
@@ -35,21 +39,21 @@ There are four cost metrics to choose from.
 
 This policy has the following input parameters required when launching the policy.
 
-- *Email list* - Email addresses of the recipients you wish to notify
-- *Billing Center List* - List of top level Billing Center names you want to report on.  Names must be exactly as shown in Optima. Leave the field blank to report on all top level Billing Centers.
-- *Cost Metric* -  See Cost Metrics above for details on selection.
-- *January Budgeted Cost* - January budgeted cost for corresponding Billing Center
-- *February Budgeted Cost* - February budgeted cost for corresponding Billing Center
-- *March Budgeted Cost* - March budgeted cost for corresponding Billing Center
-- *April Budgeted Cost* - April budgeted cost for corresponding Billing Center
-- *May Budgeted Cost* - May budgeted cost for corresponding Billing Center
-- *June Budgeted Cost* - June budgeted cost for corresponding Billing Center
-- *July Budgeted Cost* - July budgeted cost for corresponding Billing Center
-- *August Budgeted Cost* - August budgeted cost for corresponding Billing Center
-- *September Budgeted Cost* - September budgeted cost for corresponding Billing Center
-- *October Budgeted Cost* - October budgeted cost for corresponding Billing Center
-- *November Budgeted Cost* - November budgeted cost for corresponding Billing Center
-- *December Budgeted Cost* - December budgeted cost for corresponding Billing Center
+- _Email list_ - Email addresses of the recipients you wish to notify
+- _Billing Center List_ - List of top level Billing Center names you want to report on. Names must be exactly as shown in Optima. Leave the field blank to report on all top level Billing Centers.
+- _Cost Metric_ - See Cost Metrics above for details on selection.
+- _January Budgeted Cost_ - January budgeted cost for corresponding Billing Center
+- _February Budgeted Cost_ - February budgeted cost for corresponding Billing Center
+- _March Budgeted Cost_ - March budgeted cost for corresponding Billing Center
+- _April Budgeted Cost_ - April budgeted cost for corresponding Billing Center
+- _May Budgeted Cost_ - May budgeted cost for corresponding Billing Center
+- _June Budgeted Cost_ - June budgeted cost for corresponding Billing Center
+- _July Budgeted Cost_ - July budgeted cost for corresponding Billing Center
+- _August Budgeted Cost_ - August budgeted cost for corresponding Billing Center
+- _September Budgeted Cost_ - September budgeted cost for corresponding Billing Center
+- _October Budgeted Cost_ - October budgeted cost for corresponding Billing Center
+- _November Budgeted Cost_ - November budgeted cost for corresponding Billing Center
+- _December Budgeted Cost_ - December budgeted cost for corresponding Billing Center
 
 ## Policy Actions
 

@@ -23,9 +23,7 @@ Refer to the [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN
 - _Budget Name or ID_: The name or ID of the target Budget.
 - _Filter Group By Dimensions_: Filter by dimension=value pairs (e.g., 'Cloud Vendor=AWS'). Multiple values for the same dimension can be comma-separated.
 - _Budget Alert Type_: Options are "Actual" or "Forecasted". Actual Spend alerts are based on incurred costs, while Forecasted Spend alerts use monthly runrates.
-- _Degree of Summarization_: Determines if the budget should be tracked as a whole or per dimension groups (Summarized or By dimensions).
 - _Unbudgeted Spend_: Parameter to include or exclude unbudgeted funds in the calculation.
-- _Threshold Percentage_: Threshold to raise the alert if reached.
 - _Email Addresses_: A list of email addresses to notify.
 
 ## Cost
