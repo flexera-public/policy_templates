@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.2
+
+- Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.
+
 ## v6.1
 
 - Policy action error logging modernized and now works as expected in EU/APAC
