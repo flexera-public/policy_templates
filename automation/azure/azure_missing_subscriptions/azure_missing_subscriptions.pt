@@ -35,6 +35,15 @@ parameter "param_azure_endpoint" do
   default "management.azure.com"
 end
 
+parameter "param_report_selection" do
+  type "string"
+  category "Policy Settings"
+  label "Report Selection"
+  description "Whether to report Subscriptions missing in the Azure API but present in CCO data, the opposite, or both."
+  allowed_values "Missing in Azure API", "Missing in CCO", "Both"
+  default "Missing in Azure API"
+end
+
 parameter "param_subscriptions_list" do
   type "list"
   category "Filters"
@@ -205,38 +214,79 @@ datasource "ds_azure_subscriptions" do
   end
 end
 
-datasource "ds_missing_subscriptions" do
-  run_script $js_missing_subscriptions, $ds_flexera_cco_data, $ds_azure_subscriptions, $ds_applied_policy, $param_subscriptions_list
+datasource "ds_missing_subscriptions_api" do
+  run_script $js_missing_subscriptions_api, $ds_flexera_cco_data, $ds_azure_subscriptions, $ds_applied_policy, $param_subscriptions_list, $param_report_selection
 end
 
-script "js_missing_subscriptions", type: "javascript" do
-  parameters "ds_flexera_cco_data", "ds_azure_subscriptions", "ds_applied_policy", "param_subscriptions_list"
+script "js_missing_subscriptions_api", type: "javascript" do
+  parameters "ds_flexera_cco_data", "ds_azure_subscriptions", "ds_applied_policy", "param_subscriptions_list", "param_report_selection"
   result "result"
   code <<-'EOS'
-  automation_ids = _.map(ds_azure_subscriptions, function(sub) {
-    return sub['id'].toLowerCase().trim()
-  })
+  result = []
 
-  missing_subs = _.reject(ds_flexera_cco_data, function(sub) {
-    return _.contains(automation_ids, sub['vendor_account'].toLowerCase().trim())
-  })
+  if (param_report_selection != 'Missing in CCO') {
+    automation_ids = _.map(ds_azure_subscriptions, function(sub) {
+      return sub['id'].toLowerCase().trim()
+    })
 
-  result = _.map(missing_subs, function(sub) {
-    return {
-      accountID: sub['vendor_account'].toLowerCase().trim(),
-      accountName: sub['vendor_account_name'],
-      bill_source: sub['bill_source'],
-      policy_name: ds_applied_policy['name']
-    }
-  })
+    missing_subs = _.reject(ds_flexera_cco_data, function(sub) {
+      return _.contains(automation_ids, sub['vendor_account'].toLowerCase().trim())
+    })
 
-  // Remove filtered results
-  result = _.reject(result, function(sub) {
-    return _.contains(param_subscriptions_list, sub['accountID']) || _.contains(param_subscriptions_list, sub['accountName'])
-  })
+    result = _.map(missing_subs, function(sub) {
+      return {
+        accountID: sub['vendor_account'].toLowerCase().trim(),
+        accountName: sub['vendor_account_name'],
+        bill_source: sub['bill_source'],
+        policy_name: ds_applied_policy['name']
+      }
+    })
 
-  result = _.sortBy(result, 'accountID')
-  result = _.sortBy(result, 'bill_source')
+    // Remove filtered results
+    result = _.reject(result, function(sub) {
+      return _.contains(param_subscriptions_list, sub['accountID']) || _.contains(param_subscriptions_list, sub['accountName'])
+    })
+
+    result = _.sortBy(result, 'accountID')
+    result = _.sortBy(result, 'bill_source')
+  }
+EOS
+end
+
+datasource "ds_missing_subscriptions_cco" do
+  run_script $js_missing_subscriptions_cco, $ds_flexera_cco_data, $ds_azure_subscriptions, $ds_applied_policy, $param_subscriptions_list, $param_report_selection
+end
+
+script "js_missing_subscriptions_cco", type: "javascript" do
+  parameters "ds_flexera_cco_data", "ds_azure_subscriptions", "ds_applied_policy", "param_subscriptions_list", "param_report_selection"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  if (param_report_selection != 'Missing in Azure API') {
+    cco_ids = _.map(ds_flexera_cco_data, function(sub) {
+      return sub['vendor_account'].toLowerCase().trim()
+    })
+
+    missing_subs = _.reject(ds_azure_subscriptions, function(sub) {
+      return _.contains(cco_ids, sub['id'].toLowerCase().trim())
+    })
+
+    result = _.map(missing_subs, function(sub) {
+      return {
+        accountID: sub['id'].toLowerCase().trim(),
+        accountName: sub['name'],
+        policy_name: ds_applied_policy['name']
+      }
+    })
+
+    // Remove filtered results
+    result = _.reject(result, function(sub) {
+      return _.contains(param_subscriptions_list, sub['accountID']) || _.contains(param_subscriptions_list, sub['accountName'])
+    })
+
+    result = _.sortBy(result, 'accountID')
+  }
 EOS
 end
 
@@ -245,8 +295,8 @@ end
 ###############################################################################
 
 policy "pol_missing_subscriptions" do
-  validate_each $ds_missing_subscriptions do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Missing Subscriptions Found"
+  validate_each $ds_missing_subscriptions_api do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure API Missing Subscriptions"
     check eq(val(item, "accountID"), "")
     escalate $esc_email
     export do
@@ -259,6 +309,20 @@ policy "pol_missing_subscriptions" do
       end
       field "bill_source" do
         label "Bill Connection"
+      end
+    end
+  end
+  validate_each $ds_missing_subscriptions_cco do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure CCO Missing Subscriptions"
+    check eq(val(item, "accountID"), "")
+    escalate $esc_email
+    export do
+      resource_level false
+      field "accountID" do
+        label "Subscription ID"
+      end
+      field "accountName" do
+        label "Subscription Name"
       end
     end
   end
