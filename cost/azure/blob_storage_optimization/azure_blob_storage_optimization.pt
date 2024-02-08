@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "3.0",
+  version: "3.1",
   provider: "Azure",
   service: "Storage",
   policy_set: "Object Store Optimization"
@@ -188,11 +188,13 @@ datasource "ds_azure_subscriptions" do
     pagination $pagination_azure
     host $param_azure_endpoint
     path "/subscriptions/"
-    query "api-version","2020-01-01"
+    query "api-version", "2020-01-01"
     header "User-Agent", "RS Policies"
     # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
     # Forces `ds_is_deleted` datasource to run first during policy execution
     header "Meta-Flexera", val($ds_is_deleted, "path")
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
@@ -237,6 +239,7 @@ datasource "ds_azure_storage_accounts" do
     path join(["/subscriptions/", val(iter_item, 'id'), "/providers/Microsoft.Storage/storageAccounts"])
     header "User-Agent", "RS Policies"
     query "api-version", "2023-01-01"
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
@@ -343,7 +346,7 @@ datasource "ds_azure_containers" do
     query "comp", "list"
     header "User-Agent", "RS Policies"
     header "x-ms-version", "2018-11-09"
-    ignore_status [403]
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "xml"
@@ -372,7 +375,7 @@ datasource "ds_azure_blobs" do
     query "comp", "list"
     header "User-Agent", "RS Policies"
     header "x-ms-version", "2018-03-28"
-    ignore_status [403]
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "xml"
@@ -466,7 +469,6 @@ script "js_azure_blobs_with_tier", type: "javascript" do
   })
 EOS
 end
-
 
 datasource "ds_azure_blobs_incident" do
   run_script $js_azure_blobs_incident, $ds_azure_blobs_with_tier, $ds_applied_policy, $param_cool_tier_days, $param_archive_tier_days, $param_new_storage_tier
@@ -562,7 +564,6 @@ script "js_azure_blobs_incident", type: "javascript" do
   result[0]['message'] = findings + analysis + disclaimer
 EOS
 end
-
 
 ###############################################################################
 # Policy
