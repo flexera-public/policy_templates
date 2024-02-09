@@ -33,7 +33,7 @@ parameter "param_aws_account_number" do
   default ""
 end
 
-parameter "param_schedule_tag" do
+parameter "param_tag_schedule" do
   type "string"
   category "Tag Keys"
   label "Schedule Tag Key"
@@ -41,7 +41,7 @@ parameter "param_schedule_tag" do
   default "schedule"
 end
 
-parameter "param_next_start_tag" do
+parameter "param_tag_next_start" do
   type "string"
   category "Tag Keys"
   label "Next Start Tag Key"
@@ -49,7 +49,7 @@ parameter "param_next_start_tag" do
   default "next_start"
 end
 
-parameter "param_next_stop_tag" do
+parameter "param_tag_next_stop" do
   type "string"
   category "Tag Keys"
   label "Next Stop Tag Key"
@@ -280,7 +280,7 @@ datasource "ds_instance_sets" do
     query 'Action', 'DescribeInstances'
     query 'Version', '2016-11-15'
     query "Filter.1.Name", "tag-key"
-    query "Filter.1.Value.1", $param_schedule_tag
+    query "Filter.1.Value.1", $param_tag_schedule
   end
   result do
     encoding "xml"
@@ -349,11 +349,11 @@ EOS
 end
 
 datasource "ds_instances_to_schedule" do
-  run_script $js_instances_to_schedule, $ds_instances, $ds_aws_account, $ds_applied_policy, $param_schedule_tag, $param_next_start_tag, $param_next_stop_tag
+  run_script $js_instances_to_schedule, $ds_instances, $ds_aws_account, $ds_applied_policy, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop
 end
 
 script "js_instances_to_schedule", type: "javascript" do
-  parameters "ds_instances", "ds_aws_account", "ds_applied_policy", "param_schedule_tag", "param_next_start_tag", "param_next_stop_tag"
+  parameters "ds_instances", "ds_aws_account", "ds_applied_policy", "param_tag_schedule", "param_tag_next_start", "param_tag_next_stop"
   result "result"
   code <<-EOS
   result = []
@@ -370,9 +370,9 @@ script "js_instances_to_schedule", type: "javascript" do
       _.each(instance['tags'], function(item) {
         tags.push(item['key'] + '=' + item['value'])
         if (item['key'] == 'name')               { resourceName = item['value'] }
-        if (item['key'] == param_schedule_tag)   { schedule = item['value'] }
-        if (item['key'] == param_next_start_tag) { next_start = new Date(item['value']) }
-        if (item['key'] == param_next_stop_tag)  { next_stop = new Date(item['value']) }
+        if (item['key'] == param_tag_schedule)   { schedule = item['value'] }
+        if (item['key'] == param_tag_next_start) { next_start = new Date(item['value']) }
+        if (item['key'] == param_tag_next_stop)  { next_stop = new Date(item['value']) }
       })
     }
 
@@ -483,7 +483,7 @@ escalation "esc_execute_schedules" do
   automatic contains($param_automatic_action, "Execute Schedules")
   label "Execute Schedules"
   description "Approval to start or stop all selected instances based on schedule"
-  run "execute_schedules", data, $param_schedule_tag, $param_next_start_tag, $param_next_stop_tag
+  run "execute_schedules", data, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop
 end
 
 escalation "esc_update_schedules" do
@@ -496,14 +496,14 @@ escalation "esc_update_schedules" do
     label "New Schedule"
     description "Enter a new value for the schedule tag. See README for more details"
   end
-  run "update_schedules", data, $param_schedule, $param_schedule_tag, $param_next_start_tag, $param_next_stop_tag
+  run "update_schedules", data, $param_schedule, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop
 end
 
 escalation "esc_delete_schedules" do
   automatic false
   label "Approval to delete the schedule tags on all selected instances"
   description "Delete Schedule Tag"
-  run "delete_schedules", data, $param_schedule_tag, $param_next_start_tag, $param_next_stop_tag
+  run "delete_schedules", data, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop
 end
 
 escalation "esc_start_instances" do
@@ -532,7 +532,7 @@ end
 ###############################################################################
 
 # Core CWF functions for iterating through items
-define execute_schedules($data, $param_schedule_tag, $param_next_start_tag, $param_next_stop_tag) return $all_responses do
+define execute_schedules($data, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop) return $all_responses do
   $$all_responses = []
 
   foreach $instance in $data do
@@ -540,7 +540,7 @@ define execute_schedules($data, $param_schedule_tag, $param_next_start_tag, $par
       call get_instance_state($instance) retrieve $initial_state
 
       if $initial_state != "terminated" && $initial_state != "pending"
-        call execute_schedule($instance, $param_schedule_tag, $param_next_start_tag, $param_next_stop_tag)
+        call execute_schedule($instance, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop)
       end
     end
   end
@@ -550,7 +550,7 @@ define execute_schedules($data, $param_schedule_tag, $param_next_start_tag, $par
   end
 end
 
-define update_schedules($data, $param_schedule, $param_schedule_tag, $param_next_start_tag, $param_next_stop_tag) return $all_responses do
+define update_schedules($data, $param_schedule, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop) return $all_responses do
   $$all_responses = []
 
   foreach $instance in $data do
@@ -558,7 +558,7 @@ define update_schedules($data, $param_schedule, $param_schedule_tag, $param_next
       call get_instance_state($instance) retrieve $initial_state
 
       if $initial_state != "terminated" && $initial_state != "pending"
-        call update_schedule($instance, $param_schedule, $param_schedule_tag, $param_next_start_tag, $param_next_stop_tag) retrieve $update_response, $window_active
+        call update_schedule($instance, $param_schedule, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop) retrieve $update_response, $window_active
       end
     end
   end
@@ -568,7 +568,7 @@ define update_schedules($data, $param_schedule, $param_schedule_tag, $param_next
   end
 end
 
-define delete_schedules($data, $param_schedule_tag, $param_next_start_tag, $param_next_stop_tag) return $all_responses do
+define delete_schedules($data, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop) return $all_responses do
   $$all_responses = []
 
   foreach $instance in $data do
@@ -576,7 +576,7 @@ define delete_schedules($data, $param_schedule_tag, $param_next_start_tag, $para
       call get_instance_state($instance) retrieve $initial_state
 
       if $initial_state != "terminated" && $initial_state != "pending"
-        call delete_schedule($instance, $param_schedule_tag, $param_next_start_tag, $param_next_stop_tag)
+        call delete_schedule($instance, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop)
       end
     end
   end
@@ -641,8 +641,8 @@ define terminate_instances($data) return $all_responses do
 end
 
 # Secondary CWF functions for taking action on individual instances
-define execute_schedule($instance, $param_schedule_tag, $param_next_start_tag, $param_next_stop_tag) return $response do
-  call update_schedule($instance, $instance['schedule'], $param_schedule_tag, $param_next_start_tag, $param_next_stop_tag) retrieve $update_response, $window_active
+define execute_schedule($instance, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop) return $response do
+  call update_schedule($instance, $instance['schedule'], $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop) retrieve $update_response, $window_active
   call get_instance_state($instance) retrieve $state
 
   if $window_active
@@ -656,7 +656,7 @@ define execute_schedule($instance, $param_schedule_tag, $param_next_start_tag, $
   end
 end
 
-define update_schedule($instance, $schedule, $param_schedule_tag, $param_next_start_tag, $param_next_stop_tag) return $response, $window_active do
+define update_schedule($instance, $schedule, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop) return $response, $window_active do
   $rule = split($schedule, ';')[1]
   $time_range = split($schedule, ';')[0]
 
@@ -689,9 +689,9 @@ define update_schedule($instance, $schedule, $param_schedule_tag, $param_next_st
   $host = "ec2." + $instance["region"] + ".amazonaws.com"
   $href = "/"
   $params = "?Action=CreateTags&Version=2016-11-15&ResourceId.1=" + $instance["id"]
-  $params = $params + "&Tag.1.Key=" + $param_next_start_tag + "&Tag.1.Value=" + $next_start
-  $params = $params + "&Tag.2.Key=" + $param_next_stop_tag + "&Tag.2.Value=" + $next_stop
-  $params = $params + "&Tag.3.Key=" + $param_schedule_tag + "&Tag.3.Value="
+  $params = $params + "&Tag.1.Key=" + $param_tag_next_start + "&Tag.1.Value=" + $next_start
+  $params = $params + "&Tag.2.Key=" + $param_tag_next_stop + "&Tag.2.Value=" + $next_stop
+  $params = $params + "&Tag.3.Key=" + $param_tag_schedule + "&Tag.3.Value="
   $params = $params + join([$start_hour, ":", $start_minute, "-", $stop_hour, ":", $stop_minute, ";", $rule, ";", $timezone])
   $url = $host + $href + $params
   task_label("GET " + $url)
@@ -706,11 +706,11 @@ define update_schedule($instance, $schedule, $param_schedule_tag, $param_next_st
       "Action": "CreateTags",
       "Version": "2016-11-15",
       "ResourceId.1": $instance['id'],
-      "Tag.1.Key": $param_next_start_tag,
+      "Tag.1.Key": $param_tag_next_start,
       "Tag.1.Value": $next_start,
-      "Tag.2.Key": $param_next_stop_tag,
+      "Tag.2.Key": $param_tag_next_stop,
       "Tag.2.Value": $next_stop,
-      "Tag.3.Key": $param_schedule_tag,
+      "Tag.3.Key": $param_tag_schedule,
       "Tag.3.Value": join([$start_hour, ":", $start_minute, "-", $stop_hour, ":", $stop_minute, ";", $rule, ";", $timezone])
     }
   )
@@ -725,13 +725,13 @@ define update_schedule($instance, $schedule, $param_schedule_tag, $param_next_st
   end
 end
 
-define delete_schedule($instance, $param_schedule_tag, $param_next_start_tag, $param_next_stop_tag) return $response do
+define delete_schedule($instance, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop) return $response do
   $host = "ec2." + $instance["region"] + ".amazonaws.com"
   $href = "/"
   $params = "?Action=DeleteTags&Version=2016-11-15&ResourceId.1=" + $instance["id"]
-  $params = $params + "&Tag.1.Key=" + $param_schedule_tag
-  $params = $params + "&Tag.2.Key=" + $param_next_start_tag
-  $params = $params + "&Tag.3.Key=" + $param_next_stop_tag
+  $params = $params + "&Tag.1.Key=" + $param_tag_schedule
+  $params = $params + "&Tag.2.Key=" + $param_tag_next_start
+  $params = $params + "&Tag.3.Key=" + $param_tag_next_stop
   $url = $host + $href + $params
   task_label("GET " + $url)
 
@@ -745,9 +745,9 @@ define delete_schedule($instance, $param_schedule_tag, $param_next_start_tag, $p
       "Action": "DeleteTags",
       "Version": "2016-11-15",
       "ResourceId.1": $instance['id'],
-      "Tag.1.Key": $param_schedule_tag,
-      "Tag.2.Key": $param_next_start_tag,
-      "Tag.3.Key": $param_next_stop_tag
+      "Tag.1.Key": $param_tag_schedule,
+      "Tag.2.Key": $param_tag_next_start,
+      "Tag.3.Key": $param_tag_next_stop
     }
   )
 
