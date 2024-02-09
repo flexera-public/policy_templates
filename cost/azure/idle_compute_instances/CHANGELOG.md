@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.4
+
+- Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.
+
 ## v5.3
 
 - Deprecated: This policy is no longer being updated. Please see policy README for more information.

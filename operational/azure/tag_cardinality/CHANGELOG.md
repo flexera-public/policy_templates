@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1
+
+- Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.
+
 ## v3.0
 
 - Added "Subscription Allowed List" parameter to enable Subscription filtering
