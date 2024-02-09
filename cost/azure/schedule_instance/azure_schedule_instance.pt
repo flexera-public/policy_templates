@@ -494,22 +494,30 @@ escalation "esc_delete_schedules" do
 end
 
 escalation "esc_poweron_instances" do
-  automatic contains($param_automatic_action, "Power On Instances")
+  automatic false
   label "Power On Instances"
   description "Approval to power on all selected instances"
   run "poweron_instances", data, $param_azure_endpoint
 end
 
 escalation "esc_poweroff_instances" do
-  automatic contains($param_automatic_action, "Power Off Instances")
+  automatic false
   label "Power Off Instances"
   description "Approval to power off all selected instances"
-  run "poweroff_instances", data, $param_azure_endpoint
+  parameter "param_skipshutdown" do
+    type "string"
+    category "Actions"
+    label "Power Off Type"
+    description "Whether to perform a graceful shutdown or a forced shutdown when powering off instances."
+    allowed_values "Graceful", "Forced"
+    default "Graceful"
+  end
+  run "poweroff_instances", data, $param_azure_endpoint, $param_skipshutdown
 end
 
 escalation "esc_delete_instances" do
-  automatic contains($param_automatic_action, "Delete Idle Instances")
-  label "Delete Idle Instances"
+  automatic false
+  label "Delete Instances"
   description "Approval to delete all selected instances"
   run "delete_instances", data, $param_azure_endpoint
 end
@@ -518,269 +526,341 @@ end
 # Cloud Workflow
 ###############################################################################
 
-define terminate_instance($data, $$rs_optima_host) return $all_response do
-  $all_responses = []
-  foreach $item in $data do
-    call sys_log('> ' + $item['id'] + ': Terminating ...', to_s($item))
-    sub on_error: skip do
-      $response= http_request(
-        auth: $$auth_azure,
-        verb: "delete",
-        host: "management.azure.com",
-        https: true,
-        href: $item['id'],
-        query_strings: {
-          "api-version": "2019-12-01"
-        },
-        headers: {
-          "cache-control": "no-cache",
-          "content-type": "application/json"
-        }
-      )
-      $all_responses << $response
+# Core CWF functions for iterating through items
+define execute_schedules($data, $param_azure_endpoint, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call execute_schedule($instance, $param_azure_endpoint, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop)
     end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
   end
 end
 
-define schedule_instance($data, $$rs_optima_host) return $all_responses do
-  $all_responses = []
-  foreach $item in $data do
-    $rule = split($item['schedule'],';')[1]
-    $time_range = split($item['schedule'],';')[0]
-    $start_time = split($time_range,'-')[0]
-    $start_hour = split($start_time, ':')[0]
-    $start_minute = split($start_time, ':')[1]
-    $stop_time = split($time_range,'-')[1]
-    $stop_hour = split($stop_time, ':')[0]
-    $stop_minute = split($stop_time, ':')[1]
-    $start_rule = join(["FREQ=WEEKLY;BYDAY=",$rule])
-    $stop_rule = join(["FREQ=WEEKLY;BYDAY=",$rule])
-    $timezone = split($item['schedule'],';')[2]
-    if $start_minute == null
-      $start_minute = "00"
-    end
-    if $stop_minute == null
-      $stop_minute = "00"
-    end
-    if ! $timezone
-      $timezone = "UTC"
-    end
-    call window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone) retrieve $window_active , $next_start, $next_stop
+define update_schedules($data, $param_azure_endpoint, $param_schedule, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop) return $all_responses do
+  $$all_responses = []
 
-    call sys_log('window_active',$window_active)
-    call sys_log('next_start',$next_start)
-    call sys_log('next_stop',$next_stop)
-
-    if ($window_active)
-      call sys_log($item['schedule'] + ' schedule window is currently active: Instances may be started.', '')
-    else
-      call sys_log($item['schedule'] + ' schedule window is currently in-active: Instances may be stopped.', '')
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call update_schedule($instance, $param_azure_endpoint, $param_schedule, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop) retrieve $update_response, $window_active
     end
+  end
 
-    $stoppable = /^(running|starting|deallocating|deallocated)$/
-    $startable = /^(stopped|stopping|deallocating|deallocated)$/
-    call tag_resources($item, $item['schedule'], $next_start, $next_stop) retrieve $responses
-    if($window_active)
-      if($item['state']=~$startable)
-        call sys_log('> ' + $item['id'] + ': Starting ...', to_s($item))
-        sub on_error: skip do
-        $response= http_request(
-          auth: $$auth_azure,
-          verb: "post",
-          host: "management.azure.com",
-          https: true,
-          href: join([$item['id'],"/start"]),
-          query_strings: {
-              "api-version": "2019-12-01"
-          },
-          headers: {
-              "cache-control": "no-cache",
-              "content-type": "application/json"
-          }
-      )
-    $all_responses << $response
-        end
-      else
-        call sys_log('> ' + $item['id'] + ': No action - Instance state is ' + $item['state'], '')
-      end
-    else
-      if($item['state'] =~ $stoppable)
-        call sys_log('> ' + $item['id'] + ': Stopping ...', to_s($item))
-        sub on_error: skip do
-        $response= http_request(
-            auth: $$auth_azure,
-            verb: "post",
-            host: "management.azure.com",
-            https: true,
-            href: join([$item['id'],"/deallocate"]),
-            query_strings: {
-              "api-version": "2022-08-01"
-            },
-            headers: {
-              "cache-control": "no-cache",
-              "content-type": "application/json"
-            }
-        )
-    $all_responses << $response
-        end
-      else
-        call sys_log('> ' + $item['id'] + ': No action - Instance state is ' + $item['state'], '')
-      end
-    end
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
   end
 end
 
+define delete_schedules($data, $param_azure_endpoint, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop) return $all_responses do
+  $$all_responses = []
 
-define update_schedule($data, $param, $$rs_optima_host) return $all_responses do
-  $all_responses = []
-  foreach $item in $data do
-    $rule = split($param,';')[1]
-    $time_range = split($param,';')[0]
-    $start_time = split($time_range,'-')[0]
-    $start_hour = split($start_time, ':')[0]
-    $start_minute = split($start_time, ':')[1]
-    $stop_time = split($time_range,'-')[1]
-    $stop_hour = split($stop_time, ':')[0]
-    $stop_minute = split($stop_time, ':')[1]
-    $start_rule = join(["FREQ=WEEKLY;BYDAY=",$rule])
-    $stop_rule = join(["FREQ=WEEKLY;BYDAY=",$rule])
-    $timezone = split($param,';')[2]
-    if $start_minute == null
-      $start_minute = "00"
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call delete_schedule($instance, $param_azure_endpoint, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop)
     end
-    if $stop_minute == null
-      $stop_minute = "00"
-    end
-    if ! $timezone
-      $timezone = "UTC"
-    end
-    call window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone) retrieve $window_active , $next_start, $next_stop
-    call sys_log('> ' + $item['id'] + ': Updating schedule Tag ...', to_s($item))
-    call tag_resources($item, $param, $next_start, $next_stop) retrieve $response
-    $all_responses << $response
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
   end
 end
 
-define delete_schedule($data, $$rs_optima_host) return $all_responses do
-  $all_responses = []
-  foreach $item in $data do
-    call sys_log('> ' + $item['id'] + ': Deleting schedule Tag ...', to_s($item))
-      $delete_tag = "delete"
-      call tag_resources($item, $delete_tag, $next_start, $next_stop) retrieve $response
-      $all_responses << $response
+define poweron_instances($data, $param_azure_endpoint) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call poweron_instance($instance)
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
   end
 end
 
-define tag_resources($item, $param, $next_start, $next_stop) return $update_resource_response do
-  $$log = []
-  $new_tags = {}
-  $old_tags = $item["tags"]
-  if $param == "delete"
-    foreach $tag_key in keys($old_tags) do
-      if $tag_key != "next_start" && $tag_key != "next_stop" && $tag_key != "schedule"
-        $new_tags[$tag_key] = $old_tags[$tag_key]
-      end
+define poweroff_instances($data, $param_azure_endpoint, $param_skipshutdown) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call poweroff_instance($instance, $param_azure_endpoint, $param_skipshutdown)
     end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+define delete_instances($data, $param_azure_endpoint) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call delete_instance($instance, $param_azure_endpoint)
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+# Secondary CWF functions for taking action on individual instances
+define execute_schedule($instance, $param_azure_endpoint, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop) return $response do
+  call update_schedule($instance, $param_azure_endpoint, $instance['schedule'], $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop) retrieve $update_response, $window_active
+
+  if $window_active
+    call start_instance($instance, $param_azure_endpoint) retrieve $start_response
   else
-    $new_tags = $old_tags
-    $new_tags["next_start"]= $next_start
-    $new_tags["next_stop"]= $next_stop
-    $new_tags["schedule"]= $param
-  end
-  $$log << to_s($new_tags)
-  $$log << $next_start
-  $$log << $next_stop
-  $$log << $param
-  call sys_log('all tags ', to_s($new_tags))
-  sub on_error: handle_error($update_resource_response) do
-    $update_resource_response = http_request(
-      auth: $$auth_azure,
-      verb: "patch",
-      host: "management.azure.com",
-      https: true,
-      href: $item["id"],
-      query_strings: {
-        "api-version": "2020-06-01"
-      },
-      headers: {
-        "cache-control": "no-cache",
-        "content-type": "application/json"
-      },
-      body: {"tags": $new_tags}
-    )
+    call stop_instance($instance, $param_azure_endpoint) retrieve $stop_response
   end
 end
 
-define window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $tz) return $window_active, $next_start, $next_stop do
-  $params = {
-    verb: 'post',
-    host: 'bjlaftw4kh.execute-api.us-east-1.amazonaws.com',
+define update_schedule($instance, $param_azure_endpoint, $schedule, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop) return $response, $window_active do
+  $rule = split($schedule, ';')[1]
+  $time_range = split($schedule, ';')[0]
+
+  $start_time = split($time_range, '-')[0]
+  $start_hour = split($start_time, ':')[0]
+  $start_minute = split($start_time, ':')[1]
+
+  if $start_minute == null
+    $start_minute = '00'
+  end
+
+  $stop_time = split($time_range, '-')[1]
+  $stop_hour = split($stop_time, ':')[0]
+  $stop_minute = split($stop_time, ':')[1]
+
+  if $stop_minute == null
+    $stop_minute = '00'
+  end
+
+  $start_rule = join(["FREQ=WEEKLY;BYDAY=", $rule])
+  $stop_rule = join(["FREQ=WEEKLY;BYDAY=", $rule])
+  $timezone = split($schedule, ';')[2]
+
+  if ! $timezone
+    $timezone = "UTC"
+  end
+
+  call window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone) retrieve $window_active, $next_start, $next_stop
+
+  $new_tags = $instance["tags"]
+  $new_tags[$param_tag_schedule] = $schedule
+  $new_tags[$param_tag_next_start] = $next_start
+  $new_tags[$param_tag_next_stop] = $next_stop
+
+  $host = $param_azure_endpoint
+  $href = $instance["id"]
+  $params = "?api-version=2020-06-01"
+  $url = $host + $href + $params
+  task_label("PATCH " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure,
+    verb: "patch",
+    host: $host,
     https: true,
-    href: '/production',
-    headers:{
-      'content-type': 'application/json'
+    href: $$href,
+    query_strings: {
+      "api-version": "2020-06-01"
     },
-    body: {
-      'start_hour': $start_hour,
-      'start_minute': $start_minute,
-      'start_rule': $start_rule,
-      'stop_minute': $stop_minute,
-      'stop_hour': $stop_hour,
-      'stop_rule': $stop_rule,
-      'tz': $tz
-    }
-  }
-  call sys_log('window active $params', to_s($params))
-  $response = http_request($params)
-  call sys_log('window active $response', to_s($response))
-  $body = $response['body']
-  call sys_log('window active $body', to_s($body))
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json"
+    },
+    body: { "tags": $new_tags }
+  )
 
-  $window_active = to_b($body['event_active'])
-  $next_start   = $body['next_start']
-  $next_stop    = $body['next_stop']
-end
+  task_label("Update Azure instance tags response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
 
-define handle_error($response) do
-  $status_code = $response["code"]
-  if $status_code == 404
-    $_error_behavior = "skip"
+  if $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response updating Azure instance tags: " + $instance["id"] + " " + to_json($response)
   else
-    $_error_behavior = "raise"
+    task_label("Updating Azure instance tags successful: " + $instance["id"])
   end
 end
 
-define sys_log($subject, $detail) do
-  # Create empty errors array if doesn't already exist
+define delete_schedule($instance, $param_azure_endpoint, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop) return $response do
+  $new_tags = {}
+
+  foreach $tag_key in keys($instance["tags"]) do
+    if $tag_key != $param_tag_next_start && $tag_key != $param_tag_next_stop && $tag_key != $param_tag_schedule
+      $new_tags[$tag_key] = $instance["tags"][$tag_key]
+    end
+  end
+
+  $host = $param_azure_endpoint
+  $href = $instance["id"]
+  $params = "?api-version=2020-06-01"
+  $url = $host + $href + $params
+  task_label("PATCH " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure,
+    verb: "patch",
+    host: $host,
+    https: true,
+    href: $$href,
+    query_strings: {
+      "api-version": "2020-06-01"
+    },
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json"
+    },
+    body: { "tags": $new_tags }
+  )
+
+  task_label("Delete Azure instance tags response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
+
+  if $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response deleting Azure instance tags: " + $instance["id"] + " " + to_json($response)
+  else
+    task_label("Deleting Azure instance tags successful: " + $instance["id"])
+  end
+end
+
+define delete_instance($instance, $param_azure_endpoint) return $response do
+  $host = $param_azure_endpoint
+  $href = $instance["id"]
+  $params = "?api-version=2023-07-01"
+  $url = $host + $href + $params
+  task_label("DELETE " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "delete",
+    host: $host,
+    href: $href,
+    query_strings: { "api-version": "2023-07-01" }
+  )
+
+  task_label("Delete Azure VM instance response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response deleting Azure VM instance: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Delete Azure VM instance successful: " + $instance["id"])
+  end
+end
+
+# Tertiary CWF functions for specific tasks
+define window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $tz) return $window_active, $next_start, $next_stop do
+  $host = "bjlaftw4kh.execute-api.us-east-1.amazonaws.com"
+  $href = "/production"
+  $url = $host + $href
+  task_label("POST " + $url)
+
+  $response = http_request(
+    https: true,
+    verb: "post",
+    href: $href,
+    host: $host,
+    headers: { "content-type": "application/json" },
+    body: {
+      "start_hour": $start_hour,
+      "start_minute": $start_minute,
+      "start_rule": $start_rule,
+      "stop_minute": $stop_minute,
+      "stop_hour": $stop_hour,
+      "stop_rule": $stop_rule,
+      "tz": $tz
+    }
+  )
+
+  task_label("Post AWS API Gateway response: " + $host + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response posting AWS API Gateway: " + $host + " " + to_json($response)
+  else
+    task_label("Post AWS API Gateway successful: " + $host)
+    $window_active = to_b($response['body']['event_active'])
+    $next_start = $response['body']['next_start']
+    $next_stop = $response['body']['next_stop']
+  end
+end
+
+define poweron_instance($instance, $param_azure_endpoint) return $response do
+  $host = $param_azure_endpoint
+  $href = $instance["id"] + "/powerOn"
+  $params = "?api-version=2023-07-01"
+  $url = $host + $href + $params
+  task_label("POST " + $url)
+
+  $query_strings = { "api-version": "2023-07-01" }
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "post",
+    host: $host,
+    href: $href,
+    query_strings: $query_strings
+  )
+
+  task_label("Power on Azure VM instance response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response powering on Azure VM instance: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Power on Azure VM instance successful: " + $instance["id"])
+  end
+end
+
+define poweroff_instance($instance, $param_azure_endpoint, $param_skipshutdown) return $response do
+  $host = $param_azure_endpoint
+  $href = $instance["id"] + "/powerOff"
+  $params = "?api-version=2023-07-01"
+  $url = $host + $href + $params
+  task_label("POST " + $url)
+
+  $query_strings = { "api-version": "2023-07-01" }
+
+  if $param_skipshutdown == "Forced"
+    $query_strings["skipShutdown"] = "true"
+    $params = $params + "&skipShutdown=true"
+  end
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "post",
+    host: $host,
+    href: $href,
+    query_strings: $query_strings
+  )
+
+  task_label("Power off Azure VM instance response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response powering off Azure VM instance: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Power off Azure VM instance successful: " + $instance["id"])
+  end
+end
+
+define handle_error() do
   if !$$errors
     $$errors = []
   end
-  # Check if debug is enabled
-  if $$debug
-    # Append to global $$errors
-    # This is the suggested way to capture errors
-    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
-    # If Flexera NAM Zone, create audit_entries [to be deprecated]
-    # This is the legacy method for capturing errors and only supported on Flexera NAM
-    if $$rs_optima_host == "api.optima.flexeraeng.com"
-      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
-      $task_label = "Creating audit entry for " + $subject
-      sub task_label: $task, on_error: skip_error_and_append($task) do
-        rs_cm.audit_entries.create(
-          notify: "None",
-          audit_entry: {
-            auditee_href: @@account,
-            summary: $subject,
-            detail: $detail
-          }
-        )
-      end # End sub on_error
-    end # End if rs_optima_host
-  end # End if debug is enabled
-end
-
-define skip_error_and_append($subject) do
-  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
   $_error_behavior = "skip"
 end
 
