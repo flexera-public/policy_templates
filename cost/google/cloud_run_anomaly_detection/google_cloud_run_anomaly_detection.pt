@@ -1,0 +1,526 @@
+name "Google Cloud Run Anomaly Detection"
+rs_pt_ver 20180301
+type "policy"
+short_description "Identifies Anomalies in Google Cloud Run Services"
+long_description ""
+severity "low"
+category "Cost"
+default_frequency "daily"
+info(
+  publish: false,
+  version: "0.1.0",
+  provider: "Google",
+  service: "Cloud Run",
+  policy_set: "Anomaly Detection"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+  default []
+end
+
+parameter "param_projects_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Projects"
+  description "Allow or Deny entered Projects. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_projects_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Projects List"
+  description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+parameter "param_metric_lookback_time" do
+  label "Lookback Time Period"
+  type "string"
+  description "The time period to look back for anomalies. The longer the time period, the more accurate the anomaly detection will be."
+  default "Last 1 day"
+  allowed_values ["Last 15 minutes", "Last 30 minutes", "Last 1 hour", "Last 3 hours", "Last 6 hours", "Last 12 hours", "Last 1 day", "Last 2 days", "Last 7 days", "Last 14 days"]
+end
+
+parameter "param_metric_aggregation" do
+  label "Lookback Aggregation Period"
+  type "string"
+  description "The time period to aggregate the metric data"
+  default "1 minute"
+  allowed_values ["1 minute", "5 minutes", "10 minutes", "15 minutes", "30 minutes", "1 hour", "3 hours", "6 hours", "12 hours", "1 day"]
+end
+
+parameter "param_threshold_metric_name" do
+  label "Metric Name"
+  type "string"
+  description "The name of the metric to monitor for anomalies"
+  default "run.googleapis.com/container/billable_instance_time"
+  allowed_values ["run.googleapis.com/container/billable_instance_time", "run.googleapis.com/container/instance_count", "run.googleapis.com/container/memory", "run.googleapis.com/container/cpu"]
+end
+
+parameter "param_threshold_zscore" do
+  label "Threshold For Z-Score"
+  type "number"
+  description "The Z-score is the number of standard deviations by which the value of a raw score (i.e., an observed value or data point) is above or below the mean value of what is being observed or measured"
+  default 3
+  min_value 0
+end
+
+parameter "param_threshold_consequtive_anomalies" do
+  label "Threshold For Consequtive Anomalies"
+  type "number"
+  description "Number of Consqutive Anomalies to trigger an incident"
+  default 0
+  min_value 0
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+# authenticate with Google
+credentials "auth_google" do
+  schemes "oauth2"
+  label "Google"
+  description "Select the Google Cloud Credential from the list."
+  tags "provider=gce"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_google" do
+  get_page_marker do
+    body_path "nextPageToken"
+  end
+  set_page_marker do
+    query "pageToken"
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+datasource "ds_param_values" do
+  run_script $js_param_values, $param_metric_lookback_time, $param_metric_aggregation
+end
+
+script "js_param_values", type: "javascript" do
+  parameters "param_metric_lookback_time", "param_metric_aggregation"
+  result "result"
+  code <<-EOS
+  var result = {}
+
+  // Using param_metric_lookback_time, calculate the start and end time for the interval
+  var end_time = new Date()
+  // Set the seconds and milliseconds to 0 to make the timestamp more human-readable
+  end_time.setSeconds(0,0)
+  // Default start_time to Last 1 day
+  var start_time = new Date(end_time.getTime() - 24*60*60000)
+  // Override default if param value matches mapping in switch
+  switch (param_metric_lookback_time) {
+    case "Last 15 minutes":
+      var start_time = new Date(end_time.getTime() - 15*60000)
+      break
+    case "Last 30 minutes":
+      var start_time = new Date(end_time.getTime() - 30*60000)
+      break
+    case "Last 1 hour":
+      var start_time = new Date(end_time.getTime() - 60*60000)
+      break
+    case "Last 3 hours":
+      var start_time = new Date(end_time.getTime() - 3*60*60000)
+      break
+    case "Last 6 hours":
+      var start_time = new Date(end_time.getTime() - 3*60*60000)
+      break
+    case "Last 12 hours":
+      var start_time = new Date(end_time.getTime() - 12*60*60000)
+      break
+    case "Last 1 day":
+      var start_time = new Date(end_time.getTime() - 24*60*60000)
+      break
+    case "Last 2 days":
+      var start_time = new Date(end_time.getTime() - 2*24*60*60000)
+      break
+    case "Last 7 days":
+      var start_time = new Date(end_time.getTime() - 7*24*60*60000)
+      break
+    case "Last 14 days":
+      var start_time = new Date(end_time.getTime() - 14*24*60*60000)
+      break
+  }
+  // Convert to string (Example: "2024-02-09T00:00:00Z") for use in the API
+  result["start_time"] = start_time.toISOString()
+  result["end_time"] = end_time.toISOString()
+
+  // Map param_metric_aggregation to a seconds int value
+  result['aggregation'] = "60"
+  switch (param_metric_aggregation) {
+    case "1 minute":
+      result['aggregation'] = "60"
+      break
+    case "5 minutes":
+      result['aggregation'] = "300"
+      break
+    case "10 minutes":
+      result['aggregation'] = "600"
+      break
+    case "15 minutes":
+      result['aggregation'] = "900"
+      break
+    case "30 minutes":
+      result['aggregation'] = "1800"
+      break
+    case "1 hour":
+      result['aggregation'] = "3600"
+      break
+    case "3 hours":
+      result['aggregation'] = "10800"
+      break
+    case "6 hours":
+      result['aggregation'] = "21600"
+      break
+    case "12 hours":
+      result['aggregation'] = "43200"
+      break
+    case "1 day":
+      result['aggregation'] = "86400"
+      break
+  }
+EOS
+end
+
+datasource "ds_google_projects" do
+  request do
+    auth $auth_google
+    pagination $pagination_google
+    host "cloudresourcemanager.googleapis.com"
+    path "/v1/projects/"
+    query "filter", "(lifecycleState:ACTIVE)"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "projects[*]") do
+      field "projectNumber", jmes_path(col_item, "projectNumber")
+      field "projectId", jmes_path(col_item, "projectId")
+      field "projectName", jmes_path(col_item, "name")
+    end
+  end
+end
+
+datasource "ds_google_projects_filtered" do
+  run_script $js_google_projects_filtered, $ds_google_projects, $param_projects_allow_or_deny, $param_projects_list
+end
+
+script "js_google_projects_filtered", type: "javascript" do
+  parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list"
+  result "result"
+  code <<-EOS
+  if (param_projects_list.length > 0) {
+    result = _.filter(ds_google_projects, function(project) {
+      include_project = _.contains(param_projects_list, project['projectId']) || _.contains(param_projects_list, project['projectName']) || _.contains(param_projects_list, project['projectNumber'])
+
+      if (param_projects_allow_or_deny == "Deny") {
+        include_project = !include_project
+      }
+
+      return include_project
+    })
+  } else {
+    result = ds_google_projects
+  }
+EOS
+end
+
+datasource "ds_google_regions" do
+  iterate $ds_google_projects_filtered
+  request do
+    auth $auth_google
+    pagination $pagination_google
+    host "compute.googleapis.com"
+    path join(["/compute/v1/projects/", val(iter_item, "projectId"), "/regions/"])
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+      field "projectId", val(iter_item, "projectId")
+      field "projectName", val(iter_item, "projectName")
+      field "projectNumber", val(iter_item, "projectNumber")
+      field "region", jmes_path(col_item, "name")
+    end
+  end
+end
+
+datasource "ds_google_regions_filtered" do
+  run_script $js_google_regions_filtered, $ds_google_regions, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_google_regions_filtered", type: "javascript" do
+  parameters "ds_google_regions", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_google_regions, function(region) {
+      include_region = _.contains(param_regions_list, region['region'])
+
+      if (param_regions_allow_or_deny == "Deny") {
+        include_region = !include_region
+      }
+
+      return include_region
+    })
+  } else {
+    result = ds_google_regions
+  }
+EOS
+end
+
+datasource "ds_google_cloud_run_services" do
+  iterate $ds_google_regions_filtered
+  request do
+    auth $auth_google
+    host "run.googleapis.com" # v2 can use Global endpoint https://cloud.google.com/run/docs/reference/rest#rest_endpoints
+    verb "GET"
+    path join(["/v2/projects/", val(iter_item, "projectId"), "/locations/", val(iter_item, "region"), "/services"])
+    pagination $pagination_google
+  end
+  result  do
+    encoding "json"
+    collect jq(response,".services[]?") do
+      field "projectId", val(iter_item, "projectId")
+      field "projectName", val(iter_item, "projectName")
+      field "projectNumber", val(iter_item, "projectNumber")
+      field "region", val(iter_item, "region")
+      field "name", jq(col_item, ".name")
+      field "uid", jq(col_item, ".uid")
+      field "uri", jq(col_item, ".uri")
+    end
+  end
+end
+
+datasource "ds_cloud_run_utilization" do
+  iterate $ds_google_cloud_run_services
+  request do
+    auth $auth_google
+    host "monitoring.googleapis.com"
+    path join(["/v3/projects/",val(iter_item,"projectId"),"/timeSeries"])
+    query "aggregation.alignmentPeriod", join(['+',val($ds_param_values,"aggregation"),"s"],"")
+    query "aggregation.crossSeriesReducer", "REDUCE_SUM"
+    query "aggregation.groupByFields", 'resource.label."service_name"'
+    query "aggregation.perSeriesAligner", "ALIGN_RATE"
+    query "filter", join(['metric.type="',$param_threshold_metric_name,'" resource.type="cloud_run_revision" resource.label."service_name"="',last(split(val(iter_item, "name"), "/services/")),'" AND resource.labels."location"="',val(iter_item, "region"),'" AND resource.labels."service_name"="',last(split(val(iter_item, "name"), "/services/")),'"'],"")
+    query "interval.startTime", val($ds_param_values, "start_time")
+    query "interval.endTime",   val($ds_param_values, "end_time")
+  end
+  result do
+    encoding "json"
+    collect jq(response, ".timeSeries[]?") do
+      field "projectId", val(iter_item, "projectId")
+      field "projectName", val(iter_item, "projectName")
+      field "projectNumber", val(iter_item, "projectNumber")
+      field "service_name", val(iter_item, "name")
+      field "points", jq(col_item, "try(.points | if . != null then . else [] end) catch []")
+      field "points_min", jq(col_item, "try([.points[].value.doubleValue] | min | if . != null then . else 0 end) catch 0")
+      field "points_avg", jq(col_item, "try([.points[].value.doubleValue] | add/length | if . != null then . else 0 end) catch 0")
+      field "points_max", jq(col_item, "try([.points[].value.doubleValue] | max | if . != null then . else 0 end) catch 0")
+      field "points_stddev", jq(col_item, "try([.points[].value.doubleValue] | (add / length) as $mean | (map(. - $mean | . * .) | add) / (length - 1) | sqrt | if . != null then . else 0 end) catch 0")
+      field "metric_type", "run.googleapis.com/container/billable_instance_time"
+    end
+  end
+end
+
+datasource "ds_cloud_run_utilization_anomalies" do
+  run_script $js_cloud_run_utilization_anomalies, $ds_cloud_run_utilization, $param_threshold_zscore, $param_threshold_consequtive_anomalies, $param_metric_aggregation
+end
+
+script "js_cloud_run_utilization_anomalies", type: "javascript" do
+  parameters "ds_cloud_run_utilization", "param_threshold_zscore", "param_threshold_consequtive_anomalies", "param_metric_aggregation"
+  result "result"
+  code <<-EOS
+  result = []
+  _.each(ds_cloud_run_utilization, function(resource_utilization) {
+    // Reverse the points so that we can iterate through them in order of timestamp increasing
+    resource_utilization['points'] = resource_utilization['points'].reverse()
+    // Initialize consequtive_anomalies to 0
+    consequtive_anomalies = 0
+    // Initialize anomalies to an empty array
+    resource_utilization['anomalies'] = []
+    // Filter the point and return only the anomalies
+    resource_utilization['anomalies'] = _.filter(resource_utilization['points'], function(point) {
+      // TODO submit but for retrieve_data API endpoint for:
+      // point['foobar'] = "this was added in js_cloud_run_utilization_anomalies" // This appears in result for ds_cloud_run_utilization.json (the previous datasource) when retrieve_data which is not expected (modifying datasource from later in another datasource?)
+
+      // use z-score to detect anomalies
+      // https://en.wikipedia.org/wiki/Standard_score
+      // z = (point - mean) / std
+      point_value = point['value']['doubleValue']
+      mean = resource_utilization['points_avg']
+      std = resource_utilization['points_stddev']
+      z = (point_value - mean) / std
+      // zScore is the number of standard deviations by which the value of a raw score (i.e., an observed value or data point) is above or below the mean value of what is being observed or measured
+      point['value']['zScore'] = z
+      // Check if we are outside our confidence window
+      if (z > param_threshold_zscore || z < (-1 * param_threshold_zscore)) {
+        // Anomaly detected
+        // Increase the count for consequtive_anomalies
+        // do this first so that any first anomaly is 1
+        consequtive_anomalies += 1
+        // Add the consequtive_anomalies count to the anomaly point
+        point['value']['consequtiveAnomalyIndex'] = consequtive_anomalies
+        // Add the resource data to the anomaly point
+        // Keeping the key names in an array to make it easier to add new keys
+        _.each(["metric_type", "projectId", "projectName", "projectNumber","service_name"], function(key) {
+          point[key] = resource_utilization[key]
+        })
+        // Append the parameter values to the anomaly point point for reference in final output
+        point['parameters'] = {}
+        point['parameters']['param_threshold_zscore'] = param_threshold_zscore
+        point['parameters']['param_threshold_consequtive_anomalies'] = param_threshold_consequtive_anomalies
+        point['parameters']['param_metric_aggregation'] = param_metric_aggregation
+        // return true to include point in filter result
+        return true
+      } else {
+        // Reset consequtive_anomalies
+        consequtive_anomalies = 0
+        return false
+      }
+    })
+    if (resource_utilization['anomalies'].length > 0) {
+      // append the contents of 'anomalies' to the result
+      result = result.concat(resource_utilization['anomalies'])
+    }
+  })
+  // // of all results in result
+  // // group by key service_name
+  // resultsGrouped = _.groupBy(result, 'service_name')
+  // // For each group, get the max consequtiveAnomalyIndex
+  // resultsGroupedSorted = _.each(resultsGrouped, function(group) {
+  //   // sort by the consequtiveAnomalyIndex (decending)
+  //   group = _.sortBy(group, function(anomalies) {
+  //     // sort anomalies by the consequtiveAnomalyIndex
+  //     // * -1 to sort in descending order
+  //     return anomalies['value']['consequtiveAnomalyIndex'] * -1
+  //   })
+  // })
+  // // clean the result array for final results friom resultsGroupedSorted
+  // result = []
+  // // for each group in resultsGrouped get the first elemtn which is the one with max consequtiveAnomalyIndex
+  // _.each(resultsGrouped, function(group) {
+  //   // push the first element of the group to the result array
+  //   // this is the one with the highest consequtiveAnomalyIndex
+  //   r = _.first(group)
+  //   // get the last element of the group to get the start time of the first anomaly
+  //   r['interval']['startTime'] = _.last(group)['interval']['startTime']
+  //   result = result.push(r)
+  // })
+
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_utilization" do
+  validate_each $ds_cloud_run_utilization_anomalies do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows"
+    detail_template "{{ data }}"
+    check lt(  val(val(item, "value"), "consequtiveAnomalyIndex")  , $param_threshold_consequtive_anomalies) # Check that the consequtiveAnomalyIndex is less than the param_consequtiveAnomaly_threshold
+    escalate $email
+    export do
+      # resource_level true
+      # field "id" do
+      #   label "Resource ID"
+      #   path "service_name"
+      # end
+      field "param_threshold_consequtive_anomalies" do
+        label "Policy Parameter Threshold Consequtive Anomalies"
+        path "parameters.param_threshold_consequtive_anomalies"
+      end
+      field "consequtiveAnomalyIndex" do
+        label "Consequtive Anomaly Index"
+        path "value.consequtiveAnomalyIndex"
+      end
+      field "intervalStartTime" do
+        label "Interval Start Time"
+        path "interval.startTime"
+      end
+      field "param_metric_aggregation" do
+        label "Policy Parameter Metric Aggregation"
+        path "parameters.param_metric_aggregation"
+      end
+      field "projectId" do
+        label "Project ID"
+        path "projectId"
+      end
+      field "projectName" do
+        label "Project Name"
+        path "projectName"
+      end
+      field "projectNumber" do
+        label "Project Number"
+        path "projectNumber"
+      end
+      field "serviceName" do
+        label "Service Name"
+        path "service_name"
+      end
+      field "metricType" do
+        label "Metric Type"
+        path "metric_type"
+      end
+      field "metricValue" do
+        label "Metric Value"
+        path "value.doubleValue"
+      end
+      field "metricZScore" do
+        label "Metric Z-Score"
+        path "value.zScore"
+      end
+      field "param_threshold_zscore" do
+        label "Policy Parameter Threshold Z-Score"
+        path "parameters.param_threshold_zscore"
+      end
+    end
+  end
+end
+
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
