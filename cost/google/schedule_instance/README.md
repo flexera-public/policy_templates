@@ -6,11 +6,9 @@ This policy schedules Google VM instances to start and stop at specific times ba
 
 ## How To Use
 
-This policy relies on a label (default key: schedule) to stop and start instances based on a schedule. The label value defines the schedule with a start hour, stop hour and days of the week. The start and stop hour are in 24 hour format, and the days of the week are two character abbreviation for example: MO, TU, WE. See full example below. Use a Timezone TZ value to indicate a timezone to stop/start the instance(s)
+This policy uses the schedule label value (default key: schedule) for scheduling the instance. The appropriate value should be added to as a label to every instance you want to manage via this policy.
 
-### Schedule Label Format
-
-This policy uses the schedule label value (default key: schedule) for scheduling the instance. This value is a string consisting of 3 semicolon-separated substrings:
+This value is a string consisting of 3 semicolon-separated substrings:
 
 - *Hours* - Start and stop hours are 24 hour format. For example, a value of `8:15-17:30` will start instances at 8:15 and stop them at 17:30 (5:30 pm). If the minute field is left blank, the minute value of `00` will be assumed.
 - *Days of the Week* - Comma-separated list of days indicated by their two-letter abbreviation value from the following list: SU,MO,TU,WE,TH,FR,SA. For example, a value of `MO,TU,WE,TH,FR` will start and stop the instances on weekdays but not on weekends.
