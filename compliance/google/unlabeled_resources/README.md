@@ -34,21 +34,20 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 
   - Permissions
     - `compute.disks.list`
-    - `compute.instances.list`
     - `compute.disks.setLabels`
     - `compute.externalVpnGateways.list`
-    - `compute.images.list`
     - `compute.externalVpnGateways.setLabels`
+    - `compute.images.list`
     - `compute.images.setLabels`
+    - `compute.instances.list`
     - `compute.instances.setLabels`
     - `compute.snapshots.list`
     - `compute.snapshots.setLabels`
     - `compute.vpnGateways.list`
     - `compute.vpnGateways.setLabels`
-    - `compute.images.setLabels`
+    - `resourcemanager.projects.get`
     - `storage.buckets.list`
     - `storage.buckets.update`
-    - `resourcemanager.projects.get`
 
 ## Supported Clouds
 
