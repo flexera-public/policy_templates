@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.10
+
+- Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.
+
 ## v2.9
 
 - Replaced the term **whitelist** with **allowed list**.
