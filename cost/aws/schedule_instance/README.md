@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This Policy Template allows you to schedule start and stop times for your instance, along with the option to terminate instance, update and delete schedule.
+This policy schedules AWS EC2 instances to start and stop at specific times based on a configuration stored in the instance's tags. The user can also perform a variety of ad hoc actions on the instance from the incident page.
 
 ## How To Use
 
