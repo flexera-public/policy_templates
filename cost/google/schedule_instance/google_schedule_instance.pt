@@ -7,10 +7,10 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "2.5",
+  version: "3.0",
   provider: "GCE",
   service: "Compute",
-  policy_set:"Schedule Instance"
+  policy_set: "Schedule Instance"
 )
 
 ###############################################################################
@@ -19,23 +19,85 @@ info(
 
 parameter "param_email" do
   type "list"
-  label "Email addresses"
-  description "A list of email addresses to notify"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
   default []
 end
 
-parameter "param_tags_to_exclude" do
+parameter "param_label_schedule" do
+  type "string"
+  category "Label Keys"
+  label "Schedule Label Key"
+  description "Label key that schedule information is stored in. Default is recommended for most use cases."
+  default "schedule"
+end
+
+parameter "param_label_next_start" do
+  type "string"
+  category "Label Keys"
+  label "Next Start Label Key"
+  description "Label key to use for scheduling instance to start. Default is recommended for most use cases."
+  default "next_start"
+end
+
+parameter "param_label_next_stop" do
+  type "string"
+  category "Label Keys"
+  label "Next Stop Label Key"
+  description "Label key to use for scheduling instance to stop. Default is recommended for most use cases."
+  default "next_stop"
+end
+
+parameter "param_projects_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Projects"
+  description "Allow or Deny entered Projects. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_projects_list" do
   type "list"
-  label "Exclusion Tags"
-  description "A list of Google tags to ignore instances. Format: Key=Value"
+  category "Filters"
+  label "Allow/Deny Projects List"
+  description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+parameter "param_exclusion_labels" do
+  type "list"
+  category "Filters"
+  label "Exclusion Labels (Key:Value)"
+  description "Google labels to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific label key/value pairs, and Key:* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:*"
+  allowed_pattern /(^$)|[\w]*\:.*/
   default []
 end
 
 parameter "param_automatic_action" do
   type "list"
-  label "Automatic Action(s)"
-  description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Schedule Instances"]
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Execute Schedules"]
   default []
 end
 
@@ -43,18 +105,25 @@ end
 # Authentication
 ###############################################################################
 
-credentials "google_auth" do
+credentials "auth_google" do
   schemes "oauth2"
   label "Google"
   description "Select the Google Cloud Credential from the list."
   tags "provider=gce"
 end
 
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
 ###############################################################################
 # Pagination
 ###############################################################################
 
-pagination "google_pagination" do
+pagination "pagination_google" do
   get_page_marker do
     body_path "nextPageToken"
   end
@@ -64,146 +133,470 @@ pagination "google_pagination" do
 end
 
 ###############################################################################
-# Datasources
-###############################################################################
-
-datasource "ds_get_projectId" do
-  request do
-    auth $google_auth
-    verb "GET"
-    host "cloudresourcemanager.googleapis.com"
-    path "/v1/projects"
-    header "Accept", "application/json"
-    query "filter", "lifecycleState=ACTIVE"
-  end
-  result do
-    encoding"json"
-    collect jmes_path(response, "projects[*]") do
-      field "projectId", jmes_path(col_item, "projectId")
-    end
-  end
-end
-
-datasource "ds_get_zones" do
-  iterate $ds_get_projectId
-  request do
-    auth $google_auth
-    pagination $google_pagination
-    verb "GET"
-    host "compute.googleapis.com"
-    path join(["/compute/v1/projects/", val(iter_item, "projectId"), "/zones"])
-    header "Accept", "application/json"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "items[*]") do
-      field "projectId", val(iter_item, "projectId")
-      field "zone", jmes_path(col_item, "name")
-    end
-  end
-end
-
-datasource "ds_get_all_instances" do
-  iterate $ds_get_zones
-  request do
-    auth $google_auth
-    pagination $google_pagination
-    verb "GET"
-    host "compute.googleapis.com"
-    path join(["/compute/v1/projects/", val(iter_item, "projectId"), "/zones/", val(iter_item, "zone"), "/instances"])
-    query "filter", "labels.schedule!=null"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "items[*]") do
-      field "id", jmes_path(col_item,"id")
-      field "state", jmes_path(col_item,"status")
-      field "labels", jmes_path(col_item, "labels")
-      field "zone", val(iter_item,"zone")
-      field "selfLink", jmes_path(col_item, "selfLink")
-    end
-  end
-end
-
-datasource "ds_filter_resources" do
-  run_script $js_filter_resources, $ds_get_all_instances, $param_tags_to_exclude
-end
-
-###############################################################################
-# Scripts
+# Datasources & Scripts
 ###############################################################################
 
 
-script "js_filter_resources", type: "javascript" do
-  parameters "ds_get_all_instances", "param_tags_to_exclude"
+# Table to derive region from zone
+datasource "ds_zone_to_region" do
+  run_script $js_zone_to_region
+end
+
+script "js_zone_to_region", type:"javascript" do
   result "result"
   code <<-EOS
-  var result=[];
-  for(var i=0;i<ds_get_all_instances.length;i++){
-    var notMatched=true;
-    var next_start=null;
-    var next_stop=null;
-    var next_start_iso=null;
-    var next_stop_iso=null;
-    var now=new Date();
-    var instance=ds_get_all_instances[i];
-    if(instance.id!=null){
-      for(var j=0;j<param_tags_to_exclude.length;j++){
-        for(data in instance.labels){
-          if(data.toLowerCase()==param_tags_to_exclude[j].toLowerCase() || data.toLowerCase()+"="+instance.labels[data].toLowerCase()==param_tags_to_exclude[j].toLowerCase()){
-            notMatched=false;
-            break;
-          }
-        }
-        if(notMatched==false)
-        break;
-      }
-      if(notMatched){
-        var all_labels="";
-        for(var prop in instance.labels){
-          all_labels=all_labels+", "+prop+"="+instance.labels[prop];
-          if(prop== 'schedule'){
-            var schedule=instance.labels[prop];
-          }
-          else if(prop== 'next_start'){
-            var start_time=instance.labels[prop];
-            start_time=start_time.split("t");
-            start_time[1]=start_time[1].split("p").join("+");
-            start_time[1]=start_time[1].split("-").join(":");
-            start_time[1]=start_time[1].split("m").join("-");
-            start_time=start_time.join("T");
-            next_start=new Date(start_time);
-            next_start_iso=next_start.toISOString();
-          }
-          else if(prop== 'next_stop'){
-            var stop_time=instance.labels[prop];
-            stop_time=stop_time.split("t");
-            stop_time[1]=stop_time[1].split("p").join("+");
-            stop_time[1]=stop_time[1].split("-").join(":");
-            stop_time[1]=stop_time[1].split("m").join("-");
-            stop_time=stop_time.join("T");
-            next_stop=new Date(stop_time);
-            next_stop_iso=next_stop.toISOString();
-          }
-        }
-        if(now > next_start || now > next_stop || next_start==null || next_stop==null){
-          result.push({
-            "id":instance.id,
-            "state": instance.state,
-            "zone": instance.zone,
-            "schedule":schedule,
-            "labels":all_labels.slice(2),
-            "next_start":next_start_iso,
-            "next_stop":next_stop_iso,
-            "selfLink": instance.selfLink
-          })
-        }
-      }
-    }
+  result = {
+    "us-east1-b": "us-east1",
+    "us-east1-c": "us-east1",
+    "us-east1-d": "us-east1",
+    "us-east4-c": "us-east4",
+    "us-east4-b": "us-east4",
+    "us-east4-a": "us-east4",
+    "us-central1-c": "us-central1",
+    "us-central1-a": "us-central1",
+    "us-central1-f": "us-central1",
+    "us-central1-b": "us-central1",
+    "us-west1-b": "us-west1",
+    "us-west1-c": "us-west1",
+    "us-west1-a": "us-west1",
+    "europe-west4-a": "europe-west4",
+    "europe-west4-b": "europe-west4",
+    "europe-west4-c": "europe-west4",
+    "europe-west1-b": "europe-west1",
+    "europe-west1-d": "europe-west1",
+    "europe-west1-c": "europe-west1",
+    "europe-west3-c": "europe-west3",
+    "europe-west3-a": "europe-west3",
+    "europe-west3-b": "europe-west3",
+    "europe-west2-c": "europe-west2",
+    "europe-west2-b": "europe-west2",
+    "europe-west2-a": "europe-west2",
+    "asia-east1-b": "asia-east1",
+    "asia-east1-a": "asia-east1",
+    "asia-east1-c": "asia-east1",
+    "asia-southeast1-b": "asia-southeast1",
+    "asia-southeast1-a": "asia-southeast1",
+    "asia-southeast1-c": "asia-southeast1",
+    "asia-northeast1-b": "asia-northeast1",
+    "asia-northeast1-c": "asia-northeast1",
+    "asia-northeast1-a": "asia-northeast1",
+    "asia-south1-c": "asia-south1",
+    "asia-south1-b": "asia-south1",
+    "asia-south1-a": "asia-south1",
+    "australia-southeast1-b": "australia-southeast1",
+    "australia-southeast1-c": "australia-southeast1",
+    "australia-southeast1-a": "australia-southeast1",
+    "southamerica-east1-b": "southamerica-east1",
+    "southamerica-east1-c": "southamerica-east1",
+    "southamerica-east1-a": "southamerica-east1",
+    "asia-east2-a": "asia-east2",
+    "asia-east2-b": "asia-east2",
+    "asia-east2-c": "asia-east2",
+    "asia-northeast2-a": "asia-northeast2",
+    "asia-northeast2-b": "asia-northeast2",
+    "asia-northeast2-c": "asia-northeast2",
+    "asia-northeast3-a": "asia-northeast3",
+    "asia-northeast3-b": "asia-northeast3",
+    "asia-northeast3-c": "asia-northeast3",
+    "asia-south2-a": "asia-south2",
+    "asia-south2-b": "asia-south2",
+    "asia-south2-c": "asia-south2",
+    "asia-southeast2-a": "asia-southeast2",
+    "asia-southeast2-b": "asia-southeast2",
+    "asia-southeast2-c": "asia-southeast2",
+    "australia-southeast2-a": "australia-southeast2",
+    "australia-southeast2-b": "australia-southeast2",
+    "australia-southeast2-c": "australia-southeast2",
+    "europe-central2-a": "europe-central2",
+    "europe-central2-b": "europe-central2",
+    "europe-central2-c": "europe-central2",
+    "europe-north1-a": "europe-north1",
+    "europe-north1-b": "europe-north1",
+    "europe-north1-c": "europe-north1",
+    "europe-southwest1-a": "europe-southwest1",
+    "europe-southwest1-b": "europe-southwest1",
+    "europe-southwest1-c": "europe-southwest1",
+    "europe-west6-a": "europe-west6",
+    "europe-west6-b": "europe-west6",
+    "europe-west6-c": "europe-west6",
+    "northamerica-northeast1-a": "northamerica-northeast1",
+    "northamerica-northeast1-b": "northamerica-northeast1",
+    "northamerica-northeast1-c": "northamerica-northeast1",
+    "northamerica-northeast2-a": "northamerica-northeast2",
+    "northamerica-northeast2-b": "northamerica-northeast2",
+    "northamerica-northeast2-c": "northamerica-northeast2",
+    "us-west2-a": "us-west2",
+    "us-west2-b": "us-west2",
+    "us-west2-c": "us-west2",
+    "us-west3-a": "us-west3",
+    "us-west3-b": "us-west3",
+    "us-west3-c": "us-west3",
+    "us-west4-a": "us-west4",
+    "us-west4-b": "us-west4",
+    "us-west4-c": "us-west4",
+    "us-west5-a": "us-west5",
+    "us-west5-b": "us-west5",
+    "us-west5-c": "us-west5",
+    "us-west6-a": "us-west6",
+    "us-west6-b": "us-west6",
+    "us-west6-c": "us-west6",
+    "us-west7-a": "us-west7",
+    "us-west7-b": "us-west7",
+    "us-west7-c": "us-west7"
   }
-  result=_.sortBy(result, 'id');
-  result=_.sortBy(result, 'zone');
-  EOS
+EOS
+end
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_google_projects" do
+  request do
+    auth $auth_google
+    pagination $pagination_google
+    host "cloudresourcemanager.googleapis.com"
+    path "/v1/projects/"
+    query "filter", "(lifecycleState:ACTIVE)"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "projects[*]") do
+      field "number", jmes_path(col_item, "projectNumber")
+      field "id", jmes_path(col_item, "projectId")
+      field "name", jmes_path(col_item, "name")
+    end
+  end
+end
+
+datasource "ds_google_projects_filtered" do
+  run_script $js_google_projects_filtered, $ds_google_projects, $param_projects_allow_or_deny, $param_projects_list
+end
+
+script "js_google_projects_filtered", type: "javascript" do
+  parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list"
+  result "result"
+  code <<-EOS
+  if (param_projects_list.length > 0) {
+    result = _.filter(ds_google_projects, function(project) {
+      include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name']) || _.contains(param_projects_list, project['number'])
+
+      if (param_projects_allow_or_deny == "Deny") {
+        include_project = !include_project
+      }
+
+      return include_project
+    })
+  } else {
+    result = ds_google_projects
+  }
+EOS
+end
+
+
+datasource "ds_get_instances" do
+  iterate $ds_google_projects_filtered
+  request do
+    auth $auth_google
+    host "compute.googleapis.com"
+    path join(["/compute/v1/projects/", val(iter_item, 'id'), "/aggregated/instances"])
+    header "User-Agent", "RS Policies"
+    header "Content-Type", "application/json"
+    ignore_status [403, 404]
+  end
+  result do
+    encoding "json"
+    field "instances", jq(response, "[ .items | to_entries | map_values(.value) | map(select(has(\"instances\"))) | .[].instances | .[] | {id,name,selfLink,status,tags,zone,kind,hostname,cpuPlatform,labels,description,machineType}]")
+    field "projectId", val(iter_item, "id")
+    field "projectName", val(iter_item, "name")
+    field "projectNumber", val(iter_item, "number")
+  end
+end
+
+datasource "ds_instances" do
+  run_script $js_instances, $ds_get_instances, $ds_zone_to_region
+end
+
+script "js_instances", type: "javascript" do
+  parameters "ds_get_instances", "ds_zone_to_region"
+  result "result"
+  code <<-EOS
+  result = []
+
+  _.each(ds_get_instances, function(response) {
+    _.each(response['instances'], function(instance) {
+      zone = instance['zone'].split('/')[8]
+      region = ds_zone_to_region[zone]
+
+      result.push({
+        id: instance['id'],
+        name: instance['name'],
+        description: instance['description'],
+        status: instance['status'],
+        selfLink: instance['selfLink'],
+        cpuPlatform: instance['cpuPlatform'],
+        machineType: instance['machineType'],
+        hostname: instance['hostname'],
+        kind: instance['kind'],
+        labels: instance['labels'],
+        projectId: response['projectId'],
+        projectName: response['projectName'],
+        projectNumber: response['projectNumber'],
+        zone: zone,
+        region: region
+      })
+    })
+  })
+EOS
+end
+
+datasource "ds_instances_label_filtered" do
+  run_script $js_instances_label_filtered, $ds_instances, $param_label_schedule, $param_exclusion_labels
+end
+
+script "js_instances_label_filtered", type: "javascript" do
+  parameters "ds_instances", "param_label_schedule", "param_exclusion_labels"
+  result "result"
+  code <<-EOS
+  if (param_exclusion_labels.length > 0) {
+    result = _.reject(ds_instances, function(instance) {
+      labels = []
+
+      if (typeof(instance['labels']) == 'object') {
+        _.each(Object.keys(instance['labels']), function(key) {
+          labels.push([key, ":", instance['labels'][key]].join(''))
+          labels.push([key, ":*"].join(''))
+        })
+      }
+
+      exclude_instance = false
+
+      _.each(param_exclusion_labels, function(exclusion_label) {
+        if (_.contains(labels, exclusion_label)) {
+          exclude_instance = true
+        }
+      })
+
+      return exclude_instance
+    })
+  } else {
+    result = ds_instances
+  }
+
+  // Filter out any VMs that do not have the schedule tag key
+  result = _.filter(result, function(vm) {
+    label_keys = []
+    if (typeof(vm['labels']) == 'object') { label_keys = _.keys(vm['labels']) }
+
+    return _.contains(label_keys, param_label_schedule)
+  })
+EOS
+end
+
+
+datasource "ds_instances_region_filtered" do
+  run_script $js_instances_region_filtered, $ds_instances_label_filtered, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_instances_region_filtered", type: "javascript" do
+  parameters "ds_instances_label_filtered", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_instances_label_filtered, function(instance) {
+      include_instance = _.contains(param_regions_list, instance['region'])
+
+      if (param_regions_allow_or_deny == "Deny") {
+        include_instance = !include_instance
+      }
+
+      return include_instance
+    })
+  } else {
+    result = ds_instances_label_filtered
+  }
+EOS
+end
+
+
+datasource "ds_instances_to_schedule" do
+  run_script $js_instances_to_schedule, $ds_instances_region_filtered, $ds_applied_policy, $param_label_schedule, $param_label_next_start, $param_label_next_stop
+end
+
+script "js_instances_to_schedule", type: "javascript" do
+  parameters "ds_instances_region_filtered", "ds_applied_policy", "param_label_schedule", "param_label_next_start", "param_label_next_stop"
+  result "result"
+  code <<-EOS
+  result = []
+  now = new Date()
+
+  _.each(ds_instances_region_filtered, function(instance) {
+    schedule = null
+    next_start = null
+    next_stop = null
+
+    labels_object = {}
+    if (typeof(instance['labels']) == 'object') { labels_object = instance['labels'] }
+
+    labels = []
+
+    if (typeof(instance['labels']) == 'object') {
+      _.each(_.keys(instance['labels']), function(key) {
+        value = instance['labels'][key]
+
+        labels.push(key + '=' + value)
+
+        if (key == param_label_schedule)   { schedule = value   }
+        if (key == param_label_next_start) { next_start = value }
+        if (key == param_label_next_stop)  { next_stop = value  }
+      })
+    }
+
+    if (next_start != null) { next_start = new Date(next_start) }
+    if (next_stop != null)  { next_stop = new Date(next_stop)   }
+
+    if (now > next_start || now > next_stop || next_start == null || next_stop == null) {
+      if (next_start != null) { next_start = next_start.toISOString() }
+      if (next_stop != null)  { next_stop = next_stop.toISOString()   }
+
+      result.push({
+        resourceID: instance['id'],
+        resourceName: instance['name'],
+        description: instance['description'],
+        status: instance['status'],
+        selfLink: instance['selfLink'],
+        platform: instance['cpuPlatform'],
+        resourceType: instance['machineType'],
+        hostname: instance['hostname'],
+        kind: instance['kind'],
+        accountID: instance['projectId'],
+        accountName: instance['projectName'],
+        projectNumber: instance['projectNumber'],
+        zone: instance['zone'],
+        region: instance['region'],
+        tags: labels.join(', '),
+        tags_object: labels_object,
+        policy_name: ds_applied_policy['name'],
+        next_start: next_start,
+        next_stop: next_stop,
+        schedule: schedule
+      })
+    }
+  })
+
+  result = _.sortBy(result, 'resourceID')
+  result = _.sortBy(result, 'zone')
+  result = _.sortBy(result, 'region')
+  result = _.sortBy(result, 'accountID')
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_schedule_instance" do
+  validate_each $ds_instances_to_schedule do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Schedule Instance List"
+    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    escalate $esc_execute_schedules
+    escalate $esc_update_schedules
+    escalate $esc_delete_schedules
+    escalate $esc_poweron_instances
+    escalate $esc_poweroff_instances
+    escalate $esc_delete_instances
+    hash_exclude "tags"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Project ID"
+      end
+      field "accountName" do
+        label "Project Name"
+      end
+      field "projectNumber" do
+        label "Project Number"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "zone" do
+        label "Zone"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "hostname" do
+        label "Hostname"
+      end
+      field "platform" do
+        label "Platform"
+      end
+      field "tags" do
+        label "Labels"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Currency"
+      end
+      field "priority" do
+        label "Priority"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "recommenderSubtype" do
+        label "Recommendation Sub Type"
+      end
+      field "state" do
+        label "State"
+      end
+      field "status" do
+        label "Status"
+      end
+      field "selfLink" do
+        label "Resource Link"
+      end
+      field "schedule" do
+        label "Schedule"
+      end
+      field "next_start" do
+        label "Next Start"
+      end
+      field "next_stop" do
+        label "Next Stop"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+      field "tags_object" do
+        label "Labels (Object)"
+      end
+    end
+  end
 end
 
 ###############################################################################
@@ -248,49 +641,6 @@ escalation "esc_delete_schedule" do
   label "Delete Schedule"
   description "Delete Schedule Tag"
   run "delete_schedule", data, rs_optima_host
-end
-###############################################################################
-# Policy
-###############################################################################
-
-policy "policy_schedule_instance" do
-  validate $ds_filter_resources do
-    summary_template "Google Schedule Instance list"
-    hash_exclude "id", "labels"
-    escalate $esc_email
-    escalate $esc_schedule_instance
-    escalate $esc_terminate_instance
-    escalate $esc_update_schedule
-    escalate $esc_delete_schedule
-    check eq(size(data),0)
-    export do
-      resource_level true
-      field "zone" do
-        label "Zone"
-      end
-      field "id" do
-        label "Instance ID"
-      end
-      field "state" do
-        label "Instance State"
-      end
-      field "schedule" do
-        label "Schedule"
-      end
-      field "next_start" do
-        label "Next Start Time"
-      end
-      field "next_stop" do
-        label "Next Stop Time"
-      end
-      field "labels" do
-        label "Labels"
-      end
-      field "selfLink" do
-        label "SelfLink"
-      end
-    end
-  end
 end
 
 ###############################################################################
