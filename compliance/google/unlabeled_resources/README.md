@@ -50,7 +50,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
     - `resourcemanager.projects.get`
     - `storage.buckets.list`
     - `storage.buckets.update`
-   
+
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ## Supported Clouds
