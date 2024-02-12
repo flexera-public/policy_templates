@@ -3,10 +3,10 @@
 ## v3.0
 
 - Several parameters altered to be more descriptive and human-readable
-- Added ability to specify custom tag keys for tracking instance schedules
+- Added ability to specify custom label keys for tracking instance schedules
 - Added ability to filter resources by project
 - Added ability to filter resources by region
-- Added ability to filter resources by multiple tag key:value pairs
+- Added ability to filter resources by multiple label key:value pairs
 - Added ability for user to start and stop instances directly
 - Normalized incident export to be consistent with other policies
 - Added additional fields to incident export for additional context
