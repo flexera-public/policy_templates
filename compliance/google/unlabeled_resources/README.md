@@ -26,33 +26,29 @@ The following policy actions are taken on any resources found to be out of compl
 
 ## Prerequisites
 
-This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
-### Credential configuration
+- [**Google Cloud Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1121577) (*provider=gce*) which has the following:
+  - Roles
+    - `Monitoring Viewer`
 
-For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
-
-Provider tag value to match this policy: `gce`
-
-Required permissions in the provider:
-
-- The `Monitoring Viewer` Role
-- The `compute.disks.list` permission
-- The `compute.instances.list` permission
-- The `compute.disks.setLabels` permission
-- The `compute.externalVpnGateways.list` permission
-- The `compute.images.list` permission
-- The `compute.externalVpnGateways.setLabels` permission
-- The `compute.images.setLabels` permission
-- The `compute.instances.setLabels` permission
-- The `compute.snapshots.list` permission
-- The `compute.snapshots.setLabels` permission
-- The `compute.vpnGateways.list` permission
-- The `compute.vpnGateways.setLabels` permission
-- The `compute.images.setLabels` permission
-- The `storage.buckets.list` permission
-- The `storage.buckets.update` permission
-- The `resourcemanager.projects.get` permission
+  - Permissions
+    - `compute.disks.list`
+    - `compute.instances.list`
+    - `compute.disks.setLabels`
+    - `compute.externalVpnGateways.list`
+    - `compute.images.list`
+    - `compute.externalVpnGateways.setLabels`
+    - `compute.images.setLabels`
+    - `compute.instances.setLabels`
+    - `compute.snapshots.list`
+    - `compute.snapshots.setLabels`
+    - `compute.vpnGateways.list`
+    - `compute.vpnGateways.setLabels`
+    - `compute.images.setLabels`
+    - `storage.buckets.list`
+    - `storage.buckets.update`
+    - `resourcemanager.projects.get`
 
 ## Supported Clouds
 
