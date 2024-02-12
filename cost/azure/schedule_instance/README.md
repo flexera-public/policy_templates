@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This Policy Template allows you to schedule start and stop times for your instance, along with the option to delete instance, update and delete schedule.
+This policy schedules Azure virtual machines to start and stop at specific times based on a configuration stored in the virtual machine's tags. The user can also perform a variety of ad hoc actions on the virtual machine from the incident page.
 
 ## How To Use
 
