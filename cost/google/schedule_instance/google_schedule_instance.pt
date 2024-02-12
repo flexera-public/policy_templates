@@ -731,31 +731,50 @@ define execute_schedule($instance, $param_label_schedule, $param_label_next_star
 end
 
 define update_schedule($instance, $schedule, $param_label_schedule, $param_label_next_start, $param_label_next_stop) return $response, $window_active do
-  $rule = split($schedule, ';')[1]
-  $time_range = split($schedule, ';')[0]
+  # Time
+  $schedule_time = split($schedule, '_')[0]
 
-  $start_time = split($time_range, '-')[0]
+  $start_time = split($schedule_time, '-')[0]
+  $start_time = insert($start_time, 2, ":")
   $start_hour = split($start_time, ':')[0]
   $start_minute = split($start_time, ':')[1]
 
-  if $start_minute == null
+  if ! $start_minute
     $start_minute = '00'
   end
 
-  $stop_time = split($time_range, '-')[1]
+  $stop_time = split($schedule_time, '-')[1]
+  $stop_time = insert($stop_time, 2, ":")
   $stop_hour = split($stop_time, ':')[0]
   $stop_minute = split($stop_time, ':')[1]
 
-  if $stop_minute == null
+  if ! $stop_minute
     $stop_minute = '00'
   end
 
-  $start_rule = join(["FREQ=WEEKLY;BYDAY=", $rule])
-  $stop_rule = join(["FREQ=WEEKLY;BYDAY=", $rule])
-  $timezone = split($schedule, ';')[2]
+  # Days
+  $schedule_days = split($schedule, '_')[1]
+  $days = gsub(capitalize($schedule_days), "-", ",")
 
-  if ! $timezone
-    $timezone = "UTC"
+  $start_rule = join(["FREQ=WEEKLY;BYDAY=", $days])
+  $stop_rule = join(["FREQ=WEEKLY;BYDAY=", $days])
+
+  # Timezone
+  $schedule_timezone = split($schedule, '_')[2]
+
+  if split($schedule, '_')[3]
+    $schedule_timezone = $schedule_timezone + split($schedule, '_')[3]
+  end
+
+  if split($schedule, '_')[4]
+    $schedule_timezone = $schedule_timezone + split($schedule, '_')[4]
+  end
+
+  $timezone = "UTC"
+
+  if $schedule_timezone
+    call get_tzlist() retrieve $get_tzlist_response, $timezones
+    $timezone = $timezones[$schedule_timezone]
   end
 
   call window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone) retrieve $window_active, $next_start, $next_stop
@@ -966,6 +985,33 @@ define get_instance_info($instance) return $response, $instance_state, $labels, 
     $instance_state = $response["body"]["status"]
     $labels = $response["body"]["labels"]
     $fingerprint = $response["body"]["labelFingerprint"]
+  end
+end
+
+define get_tzlist() return $response, $tzlist do
+  $host = "raw.githubusercontent.com"
+  $href = "/rightscale/policy_templates/master/data/tz_database/timezones_list.json"
+  $url = $host + $href
+  task_label("GET " + $url)
+
+  $response = http_request(
+    https: true,
+    verb: "get",
+    host: $host,
+    href: $href,
+    headers:{
+      'User-Agent': 'RS Policies'
+    }
+  )
+
+  task_label("Get Github Timezone List response: " + $url + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response getting Github Timezone List: "+ $url + " " + to_json($response)
+  else
+    task_label("Get Github Timezone List successful: " + $url)
+    $tzlist = from_json($response['body'])
   end
 end
 

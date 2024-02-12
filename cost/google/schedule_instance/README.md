@@ -8,13 +8,13 @@ This policy schedules Google VM instances to start and stop at specific times ba
 
 This policy uses the schedule label value (default key: schedule) for scheduling the instance. The appropriate value should be added to as a label to every instance you want to manage via this policy.
 
-This value is a string consisting of 3 semicolon-separated substrings:
+This value is a string consisting of 3 underscore-separated substrings:
 
-- *Hours* - Start and stop hours are 24 hour format. For example, a value of `8:15-17:30` will start instances at 8:15 and stop them at 17:30 (5:30 pm). If the minute field is left blank, the minute value of `00` will be assumed.
-- *Days of the Week* - Comma-separated list of days indicated by their two-letter abbreviation value from the following list: SU,MO,TU,WE,TH,FR,SA. For example, a value of `MO,TU,WE,TH,FR` will start and stop the instances on weekdays but not on weekends.
-- *Timezone* - Timezone in [tz database format](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones). For example, a value of `America/New_York` would specify US Eastern Time. Defaults to UTC if no Timezone field is provided.
+- *Hours* - Start and stop hours are in 4-digit 24-hour format without any colons or other separators. For example, a value of `0815-1730` will start instances at 8:15 and stop them at 17:30 (5:30 pm). If the minute field is left blank, the minute value of `00` will be assumed.
+- *Days of the Week* - Hyphen-separated list of days indicated by their two-letter abbreviation value from the following list: su,mo,tu,we,th,fr,sa. For example, a value of `mo-tu-we-th-fr` will start and stop the instances on weekdays but not on weekends.
+- *Timezone* - Timezone in [tz database format](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) with the `/` character replaced with a hyphen and all characters converted to lowercase. For example, a value of `america-new_york` would specify US Eastern Time. Defaults to UTC if no Timezone field is provided.
 
-**Example Value:** 8:15-17:30;MO,TU,WE,TH,FR;America/New_York
+**Example Value:** 0815-1730_mo-tu-we-th-fr_america-new_york
 
 - Starts instances at 8:15am
 - Stops instance at 5:30pm
