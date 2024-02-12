@@ -4,26 +4,25 @@
 
 This Policy Template allows you to schedule start and stop times for your instance, along with the option to terminate instance, update and delete schedule.
 
-## How to Use
+## How To Use
 
 This policy relies on a tag (default key: schedule) to stop and start instances based on a schedule. The tag value defines the schedule with a start hour, stop hour and days of the week. The start and stop hour are in 24 hour format, and the days of the week are two character abbreviation for example: MO, TU, WE. See full example below. Use a Timezone TZ value to indicate a timezone to stop/start the instance(s)
 
 ### Schedule Tag Format
 
-This policy uses `schedule` tag value for scheduling the instance. The format should be like `8:15-17:30;MO,TU,WE,TH,FR;America/New_York`. Please refer to `Schedule Tag Example` section for more details.
-On leaving the minute field blank, policy will consider the minute as `00` and same will be added to the schedule tag value.
+This policy uses the schedule tag value (default key: schedule) for scheduling the instance. This value is a string consisting of 3 semicolon-separated substrings:
 
-### Schedule Tag Example
+- *Hours* - Start and stop hours are 24 hour format. For example, a value of `8:15-17:30` will start instances at 8:15 and stop them at 17:30 (5:30 pm). If the minute field is left blank, the minute value of `00` will be assumed.
+- *Days of the Week* - Comma-separated list of days indicated by their two-letter abbreviation value from the following list: SU,MO,TU,WE,TH,FR,SA. For example, a value of `MO,TU,WE,TH,FR` will start and stop the instances on weekdays but not on weekends.
+- *Timezone* - Timezone in [tz database format](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones). For example, a value of `America/New_York` would specify US Eastern Time. Defaults to UTC if no Timezone field is provided.
 
-Start and Stop hours are 24 hour format: for example 8:15-17:30 is start at 8:15am, and stop at 5:30pm.
+**Example Value:** 8:15-17:30;MO,TU,WE,TH,FR;America/New_York
 
-Days of the week: SU,MO,TU,WE,TH,FR,SA
+- Starts instances at 8:15am
+- Stops instance at 5:30pm
+- Monday - Friday, US Eastern Time.
 
-Timezone: Use the TZ database name from the timezone list. For example use America/New_York for Eastern time.
-
-Example: schedule=8:15-17:30;MO,TU,WE,TH,FR;America/New_York. Starts instances at 8:15am, stops instance at 5:30pm, Monday - Friday, Eastern Time.
-
-Instances are off during the weekend and start back up on Monday morning at 8:15am and are off at 5:30pm every weekday. Times are UTC unless the Timezone field is provided.
+In the above example, instances are off during the weekend and start back up on Monday morning at 8:15am and are off at 5:30pm every weekday. Times are UTC unless the Timezone field is provided.
 
 ## Input Parameters
 
