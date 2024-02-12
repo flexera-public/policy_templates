@@ -78,13 +78,18 @@ def extract_permissions_from_readme(readme_content)
       # Extract the text from this section
       section_text = readme_content[section_start..-1]
 
-      # Find the line starting with '/*' to get any specific notes around permissions from the README
-      note = ""
+      # Find the line starting with '/*' or '†' to get any specific notes around permissions from the README
+      list_of_notes = []
+      # note = ""
       section_text.each_line do |line|
         break if line.strip.start_with?( "##", "###", "- [**") && !line.strip.start_with?(section)
 
         if line.strip.start_with?("\\*")
-          note = line.strip.sub(/^\\\*\s*/, '')
+          asterisk_note = line.strip.sub(/^\\\*\s*/, '')
+          list_of_notes << { symbol: "*", detail: asterisk_note }
+        elsif line.strip.start_with?("\u2020")
+          dagger_note = line.strip.sub(/^\†\s*/, '')
+          list_of_notes << { symbol: "†", detail: dagger_note }
         end
       end
 
@@ -101,25 +106,29 @@ def extract_permissions_from_readme(readme_content)
           line.scan(/-\s*`([^`]+)`\*?/) do |match|
             permission = match.first
 
-            # Set whether permission is read-only, required, and/or has a description
+
+            # Set whether permission is read-only, required, and/or has a description (and depending on the symbol)
             read_only_permission = true
             required = true
-            if (permission.end_with?("*") == true || line.include?("*") == true) && !note.strip.empty?
+            
+            symbol_if_exists = list_of_notes.find { |note| permission.end_with?(note[:symbol]) == true || line.include?(note[:symbol]) == true }
+            # puts "Symbol: #{symbol_if_exists}"
+
+            if symbol_if_exists != nil && !symbol_if_exists[:detail].strip.empty?
               required = false
-              if note.include?("Only required for taking action")
+              if symbol_if_exists[:detail].include?("Only required for taking action")
                 read_only_permission = false
               end
 
-              permission = permission.chomp("*")
+              permission = permission.chomp(symbol_if_exists[:symbol])
 
               if credentials_section == "roles"
-                policy_credentials << { role: permission, provider: provider, read_only: read_only_permission, required: required, description: note }
+                policy_credentials << { role: permission, provider: provider, read_only: read_only_permission, required: required, description: symbol_if_exists[:detail] }
               elsif credentials_section == "permissions"
-                policy_credentials << { permission: permission, provider: provider, read_only: read_only_permission, required: required, description: note }
+                policy_credentials << { permission: permission, provider: provider, read_only: read_only_permission, required: required, description: symbol_if_exists[:detail] }
               else
-                policy_credentials << { permission: permission, provider: provider, read_only: read_only_permission, required: required, description: note }
+                policy_credentials << { permission: permission, provider: provider, read_only: read_only_permission, required: required, description: symbol_if_exists[:detail] }
               end
-
             else
               if credentials_section == "roles"
                 policy_credentials << { role: permission, provider: provider, read_only: read_only_permission, required: required }
@@ -142,12 +151,11 @@ readme_files.each do |path|
   begin
     readme_content = File.read(path)
     # ignore non-UTF-8 characters in readmes
-    readme_content.force_encoding('ISO-8859-1')
+    # readme_content.force_encoding('ISO-8859-1')
+    readme_content.force_encoding('utf-8')
     readme_content.encode('utf-8', replace: nil)
 
-    # if path == "./cost/google/idle_persistent_disk_recommendations/README.md"
-      policy_credentials = extract_permissions_from_readme(readme_content)
-    # end
+    policy_credentials = extract_permissions_from_readme(readme_content)
 
     readmes <<Readme.new(path, credentials: policy_credentials)
   rescue => e
