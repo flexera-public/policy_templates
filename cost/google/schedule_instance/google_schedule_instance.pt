@@ -1,14 +1,14 @@
 name "Google Schedule Instance"
 rs_pt_ver 20180301
 type "policy"
-short_description "This Policy Template allows you to schedule start and stop times for your instance, along with the option to terminate instance, update and delete schedule. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/google/schedule_instance/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "This Policy Template allows you to schedule start and stop times for your instance, along with the option to delete instance, update and delete schedule. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/google/schedule_instance/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Cost"
 severity "low"
 default_frequency "daily"
 info(
   version: "3.0",
-  provider: "GCE",
+  provider: "Google",
   service: "Compute",
   policy_set: "Schedule Instance"
 )
@@ -135,7 +135,6 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
-
 
 # Table to derive region from zone
 datasource "ds_zone_to_region" do
@@ -302,7 +301,6 @@ script "js_google_projects_filtered", type: "javascript" do
 EOS
 end
 
-
 datasource "ds_get_instances" do
   iterate $ds_google_projects_filtered
   request do
@@ -402,7 +400,6 @@ script "js_instances_label_filtered", type: "javascript" do
 EOS
 end
 
-
 datasource "ds_instances_region_filtered" do
   run_script $js_instances_region_filtered, $ds_instances_label_filtered, $param_regions_allow_or_deny, $param_regions_list
 end
@@ -427,7 +424,6 @@ script "js_instances_region_filtered", type: "javascript" do
 EOS
 end
 
-
 datasource "ds_instances_to_schedule" do
   run_script $js_instances_to_schedule, $ds_instances_region_filtered, $ds_applied_policy, $param_label_schedule, $param_label_next_start, $param_label_next_stop
 end
@@ -443,9 +439,6 @@ script "js_instances_to_schedule", type: "javascript" do
     schedule = null
     next_start = null
     next_stop = null
-
-    labels_object = {}
-    if (typeof(instance['labels']) == 'object') { labels_object = instance['labels'] }
 
     labels = []
 
@@ -484,7 +477,6 @@ script "js_instances_to_schedule", type: "javascript" do
         zone: instance['zone'],
         region: instance['region'],
         tags: labels.join(', '),
-        tags_object: labels_object,
         policy_name: ds_applied_policy['name'],
         next_start: next_start,
         next_stop: next_stop,
@@ -507,7 +499,7 @@ end
 
 policy "pol_schedule_instance" do
   validate_each $ds_instances_to_schedule do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Schedule Instance List"
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Google Schedule Instance List"
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
@@ -517,7 +509,7 @@ policy "pol_schedule_instance" do
     escalate $esc_start_instances
     escalate $esc_stop_instances
     escalate $esc_delete_instances
-    hash_exclude "tags"
+    hash_exclude "tags", "tags_object"
     export do
       resource_level true
       field "accountID" do
@@ -575,9 +567,6 @@ policy "pol_schedule_instance" do
         label "ID"
         path "resourceID"
       end
-      field "tags_object" do
-        label "Labels (Object)"
-      end
     end
   end
 end
@@ -588,49 +577,398 @@ end
 
 escalation "esc_email" do
   automatic true
-  label "Sends Email"
-  description "Sends Incident Email"
+  label "Send Email"
+  description "Send incident email"
   email $param_email
 end
 
-escalation "esc_schedule_instance" do
-  automatic contains($param_automatic_action, "Schedule Instances")
-  label "Schedule"
-  description "Stop or Start the Instance"
-  run "schedule_instance", data, rs_optima_host
+escalation "esc_execute_schedules" do
+  automatic contains($param_automatic_action, "Execute Schedules")
+  label "Execute Schedules"
+  description "Approval to start or stop all selected instances based on schedule"
+  run "execute_schedules", data, $param_label_schedule, $param_label_next_start, $param_label_next_stop
 end
 
-escalation "esc_terminate_instance" do
+escalation "esc_update_schedules" do
   automatic false
-  label "Terminate Instance"
-  description "Terminate or delete the Instance"
-  run "terminate_instance", data, rs_optima_host
-end
-
-escalation "esc_update_schedule" do
-  automatic false
-  label "Update Schedule"
-  description "Update the existing schedule Label"
+  label "Update Schedules"
+  description "Approval to update the schedule tags on all selected instances"
   parameter "param_schedule" do
     type "string"
+    category "Policy Actions"
     label "New Schedule"
-    description "Provide Schedule Value"
+    description "Enter a new value for the schedule tag. See README for more details"
   end
-  run "update_schedule", data, $param_schedule, rs_optima_host
+  run "update_schedules", data, $param_schedule, $param_label_schedule, $param_label_next_start, $param_label_next_stop
 end
 
-escalation "esc_delete_schedule" do
+escalation "esc_delete_schedules" do
   automatic false
-  label "Delete Schedule"
-  description "Delete Schedule Tag"
-  run "delete_schedule", data, rs_optima_host
+  label "Delete Schedules"
+  description "Approval to delete the schedule tags on all selected instances"
+  run "delete_schedules", data, $param_label_schedule, $param_label_next_start, $param_label_next_stop
+end
+
+escalation "esc_start_instances" do
+  automatic false
+  label "Start Instances"
+  description "Approval to start all selected instances"
+  run "start_instances", data
+end
+
+escalation "esc_stop_instances" do
+  automatic false
+  label "Stop Instances"
+  description "Approval to stop all selected instances"
+  run "stop_instances", data
+end
+
+escalation "esc_delete_instances" do
+  automatic false
+  label "Delete Instances"
+  description "Approval to delete all selected instances"
+  run "delete_instances", data
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-# CWF function to handle errors
+# Core CWF functions for iterating through items
+define execute_schedules($data, $param_label_schedule, $param_label_next_start, $param_label_next_stop) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call execute_schedule($instance, $param_label_schedule, $param_label_next_start, $param_label_next_stop)
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+define update_schedules($data, $param_schedule, $param_label_schedule, $param_label_next_start, $param_label_next_stop) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call update_schedule($instance, $param_schedule, $param_label_schedule, $param_label_next_start, $param_label_next_stop) retrieve $update_response, $window_active
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+define delete_schedules($data, $param_label_schedule, $param_label_next_start, $param_label_next_stop) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call delete_schedule($instance, $param_label_schedule, $param_label_next_start, $param_label_next_stop)
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+define start_instances($data) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call start_instance($instance)
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+define stop_instances($data) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call stop_instance($instance)
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+define delete_instances($data) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call delete_instance($instance)
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+# Secondary CWF functions for taking action on individual instances
+define execute_schedule($instance, $param_label_schedule, $param_label_next_start, $param_label_next_stop) return $response do
+  call update_schedule($instance, $instance['schedule'], $param_label_schedule, $param_label_next_start, $param_label_next_stop) retrieve $update_response, $window_active
+
+  if $window_active
+    call start_instance($instance) retrieve $start_response
+  else
+    call stop_instance($instance) retrieve $stop_response
+  end
+end
+
+define update_schedule($instance, $schedule, $param_label_schedule, $param_label_next_start, $param_label_next_stop) return $response, $window_active do
+  $rule = split($schedule, ';')[1]
+  $time_range = split($schedule, ';')[0]
+
+  $start_time = split($time_range, '-')[0]
+  $start_hour = split($start_time, ':')[0]
+  $start_minute = split($start_time, ':')[1]
+
+  if $start_minute == null
+    $start_minute = '00'
+  end
+
+  $stop_time = split($time_range, '-')[1]
+  $stop_hour = split($stop_time, ':')[0]
+  $stop_minute = split($stop_time, ':')[1]
+
+  if $stop_minute == null
+    $stop_minute = '00'
+  end
+
+  $start_rule = join(["FREQ=WEEKLY;BYDAY=", $rule])
+  $stop_rule = join(["FREQ=WEEKLY;BYDAY=", $rule])
+  $timezone = split($schedule, ';')[2]
+
+  if ! $timezone
+    $timezone = "UTC"
+  end
+
+  call window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone) retrieve $window_active, $next_start, $next_stop
+  call get_instance_info($instance) retrieve $get_instance_info_response, $instance_state, $new_labels, $fingerprint
+
+  $new_labels[$param_label_schedule] = $schedule
+  $new_labels[$param_label_next_start] = $next_start
+  $new_labels[$param_label_next_stop] = $next_stop
+
+  $url = $instance['selfLink'] + "/setLabels"
+  task_label("POST " + $url)
+
+  $response = http_post(
+    auth: $$auth_google,
+    url: $url,
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json"
+    },
+    body: {
+      "labels": $new_labels,
+      "labelFingerprint": $fingerprint
+    }
+  )
+
+  task_label("Update Google VM instance tags response: " + $instance["resourceName"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response updating Google VM instance tags: " + $instance["resourceName"] + " " + to_json($response)
+  else
+    task_label("Updating Google VM instance tags successful: " + $instance["resourceName"])
+  end
+end
+
+define delete_schedule($instance, $param_label_schedule, $param_label_next_start, $param_label_next_stop) return $response do
+  call get_instance_info($instance) retrieve $get_instance_info_response, $instance_state, $labels, $fingerprint
+
+  $new_labels = {}
+
+  foreach $label_key in keys($labels) do
+    if $label_key != $param_label_next_start && $label_key != $param_label_next_stop && $label_key != $param_label_schedule
+      $new_labels[$label_key] = $labels[$label_key]
+    end
+  end
+
+  $url = $instance['selfLink'] + "/setLabels"
+  task_label("POST " + $url)
+
+  $response = http_post(
+    auth: $$auth_google,
+    url: $url,
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json"
+    },
+    body: {
+      "labels": $new_labels,
+      "labelFingerprint": $fingerprint
+    }
+  )
+
+  task_label("Delete Google VM instance tags response: " + $instance["resourceName"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response deleting Google VM instance tags: " + $instance["resourceName"] + " " + to_json($response)
+  else
+    task_label("Deleting Google VM instance tags successful: " + $instance["resourceName"])
+  end
+end
+
+define delete_instance($instance) return $response do
+  $url = $instance['selfLink']
+  task_label("DELETE " + $url)
+
+  $response = http_delete(
+    auth: $$auth_google,
+    url: $url,
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json"
+    }
+  )
+
+  task_label("Delete Google VM instance response: " + $instance["resourceName"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response deleting Google VM instance: "+ $instance["resourceName"] + " " + to_json($response)
+  else
+    task_label("Delete Google VM instance successful: " + $instance["resourceName"])
+  end
+end
+
+# Tertiary CWF functions for specific tasks
+define window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $tz) return $window_active, $next_start, $next_stop do
+  $host = "bjlaftw4kh.execute-api.us-east-1.amazonaws.com"
+  $href = "/production"
+  $url = $host + $href
+  task_label("POST " + $url)
+
+  $response = http_request(
+    https: true,
+    verb: "post",
+    href: $href,
+    host: $host,
+    headers: { "content-type": "application/json" },
+    body: {
+      "start_hour": $start_hour,
+      "start_minute": $start_minute,
+      "start_rule": $start_rule,
+      "stop_minute": $stop_minute,
+      "stop_hour": $stop_hour,
+      "stop_rule": $stop_rule,
+      "tz": $tz
+    }
+  )
+
+  task_label("Post AWS API Gateway response: " + $host + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response posting AWS API Gateway: " + $host + " " + to_json($response)
+  else
+    task_label("Post AWS API Gateway successful: " + $host)
+    $window_active = to_b($response['body']['event_active'])
+    $next_start = $response['body']['next_start']
+    $next_stop = $response['body']['next_stop']
+  end
+end
+
+define start_instance($instance) return $response do
+  $url = $instance['selfLink'] + '/start'
+  task_label("POST " + $url)
+
+  $response = http_post(
+    auth: $$auth_google,
+    url: $url,
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json"
+    }
+  )
+
+  task_label("Start Google VM instance response: " + $instance["resourceName"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response starting Google VM instance: "+ $instance["resourceName"] + " " + to_json($response)
+  else
+    task_label("Start Google VM instance successful: " + $instance["resourceName"])
+  end
+end
+
+define stop_instance($instance) return $response do
+  $url = $instance['selfLink'] + '/stop'
+  task_label("POST " + $url)
+
+  $response = http_post(
+    auth: $$auth_google,
+    url: $url,
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json"
+    }
+  )
+
+  task_label("Stop Google VM instance response: " + $instance["resourceName"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response stopping Google VM instance: "+ $instance["resourceName"] + " " + to_json($response)
+  else
+    task_label("Stop Google VM instance successful: " + $instance["resourceName"])
+  end
+
+  sleep(5)
+  call get_instance_info($instance) retrieve $state_response, $current_state, $labels, $fingerprint
+  sleep(5)
+
+  while $current_state != "STOPPED" && $current_state != "TERMINATED" do
+    call get_instance_info($instance) retrieve $state_response, $current_state, $labels, $fingerprint
+    sleep(5)
+  end
+end
+
+define get_instance_info($instance) return $response, $instance_state, $labels, $fingerprint do
+  $url = $instance['selfLink']
+  task_label("GET " + $url)
+
+  $response = http_get(
+    auth: $$auth_google,
+    url: $url,
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json"
+    }
+  )
+
+  task_label("Get Google VM instance response: " + $instance["resourceName"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response getting Google VM instance: "+ $instance["resourceName"] + " " + to_json($response)
+  else
+    task_label("Get Google VM instance successful: " + $instance["resourceName"])
+    $instance_state = $response["body"]["status"]
+    $labels = $response["body"]["labels"]
+    $fingerprint = $response["body"]["labelFingerprint"]
+  end
+end
+
 define handle_error() do
   if !$$errors
     $$errors = []
@@ -641,377 +979,92 @@ define handle_error() do
   $_error_behavior = "skip"
 end
 
-# CWF function to capture and output logs
-define log_message($message) do
-  # Instantiate log messages array doesn't exist
-  if !$$log_messages
-    $$log_messages = []
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    header "Api-Version", "1.0"
   end
-  # Append timestamp to message
-  $now = strftime(now(), "%Y/%m/%d %H:%M:%S")
-  $log = $now + ": " + $message
-  # Append to log messages array
-  $$log_messages << $log
-  # Update task label with current message
-  task_label($log)
-  # Aggregate all log messages into a single string which is easier to grab from UI and interpret
-  $$log_messages_string = join($$log_messages, "\n\n")
-end
-
-define schedule_instance($data, $$rs_optima_host) return $all_response do
-  $all_response=[]
-  foreach $item in $data do
-    $rule = split($item['schedule'],'_')[1]
-    $rule= split($rule, "-")
-    $rule= join($rule, ",")
-    $rule= upcase($rule)
-    $time_range = split($item['schedule'],'_')[0]
-    $start_time = split($time_range,'-')[0]
-    $start_time = insert($start_time, 2, ":")
-    $start_hour = split($start_time, ':')[0]
-    $start_minute = split($start_time, ':')[1]
-    if $start_minute==null
-      $start_minute='00';
-    end
-    $stop_time = split($time_range,'-')[1]
-    $stop_time= insert($stop_time, 2, ":")
-    $stop_hour = split($stop_time, ':')[0]
-    $stop_minute = split($stop_time, ':')[1]
-    if $stop_minute==null
-      $stop_minute='00';
-    end
-    $start_rule = join(["FREQ=WEEKLY;BYDAY=",$rule])
-    $stop_rule = join(["FREQ=WEEKLY;BYDAY=",$rule])
-    $timezone = split($item['schedule'],'_')[2]
-    if ! $timezone
-      $timezone = "UTC"
-    end
-    $size=size(split($item['schedule'], "_"))
-    if $size > 3
-      $count = 3
-      $arr_val=split($item['schedule'], "_")
-      while $count < $size do
-        $timezone=$timezone+"_"+$arr_val[$count]
-        $count=$count+1
-      end
-    end
-    call get_tzlist() retrieve $timezones
-    $timezones=from_json($timezones)
-    $timezone=$timezones[$timezone]
-    # checking if the timezone is having required format as mentioned in the readme
-    if $timezone != null
-      call window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone) retrieve $window_active , $next_start, $next_stop
-
-      call log_message('window_active='+to_s($window_active))
-      call log_message('next_start='+to_s($next_start))
-      call log_message('next_stop='+to_s($next_stop))
-
-      if ($window_active)
-        call log_message($item['schedule'] + ' schedule window is currently active: Instances may be started.')
-      else
-        call log_message($item['schedule'] + ' schedule window is currently in-active: Instances may be stopped.')
-      end
-
-      $stoppable = /^(RUNNING|STAGING)$/
-      $startable = /^(STOPPING|TERMINATED)$/
-
-      $next_start=split($next_start, "T")
-      $next_start[1]=split($next_start[1],"-")
-      $next_start[1]=join($next_start[1], "m")
-      $next_start[1]=split($next_start[1],":")
-      $next_start[1]=join($next_start[1], "-")
-      $next_start[1]=split($next_start[1], "+")
-      $next_start[1]=join($next_start[1], "p")
-      $next_start=join($next_start, "t")
-
-      $next_stop=split($next_stop,"T")
-      $next_stop[1]=split($next_stop[1],"-")
-      $next_stop[1]=join($next_stop[1], "m")
-      $next_stop[1]=split($next_stop[1],":")
-      $next_stop[1]=join($next_stop[1], "-")
-      $next_stop[1]=split($next_stop[1], "+")
-      $next_stop[1]=join($next_stop[1], "p")
-      $next_stop=join($next_stop, "t")
-
-      call get_labelfingerprint($item) retrieve $labelFingerprint, $labels_obj
-
-      $labels_obj['next_start']=$next_start
-      $labels_obj['next_stop']=$next_stop
-      $labels_obj['schedule']=$item['schedule']
-
-      $body = {
-        "labels" : $labels_obj,
-        "labelFingerprint" : $labelFingerprint
-      }
-      $response= http_post(
-        auth: $$google_auth,
-        url: join([$item['selfLink'], "/setLabels"]),
-        headers:{
-          "cache-control": "no-cache",
-          "content-type": "application/json"
-        },
-        body: $body
-      )
-      call log_message('req=POST '+join([$item['selfLink'], "/setLabels"])+' body='+to_json($body)+' response='+to_json($response))
-      if($window_active)
-        if($item['state']=~$startable)
-          call log_message('> ' + $item['id'] + ': Starting ... ' + to_s($item))
-          sub on_error: handle_error($response) do
-            $response= http_post(
-              auth: $$google_auth,
-              url : join([$item['selfLink'], "/start"]),
-              headers:{
-                "cache-control": "no-cache",
-                "content-type": "application/json"
-              }
-            )
-            call log_message('req=POST '+join([$item['selfLink'], "/start"])+' response='+to_json($response))
-            $all_response << $response
-          end
-        else
-          call log_message('> ' + $item['id'] + ': No action - Instance state is ' + $item['state'])
-        end
-      else
-        if($item['state'] =~ $stoppable)
-          call log_message('> ' + $item['id'] + ': Stopping ...' + to_s($item))
-          sub on_error: handle_error() do
-            $response= http_post(
-              auth: $$google_auth,
-              url: join([$item['selfLink'], "/stop"]),
-              headers:{
-                "cache-control": "no-cache",
-                "content-type": "application/json"
-              }
-            )
-            call log_message('req=POST '+join([$item['selfLink'], "/stop"])+' response='+to_json($response))
-          end
-        else
-          call log_message('> ' + $item['id'] + ': No action - Instance state is ' + $item['state'])
-        end
-      end
-    # generating log for incorrect timezone format
-    else
-      call log_message('Incorrect Timezone in schedule label ' + to_s($item['schedule']))
-    end
-  end
-
-  # If we encountered any errors, use `raise` to mark the CWF process as errored
-  if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
   end
 end
 
-define terminate_instance($data, $$rs_optima_host) return $all_response do
-  $all_response=[]
-  foreach $item in $data do
-    call log_message('> ' + $item['id'] + ': Terminating ... ' + to_s($item))
-    sub on_error: handle_error() do
-      $response= http_delete(
-        auth: $$google_auth,
-        url: $item['selfLink'],
-        headers:{
-          "cache-control": "no-cache",
-          "content-type": "application/json"
-        }
-      )
-      call log_message('req=DELETE '+$item['selfLink']+' response='+to_json($response))
-    end
-  end
-
-  # If we encountered any errors, use `raise` to mark the CWF process as errored
-  if inspect($$errors) != "null"
-    raise join($$errors,"\n")
-  end
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
 end
 
-define delete_schedule($data, $$rs_optima_host) return $all_response do
-  $all_response=[]
-  foreach $item in $data do
-    call get_labelfingerprint($item) retrieve $labelFingerprint, $labels_obj
-    $new_label={}
-    $labels_obj=to_a($labels_obj)
-    foreach $label in $labels_obj do
-      if $label[0]!='schedule' && $label[0]!='next_start' && $label[0]!='next_stop'
-        $new_label[$label[0]]=$label[1];
-      end
-    end
-    call log_message('> ' + $item['id'] + ': Deleting schedule Tag ... ' + to_s($item))
-
-    sub on_error: handle_error() do
-      $body = {
-        "labels" : $new_label,
-        "labelFingerprint" : $labelFingerprint
-      }
-      $response= http_post(
-        auth: $$google_auth,
-        url: join([$item['selfLink'], "/setLabels"]),
-        headers:{
-          "cache-control": "no-cache",
-          "content-type": "application/json"
-        },
-        body: $body
-      )
-      call log_message('req=POST '+join([$item['selfLink'], "/setLabels"])+' body='+to_json($body)+' response='+to_json($response))
-    end
-  end
-
-  # If we encountered any errors, use `raise` to mark the CWF process as errored
-  if inspect($$errors) != "null"
-    raise join($$errors,"\n")
-  end
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
 end
 
-define update_schedule($data, $param, $$rs_optima_host) return $all_response do
-  $all_response=[]
-  foreach $item in $data do
-    $rule = split($param,'_')[1]
-    $rule= split($rule, "-")
-    $rule= join($rule, ",")
-    $rule= upcase($rule)
-    $time_range = split($param,'_')[0]
-    $start_time = split($time_range,'-')[0]
-    $start_time = insert($start_time, 2, ":")
-    $start_hour = split($start_time, ':')[0]
-    $start_minute = split($start_time, ':')[1]
-    if $start_minute==null
-      $start_minute='00';
-    end
-    $stop_time = split($time_range,'-')[1]
-    $stop_time= insert($stop_time, 2, ":")
-    $stop_hour = split($stop_time, ':')[0]
-    $stop_minute = split($stop_time, ':')[1]
-    if $stop_minute==null
-      $stop_minute='00';
-    end
-    $start_rule = join(["FREQ=WEEKLY;BYDAY=",$rule])
-    $stop_rule = join(["FREQ=WEEKLY;BYDAY=",$rule])
-    $timezone = split($param,'_')[2]
-    if ! $timezone
-      $timezone = "UTC"
-    end
-    $size=size(split($param, "_"))
-    if $size > 3
-      $count = 3
-      $arr_val=split($param, "_")
-      while $count < $size do
-        $timezone=$timezone+"_"+$arr_val[$count]
-        $count=$count+1
-      end
-    end
-    call get_tzlist() retrieve $timezones
-    $timezones=from_json($timezones)
-    $timezone=$timezones[$timezone]
-    # checking if the timezone is having required format as mentioned in the readme
-    if $timezone != null
-      call window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone) retrieve $window_active , $next_start, $next_stop
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
 
-      $next_start=split($next_start, "T")
-      $next_start[1]=split($next_start[1],"-")
-      $next_start[1]=join($next_start[1], "m")
-      $next_start[1]=split($next_start[1],":")
-      $next_start[1]=join($next_start[1], "-")
-      $next_start[1]=split($next_start[1], "+")
-      $next_start[1]=join($next_start[1], "p")
-      $next_start=join($next_start, "t")
-
-      $next_stop=split($next_stop,"T")
-      $next_stop[1]=split($next_stop[1],"-")
-      $next_stop[1]=join($next_stop[1], "m")
-      $next_stop[1]=split($next_stop[1],":")
-      $next_stop[1]=join($next_stop[1], "-")
-      $next_stop[1]=split($next_stop[1], "+")
-      $next_stop[1]=join($next_stop[1], "p")
-      $next_stop=join($next_stop, "t")
-
-      call get_labelfingerprint($item) retrieve $labelFingerprint, $labels_obj
-
-      $labels_obj['schedule']=$param
-      $labels_obj['next_start']=$next_start
-      $labels_obj['next_stop']=$next_stop
-      call log_message('> ' + $item['id'] + ': Updating schedule Tag ...' + to_s($item))
-      sub on_error: handle_error() do
-        $body = {
-          "labels" : $labels_obj,
-          "labelFingerprint" : $labelFingerprint
-        }
-        $response= http_post(
-          auth: $$google_auth,
-          url: join([$item['selfLink'], "/setLabels"]),
-          headers:{
-            "cache-control": "no-cache",
-            "content-type": "application/json"
-          },
-          body: $body
-        )
-        call log_message('req=POST '+join([$item['selfLink'], "/setLabels"])+' body='+to_json($body)+' response='+to_json($response))
-      end
-    # generating log for incorrect timezone format
-    else
-      call log_message('Error: Unexpected Timezone for schedule label. ' + to_s($param))
-    end
-  end
-
-  # If we encountered any errors, use `raise` to mark the CWF process as errored
-  if inspect($$errors) != "null"
-    raise join($$errors,"\n")
-  end
-end
-
-define window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $tz) return $window_active, $next_start, $next_stop do
-  $params = {
-    verb: 'post',
-    host: 'bjlaftw4kh.execute-api.us-east-1.amazonaws.com',
-    https: true,
-    href: '/production',
-    headers:{
-      'content-type': 'application/json'
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
     },
-    body: {
-      'start_hour': $start_hour,
-      'start_minute': $start_minute,
-      'start_rule': $start_rule,
-      'stop_minute': $stop_minute,
-      'stop_hour': $stop_hour,
-      'stop_rule': $stop_rule,
-      'tz': $tz
-    }
   }
-  $response = http_request($params)
-  call log_message('req=POST bjlaftw4kh.execute-api.us-east-1.amazonaws.com/production body='+to_json($body)+' response='+to_json($response))
-  $body = $response['body']
-  call log_message('window active $body='+to_s($body))
 
-  $window_active = to_b($body['event_active'])
-  $next_start   = $body['next_start']
-  $next_stop    = $body['next_stop']
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
 end
 
-define get_labelfingerprint($instance) return $labelFingerprint, $labels_obj do
-  $response = http_get(
-    auth: $$google_auth,
-    url: $instance['selfLink'],
-    headers:{
-      "cache-control": "no-cache",
-      "content-type": "application/json"
-    }
-  )
-  call log_message('req=GET '+$instance['selfLink']+' response='+to_json($response))
-  $body = $response['body']
-  $labelFingerprint   = $body['labelFingerprint']
-  $labels_obj= $body['labels']
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
 end
 
-define get_tzlist() return $timezones do
-  $params = {
-    verb: 'get',
-    host: 'raw.githubusercontent.com',
-    https: true,
-    href: '/rightscale/policy_templates/master/data/tz_database/timezones_list.json',
-    headers:{
-      'User-Agent': 'RS Policies'
-    }
-  }
-  $response = http_request($params)
-  call log_message('req=GET raw.githubusercontent.com/rightscale/policy_templates/master/data/tz_database/timezones_list.json response_code='+to_s($response['code'])+' response_size='+to_s(size($response['body'])))
-  $timezones = $response['body']
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
 end
