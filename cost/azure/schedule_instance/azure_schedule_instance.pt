@@ -101,6 +101,15 @@ parameter "param_regions_list" do
   default []
 end
 
+parameter "param_skipshutdown" do
+  type "string"
+  category "Actions"
+  label "Power Off Type"
+  description "Whether to perform a graceful shutdown or a forced shutdown when powering off instances."
+  allowed_values "Graceful", "Forced"
+  default "Graceful"
+end
+
 parameter "param_automatic_action" do
   type "list"
   category "Actions"
@@ -253,10 +262,7 @@ script "js_azure_instances_tag_filtered", type: "javascript" do
 
       exclude_vm = false
 
-      // Exclude any VMs that are missing the schedule tag key
-      exclusion_tags = param_exclusion_tags.concat(param_tag_schedule + ':*')
-
-      _.each(exclusion_tags, function(exclusion_tag) {
+      _.each(param_exclusion_tags, function(exclusion_tag) {
         if (_.contains(vm_tags, exclusion_tag)) {
           exclude_vm = true
         }
@@ -267,6 +273,14 @@ script "js_azure_instances_tag_filtered", type: "javascript" do
   } else {
     result = ds_azure_instances
   }
+
+  // Filter out any VMs that do not have the schedule tag key
+  result = _.filter(result, function(vm) {
+    tag_keys = []
+    if (typeof(vm['tags']) == 'object') { tag_keys = _.keys(vm['tags']) }
+
+    return _.contains(tag_keys, param_tag_schedule)
+  })
 EOS
 end
 
@@ -308,19 +322,17 @@ datasource "ds_azure_instances_with_status" do
   end
   result do
     encoding "json"
-    collect jmes_path(response, "value[*]") do
-      field "status", jq(response, '.statuses[] | select( .code | match("PowerState")).code | split("/")[1]')
-      field "resourceID", val(iter_item, "resourceID")
-      field "resourceGroup", val(iter_item, "resourceGroup")
-      field "resourceKind", val(iter_item, "resourceKind")
-      field "name", val(iter_item, "name")
-      field "region", val(iter_item, "region")
-      field "osType", val(iter_item, "osType")
-      field "resourceType", val(iter_item, "resourceType")
-      field "tags", val(iter_item, "tags")
-      field "subscriptionId", val(iter_item, "subscriptionId")
-      field "subscriptionName", val(iter_item, "subscriptionName")
-    end
+    field "status", jq(response, '.statuses[] | select( .code | match("PowerState")).code | split("/")[1]')
+    field "resourceID", val(iter_item, "resourceID")
+    field "resourceGroup", val(iter_item, "resourceGroup")
+    field "resourceKind", val(iter_item, "resourceKind")
+    field "name", val(iter_item, "name")
+    field "region", val(iter_item, "region")
+    field "osType", val(iter_item, "osType")
+    field "resourceType", val(iter_item, "resourceType")
+    field "tags", val(iter_item, "tags")
+    field "subscriptionId", val(iter_item, "subscriptionId")
+    field "subscriptionName", val(iter_item, "subscriptionName")
   end
 end
 
@@ -335,10 +347,14 @@ script "js_instances_to_schedule", type: "javascript" do
   result = []
   now = new Date()
 
-  _.each(ds_instances, function(instance) {
+  _.each(ds_azure_instances_with_status, function(instance) {
     schedule = null
     next_start = null
     next_stop = null
+
+    tags_object = {}
+    if (typeof(instance['tags']) == 'object') { tags_object = instance['tags'] }
+
     tags = []
 
     if (typeof(instance['tags']) == 'object') {
@@ -347,9 +363,9 @@ script "js_instances_to_schedule", type: "javascript" do
 
         tags.push(key + '=' + value)
 
-        if (key == param_tag_schedule)   { schedule = item['value']   }
-        if (key == param_tag_next_start) { next_start = item['value'] }
-        if (key == param_tag_next_stop)  { next_stop = item['value']  }
+        if (key == param_tag_schedule)   { schedule = value   }
+        if (key == param_tag_next_start) { next_start = value }
+        if (key == param_tag_next_stop)  { next_stop = value  }
       })
     }
 
@@ -372,6 +388,7 @@ script "js_instances_to_schedule", type: "javascript" do
         osType: instance['osType'],
         service: "Microsoft.Compute",
         tags: tags.join(', '),
+        tags_object: tags_object,
         policy_name: ds_applied_policy['name'],
         next_start: next_start,
         next_stop: next_stop,
@@ -452,6 +469,9 @@ policy "pol_schedule_instance" do
         label "ID"
         path "resourceID"
       end
+      field "tags_object" do
+        label "Tags (Object)"
+      end
     end
   end
 end
@@ -470,7 +490,7 @@ escalation "esc_execute_schedules" do
   automatic contains($param_automatic_action, "Execute Schedules")
   label "Execute Schedules"
   description "Approval to start or stop all selected instances based on schedule"
-  run "execute_schedules", data, $param_azure_endpoint, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop
+  run "execute_schedules", data, $param_azure_endpoint, $param_skipshutdown, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop
 end
 
 escalation "esc_update_schedules" do
@@ -504,14 +524,6 @@ escalation "esc_poweroff_instances" do
   automatic false
   label "Power Off Instances"
   description "Approval to power off all selected instances"
-  parameter "param_skipshutdown" do
-    type "string"
-    category "Actions"
-    label "Power Off Type"
-    description "Whether to perform a graceful shutdown or a forced shutdown when powering off instances."
-    allowed_values "Graceful", "Forced"
-    default "Graceful"
-  end
   run "poweroff_instances", data, $param_azure_endpoint, $param_skipshutdown
 end
 
@@ -527,12 +539,12 @@ end
 ###############################################################################
 
 # Core CWF functions for iterating through items
-define execute_schedules($data, $param_azure_endpoint, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop) return $all_responses do
+define execute_schedules($data, $param_azure_endpoint, $param_skipshutdown, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop) return $all_responses do
   $$all_responses = []
 
   foreach $instance in $data do
     sub on_error: handle_error() do
-      call execute_schedule($instance, $param_azure_endpoint, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop)
+      call execute_schedule($instance, $param_azure_endpoint, $param_skipshutdown, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop)
     end
   end
 
@@ -574,7 +586,7 @@ define poweron_instances($data, $param_azure_endpoint) return $all_responses do
 
   foreach $instance in $data do
     sub on_error: handle_error() do
-      call poweron_instance($instance)
+      call poweron_instance($instance, $param_azure_endpoint)
     end
   end
 
@@ -612,13 +624,13 @@ define delete_instances($data, $param_azure_endpoint) return $all_responses do
 end
 
 # Secondary CWF functions for taking action on individual instances
-define execute_schedule($instance, $param_azure_endpoint, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop) return $response do
+define execute_schedule($instance, $param_azure_endpoint, $param_skipshutdown, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop) return $response do
   call update_schedule($instance, $param_azure_endpoint, $instance['schedule'], $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop) retrieve $update_response, $window_active
 
   if $window_active
-    call start_instance($instance, $param_azure_endpoint) retrieve $start_response
+    call poweron_instance($instance, $param_azure_endpoint) retrieve $start_response
   else
-    call stop_instance($instance, $param_azure_endpoint) retrieve $stop_response
+    call poweroff_instance($instance, $param_azure_endpoint, $param_skipshutdown) retrieve $stop_response
   end
 end
 
@@ -652,7 +664,7 @@ define update_schedule($instance, $param_azure_endpoint, $schedule, $param_tag_s
 
   call window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone) retrieve $window_active, $next_start, $next_stop
 
-  $new_tags = $instance["tags"]
+  $new_tags = $instance["tags_object"]
   $new_tags[$param_tag_schedule] = $schedule
   $new_tags[$param_tag_next_start] = $next_start
   $new_tags[$param_tag_next_stop] = $next_stop
@@ -668,7 +680,7 @@ define update_schedule($instance, $param_azure_endpoint, $schedule, $param_tag_s
     verb: "patch",
     host: $host,
     https: true,
-    href: $$href,
+    href: $href,
     query_strings: {
       "api-version": "2020-06-01"
     },
@@ -692,9 +704,9 @@ end
 define delete_schedule($instance, $param_azure_endpoint, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop) return $response do
   $new_tags = {}
 
-  foreach $tag_key in keys($instance["tags"]) do
+  foreach $tag_key in keys($instance["tags_object"]) do
     if $tag_key != $param_tag_next_start && $tag_key != $param_tag_next_stop && $tag_key != $param_tag_schedule
-      $new_tags[$tag_key] = $instance["tags"][$tag_key]
+      $new_tags[$tag_key] = $instance["tags_object"][$tag_key]
     end
   end
 
@@ -709,7 +721,7 @@ define delete_schedule($instance, $param_azure_endpoint, $param_tag_schedule, $p
     verb: "patch",
     host: $host,
     https: true,
-    href: $$href,
+    href: $href,
     query_strings: {
       "api-version": "2020-06-01"
     },
@@ -795,7 +807,7 @@ end
 
 define poweron_instance($instance, $param_azure_endpoint) return $response do
   $host = $param_azure_endpoint
-  $href = $instance["id"] + "/powerOn"
+  $href = $instance["id"] + "/start"
   $params = "?api-version=2023-07-01"
   $url = $host + $href + $params
   task_label("POST " + $url)
