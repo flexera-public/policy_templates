@@ -106,13 +106,12 @@ def extract_permissions_from_readme(readme_content)
           line.scan(/-\s*`([^`]+)`\*?/) do |match|
             permission = match.first
 
-
             # Set whether permission is read-only, required, and/or has a description (and depending on the symbol)
             read_only_permission = true
             required = true
             
+            # Checks for a symbol (which would denote that the permission has an accompanying description)
             symbol_if_exists = list_of_notes.find { |note| permission.end_with?(note[:symbol]) == true || line.include?(note[:symbol]) == true }
-            # puts "Symbol: #{symbol_if_exists}"
 
             if symbol_if_exists != nil && !symbol_if_exists[:detail].strip.empty?
               required = false
