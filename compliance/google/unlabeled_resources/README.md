@@ -1,6 +1,6 @@
 # Google Unlabeled Resources
 
-## What it does
+## What It does
 
 Find all Google cloud resources(disks, images, instances, snapshots, buckets, vpnGateways) missing any of the user provided labels with the option to update the resources with the missing labels.
 
@@ -26,33 +26,32 @@ The following policy actions are taken on any resources found to be out of compl
 
 ## Prerequisites
 
-This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+This Policy Template requires that several APIs be enabled in your Google Cloud environment:
 
-### Credential configuration
+- [Cloud Resource Manager API](https://console.cloud.google.com/flows/enableapi?apiid=cloudresourcemanager.googleapis.com)
+- [Compute Engine API](https://console.cloud.google.com/flows/enableapi?apiid=compute.googleapis.com)
 
-For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
-Provider tag value to match this policy: `gce`
+- [**Google Cloud Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1121577) (*provider=gce*) which has the following:
+  - Permissions
+    - `compute.disks.list`
+    - `compute.disks.setLabels`
+    - `compute.externalVpnGateways.list`
+    - `compute.externalVpnGateways.setLabels`
+    - `compute.images.list`
+    - `compute.images.setLabels`
+    - `compute.instances.list`
+    - `compute.instances.setLabels`
+    - `compute.snapshots.list`
+    - `compute.snapshots.setLabels`
+    - `compute.vpnGateways.list`
+    - `compute.vpnGateways.setLabels`
+    - `resourcemanager.projects.get`
+    - `storage.buckets.list`
+    - `storage.buckets.update`
 
-Required permissions in the provider:
-
-- The `Monitoring Viewer` Role
-- The `compute.disks.list` permission
-- The `compute.instances.list` permission
-- The `compute.disks.setLabels` permission
-- The `compute.externalVpnGateways.list` permission
-- The `compute.images.list` permission
-- The `compute.externalVpnGateways.setLabels` permission
-- The `compute.images.setLabels` permission
-- The `compute.instances.setLabels` permission
-- The `compute.snapshots.list` permission
-- The `compute.snapshots.setLabels` permission
-- The `compute.vpnGateways.list` permission
-- The `compute.vpnGateways.setLabels` permission
-- The `compute.images.setLabels` permission
-- The `storage.buckets.list` permission
-- The `storage.buckets.update` permission
-- The `resourcemanager.projects.get` permission
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ## Supported Clouds
 
