@@ -1,5 +1,15 @@
 # Changelog
 
+## v4.0
+
+- Several parameters altered to be more descriptive and human-readable
+- Added several fields to incident export to provide additional context
+- Normalized incident export to be consistent with other policies
+- Streamlined code for better readability and faster execution
+- Policy action error logging modernized and now works as expected in EU/APAC
+- Policy now requires a valid Flexera credential
+- Added logic required for "Meta Policy" use-cases
+
 ## v3.1
 
 - Updated description of `Account Number` parameter
