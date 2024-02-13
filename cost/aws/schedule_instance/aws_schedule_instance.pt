@@ -1,41 +1,28 @@
 name "AWS Schedule Instance"
 rs_pt_ver 20180301
 type "policy"
-short_description "This Policy Template allows you to schedule start and stop times for your instance, along with the option to terminate instance, update and delete schedule. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/schedule_instance/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Schedules EC2 instances to start and stop at specific times based on a configuration stored in the instance's tags. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/schedule_instance/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
-category "Cost"
 severity "low"
+category "Cost"
 default_frequency "daily"
 info(
-  version: "4.2",
+  version: "5.0",
   provider: "AWS",
   service: "Compute",
-  policy_set:"Schedule Instance"
+  policy_set: "Schedule Instance"
 )
 
 ###############################################################################
 # Parameters
 ###############################################################################
 
-parameter "param_allowed_regions_allow_or_deny" do
-  type "string"
-  label "Allow/Deny Regions"
-  description "Allow or Deny entered regions. See the README for more details"
-  allowed_values "Allow", "Deny"
-  default "Allow"
-end
-
-parameter "param_allowed_regions" do
-  type "list"
-  label "Regions"
-  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
-  description "A list of allowed or denied regions. See the README for more details"
-end
-
 parameter "param_email" do
   type "list"
-  label "Email addresses"
-  description "A list of email addresses to notify"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+  default []
 end
 
 parameter "param_aws_account_number" do
@@ -46,17 +33,63 @@ parameter "param_aws_account_number" do
   default ""
 end
 
-parameter "param_tags_to_exclude" do
+parameter "param_tag_schedule" do
+  type "string"
+  category "Tag Keys"
+  label "Schedule Tag Key"
+  description "Tag key that schedule information is stored in. Default is recommended for most use cases."
+  default "schedule"
+end
+
+parameter "param_tag_next_start" do
+  type "string"
+  category "Tag Keys"
+  label "Next Start Tag Key"
+  description "Tag key to use for scheduling instance to start. Default is recommended for most use cases."
+  default "next_start"
+end
+
+parameter "param_tag_next_stop" do
+  type "string"
+  category "Tag Keys"
+  label "Next Stop Tag Key"
+  description "Tag key to use for scheduling instance to stop. Default is recommended for most use cases."
+  default "next_stop"
+end
+
+parameter "param_exclusion_tags" do
   type "list"
-  label "Exclusion Tags"
-  description "A list of AWS tags to ignore instances. Format: Key=Value"
+  category "Filters"
+  label "Exclusion Tags (Key:Value)"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:*"
+  allowed_pattern /(^$)|[\w]*\:.*/
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details"
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  description "A list of allowed or denied regions. See the README for more details"
+  default []
 end
 
 parameter "param_automatic_action" do
   type "list"
+  category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Schedule Instances"]
+  allowed_values ["Execute Schedules"]
   default []
 end
 
@@ -65,9 +98,9 @@ end
 ###############################################################################
 
 credentials "auth_aws" do
-  schemes "aws","aws_sts"
+  schemes "aws", "aws_sts"
   label "AWS"
-  description "Select the AWS Cloud Credential from the list."
+  description "Select the AWS Credential from the list"
   tags "provider=aws"
   aws_account_number $param_aws_account_number
 end
@@ -83,9 +116,9 @@ end
 # Pagination
 ###############################################################################
 
-pagination "aws_pagination" do
+pagination "pagination_aws" do
   get_page_marker do
-    body_path "//DescribeInstancesResponse/nextToken"
+    body_path jmes_path(response, "NextToken")
   end
   set_page_marker do
     body_field "NextToken"
@@ -93,8 +126,64 @@ pagination "aws_pagination" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get AWS account info
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
 
 datasource "ds_get_caller_identity" do
   request do
@@ -109,14 +198,35 @@ datasource "ds_get_caller_identity" do
   result do
     encoding "xml"
     collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
-      field "account",xpath(col_item, "Account")
+      field "account", xpath(col_item, "Account")
     end
   end
 end
 
-# ds_region_list is a list of regions that are opted-in or opt-in-not-required
-datasource "ds_regions_list" do
-  # https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeRegions.html
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_get_caller_identity
+end
+
+script "js_aws_account", type:"javascript" do
+  parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+  result = _.find(ds_cloud_vendor_accounts, function(account) {
+    return account['id'] == ds_get_caller_identity[0]['account']
+  })
+
+  // This is in case the API does not return the relevant account info
+  if (result == undefined) {
+    result = {
+      id: ds_get_caller_identity[0]['account'],
+      name: "",
+      tags: {}
+    }
+  }
+EOS
+end
+
+datasource "ds_describe_regions" do
   request do
     auth $auth_aws
     verb "GET"
@@ -139,155 +249,229 @@ datasource "ds_regions_list" do
   end
 end
 
-# Get only SCP enabled regions
 datasource "ds_regions" do
-  run_script $js_regions, $param_allowed_regions, $ds_regions_list, $param_allowed_regions_allow_or_deny
+  run_script $js_regions, $ds_describe_regions, $param_regions_list, $param_regions_allow_or_deny
 end
 
-datasource "ds_get_all_instances" do
+script "js_regions", type:"javascript" do
+  parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
+  result "result"
+  code <<-EOS
+  allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_describe_regions, function(item) {
+      return _.contains(param_regions_list, item['region']) == allow_deny_test[param_regions_allow_or_deny]
+    })
+  } else {
+    result = ds_describe_regions
+  }
+EOS
+end
+
+datasource "ds_instance_sets" do
   iterate $ds_regions
   request do
     auth $auth_aws
-    pagination $aws_pagination
-    host join(["ec2.",val(iter_item, "region"),".amazonaws.com"])
-    verb "GET"
-    path "/"
-    query "Action", "DescribeInstances"
+    host join(['ec2.', val(iter_item, 'region'), '.amazonaws.com'])
+    path '/'
+    header 'User-Agent', 'RS Policies'
+    header 'Content-Type', 'text/xml'
+    query 'Action', 'DescribeInstances'
+    query 'Version', '2016-11-15'
     query "Filter.1.Name", "tag-key"
-    query "Filter.1.Value.1", "schedule"
-    query "Version", "2016-11-15"
+    query "Filter.1.Value.1", $param_tag_schedule
   end
   result do
     encoding "xml"
-    collect xpath(response,"//DescribeInstancesResponse/reservationSet/item/instancesSet/item") do
-      field "id", xpath(col_item,"instanceId")
-      field "state", xpath(col_item,"instanceState/name")
-      field "tags" do
-        collect xpath(col_item,"tagSet/item") do
-          field "tagKey", xpath(col_item,"key")
-          field "tagValue", xpath(col_item,"value")
+    collect xpath(response, "//DescribeInstancesResponse/reservationSet/item", "array") do
+      field "instances_set" do
+        collect xpath(col_item,"instancesSet/item", "array") do
+          field "region", val(iter_item, "region")
+          field "instanceId", xpath(col_item, "instanceId")
+          field "imageId", xpath(col_item, "imageId")
+          field "resourceType", xpath(col_item, "instanceType")
+          field "platform", xpath(col_item, "platformDetails")
+          field "privateDnsName", xpath(col_item, "privateDnsName")
+          field "launchTime", xpath(col_item, "launchTime")
+          field "state", xpath(col_item,"instanceState/name")
+          field "tags" do
+            collect xpath(col_item,"tagSet/item", "array") do
+              field "key", xpath(col_item, "key")
+              field "value", xpath(col_item, "value")
+            end
+          end
         end
       end
-      field "region", val(iter_item,"region")
     end
   end
 end
 
-datasource "ds_filter_resources" do
-  run_script $js_filter_resources, $ds_get_all_instances, $param_tags_to_exclude, $ds_get_caller_identity
+datasource "ds_instances" do
+  run_script $js_instances, $ds_instance_sets, $param_exclusion_tags
 end
 
-###############################################################################
-# Scripts
-###############################################################################
-
-script "js_regions", type:"javascript" do
-  parameters "user_entered_regions", "all_regions", "regions_allow_or_deny"
-  result "regions"
-  code <<-EOS
-    if(_.isEmpty(user_entered_regions)){
-      regions = all_regions;
-    }else{
-      //Filter unique regions
-      var uniqueRegions = _.uniq(user_entered_regions);
-      var all_regions_list = [];
-      //Filter and remove denied regions from all_regions
-      if (regions_allow_or_deny == "Deny"){
-        var all_regions = all_regions.filter(function(obj){
-          return user_entered_regions.indexOf(obj.region) === -1;
-        });
-      }
-      all_regions.forEach(function(all_region){
-        all_regions_list.push(all_region.region)
-      })
-
-      //Filter valid regions
-      var valid_regions = [];
-      _.map(uniqueRegions, function(uniqueRegion){
-        if(all_regions_list.indexOf(uniqueRegion) > -1){
-          valid_regions.push({"region": uniqueRegion})
-        }
-      })
-
-      //Throw an error if no valid regions found
-      if (_.isEmpty(valid_regions)) {
-        regions = all_regions;
-      }else{
-        regions = valid_regions
-      }
-    }
-  EOS
-end
-
-script "js_filter_resources", type: "javascript" do
-  parameters "ds_get_all_instances", "param_tags_to_exclude", "ds_get_caller_identity"
+script "js_instances", type: "javascript" do
+  parameters "ds_instance_sets", "param_exclusion_tags"
   result "result"
   code <<-EOS
-  var result=[];
-  for(var i=0;i<ds_get_all_instances.length;i++){
-    var notMatched=true;
-    var next_start=null;
-    var next_stop=null;
-    var next_start_iso=null;
-    var next_stop_iso=null;
-    var now=new Date();
-    var instance=ds_get_all_instances[i];
-    for(var j=0;j<param_tags_to_exclude.length;j++){
-      var param_lowerCase=param_tags_to_exclude[j].toLowerCase();
-      if(param_lowerCase.indexOf("=")==-1)
-      {
-        for(var k=0;k<instance.tags.length;k++){
-          var current_tag=instance.tags[k];
-          if(current_tag["tagKey"].toLowerCase()==param_lowerCase){
-            notMatched=false;
-            break;
+  result = []
+
+  _.each(ds_instance_sets, function(item) {
+    if (param_exclusion_tags.length > 0) {
+      filtered_instances = _.reject(item['instances_set'], function(instance) {
+        instance_tags = []
+
+        if (instance['tags'] != null && instance['tags'] != undefined) {
+          _.each(instance['tags'], function(tag) {
+            instance_tags.push([tag['key'], tag['value']].join(':'))
+            instance_tags.push([tag['key'], '*'].join(':'))
+          })
+        }
+
+        exclude_instance = false
+
+        _.each(param_exclusion_tags, function(exclusion_tag) {
+          if (_.contains(instance_tags, exclusion_tag)) {
+            exclude_instance = true
           }
-        }
-      }
-      else {
-        var arr=param_lowerCase.split("=");
-        for(var k=0;k<instance.tags.length;k++){
-          var current_tag=instance.tags[k];
-          if(current_tag["tagKey"].toLowerCase()==arr[0] && current_tag["tagValue"].toLowerCase()==arr[1]){
-            notMatched=false;
-            break;
-          }
-        }
-      }
-    }
-    if(notMatched){
-      var all_tags="";
-      for(var j=0;j<instance.tags.length;j++){
-        all_tags=all_tags+", "+instance.tags[j].tagKey+"="+instance.tags[j].tagValue;
-        if(instance.tags[j].tagKey== 'schedule'){
-          schedule=instance.tags[j].tagValue;
-        }
-        else if(instance.tags[j].tagKey== 'next_start'){
-          next_start=new Date(instance.tags[j].tagValue);
-          next_start_iso=next_start.toISOString();
-        }
-        else if(instance.tags[j].tagKey== 'next_stop'){
-          next_stop=new Date(instance.tags[j].tagValue);
-          next_stop_iso=next_stop.toISOString();
-        }
-      }
-      if(now > next_start || now > next_stop || next_start==null || next_stop==null){
-        result.push({
-          "accountId": ds_get_caller_identity[0]['account'],
-          "id":instance.id,
-          "state": instance.state,
-          "region": instance.region,
-          "schedule":schedule,
-          "tags":all_tags.slice(2),
-          "next_start":next_start_iso,
-          "next_stop":next_stop_iso
         })
-      }
+
+        return exclude_instance
+      })
+
+      result = result.concat(filtered_instances)
+    } else {
+      result = result.concat(item['instances_set'])
     }
-  }
-  result=_.sortBy(result, 'id');
-  result=_.sortBy(result, 'region');
-  EOS
+  })
+EOS
+end
+
+datasource "ds_instances_to_schedule" do
+  run_script $js_instances_to_schedule, $ds_instances, $ds_aws_account, $ds_applied_policy, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop
+end
+
+script "js_instances_to_schedule", type: "javascript" do
+  parameters "ds_instances", "ds_aws_account", "ds_applied_policy", "param_tag_schedule", "param_tag_next_start", "param_tag_next_stop"
+  result "result"
+  code <<-EOS
+  result = []
+  now = new Date()
+
+  _.each(ds_instances, function(instance) {
+    resourceName = ''
+    schedule = null
+    next_start = null
+    next_stop = null
+    tags = []
+
+    if (typeof(instance['tags']) == 'object') {
+      _.each(instance['tags'], function(item) {
+        tags.push(item['key'] + '=' + item['value'])
+        if (item['key'].toLowerCase() == 'name') { resourceName = item['value'] }
+        if (item['key'] == param_tag_schedule)   { schedule = item['value']     }
+        if (item['key'] == param_tag_next_start) { next_start = item['value']   }
+        if (item['key'] == param_tag_next_stop)  { next_stop = item['value']    }
+      })
+    }
+
+    if (next_start != null) { next_start = new Date(next_start) }
+    if (next_stop != null)  { next_stop = new Date(next_stop)   }
+
+    if (now > next_start || now > next_stop || next_start == null || next_stop == null) {
+      if (next_start != null) { next_start = next_start.toISOString() }
+      if (next_stop != null)  { next_stop = next_stop.toISOString()   }
+
+      result.push({
+        resourceID: instance['instanceId'],
+        resourceType: instance['resourceType'],
+        region: instance['region'],
+        platform: instance['platform'],
+        state: instance['state'],
+        privateDnsName: instance['privateDnsName']
+        hostname: instance['privateDnsName'].split('.')[0],
+        accountID: ds_aws_account['id'],
+        accountName: ds_aws_account['name'],
+        policy_name: ds_applied_policy['name'],
+        resourceName: resourceName,
+        tags: tags.join(', '),
+        next_start: next_start,
+        next_stop: next_stop,
+        schedule: schedule
+      })
+    }
+  })
+
+  result = _.sortBy(result, 'resourceID')
+  result = _.sortBy(result, 'region')
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_schedule_instance" do
+  validate_each $ds_instances_to_schedule do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Scheduled EC2 Instances"
+    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    escalate $esc_execute_schedules
+    escalate $esc_update_schedules
+    escalate $esc_delete_schedules
+    escalate $esc_start_instances
+    escalate $esc_stop_instances
+    escalate $esc_terminate_instances
+    hash_exclude "tags", "resourceName"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "state" do
+        label "Instance State"
+      end
+      field "resourceType" do
+        label "Instance Size"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "platform" do
+        label "Platform"
+      end
+      field "hostname" do
+        label "Hostname"
+      end
+      field "schedule" do
+        label "Schedule"
+      end
+      field "next_start" do
+        label "Next Start"
+      end
+      field "next_stop" do
+        label "Next Stop"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+    end
+  end
 end
 
 ###############################################################################
@@ -301,89 +485,468 @@ escalation "esc_email" do
   email $param_email
 end
 
-escalation "esc_schedule_instance" do
-  automatic contains($param_automatic_action, "Schedule Instances")
-  label "Schedule"
-  description "Stop or Start the Instance"
-  run "schedule_instance", data, rs_optima_host
+escalation "esc_execute_schedules" do
+  automatic contains($param_automatic_action, "Execute Schedules")
+  label "Execute Schedules"
+  description "Approval to start or stop all selected instances based on schedule"
+  run "execute_schedules", data, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop
 end
 
-escalation "esc_terminate_instance" do
+escalation "esc_update_schedules" do
   automatic false
-  label "Terminate Instance"
-  description "Terminate or delete the Instance"
-  run "terminate_instance", data, rs_optima_host
-end
-
-escalation "esc_update_schedule" do
-  automatic false
-  label "Update Schedule"
-  description "Update the existing schedule Tag"
+  label "Update Schedules"
+  description "Approval to update the schedule tags on all selected instances"
   parameter "param_schedule" do
     type "string"
+    category "Policy Actions"
     label "New Schedule"
-    description "Provide Schedule Value"
+    description "Enter a new value for the schedule tag. See README for more details"
   end
-  run "update_schedule", data, $param_schedule, rs_optima_host
+  run "update_schedules", data, $param_schedule, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop
 end
 
-escalation "esc_delete_schedule" do
+escalation "esc_delete_schedules" do
   automatic false
-  label "Delete Schedule"
-  description "Delete Schedule Tag"
-  run "delete_schedule", data, rs_optima_host
+  label "Delete Schedules"
+  description "Approval to delete the schedule tags on all selected instances"
+  run "delete_schedules", data, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop
 end
 
-###############################################################################
-# Policy
-###############################################################################
+escalation "esc_start_instances" do
+  automatic false
+  label "Start Instances"
+  description "Approval to start all selected instances"
+  run "start_instances", data
+end
 
-policy "policy_schedule_instance" do
-  validate $ds_filter_resources do
-    summary_template "AWS Account ID: {{with index data 0}}{{ .accountId }}{{end}} - Schedule Instance list"
-    hash_exclude "tags"
-    escalate $esc_email
-    escalate $esc_schedule_instance
-    escalate $esc_terminate_instance
-    escalate $esc_update_schedule
-    escalate $esc_delete_schedule
-    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
-    check logic_or($ds_parent_policy_terminated, eq(size(data),0))
-    export do
-      resource_level true
-      field "accountId" do
-        label "Account Id"
-      end
-      field "region" do
-        label "Region"
-      end
-      field "id" do
-        label "Instance ID"
-      end
-      field "state" do
-        label "Instance State"
-      end
-      field "schedule" do
-        label "Schedule"
-      end
-      field "next_start" do
-        label "Next Start"
-      end
-      field "next_stop" do
-        label "Next Stop"
-      end
-      field "tags" do
-        label "Tags"
-      end
-    end
-  end
+escalation "esc_stop_instances" do
+  automatic false
+  label "Stop Instances"
+  description "Approval to stop all selected instances"
+  run "stop_instances", data
+end
+
+escalation "esc_terminate_instances" do
+  automatic false
+  label "Terminate Instances"
+  description "Approval to terminate all selected instances"
+  run "terminate_instances", data
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-# CWF function to handle errors
+# Core CWF functions for iterating through items
+define execute_schedules($data, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call get_instance_state($instance) retrieve $initial_state
+
+      if $initial_state != "terminated" && $initial_state != "pending"
+        call execute_schedule($instance, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop)
+      end
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+define update_schedules($data, $param_schedule, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call get_instance_state($instance) retrieve $initial_state
+
+      if $initial_state != "terminated" && $initial_state != "pending"
+        call update_schedule($instance, $param_schedule, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop) retrieve $update_response, $window_active
+      end
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+define delete_schedules($data, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call get_instance_state($instance) retrieve $initial_state
+
+      if $initial_state != "terminated" && $initial_state != "pending"
+        call delete_schedule($instance, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop)
+      end
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+define start_instances($data) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call get_instance_state($instance) retrieve $initial_state
+
+      if $initial_state != "terminated" && $initial_state != "pending" && $initial_state != "running"
+        call start_instance($instance)
+      end
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+define stop_instances($data) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call get_instance_state($instance) retrieve $initial_state
+
+      if $initial_state != "terminated" && $initial_state != "pending" && $initial_state != "stopped"
+        call stop_instance($instance)
+      end
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+define terminate_instances($data) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call get_instance_state($instance) retrieve $initial_state
+
+      if $initial_state != "terminated" && $initial_state != "pending"
+        call terminate_instance($instance)
+      end
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+# Secondary CWF functions for taking action on individual instances
+define execute_schedule($instance, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop) return $response do
+  call update_schedule($instance, $instance['schedule'], $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop) retrieve $update_response, $window_active
+  call get_instance_state($instance) retrieve $state
+
+  if $window_active
+    if $state =~ /^(stopped|stopping)$/
+      call start_instance($instance) retrieve $start_response
+    end
+  else
+    if $state =~ /^(running|pending)$/
+      call stop_instance($instance) retrieve $stop_response
+    end
+  end
+end
+
+define update_schedule($instance, $schedule, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop) return $response, $window_active do
+  $rule = split($schedule, ';')[1]
+  $time_range = split($schedule, ';')[0]
+
+  $start_time = split($time_range, '-')[0]
+  $start_hour = split($start_time, ':')[0]
+  $start_minute = split($start_time, ':')[1]
+
+  if $start_minute == null
+    $start_minute = '00'
+  end
+
+  $stop_time = split($time_range, '-')[1]
+  $stop_hour = split($stop_time, ':')[0]
+  $stop_minute = split($stop_time, ':')[1]
+
+  if $stop_minute == null
+    $stop_minute = '00'
+  end
+
+  $start_rule = join(["FREQ=WEEKLY;BYDAY=", $rule])
+  $stop_rule = join(["FREQ=WEEKLY;BYDAY=", $rule])
+  $timezone = split($schedule, ';')[2]
+
+  if ! $timezone
+    $timezone = "UTC"
+  end
+
+  call window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone) retrieve $window_active, $next_start, $next_stop
+
+  $host = "ec2." + $instance["region"] + ".amazonaws.com"
+  $href = "/"
+  $params = "?Action=CreateTags&Version=2016-11-15&ResourceId.1=" + $instance["id"]
+  $params = $params + "&Tag.1.Key=" + $param_tag_next_start + "&Tag.1.Value=" + $next_start
+  $params = $params + "&Tag.2.Key=" + $param_tag_next_stop + "&Tag.2.Value=" + $next_stop
+  $params = $params + "&Tag.3.Key=" + $param_tag_schedule + "&Tag.3.Value="
+  $params = $params + join([$start_hour, ":", $start_minute, "-", $stop_hour, ":", $stop_minute, ";", $rule, ";", $timezone])
+  $url = $host + $href + $params
+  task_label("GET " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    host: $host,
+    href: $href,
+    https: true,
+    verb: "get",
+    query_strings:{
+      "Action": "CreateTags",
+      "Version": "2016-11-15",
+      "ResourceId.1": $instance['id'],
+      "Tag.1.Key": $param_tag_next_start,
+      "Tag.1.Value": $next_start,
+      "Tag.2.Key": $param_tag_next_stop,
+      "Tag.2.Value": $next_stop,
+      "Tag.3.Key": $param_tag_schedule,
+      "Tag.3.Value": join([$start_hour, ":", $start_minute, "-", $stop_hour, ":", $stop_minute, ";", $rule, ";", $timezone])
+    }
+  )
+
+  task_label("Create AWS instance tags response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
+
+  if $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response creating AWS instance tags: " + $instance["id"] + " " + to_json($response)
+  else
+    task_label("Create AWS instance tags response successful: " + $instance["id"])
+  end
+end
+
+define delete_schedule($instance, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop) return $response do
+  $host = "ec2." + $instance["region"] + ".amazonaws.com"
+  $href = "/"
+  $params = "?Action=DeleteTags&Version=2016-11-15&ResourceId.1=" + $instance["id"]
+  $params = $params + "&Tag.1.Key=" + $param_tag_schedule
+  $params = $params + "&Tag.2.Key=" + $param_tag_next_start
+  $params = $params + "&Tag.3.Key=" + $param_tag_next_stop
+  $url = $host + $href + $params
+  task_label("GET " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    host: $host,
+    href: $href,
+    https: true,
+    verb: "get",
+    query_strings:{
+      "Action": "DeleteTags",
+      "Version": "2016-11-15",
+      "ResourceId.1": $instance['id'],
+      "Tag.1.Key": $param_tag_schedule,
+      "Tag.2.Key": $param_tag_next_start,
+      "Tag.3.Key": $param_tag_next_stop
+    }
+  )
+
+  task_label("Delete AWS instance tags response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
+
+  if $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response deleting AWS instance tags: " + $instance["id"] + " " + to_json($response)
+  else
+    task_label("Delete AWS instance tags response successful: " + $instance["id"])
+  end
+end
+
+define terminate_instance($instance) return $response do
+  $host = "ec2." + $instance["region"] + ".amazonaws.com"
+  $href = "/"
+  $params = "?Action=TerminateInstances&Version=2016-11-15&InstanceId.1=" + $instance["id"]
+  $url = $host + $href + $params
+  task_label("POST " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    href: $href,
+    host: $host,
+    query_strings: {
+      "Action": "TerminateInstances",
+      "Version": "2016-11-15",
+      "InstanceId.1": $instance["id"]
+    }
+  )
+
+  task_label("Terminate AWS Instance response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
+
+  if $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response terminating AWS Instance: " + $instance["id"] + " " + to_json($response)
+  else
+    task_label("Terminate AWS Instance successful: " + $instance["id"])
+
+    call get_instance_state($instance) retrieve $instance_state
+
+    while $instance_state != "terminated" do
+      call get_instance_state($instance) retrieve $instance_state
+      task_label("Waiting for Terminate AWS Instance: " + $instance["id"] + " " + $instance_state)
+      sleep(10)
+    end
+    task_label("Completed Terminate AWS Instance: " + $instance["id"])
+  end
+end
+
+# Tertiary CWF functions for specific tasks
+define window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $tz) return $window_active, $next_start, $next_stop do
+  $host = "bjlaftw4kh.execute-api.us-east-1.amazonaws.com"
+  $href = "/production"
+  $url = $host + $href
+  task_label("POST " + $url)
+
+  $response = http_request(
+    https: true,
+    verb: "post",
+    href: $href,
+    host: $host,
+    headers: { "content-type": "application/json" },
+    body: {
+      "start_hour": $start_hour,
+      "start_minute": $start_minute,
+      "start_rule": $start_rule,
+      "stop_minute": $stop_minute,
+      "stop_hour": $stop_hour,
+      "stop_rule": $stop_rule,
+      "tz": $tz
+    }
+  )
+
+  task_label("Post AWS API Gateway response: " + $host + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response posting AWS API Gateway: " + $host + " " + to_json($response)
+  else
+    task_label("Post AWS API Gateway successful: " + $host)
+    $window_active = to_b($response['body']['event_active'])
+    $next_start = $response['body']['next_start']
+    $next_stop = $response['body']['next_stop']
+  end
+end
+
+define start_instance($instance) return $response do
+  $host = "ec2." + $instance["region"] + ".amazonaws.com"
+  $href = "/"
+  $params = "?Action=StartInstances&Version=2016-11-15&InstanceId.1=" + $instance["id"]
+  $url = $host + $href + $params
+  task_label("POST " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    href: $href,
+    host: $host,
+    query_strings: {
+      "Action": "StartInstances",
+      "Version": "2016-11-15",
+      "InstanceId.1": $instance["id"]
+    }
+  )
+
+  task_label("Start AWS Instance response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
+
+  if $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response starting AWS Instance: " + $instance["id"] + " " + to_json($response)
+  else
+    task_label("Start AWS Instance successful: " + $instance["id"])
+    call get_instance_state($instance) retrieve $instance_state
+
+    while $instance_state != "running" do
+      call get_instance_state($instance) retrieve $instance_state
+      sleep(10)
+    end
+  end
+end
+
+define stop_instance($instance) return $response do
+  $host = "ec2." + $instance["region"] + ".amazonaws.com"
+  $href = "/"
+  $params = "?Action=StopInstances&Version=2016-11-15&InstanceId.1=" + $instance["id"]
+  $url = $host + $href + $params
+  task_label("POST " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    href: $href,
+    host: $host,
+    query_strings: {
+      "Action": "StopInstances",
+      "Version": "2016-11-15",
+      "InstanceId.1": $instance["id"]
+    }
+  )
+
+  task_label("Stop AWS Instance response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
+
+  if $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response stopping AWS Instance: " + $instance["id"] + " " + to_json($response)
+  else
+    task_label("Stop AWS Instance successful: " + $instance["id"])
+    call get_instance_state($instance) retrieve $instance_state
+
+    while $instance_state != "stopped" do
+      call get_instance_state($instance) retrieve $instance_state
+      sleep(10)
+    end
+  end
+end
+
+define get_instance_state($instance) return $instance_state do
+  $host = "ec2." + $instance["region"] + ".amazonaws.com"
+  $href = "/"
+  $params = "?Action=DescribeInstanceStatus&Version=2016-11-15&IncludeAllInstances=true&InstanceId.1=" + $instance["id"]
+  $url = $host + $href + $params
+  task_label("POST " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    href: $href,
+    host: $host,
+    query_strings: {
+      "Action": "DescribeInstanceStatus",
+      "Version": "2016-11-15",
+      "IncludeAllInstances": "true",
+      "InstanceId.1": $instance["id"]
+    }
+  )
+
+  task_label("Get AWS Instance status response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
+
+  if $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response getting AWS Instance status: " + $instance["id"] + " " + to_json($response)
+  else
+    task_label("Get AWS Instance status successful: " + $instance["id"])
+    $instance_state = $response["body"]["DescribeInstanceStatusResponse"]["instanceStatusSet"]["item"]["instanceState"]["name"]
+  end
+end
+
 define handle_error() do
   if !$$errors
     $$errors = []
@@ -392,295 +955,6 @@ define handle_error() do
   # We check for errors at the end, and raise them all together
   # Skip errors handled by this definition
   $_error_behavior = "skip"
-end
-
-# CWF function to capture and output logs
-define log_message($message) do
-  # Instantiate log messages array doesn't exist
-  if !$$log_messages
-    $$log_messages = []
-  end
-  # Append timestamp to message
-  $now = strftime(now(), "%Y/%m/%d %H:%M:%S")
-  $log = $now + ": " + $message
-  # Append to log messages array
-  $$log_messages << $log
-  # Update task label with current message
-  task_label($log)
-  # Aggregate all log messages into a single string which is easier to grab from UI and interpret
-  $$log_messages_string = join($$log_messages, "\n\n")
-end
-
-define schedule_instance($data, $$rs_optima_host) do
-  foreach $item in $data on_error: handle_error() do
-    $rule = split($item['schedule'],';')[1]
-    $time_range = split($item['schedule'],';')[0]
-    $start_time = split($time_range,'-')[0]
-    $start_hour = split($start_time, ':')[0]
-    $start_minute = split($start_time, ':')[1]
-    if $start_minute==null
-      $start_minute='00';
-    end
-    $stop_time = split($time_range,'-')[1]
-    $stop_hour = split($stop_time, ':')[0]
-    $stop_minute = split($stop_time, ':')[1]
-    if $stop_minute==null
-      $stop_minute='00';
-    end
-    $start_rule = join(["FREQ=WEEKLY;BYDAY=",$rule])
-    $stop_rule = join(["FREQ=WEEKLY;BYDAY=",$rule])
-    $timezone = split($item['schedule'],';')[2]
-    if ! $timezone
-      $timezone = "UTC"
-    end
-    call window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone) retrieve $window_active , $next_start, $next_stop
-
-    call log_message('window_active='+to_s($window_active))
-    call log_message('next_start='+to_s($next_start))
-    call log_message('next_stop='+to_s($next_stop))
-
-    if ($window_active)
-      call log_message($item['schedule'] + ' schedule window is currently active: Instances may be started.')
-    else
-      call log_message($item['schedule'] + ' schedule window is currently in-active: Instances may be stopped.')
-    end
-
-    $stoppable = /^(running|pending)$/
-    $startable = /^(stopped|stopping)$/
-
-    $response= http_request(
-      auth: $$auth_aws,
-      host: join(["ec2.", $item['region'], ".amazonaws.com"]),
-      href: "/",
-      https: true,
-      verb: "get",
-      query_strings:{
-        "Action": "CreateTags",
-        "ResourceId.1": $item['id'],
-        "Tag.1.Key": "next_start",
-        "Tag.1.Value": $next_start,
-        "Tag.2.Key": "next_stop",
-        "Tag.2.Value": $next_stop,
-        "Tag.3.Key": 'schedule',
-        "Tag.3.Value": join([$start_hour, ":", $start_minute, "-", $stop_hour, ":", $stop_minute, ";",$rule, ";", $timezone]),
-        "Version": "2016-11-15"
-      }
-    )
-    call log_message("req=GET "+join(["ec2.", $item['region'], ".amazonaws.com"])+"/?Action=CreateTags resp="+to_json($response))
-    if($window_active)
-      if($item['state']=~$startable)
-        $retry_count=0
-        $max_retry=10
-        while ($item['state']=~$startable && $retry_count < $max_retry) do
-          call log_message($item['id'] + ': Starting ... '+ to_s($item))
-          $response= http_request(
-            auth: $$auth_aws,
-            host: join(["ec2.", $item['region'], ".amazonaws.com"]),
-            href: "/",
-            https: true,
-            verb: "get",
-            query_strings:{
-              "Action": "StartInstances",
-              "InstanceId.1":$item['id'],
-              "Version":"2016-11-15"
-            }
-          )
-          call log_message("req=GET "+join(["ec2.", $item['region'], ".amazonaws.com"])+"/?Action=StartInstances resp="+to_json($response))
-          # Sleep 3 seconds to allow AWS to process the request
-          sleep(3)
-          # Update the item state after making the start request
-          call aws_ec2_describe_instance($item) retrieve $response
-          $item['state'] = $response['body']['DescribeInstancesResponse']['reservationSet']['item']['instancesSet']['item']['instanceState']['name']
-          call log_message($item['id'] + ': State is '+ $item['state'])
-          $retry_count = $retry_count + 1
-          # Check if we have gone over our retry limit
-          if ($item['state']=~$startable)
-            if($retry_count >= $max_retry)
-              raise "Max retry count reached attempting to start instance " + $item['id'] + ".  This is not expected. Last known state is " + $item['state']
-            else
-              $sleep_time = ($retry_count * 1) # Incremental backoff each time we retry.. 1 second for each retry attempt
-              call log_message($item['id'] + ': State is '+ $item['state'] + "... Sleeping for " + to_s($sleep_time) + " seconds .. Retry count is " + to_s($retry_count) + "/" + to_s($max_retry))
-              sleep($sleep_time)
-            end
-          end
-        end
-        call log_message($item['id'] + ': Start Successfully - Instance state is ' + $item['state'])
-      else
-        call log_message($item['id'] + ': No action - Instance state is ' + $item['state'])
-      end
-    else
-      if($item['state'] =~ $stoppable)
-        call log_message($item['id'] + ': Stopping ... ' + to_s($item))
-        $response= http_request(
-          auth: $$auth_aws,
-          host: join(["ec2.", $item['region'], ".amazonaws.com"]),
-          href: "/",
-          https: true,
-          verb: "get",
-          query_strings:{
-            "Action": "StopInstances",
-            "InstanceId.1":$item['id'],
-            "Version":"2016-11-15"
-          }
-        )
-        call log_message("req=GET "+join(["ec2.", $item['region'], ".amazonaws.com"])+"/?Action=StopInstances resp="+to_json($response))
-      else
-        call log_message($item['id'] + ': No action - Instance state is ' + $item['state'])
-      end
-    end
-  end
-
-  # If we encountered any errors, use `raise` to mark the CWF process as errored
-  if inspect($$errors) != "null"
-    raise join($$errors,"\n")
-  end
-end
-
-define terminate_instance($data, $$rs_optima_host) do
-  foreach $item in $data on_error: handle_error() do
-    call log_message($item['id'] + ': Terminating ...' + to_s($item))
-    $response= http_request(
-      auth: $$auth_aws,
-      host: join(["ec2.", $item['region'], ".amazonaws.com"]),
-      href: "/",
-      https: true,
-      verb: "get",
-      query_strings:{
-        "Action": "TerminateInstances",
-        "InstanceId.1":$item['id'],
-        "Version":"2016-11-15"
-      }
-    )
-    call log_message("req=GET "+join(["ec2.", $item['region'], ".amazonaws.com"])+"/?Action=TerminateInstances resp="+to_json($response))
-  end
-
-  # If we encountered any errors, use `raise` to mark the CWF process as errored
-  if inspect($$errors) != "null"
-    raise join($$errors,"\n")
-  end
-end
-
-define aws_ec2_describe_instance($item) return $response do
-  $response= http_request(
-    auth: $$auth_aws,
-    host: join(["ec2.", $item['region'], ".amazonaws.com"]),
-    href: "/",
-    https: true,
-    verb: "get",
-    query_strings:{
-      "Action": "DescribeInstances",
-      "InstanceId.1": $item['id'],
-      "Version": "2016-11-15"
-    }
-  )
-  call log_message("req=GET "+join(["ec2.", $item['region'], ".amazonaws.com"])+"/?Action=DescribeInstances resp="+to_json($response))
-end
-
-define delete_schedule($data, $$rs_optima_host) do
-  foreach $item in $data on_error: handle_error() do
-    call log_message($item['id'] + ': Deleting schedule Tag ... '+to_s($item))
-    $response= http_request(
-      auth: $$auth_aws,
-      host: join(["ec2.", $item['region'], ".amazonaws.com"]),
-      href: "/",
-      https: true,
-      verb: "get",
-      query_strings:{
-        "Action": "DeleteTags",
-        "ResourceId.1": $item['id'],
-        "Tag.1.Key": "schedule",
-        "Tag.2.Key": "next_start",
-        "Tag.3.Key": "next_stop",
-        "Version": "2016-11-15"
-      }
-    )
-    call log_message("req=GET "+join(["ec2.", $item['region'], ".amazonaws.com"])+"/?Action=DeleteTags resp="+to_json($response))
-  end
-
-  # If we encountered any errors, use `raise` to mark the CWF process as errored
-  if inspect($$errors) != "null"
-    raise join($$errors,"\n")
-  end
-end
-
-define update_schedule($data, $param, $$rs_optima_host) do
-  foreach $item in $data on_error: handle_error() do
-    $rule = split($param,';')[1]
-    $time_range = split($param,';')[0]
-    $start_time = split($time_range,'-')[0]
-    $start_hour = split($start_time, ':')[0]
-    $start_minute = split($start_time, ':')[1]
-    if $start_minute==null
-      $start_minute='00';
-    end
-    $stop_time = split($time_range,'-')[1]
-    $stop_hour = split($stop_time, ':')[0]
-    $stop_minute = split($stop_time, ':')[1]
-    if $stop_minute==null
-      $stop_minute='00';
-    end
-    $start_rule = join(["FREQ=WEEKLY;BYDAY=",$rule])
-    $stop_rule = join(["FREQ=WEEKLY;BYDAY=",$rule])
-    $timezone = split($param,';')[2]
-    if ! $timezone
-      $timezone = "UTC"
-    end
-    call window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone) retrieve $window_active , $next_start, $next_stop
-    call log_message($item['id'] + ': Updating schedule Tag ... ' + to_s($item))
-    $response= http_request(
-      auth: $$auth_aws,
-      host: join(["ec2.", $item['region'], ".amazonaws.com"]),
-      href: "/",
-      https: true,
-      verb: "get",
-      query_strings:{
-        "Action": "CreateTags",
-        "ResourceId.1": $item['id'],
-        "Tag.1.Key": "next_start",
-        "Tag.1.Value": $next_start,
-        "Tag.2.Key": "next_stop",
-        "Tag.2.Value": $next_stop,
-        "Tag.3.Key": 'schedule',
-        "Tag.3.Value": join([$start_hour, ":", $start_minute, "-", $stop_hour, ":", $stop_minute, ";",$rule, ";", $timezone]),
-        "Version": "2016-11-15"
-      }
-    )
-    call log_message("req=GET "+join(["ec2.", $item['region'], ".amazonaws.com"])+"/?Action=CreateTags resp="+to_json($response))
-  end
-
-  # If we encountered any errors, use `raise` to mark the CWF process as errored
-  if inspect($$errors) != "null"
-    raise join($$errors,"\n")
-  end
-end
-
-define window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $tz) return $window_active, $next_start, $next_stop do
-  $request = {
-    verb: 'post',
-    host: 'bjlaftw4kh.execute-api.us-east-1.amazonaws.com',
-    https: true,
-    href: '/production',
-    headers:{
-      'content-type': 'application/json'
-    },
-    body: {
-      'start_hour': $start_hour,
-      'start_minute': $start_minute,
-      'start_rule': $start_rule,
-      'stop_minute': $stop_minute,
-      'stop_hour': $stop_hour,
-      'stop_rule': $stop_rule,
-      'tz': $tz
-    }
-  }
-  $response = http_request($request)
-  call log_message("req="+to_json($request)+" resp="+to_json($response))
-
-  $body = $response['body']
-
-  $window_active = to_b($body['event_active'])
-  $next_start   = $body['next_start']
-  $next_stop    = $body['next_stop']
 end
 
 ###############################################################################

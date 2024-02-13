@@ -8,7 +8,7 @@ tenancy "single"
 default_frequency "15 minutes"
 info(
   provider: "AWS",
-  version: "4.2", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "5.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "false"
 )
 
@@ -68,32 +68,63 @@ parameter "param_template_source" do
 end
 
 ## Child Policy Parameters
-parameter "param_allowed_regions_allow_or_deny" do
+parameter "param_tag_schedule" do
   type "string"
+  category "Tag Keys"
+  label "Schedule Tag Key"
+  description "Tag key that schedule information is stored in. Default is recommended for most use cases."
+  default "schedule"
+end
+
+parameter "param_tag_next_start" do
+  type "string"
+  category "Tag Keys"
+  label "Next Start Tag Key"
+  description "Tag key to use for scheduling instance to start. Default is recommended for most use cases."
+  default "next_start"
+end
+
+parameter "param_tag_next_stop" do
+  type "string"
+  category "Tag Keys"
+  label "Next Stop Tag Key"
+  description "Tag key to use for scheduling instance to stop. Default is recommended for most use cases."
+  default "next_stop"
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags (Key:Value)"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:*"
+  allowed_pattern /(^$)|[\w]*\:.*/
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
   label "Allow/Deny Regions"
   description "Allow or Deny entered regions. See the README for more details"
   allowed_values "Allow", "Deny"
   default "Allow"
 end
 
-parameter "param_allowed_regions" do
+parameter "param_regions_list" do
   type "list"
-  label "Regions"
+  category "Filters"
+  label "Allow/Deny Regions List"
   allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   description "A list of allowed or denied regions. See the README for more details"
-end
-
-parameter "param_tags_to_exclude" do
-  type "list"
-  label "Exclusion Tags"
-  description "A list of AWS tags to ignore instances. Format: Key=Value"
+  default []
 end
 
 parameter "param_automatic_action" do
   type "list"
+  category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Schedule Instances"]
+  allowed_values ["Execute Schedules"]
   default []
 end
 
@@ -101,9 +132,9 @@ end
 # Authentication
 ###############################################################################
 credentials "auth_aws" do
-  schemes "aws","aws_sts"
+  schemes "aws", "aws_sts"
   label "AWS"
-  description "Select the AWS Cloud Credential from the list."
+  description "Select the AWS Credential from the list"
   tags "provider=aws"
   aws_account_number $param_aws_account_number
 end
@@ -757,19 +788,19 @@ datasource "ds_child_incident_details" do
   end
 end
 
-datasource "ds_filter_resources_combined_incidents" do
-  run_script $js_ds_filter_resources_combined_incidents, $ds_child_incident_details
+datasource "ds_instances_to_schedule_combined_incidents" do
+  run_script $js_ds_instances_to_schedule_combined_incidents, $ds_child_incident_details
 end
 
-script "js_ds_filter_resources_combined_incidents", type: "javascript" do
+script "js_ds_instances_to_schedule_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-EOS
   result = []
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
-    // If the incident summary contains "Schedule Instance list" then include it in the filter result
-    if (s.indexOf("Schedule Instance list") > -1) {
+    // If the incident summary contains "AWS Scheduled EC2 Instances" then include it in the filter result
+    if (s.indexOf("AWS Scheduled EC2 Instances") > -1) {
       _.each(incident["violation_data"], function(violation) {
         violation["incident_id"] = incident["id"];
         result.push(violation);
@@ -780,48 +811,70 @@ EOS
 end
 
 
-# Escalation for Schedule
-escalation "esc_schedule_instance" do
+# Escalation for Execute Schedules
+escalation "esc_execute_schedules" do
   automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
-  label "Schedule"
-  description "Stop or Start the Instance"
-  run "esc_schedule_instance", data, rs_governance_host, rs_project_id
+  label "Execute Schedules"
+  description "Approval to start or stop all selected instances based on schedule"
+  run "esc_execute_schedules", data, rs_governance_host, rs_project_id
 end
-define esc_schedule_instance($data, $governance_host, $rs_project_id) do
-  call child_run_action($data, $governance_host, $rs_project_id, "Schedule")
+define esc_execute_schedules($data, $governance_host, $rs_project_id) do
+  call child_run_action($data, $governance_host, $rs_project_id, "Execute Schedules")
 end
 
-# Escalation for Terminate Instance
-escalation "esc_terminate_instance" do
+# Escalation for Update Schedules
+escalation "esc_update_schedules" do
   automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
-  label "Terminate Instance"
-  description "Terminate or delete the Instance"
-  run "esc_terminate_instance", data, rs_governance_host, rs_project_id
+  label "Update Schedules"
+  description "Approval to update the schedule tags on all selected instances"
+  run "esc_update_schedules", data, rs_governance_host, rs_project_id
 end
-define esc_terminate_instance($data, $governance_host, $rs_project_id) do
-  call child_run_action($data, $governance_host, $rs_project_id, "Terminate Instance")
+define esc_update_schedules($data, $governance_host, $rs_project_id) do
+  call child_run_action($data, $governance_host, $rs_project_id, "Update Schedules")
 end
 
-# Escalation for Update Schedule
-escalation "esc_update_schedule" do
+# Escalation for Delete Schedules
+escalation "esc_delete_schedules" do
   automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
-  label "Update Schedule"
-  description "Update the existing schedule Tag"
-  run "esc_update_schedule", data, rs_governance_host, rs_project_id
+  label "Delete Schedules"
+  description "Approval to delete the schedule tags on all selected instances"
+  run "esc_delete_schedules", data, rs_governance_host, rs_project_id
 end
-define esc_update_schedule($data, $governance_host, $rs_project_id) do
-  call child_run_action($data, $governance_host, $rs_project_id, "Update Schedule")
+define esc_delete_schedules($data, $governance_host, $rs_project_id) do
+  call child_run_action($data, $governance_host, $rs_project_id, "Delete Schedules")
 end
 
-# Escalation for Delete Schedule
-escalation "esc_delete_schedule" do
+# Escalation for Start Instances
+escalation "esc_start_instances" do
   automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
-  label "Delete Schedule"
-  description "Delete Schedule Tag"
-  run "esc_delete_schedule", data, rs_governance_host, rs_project_id
+  label "Start Instances"
+  description "Approval to start all selected instances"
+  run "esc_start_instances", data, rs_governance_host, rs_project_id
 end
-define esc_delete_schedule($data, $governance_host, $rs_project_id) do
-  call child_run_action($data, $governance_host, $rs_project_id, "Delete Schedule")
+define esc_start_instances($data, $governance_host, $rs_project_id) do
+  call child_run_action($data, $governance_host, $rs_project_id, "Start Instances")
+end
+
+# Escalation for Stop Instances
+escalation "esc_stop_instances" do
+  automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
+  label "Stop Instances"
+  description "Approval to stop all selected instances"
+  run "esc_stop_instances", data, rs_governance_host, rs_project_id
+end
+define esc_stop_instances($data, $governance_host, $rs_project_id) do
+  call child_run_action($data, $governance_host, $rs_project_id, "Stop Instances")
+end
+
+# Escalation for Terminate Instances
+escalation "esc_terminate_instances" do
+  automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
+  label "Terminate Instances"
+  description "Approval to terminate all selected instances"
+  run "esc_terminate_instances", data, rs_governance_host, rs_project_id
+end
+define esc_terminate_instances($data, $governance_host, $rs_project_id) do
+  call child_run_action($data, $governance_host, $rs_project_id, "Terminate Instances")
 end
 
 
@@ -831,28 +884,48 @@ end
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
-    # Consolidated incident for Schedule Instance list
-  validate $ds_filter_resources_combined_incidents do
-    summary_template "Consolidated Incident: {{ len data }} Schedule Instance list"
+    # Consolidated incident for AWS Scheduled EC2 Instances
+  validate $ds_instances_to_schedule_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} AWS Scheduled EC2 Instances"
     escalate $esc_email
-    escalate $esc_schedule_instance
-    escalate $esc_terminate_instance
-    escalate $esc_update_schedule
-    escalate $esc_delete_schedule
+    escalate $esc_execute_schedules
+    escalate $esc_update_schedules
+    escalate $esc_delete_schedules
+    escalate $esc_start_instances
+    escalate $esc_stop_instances
+    escalate $esc_terminate_instances
     check eq(size(data), 0)
     export do
       resource_level true
-      field "accountId" do
-        label "Account Id"
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "state" do
+        label "Instance State"
+      end
+      field "resourceType" do
+        label "Instance Size"
       end
       field "region" do
         label "Region"
       end
-      field "id" do
-        label "Instance ID"
+      field "platform" do
+        label "Platform"
       end
-      field "state" do
-        label "Instance State"
+      field "hostname" do
+        label "Hostname"
       end
       field "schedule" do
         label "Schedule"
@@ -863,8 +936,8 @@ policy "policy_scheduled_report" do
       field "next_stop" do
         label "Next Stop"
       end
-      field "tags" do
-        label "Tags"
+      field "id" do
+        label "ID"
       end
       field "incident_id" do
         label "Child Incident ID"
