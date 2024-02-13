@@ -334,7 +334,7 @@ datasource "ds_cloud_run_utilization" do
     path join(["/v3/projects/",val(iter_item,"projectId"),"/timeSeries"])
     query "aggregation.alignmentPeriod", join(['+',val($ds_param_values,"aggregation"),"s"],"")
     query "aggregation.crossSeriesReducer", "REDUCE_SUM"
-    query "aggregation.groupByFields", 'resource.label."service_name"'
+    query "aggregation.groupByFields", 'resource.label."service_name"' # TODO: Parameterize
     query "aggregation.perSeriesAligner", "ALIGN_RATE"
     query "filter", join(['metric.type="',$param_threshold_metric_name,'" resource.type="cloud_run_revision" resource.label."service_name"="',last(split(val(iter_item, "name"), "/services/")),'" AND resource.labels."location"="',val(iter_item, "region"),'" AND resource.labels."service_name"="',last(split(val(iter_item, "name"), "/services/")),'"'],"")
     query "interval.startTime", val($ds_param_values, "start_time")
@@ -352,7 +352,7 @@ datasource "ds_cloud_run_utilization" do
       field "points_avg", jq(col_item, "try([.points[].value.doubleValue] | add/length | if . != null then . else 0 end) catch 0")
       field "points_max", jq(col_item, "try([.points[].value.doubleValue] | max | if . != null then . else 0 end) catch 0")
       field "points_stddev", jq(col_item, "try([.points[].value.doubleValue] | (add / length) as $mean | (map(. - $mean | . * .) | add) / (length - 1) | sqrt | if . != null then . else 0 end) catch 0")
-      field "metric_type", "run.googleapis.com/container/billable_instance_time"
+      field "metric_type", $param_threshold_metric_name
     end
   end
 end
@@ -418,30 +418,6 @@ script "js_cloud_run_utilization_anomalies", type: "javascript" do
       result = result.concat(resource_utilization['anomalies'])
     }
   })
-  // // of all results in result
-  // // group by key service_name
-  // resultsGrouped = _.groupBy(result, 'service_name')
-  // // For each group, get the max consequtiveAnomalyIndex
-  // resultsGroupedSorted = _.each(resultsGrouped, function(group) {
-  //   // sort by the consequtiveAnomalyIndex (decending)
-  //   group = _.sortBy(group, function(anomalies) {
-  //     // sort anomalies by the consequtiveAnomalyIndex
-  //     // * -1 to sort in descending order
-  //     return anomalies['value']['consequtiveAnomalyIndex'] * -1
-  //   })
-  // })
-  // // clean the result array for final results friom resultsGroupedSorted
-  // result = []
-  // // for each group in resultsGrouped get the first elemtn which is the one with max consequtiveAnomalyIndex
-  // _.each(resultsGrouped, function(group) {
-  //   // push the first element of the group to the result array
-  //   // this is the one with the highest consequtiveAnomalyIndex
-  //   r = _.first(group)
-  //   // get the last element of the group to get the start time of the first anomaly
-  //   r['interval']['startTime'] = _.last(group)['interval']['startTime']
-  //   result = result.push(r)
-  // })
-
 EOS
 end
 

@@ -4,7 +4,7 @@
 
 This Policy uses Google Cloud Metrics data to identify anomalies for Cloud Run services using the [Standard Score (aka `Z-score`)](https://en.wikipedia.org/wiki/Standard_score) statistical method.
 
->  The standard score is the number of standard deviations by which the value of a raw score (i.e., an observed value or data point) is above or below the mean value of what is being observed or measured.
+> The standard score is the number of standard deviations by which the value of a raw score (i.e., an observed value or data point) is above or below the mean value of what is being observed or measured.
 
 This policy only uses Google Cloud Metric data and is designed to notify of anomalies <24 hours -- specifically before cost and usage data is available.
 
@@ -22,19 +22,18 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
-
 ### Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
- - Allow/Deny Projects
- - Allow/Deny Regions
- - *Lookback Time Period* - The time period to look back for anomalies. The longer the time period, the more accurate the anomaly detection will be.
- - *Lookback Aggregation Period* - The time period to aggregate the metric data
- - *Metric Name* - The name of the metric to monitor for anomalies
- - *Threshold For Z-score* - The threshold for Z-scale, which is the number of consequent anomaly events to trigger an incident (i.e. 1, 2, 3)
- - *Threshold For Consequtive Anomalies* - Number of Consqutive Anomalies to trigger an incident
- - *Email addresses* - A list of email addresses to notify
+- Allow/Deny Projects
+- Allow/Deny Regions
+- *Lookback Time Period* - The time period to look back for anomalies. The longer the time period, the more accurate the anomaly detection will be.
+- *Lookback Aggregation Period* - The time period to aggregate the metric data
+- *Metric Name* - The name of the metric to monitor for anomalies
+- *Threshold For Z-score* - The threshold for Z-scale, which is the number of consequent anomaly events to trigger an incident (i.e. 1, 2, 3)
+- *Threshold For Consequtive Anomalies* - Number of Consqutive Anomalies to trigger an incident
+- *Email addresses* - A list of email addresses to notify
 
 ## Cost
 
