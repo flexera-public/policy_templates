@@ -5,9 +5,9 @@ short_description "Gathers AWS CloudWatch CPU and Burst Credit data for instance
 long_description ""
 severity "low"
 category "Cost"
-default_frequency "daily"
+default_frequency "weekly"
 info(
-  version: "3.2",
+  version: "4.0",
   provider: "AWS",
   service: "Compute",
   policy_set: ""
@@ -17,25 +17,12 @@ info(
 # Parameters
 ###############################################################################
 
-parameter "param_allowed_regions_allow_or_deny" do
-  type "string"
-  label "Allow/Deny Regions"
-  description "Allow or Deny entered regions. See the README for more details"
-  allowed_values "Allow", "Deny"
-  default "Allow"
-end
-
-parameter "param_allowed_regions" do
-  type "list"
-  label "Regions"
-  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
-  description "A list of allowed or denied regions. See the README for more details"
-end
-
 parameter "param_email" do
   type "list"
+  category "Policy Settings"
   label "Email addresses to notify"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
+  default []
 end
 
 parameter "param_aws_account_number" do
@@ -46,38 +33,63 @@ parameter "param_aws_account_number" do
   default ""
 end
 
-parameter "param_num_cpu_surplus_credits" do
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags (Key:Value)"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:*"
+  allowed_pattern /(^$)|[\w]*\:.*/
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details"
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  description "A list of allowed or denied regions. See the README for more details"
+  default []
+end
+
+parameter "param_cpu_surplus_credits" do
   type "number"
-  label "Number of Surplus Credits to alert on"
-  description "Number of CPU Surplus Credits to report on, Set to -1 to ignore cpu burst credits"
+  category "Policy Settings"
+  label "CPU Surplus Credits"
+  description "Number of CPU Surplus Credits to report on. Set to -1 to ignore CPU burst credits"
   default -1
   min_value -1
 end
 
-parameter "param_bool_cpu_burst_credit_balance" do
+parameter "param_cpu_burst_credit_balance" do
   type "string"
-  label "Enable checking burst credit balance against max"
-  description "checks burst credit balance against max_earnable_credits"
+  category "Policy Settings"
+  label "Check Burst Credit Balance"
+  description "Whether to check burst credit balance against max_earnable_credits"
   default "false"
   allowed_values "true", "false"
 end
 
-parameter "param_exclusion_tag_key" do
-  category "User Inputs"
-  label "Exclusion Tag"
-  description "Cloud native tag key to ignore instances. Format: Key:Value"
-  type "string"
-end
-
 parameter "param_cooldown_days" do
   type "number"
+  category "Policy Settings"
   label "Cooldown Days"
   description "Days to cooldown between checks of same instance"
   default 30
+  min_value 1
 end
 
 parameter "param_automatic_action" do
   type "list"
+  category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
   allowed_values ["Resize Instances"]
@@ -88,18 +100,102 @@ end
 # Authentication
 ###############################################################################
 
-#authenticate with AWS
 credentials "auth_aws" do
-  schemes "aws","aws_sts"
+  schemes "aws", "aws_sts"
   label "AWS"
   description "Select the AWS Credential from the list"
   tags "provider=aws"
   aws_account_number $param_aws_account_number
 end
 
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
 ###############################################################################
-# Datasources
+# Pagination
 ###############################################################################
+
+pagination "pagination_aws" do
+  get_page_marker do
+    body_path jmes_path(response, "NextToken")
+  end
+  set_page_marker do
+    body_field "NextToken"
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+datasource "ds_instance_types" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/data/aws/instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get AWS account info
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
 
 datasource "ds_get_caller_identity" do
   request do
@@ -114,14 +210,35 @@ datasource "ds_get_caller_identity" do
   result do
     encoding "xml"
     collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
-      field "account",xpath(col_item, "Account")
+      field "account", xpath(col_item, "Account")
     end
   end
 end
 
-# ds_region_list is a list of regions that are opted-in or opt-in-not-required
-datasource "ds_regions_list" do
-  # https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeRegions.html
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_get_caller_identity
+end
+
+script "js_aws_account", type:"javascript" do
+  parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+  result = _.find(ds_cloud_vendor_accounts, function(account) {
+    return account['id'] == ds_get_caller_identity[0]['account']
+  })
+
+  // This is in case the API does not return the relevant account info
+  if (result == undefined) {
+    result = {
+      id: ds_get_caller_identity[0]['account'],
+      name: "",
+      tags: {}
+    }
+  }
+EOS
+end
+
+datasource "ds_describe_regions" do
   request do
     auth $auth_aws
     verb "GET"
@@ -132,6 +249,9 @@ datasource "ds_regions_list" do
     query "Filter.1.Name", "opt-in-status"
     query "Filter.1.Value.1", "opt-in-not-required"
     query "Filter.1.Value.2", "opted-in"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
   end
   result do
     encoding "xml"
@@ -141,28 +261,38 @@ datasource "ds_regions_list" do
   end
 end
 
-# Get only SCP enabled regions
 datasource "ds_regions" do
-  run_script $js_regions, $param_allowed_regions, $ds_regions_list, $param_allowed_regions_allow_or_deny
+  run_script $js_regions, $ds_describe_regions, $param_regions_list, $param_regions_allow_or_deny
 end
 
-datasource "ds_instance_types" do
-  request do
-    verb "GET"
-    host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/data/aws/instance_types.json"
-    header "User-Agent", "RS Policies"
-  end
+script "js_regions", type:"javascript" do
+  parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
+  result "result"
+  code <<-EOS
+  allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_describe_regions, function(item) {
+      return _.contains(param_regions_list, item['region']) == allow_deny_test[param_regions_allow_or_deny]
+    })
+  } else {
+    result = ds_describe_regions
+  }
+EOS
 end
 
-datasource "ds_instances" do
-  run_script $js_instances, $ds_instances_set, $param_exclusion_tag_key, $ds_instance_types
-end
-
-datasource "ds_instances_set" do
+datasource "ds_instance_sets" do
   iterate $ds_regions
   request do
-    run_script $js_instances_set, val(iter_item,"region")
+    auth $auth_aws
+    host join(['ec2.', val(iter_item, 'region'), '.amazonaws.com'])
+    path '/'
+    header 'User-Agent', 'RS Policies'
+    header 'Content-Type', 'text/xml'
+    query 'Action', 'DescribeInstances'
+    query 'Version', '2016-11-15'
+    query 'Filter.1.Name', 'instance-state-name'
+    query 'Filter.1.Value.1', 'running'
   end
   result do
     encoding "xml"
@@ -170,11 +300,14 @@ datasource "ds_instances_set" do
       field "instances_set" do
         collect xpath(col_item,"instancesSet/item","array") do
           field "region",val(iter_item, "region")
-          field "instanceId", xpath(col_item,"instanceId")
-          field "instanceType", xpath(col_item,"instanceType")
+          field "instanceId", xpath(col_item, "instanceId")
+          field "imageId", xpath(col_item, "imageId")
+          field "resourceType", xpath(col_item, "instanceType")
+          field "platform", xpath(col_item, "platformDetails")
           field "privateDnsName", xpath(col_item, "privateDnsName")
-          field "tag_set" do
-            collect xpath(col_item,"tagSet/item","array") do
+          field "launchTime", xpath(col_item, "launchTime")
+          field "tags" do
+            collect xpath(col_item,"tagSet/item", "array") do
               field "key", xpath(col_item, "key")
               field "value", xpath(col_item, "value")
             end
@@ -185,336 +318,227 @@ datasource "ds_instances_set" do
   end
 end
 
-datasource "ds_cloudwatch_cpu_usage" do
+datasource "ds_instances" do
+  run_script $js_instances, $ds_instance_sets, $ds_instance_types, $param_exclusion_tags
+end
+
+script "js_instances", type: "javascript" do
+  parameters "ds_instance_sets", "ds_instance_types", "param_exclusion_tags"
+  result "result"
+  code <<-EOS
+  result = []
+
+  _.each(ds_instance_sets, function(item) {
+    if (param_exclusion_tags.length > 0) {
+      filtered_instances = _.reject(item['instances_set'], function(instance) {
+        instance_tags = []
+
+        if (instance['tags'] != null && instance['tags'] != undefined) {
+          _.each(instance['tags'], function(tag) {
+            instance_tags.push([tag['key'], tag['value']].join(':'))
+            instance_tags.push([tag['key'], '*'].join(':'))
+          })
+        }
+
+        exclude_instance = false
+
+        _.each(param_exclusion_tags, function(exclusion_tag) {
+          if (_.contains(instance_tags, exclusion_tag)) {
+            exclude_instance = true
+          }
+        })
+
+        return exclude_instance
+      })
+
+      result = result.concat(filtered_instances)
+    } else {
+      result = result.concat(item['instances_set'])
+    }
+  })
+
+  result = _.map(result, function(instance) {
+    resourceTypeInfo = ds_instance_types[instance['resourceType']]
+
+    return {
+      region: instance['region'],
+      instanceId: instance['instanceId'],
+      imageId: instance['imageId'],
+      resourceType: instance['resourceType'],
+      platform: instance['platform'],
+      privateDnsName: instance['privateDnsName'],
+      launchTime: instance['launchTime'],
+      tags: instance['tags'],
+      resourceTypeInfo: resourceTypeInfo
+    }
+  })
+EOS
+end
+
+datasource "ds_instances_cpu_usage" do
   iterate $ds_instances
   request do
-    run_script $js_cloudwatch_cpu_usage, val(iter_item, "region"), val(iter_item, "instanceId")
+    run_script $js_get_instance_stats, val(iter_item, "region"), val(iter_item, "instanceId"), "CPUUtilization"
   end
   result do
     encoding "json"
     collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
+      field "cpuUnit", jmes_path(col_item, "Unit")
+      field "cpuMaximum", jmes_path(col_item, "Maximum")
+      field "cpuMinimum", jmes_path(col_item, "Minimum")
+      field "cpuAverage", jmes_path(col_item, "Average")
       field "region", val(iter_item, "region")
       field "instanceId", val(iter_item, "instanceId")
-      field "instanceType", val(iter_item, "instanceType")
-      field "instance_type_info", val(iter_item,"instance_type_info")
+      field "imageId", val(iter_item, "imageId")
+      field "resourceType", val(iter_item, "resourceType")
+      field "resourceTypeInfo", val(iter_item, "resourceTypeInfo")
+      field "platform", val(iter_item, "platform")
       field "privateDnsName", val(iter_item, "privateDnsName")
-      field "tag_set", val(iter_item, "tag_set")
-      field "cpu_unit", jmes_path(col_item,"Unit")
-      field "cpu_maximum", jmes_path(col_item, "Maximum")
-      field "cpu_minimum", jmes_path(col_item, "Minimum")
-      field "cpu_average", jmes_path(col_item, "Average")
+      field "launchTime", val(iter_item, "launchTime")
+      field "tags", val(iter_item, "tags")
     end
   end
 end
 
-datasource "ds_cloudwatch_cpu_credit_balance" do
-  iterate $ds_instances
+datasource "ds_instances_cpu_credit_balance" do
+  iterate $ds_instances_cpu_usage
   request do
-    run_script $js_cloudwatch_cpu_credit_balance, val(iter_item, "region"), val(iter_item, "instanceId")
+    run_script $js_get_instance_stats, val(iter_item, "region"), val(iter_item, "instanceId"), "CPUCreditBalance"
   end
   result do
     encoding "json"
     collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
+      field "cpuCreditBalanceUnit", jmes_path(col_item, "Unit")
+      field "cpuCreditBalanceMaximum", jmes_path(col_item, "Maximum")
+      field "cpuCreditBalanceMinimum", jmes_path(col_item, "Minimum")
+      field "cpuCreditBalanceAverage", jmes_path(col_item, "Average")
+      field "cpuUnit", val(iter_item, "cpuUnit")
+      field "cpuMaximum", val(iter_item, "cpuMaximum")
+      field "cpuMinimum", val(iter_item, "cpuMinimum")
+      field "cpuAverage", val(iter_item, "cpuAverage")
       field "region", val(iter_item, "region")
       field "instanceId", val(iter_item, "instanceId")
+      field "imageId", val(iter_item, "imageId")
+      field "resourceType", val(iter_item, "resourceType")
+      field "resourceTypeInfo", val(iter_item, "resourceTypeInfo")
+      field "platform", val(iter_item, "platform")
       field "privateDnsName", val(iter_item, "privateDnsName")
-      field "tag_set", val(iter_item, "tag_set")
-      field "cpu_credit_balance_unit", jmes_path(col_item,"Unit")
-      field "max", jmes_path(col_item, "Maximum")
-      field "min", jmes_path(col_item, "Minimum")
-      field "avg", jmes_path(col_item, "Average")
+      field "launchTime", val(iter_item, "launchTime")
+      field "tags", val(iter_item, "tags")
     end
   end
 end
 
-datasource "ds_cloudwatch_cpu_surplus_credit_balance" do
-  iterate $ds_instances
+datasource "ds_instances_cpu_credit_surplus" do
+  iterate $ds_instances_cpu_credit_balance
   request do
-    run_script $js_cloudwatch_cpu_surplus_credit_balance, val(iter_item, "region"), val(iter_item, "instanceId")
+    run_script $js_get_instance_stats, val(iter_item, "region"), val(iter_item, "instanceId"), "CPUSurplusCreditBalance"
   end
   result do
     encoding "json"
     collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
+      field "cpuSurplusCreditBalanceUnit", jmes_path(col_item, "Unit")
+      field "cpuSurplusCreditBalanceMaximum", jmes_path(col_item, "Maximum")
+      field "cpuSurplusCreditBalanceMinimum", jmes_path(col_item, "Minimum")
+      field "cpuSurplusCreditBalanceAverage", jmes_path(col_item, "Average")
+      field "cpuCreditBalanceUnit", val(iter_item, "cpuCreditBalanceUnit")
+      field "cpuCreditBalanceMaximum", val(iter_item, "cpuCreditBalanceMaximum")
+      field "cpuCreditBalanceMinimum", val(iter_item, "cpuCreditBalanceMinimum")
+      field "cpuCreditBalanceAverage", val(iter_item, "cpuCreditBalanceAverage")
+      field "cpuUnit", val(iter_item, "cpuUnit")
+      field "cpuMaximum", val(iter_item, "cpuMaximum")
+      field "cpuMinimum", val(iter_item, "cpuMinimum")
+      field "cpuAverage", val(iter_item, "cpuAverage")
       field "region", val(iter_item, "region")
       field "instanceId", val(iter_item, "instanceId")
+      field "imageId", val(iter_item, "imageId")
+      field "resourceType", val(iter_item, "resourceType")
+      field "resourceTypeInfo", val(iter_item, "resourceTypeInfo")
+      field "platform", val(iter_item, "platform")
       field "privateDnsName", val(iter_item, "privateDnsName")
-      field "tag_set", val(iter_item, "tag_set")
-      field "cpu_credit_balance_unit", jmes_path(col_item,"Unit")
-      field "max", jmes_path(col_item, "Maximum")
-      field "min", jmes_path(col_item, "Minimum")
-      field "avg", jmes_path(col_item, "Average")
+      field "launchTime", val(iter_item, "launchTime")
+      field "tags", val(iter_item, "tags")
     end
   end
 end
 
-datasource "ds_cloudwatch_cpu_surplus_credits_charged" do
-  iterate $ds_instances
+datasource "ds_instances_with_stats" do
+  iterate $ds_instances_cpu_credit_surplus
   request do
-    run_script $js_cloudwatch_cpu_surplus_credits_charged, val(iter_item, "region"), val(iter_item, "instanceId")
+    run_script $js_get_instance_stats, val(iter_item, "region"), val(iter_item, "instanceId"), "CPUSurplusCreditsCharged"
   end
   result do
     encoding "json"
     collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
+      field "CPUSurplusCreditsChargedUnit", jmes_path(col_item, "Unit")
+      field "CPUSurplusCreditsChargedMaximum", jmes_path(col_item, "Maximum")
+      field "CPUSurplusCreditsChargedMinimum", jmes_path(col_item, "Minimum")
+      field "CPUSurplusCreditsChargedAverage", jmes_path(col_item, "Average")
+      field "cpuSurplusCreditBalanceUnit", val(iter_item, "cpuSurplusCreditBalanceUnit")
+      field "cpuSurplusCreditBalanceMaximum", val(iter_item, "cpuSurplusCreditBalanceMaximum")
+      field "cpuSurplusCreditBalanceMinimum", val(iter_item, "cpuSurplusCreditBalanceMinimum")
+      field "cpuSurplusCreditBalanceAverage", val(iter_item, "cpuSurplusCreditBalanceAverage")
+      field "cpuCreditBalanceUnit", val(iter_item, "cpuCreditBalanceUnit")
+      field "cpuCreditBalanceMaximum", val(iter_item, "cpuCreditBalanceMaximum")
+      field "cpuCreditBalanceMinimum", val(iter_item, "cpuCreditBalanceMinimum")
+      field "cpuCreditBalanceAverage", val(iter_item, "cpuCreditBalanceAverage")
+      field "cpuUnit", val(iter_item, "cpuUnit")
+      field "cpuMaximum", val(iter_item, "cpuMaximum")
+      field "cpuMinimum", val(iter_item, "cpuMinimum")
+      field "cpuAverage", val(iter_item, "cpuAverage")
       field "region", val(iter_item, "region")
       field "instanceId", val(iter_item, "instanceId")
+      field "imageId", val(iter_item, "imageId")
+      field "resourceType", val(iter_item, "resourceType")
+      field "resourceTypeInfo", val(iter_item, "resourceTypeInfo")
+      field "platform", val(iter_item, "platform")
       field "privateDnsName", val(iter_item, "privateDnsName")
-      field "tag_set", val(iter_item, "tag_set")
-      field "cpu_credit_balance_unit", jmes_path(col_item,"Unit")
-      field "max", jmes_path(col_item, "Maximum")
-      field "min", jmes_path(col_item, "Minimum")
-      field "avg", jmes_path(col_item, "Average")
+      field "launchTime", val(iter_item, "launchTime")
+      field "tags", val(iter_item, "tags")
     end
   end
+end
+
+script "js_get_instance_stats", type: "javascript" do
+  result "request"
+  parameters "region", "instanceId", "metricName"
+  code <<-EOS
+  start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString()
+  end_date = new Date().toISOString()
+
+  var request = {
+    auth: "auth_aws",
+    host: "monitoring." + region + ".amazonaws.com",
+    path: "/",
+    headers: {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json",
+      "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
+      "Accept": "application/json",
+      "Content-Encoding": "amz-1.0"
+    },
+    query_params: {
+      "Action": "GetMetricStatistics",
+      "Version": "2010-08-01",
+      "Namespace": "AWS/EC2",
+      "MetricName": metricName,
+      "Dimensions.member.1.Name": "InstanceId",
+      "Dimensions.member.1.Value": instanceId,
+      "StartTime": start_date,
+      "EndTime": end_date,
+      "Period": "2592000",
+      "Statistics.member.1": "Maximum",
+      "Statistics.member.2": "Average",
+      "Statistics.member.3": "Minimum"
+    }
+  }
+EOS
 end
 
 datasource "ds_merged_metrics" do
   run_script $js_merged_metrics, $ds_cloudwatch_cpu_usage, $ds_cloudwatch_cpu_credit_balance, $ds_cloudwatch_cpu_surplus_credit_balance, $ds_cloudwatch_cpu_surplus_credits_charged
 end
 
-datasource "ds_check_merged_metrics" do
-  run_script $js_check_merged_metrics, $ds_merged_metrics, $param_bool_cpu_burst_credit_balance, $param_num_cpu_surplus_credits, $ds_get_caller_identity
-end
-
-###############################################################################
-# Scripts
-###############################################################################
-
-script "js_regions", type:"javascript" do
-  parameters "user_entered_regions", "all_regions", "regions_allow_or_deny"
-  result "regions"
-  code <<-EOS
-    if(_.isEmpty(user_entered_regions)){
-      regions = all_regions;
-    }else{
-      //Filter unique regions
-      var uniqueRegions = _.uniq(user_entered_regions);
-      var all_regions_list = [];
-      //Filter and remove denied regions from all_regions
-      if (regions_allow_or_deny == "Deny"){
-        var all_regions = all_regions.filter(function(obj){
-          return user_entered_regions.indexOf(obj.region) === -1;
-        });
-      }
-      all_regions.forEach(function(all_region){
-        all_regions_list.push(all_region.region)
-      })
-
-      //Filter valid regions
-      var valid_regions = [];
-      _.map(uniqueRegions, function(uniqueRegion){
-        if(all_regions_list.indexOf(uniqueRegion) > -1){
-          valid_regions.push({"region": uniqueRegion})
-        }
-      })
-
-      //Throw an error if no valid regions found
-      if (_.isEmpty(valid_regions)) {
-        regions = all_regions;
-      }else{
-        regions = valid_regions
-      }
-    }
-  EOS
-end
-
-script "js_instances", type: "javascript" do
-  result "results"
-  parameters "ds_instance_set", "param_exclusion_tag_key", "ds_instance_types"
-  code <<-EOS
-  var tag_key = param_exclusion_tag_key.split(':')[0]
-  var tag_value = param_exclusion_tag_key.split(':')[1]
-  var results = []
-  for ( n=0; n < ds_instance_set.length; n++) {
-    var instance_set = ds_instance_set[n].instances_set
-    for ( i=0; i < instance_set.length; i++) {
-      var instance = instance_set[i]
-      var tags = instance.tag_set
-      var instance_type_info = ds_instance_types[instance.instanceType]
-
-      if (_.contains(_.pluck(tags,'key'), tag_key) && _.contains(_.pluck(tags,'value'), tag_value)){
-        continue
-      } else {
-        results.push({
-          "region": instance.region,
-          "instanceId": instance.instanceId,
-          "instanceType": instance.instanceType,
-          "privateDnsName": instance.privateDnsName,
-          "tag_set": instance.tag_set,
-          "instance_type_info": instance_type_info
-        })
-      }
-    }
-  }
-  results = _.sortBy(results, 'region');
-EOS
-end
-
-script "js_instances_set", type: "javascript" do
-  result "results"
-  parameters "region"
-  code <<-EOS
-  var end_date = new Date().toISOString()
-  var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
-  results = {
-    "auth": "auth_aws",
-    "host": 'ec2.'+region+'.amazonaws.com',
-    "verb": "GET",
-    "path": "/",
-    "headers": {
-      "User-Agent": "RS Policies",
-      "Content-Type": "text/xml"
-    }
-    "query_params": {
-      'Action': 'DescribeInstances',
-      'Version': '2016-11-15'
-    }
-  }
-EOS
-end
-
-script "js_cloudwatch_cpu_usage", type: "javascript" do
-  result "results"
-  parameters "region","instance_id"
-  code <<-EOS
-  var end_date = new Date().toISOString()
-  var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
-  results = {
-    "auth": "auth_aws",
-    "host": 'monitoring.'+region+'.amazonaws.com',
-    "verb": "GET",
-    "path": "/",
-    "headers": {
-      "User-Agent": "RS Policies",
-      "Content-Type": "application/json",
-      "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
-      "Accept": "application/json",
-      "Content-Encoding": "amz-1.0"
-    }
-    "query_params": {
-      'Action': 'GetMetricStatistics',
-      'Version': '2010-08-01',
-      'Namespace': 'AWS/EC2',
-      'MetricName': 'CPUUtilization',
-      'Dimensions.member.1.Name': 'InstanceId',
-      'Dimensions.member.1.Value': instance_id,
-      'StartTime': start_date,
-      'EndTime': end_date,
-      'Period': "2592000",
-      'Statistics.member.1': 'Maximum',
-      'Statistics.member.2': 'Average',
-      'Statistics.member.3': 'Minimum'
-    }
-  }
-EOS
-end
-
-script "js_cloudwatch_cpu_credit_balance", type: "javascript" do
-  result "results"
-  parameters "region","instance_id"
-  code <<-EOS
-  var end_date = new Date().toISOString()
-  var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
-  results = {
-    "auth": "auth_aws",
-    "host": 'monitoring.'+region+'.amazonaws.com',
-    "verb": "GET",
-    "path": "/",
-    "headers": {
-      "User-Agent": "RS Policies",
-      "Content-Type": "application/json",
-      "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
-      "Accept": "application/json",
-      "Content-Encoding": "amz-1.0"
-    }
-    "query_params": {
-      'Action': 'GetMetricStatistics',
-      'Version': '2010-08-01',
-      'Namespace': 'AWS/EC2',
-      'MetricName': 'CPUCreditBalance',
-      'Dimensions.member.1.Name': 'InstanceId',
-      'Dimensions.member.1.Value': instance_id,
-      'StartTime': start_date,
-      'EndTime': end_date,
-      'Period': "2592000",
-      'Statistics.member.1': 'Maximum',
-      'Statistics.member.2': 'Average',
-      'Statistics.member.3': 'Minimum'
-    }
-  }
-EOS
-end
-
-script "js_cloudwatch_cpu_surplus_credit_balance", type: "javascript" do
-  result "results"
-  parameters "region","instance_id"
-  code <<-EOS
-  var end_date = new Date().toISOString()
-  var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
-  results = {
-    "auth": "auth_aws",
-    "host": 'monitoring.'+region+'.amazonaws.com',
-    "verb": "GET",
-    "path": "/",
-    "headers": {
-      "User-Agent": "RS Policies",
-      "Content-Type": "application/json",
-      "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
-      "Accept": "application/json",
-      "Content-Encoding": "amz-1.0"
-    }
-    "query_params": {
-      'Action': 'GetMetricStatistics',
-      'Version': '2010-08-01',
-      'Namespace': 'AWS/EC2',
-      'MetricName': 'CPUSurplusCreditBalance',
-      'Dimensions.member.1.Name': 'InstanceId',
-      'Dimensions.member.1.Value': instance_id,
-      'StartTime': start_date,
-      'EndTime': end_date,
-      'Period': "2592000",
-      'Statistics.member.1': 'Maximum',
-      'Statistics.member.2': 'Average',
-      'Statistics.member.3': 'Minimum'
-    }
-  }
-EOS
-end
-
-script "js_cloudwatch_cpu_surplus_credits_charged", type: "javascript" do
-  result "results"
-  parameters "region","instance_id"
-  code <<-EOS
-  var end_date = new Date().toISOString()
-  var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
-  results = {
-    "auth": "auth_aws",
-    "host": 'monitoring.'+region+'.amazonaws.com',
-    "verb": "GET",
-    "path": "/",
-    "headers": {
-      "User-Agent": "RS Policies",
-      "Content-Type": "application/json",
-      "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
-      "Accept": "application/json",
-      "Content-Encoding": "amz-1.0"
-    }
-    "query_params": {
-      'Action': 'GetMetricStatistics',
-      'Version': '2010-08-01',
-      'Namespace': 'AWS/EC2',
-      'MetricName': 'CPUSurplusCreditsCharged',
-      'Dimensions.member.1.Name': 'InstanceId',
-      'Dimensions.member.1.Value': instance_id,
-      'StartTime': start_date,
-      'EndTime': end_date,
-      'Period': "2592000",
-      'Statistics.member.1': 'Maximum',
-      'Statistics.member.2': 'Average',
-      'Statistics.member.3': 'Minimum'
-    }
-  }
-EOS
-end
 
 script "js_merged_metrics", type: "javascript" do
   parameters "ds_cloudwatch_cpu_usage", "ds_cloudwatch_cpu_credit_balance", "ds_cloudwatch_cpu_surplus_credit_balance", "ds_cloudwatch_cpu_surplus_credits_charged"
@@ -585,14 +609,18 @@ script "js_merged_metrics", type: "javascript" do
 EOS
 end
 
+datasource "ds_check_merged_metrics" do
+  run_script $js_check_merged_metrics, $ds_merged_metrics, $param_cpu_burst_credit_balance, $param_cpu_surplus_credits, $ds_get_caller_identity
+end
+
 script "js_check_merged_metrics", type: "javascript" do
-  parameters "ds_merged_metrics", "param_bool_cpu_burst_credit_balance", "param_num_cpu_surplus_credits", "ds_get_caller_identity"
+  parameters "ds_merged_metrics", "param_cpu_burst_credit_balance", "param_cpu_surplus_credits", "ds_get_caller_identity"
   result "merged_results"
   code <<-EOS
     var merged_results = []
     _.each(ds_merged_metrics,function(result) {
       if ( result.instance_type_info.burst_info !== undefined ){
-        if ( param_bool_cpu_burst_credit_balance == "true" && (result.cloudwatch_cpu_credit_balance_min != "N/A") && (result.cloudwatch_cpu_credit_balance_min == result.instance_type_info.burst_info.max_earnable_credits)){
+        if ( param_cpu_burst_credit_balance == "true" && (result.cloudwatch_cpu_credit_balance_min != "N/A") && (result.cloudwatch_cpu_credit_balance_min == result.instance_type_info.burst_info.max_earnable_credits)){
           merged_results.push(
             {
               "accountId": ds_get_caller_identity[0]['account'],
@@ -621,7 +649,7 @@ script "js_check_merged_metrics", type: "javascript" do
         }
       }
 
-      if ( param_num_cpu_surplus_credits != -1 && (result.cloudwatch_cpu_surplus_credit_balance_min != "N/A") && (result.cloudwatch_cpu_surplus_credit_balance_min >= param_num_cpu_surplus_credits)){
+      if ( param_cpu_surplus_credits != -1 && (result.cloudwatch_cpu_surplus_credit_balance_min != "N/A") && (result.cloudwatch_cpu_surplus_credit_balance_min >= param_cpu_surplus_credits)){
         merged_results.push(
           {
             "accountId": ds_get_caller_identity[0]['account'],
@@ -650,24 +678,6 @@ script "js_check_merged_metrics", type: "javascript" do
       }
     })
   EOS
-end
-
-###############################################################################
-# Escalations
-###############################################################################
-
-escalation "esc_email" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
-end
-
-escalation "esc_resize_instance" do
-  automatic contains($param_automatic_action, "Resize Instances")
-  label "Resize Instances"
-  description "Resize selected instances"
-  run "resize_instances", data, $param_cooldown_days, rs_optima_host
 end
 
 ###############################################################################
@@ -726,6 +736,25 @@ policy "pol_utilization" do
     check eq(size(data), 0)
   end
 end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_resize_instance" do
+  automatic contains($param_automatic_action, "Resize Instances")
+  label "Resize Instances"
+  description "Resize selected instances"
+  run "resize_instances", data, $param_cooldown_days, rs_optima_host
+end
+
 
 ###############################################################################
 # Cloud Workflow
