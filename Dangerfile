@@ -199,7 +199,7 @@ end
 # print warning if new datasource is added to ensure the README permissions have been updated
 permissions_verified_pt_file_yaml = YAML.load_file('tools/policy_master_permission_generation/validated_policy_templates.yaml')
 has_app_changes.each do |file|
-  if file.end_with? ".pt" && !file.end_with? "_meta_parent.pt"
+  if file.end_with?(".pt") && !file.end_with?("_meta_parent.pt")
     # Get the diff to see only the new changes
     diff = git.diff_for_file(file)
 
