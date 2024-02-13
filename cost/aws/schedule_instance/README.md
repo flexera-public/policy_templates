@@ -65,10 +65,10 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   - `ec2:CreateTags`
   - `ec2:DeleteTags`
   - `ec2:DescribeRegions`
-  - `kms:CreateGrant` `*`
-  - `kms:Decrypt` `*`
+  - `kms:CreateGrant`*
+  - `kms:Decrypt`*
 
-  `*` Only required if using Customer Managed KMS Key on Volumes mounted by EC2 Instance(s)
+  \* Only required if using Customer Managed KMS Key on Volumes mounted by EC2 Instance(s)
 
   Example IAM Permission Policy:
 
