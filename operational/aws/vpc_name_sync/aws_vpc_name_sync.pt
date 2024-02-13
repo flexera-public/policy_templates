@@ -109,14 +109,6 @@ permission "perm_update_network_name" do
   resources "rs_cm.networks"
 end
 
-parameter "param_automatic_action" do
-  type "list"
-  label "Automatic Actions"
-  description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Update VPC"]
-  default []
-end
-
 ###############################################################################
 # Resources
 ###############################################################################
@@ -299,138 +291,111 @@ datasource "ds_aws_vpcs" do
           field "value", xpath(col_item, "value")
         end
       end
-
     end
   end
 end
 
-datasource "ds_networks" do
+datasource "ds_cmp_networks" do
   iterate @networks
   field "name", val(iter_item, "name")
   field "href", href(iter_item)
-  field "resource_uid", val(iter_item, "resource_uid")
+  field "id", val(iter_item, "resource_uid")
 end
 
-datasource "ds_rs_updates" do
-  run_script $script_vpcs, $ds_vpcs, $ds_networks
+datasource "ds_mismatched_vpcs" do
+  run_script $js_mismatched_vpcs, $ds_aws_vpcs, $ds_cmp_networks, $ds_aws_account, $ds_applied_policy
 end
 
-###############################################################################
-# Scripts
-###############################################################################
-
-script "js_regions", type:"javascript" do
-  parameters "user_entered_regions", "all_regions", "regions_allow_or_deny"
-  result "regions"
+script "js_mismatched_vpcs", type: "javascript" do
+  parameters "ds_aws_vpcs", "ds_cmp_networks", "ds_aws_account", "ds_applied_policy"
+  result "result"
   code <<-EOS
-    if(_.isEmpty(user_entered_regions)){
-      regions = all_regions;
-    }else{
-      //Filter unique regions
-      var uniqueRegions = _.uniq(user_entered_regions);
-      var all_regions_list = [];
-      //Filter and remove denied regions from all_regions
-      if (regions_allow_or_deny == "Deny"){
-        var all_regions = all_regions.filter(function(obj){
-          return user_entered_regions.indexOf(obj.region) === -1;
-        });
-      }
-      all_regions.forEach(function(all_region){
-        all_regions_list.push(all_region.region)
-      })
-      //Filter valid regions
-      var valid_regions = [];
-      _.map(uniqueRegions, function(uniqueRegion){
-        if(all_regions_list.indexOf(uniqueRegion) > -1){
-          valid_regions.push({"region": uniqueRegion})
+
+  result = []
+
+  aws_vpc_object = {}
+
+  _.each(ds_aws_vpcs, function(vpc) {
+    name = ''
+
+    if (typeof(vpc['tags']) == 'object') {
+      _.each(vpc['tags'], function(tag) {
+        if (tag['key'].toLowerCase() == 'name') {
+          name = tag['value']
         }
       })
-
-      //Throw an error if no valid regions found
-      if (_.isEmpty(valid_regions)) {
-        regions = all_regions;
-      }else{
-        regions = valid_regions
-      }
     }
-  EOS
-end
 
-script "script_vpcs", type: "javascript" do
-  parameters "ds_vpcs","ds_networks"
-  result "updates"
-  code <<-EOS
-    results = [];
-    updates = [];
-
-    for( i = 0; i <= ds_vpcs.length - 1; i++) {
-      var tags = ds_vpcs[i]["tag_set"];
-
-      var name = "";
-      for( x = 0; x <= tags.length - 1; x++){
-        if(tags[x]["key"] === "Name") {
-          name = tags[x]["value"];
-        }
-      };
-      results.push({
-        "vpcid": ds_vpcs[i]["vpc_id"],
-        "name": name,
-        "region": ds_vpcs[i]["region"]
-      });
-    };
-
-    for( y = 0; y <= ds_networks.length - 1; y++) {
-      var aws_name = "";
-      var region = "";
-      for (aws = 0; aws <= results.length - 1; aws++) {
-        if(results[aws]["vpcid"] === ds_networks[y]["resource_uid"]) {
-          aws_name = results[aws]["name"]
-          region = results[aws]["region"]
-          break;
-        }
-      }
-
-      if(aws_name != "") {
-        updates.push({
-          "rs_name": ds_networks[y]["name"],
-          "aws_name":  aws_name,
-          "href": ds_networks[y]["href"],
-          "id": ds_networks[y]["resource_uid"],
-          "region": region
-        })
-      }
+    aws_vpc_object[vpc['id']] = {
+      name: name,
+      region: vpc['region']
     }
-  updates = _.sortBy(updates,"id")
-  updates = _.sortBy(updates,"region")
-  EOS
+  })
+
+  _.each(ds_cmp_networks, function(network) {
+    aws_name = ''
+    region = ''
+
+    if (aws_vpc_object[network['id']] != undefined) {
+      aws_name = aws_vpc_object[network['id']]['name']
+      region = aws_vpc_object[network['id']]['region']
+    }
+
+    if (network['name'] != aws_name) {
+      result.push({
+        resourceID: network["id"],
+        href: network["href"],
+        cmp_name: network["name"],
+        aws_name: aws_name,
+        region: region,
+        accountID: ds_aws_account['id'],
+        accountName: ds_aws_account['name'],
+        policy_name: ds_applied_policy['name']
+      })
+    }
+  })
+
+  result = _.sortBy(result, 'resourceID')
+  result = _.sortBy(result, 'region')
+EOS
 end
 
 ###############################################################################
 # Policy
 ###############################################################################
 
-policy "policy_vpc_sync" do
-  validate_each $ds_rs_updates do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} VPC Names Out of Sync"
-    check equals?(val(item, "rs_name"), val(item, "aws_name"))
-    escalate $email
-    escalate $escalate_resources
+policy "pol_mismatched_vpcs" do
+  validate_each $ds_mismatched_vpcs do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS VPC Names Out of Sync"
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    escalate $esc_update_vpcs
     export do
       resource_level true
-      field "id" do
-        label "VPC Id"
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "VPC ID"
       end
       field "region" do
         label "Region"
       end
-      field "rs_name" do
-        label "RS Name"
+      field "cmp_name" do
+        label "Flexera CMP Name"
       end
       field "aws_name" do
         label "AWS Name"
       end
       field "href" do
-        label "Href"
+        label "HREF"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
       end
     end
   end
@@ -440,64 +405,143 @@ end
 # Escalations
 ###############################################################################
 
-escalation "email" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
   email $param_email
 end
 
-escalation "escalate_resources" do
-  automatic contains($param_automatic_action, "Update VPC")
-  label "Update VPC"
-  description "Update selected VPC"
-  run "update_vpcs", data, rs_optima_host
+escalation "esc_update_vpcs" do
+  automatic contains($param_automatic_action, "Update VPCs")
+  label "Update VPCs"
+  description "Approval to update selected VPCs"
+  run "update_vpcs", data
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define update_vpcs($data, $$rs_optima_host) do
-  $$debug=false
-  call sys_log('AWS VPC Name Sync Policy: Affected VPCs',to_s($data))
+define update_vpcs($data) return $all_responses do
+  $$all_responses = []
+
   foreach $vpc in $data do
-    call sys_log('AWS VPC Name Sync Policy: Updating VPC',to_s($vpc))
-    @vpc = rs_cm.get(href: $vpc["href"])
-    @vpc.update(network: {"name": $vpc["aws_name"]})
+    sub on_error: handle_error() do
+      call update_vpc($vpc)
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
   end
 end
 
-define sys_log($subject, $detail) do
-  # Create empty errors array if doesn't already exist
+define update_vpc($vpc) return $name do
+  task_label("CMP Update VPC " + $vpc["id"])
+
+  @vpc = rs_cm.get(href: $vpc["href"])
+  @vpc.update(network: {"name": $vpc["aws_name"]})
+
+  $name = $vpc["aws_name"]
+end
+
+define handle_error() do
   if !$$errors
     $$errors = []
   end
-  # Check if debug is enabled
-  if $$debug
-    # Append to global $$errors
-    # This is the suggested way to capture errors
-    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
-    # If Flexera NAM Zone, create audit_entries [to be deprecated]
-    # This is the legacy method for capturing errors and only supported on Flexera NAM
-    if $$rs_optima_host == "api.optima.flexeraeng.com"
-      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
-      $task_label = "Creating audit entry for " + $subject
-      sub task_label: $task, on_error: skip_error_and_append($task) do
-        rs_cm.audit_entries.create(
-          notify: "None",
-          audit_entry: {
-            auditee_href: @@account,
-            summary: $subject,
-            detail: $detail
-          }
-        )
-      end # End sub on_error
-    end # End if rs_optima_host
-  end # End if debug is enabled
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
 end
 
-define skip_error_and_append($subject) do
-  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
-  $_error_behavior = "skip"
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
 end
