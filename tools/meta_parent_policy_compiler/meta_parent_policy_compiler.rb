@@ -27,6 +27,7 @@ default_child_policy_template_files = [
   "../../cost/aws/unused_volumes/aws_delete_unused_volumes.pt",
   "../../operational/aws/lambda_functions_with_high_error_rate/lambda_functions_with_high_error_rate.pt",
   "../../operational/aws/long_running_instances/long_running_instances.pt",
+  "../../operational/aws/subnet_name_sync/aws_subnet_name_sync.pt",
   "../../operational/aws/tag_cardinality/aws_tag_cardinality.pt",
   "../../security/aws/ebs_unencrypted_volumes/aws_unencrypted_volumes.pt",
   "../../security/aws/rds_publicly_accessible/aws_publicly_accessible_rds_instances.pt",

@@ -424,54 +424,41 @@ escalation "esc_update_subnets" do
   automatic contains($param_automatic_action, "Update Subnets")
   label "Update Subnets"
   description "Approval to update selected subnets"
-  run "update_subnets", data, rs_optima_host
+  run "update_subnets", data
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define update_subnets($data, $$rs_optima_host) do
-  $$debug=false
-  call sys_log('AWS Subnet Name Sync Policy: Affected Subnets',to_s($data))
+define update_subnets($data) return $all_responses do
+  $$all_responses = []
+
   foreach $subnet in $data do
-    call sys_log('AWS Subnet Name Sync Policy: Updating Subnet',to_s($subnet))
-    @subnet = rs_cm.get(href: $subnet["href"])
-    @subnet.update(subnet: {"name": $subnet["aws_name"]})
+    sub on_error: handle_error() do
+      call update_subnet($subnet)
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
   end
 end
 
-define sys_log($subject, $detail) do
-  # Create empty errors array if doesn't already exist
+define update_subnet($subnet) return $instance_state do
+  task_label("CMP Update Subnet " + $subnet["id"])
+
+  @subnet = rs_cm.get(href: $subnet["href"])
+  @subnet.update(subnet: {"name": $subnet["aws_name"]})
+end
+
+define handle_error() do
   if !$$errors
     $$errors = []
   end
-  # Check if debug is enabled
-  if $$debug
-    # Append to global $$errors
-    # This is the suggested way to capture errors
-    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
-    # If Flexera NAM Zone, create audit_entries [to be deprecated]
-    # This is the legacy method for capturing errors and only supported on Flexera NAM
-    if $$rs_optima_host == "api.optima.flexeraeng.com"
-      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
-      $task_label = "Creating audit entry for " + $subject
-      sub task_label: $task, on_error: skip_error_and_append($task) do
-        rs_cm.audit_entries.create(
-          notify: "None",
-          audit_entry: {
-            auditee_href: @@account,
-            summary: $subject,
-            detail: $detail
-          }
-        )
-      end # End sub on_error
-    end # End if rs_optima_host
-  end # End if debug is enabled
-end
-
-define skip_error_and_append($subject) do
-  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
   $_error_behavior = "skip"
 end
 
