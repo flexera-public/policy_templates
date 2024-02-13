@@ -1,18 +1,99 @@
 name "AWS VPC Name Tag Sync"
 rs_pt_ver 20180301
 type "policy"
-short_description "Ensures a Network name in Cloud Management reflects the value of the Network name tag in AWS. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/vpc_name_sync) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Ensures VPC names in Flexera Cloud Management align with the VPC name tag in AWS. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/vpc_name_sync) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
-severity "medium"
 category "Operational"
+severity "medium"
+default_frequency "weekly"
 info(
-  publish: "false",
-  version: "3.1",
+  version: "4.0",
   provider: "AWS",
   service: "VPC",
   policy_set: "",
-  default_frequency: "hourly"
+  publish: "false"
 )
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+  default []
+end
+
+parameter "param_aws_account_number" do
+  type "string"
+  category "Policy Settings"
+  label "Account Number"
+  description "Leave blank; this is for automated use with Meta Policies. See README for more details."
+  default ""
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details"
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  description "A list of allowed or denied regions. See the README for more details"
+  default []
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Update VPCs"]
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws", "aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+  aws_account_number $param_aws_account_number
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+auth "rs", type: "rightscale"
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_aws" do
+  get_page_marker do
+    body_path jmes_path(response, "NextToken")
+  end
+  set_page_marker do
+    body_field "NextToken"
+  end
+end
 
 ###############################################################################
 # Permissions
@@ -37,60 +118,9 @@ parameter "param_automatic_action" do
 end
 
 ###############################################################################
-# Parameters
-###############################################################################
-
-parameter "param_allowed_regions_allow_or_deny" do
-  type "string"
-  label "Allow/Deny Regions"
-  description "Allow or Deny entered regions. See the README for more details"
-  allowed_values "Allow", "Deny"
-  default "Allow"
-end
-
-parameter "param_allowed_regions" do
-  type "list"
-  label "Regions"
-  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
-  description "A list of allowed or denied regions. See the README for more details"
-end
-
-parameter "param_email" do
-  type "list"
-  label "Email addresses of the recipients you wish to notify"
-end
-
-parameter "param_aws_account_number" do
-  type "string"
-  category "Policy Settings"
-  label "Account Number"
-  description "Leave blank; this is for automated use with Meta Policies. See README for more details."
-  default ""
-end
-
-###############################################################################
-# Authentication
-###############################################################################
-
-credentials "auth_aws" do
-  schemes "aws","aws_sts"
-  label "AWS"
-  description "Select the AWS Credential from the list"
-  tags "provider=aws"
-  aws_account_number $param_aws_account_number
-end
-
-
-auth "rs", type: "rightscale"
-
-###############################################################################
-# Pagination
-###############################################################################
-
-
-###############################################################################
 # Resources
 ###############################################################################
+
 resources "clouds", type: "rs_cm.clouds" do
   filter do
     cloud_type "amazon"
@@ -105,12 +135,107 @@ resources "networks", type: "rs_cm.network" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
-# ds_region_list is a list of regions that are opted-in or opt-in-not-required
-datasource "ds_regions_list" do
-  # https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeRegions.html
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get AWS account info
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account", xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_get_caller_identity
+end
+
+script "js_aws_account", type:"javascript" do
+  parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+  result = _.find(ds_cloud_vendor_accounts, function(account) {
+    return account['id'] == ds_get_caller_identity[0]['account']
+  })
+
+  // This is in case the API does not return the relevant account info
+  if (result == undefined) {
+    result = {
+      id: ds_get_caller_identity[0]['account'],
+      name: "",
+      tags: {}
+    }
+  }
+EOS
+end
+
+datasource "ds_describe_regions" do
   request do
     auth $auth_aws
     verb "GET"
@@ -121,6 +246,9 @@ datasource "ds_regions_list" do
     query "Filter.1.Name", "opt-in-status"
     query "Filter.1.Value.1", "opt-in-not-required"
     query "Filter.1.Value.2", "opted-in"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
   end
   result do
     encoding "xml"
@@ -130,16 +258,31 @@ datasource "ds_regions_list" do
   end
 end
 
-# Get only SCP enabled regions
 datasource "ds_regions" do
-  run_script $js_regions, $param_allowed_regions, $ds_regions_list, $param_allowed_regions_allow_or_deny
+  run_script $js_regions, $ds_describe_regions, $param_regions_list, $param_regions_allow_or_deny
 end
 
-datasource "ds_vpcs" do
+script "js_regions", type:"javascript" do
+  parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
+  result "result"
+  code <<-EOS
+  allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_describe_regions, function(item) {
+      return _.contains(param_regions_list, item['region']) == allow_deny_test[param_regions_allow_or_deny]
+    })
+  } else {
+    result = ds_describe_regions
+  }
+EOS
+end
+
+datasource "ds_aws_vpcs" do
   iterate $ds_regions
   request do
     auth $auth_aws
-    host join(["ec2.",val(iter_item,"region"),".amazonaws.com"])
+    host join(["ec2.", val(iter_item,"region"), ".amazonaws.com"])
     path "/"
     query "Action", "DescribeVpcs"
     query "Version", "2016-11-15"
@@ -148,14 +291,15 @@ datasource "ds_vpcs" do
   result do
     encoding "xml"
     collect xpath(response, "//DescribeVpcsResponse/vpcSet/item", "array") do
-      field "tag_set" do
+      field "id", xpath(col_item, "vpcId")
+      field "region", val(iter_item, "region")
+      field "tags" do
         collect xpath(col_item, "tagSet/item") do
           field "key", xpath(col_item, "key")
           field "value", xpath(col_item, "value")
         end
       end
-      field "vpc_id", xpath(col_item, "vpcId")
-      field "region", val(iter_item,"region")
+
     end
   end
 end
