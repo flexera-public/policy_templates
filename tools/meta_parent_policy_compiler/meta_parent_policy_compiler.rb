@@ -65,6 +65,7 @@ default_child_policy_template_files = [
   "../../cost/google/idle_ip_address_recommendations/google_idle_ip_address_recommendations.pt",
   "../../cost/google/idle_persistent_disk_recommendations/google_idle_persistent_disk_recommendations.pt",
   "../../cost/google/rightsize_vm_recommendations/google_rightsize_vm_recommendations.pt",
+  "../../cost/google/schedule_instance/google_schedule_instance.pt",
   "../../cost/google/cud_recommendations/google_committed_use_discount_recommendations.pt",
   "../../cost/google/old_snapshots/google_delete_old_snapshots.pt"
 ]

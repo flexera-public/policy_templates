@@ -335,7 +335,6 @@ These templates can generate savings estimates for your environment.
   - [Google Committed Use Discount (CUD)](./cost/google/cud_report)
   - [Google Expiring Committed Use Discount (CUD)](./cost/google/cud_expiration)
   - [Google Idle Compute Instances](./cost/google/idle_compute_instances)
-  - [Google Schedule Instance](./cost/google/schedule_instance)
 
 - SQL
 
@@ -352,6 +351,7 @@ These templates can generate savings estimates for your environment.
   - [Google Committed Use Discount Recommender](./cost/google/cud_recommendations)
   - [Google Idle IP Address Recommender](./cost/google/idle_ip_address_recommendations)
   - [Google Rightsize VM Recommender](./cost/google/rightsize_vm_recommendations)
+  - [Google Schedule Instance](./cost/google/schedule_instance)
   - [Turbonomic Allocate Virtual Machine Recommendations Google](./cost/turbonomics/allocate_virtual_machines_recommendations/gcp)
   - [Turbonomic Rightsize Virtual Machines Recommendations Google](./cost/turbonomics/scale_virtual_machines_recommendations/gcp)
 
@@ -408,16 +408,13 @@ These templates can generate savings estimates for your environment.
 
   - [AKS Node Pools Without Autoscaling](./operational/azure/aks_nodepools_without_autoscaling)
   - [AKS Node Pools Without Zero Autoscaling](./operational/azure/aks_nodepools_without_zero_autoscaling)
+  - [Azure Migrate Integration](./operational/azure/azure_migrate)
 
 - Compute
 
   - [Azure Long Running Instances](./operational/azure/azure_long_running_instances)
   - [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks)
   - [Expiring Azure Certificates](./operational/azure/azure_certificates)
-
-- SQL
-
-  - [Azure Migrate Integration](./operational/azure/azure_migrate)
 
 - Tags
 
@@ -637,13 +634,13 @@ These templates can generate savings estimates for your environment.
   Security: 74
 :optimization_count: 44
 :policy_sets:
-  '': 81
+  '': 82
   AWS Config: 1
   Allocate VMs: 3
   CIS: 61
   Committed Use Discount: 1
   Common Bill Ingestion: 2
-  Database Services: 2
+  Database Services: 1
   Databricks: 1
   Disallowed Regions: 2
   Forecasting: 4
@@ -700,9 +697,9 @@ These templates can generate savings estimates for your environment.
   Flexera Optima: 24
   Flexera RISC: 2
   Flexera SaaS Manager: 9
-  GCE: 7
+  GCE: 6
   GitHub: 7
-  Google: 12
+  Google: 13
   Kubecost: 2
   Microsoft: 1
   Okta: 1
@@ -710,7 +707,7 @@ These templates can generate savings estimates for your environment.
   ServiceNow: 1
 :services:
   '': 59
-  AKS: 2
+  AKS: 3
   All: 1
   App Service: 1
   CCO: 1
@@ -742,7 +739,7 @@ These templates can generate savings estimates for your environment.
   PostgreSQL: 4
   RDS: 5
   S3: 8
-  SQL: 15
+  SQL: 14
   Security: 3
   Storage: 22
   Storage Accounts: 2
