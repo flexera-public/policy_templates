@@ -546,67 +546,74 @@ script "js_instance_recommendations", type: "javascript" do
   result = []
 
   _.each(ds_instances_with_stats, function(instance) {
-    include_instance = false
-    tags = []
-    resourceName = ""
-
-    if (instance['tags'] != undefined && instance['tags'] != null) {
-      _.each(instance['tags'], function(tag) {
-        tags.push([tag['key'], tag['value']].join('='))
-        if (tag['key'].toLowerCase() == 'name') { resourceName = tag['value'] }
-      })
-    }
-
-    new_instance = {
-      resourceID: instance['instanceId'],
-      region: instance['region'],
-      imageId: instance['imageId'],
-      resourceType: instance['resourceType'],
-      resourceTypeInfo: instance['resourceTypeInfo'],
-      platform: instance['platform'],
-      privateDnsName: instance['privateDnsName'],
-      hostname: instance['privateDnsName'].split('.')[0],
-      launchTime: instance['launchTime'],
-      tags: instance['tags'],
-      cpuUnit: instance['cpuUnit'],
-      cpuMaximum: Number(instance['cpuMaximum'].toFixed(2)),
-      cpuMinimum: Number(instance['cpuMinimum'].toFixed(2)),
-      cpuAverage: Number(instance['cpuAverage'].toFixed(2)),
-      cpuCreditBalanceUnit: instance['cpuCreditBalanceUnit'],
-      cpuCreditBalanceMaximum: instance['cpuCreditBalanceMaximum'],
-      cpuCreditBalanceMinimum: instance['cpuCreditBalanceMinimum'],
-      cpuCreditBalanceAverage: instance['cpuCreditBalanceAverage'],
-      cpuSurplusCreditBalanceUnit: instance['cpuSurplusCreditBalanceUnit'],
-      cpuSurplusCreditBalanceMaximum: instance['cpuSurplusCreditBalanceMaximum'],
-      cpuSurplusCreditBalanceMinimum: instance['cpuSurplusCreditBalanceMinimum'],
-      cpuSurplusCreditBalanceAverage: instance['cpuSurplusCreditBalanceAverage'],
-      cpuSurplusCreditsChargedUnit: instance['cpuSurplusCreditsChargedUnit'],
-      cpuSurplusCreditsChargedMaximum: instance['cpuSurplusCreditsChargedMaximum'],
-      cpuSurplusCreditsChargedMinimum: instance['cpuSurplusCreditsChargedMinimum'],
-      cpuSurplusCreditsChargedAverage: instance['cpuSurplusCreditsChargedAverage'],
-      accountID: ds_aws_account['id'],
-      accountName: ds_aws_account['name'],
-      policy_name: ds_applied_policy['name'],
-      resourceName: resourceName,
-      tags: tags.join(', '),
-      service: "EC2"
-    }
+    newResourceType = null
 
     if (instance['resourceTypeInfo']['burst_info'] != undefined) {
       if (param_cpu_burst_credit_balance == "Yes" && instance['cpuCreditBalanceMinimum'] != 'N/A' && instance['cpuCreditBalanceMinimum'] == instance['resourceTypeInfo']['burst_info']['max_earnable_credits'] && instance['resourceTypeInfo']['down'] != undefined) {
-        include_instance = true
-        new_instance['newResourceType'] = instance['resourceTypeInfo']['down']
-        new_instance['maxEarnableCredits'] = instance['resourceTypeInfo']['burst_info']['max_earnable_credits']
+        newResourceType = instance['resourceTypeInfo']['down']
       }
     }
 
     if (param_cpu_surplus_credits != -1 && instance['cpuSurplusCreditBalanceMinimum'] != "N/A" && instance['cpuSurplusCreditBalanceMinimum'] >= param_cpu_surplus_credits && instance['resourceTypeInfo']['up'] != undefined) {
-      include_instance = true
-      new_instance['newResourceType'] = instance['resourceTypeInfo']['up']
-      new_instance['maxEarnableCredits'] = instance['resourceTypeInfo']['burst_info']['max_earnable_credits']
+      newResourceType = instance['resourceTypeInfo']['up']
     }
 
-    if (include_instance) { result.push(new_instance) }
+    if (newResourceType != null) {
+      tags = []
+      resourceName = ""
+
+      if (instance['tags'] != undefined && instance['tags'] != null) {
+        _.each(instance['tags'], function(tag) {
+          tags.push([tag['key'], tag['value']].join('='))
+          if (tag['key'].toLowerCase() == 'name') { resourceName = tag['value'] }
+        })
+      }
+
+      recommendationDetails = [
+        "Change instance type of EC2 instance ", instance["resourceID"], " ",
+        "in AWS Account ", ds_aws_account['name'], " ",
+        "(", ds_aws_account['id'], ") ",
+        "from ", instance["resourceType"], " ",
+        "to ", newResourceType
+      ].join('')
+
+      result.push({
+        resourceID: instance['instanceId'],
+        region: instance['region'],
+        imageId: instance['imageId'],
+        resourceType: instance['resourceType'],
+        resourceTypeInfo: instance['resourceTypeInfo'],
+        platform: instance['platform'],
+        privateDnsName: instance['privateDnsName'],
+        hostname: instance['privateDnsName'].split('.')[0],
+        launchTime: instance['launchTime'],
+        cpuUnit: instance['cpuUnit'],
+        cpuMaximum: Number(instance['cpuMaximum'].toFixed(2)),
+        cpuMinimum: Number(instance['cpuMinimum'].toFixed(2)),
+        cpuAverage: Number(instance['cpuAverage'].toFixed(2)),
+        cpuCreditBalanceUnit: instance['cpuCreditBalanceUnit'],
+        cpuCreditBalanceMaximum: instance['cpuCreditBalanceMaximum'],
+        cpuCreditBalanceMinimum: instance['cpuCreditBalanceMinimum'],
+        cpuCreditBalanceAverage: instance['cpuCreditBalanceAverage'],
+        cpuSurplusCreditBalanceUnit: instance['cpuSurplusCreditBalanceUnit'],
+        cpuSurplusCreditBalanceMaximum: instance['cpuSurplusCreditBalanceMaximum'],
+        cpuSurplusCreditBalanceMinimum: instance['cpuSurplusCreditBalanceMinimum'],
+        cpuSurplusCreditBalanceAverage: instance['cpuSurplusCreditBalanceAverage'],
+        cpuSurplusCreditsChargedUnit: instance['cpuSurplusCreditsChargedUnit'],
+        cpuSurplusCreditsChargedMaximum: instance['cpuSurplusCreditsChargedMaximum'],
+        cpuSurplusCreditsChargedMinimum: instance['cpuSurplusCreditsChargedMinimum'],
+        cpuSurplusCreditsChargedAverage: instance['cpuSurplusCreditsChargedAverage'],
+        accountID: ds_aws_account['id'],
+        accountName: ds_aws_account['name'],
+        policy_name: ds_applied_policy['name'],
+        resourceName: resourceName,
+        tags: tags.join(', '),
+        recommendationDetails: recommendationDetails,
+        newResourceType: newResourceType,
+        maxEarnableCredits: instance['resourceTypeInfo']['burst_info']['max_earnable_credits'],
+        service: "EC2"
+      })
+    }
   })
 EOS
 end
@@ -638,6 +645,9 @@ policy "pol_utilization" do
       end
       field "tags" do
         label "Resource Tags"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
       end
       field "resourceType" do
         label "Instance Size"
