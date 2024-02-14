@@ -1,5 +1,9 @@
 # AWS Subnet Name Tag Sync
 
+## Deprecated
+
+This policy is no longer being updated.
+
 ## What it does
 
 This Policy Template is used to automatically synchronize the AWS Subnet names to Cloud Management.
