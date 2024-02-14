@@ -1,7 +1,7 @@
-name "AWS Burstable Instance CloudWatch Utilization"
+name "AWS Burstable EC2 Instance CloudWatch Utilization"
 rs_pt_ver 20180301
 type "policy"
-short_description "Gathers AWS CloudWatch CPU and Burst Credit data for instances on 30 day intervals. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/burstable_instance_cloudwatch_credit_utilization/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Gathers AWS CloudWatch CPU and Burst Credit data for EC2 instances on 30 day intervals. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/burstable_instance_cloudwatch_credit_utilization/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "low"
 category "Cost"
@@ -535,15 +535,14 @@ script "js_get_instance_stats", type: "javascript" do
 EOS
 end
 
-datasource "ds_incident" do
-  run_script $js_incident, $ds_instances_with_stats, $param_cpu_burst_credit_balance, $param_cpu_surplus_credits, $ds_aws_account, $ds_applied_policy
+datasource "ds_instance_recommendations" do
+  run_script $js_instance_recommendations, $ds_instances_with_stats, $param_cpu_burst_credit_balance, $param_cpu_surplus_credits, $ds_aws_account, $ds_applied_policy
 end
 
-script "js_incident", type: "javascript" do
+script "js_instance_recommendations", type: "javascript" do
   parameters "ds_instances_with_stats", "param_cpu_burst_credit_balance", "param_cpu_surplus_credits", "ds_aws_account", "ds_applied_policy"
   result "result"
   code <<-'EOS'
-
   result = []
 
   _.each(ds_instances_with_stats, function(instance) {
@@ -617,13 +616,14 @@ end
 ###############################################################################
 
 policy "pol_utilization" do
-  validate_each $ds_incident do
+  validate_each $ds_instance_recommendations do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Actionable EC2 Instances Found"
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     escalate $esc_resize_instances
     hash_exclude "tags"
     export do
+      resource_level true
       field "accountID" do
         label "Account ID"
       end
@@ -738,7 +738,6 @@ define resize_instances($data) do
     raise join($$errors,"\n")
   end
 end
-
 
 # CWF function to start an instance
 define start_instance($instance) return $response do
@@ -914,7 +913,6 @@ datasource "ds_get_policy" do
     field "id", jmes_path(response, "id")
   end
 end
-
 
 datasource "ds_parent_policy_terminated" do
   run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id

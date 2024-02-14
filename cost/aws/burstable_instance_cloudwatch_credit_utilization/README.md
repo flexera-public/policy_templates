@@ -1,26 +1,25 @@
-# AWS Burstable Instance CloudWatch Utilization Policy
+# AWS Burstable EC2 Instance CloudWatch Utilization Policy
 
-## What it does
+## What It does
 
 This Policy Template gathers AWS CloudWatch data for instances on 30 day intervals. Information on Burst Credits can be found [here](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/burstable-performance-instances-monitoring-cpu-credits.html). This policy will then take the appropriate actions based on which check fails and resize the instance.
 
 ## Functional Details
 
-- This policy identifies all instances reporting performance metrics to CloudWatch whose CPU, Burst Credit Balance, Surplus Burst Credit Balance meet specified thresholds set forth in the parameters.
-- The **Exclusion Tag** parameter is a string value. If the exclusion tag is used on an Instance, that Instance is presumed to be exempt from this policy.
+- This policy identifies all instances reporting performance metrics to CloudWatch whose CPU, Burst Credit Balance, Surplus Burst Credit Balance meet specified thresholds set forth in the parameters..
 - If you get an **N/A** in a field you will need to install the [CloudWatch Agent](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Install-CloudWatch-Agent.html) on the instance to get those metrics.
 
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
-- *Allow/Deny Regions* - Whether to treat regions parameter as allow or deny list.
-- *Regions* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
-- *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
-- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [more](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
-- *Number of Surplus Credits to alert on* - Number of CPU Surplus Credits to report on, Set to -1 to ignore cpu burst credits
-- *Enable checking burst credit balance against max* - checks burst credit balance against max_earnable_credits
-- *Exclusion Tag* - Cloud native tag key to ignore instances. Format: Key:Value
+- *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
+- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
+- *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
+- *Allow/Deny Regions List* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled. See [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
+- *Exclusion Tags (Key:Value)* - Cloud native tags to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:\* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:\*
+- *CPU Surplus Credits* - Number of CPU Surplus Credits to report on. Set to -1 to ignore CPU burst credits.
+- *Check Burst Credit Balance* - Whether to check burst credit balance against max_earnable_credits
 - *Cooldown Days* - Days to cooldown between checks of same instance
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
@@ -29,65 +28,61 @@ For example if a user selects the "Resize Instances" action while applying the p
 
 ## Policy Actions
 
-- Sends an email notification.
-- Resizing instances after approval.
+- Sends an email notification
+- Resize EC2 instances after approval
 
 ## Prerequisites
 
-This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
-### Credential configuration
+### Credential Configuration
 
 For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
 
-Provider tag value to match this policy: `aws` , `aws_sts`
+- [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
+  - `ec2:DescribeRegions`
+  - `ec2:DescribeInstances`
+  - `ec2:DescribeTags`
+  - `ec2:DescribeInstanceStatus`*
+  - `ec2:ModifyInstanceAttribute`*
+  - `ec2:StartInstances`*
+  - `ec2:StopInstances`*
+  - `cloudwatch:GetMetricStatistics`
+  - `cloudwatch:ListMetrics`
+  - `sts:GetCallerIdentity`
 
-Required permissions in the provider:
+\* Only required for taking action (resizing); the policy will still function in a read-only capacity without these permissions.
 
-```javascript
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": [
-        "cloudwatch:GetMetricStatistics",
-        "cloudwatch:ListMetrics"
-      ],
-      "Resource": "*",
-      "Condition": {
-        "Bool": {
-          "aws:SecureTransport": "true"
-        }
-      }
-    }
-  ]
-}
-```
+  Example IAM Permission Policy:
 
-```javascript
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": [
-        "ec2:StartInstances",
-        "ec2:StopInstances"
-      ],
-      "Resource": "arn:aws:ec2:*:*:instance/*",
-    },
-    {
-      "Effect": "Allow",
-      "Action": [
-        "ec2:DescribeInstances",
-        "ec2:DescribeRegions"
-      ],
-      "Resource": "*"
-    }
-  ]
-}
-```
+  ```json
+  {
+      "Version": "2012-10-17",
+      "Statement": [
+          {
+              "Effect": "Allow",
+              "Action": [
+                  "ec2:DescribeRegions",
+                  "ec2:DescribeInstances",
+                  "ec2:DescribeTags",
+                  "ec2:DescribeInstanceStatus",
+                  "ec2:ModifyInstanceAttribute",
+                  "ec2:StartInstances",
+                  "ec2:StopInstances",
+                  "cloudwatch:GetMetricStatistics",
+                  "cloudwatch:ListMetrics",
+                  "sts:GetCallerIdentity"
+              ],
+              "Resource": "*"
+          }
+      ]
+  }
+  ```
+
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - `billing_center_viewer`
+
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ## Supported Clouds
 
