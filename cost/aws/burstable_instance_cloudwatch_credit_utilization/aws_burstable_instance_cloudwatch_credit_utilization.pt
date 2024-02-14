@@ -470,10 +470,10 @@ datasource "ds_instances_with_stats" do
   result do
     encoding "json"
     collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
-      field "CPUSurplusCreditsChargedUnit", jmes_path(col_item, "Unit")
-      field "CPUSurplusCreditsChargedMaximum", jmes_path(col_item, "Maximum")
-      field "CPUSurplusCreditsChargedMinimum", jmes_path(col_item, "Minimum")
-      field "CPUSurplusCreditsChargedAverage", jmes_path(col_item, "Average")
+      field "cpuSurplusCreditsChargedUnit", jmes_path(col_item, "Unit")
+      field "cpuSurplusCreditsChargedMaximum", jmes_path(col_item, "Maximum")
+      field "cpuSurplusCreditsChargedMinimum", jmes_path(col_item, "Minimum")
+      field "cpuSurplusCreditsChargedAverage", jmes_path(col_item, "Average")
       field "cpuSurplusCreditBalanceUnit", val(iter_item, "cpuSurplusCreditBalanceUnit")
       field "cpuSurplusCreditBalanceMaximum", val(iter_item, "cpuSurplusCreditBalanceMaximum")
       field "cpuSurplusCreditBalanceMinimum", val(iter_item, "cpuSurplusCreditBalanceMinimum")
@@ -535,149 +535,81 @@ script "js_get_instance_stats", type: "javascript" do
 EOS
 end
 
-datasource "ds_merged_metrics" do
-  run_script $js_merged_metrics, $ds_cloudwatch_cpu_usage, $ds_cloudwatch_cpu_credit_balance, $ds_cloudwatch_cpu_surplus_credit_balance, $ds_cloudwatch_cpu_surplus_credits_charged
+datasource "ds_incident" do
+  run_script $js_incident, $ds_instances_with_stats, $param_cpu_burst_credit_balance, $param_cpu_surplus_credits, $ds_aws_account, $ds_applied_policy
 end
 
+script "js_incident", type: "javascript" do
+  parameters "ds_instances_with_stats", "param_cpu_burst_credit_balance", "param_cpu_surplus_credits", "ds_aws_account", "ds_applied_policy"
+  result "result"
+  code <<-'EOS'
 
-script "js_merged_metrics", type: "javascript" do
-  parameters "ds_cloudwatch_cpu_usage", "ds_cloudwatch_cpu_credit_balance", "ds_cloudwatch_cpu_surplus_credit_balance", "ds_cloudwatch_cpu_surplus_credits_charged"
-  result "merged_results"
-  code <<-EOS
-  var merged_results = []
-  for ( i = 0; i < ds_cloudwatch_cpu_usage.length; i++){
-    var instance_id = ds_cloudwatch_cpu_usage[i].instanceId
-    var cloudwatch_cpu_credit_balance = _.find(ds_cloudwatch_cpu_credit_balance, function(record) { return record.instanceId == instance_id; })
-    var cloudwatch_cpu_surplus_credit_balance = _.find(ds_cloudwatch_cpu_surplus_credit_balance, function(record) { return record.instanceId == instance_id; })
-    var cloudwatch_cpu_surplus_credits_charged = _.find(ds_cloudwatch_cpu_surplus_credits_charged, function(record) { return record.instanceId == instance_id; })
+  result = []
 
-    if (cloudwatch_cpu_credit_balance != null && cloudwatch_cpu_credit_balance !== undefined) {
-      var cloudwatch_cpu_credit_balance_avg = parseFloat(cloudwatch_cpu_credit_balance.avg).toFixed(2)
-      var cloudwatch_cpu_credit_balance_min = parseFloat(cloudwatch_cpu_credit_balance.min).toFixed(2)
-      var cloudwatch_cpu_credit_balance_max = parseFloat(cloudwatch_cpu_credit_balance.max).toFixed(2)
-    } else {
-      var cloudwatch_cpu_credit_balance_avg = "N/A"
-      var cloudwatch_cpu_credit_balance_min = "N/A"
-      var cloudwatch_cpu_credit_balance_max = "N/A"
+  _.each(ds_instances_with_stats, function(instance) {
+    include_instance = false
+    tags = []
+    resourceName = ""
+
+    if (instance['tags'] != undefined && instance['tags'] != null) {
+      _.each(instance['tags'], function(tag) {
+        tags.push([tag['key'], tag['value']].join('='))
+        if (tag['key'].toLowerCase() == 'name') { resourceName = tag['value'] }
+      })
     }
 
-    if (cloudwatch_cpu_surplus_credit_balance != null && cloudwatch_cpu_surplus_credit_balance !== undefined) {
-      var cloudwatch_cpu_surplus_credit_balance_avg = parseFloat(cloudwatch_cpu_surplus_credit_balance.avg).toFixed(2)
-      var cloudwatch_cpu_surplus_credit_balance_min = parseFloat(cloudwatch_cpu_surplus_credit_balance.min).toFixed(2)
-      var cloudwatch_cpu_surplus_credit_balance_max = parseFloat(cloudwatch_cpu_surplus_credit_balance.max).toFixed(2)
-    } else {
-      var cloudwatch_cpu_surplus_credit_balance_avg = "N/A"
-      var cloudwatch_cpu_surplus_credit_balance_min = "N/A"
-      var cloudwatch_cpu_surplus_credit_balance_max = "N/A"
+    new_instance = {
+      resourceID: instance['instanceId'],
+      region: instance['region'],
+      imageId: instance['imageId'],
+      resourceType: instance['resourceType'],
+      resourceTypeInfo: instance['resourceTypeInfo'],
+      platform: instance['platform'],
+      privateDnsName: instance['privateDnsName'],
+      hostname: instance['privateDnsName'].split('.')[0],
+      launchTime: instance['launchTime'],
+      tags: instance['tags'],
+      cpuUnit: instance['cpuUnit'],
+      cpuMaximum: instance['cpuMaximum'],
+      cpuMinimum: instance['cpuMinimum'],
+      cpuAverage: instance['cpuAverage'],
+      cpuCreditBalanceUnit: instance['cpuCreditBalanceUnit'],
+      cpuCreditBalanceMaximum: instance['cpuCreditBalanceMaximum'],
+      cpuCreditBalanceMinimum: instance['cpuCreditBalanceMinimum'],
+      cpuCreditBalanceAverage: instance['cpuCreditBalanceAverage'],
+      cpuSurplusCreditBalanceUnit: instance['cpuSurplusCreditBalanceUnit'],
+      cpuSurplusCreditBalanceMaximum: instance['cpuSurplusCreditBalanceMaximum'],
+      cpuSurplusCreditBalanceMinimum: instance['cpuSurplusCreditBalanceMinimum'],
+      cpuSurplusCreditBalanceAverage: instance['cpuSurplusCreditBalanceAverage'],
+      cpuSurplusCreditsChargedUnit: instance['cpuSurplusCreditsChargedUnit'],
+      cpuSurplusCreditsChargedMaximum: instance['cpuSurplusCreditsChargedMaximum'],
+      cpuSurplusCreditsChargedMinimum: instance['cpuSurplusCreditsChargedMinimum'],
+      cpuSurplusCreditsChargedAverage: instance['cpuSurplusCreditsChargedAverage'],
+      accountID: ds_aws_account['id'],
+      accountName: ds_aws_account['name'],
+      policy_name: ds_applied_policy['name'],
+      resourceName: resourceName,
+      tags: tags.join(', '),
+      service: "EC2"
     }
 
-    if (cloudwatch_cpu_surplus_credits_charged != null && cloudwatch_cpu_surplus_credits_charged !== undefined) {
-      var cloudwatch_cpu_surplus_credits_charged_avg = parseFloat(cloudwatch_cpu_surplus_credits_charged.avg).toFixed(2)
-      var cloudwatch_cpu_surplus_credits_charged_min = parseFloat(cloudwatch_cpu_surplus_credits_charged.min).toFixed(2)
-      var cloudwatch_cpu_surplus_credits_charged_max = parseFloat(cloudwatch_cpu_surplus_credits_charged.max).toFixed(2)
-    } else {
-      var cloudwatch_cpu_surplus_credits_charged_avg = "N/A"
-      var cloudwatch_cpu_surplus_credits_charged_min = "N/A"
-      var cloudwatch_cpu_surplus_credits_charged_max = "N/A"
-    }
-
-    merged_results.push(
-      {
-        "region": ds_cloudwatch_cpu_usage[i].region,
-        "instanceId": ds_cloudwatch_cpu_usage[i].instanceId,
-        "instanceType": ds_cloudwatch_cpu_usage[i].instanceType,
-        "instance_type_info": ds_cloudwatch_cpu_usage[i].instance_type_info,
-        "privateDnsName": ds_cloudwatch_cpu_usage[i].privateDnsName,
-        "hostname": ds_cloudwatch_cpu_usage[i].privateDnsName.split('.')[0],
-        "tag_set": ds_cloudwatch_cpu_usage[i].tag_set,
-        "cpu_minimum": parseFloat(ds_cloudwatch_cpu_usage[i].cpu_minimum).toFixed(2),
-        "cpu_maximum": parseFloat(ds_cloudwatch_cpu_usage[i].cpu_maximum).toFixed(2),
-        "cpu_average": parseFloat(ds_cloudwatch_cpu_usage[i].cpu_average).toFixed(2),
-        "cloudwatch_cpu_credit_balance_avg": cloudwatch_cpu_credit_balance_avg,
-        "cloudwatch_cpu_credit_balance_max": cloudwatch_cpu_credit_balance_max,
-        "cloudwatch_cpu_credit_balance_min": cloudwatch_cpu_credit_balance_min,
-        "cloudwatch_cpu_surplus_credit_balance_avg": cloudwatch_cpu_surplus_credit_balance_avg,
-        "cloudwatch_cpu_surplus_credit_balance_max": cloudwatch_cpu_surplus_credit_balance_max,
-        "cloudwatch_cpu_surplus_credit_balance_min": cloudwatch_cpu_surplus_credit_balance_min,
-        "cloudwatch_cpu_surplus_credits_charged_avg": cloudwatch_cpu_surplus_credits_charged_avg,
-        "cloudwatch_cpu_surplus_credits_charged_min": cloudwatch_cpu_surplus_credits_charged_min,
-        "cloudwatch_cpu_surplus_credits_charged_max": cloudwatch_cpu_surplus_credits_charged_max
+    if (instance['resourceTypeInfo']['burst_info'] != undefined) {
+      if (param_cpu_burst_credit_balance == "true" && instance['cpuCreditBalanceMinimum'] != 'N/A' && instance['cpuCreditBalanceMinimum'] == instance['resourceTypeInfo']['burst_info']['max_earnable_credits'] && instance['resourceTypeInfo']['down'] != undefined) {
+        include_instance = true
+        new_instance['newResourceType'] = instance['resourceTypeInfo']['down']
+        new_instance['maxEarnableCredits'] = instance['resourceTypeInfo']['burst_info']['max_earnable_credits']
       }
-    )
-  }
-  merged_results = _.sortBy(merged_results, 'region');
+    }
+
+    if (param_cpu_surplus_credits != -1 && instance['cpuSurplusCreditBalanceMinimum'] != "N/A" && instance['cpuSurplusCreditBalanceMinimum'] >= param_cpu_surplus_credits && instance['resourceTypeInfo']['up'] != undefined) {
+      include_instance = true
+      new_instance['newResourceType'] = instance['resourceTypeInfo']['up']
+      new_instance['maxEarnableCredits'] = instance['resourceTypeInfo']['burst_info']['max_earnable_credits']
+    }
+
+    if (include_instance) { result.push(new_instance) }
+  })
 EOS
-end
-
-datasource "ds_check_merged_metrics" do
-  run_script $js_check_merged_metrics, $ds_merged_metrics, $param_cpu_burst_credit_balance, $param_cpu_surplus_credits, $ds_get_caller_identity
-end
-
-script "js_check_merged_metrics", type: "javascript" do
-  parameters "ds_merged_metrics", "param_cpu_burst_credit_balance", "param_cpu_surplus_credits", "ds_get_caller_identity"
-  result "merged_results"
-  code <<-EOS
-    var merged_results = []
-    _.each(ds_merged_metrics,function(result) {
-      if ( result.instance_type_info.burst_info !== undefined ){
-        if ( param_cpu_burst_credit_balance == "true" && (result.cloudwatch_cpu_credit_balance_min != "N/A") && (result.cloudwatch_cpu_credit_balance_min == result.instance_type_info.burst_info.max_earnable_credits)){
-          merged_results.push(
-            {
-              "accountId": ds_get_caller_identity[0]['account'],
-              "region": result.region,
-              "id": result.instanceId,
-              "instanceType": result.instanceType,
-              "instance_type_info": result.instance_type_info,
-              "privateDnsName": result.privateDnsName,
-              "hostname": result.hostname,
-              "tag_set": result.tag_set,
-              "cpu_minimum": result.cpu_minimum,
-              "cpu_maximum": result.cpu_maximum,
-              "cpu_average": result.cpu_average,
-              "cloudwatch_cpu_credit_balance_avg": result.cloudwatch_cpu_credit_balance_avg,
-              "cloudwatch_cpu_credit_balance_max": result.cloudwatch_cpu_credit_balance_max,
-              "cloudwatch_cpu_credit_balance_min": result.cloudwatch_cpu_credit_balance_min,
-              "cloudwatch_cpu_surplus_credit_balance_avg": result.cloudwatch_cpu_surplus_credit_balance_avg,
-              "cloudwatch_cpu_surplus_credit_balance_max": result.cloudwatch_cpu_surplus_credit_balance_max,
-              "cloudwatch_cpu_surplus_credit_balance_min": result.cloudwatch_cpu_surplus_credit_balance_min,
-              "cloudwatch_cpu_surplus_credits_charged_avg": result.cloudwatch_cpu_surplus_credits_charged_avg,
-              "cloudwatch_cpu_surplus_credits_charged_min": result.cloudwatch_cpu_surplus_credits_charged_min,
-              "cloudwatch_cpu_surplus_credits_charged_max": result.cloudwatch_cpu_surplus_credits_charged_max,
-              "next_instance_size": result.instance_type_info["down"]
-            }
-          )
-        }
-      }
-
-      if ( param_cpu_surplus_credits != -1 && (result.cloudwatch_cpu_surplus_credit_balance_min != "N/A") && (result.cloudwatch_cpu_surplus_credit_balance_min >= param_cpu_surplus_credits)){
-        merged_results.push(
-          {
-            "accountId": ds_get_caller_identity[0]['account'],
-            "region": result.region,
-            "id": result.instanceId,
-            "instanceType": result.instanceType,
-            "instance_type_info": result.instance_type_info,
-            "privateDnsName": result.privateDnsName,
-            "hostname": result.hostname,
-            "tag_set": result.tag_set,
-            "cpu_minimum": result.cpu_minimum,
-            "cpu_maximum": result.cpu_maximum,
-            "cpu_average": result.cpu_average,
-            "cloudwatch_cpu_credit_balance_avg": result.cloudwatch_cpu_credit_balance_avg,
-            "cloudwatch_cpu_credit_balance_max": result.cloudwatch_cpu_credit_balance_max,
-            "cloudwatch_cpu_credit_balance_min": result.cloudwatch_cpu_credit_balance_min,
-            "cloudwatch_cpu_surplus_credit_balance_avg": result.cloudwatch_cpu_surplus_credit_balance_avg,
-            "cloudwatch_cpu_surplus_credit_balance_max": result.cloudwatch_cpu_surplus_credit_balance_max,
-            "cloudwatch_cpu_surplus_credit_balance_min": result.cloudwatch_cpu_surplus_credit_balance_min,
-            "cloudwatch_cpu_surplus_credits_charged_avg": result.cloudwatch_cpu_surplus_credits_charged_avg,
-            "cloudwatch_cpu_surplus_credits_charged_min": result.cloudwatch_cpu_surplus_credits_charged_min,
-            "cloudwatch_cpu_surplus_credits_charged_max": result.cloudwatch_cpu_surplus_credits_charged_max,
-            "next_instance_size": result.instance_type_info["up"]
-          }
-        )
-      }
-    })
-  EOS
 end
 
 ###############################################################################
@@ -685,55 +617,72 @@ end
 ###############################################################################
 
 policy "pol_utilization" do
-  validate $ds_check_merged_metrics do
-    summary_template "AWS Account ID: {{with index data 0}}{{ .accountId }}{{end}} - {{ len data }} rows containing instance CloudWatch utilization data"
+  validate_each $ds_incident do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Actionable EC2 Instances Found"
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    escalate $esc_resize_instances
+    hash_exclude "tags"
     export do
-      resource_level true
-      field "accountId" do
-        label "Account Id"
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "resourceType" do
+        label "Instance Size"
+      end
+      field "newResourceType" do
+        label "Recommended Instance Size"
       end
       field "region" do
         label "Region"
       end
-      field "id" do
-        label "Instance ID"
-      end
-      field "instanceType" do
-        label "Instance Type"
+      field "platform" do
+        label "Platform"
       end
       field "hostname" do
         label "Hostname"
       end
-      field "privateDnsName" do
-        label "Private DNS Name"
+      field "launchTime" do
+        label "Launch Time"
       end
-      field "cpu_maximum" do
+      field "cpuMaximum" do
         label "CPU Maximum %"
       end
-      field "cpu_average" do
+      field "cpuAverage" do
         label "CPU Average %"
       end
-      field "cloudwatch_cpu_credit_balance_min" do
+      field "cpuCreditBalanceMinimum" do
         label "CPU Credit Balance Minimum"
       end
-      field "cloudwatch_cpu_surplus_credit_balance_min" do
+      field "cpuSurplusCreditBalanceMinimum" do
         label "CPU Surplus Credit Balance Minimum"
       end
-      field "cloudwatch_cpu_surplus_credits_charged_max" do
+      field "cpuSurplusCreditsChargedMaximum" do
         label "CPU Surplus Credit Charged Maximum"
       end
-      field "instance_type_info_burst_info_max_earnable_credits" do
+      field "maxEarnableCredits" do
         label "Max Earnable Credits"
-        path "instance_type_info.burst_info.max_earnable_credits"
       end
-      field "next_instance_size" do
-        label "Resize Instance To"
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
       end
     end
-
-    escalate $esc_email
-    escalate $esc_resize_instance
-    check eq(size(data), 0)
   end
 end
 
@@ -748,189 +697,290 @@ escalation "esc_email" do
   email $param_email
 end
 
-escalation "esc_resize_instance" do
+escalation "esc_resize_instances" do
   automatic contains($param_automatic_action, "Resize Instances")
   label "Resize Instances"
-  description "Resize selected instances"
-  run "resize_instances", data, $param_cooldown_days, rs_optima_host
+  description "Approval to resize all selected instances"
+  run "resize_instances", data
 end
-
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define resize_instances($data,$param_cooldown_days, $$rs_optima_host) do
-  foreach $item in $data do
+# Core CWF function to resize instances
+define resize_instances($data) do
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      # Get the initial state of the instance before we take any action
+      call get_instance_state($instance) retrieve $initial_state
 
-    @current_instance = rs_cm.instances.empty()
-    @instance = rs_cm.instances.index(filter: ["resource_uid=="+$item["id"]])
-    @cloud = @instance.cloud()
-    @next_instance = @instance
-
-    if $item["next_instance_size"] != "N/A"
-      sub on_error: rollback($item, @next_instance, @cloud) do
-        call sys_log('Instance Resizing',$item['id'])
-        call stop_instance(@instance, @cloud, $item) retrieve @next_instance
-
-        @next_instance = first(@cloud.instances(filter: ['resource_uid=='+$item['id']]))
-        @new_instance_type = first(@cloud.instance_types(filter: ["name=="+$item["next_instance_size"]]))
-        @next_instance.update(instance: { instance_type_href: @new_instance_type.href })
-
-        call sys_log('Instance Resized', @new_instance_type.name)
-        call start_instance(@next_instance, @cloud, $item) retrieve @next_instance
-      end
-
-      sub task_label:"Adding Cooldown Tag" do
-        $date = now() + (60*60*24)*$param_cooldown_days
-        $format_string = "%Y/%m/%d %H:%M:%S"
-        $formatted_time = strftime($date, $format_string)
-        # add the cooldown tag, but
-        # dont add/modify the cooldown tag if it already exists
-        $cooldown_tag = tag_value(@next_instance,'rs_downsize:cooldown')
-        call sys_log('cooldown_tag',$cooldown_tag)
-
-        if !$cooldown_tag
-          task_label("Adding Cooldown Tag " + $item['id'])
-          rs_cm.tags.multi_add(resource_hrefs: [@next_instance.href], tags: ["rs_downsize:cooldown="+$formatted_time])
-          call sys_log('Adding Cooldown Tag',$formatted_time)
+      # Check to see if the instance is in a state that we can actual change instance type
+      if $initial_state != "terminated" && $initial_state != "pending"
+        # Stop the instance if it's not already stopped
+        if $initial_state != "stopped"
+          call stop_instance($instance)
         end
-        @current_instance = @next_instance
-      end
-    end
-  end
-end
 
-define rollback($item, @instance, @cloud) do
-  sub task_label:"Rolling Back to Original Instance Type" do
-    ## Logic to revert the instance back to its original instance type
-    call sys_log('Instance Rollingback', $item['id'])
-    @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['id'] ]))
+        # Resize the instance
+        call resize_instance($instance)
 
-    sub task_label:"Setting Error Tag" do
-      $msg = split($_error["message"], "\n")
-      foreach $i in $msg do
-        if $i =~ "CloudException"
-          $tag = "rs_policy_action:downsize_error_info=" + $i
-          rs_cm.tags.multi_add(tags: [$tag], resource_hrefs: [@instance.href])
+        # Start the instance if it was running before we stopped it
+        if $initial_state == "running"
+          call start_instance($instance)
         end
       end
-      call sys_log(join(["Resize Error: ",@instance.name]), to_s($msg))
-    end
-
-    $state = @instance.state
-    $current_instance_type = @instance.instance_type().name
-    $started_condition = "/^(stranded|stranded in booting|error|operational|running)$/"
-    if $current_instance_type == $item["instanceType"]
-      # Instance is still the original size, just make sure it's running
-      if $state =~ $started_condition
-        # instance is running nothing to do
-      else
-        # instance is not running, start it
-        call start_instance(@instance, @cloud, $item) retrieve @instance
-      end
-    else
-      # Instance is the new size, roll back
-      call sys_log('Instance Resizing', $item['id'])
-      call stop_instance(@instance, @cloud, $item) retrieve @instance
-
-      @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['id']]))
-      @new_instance_type = first(@cloud.instance_types(filter: ["name=="+$item["instanceType"]]))
-      @instance.update(instance: { instance_type_href: @new_instance_type.href })
-
-      call sys_log('Instance Resized', @new_instance_type.name)
-      call start_instance(@instance, @cloud, $item) retrieve @instance
     end
   end
-  $_error_behavior = "skip"
-end
 
-define stop_instance(@instance, @cloud, $item) return @instance do
-  task_label("Stopping instance " + $item['id'])
-  @instance.stop()
-  task_label("Sleeping until instance stopped " + $item['id'])
-  $wake_condition = "/^(stopped|terminated|inactive|error|provisioned)$/"
-  $state = ''
-  while $state !~ $wake_condition do
-    sub on_error: retry, timeout: 20m, on_timeout: skip do
-      # find the resource by resource_uid because the href may have changed after resize.
-      @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['id']]))
-      call sys_log('Waiting for instance stop state: ' + @instance.name,to_s(to_object(@instance)))
-      $state = @instance.state
-      call sys_log('Instance stop state',$state)
-    end
-  end
-  task_label("Instance Stopped " + $item['id'])
-  call sys_log('Instance Stopped', $item['id'])
-end
-
-define start_instance(@instance, @cloud, $item) return @instance do
-  task_label("Starting instance " + $item['id'])
-  @instance.start()
-  $wake_condition = "/^(stranded|stranded in booting|error|operational|running)$/"
-  $state = ''
-  task_label("Sleeping until instance started " + @next_instance.name)
-  while $state !~ $wake_condition do
-    sub on_error: retry, timeout: 20m, on_timeout: skip do
-      # find the resource by resource_uid because the href may have changed after resize.
-      @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['id']]))
-      call sys_log('waiting for instance start state', to_s(to_object(@instance)))
-      $state = @instance.state
-      call sys_log('Instance start state', $state)
-    end
-  end
-  task_label("Instance Started " + $item['id'])
-  call sys_log('Instance Started', $item['id'])
-end
-
-# remove the cooldown tag if the $param_cooldown_days has exceeded
-define delete_cooldown_tag($data,$param_cooldown_days) do
-  foreach $item in $data['cooldown_instances'] do
-    @cloud = rs_cm.get(href: $item['cloud_href'])
-    # find the resource by resource_uid because the href may have changed after resize.
-    @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['instanceId'] ]))
-    $cooldown_tag = tag_value(@instance,'rs_downsize:cooldown')
-    call sys_log('cooldown_tag',$cooldown_tag)
-    $cooldown_time = to_d($cooldown_tag)
-    call sys_log('cooldown_time',to_s($cooldown_time))
-    # if the cooldown_time has passed delete the cooldown tag
-    if ($cooldown_time - now()) / 86400 >= $param_cooldown_days
-      rs_cm.tags.multi_delete(resource_hrefs: [@instance.href], tags: 'rs_downsize:cooldown')
-      call sys_log('deleted cooldown tag',$cooldown_value)
-    end
+  # If we encountered any errors, use `raise` to mark the CWF process as errored
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
   end
 end
 
-define sys_log($subject, $detail) do
-  # Create empty errors array if doesn't already exist
+
+# CWF function to start an instance
+define start_instance($instance) return $response do
+  task_label("Starting Instance: " + $instance["id"])
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    href: "/",
+    host: "ec2." + $instance['region'] + ".amazonaws.com",
+    query_strings: {
+      "Action": "StartInstances",
+      "Version": "2016-11-15",
+      "InstanceId.1": $instance["id"]
+    }
+  )
+
+  call handle_response($response)
+
+  task_label("Checking for expected response code for Starting Instance: " + $instance["id"])
+
+  if $response["code"] != 202 && $response["code"] != 200
+    raise 'Unexpected response Starting Instance: '+to_json($response)
+  else
+    task_label("Successful Starting Instance: " + $instance["id"])
+    call get_instance_state($instance) retrieve $instance_state
+
+    while $instance_state != "running" do
+      call get_instance_state($instance) retrieve $instance_state
+      task_label("Waiting for Start.. Instance State: " + $instance["id"] +" "+ $instance_state)
+      sleep(10)
+    end
+
+    task_label("Completed Starting Instance: " + $instance["id"])
+  end
+end
+
+# CWF function to stop an instance
+define stop_instance($instance) return $response do
+  task_label("Stopping Instance: " + $instance["id"])
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    href: "/",
+    host: "ec2." + $instance['region'] + ".amazonaws.com",
+    query_strings: {
+      "Action": "StopInstances",
+      "Version": "2016-11-15",
+      "InstanceId.1": $instance["id"]
+    }
+  )
+
+  call handle_response($response)
+
+  task_label("Checking for expected response code for Stop Instance: " + $instance["id"])
+
+  if $response["code"] != 202 && $response["code"] != 200
+    raise 'Unexpected response Stop Instance: '+to_json($response)
+  else
+    task_label("Successful Stop Instance: " + $instance["id"])
+    call get_instance_state($instance) retrieve $instance_state
+
+    while $instance_state != "stopped" do
+      call get_instance_state($instance) retrieve $instance_state
+      task_label("Waiting for Stop.. Instance State: " + $instance["id"] +" "+ $instance_state)
+      sleep(10)
+    end
+
+    task_label("Completed Stop Instance: " + $instance["id"])
+  end
+end
+
+# CWF function to resize an instance
+define resize_instance($instance) return $response do
+  task_label("Modifying Instance Type: " + $instance["id"])
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    href: "/",
+    host: "ec2." + $instance["region"] + ".amazonaws.com",
+    query_strings: {
+      "Action": "ModifyInstanceAttribute",
+      "Version": "2016-11-15",
+      "InstanceId": $instance["id"],
+      "InstanceType.Value": $instance["newResourceType"]
+    }
+  )
+
+  call handle_response($response)
+
+  task_label("Checking for expected response code for Modify Instance: " + $instance["id"])
+
+  if $response["code"] != 202 && $response["code"] != 200
+    raise 'Unexpected response Modify Instance: '+to_json($response)
+  else
+    task_label("Successful Modify Instance: " + $instance["id"])
+    call get_instance_state($instance) retrieve $instance_state
+
+    while $instance_state != "stopped" do
+      call get_instance_state($instance) retrieve $instance_state
+      task_label("Waiting for \"stopped\".. Instance State: " + $instance["id"] +" "+ $instance_state)
+      sleep(10)
+    end
+
+    task_label("Completed Modify Instance: " + $instance["id"])
+  end
+end
+
+# CWF function to get the current state of an instance
+define get_instance_state($instance) return $instance_state do
+  task_label("Getting Instance State: " + $instance["id"])
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    href: "/",
+    host: "ec2." + $instance["region"] + ".amazonaws.com",
+    query_strings: {
+      "Action": "DescribeInstanceStatus",
+      "Version": "2016-11-15",
+      "IncludeAllInstances": "true",
+      "InstanceId.1": $instance["id"]
+    }
+  )
+
+  call handle_response($response)
+
+  $instance_state = $response["body"]["DescribeInstanceStatusResponse"]["instanceStatusSet"]["item"]["instanceState"]["name"]
+end
+
+# CWF function to handle errors
+define handle_error() do
   if !$$errors
     $$errors = []
   end
-  # Check if debug is enabled
-  if $$debug
-    # Append to global $$errors
-    # This is the suggested way to capture errors
-    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
-    # If Flexera NAM Zone, create audit_entries [to be deprecated]
-    # This is the legacy method for capturing errors and only supported on Flexera NAM
-    if $$rs_optima_host == "api.optima.flexeraeng.com"
-      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
-      $task_label = "Creating audit entry for " + $subject
-      sub task_label: $task, on_error: skip_error_and_append($task) do
-        rs_cm.audit_entries.create(
-          notify: "None",
-          audit_entry: {
-            auditee_href: @@account,
-            summary: $subject,
-            detail: $detail
-          }
-        )
-      end # End sub on_error
-    end # End if rs_optima_host
-  end # End if debug is enabled
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
 end
 
-define skip_error_and_append($subject) do
-  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
-  $_error_behavior = "skip"
+# CWF function to handle responses
+define handle_response($response) do
+  if !$$all_responses
+    $$all_responses = []
+  end
+  # Convert response object to JSON string.  Easier to interpret
+  $$all_responses << to_json($response)
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
 end
