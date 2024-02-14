@@ -577,6 +577,9 @@ script "js_instance_recommendations", type: "javascript" do
         "to ", newResourceType
       ].join('')
 
+      cpu_surplus_credits = param_cpu_surplus_credits
+      if (cpu_surplus_credits == -1) { cpu_surplus_credits = "Ignored" }
+
       result.push({
         resourceID: instance['instanceId'],
         region: instance['region'],
@@ -612,7 +615,9 @@ script "js_instance_recommendations", type: "javascript" do
         newResourceType: newResourceType,
         maxEarnableCredits: instance['resourceTypeInfo']['burst_info']['max_earnable_credits'],
         service: "EC2",
-        message: ""
+        param_cpu_surplus_credits: cpu_surplus_credits,
+        param_cpu_burst_credit_balance: param_cpu_burst_credit_balance,
+        param_cooldown_days: param_cooldown_days
       })
     }
   })
@@ -621,16 +626,11 @@ script "js_instance_recommendations", type: "javascript" do
   result = _.sortBy(result, 'region')
 
   // Add a dummy entry to ensure that the policy's check statement executes at least once
-  result.push({ resourceID: "", tags: "", policy_name: "", message: "" })
-
-  cpu_surplus_credits = param_cpu_surplus_credits
-  if (cpu_surplus_credits == -1) { cpu_surplus_credits = "Ignored" }
-
-  result[0]['message'] = "The below results were produced with the following settings:\n\n"
-  result[0]['message'] += "CPU Surplus Credits: " + cpu_surplus_credits + "\n"
-  result[0]['message'] += "Check Burst Credit Balance: " + param_cpu_burst_credit_balance + "\n"
-  result[0]['message'] += "Cooldown Days: " + param_cooldown_days + "\n\n"
-  result[0]['message'] += "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+  result.push({
+    resourceID: "", tags: "", policy_name: "",
+    param_cpu_surplus_credits: "", param_cooldown_days: "",
+    param_cpu_burst_credit_balance: ""
+  })
 EOS
 end
 
@@ -641,11 +641,17 @@ end
 policy "pol_utilization" do
   validate_each $ds_instance_recommendations do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Actionable EC2 Instances Found"
-    detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
+    detail_template <<-EOS
+The below results were produced with the following settings:\n
+**CPU Surplus Credits:** {{ with index data 0 }}{{ .param_cpu_surplus_credits }}{{ end }}\\
+**Check Burst Credit Balance:** {{ with index data 0 }}{{ .param_cpu_burst_credit_balance }}{{ end }}\\
+**Cooldown Days:** {{ with index data 0 }}{{ .param_cooldown_days }}{{ end }}\n
+The above settings can be modified by editing the applied policy and changing the appropriate parameters.
+    EOS
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     escalate $esc_resize_instances
-    hash_exclude "tags"
+    hash_exclude "tags", "param_cpu_surplus_credits", "param_cpu_burst_credit_balance", "param_cooldown_days"
     export do
       resource_level true
       field "accountID" do
