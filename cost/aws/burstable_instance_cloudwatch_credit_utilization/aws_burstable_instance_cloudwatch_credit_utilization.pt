@@ -536,11 +536,11 @@ EOS
 end
 
 datasource "ds_instance_recommendations" do
-  run_script $js_instance_recommendations, $ds_instances_with_stats, $param_cpu_burst_credit_balance, $param_cpu_surplus_credits, $ds_aws_account, $ds_applied_policy
+  run_script $js_instance_recommendations, $ds_instances_with_stats, $param_cpu_burst_credit_balance, $param_cpu_surplus_credits, $param_cooldown_days, $ds_aws_account, $ds_applied_policy
 end
 
 script "js_instance_recommendations", type: "javascript" do
-  parameters "ds_instances_with_stats", "param_cpu_burst_credit_balance", "param_cpu_surplus_credits", "ds_aws_account", "ds_applied_policy"
+  parameters "ds_instances_with_stats", "param_cpu_burst_credit_balance", "param_cpu_surplus_credits", "param_cooldown_days", "ds_aws_account", "ds_applied_policy"
   result "result"
   code <<-'EOS'
   result = []
@@ -570,7 +570,7 @@ script "js_instance_recommendations", type: "javascript" do
       }
 
       recommendationDetails = [
-        "Change instance type of EC2 instance ", instance["resourceID"], " ",
+        "Change instance type of EC2 instance ", instance["instanceId"], " ",
         "in AWS Account ", ds_aws_account['name'], " ",
         "(", ds_aws_account['id'], ") ",
         "from ", instance["resourceType"], " ",
@@ -611,10 +611,26 @@ script "js_instance_recommendations", type: "javascript" do
         recommendationDetails: recommendationDetails,
         newResourceType: newResourceType,
         maxEarnableCredits: instance['resourceTypeInfo']['burst_info']['max_earnable_credits'],
-        service: "EC2"
+        service: "EC2",
+        message: ""
       })
     }
   })
+
+  result = _.sortBy(result, 'resourceID')
+  result = _.sortBy(result, 'region')
+
+  // Add a dummy entry to ensure that the policy's check statement executes at least once
+  result.push({ resourceID: "", tags: "", policy_name: "", message: "" })
+
+  cpu_surplus_credits = param_cpu_surplus_credits
+  if (cpu_surplus_credits == -1) { cpu_surplus_credits = "Ignored" }
+
+  result[0]['message'] = "The below results were produced with the following settings:\n\n"
+  result[0]['message'] += "CPU Surplus Credits: " + cpu_surplus_credits + "\n"
+  result[0]['message'] += "Check Burst Credit Balance: " + param_cpu_burst_credit_balance + "\n"
+  result[0]['message'] += "Cooldown Days: " + param_cooldown_days + "\n\n"
+  result[0]['message'] += "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
 EOS
 end
 
@@ -625,6 +641,7 @@ end
 policy "pol_utilization" do
   validate_each $ds_instance_recommendations do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Actionable EC2 Instances Found"
+    detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     escalate $esc_resize_instances
