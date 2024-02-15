@@ -66,6 +66,34 @@ datasource "ds_self_policy" do
   end
 end
 
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
 datasource "ds_applied_policies" do
   request do
     auth $auth_flexera
@@ -155,11 +183,11 @@ datasource "ds_catalog_policies" do
 end
 
 datasource "ds_outdated_policies" do
-  run_script $js_outdated_policies, $ds_applied_policies, $ds_catalog_policies, $ds_policy_aggregates, $ds_self_policy, $param_ignore_list, rs_org_id, rs_project_id, policy_id
+  run_script $js_outdated_policies, $ds_applied_policies, $ds_catalog_policies, $ds_policy_aggregates, $ds_self_policy, $ds_flexera_api_hosts, $param_ignore_list, rs_org_id, rs_project_id, policy_id
 end
 
 script "js_outdated_policies", type: "javascript" do
-  parameters "ds_applied_policies", "ds_catalog_policies", "ds_policy_aggregates", "ds_self_policy", "param_ignore_list", "rs_org_id", "rs_project_id", "policy_id"
+  parameters "ds_applied_policies", "ds_catalog_policies", "ds_policy_aggregates", "ds_self_policy", "ds_flexera_api_hosts", "param_ignore_list", "rs_org_id", "rs_project_id", "policy_id"
   result "result"
   code <<-'EOS'
   aggregate_object = {}
@@ -211,7 +239,7 @@ script "js_outdated_policies", type: "javascript" do
 
   combined_data = _.map(filtered_policies, function(policy) {
     catalog_policy = catalog_object[policy['published_template']['name']]
-    policy_url = "https://app.flexera.com/orgs/" + rs_org_id + "/automation/applied-policies/projects/" + rs_project_id + "?policyId=" + policy['id']
+    policy_url = "https://" + ds_flexera_api_hosts['flexera'] + "/orgs/" + rs_org_id + "/automation/applied-policies/projects/" + rs_project_id + "?policyId=" + policy['id']
 
     rec_verb = "Update"
 
