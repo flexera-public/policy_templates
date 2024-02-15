@@ -1,5 +1,22 @@
 # Changelog
 
+## v4.0
+
+- Several parameters altered to be more descriptive and human-readable
+- Added ability to specify custom tag keys for tracking instance schedules
+- Added ability to use subscription filter as an allow list or a deny list
+- Added ability to filter resources by multiple tag key:value pairs
+- Added ability to filter resources by region
+- Added ability for user to start and stop instances directly
+- Normalized incident export to be consistent with other policies
+- Added additional fields to incident export for additional context
+- Streamlined code for better readability and faster execution
+- Policy action error logging modernized and now works as expected in EU/APAC
+
+## v3.1
+
+- Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.
+
 ## v3.0
 
 - Added logic required for "Meta Policy" use-cases

@@ -51,6 +51,7 @@ These templates can generate savings estimates for your environment.
 - [Azure Old Snapshots](./cost/azure/old_snapshots)
 - [Azure Reserved Instances Recommendations](./cost/azure/reserved_instances/recommendations)
 - [Azure Rightsize Compute Instances](./cost/azure/rightsize_compute_instances)
+- [Azure Rightsize Managed Disks](./cost/azure/rightsize_managed_disks)
 - [Azure Rightsize SQL Databases](./cost/azure/rightsize_sql_instances)
 - [Azure Savings Plan Recommendations](./cost/azure/savings_plan/recommendations)
 - [Azure Superseded Compute Instances](./cost/azure/superseded_instances)
@@ -153,12 +154,6 @@ These templates can generate savings estimates for your environment.
 
 - [Billing Center Access Report](./compliance/billing_center_access_report)
 
-#### GCE
-
-- Compute
-
-  - [Google Long-stopped instances](./compliance/google/long_stopped_instances)
-
 #### GitHub
 
 - [GitHub.com Available Seats Report](./compliance/github/available_seats)
@@ -172,6 +167,10 @@ These templates can generate savings estimates for your environment.
 #### Google
 
 - [Google Unlabeled Resources](./compliance/google/unlabeled_resources)
+
+- Compute
+
+  - [Google Long Stopped VM Instances](./compliance/google/long_stopped_instances)
 
 ### Policy Templates for Cost
 
@@ -218,11 +217,11 @@ These templates can generate savings estimates for your environment.
 - S3
 
   - [AWS Bucket Size Check](./cost/aws/s3_bucket_size)
-  - [AWS Object Storage Optimization](./cost/aws/object_storage_optimization)
   - [AWS S3 Bucket Intelligent Tiering Check](./cost/aws/s3_storage_policy)
 
 - Storage
 
+  - [AWS Object Storage Optimization](./cost/aws/object_storage_optimization)
   - [AWS Old Snapshots](./cost/aws/old_snapshots)
   - [Turbonomic Delete Unattached Volumes Recommendations AWS](./cost/turbonomics/delete_unattached_volumes/aws)
 
@@ -233,10 +232,6 @@ These templates can generate savings estimates for your environment.
   - [Turbonomic Rightsize Virtual Volumes Recommendations AWS](./cost/turbonomics/rightsize_virtual_volumes_recommendations/aws)
 
 #### Azure
-
-- Blob Store
-
-  - [Azure Blob Storage Optimization](./cost/azure/object_storage_optimization)
 
 - Compute
 
@@ -259,6 +254,10 @@ These templates can generate savings estimates for your environment.
 
   - [Azure Databricks Rightsize Compute Instances](./cost/azure/databricks/rightsize_compute)
 
+- Managed Disks
+
+  - [Azure Rightsize Managed Disks](./cost/azure/rightsize_managed_disks)
+
 - Marketplace
 
   - [Azure New Marketplace Products](./operational/azure/marketplace_new_products)
@@ -270,6 +269,7 @@ These templates can generate savings estimates for your environment.
 
 - Storage
 
+  - [Azure Blob Storage Optimization](./cost/azure/blob_storage_optimization)
   - [Azure Old Snapshots](./cost/azure/old_snapshots)
   - [Azure Unused Volumes](./cost/azure/unused_volumes)
   - [Turbonomic Delete Unattached Volumes Recommendations Azure](./cost/turbonomics/delete_unattached_volumes/azure)
@@ -335,7 +335,6 @@ These templates can generate savings estimates for your environment.
   - [Google Committed Use Discount (CUD)](./cost/google/cud_report)
   - [Google Expiring Committed Use Discount (CUD)](./cost/google/cud_expiration)
   - [Google Idle Compute Instances](./cost/google/idle_compute_instances)
-  - [Google Schedule Instance](./cost/google/schedule_instance)
 
 - SQL
 
@@ -352,6 +351,7 @@ These templates can generate savings estimates for your environment.
   - [Google Committed Use Discount Recommender](./cost/google/cud_recommendations)
   - [Google Idle IP Address Recommender](./cost/google/idle_ip_address_recommendations)
   - [Google Rightsize VM Recommender](./cost/google/rightsize_vm_recommendations)
+  - [Google Schedule Instance](./cost/google/schedule_instance)
   - [Turbonomic Allocate Virtual Machine Recommendations Google](./cost/turbonomics/allocate_virtual_machines_recommendations/gcp)
   - [Turbonomic Rightsize Virtual Machines Recommendations Google](./cost/turbonomics/scale_virtual_machines_recommendations/gcp)
 
@@ -402,13 +402,13 @@ These templates can generate savings estimates for your environment.
 
 #### Azure
 
-- [Azure Migrate Integration](./operational/azure/azure_migrate)
 - [Azure Sync Tags with Optima](./operational/azure/sync_tags_with_optima)
 
 - AKS
 
   - [AKS Node Pools Without Autoscaling](./operational/azure/aks_nodepools_without_autoscaling)
   - [AKS Node Pools Without Zero Autoscaling](./operational/azure/aks_nodepools_without_zero_autoscaling)
+  - [Azure Migrate Integration](./operational/azure/azure_migrate)
 
 - Compute
 
@@ -628,11 +628,11 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 34
-  Cost: 96
+  Cost: 97
   Operational: 23
   SaaS Management: 12
   Security: 74
-:optimization_count: 43
+:optimization_count: 44
 :policy_sets:
   '': 82
   AWS Config: 1
@@ -668,6 +668,7 @@ These templates can generate savings estimates for your environment.
   Rightsize Containers: 1
   Rightsize Database Instances: 4
   Rightsize Database Services: 1
+  Rightsize Storage: 1
   Rightsize Volumes: 2
   Savings Plan Utilization: 1
   Savings Plans: 2
@@ -687,7 +688,7 @@ These templates can generate savings estimates for your environment.
 :providers:
   '': 1
   AWS: 76
-  Azure: 79
+  Azure: 80
   Azure China: 1
   Flexera: 6
   Flexera Cloud Management: 3
@@ -696,20 +697,19 @@ These templates can generate savings estimates for your environment.
   Flexera Optima: 24
   Flexera RISC: 2
   Flexera SaaS Manager: 9
-  GCE: 8
+  GCE: 6
   GitHub: 7
-  Google: 11
+  Google: 13
   Kubecost: 2
   Microsoft: 1
   Okta: 1
   Oracle: 1
   ServiceNow: 1
 :services:
-  '': 60
-  AKS: 2
+  '': 59
+  AKS: 3
   All: 1
   App Service: 1
-  Blob Store: 1
   CCO: 1
   Cloud Cost Optimization: 1
   CloudTrail: 7
@@ -728,6 +728,7 @@ These templates can generate savings estimates for your environment.
   KMS: 1
   Kubernetes: 2
   Lambda: 1
+  Managed Disks: 1
   Marketplace: 2
   MySQL: 2
   Network: 1
@@ -737,16 +738,16 @@ These templates can generate savings estimates for your environment.
   Policy: 1
   PostgreSQL: 4
   RDS: 5
-  S3: 9
+  S3: 8
   SQL: 14
   Security: 3
-  Storage: 20
+  Storage: 22
   Storage Accounts: 2
   Tags: 2
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 239
+:total_count: 240
 -->
 <!-- End Policy Template Stats -->
 

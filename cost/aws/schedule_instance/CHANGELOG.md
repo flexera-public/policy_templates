@@ -1,5 +1,16 @@
 # Changelog
 
+## v5.0
+
+- Several parameters altered to be more descriptive and human-readable
+- Added ability to specify custom tag keys for tracking instance schedules
+- Added ability to filter resources by multiple tag key:value pairs
+- Added ability for user to start and stop instances directly
+- Normalized incident export to be consistent with other policies
+- Added additional fields to incident export for additional context
+- Streamlined code for better readability and faster execution
+- Policy action error logging modernized and now works as expected in EU/APAC
+
 ## v4.2
 
 - Improved logging, and error capture/handling
