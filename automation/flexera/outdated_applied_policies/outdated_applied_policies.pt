@@ -145,6 +145,11 @@ script "js_outdated_policies", type: "javascript" do
     if (policy['published_template'] == null) {
       reject_policy = true
     } else {
+      // Exclude this policy to avoid the policy trying to terminate itself if the user actions on it
+      if (policy['id'] == policy_id) {
+        reject_policy = true
+      }
+
       // Exclude policies where we did not find a corresponding entry in the active policy list
       if (catalog_object[policy['published_template']['name']] == undefined) {
         reject_policy = true
@@ -181,6 +186,19 @@ script "js_outdated_policies", type: "javascript" do
       "from version ", policy['version'], " to version ", catalog_policy['version']
     ].join('')
 
+    update_body = {
+      credentials: policy['credentials'],
+      description: policy['description'],
+      dry_run: policy['dry_run'],
+      frequency: policy['frequency'],
+      log_level: policy['log_level'],
+      name: policy['name'],
+      options: policy['options'],
+      severity: policy['severity'],
+      skip_approvals: policy['skip_approvals'],
+      template_href: policy['published_template']['href']
+    }
+
     return {
       id: policy['id'],
       href: policy['href'],
@@ -214,13 +232,14 @@ script "js_outdated_policies", type: "javascript" do
       catalog_service: catalog_policy['service'],
       catalog_policy_set: catalog_policy['policy_set'],
       self_policy_name: ds_self_policy['name'],
+      update_body: update_body,
       recommendationDetails: recommendationDetails,
       message: ''
     }
   })
 
   result = _.filter(combined_data, function(policy) {
-    return policy['version'] != policy['catalog_version'] && typeof(policy['catalog_version']) == 'string' && policy['id'] != policy_id
+    return policy['version'] != policy['catalog_version'] && typeof(policy['catalog_version']) == 'string'
   })
 
   if (result.length > 0) {
@@ -290,17 +309,11 @@ policy "pol_outdated_policies" do
       field "href" do
         label "Applied Policy HREF"
       end
-      field "credentials" do
-        label "Applied Policy Credentials"
-      end
       field "description" do
         label "Applied Policy Description"
       end
       field "frequency" do
         label "Applied Policy Frequency"
-      end
-      field "options" do
-        label "Applied Policy Parameters"
       end
       field "severity" do
         label "Applied Policy Severity"
@@ -319,6 +332,9 @@ policy "pol_outdated_policies" do
       end
       field "name_without_link" do
         label "Applied Policy Name (Unlinked)"
+      end
+      field "update_body" do
+        label "Applied Policy Details"
       end
     end
   end
@@ -383,17 +399,7 @@ define apply_policy($policy, $rs_governance_host, $rs_project_id) return $respon
     https: true,
     verb: "post",
     headers: { "Api-Version": "1.0" },
-    body: {
-      "credentials": $policy["credentials"],
-      "description": $policy["description"],
-      "dry_run": $policy["dry_run"],
-      "frequency": $policy["frequency"],
-      "name": $policy["name"],
-      "options": $policy["options"],
-      "severity": $policy["severity"],
-      "skip_approvals": $policy["skip_approvals"],
-      "template_href": $policy["catalog_href"]
-    }
+    body: $policy["update_body"]
   )
 
   $code = $response["code"]
