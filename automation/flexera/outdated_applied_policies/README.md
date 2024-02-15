@@ -10,6 +10,7 @@ The following policy types will always be ignored and not reported on by this po
 - Policies applied from a source other than the Flexera Automation Catalog.
 - Organization-specific policies published to that organization's own catalog.
 - Flexera policies present in the [policy-templates Github Repository](https://github.com/flexera-public/policy_templates) but not published in the Flexera Automation Catalog, such as meta policies and other misc. utility policies.
+- Policy aggregates applied across multiple projects. Aggregates applied only to the project this policy is applied in will still be included in the results and are actionable.
 
 ## How It Works
 
@@ -42,8 +43,12 @@ This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/Ma
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `governance:published_template:index`
   - `governance:published_template:show`
+  - `governance:policy_aggregate:index`,
+  - `governance:policy_aggregate:show`,
   - `governance:applied_policy:index`
   - `governance:applied_policy:show`
+  - `governance:policy_aggregate:create`*
+  - `governance:policy_aggregate:delete`*
   - `governance:applied_policy:create`*
   - `governance:applied_policy:delete`*
 
