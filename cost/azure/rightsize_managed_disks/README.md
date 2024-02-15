@@ -2,10 +2,9 @@
 
 ## What it does
 
-This Policy Template scans all volumes in the given account and identifies any volume that meets the user-specified criteria for being oversized. The user can filter volumes based on usage percentage of IOPS, usage percentage of throughput, or any combination of these. Any volumes that meet the user-specified criteria are considered oversized. If any oversized volumes are found, an incident report will show the volumes and related information. An email will be sent to the user-specified email addresses.
+This policy checks managed disks in Azure subscriptions and identifies underutilized disks based on disk performance metrics over a lookback period and a threshold specified by the user; if underutilized disks are found, then disk type downgrade is recommended. An email will be sent to the user-specified email addresses.
 
-- It is important that you keep constant LUN numbers for your data disks because when policy retrieves metrics for them. It will only look for the latest LUN number assigned to the data disk; if changed multiple times before running the policy, only the data points using the current LUN the disk has will be retrieved for analysis.
-- Currently the policy only works for righsizing using the disk used IOPS and throughput since disk capacity (GiB) is not retrievable from Azure.
+Note: It is preferred to keep the disk LUN number constant when detaching and re-attaching a data disk to a virtual machine. LUN number is used to retrieve disk performance metrics (IOPs and throughput).
 
 ### Policy Saving Details
 
@@ -24,10 +23,10 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Allow/Deny Subscriptions List* - A list of allowed or denied Subscription IDs/names. If empty, no filtering will occur and recommendations will be produced for all subscriptions.
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
 - *Allow/Deny Regions List* - Filter results by region, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all the regions.
-- *Minimum Used Disk IOPS %* - The minimum used disk IOPS percentage threshold at which to consider a disk to be 'oversized' and therefore be flagged for downsizing.
-- *Aggregation Type For Disk IOPS* - Statistic to use when determining if the disk IOPS is more than the disk actually uses.
-- *Minimum Used Disk Throughput %* - The minimum used disk throughput percentage threshold at which to consider a disk to be 'oversized' and therefore be flagged for downsizing.
-- *Aggregation Type For Disk Throughput* - Statistic to use when determining if the disk throughput is more than the disk actually uses.
+- *IOPS Threshold* - The IOPS threshold at which to consider a managed disk to be underutilized.
+- *IOPS Threshold Statistic* - Statistic to use for IOPS when determining if a managed disk is underutilized.
+- *Throughput Threshold* - The throughput threshold at which to consider a managed disk to be underutilized.
+- *Throughput Threshold Statistic* - Statistic to use for throughput when determining if a managed disk is underutilized.
 - *Lookback Period* - How many days back to look at disk IOPS and throughput data. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days.
 
 ## Policy Actions
