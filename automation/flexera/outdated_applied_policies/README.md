@@ -4,6 +4,13 @@
 
 This policy checks all applied policies against the same policy in the catalog to determine if the applied policy is using an outdated version of the catalog policy. An email is sent and an incident is raised with all outdated policies. Optionally, outdated policies can automatically be updated.
 
+The following policy types will always be ignored and not reported on by this policy:
+
+- This policy itself.
+- Policies applied from a source other than the Flexera Automation Catalog.
+- Organization-specific policies published to that organization's own catalog.
+- Flexera policies present in the [policy-templates Github Repository](https://github.com/flexera-public/policy_templates) but not published in the Flexera Automation Catalog, such as meta policies and other misc. utility policies.
+
 ## How It Works
 
 The list of outdated policies is generated as follows:

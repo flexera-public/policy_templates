@@ -138,18 +138,25 @@ script "js_outdated_policies", type: "javascript" do
     catalog_object[policy['name']] = policy
   })
 
-  applied_from_catalog = _.reject(ds_applied_policies, function(policy) {
+  filtered_policies = _.reject(ds_applied_policies, function(policy) {
     reject_policy = false
+
+    // Exclude this policy to avoid the policy trying to terminate itself if the user actions on it
+    if (policy['id'] == policy_id) {
+      reject_policy = true
+    }
+
+    // Exclude policies on the user-provided ignore list
+    ignore_list = _.map(param_ignore_list, function(item) { return item.toLowerCase().trim() })
+
+    if (_.contains(ignore_list, policy['name'].toLowerCase()) || _.contains(ignore_list, policy['id'].toLowerCase())) {
+      reject_policy = true
+    }
 
     // Exclude policies that were not applied from the catalog
     if (policy['published_template'] == null) {
       reject_policy = true
     } else {
-      // Exclude this policy to avoid the policy trying to terminate itself if the user actions on it
-      if (policy['id'] == policy_id) {
-        reject_policy = true
-      }
-
       // Exclude policies where we did not find a corresponding entry in the active policy list
       if (catalog_object[policy['published_template']['name']] == undefined) {
         reject_policy = true
@@ -159,19 +166,12 @@ script "js_outdated_policies", type: "javascript" do
       if (policy['published_template']['updated_by']['email'] != 'support@flexera.com') {
         reject_policy = true
       }
-
-      // Exclude policies on the user-provided ignore list
-      ignore_list = _.map(param_ignore_list, function(item) { return item.toLowerCase().trim() })
-
-      if (_.contains(ignore_list, policy['name'].toLowerCase()) || _.contains(ignore_list, policy['id'].toLowerCase())) {
-        reject_policy = true
-      }
     }
 
     return reject_policy
   })
 
-  combined_data = _.map(applied_from_catalog, function(policy) {
+  combined_data = _.map(filtered_policies, function(policy) {
     catalog_policy = catalog_object[policy['published_template']['name']]
     policy_url = "https://app.flexera.com/orgs/" + rs_org_id + "/automation/applied-policies/projects/" + rs_project_id + "?policyId=" + policy['id']
 
@@ -253,11 +253,21 @@ script "js_outdated_policies", type: "javascript" do
     pol_verb = "are"
     if (total_outdated == 1) { pol_verb = "is" }
 
-    result[0]['message'] = [
+    message = [
       "Out of ", total_applied_policies, " ", pol_noun, " analyzed, ",
       total_outdated, " (", outdated_percentage,
-      ") ", pol_verb, " unused and recommended for deletion. "
+      ") ", pol_verb, " unused and recommended for deletion.\n\n"
     ].join('')
+
+    settings = "No policies were filtered from this report.\n\n"
+
+    if (param_ignore_list.length > 0) {
+      settings = "The following policies were filtered from this report: " + param_ignore_list.join(', ') + "\n\n"
+    }
+
+    disclaimer = "Filtering can be adjusted by editing the applied policy and changing the appropriate parameters."
+
+    result[0]['message'] = message + settings + disclaimer
   }
 EOS
 end
