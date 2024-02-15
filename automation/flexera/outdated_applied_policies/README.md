@@ -32,7 +32,14 @@ This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/Ma
 ### Credential Configuration
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
-  - `common:org:own`
+  - `governance:published_template:index`
+  - `governance:published_template:show`
+  - `governance:applied_policy:index`
+  - `governance:applied_policy:show`
+  - `governance:applied_policy:create`*
+  - `governance:applied_policy:delete`*
+
+\* Only required for taking action (updating applied policies); the policy will still function in a read-only capacity without these permissions.
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
