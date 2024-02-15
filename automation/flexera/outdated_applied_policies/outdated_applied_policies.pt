@@ -1,7 +1,7 @@
 name "Flexera Automation Outdated Applied Policies"
 rs_pt_ver 20180301
 type "policy"
-short_description "Reports any applied policies in Flexera Automation that are not using the latest version of that policy from the catalog. See the [README](https://github.com/flexera-public/policy_templates/tree/master/automation/flexera/outdated_applied_policies) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Reports any applied policies in Flexera Automation that are not using the latest version of that policy from the catalog and, optionally, updates them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/automation/flexera/outdated_applied_policies) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "low"
 category "Operational"
@@ -22,6 +22,14 @@ parameter "param_email" do
   category "Policy Settings"
   label "Email Addresses"
   description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_ignore_list" do
+  type "list"
+  category "Filters"
+  label "Policy Ignore List"
+  description "A list of applied policy names and/or IDs to ignore and not report on. Leave blank to assess all applied policies."
   default []
 end
 
@@ -117,11 +125,11 @@ datasource "ds_catalog_policies" do
 end
 
 datasource "ds_outdated_policies" do
-  run_script $js_outdated_policies, $ds_applied_policies, $ds_catalog_policies, $ds_self_policy, policy_id
+  run_script $js_outdated_policies, $ds_applied_policies, $ds_catalog_policies, $ds_self_policy, $param_ignore_list, rs_org_id, rs_project_id, policy_id
 end
 
 script "js_outdated_policies", type: "javascript" do
-  parameters "ds_applied_policies", "ds_catalog_policies", "ds_self_policy", "policy_id"
+  parameters "ds_applied_policies", "ds_catalog_policies", "ds_self_policy", "param_ignore_list", "rs_org_id", "rs_project_id", "policy_id"
   result "result"
   code <<-'EOS'
   catalog_object = {}
@@ -146,6 +154,13 @@ script "js_outdated_policies", type: "javascript" do
       if (policy['published_template']['updated_by']['email'] != 'support@flexera.com') {
         reject_policy = true
       }
+
+      // Exclude policies on the user-provided ignore list
+      ignore_list = _.map(param_ignore_list, function(item) { return item.toLowerCase().trim() })
+
+      if (_.contains(ignore_list, policy['name'].toLowerCase()) || _.contains(ignore_list, policy['id']).toLowerCase()) {
+        reject_policy = true
+      }
     }
 
     return reject_policy
@@ -153,11 +168,24 @@ script "js_outdated_policies", type: "javascript" do
 
   combined_data = _.map(applied_from_catalog, function(policy) {
     catalog_policy = catalog_object[policy['published_template']['name']]
+    policy_url = "https://app.flexera.com/orgs/" + rs_org_id + "/automation/applied-policies/projects/" + rs_project_id + "?policyId=" + policy['id']
+
+    rec_verb = "Update"
+
+    if (policy['version'].split('.')[0] != catalog_policy['version'].split('.')[0]) {
+      rec_verb = "Manually update"
+    }
+
+    recommendationDetails = [
+      rec_verb, " applied policy ", policy['name'], " (", policy['id'], ") ",
+      "from version ", policy['version'], " to version ", catalog_policy['version']
+    ]
 
     return {
       id: policy['id'],
       href: policy['href'],
-      name: policy['name'],
+      name: policy['name'] + "||" + policy_url,
+      name_without_link: policy['name'],
       description: policy['description'],
       category: policy['category'],
       created_at: policy['created_at'],
@@ -185,13 +213,33 @@ script "js_outdated_policies", type: "javascript" do
       catalog_provider: catalog_policy['provider'],
       catalog_service: catalog_policy['service'],
       catalog_policy_set: catalog_policy['policy_set'],
-      self_policy_name: ds_self_policy['name']
+      self_policy_name: ds_self_policy['name'],
+      recommendationDetails: recommendationDetails,
+      message: ''
     }
   })
 
   result = _.filter(combined_data, function(policy) {
     return policy['version'] != policy['catalog_version'] && typeof(policy['catalog_version']) == 'string' && policy['id'] != policy_id
   })
+
+  if (result.length > 0) {
+    total_applied_policies = ds_applied_policies.length.toString()
+    total_outdated = result.length.toString()
+    outdated_percentage = (total_outdated / total_applied_policies * 100).toFixed(2).toString() + '%'
+
+    pol_noun = "policies"
+    if (total_applied_policies == 1) { pol_noun = "policy" }
+
+    pol_verb = "are"
+    if (total_outdated == 1) { pol_verb = "is" }
+
+    result[0]['message'] = [
+      "Out of ", total_applied_policies, " ", pol_noun, " analyzed, ",
+      total_outdated, " (", outdated_percentage,
+      ") ", pol_verb, " unused and recommended for deletion. "
+    ].join('')
+  }
 EOS
 end
 
@@ -202,22 +250,24 @@ end
 policy "pol_outdated_policies" do
   validate_each $ds_outdated_policies do
     summary_template "{{ with index data 0 }}{{ .self_policy_name }}{{ end }}: {{ len data }} Outdated Policies Found"
+    detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
     check eq(val(item, "id"), "")
     escalate $esc_email
     escalate $esc_update_policies
     export do
       resource_level true
-      field "id" do
-        label "Applied Policy ID"
-      end
       field "name" do
         label "Applied Policy Name"
+        format "link-external"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
       end
       field "created_at" do
-        label "Policy Applied Date"
+        label "Date Applied"
       end
       field "catalog_updated_at" do
-        label "Catalog Policy Updated Date"
+        label "Date Catalog Updated"
       end
       field "version" do
         label "Applied Policy Version"
@@ -233,6 +283,9 @@ policy "pol_outdated_policies" do
       end
       field "catalog_href" do
         label "Catalog Policy HREF"
+      end
+      field "id" do
+        label "Applied Policy ID"
       end
       field "href" do
         label "Applied Policy HREF"
@@ -263,6 +316,9 @@ policy "pol_outdated_policies" do
       end
       field "log_level" do
         label "Applied Policy Log Level"
+      end
+      field "name_without_link" do
+        label "Applied Policy Name (Unlinked)"
       end
     end
   end
@@ -303,7 +359,7 @@ define update_policies($data, $rs_governance_host, $rs_project_id) return $all_r
           call delete_policy($policy, $rs_governance_host) retrieve $delete_response
         end
       else
-        $policy_name = $policy["name"] + " (" + $policy["id"] + ")"
+        $policy_name = $policy["name_without_link"] + " (" + $policy["id"] + ")"
         raise "Applied Policy " + $policy_name + " was not updated due to a major version change. Please update manually."
       end
     end
@@ -368,7 +424,7 @@ define delete_policy($policy, $rs_governance_host) return $response do
     headers: { "Api-Version": "1.0" }
   )
 
-  $policy_name = $policy["name"] + " (" + $policy["id"] + ")"
+  $policy_name = $policy["name_without_link"] + " (" + $policy["id"] + ")"
 
   task_label("Delete Applied Policy response: " + $policy_name + " " + to_json($response))
   $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
