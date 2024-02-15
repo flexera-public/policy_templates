@@ -23,9 +23,9 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Allow/Deny Subscriptions List* - A list of allowed or denied Subscription IDs/names. If empty, no filtering will occur and recommendations will be produced for all subscriptions.
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
 - *Allow/Deny Regions List* - Filter results by region, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all the regions.
-- *IOPS Threshold* - The IOPS threshold at which to consider a managed disk to be underutilized.
+- *IOPS Threshold (%)* - The IOPS threshold percentage at which to consider a managed disk to be underutilized.
 - *IOPS Threshold Statistic* - Statistic to use for IOPS when determining if a managed disk is underutilized.
-- *Throughput Threshold* - The throughput threshold at which to consider a managed disk to be underutilized.
+- *Throughput Threshold (%)* - The throughput threshold at which to consider a managed disk to be underutilized.
 - *Throughput Threshold Statistic* - Statistic to use for throughput when determining if a managed disk is underutilized.
 - *Lookback Period* - How many days back to look at disk IOPS and throughput data. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days.
 
