@@ -35,9 +35,6 @@ This Policy Template requires that several APIs be enabled in your Google Cloud 
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
 - [**Google Cloud Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1121577) (*provider=gce*) which has the following:
-  - Roles
-    - `Monitoring Viewer`
-
   - Permissions
     - `resourcemanager.projects.get`
     - `monitoring.metricDescriptors.list`
