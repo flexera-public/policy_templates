@@ -36,15 +36,15 @@ This policy has the following input parameters required when launching the polic
 
 ## Prerequisites
 
-This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
 ### Credential Configuration
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `governance:published_template:index`
   - `governance:published_template:show`
-  - `governance:policy_aggregate:index`,
-  - `governance:policy_aggregate:show`,
+  - `governance:policy_aggregate:index`
+  - `governance:policy_aggregate:show`
   - `governance:applied_policy:index`
   - `governance:applied_policy:show`
   - `governance:policy_aggregate:create`*
