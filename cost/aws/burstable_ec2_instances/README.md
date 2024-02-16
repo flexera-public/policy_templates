@@ -1,4 +1,4 @@
-# AWS Burstable EC2 Instance CloudWatch Utilization Policy
+# AWS Burstable EC2 Instances
 
 ## What It does
 
