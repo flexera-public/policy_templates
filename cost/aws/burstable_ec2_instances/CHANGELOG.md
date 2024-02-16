@@ -3,6 +3,7 @@
 ## v4.0
 
 - Policy name changed to reference EC2 service directly
+- Policy now consistently gathers correct CloudWatch statistics
 - Several parameters altered to be more descriptive and human-readable
 - Added ability to filter resources by multiple tag key:value pairs
 - Removed cooldown parameter/functionality and set default policy frequency to "monthly"
