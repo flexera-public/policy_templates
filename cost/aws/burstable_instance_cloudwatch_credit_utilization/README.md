@@ -20,7 +20,6 @@ This policy has the following input parameters required when launching the polic
 - *Exclusion Tags (Key:Value)* - Cloud native tags to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:\* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:\*
 - *CPU Surplus Credits* - Number of CPU Surplus Credits to report on. Set to -1 to ignore CPU burst credits.
 - *Check Burst Credit Balance* - Whether to check burst credit balance against max_earnable_credits
-- *Cooldown Days* - Days to cooldown between checks of same instance
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
 Please note that the "*Automatic Actions*" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
@@ -40,6 +39,9 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
 
 - [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
+  - `sts:GetCallerIdentity`
+  - `cloudwatch:GetMetricStatistics`
+  - `cloudwatch:ListMetrics`
   - `ec2:DescribeRegions`
   - `ec2:DescribeInstances`
   - `ec2:DescribeTags`
@@ -47,9 +49,6 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
   - `ec2:ModifyInstanceAttribute`*
   - `ec2:StartInstances`*
   - `ec2:StopInstances`*
-  - `cloudwatch:GetMetricStatistics`
-  - `cloudwatch:ListMetrics`
-  - `sts:GetCallerIdentity`
 
 \* Only required for taking action (resizing); the policy will still function in a read-only capacity without these permissions.
 
@@ -62,16 +61,16 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
           {
               "Effect": "Allow",
               "Action": [
+                  "sts:GetCallerIdentity",
+                  "cloudwatch:GetMetricStatistics",
+                  "cloudwatch:ListMetrics",
                   "ec2:DescribeRegions",
                   "ec2:DescribeInstances",
                   "ec2:DescribeTags",
                   "ec2:DescribeInstanceStatus",
                   "ec2:ModifyInstanceAttribute",
                   "ec2:StartInstances",
-                  "ec2:StopInstances",
-                  "cloudwatch:GetMetricStatistics",
-                  "cloudwatch:ListMetrics",
-                  "sts:GetCallerIdentity"
+                  "ec2:StopInstances"
               ],
               "Resource": "*"
           }
