@@ -57,6 +57,7 @@ def extract_permissions_from_readme(readme_content)
     "[**AWS Credentials**]",
     "[**AWS Credential**]",
     "[**Azure Resource Manager Credential**]",
+    "[**Azure Storage Credential**]",
     "[**Google Cloud Credential**]",
     "[**Flexera Credential**]"
   ]
@@ -67,6 +68,8 @@ def extract_permissions_from_readme(readme_content)
       provider = "aws"
     when "[**Azure Resource Manager Credential**]"
       provider = "azure_rm"
+    when "[**Azure Storage Credential**]"
+      provider = "azure_storage"
     when "[**Google Cloud Credential**]"
       provider = "gce"
     when "[**Flexera Credential**]"
@@ -109,7 +112,7 @@ def extract_permissions_from_readme(readme_content)
             # Set whether permission is read-only, required, and/or has a description (and depending on the symbol)
             read_only_permission = true
             required = true
-            
+
             # Checks for a symbol (which would denote that the permission has an accompanying description)
             symbol_if_exists = list_of_notes.find { |note| permission.end_with?(note[:symbol]) == true || line.include?(note[:symbol]) == true }
 
