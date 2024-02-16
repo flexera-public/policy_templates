@@ -422,6 +422,10 @@ These templates can generate savings estimates for your environment.
 
 #### Flexera
 
+- Automation
+
+  - [Flexera Automation Outdated Applied Policies](./automation/flexera/outdated_applied_policies)
+
 - CCO
 
   - [Bill Processing Error Notification](./operational/bill_processing_errors_notification)
@@ -629,7 +633,7 @@ These templates can generate savings estimates for your environment.
 :categories:
   Compliance: 34
   Cost: 97
-  Operational: 23
+  Operational: 24
   SaaS Management: 12
   Security: 74
 :optimization_count: 44
@@ -637,6 +641,7 @@ These templates can generate savings estimates for your environment.
   '': 82
   AWS Config: 1
   Allocate VMs: 3
+  Automation: 1
   CIS: 61
   Committed Use Discount: 1
   Common Bill Ingestion: 2
@@ -690,7 +695,7 @@ These templates can generate savings estimates for your environment.
   AWS: 76
   Azure: 80
   Azure China: 1
-  Flexera: 6
+  Flexera: 7
   Flexera Cloud Management: 3
   Flexera FNMS: 1
   Flexera ITAM: 5
@@ -710,6 +715,7 @@ These templates can generate savings estimates for your environment.
   AKS: 3
   All: 1
   App Service: 1
+  Automation: 1
   CCO: 1
   Cloud Cost Optimization: 1
   CloudTrail: 7
@@ -747,7 +753,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 240
+:total_count: 241
 -->
 <!-- End Policy Template Stats -->
 
