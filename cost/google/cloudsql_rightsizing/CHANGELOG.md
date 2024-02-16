@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.11
+
+- Updated Policy Template name from "Google Rightsize CloudSQL Instances" to "Google Rightsize Cloud SQL Instances"
+
 ## v2.10
 
 - Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM

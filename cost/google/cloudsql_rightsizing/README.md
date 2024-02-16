@@ -1,4 +1,4 @@
-# Google Rightsize CloudSQL Instances
+# Google Rightsize Cloud SQL Instances
 
 ## What it does
 
@@ -6,9 +6,9 @@ This Policy Template checks Google Cloud SQL instances based on provided CPU thr
 
 ## Functional Details
 
-- This policy identifies all Google CloudSQL instances reporting performance metrics to stackdriver whose CPU utilization is below the thresholds set in the **Average used CPU % - Downsize Threshold** and **Average used CPU % - Upsize Threshold** parameters.
+- This policy identifies all Google Cloud SQL instances reporting performance metrics to stackdriver whose CPU utilization is below the thresholds set in the **Average used CPU % - Downsize Threshold** and **Average used CPU % - Upsize Threshold** parameters.
 - If APIs & Services are not enabled for a project, the policy will skip that particular project. On the next run if APIs & Services are enabled, then the project will be considered for execution.
-- The **Exclusion Tag Key:Value** parameter is a string value.  Supply the Tag Key & Value.  If the exclusion tag is used on an CloudSQL Instance, that Instance is presumed to be exempt from this policy.
+- The **Exclusion Tag Key:Value** parameter is a string value.  Supply the Tag Key & Value.  If the exclusion tag is used on an Cloud SQL Instance, that Instance is presumed to be exempt from this policy.
 - The rightsizing escalation can be automated, executed after approval, or skipped.
 - This policy does not support custom tiers.
 
@@ -41,15 +41,12 @@ This Policy Template requires that several APIs be enabled in your Google Cloud 
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
 - [**Google Cloud Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1121577) (*provider=gce*) which has the following:
-  - Roles
-    - `Monitoring Viewer`
 
   - Permissions
+    - `monitoring.metricDescriptors.list`
+    - `monitoring.timeSeries.list`
     - `sqlservice.admin`
     - `resourcemanager.projects.get`
-
-- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
-  - `billing_center_viewer`
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
