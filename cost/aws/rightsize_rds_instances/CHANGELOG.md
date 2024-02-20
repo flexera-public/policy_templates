@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.0
+
+- Added support for regex when filtering resources by tag
+
 ## v4.2
 
 - Fixed issue with incorrectly reporting on instances with hyphens or underscores in their name.
