@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.0
+
+- Added support for regex when filtering resources by tag
+
 ## v4.4
 
 - Added parameter to override the AWS Pricing API Endpoint
