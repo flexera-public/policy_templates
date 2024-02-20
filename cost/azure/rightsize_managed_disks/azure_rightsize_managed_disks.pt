@@ -1,13 +1,13 @@
 name "Azure Rightsize Managed Disks"
 rs_pt_ver 20180301
 type "policy"
-short_description "Looks for oversized managed disks and suggest recommendations to save money. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_disks/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "This policy finds underutilized managed disks and recommends downgrading the managed disk tier if this results in savings and satisfies required usage levels. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_disks/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Cost"
 severity "low"
 default_frequency "monthly"
 info(
-  version: "1.1",
+  version: "1.2",
   provider: "Azure",
   service: "Managed Disks",
   policy_set: "Rightsize Storage",
@@ -90,8 +90,8 @@ end
 parameter "param_min_used_disk_iops_pct" do
   type "number"
   category "Filters"
-  label "Used disk IOPS percentage threshold"
-  description "The minimum used disk IOPS percentage threshold at which to consider a disk to be 'oversized' and therefore be flagged for downsizing. Set to -1 to disable this filter."
+  label "IOPS Threshold (%)"
+  description "The IOPs threshold at which to consider a managed disk to be underutilized. Set to -1 to turn off this filter."
   min_value -1
   max_value 100
   default -1
@@ -100,8 +100,8 @@ end
 parameter "param_stats_aggregation_for_disk_iops" do
   type "string"
   category "Statistics"
-  label "Aggregation type for determining oversized disk IOPS"
-  description "Statistic to use when determining if the disk IOPS is more than the disk actually uses."
+  label "IOPS Threshold Statistic"
+  description "Statistic to use for IOPS when determining if a managed disk is underutilized."
   allowed_values "Average", "Maximum"
   default "Maximum"
 end
@@ -109,8 +109,8 @@ end
 parameter "param_min_used_disk_throughput_pct" do
   type "number"
   category "Filters"
-  label "Used disk throughput percentage threshold"
-  description "The minimum used disk throughput percentage threshold at which to consider a disk to be 'oversized' and therefore be flagged for downsizing. Set to -1 to disable this filter."
+  label "Throughput Threshold (%)"
+  description "The throughput threshold at which to consider a managed disk to be underutilized. Set to -1 to turn off this filter."
   min_value -1
   max_value 100
   default -1
@@ -119,8 +119,8 @@ end
 parameter "param_stats_aggregation_for_disk_throughput" do
   type "string"
   category "Statistics"
-  label "Aggregation type for determining oversized disk throughput"
-  description "Statistic to use when determining if the disk throughput is more than the disk actually uses."
+  label "Throughput Threshold Statistic"
+  description "Statistic to use for throughput when determining if a managed disk is underutilized."
   allowed_values "Average", "Maximum"
   default "Maximum"
 end
@@ -842,6 +842,10 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
       newResourceTypePriceCurrency = fittingDiskPrice.currencyCode
     } else continue;
 
+    if (monthlySavings < param_min_savings) {
+      continue;
+    }
+
     tags = []
     if (typeof(disk.tags) == 'object') {
       _.each(Object.keys(disk.tags), function(key) {
@@ -890,7 +894,7 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
     totalMonthlySavings += monthlySavings
   }
 
-  if (recommendations.length > 0 && totalMonthlySavings >= param_min_savings) {
+  if (recommendations.length > 0) {
     monthlySavings = monthlySavings.toFixed(2)
 
     recommendations[0].message = "Oversized disks are those that meet the following conditions within the last " + param_stats_lookback + " day(s):\n\n"
