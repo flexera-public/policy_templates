@@ -12,7 +12,13 @@ This policy checks all the user node pools associated with each AKS cluster. If 
 
 This policy has the following input parameters required when launching the policy.
 
-- *Exclusion Tags* - Cloud native tag keys to ignore instances. Example: exclude_utilization
+- *Exclusion Tags* - The policy will filter resources containing the specified tags from the results. The following formats are supported:
+  - `Key` - Filter all resources with the specified tag key.
+  - `Key==Value` - Filter all resources with the specified tag key:value pair.
+  - `Key!=Value` - Filter all resources missing the specified tag key:value pair. This will also filter all resources missing the specified tag key.
+  - `Key=~/Regex/` - Filter all resources where the value for the specified key matches the specified regex string.
+  - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified tag key.
+- *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
 - *Email addresses* - Email addresses of the recipients you wish to notify.
 - *Azure Endpoint* - Azure Endpoint to access resources
 - *Subscription Allowed List* - Allowed Subscriptions, if empty, all subscriptions will be checked

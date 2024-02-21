@@ -55,6 +55,8 @@ default_child_policy_template_files = [
   "../../cost/azure/superseded_instances/azure_superseded_instances.pt",
   "../../cost/azure/storage_account_lifecycle_management/storage_account_lifecycle_management.pt",
   "../../cost/azure/databricks/rightsize_compute/azure_databricks_rightsize_compute.pt",
+  "../../operational/azure/aks_nodepools_without_autoscaling/aks_nodepools_without_autoscaling.pt",
+  "../../operational/azure/aks_nodepools_without_zero_autoscaling/aks_nodepools_without_zero_autoscaling.pt",
   "../../operational/azure/azure_certificates/azure_certificates.pt",
   "../../operational/azure/azure_long_running_instances/azure_long_running_instances.pt",
   "../../operational/azure/tag_cardinality/azure_tag_cardinality.pt",
