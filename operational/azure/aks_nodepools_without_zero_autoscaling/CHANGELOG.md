@@ -9,6 +9,8 @@
 - Added ability to use regex when filtering resources by tag
 - Normalized incident export to be consistent with other policies
 - Streamlined code for better readability and faster execution
+- Added logic required for "Meta Policy" use-cases
+- To facilitate "Meta Policy" use-cases, policy now requires a Flexera credential
 
 ## v2.5
 
