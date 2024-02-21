@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.0
+
+- Added ability to specify custom dimensions for the graph in the report
+- Added ability to filter costs in report by any user-specified dimension
+- Improved incident output for readability and removed references to Optima
+- Incident table now shows the raw data used to create the graph in the report
+- Streamlined code for better readability and faster execution
+
 ## v2.1
 
 - Fixed issue with incorrectly-rendered graph when selecting "Week" for the Billing Term parameter

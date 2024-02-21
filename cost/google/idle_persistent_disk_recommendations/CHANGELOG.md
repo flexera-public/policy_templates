@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1
+
+- Added ability to filter by how long a disk has been detached
+
 ## v3.0
 
 - Policy now requires a Flexera credential

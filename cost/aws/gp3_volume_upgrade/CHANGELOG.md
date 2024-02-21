@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.4
+
+- Changed internal name of escalation code to ensure "Meta Policy" works as expected
+
 ## v4.3
 
 - Deprecated: This policy is no longer being updated. Please see policy README for more information.

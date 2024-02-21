@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3
+
+- Added Hyperlinks for `System Details URL` incident field.
+
 ## v0.2
 
 - Added `System Details Url` incident field.

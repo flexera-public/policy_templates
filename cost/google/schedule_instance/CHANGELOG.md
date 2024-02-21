@@ -1,5 +1,25 @@
 # Changelog
 
+## v3.0
+
+- Several parameters altered to be more descriptive and human-readable
+- Added ability to specify custom label keys for tracking instance schedules
+- Added ability to filter resources by project
+- Added ability to filter resources by region
+- Added ability to filter resources by multiple label key:value pairs
+- Added ability for user to start and stop instances directly
+- Normalized incident export to be consistent with other policies
+- Added additional fields to incident export for additional context
+- Streamlined code for better readability and faster execution
+- Policy action error logging modernized and now works as expected in EU/APAC
+- Added logic required for "Meta Policy" use-cases
+- To facilitate "Meta Policy" use-cases, policy now requires a Flexera credential
+
+## v2.5
+
+- Improved logging, and error capture/handling
+- Added default values for params that are not required
+
 ## v2.4
 
 - Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM

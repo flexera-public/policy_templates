@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.6
+
+- Added Hyperlinks for `System Details URL` incident field.
+
 ## v0.5
 
 - Added `Provisioned IOPs` incident field.

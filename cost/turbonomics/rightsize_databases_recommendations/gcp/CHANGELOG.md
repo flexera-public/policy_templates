@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.5
+
+- Added Hyperlinks for `System Details URL` incident field.
+
 ## v0.4
 
 - Renamed `Created Time` incident field to `Recommendation Created Time`.

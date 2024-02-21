@@ -8,7 +8,7 @@ tenancy "single"
 default_frequency "15 minutes"
 info(
   provider: "AWS",
-  version: "4.1", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "5.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "false"
 )
 
@@ -29,7 +29,8 @@ parameter "param_dimension_filter_includes" do
   type "list"
   label "Dimension Include Filters"
   description <<-EOS
-  Filters [`dimension_name=dimension_value` pairs] to determine which AWS Accounts returned by the Flexera Bill Analysis API to **INCLUDE** and be applied to.
+  Filters [`dimension_name=dimension_value` and `dimension_name=~dimension_value` pairs] to determine which AWS Accounts returned by the Flexera Bill Analysis API to **INCLUDE** and be applied to.
+  Use = to match the entire value and =~ to match a substring contained in the value.
   During each run this policy will select AWS Accounts who match **all** the filters defined and apply a child policy for each.
   If no include filters are provided, then all AWS Accounts are included by default.
   Most of the dimensions in Flexera can be used [default dimensions, custom tag dimensions, rule-based dimensions].  Full list of available dimensions documented in the [Bill Analysis API Docs](https://reference.rightscale.com/bill_analysis/).
@@ -41,7 +42,8 @@ parameter "param_dimension_filter_excludes" do
   type "list"
   label "Dimension Exclude Filters"
   description <<-EOS
-  Filters [`dimension_name=dimension_value` pairs] to determine which AWS Accounts returned by  the Flexera Bill Analysis API to **EXCLUDE** and *not* have policy applied to.
+  Filters [`dimension_name=dimension_value` and `dimension_name=~dimension_value` pairs] to determine which AWS Accounts returned by  the Flexera Bill Analysis API to **EXCLUDE** and *not* have policy applied to.
+  Use = to match the entire value and =~ to match a substring contained in the value.
   During each run this policy will select AWS Accounts who match **all** the filters defined here and excludes them from results.
   Can be used to exclude specific AWS Accounts [`vendor_account=123456789012`]
   Most of the dimensions in Flexera can be used [default dimensions, custom tag dimensions, rule-based dimensions].  Full list of available dimensions documented in the [Bill Analysis API Docs](https://reference.rightscale.com/bill_analysis/).
@@ -66,34 +68,39 @@ parameter "param_template_source" do
 end
 
 ## Child Policy Parameters
-parameter "param_exclude_tags" do
+parameter "param_exclusion_tags" do
   type "list"
-  category "User Inputs"
-  label "Exclusion Tag"
-  description "List of tags that will exclude EC2 instances from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'."
+  category "Filters"
+  label "Exclusion Tags (Key:Value)"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:*"
+  allowed_pattern /(^$)|[\w]*\:.*/
   default []
 end
 
-parameter "param_allowed_regions_allow_or_deny" do
+parameter "param_regions_disallow_or_allow" do
   type "string"
-  label "Allow/Deny Regions"
-  description "Allow or Deny entered regions. See the README for more details"
-  allowed_values "Allow", "Deny"
-  default "Allow"
+  category "Filters"
+  label "Disallow/Allow Regions"
+  description "Disallow or Allow entered regions. See the README for more details"
+  allowed_values "Disallow", "Allow"
+  default "Disallow"
 end
 
-parameter "param_allowed_regions" do
+parameter "param_regions_list" do
   type "list"
-  label "Regions"
-  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
-  description "A list of allowed or denied regions. See the README for more details"
+  category "Filters"
+  label "Disallow/Allow Regions List"
+  description "A list of disallowed or allowed regions. See the README for more details"
+  allowed_pattern /^[a-z]{2}(-gov)?-[a-z]+-[0-9]+$/
+  default []
 end
 
 parameter "param_automatic_action" do
   type "list"
+  category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Terminate Instances"]
+  allowed_values ["Stop Instances", "Terminate Instances"]
   default []
 end
 
@@ -101,7 +108,7 @@ end
 # Authentication
 ###############################################################################
 credentials "auth_aws" do
-  schemes "aws","aws_sts"
+  schemes "aws", "aws_sts"
   label "AWS"
   description "Select the AWS Credential from the list"
   tags "provider=aws"
@@ -282,23 +289,49 @@ script "js_make_billing_center_request", type: "javascript" do
   // Append to default dimensions and filter expressions using parent policy params
   _.each(param_dimension_filter_includes, function (v) {
     // split key=value string
-    var split = v.split("=");
+    if (v.indexOf('=~') == -1) {
+      var split = v.split("=");
+      var type = "equal"
+    } else {
+      var split = v.split("=~");
+      var type = "substring"
+    }
+
     var k = split[0];
     var v = split[1];
+
     // append to lists
     dimensions.push(k);
-    filter_expressions.push({ dimension: k, type: "equal", value: v });
+
+    if (type == "equal") {
+      filter_expressions.push({ dimension: k, type: "equal", value: v });
+    } else {
+      filter_expressions.push({ dimension: k, type: "substring", substring: v });
+    }
   });
 
   // Append to filter expressions using exclude policy params
   _.each(param_dimension_filter_excludes, function (v) {
     // split key=value string
-    var split = v.split("=");
+    if (v.indexOf('=~') == -1) {
+      var split = v.split("=");
+      var type = "equal"
+    } else {
+      var split = v.split("=~");
+      var type = "substring"
+    }
+
     var k = split[0];
     var v = split[1];
+
     // append to lists
     dimensions.push(k);
-    filter_expressions.push({ "type": "not", "expression": { "dimension": k, "type": "equal", "value": v } });
+
+    if (type == "equal") {
+      filter_expressions.push({ "type": "not", "expression": { "dimension": k, "type": "equal", "value": v } });
+    } else {
+      filter_expressions.push({ "type": "not", "expression": { "dimension": k, "type": "substring", "substring": v } });
+    }
   });
 
   // Produces a duplicate-free version of the array
@@ -731,19 +764,19 @@ datasource "ds_child_incident_details" do
   end
 end
 
-datasource "ds_list_aws_instances_combined_incidents" do
-  run_script $js_ds_list_aws_instances_combined_incidents, $ds_child_incident_details
+datasource "ds_instances_in_bad_regions_combined_incidents" do
+  run_script $js_ds_instances_in_bad_regions_combined_incidents, $ds_child_incident_details
 end
 
-script "js_ds_list_aws_instances_combined_incidents", type: "javascript" do
+script "js_ds_instances_in_bad_regions_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-EOS
   result = []
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
-    // If the incident summary contains "in Disallowed regions" then include it in the filter result
-    if (s.indexOf("in Disallowed regions") > -1) {
+    // If the incident summary contains "AWS EC2 Instances In Disallowed Regions Found" then include it in the filter result
+    if (s.indexOf("AWS EC2 Instances In Disallowed Regions Found") > -1) {
       _.each(incident["violation_data"], function(violation) {
         violation["incident_id"] = incident["id"];
         result.push(violation);
@@ -754,15 +787,26 @@ EOS
 end
 
 
-# Escalation for Delete Instances
-escalation "esc_terminate_instances_disallowed_region" do
+# Escalation for Stop Instances
+escalation "esc_stop_instances" do
   automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
-  label "Delete Instances"
-  description "Delete instances found in disallowd regions."
-  run "esc_terminate_instances_disallowed_region", data, rs_governance_host, rs_project_id
+  label "Stop Instances"
+  description "Approval to stop all selected instances"
+  run "esc_stop_instances", data, rs_governance_host, rs_project_id
 end
-define esc_terminate_instances_disallowed_region($data, $governance_host, $rs_project_id) do
-  call child_run_action($data, $governance_host, $rs_project_id, "Delete Instances")
+define esc_stop_instances($data, $governance_host, $rs_project_id) do
+  call child_run_action($data, $governance_host, $rs_project_id, "Stop Instances")
+end
+
+# Escalation for Terminate Instances
+escalation "esc_terminate_instances" do
+  automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
+  label "Terminate Instances"
+  description "Approval to terminate all selected instances"
+  run "esc_terminate_instances", data, rs_governance_host, rs_project_id
+end
+define esc_terminate_instances($data, $governance_host, $rs_project_id) do
+  call child_run_action($data, $governance_host, $rs_project_id, "Terminate Instances")
 end
 
 
@@ -772,28 +816,53 @@ end
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
-    # Consolidated incident for in Disallowed regions
-  validate $ds_list_aws_instances_combined_incidents do
-    summary_template "Consolidated Incident: {{ len data }} in Disallowed regions"
+    # Consolidated incident for AWS EC2 Instances In Disallowed Regions Found
+  validate $ds_instances_in_bad_regions_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} AWS EC2 Instances In Disallowed Regions Found"
     escalate $esc_email
-    escalate $esc_terminate_instances_disallowed_region
+    escalate $esc_stop_instances
+    escalate $esc_terminate_instances
     check eq(size(data), 0)
     export do
       resource_level true
-      field "id" do
-        label "Instance ID"
+      field "accountID" do
+        label "Account ID"
       end
-      field "instance_state" do
-        label "Instance State"
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "resourceType" do
+        label "Instance Size"
       end
       field "region" do
         label "Region"
       end
-      field "instance_type" do
-        label "Instance Type"
+      field "platform" do
+        label "Platform"
       end
-      field "tagKeyValue" do
-        label "Tags"
+      field "hostname" do
+        label "Hostname"
+      end
+      field "launchTime" do
+        label "Launch Time"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "ID"
       end
       field "incident_id" do
         label "Child Incident ID"

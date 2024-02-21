@@ -6,7 +6,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "7.3",
+  version: "7.4",
   provider: "AWS",
   service: "EBS",
   policy_set: "Unused Volumes",
@@ -1012,251 +1012,223 @@ escalation "esc_delete_volumes" do
   automatic contains($param_automatic_action, "Delete Volumes")
   label "Delete Volumes"
   description "Approval to terminate all selected instances"
-  run "delete_volumes", data, $param_take_snapshot, rs_optima_host
+  run "delete_volumes", data, $param_take_snapshot
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define delete_volumes($data, $param_take_snapshot, $$rs_optima_host) do
-  # Change "No" to "Yes" to enable CWF debug logging
-  $log_to_cm_audit_entries = "No"
+define delete_volumes($data, $param_take_snapshot) return $all_responses do
+  $$all_responses = []
 
-  $$debug = $log_to_cm_audit_entries == "Yes"
-  $$errors = []
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      $snapshot_status_code = 200
+      $detach_status_code = 200
 
-  foreach $item in $data do
-    $snapshot_status_code = 200
-    $detach_status_code = 200
+      if $instance["state"] == "in-use" || $instance["status"] == "in-use"
+        call detach_volume($instance) retrieve $detach_response, $detach_status_code
+        $$all_responses << $detach_response
+      end
 
-    if $item["status"] == "in-use"
-      call detach_volume($item, $$errors) retrieve $status_code, $$errors
-      $detach_status_code = $status_code
-    end
+      if $param_take_snapshot == "Yes"
+        call create_snapshot($instance) retrieve $snapshot_response, $snapshot_status_code
+        $$all_responses << $snapshot_response
+      end
 
-    if $param_take_snapshot == "Yes"
-      call create_snapshot($item, $$errors) retrieve $status_code, $$errors
-      $snapshot_status_code = $status_code
-    end
-
-    if $snapshot_status_code == 200 && $detach_status_code == 200
-      call delete_volume($item, $$errors) retrieve $status_code, $$errors
-    end
-  end
-
-  if size($$errors) > 0
-    $error = join($$errors, "\n")
-    call sys_log("Errors", $error)
-    raise $error
-  end
-end
-
-define create_snapshot($item, $errors) return $status_code, $errors do
-  $status_code
-  $snapshot_status = "pending"
-  $response = http_request(
-    auth: $$auth_aws,
-    https: true,
-    verb: "get",
-    host: "ec2." + $item["region"] + ".amazonaws.com",
-    href: "/",
-    query_strings: {
-      "Action": "CreateSnapshot",
-      "Version": "2016-11-15",
-      "VolumeId": $item["id"]
-    }
-  )
-  call check_response_and_append_if_error($response, "Create Volume Snapshot", $errors) retrieve $errors
-  call sys_log("Create Volume Snapshot Response ", to_s($response))
-  $status_code = $response["code"]
-
-  if $status_code == 200
-    $snapshot_status = $response["body"]["CreateSnapshotResponse"]["status"]
-    $snapshotId = $response["body"]["CreateSnapshotResponse"]["snapshotId"]
-
-    if $snapshot_status == "pending"
-      $condition_check = "completed"
-
-      while $condition_check !~ $snapshot_status do
-        sleep(30)
-        call get_snapshot_status(to_s($snapshotId), []) retrieve $status, $snapshot_errors
-        $snapshot_status = $status
-
-        if $snapshot_status == "error" || size($snapshot_errors) > 0
-          $status_code = 400
-          $snapshot_status = "completed"
-          foreach $error in $snapshot_errors do
-            $errors << $error
-          end
-        end
+      if $snapshot_status_code == 200 && $detach_status_code == 200
+        call delete_volume($instance) retrieve $delete_response
+        $$all_responses << $delete_response
       end
     end
   end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
 end
 
-define get_snapshot_status($snapshotId, $errors) return $snapshot_status, $errors do
-  call sys_log("Inside Get Snapshot Details Snapshot Id ", $snapshotId)
-  $snapshot_response = http_request(
-    auth: $$auth_aws,
-    https: true,
-    verb: "get",
-    host: "ec2." + $item["region"] + ".amazonaws.com",
-    href: "/",
-    query_strings: {
-      "Action": "DescribeSnapshots",
-      "Version": "2016-11-15",
-      "SnapshotId": $snapshotId
-    }
-  )
-  call check_response_and_append_if_error($snapshot_response, "Describe Snapshot " + $snapshotId, $errors) retrieve $errors
-  call sys_log("Get Snapshot Details ", to_s($snapshot_response))
-  $snapshot_status = $snapshot_response["body"]["DescribeSnapshotsResponse"]["snapshotSet"]["item"]["status"]
-end
-
-define detach_volume($item, $errors) return $status_code, $errors do
-  $status_code
-  $volume_status = "in-use"
+define detach_volume($instance) return $response, $status_code do
+  $host = "ec2." + $instance["region"] + ".amazonaws.com"
+  $href = "/"
+  $params = "?Action=DetachVolume&Version=2016-11-15&VolumeId=" + $instance["id"]
+  $url = $host + $href + $params
+  task_label("GET " + $url)
 
   $response = http_request(
     auth: $$auth_aws,
     https: true,
     verb: "get",
-    host: "ec2." + $item["region"] + ".amazonaws.com",
-    href: "/",
+    host: $host,
+    href: $href,
     query_strings: {
       "Action": "DetachVolume",
       "Version": "2016-11-15",
-      "VolumeId": $item["id"]
+      "VolumeId": $instance["id"]
     }
   )
-  call check_response_and_append_if_error($response, "Detach Volume", $errors) retrieve $errors
-  call sys_log("Detach Volume Response ", to_s($response))
+
   $status_code = $response["code"]
 
-  if $status_code == 200
-    $volume_status = $response["body"]["DetachVolumeResponse"]["status"]
-    $volumeId = $response["body"]["DetachVolumeResponse"]["volumeId"]
+  task_label("Get AWS Volume response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
 
-    if $volume_status == "in-use"
-      $condition_check = "available"
+  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
+    raise "Unexpected response getting AWS Volume: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Get AWS Volume successful: " + $instance["id"])
 
-      while $condition_check !~ $volume_status do
-        sleep(30)
-        call get_detach_status(to_s($volumeId), []) retrieve $status, $volume_errors
-        $volume_status = $status
+    $status = $response["body"]["DetachVolumeResponse"]["status"]
 
-        if $volume_status == "error" || size($volume_errors) > 0
-          $status_code = 400
-          $volume_status = "available"
-          foreach $error in $volume_errors do
-            $errors << $error
-          end
-        end
-      end
+    while $status !~ "available" do
+      sleep(30)
+      call get_volume_status($instance) retrieve $status_response, $status
     end
   end
 end
 
-define get_detach_status($volumeId, $errors) return $volume_status, $errors do
-  call sys_log("Inside Detach Volume Details Volume Id ", $volumeId)
-  $volume_response = http_request(
-    auth: $$auth_aws,
-    https: true,
-    verb: "get",
-    host: "ec2." + $item["region"] + ".amazonaws.com",
-    href: "/",
-    query_strings: {
-      "Action": "DescribeVolumes",
-      "Version": "2016-11-15",
-      "VolumeId.1": $volumeId
-    }
-  )
-  call check_response_and_append_if_error($volume_response, "Describe Volume " + $volumeId, $errors) retrieve $errors
-  call sys_log("Get Volume Details ", to_s($volume_response))
-  $volume_status = $volume_response["body"]["DescribeVolumesResponse"]["volumeSet"]["item"]["status"]
-end
+define get_volume_status($instance) return $response, $status do
+  $host = "ec2." + $instance["region"] + ".amazonaws.com"
+  $href = "/"
+  $params = "?Action=DescribeVolumes&Version=2016-11-15&VolumeId.1=" + $instance["id"]
+  $url = $host + $href + $params
+  task_label("GET " + $url)
 
-define delete_volume($item, $errors) return $status_code, $errors do
-  $delete_response = http_request(
-    auth: $$auth_aws,
-    https: true,
-    verb: "get",
-    host: "ec2." + $item["region"] + ".amazonaws.com",
-    href: "/",
-    query_strings: {
-      "Action": "DeleteVolume",
-      "Version": "2016-11-15",
-      "VolumeId": $item["id"]
-    }
-  )
-  call check_response_and_append_if_error($delete_response, "Delete Volume", $errors) retrieve $errors
-  call sys_log("Delete Volumes Response ", to_s($delete_response))
-  $volume_delete_status = $delete_response["code"]
-  if $volume_delete_status != 200
-    $volume_delete_body = $delete_response["body"]
-    $split_body = split($volume_delete_body, "<Message>")
-    $split_final_message = split($split_body[1], "</Message>")
-    call create_tag($item["region"], $item["id"], to_s($split_final_message[0]), $errors) retrieve $errors
-  end
-end
-
-define create_tag($region, $volumeId, $message, $errors) return $errors do
-  call sys_log("Create Tag  ", $volumeId)
   $response = http_request(
     auth: $$auth_aws,
     https: true,
     verb: "get",
-    host: "ec2." + $region + ".amazonaws.com",
-    href: "/",
+    host: $host,
+    href: $href,
     query_strings: {
-      "Action": "CreateTags",
+      "Action": "DescribeVolumes",
       "Version": "2016-11-15",
-      "ResourceId.1": $volumeId,
-      "Tag.1.Key": "Error While Deleting Volume",
-      "Tag.1.Value": to_s($message)
+      "VolumeId.1": $instance["id"]
     }
   )
-  call check_response_and_append_if_error($response, "Create Tag", $errors) retrieve $errors
-end
 
-define check_response_and_append_if_error($response, $request_description, $errors) return $errors do
-  if $response["code"] > 299 || $response["code"] < 200
-    $errors << "Unexpected status code from " + $request_description + " request\n  " + to_s($response)
+  $status = $response["body"]["DescribeVolumesResponse"]["volumeSet"]["item"]["status"]
+
+  task_label("Get AWS Volume response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
+
+  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
+    raise "Unexpected response getting AWS Volume: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Get AWS Volume successful: " + $instance["id"])
   end
 end
 
-define sys_log($subject, $detail) do
-  # Create empty errors array if doesn't already exist
+define create_snapshot($instance) return $response, $status_code do
+  $host = "ec2." + $instance["region"] + ".amazonaws.com"
+  $href = "/"
+  $params = "?Action=CreateSnapshot&Version=2016-11-15&VolumeId=" + $instance["id"]
+  $url = $host + $href + $params
+  task_label("GET " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "get",
+    href: $href,
+    host: $host,
+    query_strings: {
+      "Action": "CreateSnapshot",
+      "Version": "2016-11-15",
+      "VolumeId": $instance["id"]
+    }
+  )
+
+  $status_code = $response["code"]
+
+  task_label("Get AWS Volume response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
+
+  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
+    raise "Unexpected response getting AWS Volume: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Get AWS Volume successful: " + $instance["id"])
+
+    $status = $response["body"]["CreateSnapshotResponse"]["status"]
+    $snapshot_id = to_s($response["body"]["CreateSnapshotResponse"]["snapshotId"])
+
+    while $status !~ "completed" do
+      sleep(30)
+      call get_snapshot_status($snapshot_id, $instance["region"]) retrieve $status_response, $status
+    end
+  end
+end
+
+define get_snapshot_status($snapshot_id, $region) return $response, $status do
+  $host = "ec2." + $region + ".amazonaws.com"
+  $href = "/"
+  $params = "?Action=DescribeSnapshots&Version=2016-11-15&SnapshotId=" + $snapshot_id
+  $url = $host + $href + $params
+  task_label("GET " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "get",
+    host: $host,
+    href: $href,
+    query_strings: {
+      "Action": "DescribeSnapshots",
+      "Version": "2016-11-15",
+      "SnapshotId": $snapshot_id
+    }
+  )
+
+  $status = $response["body"]["DescribeSnapshotsResponse"]["snapshotSet"]["item"]["status"]
+
+  task_label("Get AWS EC2 Snapshot response: " + $snapshot_id + " " + to_json($response))
+  $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
+
+  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
+    raise "Unexpected response getting AWS EC2 Snapshot: "+ $snapshot_id + " " + to_json($response)
+  else
+    task_label("Get AWS EC2 Snapshot successful: " + $snapshot_id)
+  end
+end
+
+define delete_volume($instance) return $response do
+  $host = "ec2." + $instance["region"] + ".amazonaws.com"
+  $href = "/"
+  $params = "?Action=DeleteVolume&Version=2016-11-15&VolumeId=" + $instance["id"]
+  $url = $host + $href + $params
+  task_label("GET " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "get",
+    host: $host,
+    href: $href,
+    query_strings: {
+      "Action": "DeleteVolume",
+      "Version": "2016-11-15",
+      "VolumeId": $instance["id"]
+    }
+  )
+
+  task_label("Get AWS Volume response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
+
+  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
+    raise "Unexpected response getting AWS Volume: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Get AWS Volume successful: " + $instance["id"])
+  end
+end
+
+define handle_error() do
   if !$$errors
     $$errors = []
   end
-  # Check if debug is enabled
-  if $$debug
-    # Append to global $$errors
-    # This is the suggested way to capture errors
-    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
-    # If Flexera NAM Zone, create audit_entries [to be deprecated]
-    # This is the legacy method for capturing errors and only supported on Flexera NAM
-    if $$rs_optima_host == "api.optima.flexeraeng.com"
-      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
-      $task_label = "Creating audit entry for " + $subject
-      sub task_label: $task, on_error: skip_error_and_append($task) do
-        rs_cm.audit_entries.create(
-          notify: "None",
-          audit_entry: {
-            auditee_href: @@account,
-            summary: $subject,
-            detail: $detail
-          }
-        )
-      end # End sub on_error
-    end # End if rs_optima_host
-  end # End if debug is enabled
-end
-
-define skip_error_and_append($subject) do
-  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
   $_error_behavior = "skip"
 end
 

@@ -53,6 +53,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   - `ec2:DescribeVolumes`
   - `ec2:DescribeSnapshots`
   - `cloudwatch:GetMetricStatistics`
+  - `cloudwatch:GetMetricData`
   - `ec2:CreateTags`*
   - `ec2:CreateSnapshot`*
   - `ec2:DetachVolume`*
@@ -73,6 +74,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
                   "ec2:DescribeVolumes",
                   "ec2:DescribeSnapshots",
                   "cloudwatch:GetMetricStatistics",
+                  "cloudwatch:GetMetricData",
                   "ec2:CreateTags",
                   "ec2:CreateSnapshot",
                   "ec2:DetachVolume",
