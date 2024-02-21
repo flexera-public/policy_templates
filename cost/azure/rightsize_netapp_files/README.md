@@ -48,7 +48,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   - `Microsoft.NetApp/netAppAccounts/capacityPools/volumes/write` *
   - `Microsoft.Insights/metrics/read`
 
-* Only required for taking action (changing the size); the policy will still function in a read-only capacity without these permissions.
+\* Only required for taking action (changing the size); the policy will still function in a read-only capacity without these permissions.
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*).
 
