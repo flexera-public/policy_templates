@@ -1,5 +1,20 @@
 # Changelog
 
+## v4.1
+
+- Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.
+
+## v4.0
+
+- Fixed issue with resource count in incident subject being off by 1
+- Fixed minor grammar issue if results only include 1 item
+- Renamed policy actions to make it clear whether they are for underutilized or idle instances
+- Added ability to filter resources by tag key via wildcard
+- Added option to power off idle instances
+- Added ability to indicate whether to do a graceful or forced shutdown when powering off instances
+- Improved code related to incident export
+- Updated and improved code for policy actions
+
 ## v3.3
 
 - Added ability to filter resources by region

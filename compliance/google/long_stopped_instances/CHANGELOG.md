@@ -1,5 +1,18 @@
 # Change log
 
+## v3.0
+
+- Several parameters altered to be more descriptive and human-readable
+- Added more robust ability to filter resources by project
+- Added ability to filter resources by region
+- Added ability to filter resources by multiple tag key:value pairs
+- Added additional context to incident description
+- Normalized incident export to be consistent with other policies
+- Added human-readable recommendation to incident export
+- Streamlined code for better readability and faster execution
+- Meta policy support added
+- Policy now requires a valid Flexera credential
+
 ## v2.7
 
 - Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`

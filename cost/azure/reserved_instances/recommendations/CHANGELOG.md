@@ -1,5 +1,18 @@
 # Changelog
 
+## v3.3
+
+- Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.
+
+## v3.2
+
+- Fixed issue where policy execution would fail due to 429 error from Azure API
+- Added logic required for "Meta Policy" use-cases
+
+## v3.1
+
+- Fixed bug where policy would not filter recommendations by term
+
 ## v3.0
 
 - Policy now automatically converts savings to local currency when appropriate

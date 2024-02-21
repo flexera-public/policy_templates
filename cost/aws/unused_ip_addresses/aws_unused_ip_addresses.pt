@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "6.7",
+  version: "6.8",
   provider: "AWS",
   service: "Compute",
   policy_set: "Unused IP Addresses",
@@ -48,7 +48,7 @@ parameter "param_pricing_api_endpoint" do
   type "string"
   category "Policy Settings"
   label "AWS Pricing API Endpoint"
-  description "See AWS Docs for more details: https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/using-price-list-query-api.html#price-list-query-api-endpoints"
+  description "The AWS Pricing API endpoint to use when retrieving pricing data for unused IP addresses. Pricing may vary based on region. See README for more details."
   allowed_values "api.pricing.us-east-1.amazonaws.com", "api.pricing.eu-central-1.amazonaws.com", "api.pricing.ap-south-1.amazonaws.com"
   default "api.pricing.us-east-1.amazonaws.com"
 end
@@ -868,7 +868,7 @@ escalation "esc_release_ip_address" do
   automatic contains($param_automatic_action, "Release Unused IP Addresses")
   label "Release Unused IP Addresses"
   description "Approval to release all selected IP addresses"
-  run "release_unused_ip_addresses", data, rs_optima_host
+  run "release_unused_ip_addresses", data
 end
 
 
@@ -876,92 +876,75 @@ end
 # Cloud Workflow
 ###############################################################################
 
-define release_unused_ip_addresses($data, $$rs_optima_host) do
-  # Change "No" to "Yes" to enable CWF debug logging
-  $log_to_cm_audit_entries = "No"
+define release_unused_ip_addresses($data) return $all_responses do
+  $$all_responses = []
 
-  $$debug = $param_log_to_cm_audit_entries == "Yes"
-  $$errors = []
-  $all_responses = []
-  foreach $item in $data do
-    sub on_error: skip_error_and_append($item["id"]) do
-      if $item["domain"] == "standard"
-        $response = http_request(
-          verb: "get",
-          host: join(["ec2.", $item["region"], ".amazonaws.com"]),
-          auth: $$auth_aws,
-          href: "/",
-          query_strings:{
-            "Action": "ReleaseAddress",
-            "PublicIp": $item["id"],
-            "Version": "2016-11-15"
-          },
-          https: true
-        )
-      elsif $item["domain"] == "vpc"
-        $response = http_request(
-          verb: "get",
-          host: join(["ec2.", $item["region"], ".amazonaws.com"]),
-          auth: $$auth_aws,
-          href: "/",
-          query_strings:{
-            "Action": "ReleaseAddress",
-            "AllocationId": $item["allocationID"],
-            "Version": "2016-11-15"
-          },
-          https: true
-        )
-      end
-      call check_response_and_append_if_error($response, "Release Address " + $item["id"], $$errors) retrieve $$errors
-      $all_responses << $response
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call release_unused_ip_address($instance) retrieve $release_response
+      $$all_responses << $release_response
     end
   end
-  call sys_log("Responses", to_s($all_responses))
-  if size($$errors) > 0
-    $error = join($$errors, "\n")
-    call sys_log("Errors", $error)
-    raise $error
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
   end
 end
 
-define sys_log($subject, $detail) do
-  # Create empty errors array if doesn't already exist
+define release_unused_ip_address($instance) return $response do
+  if $instance["domain"] == "standard"
+    $id = strip($instance["resourceID"])
+    $id_param = "PublicIp=" + $id
+    $query_strings = {
+      "Action": "ReleaseAddress",
+      "Version": "2016-11-15",
+      "PublicIp": $id
+    }
+  end
+
+  if $instance["domain"] == "vpc"
+    $id = strip($instance["allocationID"])
+    $id_param = "AllocationId=" + $id
+    $query_strings = {
+      "Action": "ReleaseAddress",
+      "Version": "2016-11-15",
+      "AllocationId": $id
+    }
+  end
+
+  $host = "ec2." + $instance["region"] + ".amazonaws.com"
+  $href = "/"
+  $params = "?Action=ReleaseAddress&Version=2016-11-15&" + $id_param
+  $url = $host + $href + $params
+  task_label("GET " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "get",
+    href: $href,
+    host: $host,
+    query_strings: $query_strings
+  )
+
+  task_label("Get AWS IP Address response: " + $id + " " + to_json($response))
+  $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
+
+  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
+    raise "Unexpected response getting AWS IP Address: "+ $id + " " + to_json($response)
+  else
+    task_label("Get AWS IP Address successful: " + $id)
+  end
+end
+
+define handle_error() do
   if !$$errors
     $$errors = []
   end
-  # Check if debug is enabled
-  if $$debug
-    # Append to global $$errors
-    # This is the suggested way to capture errors
-    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
-    # If Flexera NAM Zone, create audit_entries [to be deprecated]
-    # This is the legacy method for capturing errors and only supported on Flexera NAM
-    if $$rs_optima_host == "api.optima.flexeraeng.com"
-      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
-      $task_label = "Creating audit entry for " + $subject
-      sub task_label: $task, on_error: skip_error_and_append($task) do
-        rs_cm.audit_entries.create(
-          notify: "None",
-          audit_entry: {
-            auditee_href: @@account,
-            summary: $subject,
-            detail: $detail
-          }
-        )
-      end # End sub on_error
-    end # End if rs_optima_host
-  end # End if debug is enabled
-end
-
-define skip_error_and_append($subject) do
-  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
   $_error_behavior = "skip"
-end
-
-define check_response_and_append_if_error($response, $request_description, $errors) return $errors do
-  if $response["code"] > 299 || $response["code"] < 200
-    $errors << "Unexpected status code from " + $request_description + " request\n  " + to_s($response)
-  end
 end
 
 ###############################################################################

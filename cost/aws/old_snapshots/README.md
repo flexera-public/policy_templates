@@ -75,7 +75,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
                   "ec2:DescribeImages",
                   "ec2:DescribeSnapshots",
                   "ec2:DeregisterImage",
-                  "ec2:DeleteSnapshot"
+                  "ec2:DeleteSnapshot",
                   "rds:DescribeDBInstances",
                   "rds:DescribeDBSnapshots",
                   "rds:DescribeDBClusters",

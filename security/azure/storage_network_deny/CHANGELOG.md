@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.3
+
+- Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.
+
 ## v2.2
 
 - Added `ignore_status [400,403,404]` for API calls to Azure API to ignore errors related to legacy subscription types

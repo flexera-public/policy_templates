@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.1",
+  version: "2.2",
   provider: "Flexera",
   service: "Optima",
   policy_set: "Automation",
@@ -22,6 +22,13 @@ parameter "param_tag_list" do
   type "list"
   label "Tag Keys"
   description "A list of AWS account tag keys to build Rule-Based Dimensions from"
+end
+
+parameter "param_name_list" do
+  type "list"
+  label "Dimension Names"
+  description "A list of names to give the Rule-Based Dimensions in the Flexera platform. Enter names in the same order as the tag keys in the 'Tag Keys' field. Dimension names will be derived from tag keys directly if this list is left empty."
+  default []
 end
 
 parameter "param_effective_date" do
@@ -125,21 +132,26 @@ datasource "ds_existing_rbds" do
 end
 
 datasource "ds_rbds" do
-  run_script $js_rbds, $ds_cloud_vendor_accounts, $ds_existing_rbds, $param_tag_list, $param_effective_date
+  run_script $js_rbds, $ds_cloud_vendor_accounts, $ds_existing_rbds, $param_name_list, $param_tag_list, $param_effective_date
 end
 
 script "js_rbds", type: "javascript" do
-  parameters "accounts", "existing_rbds", "param_tag_list", "param_effective_date"
+  parameters "accounts", "existing_rbds", "param_name_list", "param_tag_list", "param_effective_date"
   result "result"
   code <<-'EOS'
   result = []
 
   rbd_id_list = _.pluck(existing_rbds, 'id')
 
-  _.each(param_tag_list, function(tag) {
-    rbd_id = "rbd_" + tag.toLowerCase().replace(/\s+/g, '').replace(/\W/g, "").replace('.', '').replace('-', '').trim()
+  _.each(param_tag_list, function(tag, index) {
     rbd_name = tag.replace('.', ' ').replace('-', ' ')
     rbd_name = rbd_name.replace(/\W/g, " ").trim()
+
+    // Use user-specified name instead of user provided one
+    if (param_tag_list.length == param_name_list.length) { rbd_name = param_name_list[index] }
+
+    rbd_id = "rbd_" + rbd_name.toLowerCase().replace(/\s+/g, '').replace(/\W/g, "").replace('.', '').replace('-', '').trim()
+
     tag_key = tag.toLowerCase().trim()
     verb = "POST"
 

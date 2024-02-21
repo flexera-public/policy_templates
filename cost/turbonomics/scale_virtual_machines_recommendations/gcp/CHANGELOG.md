@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.7
+
+- Added Hyperlinks for `System Details URL` incident field.
+
 ## v0.6
 
 - Added `Resource Type` incident field.

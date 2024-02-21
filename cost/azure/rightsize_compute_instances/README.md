@@ -8,7 +8,7 @@ This policy checks all the instances in Azure Subscriptions for the average or m
 
 - The policy leverages the Azure API to check all instances and then checks the instance average or maximum CPU and memory utilization over a user-specified number of days.
 - The policy identifies all instances that have CPU and/or memory utilization below the user-specified idle thresholds and provides the relevant recommendation.
-- The recommendation provided for Idle Instances is a deletion action. These instances can be deleted in an automated manner or after approval.
+- The recommendation provided for Idle Instances is a deletion action. These instances can be deleted or powered off in an automated manner or after approval.
 - The policy identifies all instances that have CPU and/or memory utilization below the user-specified underutilized thresholds and provides the relevant recommendation.
 - The recommendation provided for Underutilized Instances is a downsize action. These instances can be downsized in an automated manner or after approval.
 
@@ -39,8 +39,9 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Idle/Utilized for both CPU/Memory or either* - Set whether an instance should be considered idle and/or underutilized only if both CPU and memory are under the thresholds or if either CPU or memory are under. Has no effect if other parameters are configured such that only CPU or memory is being considered.
 - *Threshold Statistic* - Statistic to use when determining if an instance is idle/underutilized.
 - *Statistic Lookback Period* - How many days back to look at CPU and/or memory data for instances. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days.
-- *Exclusion Tags (Key:Value)* - Cloud native tags to ignore instances that you don't want to consider for downsizing or deletion. Format: Key:Value
+- *Exclusion Tags (Key:Value)* - Cloud native tags to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:\* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:\*
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
+- *Power Off Type* - Whether to perform a graceful shutdown or a forced shutdown when powering off idle instances. Only applicable when taking action against instances.
 
 Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
 For example if a user selects the "Delete Instances" action while applying the policy, all the resources that didn't satisfy the policy condition will be deleted.
@@ -48,6 +49,7 @@ For example if a user selects the "Delete Instances" action while applying the p
 ## Policy Actions
 
 - Sends an email notification
+- Power off virtual machines (if idle) after approval
 - Delete virtual machines (if idle) after approval
 - Downsize virtual machines (if underutilized) after approval
 
@@ -62,10 +64,13 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
 - [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:
   - `Microsoft.Compute/virtualMachines/read`
   - `Microsoft.Compute/virtualMachines/write`*
+  - `Microsoft.Compute/virtualMachines/powerOff/action`*
+  - `Microsoft.Compute/virtualMachines/start/action`*
+  - `Microsoft.Compute/virtualMachines/delete`*
   - `Microsoft.Compute/skus/read`
   - `Microsoft.Insights/metrics/read`
 
-\* Only required for taking action (deleting or downsizing); the policy will still function in a read-only capacity without these permissions.
+\* Only required for taking action (deleting, powering off or downsizing); the policy will still function in a read-only capacity without these permissions.
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`

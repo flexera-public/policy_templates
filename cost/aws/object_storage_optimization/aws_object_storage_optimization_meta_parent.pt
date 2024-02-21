@@ -8,7 +8,7 @@ tenancy "single"
 default_frequency "15 minutes"
 info(
   provider: "AWS",
-  version: "3.2", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "4.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "false"
 )
 
@@ -29,7 +29,8 @@ parameter "param_dimension_filter_includes" do
   type "list"
   label "Dimension Include Filters"
   description <<-EOS
-  Filters [`dimension_name=dimension_value` pairs] to determine which AWS Accounts returned by the Flexera Bill Analysis API to **INCLUDE** and be applied to.
+  Filters [`dimension_name=dimension_value` and `dimension_name=~dimension_value` pairs] to determine which AWS Accounts returned by the Flexera Bill Analysis API to **INCLUDE** and be applied to.
+  Use = to match the entire value and =~ to match a substring contained in the value.
   During each run this policy will select AWS Accounts who match **all** the filters defined and apply a child policy for each.
   If no include filters are provided, then all AWS Accounts are included by default.
   Most of the dimensions in Flexera can be used [default dimensions, custom tag dimensions, rule-based dimensions].  Full list of available dimensions documented in the [Bill Analysis API Docs](https://reference.rightscale.com/bill_analysis/).
@@ -41,7 +42,8 @@ parameter "param_dimension_filter_excludes" do
   type "list"
   label "Dimension Exclude Filters"
   description <<-EOS
-  Filters [`dimension_name=dimension_value` pairs] to determine which AWS Accounts returned by  the Flexera Bill Analysis API to **EXCLUDE** and *not* have policy applied to.
+  Filters [`dimension_name=dimension_value` and `dimension_name=~dimension_value` pairs] to determine which AWS Accounts returned by  the Flexera Bill Analysis API to **EXCLUDE** and *not* have policy applied to.
+  Use = to match the entire value and =~ to match a substring contained in the value.
   During each run this policy will select AWS Accounts who match **all** the filters defined here and excludes them from results.
   Can be used to exclude specific AWS Accounts [`vendor_account=123456789012`]
   Most of the dimensions in Flexera can be used [default dimensions, custom tag dimensions, rule-based dimensions].  Full list of available dimensions documented in the [Bill Analysis API Docs](https://reference.rightscale.com/bill_analysis/).
@@ -66,37 +68,74 @@ parameter "param_template_source" do
 end
 
 ## Child Policy Parameters
-parameter "param_glacier_days" do
-  type "string"
-  label "Days since last modified to move to Glacier"
-  description "Move to glacier after days last modified - leave blank to skip moving"
-end
-
-parameter "param_deep_archive_days" do
-  type "string"
-  label "Days since last modified to move to Deep Archive"
-  description "Move to glacier deep archive after days last modified- leave blank to skip moving"
-end
-
-parameter "param_exclude_tags" do
-  type "list"
-  label "Tags to ignore"
-  description "List of tags that will exclude s3 objects from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'"
-  default []
-end
-
 parameter "param_bucket_list" do
   type "list"
+  category "Filters"
   label "Bucket List"
   description "A list of S3 buckets to assess objects in. Leave blank to assess all buckets."
   default []
 end
 
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags (Key:Value)"
+  description "Cloud native tags to ignore S3 objects that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:* format to match any objects with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:*"
+  allowed_pattern /(^$)|[\w]*\:.*/
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details"
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  description "A list of allowed or denied regions. See the README for more details"
+  default []
+end
+
+parameter "param_new_storage_class" do
+  type "string"
+  category "Actions"
+  label "New Storage Class"
+  description "Whether to move objects to Glacier or Deep Archive if they meet the specified age thresholds. Select 'Both' to consider moving objects to either one based on the specified age thresholds"
+  default "Both"
+  allowed_values "Both", "Glacier", "Deep Archive"
+end
+
+parameter "param_glacier_days" do
+  type "number"
+  category "Actions"
+  label "Glacier Age Threshold (Days)"
+  description "Time in days since object was last modified to change storage class to Glacier. Not applicable if 'Deep Archive' is selected for New Storage Class"
+  default 30
+  min_value 1
+end
+
+parameter "param_deep_archive_days" do
+  type "number"
+  category "Actions"
+  label "Deep Archive Age Threshold (Days)"
+  description "Time in days since object was last modified to change storage class to Deep Archive. Not applicable if 'Glacier' is selected for New Storage Class"
+  default 90
+  min_value 1
+end
+
 parameter "param_automatic_action" do
   type "list"
+  category "Actions"
   label "Automatic Actions"
-  description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Update S3 Objects Class"]
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Update S3 Objects Storage Class", "Delete S3 Objects"]
   default []
 end
 
@@ -104,7 +143,7 @@ end
 # Authentication
 ###############################################################################
 credentials "auth_aws" do
-  schemes "aws","aws_sts"
+  schemes "aws", "aws_sts"
   label "AWS"
   description "Select the AWS Credential from the list"
   tags "provider=aws"
@@ -113,7 +152,7 @@ end
 
 credentials "auth_flexera" do
   schemes "oauth2"
-  label "flexera"
+  label "Flexera"
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
@@ -285,23 +324,49 @@ script "js_make_billing_center_request", type: "javascript" do
   // Append to default dimensions and filter expressions using parent policy params
   _.each(param_dimension_filter_includes, function (v) {
     // split key=value string
-    var split = v.split("=");
+    if (v.indexOf('=~') == -1) {
+      var split = v.split("=");
+      var type = "equal"
+    } else {
+      var split = v.split("=~");
+      var type = "substring"
+    }
+
     var k = split[0];
     var v = split[1];
+
     // append to lists
     dimensions.push(k);
-    filter_expressions.push({ dimension: k, type: "equal", value: v });
+
+    if (type == "equal") {
+      filter_expressions.push({ dimension: k, type: "equal", value: v });
+    } else {
+      filter_expressions.push({ dimension: k, type: "substring", substring: v });
+    }
   });
 
   // Append to filter expressions using exclude policy params
   _.each(param_dimension_filter_excludes, function (v) {
     // split key=value string
-    var split = v.split("=");
+    if (v.indexOf('=~') == -1) {
+      var split = v.split("=");
+      var type = "equal"
+    } else {
+      var split = v.split("=~");
+      var type = "substring"
+    }
+
     var k = split[0];
     var v = split[1];
+
     // append to lists
     dimensions.push(k);
-    filter_expressions.push({ "type": "not", "expression": { "dimension": k, "type": "equal", "value": v } });
+
+    if (type == "equal") {
+      filter_expressions.push({ "type": "not", "expression": { "dimension": k, "type": "equal", "value": v } });
+    } else {
+      filter_expressions.push({ "type": "not", "expression": { "dimension": k, "type": "substring", "substring": v } });
+    }
   });
 
   // Produces a duplicate-free version of the array
@@ -734,19 +799,19 @@ datasource "ds_child_incident_details" do
   end
 end
 
-datasource "ds_aws_filtered_s3_objects_combined_incidents" do
-  run_script $js_ds_aws_filtered_s3_objects_combined_incidents, $ds_child_incident_details
+datasource "ds_aws_s3_objects_incident_combined_incidents" do
+  run_script $js_ds_aws_s3_objects_incident_combined_incidents, $ds_child_incident_details
 end
 
-script "js_ds_aws_filtered_s3_objects_combined_incidents", type: "javascript" do
+script "js_ds_aws_s3_objects_incident_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-EOS
   result = []
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
-    // If the incident summary contains "Opportunities for AWS Object Storage Optimization" then include it in the filter result
-    if (s.indexOf("Opportunities for AWS Object Storage Optimization") > -1) {
+    // If the incident summary contains "AWS S3 Objects Recommended For Storage Class Change" then include it in the filter result
+    if (s.indexOf("AWS S3 Objects Recommended For Storage Class Change") > -1) {
       _.each(incident["violation_data"], function(violation) {
         violation["incident_id"] = incident["id"];
         result.push(violation);
@@ -757,25 +822,25 @@ EOS
 end
 
 
-# Escalation for Approve S3 Object Storage Class Change
-escalation "esc_modify_s3_object_storage_class_approval" do
+# Escalation for Update S3 Objects Storage Class
+escalation "esc_update" do
   automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
-  label "Approve S3 Object Storage Class Change"
-  description "Approve selected S3 object storage class change"
-  run "esc_modify_s3_object_storage_class_approval", data, rs_governance_host, rs_project_id
+  label "Update S3 Objects Storage Class"
+  description "Approval to update the storage class of all selected S3 Objects"
+  run "esc_update", data, rs_governance_host, rs_project_id
 end
-define esc_modify_s3_object_storage_class_approval($data, $governance_host, $rs_project_id) do
-  call child_run_action($data, $governance_host, $rs_project_id, "Approve S3 Object Storage Class Change")
+define esc_update($data, $governance_host, $rs_project_id) do
+  call child_run_action($data, $governance_host, $rs_project_id, "Update S3 Objects Storage Class")
 end
 
 # Escalation for Delete S3 Objects
-escalation "esc_delete_s3_objects_approval" do
+escalation "esc_delete" do
   automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
   label "Delete S3 Objects"
-  description "Delete selected S3 objects"
-  run "esc_delete_s3_objects_approval", data, rs_governance_host, rs_project_id
+  description "Approval to delete all selected S3 Objects"
+  run "esc_delete", data, rs_governance_host, rs_project_id
 end
-define esc_delete_s3_objects_approval($data, $governance_host, $rs_project_id) do
+define esc_delete($data, $governance_host, $rs_project_id) do
   call child_run_action($data, $governance_host, $rs_project_id, "Delete S3 Objects")
 end
 
@@ -786,42 +851,50 @@ end
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
-    # Consolidated incident for Opportunities for AWS Object Storage Optimization
-  validate $ds_aws_filtered_s3_objects_combined_incidents do
-    summary_template "Consolidated Incident: {{ len data }} Opportunities for AWS Object Storage Optimization"
+    # Consolidated incident for AWS S3 Objects Recommended For Storage Class Change
+  validate $ds_aws_s3_objects_incident_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} AWS S3 Objects Recommended For Storage Class Change"
     escalate $esc_email
-    escalate $esc_report_s3_Objects_list
-    escalate $esc_modify_s3_object_storage_class_approval
-    escalate $esc_delete_s3_objects_approval
+    escalate $esc_update
+    escalate $esc_delete
     check eq(size(data), 0)
     export do
       resource_level true
-      field "accountId" do
-        label "Account Id"
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "bucket_name" do
+        label "Bucket Name"
+      end
+      field "resourceID" do
+        label "Object Key"
       end
       field "region" do
         label "Region"
       end
-      field "id" do
-        label "Bucket Name"
-      end
-      field "object_key" do
-        label "Object Key"
-      end
-      field "storage_class" do
-        label "Current Storage Class"
-      end
       field "last_modified" do
         label "Last Modified Date"
       end
-      field "modify_storage_class_to" do
-        label "Move Storage Class To"
+      field "recommendationDetails" do
+        label "Recommendation"
       end
-      field "tagKeyValue" do
+      field "resourceType" do
+        label "Current Storage Class"
+      end
+      field "newResourceType" do
+        label "Recommended Storage Class"
+      end
+      field "tags" do
         label "Tags"
       end
       field "host" do
         label "Host"
+      end
+      field "id" do
+        label "ID"
       end
       field "incident_id" do
         label "Child Incident ID"

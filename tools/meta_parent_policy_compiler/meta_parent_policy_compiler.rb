@@ -9,6 +9,7 @@ default_child_policy_template_files = [
   "../../compliance/aws/disallowed_regions/aws_disallowed_regions.pt",
   "../../compliance/aws/instances_without_fnm_agent/aws_instances_not_running_flexnet_inventory_agent.pt",
   "../../compliance/aws/long_stopped_instances/aws_long_stopped_instances.pt",
+  "../../compliance/aws/untagged_resources/aws_untagged_resources.pt",
   "../../cost/aws/gp3_volume_upgrade/aws_upgrade_to_gp3_volume.pt",
   "../../cost/aws/idle_compute_instances/idle_compute_instances.pt",
   "../../cost/aws/object_storage_optimization/aws_object_storage_optimization.pt",
@@ -20,6 +21,7 @@ default_child_policy_template_files = [
   "../../cost/aws/s3_storage_policy/aws_s3_bucket_policy_check.pt",
   "../../cost/aws/schedule_instance/aws_schedule_instance.pt",
   "../../cost/aws/superseded_instances/aws_superseded_instances.pt",
+  "../../cost/aws/unused_clbs/aws_unused_clbs.pt",
   "../../cost/aws/unused_ip_addresses/aws_unused_ip_addresses.pt",
   "../../cost/aws/unused_rds/unused_rds.pt",
   "../../cost/aws/unused_volumes/aws_delete_unused_volumes.pt",
@@ -30,13 +32,18 @@ default_child_policy_template_files = [
   "../../security/aws/rds_publicly_accessible/aws_publicly_accessible_rds_instances.pt",
   "../../security/storage/aws/public_buckets/aws_public_buckets.pt",
   # Azure Policy Templates
+  "../../compliance/azure/azure_untagged_vms/untagged_vms.pt",
+  "../../compliance/azure/azure_untagged_resources/untagged_resources.pt",
   "../../compliance/azure/azure_disallowed_regions/azure_disallowed_regions.pt",
   "../../compliance/azure/ahub_manual/azure_ahub_utilization_with_manual_entry.pt",
   "../../compliance/azure/instances_without_fnm_agent/azure_instances_not_running_flexnet_inventory_agent.pt",
   "../../compliance/azure/azure_long_stopped_instances/long_stopped_instances_azure.pt",
+  "../../cost/azure/reserved_instances/recommendations/azure_reserved_instance_recommendations.pt",
   "../../cost/azure/idle_compute_instances/azure_idle_compute_instances.pt",
+  "../../cost/azure/blob_storage_optimization/azure_blob_storage_optimization.pt",
   "../../cost/azure/old_snapshots/azure_delete_old_snapshots.pt",
   "../../cost/azure/rightsize_compute_instances/azure_compute_rightsizing.pt",
+  "../../cost/azure/rightsize_managed_disks/azure_rightsize_managed_disks.pt",
   "../../cost/azure/rightsize_netapp_files/azure_rightsize_netapp_files.pt",
   "../../cost/azure/rightsize_sql_instances/azure_rightsize_sql_instances.pt",
   "../../cost/azure/unused_ip_addresses/azure_unused_ip_addresses.pt",
@@ -54,14 +61,15 @@ default_child_policy_template_files = [
   "../../operational/azure/tag_cardinality/azure_tag_cardinality.pt",
   "../../operational/azure/vms_without_managed_disks/azure_vms_without_managed_disks.pt",
   # Google Policy Templates
+  "../../compliance/google/long_stopped_instances/google_long_stopped_instances.pt",
   "../../cost/google/cloud_sql_idle_instance_recommendations/google_sql_idle_instance_recommendations.pt",
   "../../cost/google/idle_ip_address_recommendations/google_idle_ip_address_recommendations.pt",
   "../../cost/google/idle_persistent_disk_recommendations/google_idle_persistent_disk_recommendations.pt",
   "../../cost/google/rightsize_vm_recommendations/google_rightsize_vm_recommendations.pt",
+  "../../cost/google/schedule_instance/google_schedule_instance.pt",
   "../../cost/google/cud_recommendations/google_committed_use_discount_recommendations.pt",
   "../../cost/google/old_snapshots/google_delete_old_snapshots.pt"
 ]
-
 
 # Compile Meta Parent Policy Definition
 # This function takes a child policy template file path

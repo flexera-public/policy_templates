@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "4.1",
+  version: "4.4",
   provider: "Azure",
   service: "SQL",
   policy_set: "Rightsize Database Instances",
@@ -42,6 +42,15 @@ parameter "param_min_savings" do
   description "Minimum potential savings required to generate a recommendation"
   min_value 0
   default 0
+end
+
+parameter "param_minimum_age" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Age (Days)"
+  description "The minimum age, in days, since a SQL database was created to produce recommendations for it. Set to 0 to ignore age entirely."
+  default 0
+  min_value 0
 end
 
 parameter "param_subscriptions_allow_or_deny" do
@@ -268,11 +277,13 @@ datasource "ds_azure_subscriptions" do
     pagination $pagination_azure
     host $param_azure_endpoint
     path "/subscriptions/"
-    query "api-version","2020-01-01"
+    query "api-version", "2020-01-01"
     header "User-Agent", "RS Policies"
     # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
     # Forces `ds_is_deleted` datasource to run first during policy execution
     header "Meta-Flexera", val($ds_is_deleted, "path")
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
@@ -317,9 +328,10 @@ datasource "ds_azure_sql_databases" do
     path join(["/subscriptions/", val(iter_item, "id"), "/resources"])
     query "api-version", "2019-08-01"
     query "$filter", "resourceType eq 'Microsoft.Sql/servers/databases'"
+    query "$expand", "createdTime"
     header "User-Agent", "RS Policies"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-    ignore_status [400,403,404]
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
@@ -331,6 +343,7 @@ datasource "ds_azure_sql_databases" do
       field "kind", jmes_path(col_item, "kind")
       field "sku" , jmes_path(col_item, "sku")
       field "tags", jmes_path(col_item, "tags")
+      field "createdTime", jmes_path(col_item, "createdTime")
       field "resourceGroup", get(4, split(jmes_path(col_item,"id"), "/"))
       field "subscriptionId",val(iter_item, "id")
       field "subscriptionName",val(iter_item, "name")
@@ -338,15 +351,38 @@ datasource "ds_azure_sql_databases" do
   end
 end
 
+datasource "ds_azure_sql_databases_age_filtered" do
+  run_script $js_azure_sql_databases_age_filtered, $ds_azure_sql_databases, $param_minimum_age
+end
+
+script "js_azure_sql_databases_age_filtered", type: "javascript" do
+  parameters "ds_azure_sql_databases", "param_minimum_age"
+  result "result"
+  code <<-EOS
+  if (param_minimum_age > 0) {
+    today = new Date()
+
+    result = _.filter(ds_azure_sql_databases, function(db) {
+      created = new Date(db['createdTime'])
+      age = Math.round((today - created) / 1000 / 60 / 60 / 24)
+
+      return age >= param_minimum_age
+    })
+  } else {
+    result = ds_azure_sql_databases
+  }
+EOS
+end
+
 datasource "ds_azure_sql_databases_system_filtered" do
-  run_script $js_azure_sql_databases_system_filtered, $ds_azure_sql_databases
+  run_script $js_azure_sql_databases_system_filtered, $ds_azure_sql_databases_age_filtered
 end
 
 script "js_azure_sql_databases_system_filtered", type: "javascript" do
-  parameters "ds_azure_sql_databases"
+  parameters "ds_azure_sql_databases_age_filtered"
   result "result"
   code <<-EOS
-  result = _.reject(ds_azure_sql_databases, function(db) {
+  result = _.reject(ds_azure_sql_databases_age_filtered, function(db) {
     sku_name = null
     if (typeof(db['sku']) == 'object') { sku_name = db['sku']['name'] }
 
@@ -512,6 +548,7 @@ script "js_merged_metrics", type: "javascript" do
       type: db['type'],
       sku: db['sku'],
       tags: db_tags.join(', '),
+      createdTime: db['createdTime'],
       resourceGroup: db['resourceGroup'],
       subscriptionId: db['subscriptionId'],
       subscriptionName: db['subscriptionName'],
@@ -713,11 +750,11 @@ EOS
 end
 
 datasource "ds_downsize_sql_incident" do
-  run_script $js_downsize_sql_incident, $ds_merged_metrics, $ds_azure_sql_databases_region_filtered, $ds_sql_costs_grouped, $ds_currency, $param_min_savings, $param_stats_lookback, $param_stats_underutil_threshold_cpu_value, $param_unused_or_underutilized
+  run_script $js_downsize_sql_incident, $ds_merged_metrics, $ds_azure_sql_databases_region_filtered, $ds_sql_costs_grouped, $ds_currency, $param_min_savings, $param_stats_lookback, $param_stats_underutil_threshold_cpu_value, $param_unused_or_underutilized, $param_minimum_age
 end
 
 script "js_downsize_sql_incident", type: "javascript" do
-  parameters "ds_merged_metrics", "ds_azure_sql_databases_region_filtered", "ds_sql_costs_grouped", "ds_currency", "param_min_savings", "param_stats_lookback", "param_stats_underutil_threshold_cpu_value", "param_unused_or_underutilized"
+  parameters "ds_merged_metrics", "ds_azure_sql_databases_region_filtered", "ds_sql_costs_grouped", "ds_currency", "param_min_savings", "param_stats_lookback", "param_stats_underutil_threshold_cpu_value", "param_unused_or_underutilized", "param_minimum_age"
   result "result"
   code <<-'EOS'
   // Function for formatting currency numbers later
@@ -767,6 +804,7 @@ script "js_downsize_sql_incident", type: "javascript" do
         resourceType: db['type'],
         sku: db['sku'],
         tags: db['tags'],
+        createdTime: db['createdTime'],
         resourceGroup: db['resourceGroup'],
         accountID: db['subscriptionId'],
         accountName: db['subscriptionName'],
@@ -813,14 +851,24 @@ script "js_downsize_sql_incident", type: "javascript" do
     context_message = [
       "An Azure SQL Database is considered underutilized if it has an average CPU usage below ",
       param_stats_underutil_threshold_cpu_value, "% for the last ", param_stats_lookback, " ", day_message,
-      ", regardless of whether it has had any connections to it in that same time period.\n\n"
+      ", regardless of whether it has had any connections to it in that same time period. "
     ].join('')
   } else {
     context_message = [
       "An Azure SQL Database is considered underutilized if it has had at least one connection to it ",
       "in the last ", param_stats_lookback, " ", day_message, " but has an average CPU usage below ",
-      param_stats_underutil_threshold_cpu_value, "% for that same time period.\n\n"
+      param_stats_underutil_threshold_cpu_value, "% for that same time period. "
     ].join('')
+  }
+
+  min_age_message = "Results were not filtered by age.\n\n"
+
+  if (param_minimum_age == 1) {
+    min_age_message = "Only Azure SQL Databases created more than 1 day ago were included in the results.\n\n"
+  }
+
+  if (param_minimum_age > 1) {
+    min_age_message = "Only Azure SQL Databases created more than " + param_minimum_age + " days ago were included in the results.\n\n"
   }
 
   disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
@@ -836,20 +884,20 @@ script "js_downsize_sql_incident", type: "javascript" do
     newResourceType: "",    cpuAverage: "",            lookbackPeriod: "",
     threshold: "",          policy_name: "",           savings: "",
     savingsCurrency: "",    service: "",               platform: "",
-    total_savings: "",      message: ""
+    createdTime: "",        total_savings: "",         message: ""
   })
 
   result[0]['total_savings'] = savings_message
-  result[0]['message'] = findings + context_message + disclaimer
+  result[0]['message'] = findings + context_message + min_age_message + disclaimer
 EOS
 end
 
 datasource "ds_unused_sql_incident" do
-  run_script $js_unused_sql_incident, $ds_merged_metrics, $ds_azure_sql_databases_region_filtered, $ds_sql_costs_grouped, $ds_currency, $param_min_savings, $param_stats_lookback
+  run_script $js_unused_sql_incident, $ds_merged_metrics, $ds_azure_sql_databases_region_filtered, $ds_sql_costs_grouped, $ds_currency, $param_min_savings, $param_stats_lookback, $param_minimum_age
 end
 
 script "js_unused_sql_incident", type: "javascript" do
-  parameters "ds_merged_metrics", "ds_azure_sql_databases_region_filtered", "ds_sql_costs_grouped", "ds_currency", "param_min_savings", "param_stats_lookback"
+  parameters "ds_merged_metrics", "ds_azure_sql_databases_region_filtered", "ds_sql_costs_grouped", "ds_currency", "param_min_savings", "param_stats_lookback", "param_minimum_age"
   result "result"
   code <<-'EOS'
   // Function for formatting currency numbers later
@@ -898,6 +946,7 @@ script "js_unused_sql_incident", type: "javascript" do
         resourceType: db['type'],
         sku: db['sku'],
         tags: db['tags'],
+        createdTime: db['createdTime'],
         resourceGroup: db['resourceGroup'],
         accountID: db['subscriptionId'],
         accountName: db['subscriptionName'],
@@ -940,8 +989,18 @@ script "js_unused_sql_incident", type: "javascript" do
 
   context_message = [
     "An Azure SQL Database is considered unused if it has not had any connections ",
-    "for at least ", param_stats_lookback, " ", day_message, ".\n\n"
+    "for at least ", param_stats_lookback, " ", day_message, ". "
   ].join('')
+
+  min_age_message = "Results were not filtered by age.\n\n"
+
+  if (param_minimum_age == 1) {
+    min_age_message = "Only Azure SQL Databases created more than 1 day ago were included in the results.\n\n"
+  }
+
+  if (param_minimum_age > 1) {
+    min_age_message = "Only Azure SQL Databases created more than " + param_minimum_age + " days ago were included in the results.\n\n"
+  }
 
   disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
 
@@ -955,11 +1014,12 @@ script "js_unused_sql_incident", type: "javascript" do
     accountName: "",       recommendationType: "",    recommendationDetails: "",
     lookbackPeriod: "",    threshold: "",             policy_name: "",
     savings: "",           savingsCurrency: "",       service: "",
-    platform: "",          total_savings: "",         message: ""
+    platform: "",          createdTime: "",           total_savings: "",
+    message: ""
   })
 
   result[0]['total_savings'] = savings_message
-  result[0]['message'] = findings + context_message + disclaimer
+  result[0]['message'] = findings + context_message + min_age_message + disclaimer
 EOS
 end
 
@@ -996,6 +1056,9 @@ policy "pol_azure_sql_utilization" do
       end
       field "tags" do
         label "Resource Tags"
+      end
+      field "createdTime" do
+        label "Created At"
       end
       field "recommendationDetails" do
         label "Recommendation"
@@ -1079,6 +1142,9 @@ policy "pol_azure_sql_utilization" do
       field "tags" do
         label "Resource Tags"
       end
+      field "createdTime" do
+        label "Created At"
+      end
       field "recommendationDetails" do
         label "Recommendation"
       end
@@ -1155,89 +1221,108 @@ end
 ###############################################################################
 
 define downsize_instances($data, $param_azure_endpoint) return $all_responses do
-  # Change "No" to "Yes" to enable CWF debug logging
-  $log_to_cm_audit_entries = "Yes"
+  $$all_responses = []
 
-  $$debug = $log_to_cm_audit_entries == "Yes"
-
-  $$errors = []
-  $all_responses = []
-
-  foreach $item in $data do
-    sub on_error: skip do
-      $response = http_request(
-        auth: $$auth_azure,
-        verb: "patch",
-        host: $param_azure_endpoint,
-        https: true,
-        href: $item["id"],
-        query_strings: {
-          "api-version": "2017-10-01-preview"
-        },
-        headers: {
-          "cache-control": "no-cache",
-          "content-type": "application/json"
-        },
-        body: {
-          "sku": {
-            "name": $item["skuName"],
-            "tier": $item["skuTier"],
-            "capacity": $item["newResourceType"]
-          }
-        }
-      )
-
-      call sys_log('Downsize Azure SQL Databases: ', to_s($response))
-
-      $all_responses << $response
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call downsize_instance($instance, $param_azure_endpoint) retrieve $downsize_response
     end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+define downsize_instance($instance, $param_azure_endpoint) return $response do
+  $host = $param_azure_endpoint
+  $href = $instance["id"]
+  $params = "?api-version=2017-10-01-preview"
+  $url = $host + $href + $params
+  task_label("PATCH " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "patch",
+    host: $host,
+    href: $href,
+    query_strings: { "api-version": "2017-10-01-preview" },
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json"
+    },
+    body: {
+      "sku": {
+        "name": $instance["skuName"],
+        "tier": $instance["skuTier"],
+        "capacity": $instance["newResourceType"]
+      }
+    }
+  )
+
+  task_label("Patch Azure SQL instance response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response patching Azure SQL instance: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Patch Azure SQL instance successful: " + $instance["id"])
   end
 end
 
 define delete_instances($data, $param_azure_endpoint) return $all_responses do
-  # Change "No" to "Yes" to enable CWF debug logging
-  $log_to_cm_audit_entries = "Yes"
+  $$all_responses = []
 
-  $$debug = $log_to_cm_audit_entries == "Yes"
-
-  $$errors = []
-  $all_responses = []
-
-  foreach $item in $data do
-    sub on_error: skip do
-      $response = http_request(
-        auth: $$auth_azure,
-        verb: "delete",
-        host: $param_azure_endpoint,
-        https: true,
-        href: $item["id"],
-        query_strings: {
-          "api-version": "2017-10-01-preview"
-        },
-        headers: {
-          "cache-control": "no-cache",
-          "content-type": "application/json"
-        }
-      )
-
-      call sys_log('Deleted Azure SQL Databases: ', to_s($response))
-
-      $all_responses << $response
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call delete_instance($instance, $param_azure_endpoint) retrieve $delete_response
     end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
   end
 end
 
-define sys_log($subject, $detail) do
-  if $$debug
-    rs_cm.audit_entries.create(
-      notify: "None",
-      audit_entry: {
-        auditee_href: @@account,
-        summary: $subject,
-        detail: $detail
-      }
-    )
+define delete_instance($instance, $param_azure_endpoint) return $response do
+  $host = $param_azure_endpoint
+  $href = $instance["id"]
+  $params = "?api-version=2017-10-01-preview"
+  $url = $host + $href + $params
+  task_label("DELETE " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "delete",
+    host: $host,
+    href: $href,
+    query_strings: { "api-version": "2017-10-01-preview" },
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json"
+    }
+  )
+
+  task_label("Delete Azure SQL instance response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response deleting Azure SQL instance: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Delete Azure SQL instance successful: " + $instance["id"])
   end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
 end
 
 ###############################################################################
@@ -1329,4 +1414,3 @@ script "js_check_deleted", type: "javascript" do
   result = {"path":"/"}
   EOS
 end
-
