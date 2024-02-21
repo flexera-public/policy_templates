@@ -38,8 +38,8 @@ end
 parameter "param_stats_underutil_threshold_pool_value" do
   type "number"
   category "Statistics"
-  label "Capacity Pool Allocated Capacity Threshold (%)"
-  description "The threshold that should be the new allocated capacity of a pool and therefore be flagged for rightsizing."
+  label "Pool Allocated to Volume Threshold (%)"
+  description "The desired level of pool capacity allocated to volumes."
   min_value 0
   max_value 100
   default 50
@@ -48,8 +48,8 @@ end
 parameter "param_stats_underutil_threshold_volume_value" do
   type "number"
   category "Statistics"
-  label "Volume Logical Size Threshold (%)"
-  description "The threshold that should be the new logical size of a volume and therefore be flagged for rightsizing."
+  label "Volume Consumed Capacity Threshold (%)"
+  description "The desired level of volume capacity usage."
   min_value 0
   max_value 100
   default 50
@@ -101,8 +101,8 @@ end
 parameter "param_show_size_increment_recommendations" do
   type "string"
   category "Filters"
-  label "Show size increment recommendations"
-  description "Choose if you want this policy to also show recommendations to increase the size of capacity pools and volumes."
+  label "Show Upsize Recommendations"
+  description "Include or suppress upsize recommendations for pools and volumes."
   allowed_values "Yes", "No"
   default "No"
 end
@@ -119,8 +119,8 @@ end
 parameter "param_recommendation_mode" do
   type "string"
   category "Statistics"
-  label "Recommendation mode"
-  description "Choose between scanning only pools or pools with their volumes, each will produce different recommendations."
+  label "Recommendation Mode"
+  description "Choose between scanning only pools or pools and volumes."
   allowed_values "Resize Pools", "Resize Pools and Volumes"
   default "Resize Pools"
 end
@@ -715,7 +715,7 @@ script "js_naf_oversized_pools", type: "javascript" do
                 size: Math.round(pool['allocatedSize'] / 1024),
                 allocatedUsed: (pool['consumedSize'] / 1024).toFixed(3),
                 consumedPercentage: poolConsumedPercentage,
-                poolCreatedAt: pool['naf_pool_created_at'],
+                createdAt: pool['naf_pool_created_at'],
                 threshold: param_stats_underutil_threshold_pool_value,
                 recommendedSize: gibibytesToTebibytes(poolRecommendedSize),
                 savings: parseFloat(savings.toFixed(3))
@@ -964,6 +964,7 @@ script "js_naf_oversized_volumes", type: "javascript" do
                   savings: parseFloat(savings.toFixed(3)),
                   savingsCurrency: "USD",
                   id: pool['naf_pool_id'],
+                  createdAt: pool['naf_pool_created_at'],
               })
               _.each(pool.naf_pool_volumes, function(vol) {
                 result.push({
@@ -988,6 +989,7 @@ script "js_naf_oversized_volumes", type: "javascript" do
                   savings: 0,
                   savingsCurrency: "USD",
                   id: vol.naf_volume_id,
+                  createdAt: vol.naf_volume_created_at,
                 })
               })
             }
@@ -1018,7 +1020,7 @@ end
 
 policy "pol_azure_rightsize_netapp_files" do
   validate $ds_naf_oversized_pools do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Oversized NetApp Pools Found"
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure NetApp Pools Found"
     detail_template <<-'EOS'
     **Potential Monthly Savings:** {{ with index data 0 }}${{ .total_savings }} {{ .savings_currency }}
 
@@ -1027,7 +1029,7 @@ policy "pol_azure_rightsize_netapp_files" do
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
     check logic_or($ds_parent_policy_terminated, eq(size(data), 0))
     escalate $esc_email
-    escalate $esc_rightsize_pools
+    escalate $esc_rightsize_resources
     export do
       resource_level true
       field "accountID" do
@@ -1047,6 +1049,9 @@ policy "pol_azure_rightsize_netapp_files" do
       end
       field "resourceName" do
         label "Resource Name"
+      end
+      field "createdAt" do
+        label "Date/Time Created"
       end
       field "resourceType" do
         label "Resource Type"
@@ -1087,7 +1092,7 @@ policy "pol_azure_rightsize_netapp_files" do
     end
   end
   validate $ds_naf_oversized_volumes do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Oversized NetApp Resources Found"
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure NetApp Resources Found"
     detail_template <<-'EOS'
     **Potential Monthly Savings:** {{ with index data 0 }}${{ .total_savings }} {{ .savings_currency }}
 
@@ -1096,6 +1101,7 @@ policy "pol_azure_rightsize_netapp_files" do
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
     check logic_or($ds_parent_policy_terminated, eq(size(data), 0))
     escalate $esc_email
+    escalate $esc_rightsize_resources
     export do
       resource_level true
       field "accountID" do
@@ -1115,6 +1121,9 @@ policy "pol_azure_rightsize_netapp_files" do
       end
       field "resourceName" do
         label "Resource Name"
+      end
+      field "createdAt" do
+        label "Date/Time Created"
       end
       field "resourceType" do
         label "Resource Type"
@@ -1176,19 +1185,11 @@ escalation "esc_email" do
   email $param_email
 end
 
-escalation "esc_rightsize_pools" do
-# Resize Pools and Volumes"
-  automatic logic_and(eq($param_automatic_action, "Rightsize recommended pools and volumes"), eq($param_recommendation_mode, "Resize Pools"))
-  label "Rightsize Underutilized Pools"
-  description "Approval to rightsize all the selected pools"
-  run "set_pool_sizes", data, $param_azure_endpoint
-end
-
-escalation "esc_rightsize_pools_and_volumes" do
-  automatic logic_and(eq($param_automatic_action, "Rightsize recommended pools and volumes"), eq($param_recommendation_mode, "Resize Pools and Volumes"))
-  label "Rightsize Underutilized Pools And Volumes"
-  description "Approval to rightsize all the selected pools and volumes"
-  run "set_pool_sizes", data, $param_azure_endpoint
+escalation "esc_rightsize_resources" do
+  automatic contains($param_automatic_action, "Rightsize recommended pools and volumes")
+  label "Rightsize resources"
+  description "Approval to rightsize all the selected resources."
+  run "set_sizes", data, $param_azure_endpoint
 end
 
 ###############################################################################
@@ -1208,7 +1209,6 @@ end
 define set_pool_size($pool_id, $size_bytes, $param_azure_endpoint) return $response do
   $url = $param_azure_endpoint + $pool_id + "api-version=2023-05-01"
   task_label("PATCH" + $url)
-
   $response = http_request(
     auth: $$auth_azure,
     https: true,
@@ -1222,10 +1222,8 @@ define set_pool_size($pool_id, $size_bytes, $param_azure_endpoint) return $respo
       }
     }
   )
-
   task_label("Patch Azure NetApp capacity pool response: " + $pool_id + " " + to_json($response))
   $$all_responses << to_json({ "req": "PATCH " + $url, "resp": $response })
-
   if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
     raise "Unexpected response patching Azure NetApp capacity pool: " + $pool_id + " " + to_json($response)
   else
@@ -1233,65 +1231,57 @@ define set_pool_size($pool_id, $size_bytes, $param_azure_endpoint) return $respo
   end
 end
 
-define set_pool_sizes($data, $param_azure_endpoint) return $$all_responses do
-  $$all_responses = []
+define set_volume_size($vol_id, $size_bytes, $param_azure_endpoint) return $response do
+  $url = $param_azure_endpoint + $vol_id + "api-version=2023-07-01"
+  task_label("PATCH" + $url)
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "patch",
+    host: $param_azure_endpoint,
+    href: $vol_id,
+    query_strings: { "api-version": "2023-07-01" },
+    body: {
+      "properties": {
+        "usageThreshold": $size_bytes
+      }
+    }
+  )
+  task_label("Patch Azure NetApp volume response: " + $vol_id + " " + to_json($response))
+  $$all_responses << to_json({ "req": "PATCH " + $url, "resp": $response })
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response patching Azure NetApp volume: " + $vol_id + " " + to_json($response)
+  else
+    task_label("Patch Azure NetApp volume successful: " + $vol_id)
+  end
+end
 
-  foreach $pool in $data do
-    sub on_error: handle_error() do
-      # pool["recommendedSize"] is in TiB, so we need to convert it to bytes.
-      $recommended_size_bytes = $pool["recommendedSize"] * (2 ^ 40)
-      call set_pool_size($pool["resourceID"], $recommended_size_bytes, $param_azure_endpoint) retrieve $set_size_response
+define set_sizes($data, $param_azure_endpoint) return $all_responses do
+  $$all_responses = []
+  # Resize volumes first, so pools can be resized to the recommended by the policy.
+  foreach $res in $data do
+    if $res["resourceType"] == "Microsoft.NetApp/netAppAccounts/capacityPools/volumes"
+      sub on_error: handle_error() do
+        # Remember that recommendedSize for volumes is in GiB
+        $recommended_size_bytes = $res["recommendedSize"] * (2 ^ 30)
+        call set_volume_size($res["resourceID"], $recommended_size_bytes, $param_azure_endpoint) retrieve $set_size_response
+      end
     end
   end
-
+  # Resize pools.
+  foreach $res in $data do
+    if $res["resourceType"] == "Microsoft.NetApp/netAppAccounts/capacityPools"
+      sub on_error: handle_error() do
+        # Remember that recommendedSize for pools is in TiB
+        $recommended_size_bytes = $res["recommendedSize"] * (2 ^ 40)
+        call set_pool_size($res["resourceID"], $recommended_size_bytes, $param_azure_endpoint) retrieve $set_size_response
+      end
+    end
+  end
   if inspect($$errors) != "null"
     raise join($$errors, "\n")
   end
 end
-
-# define set_volume_size($vol_id, $size_GiB, $param_azure_endpoint) return $response do
-#   $url = $param_azure_endpoint + $vol_id + "api-version=2023-05-01"
-
-#   task_label("PATCH" + $url)
-
-#   $response = http_request(
-#     auth: $$auth_azure,
-#     https: true,
-#     verb: "patch",
-#     host: $param_azure_endpoint,
-#     href: $vol_id,
-#     query_strings: { "api-version": "2023-05-01" },
-#     body: {
-#       "properties": {
-#         "size": $size_TiB
-#       }
-#     }
-#   )
-
-#   task_label("Patch Azure NetApp volume response: " + $vol_id + " " + to_json($response))
-#   $$all_responses << to_json({ "req": "PATCH " + $url, "resp": $response })
-
-#   if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
-#     raise "Unexpected response patching Azure NetApp volume: " + $vol_id + " " + to_json($response)
-#   else
-#     task_label("Patch Azure NetApp volume successful: " + $vol_id)
-#   end
-# end
-
-# define set_volume_sizes($data, $param_azure_endpoint) return $$all_responses do
-#   $$all_responses = []
-
-#   foreach $pool in $data do
-#     sub on_error: handle_error() do
-#       $recommended_size = $pool["poolRecommendedSize"] / 1024 * 1099511627776
-#       call set_pool_size($pool["resourceID"], $recommended_size, $param_azure_endpoint) retrieve $set_size_response
-#     end
-#   end
-
-#   if inspect($$errors) != "null"
-#     raise join($$errors, "\n")
-#   end
-# end
 
 ###############################################################################
 # Meta Policy [alpha]
