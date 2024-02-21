@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "3.0",
+  version: "4.0",
   provider: "Google",
   service: "Compute",
   policy_set: "Unused IP Addresses",
@@ -72,10 +72,18 @@ end
 parameter "param_exclusion_labels" do
   type "list"
   category "Filters"
-  label "Exclusion Labels (Key:Value)"
-  description "Google labels to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific label key/value pairs, and Key:* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:*"
-  allowed_pattern /(^$)|[\w]*\:.*/
+  label "Exclusion Labels"
+  description "Cloud native labels to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
   default []
+end
+
+parameter "param_exclusion_labels_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Labels: Any / All"
+  description "Whether to filter instances containing any of the specified labels or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Labels' field."
+  allowed_values "Any", "All"
+  default "Any"
 end
 
 parameter "param_automatic_action" do
@@ -287,33 +295,75 @@ EOS
 end
 
 datasource "ds_ip_addresses" do
-  run_script $js_ip_addresses, $ds_ip_addresses_region_filtered, $param_exclusion_labels
+  run_script $js_ip_addresses, $ds_ip_addresses_region_filtered, $param_exclusion_labels, $param_exclusion_labels_boolean
 end
 
 script "js_ip_addresses", type: "javascript" do
-  parameters "ds_ip_addresses_region_filtered", "param_exclusion_labels"
+  parameters "ds_ip_addresses_region_filtered", "param_exclusion_labels", "param_exclusion_labels_boolean"
   result "result"
   code <<-EOS
+  comparators = _.map(param_exclusion_labels, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
   if (param_exclusion_labels.length > 0) {
-    result = _.reject(ds_ip_addresses_region_filtered, function(ip) {
-      ip_labels = []
+    result = _.reject(ds_ip_addresses_region_filtered, function(resource) {
+      resource_labels = {}
+      if (typeof(resource['labels']) == 'object') { resource_labels = resource['labels'] }
 
-      if (typeof(ip['labels']) == 'object') {
-        _.each(Object.keys(ip['labels']), function(key) {
-          ip_labels.push([key, ":", ip['labels'][key]].join(''))
-          ip_labels.push([key, ":*"].join(''))
-        })
-      }
+      // Store a list of found labels
+      found_labels = []
 
-      exclude_ip = false
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_label = resource_labels[comparator['key']]
 
-      _.each(param_exclusion_labels, function(exclusion_label) {
-        if (_.contains(ip_labels, exclusion_label)) {
-          exclude_ip = true
+        if (comparison == 'key' && resource_label != undefined) { found_labels.push(string) }
+        if (comparison == '==' && resource_label == value) { found_labels.push(string) }
+        if (comparison == '!=' && resource_label != value) { found_labels.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_label != undefined && value.test(resource_label)) { found_labels.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_label == undefined) { found_labels.push(string) }
+          if (resource_label != undefined && value.test(resource_label)) { found_labels.push(string) }
         }
       })
 
-      return exclude_ip
+      all_labels_found = found_labels.length == comparators.length
+      any_labels_found = found_labels.length > 0 && param_exclusion_labels_boolean == 'Any'
+
+      return all_labels_found || any_labels_found
     })
   } else {
     result = ds_ip_addresses_region_filtered
