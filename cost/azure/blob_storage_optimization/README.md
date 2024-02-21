@@ -13,7 +13,13 @@ This policy checks Azure storage containers for blobs to move to the 'Cool' or '
 - *Allow/Deny Subscriptions List* - A list of allowed or denied Subscription IDs/names. Leave blank to check all Subscriptions.
 - *Allow/Deny Regions* - Allow or Deny entered regions to filter results.
 - *Allow/Deny Regions List* - A list of allowed or denied regions. Leave blank to check all Subscriptions.
-- *Exclusion Tags (Key:Value)* - Cloud native tags to ignore storage accounts that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:\* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:\*
+- *Exclusion Tags* - The policy will filter resources containing the specified tags from the results. The following formats are supported:
+  - `Key` - Filter all resources with the specified tag key.
+  - `Key==Value` - Filter all resources with the specified tag key:value pair.
+  - `Key!=Value` - Filter all resources missing the specified tag key:value pair. This will also filter all resources missing the specified tag key.
+  - `Key=~/Regex/` - Filter all resources where the value for the specified key matches the specified regex string.
+  - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified tag key.
+- *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
 - *New Storage Tier* - Whether to move blobs to Cool or Archive if they meet the specified age thresholds. Select 'Both' to consider moving blobs to either one based on the specified age thresholds
 - *Cool Age Threshold (Days)* - Time in days since blob was last modified to change storage tier to Cool. Not applicable if 'Archive' is selected for New Storage Tier.
 - *Archive Age Threshold (Days)* - Time in days since blob was last modified to change storage tier to Archive. Not applicable if 'Cool' is selected for New Storage Tier.
