@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1
+
+- Fixed issue where currency conversion would sometimes not work as expected.
+
 ## v3.0
 
 - Policy now requires a Flexera credential

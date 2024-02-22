@@ -4,6 +4,10 @@
 
 - Added support for regex when filtering resources by tag
 
+## v6.9
+
+- Fixed issue where currency conversion would sometimes not work as expected.
+
 ## v6.8
 
 - Policy action error logging modernized and now works as expected in EU/APAC
