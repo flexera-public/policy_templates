@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.1
+
+- Fixed issue where currency conversion would sometimes not work as expected.
+
 ## v4.0
 
 - Policy now converts savings to local currency when appropriate
