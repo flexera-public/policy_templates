@@ -322,25 +322,22 @@ script "js_get_anomalies", type: "javascript" do
   parameters "ds_filter_dimensions", "ds_top_level_bcs", "ds_request_variables", "param_dimensions", "param_window_size", "param_standard_deviations", "param_anomaly_limit", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
-  bc_filters = _.filter(all_filters, function(filter) {
+  bc_filters = _.filter(ds_filter_dimensions['filters'], function(filter) {
     return filter['id'] == "billing_center_id"
   })
 
-  other_filters = _.filter(all_filters, function(filter) {
+  other_filters = _.filter(ds_filter_dimensions['filters'], function(filter) {
     return filter['id'] != "billing_center_id"
   })
 
-  if (bc_filters.length > 0) {
-    billingCenterIds = [ _.pluck(bc_filters, 'value') ]
-  } else {
-    billingCenterIds = ds_top_level_bcs
-  }
+  billingCenterIds = ds_top_level_bcs
+  if (bc_filters.length > 0) { billingCenterIds = [ _.pluck(bc_filters, 'value') ] }
 
   body_fields = {
     startAt: ds_request_variables['startAt'],
     endAt: ds_request_variables['endAt'],
     metric: ds_request_variables['cost_metric'],
-    dimensions: ds_filter_dimensions['ids'].concat(ds_filter_dimensions['invalid_ids']),
+    dimensions: ds_filter_dimensions['ids'],
     billingCenterIds: billingCenterIds,
     windowSize: param_window_size,
     standardDeviations: param_standard_deviations,
@@ -390,23 +387,26 @@ script "js_filter_anomalies", type: "javascript" do
   dimensionAPIString = _.map(dimensions, function(id) { return "&groupBy=" + id }).join('')
   dimensionsReadable = ds_filter_dimensions['names'].join(', ')
 
-
   anomalies = []
-  _.each(ds_get_anomalies, function(timeSeriesEntry){
+
+  _.each(ds_get_anomalies, function(timeSeriesEntry) {
       anomalous = []
-      _.each(timeSeriesEntry.timeSeries.data, function(data){
+      timeSeries = timeSeriesEntry['timeSeries']
+
+      _.each(timeSeries.data, function(data) {
         if (data.anomalous != null) {
           if (data.anomalous == true && param_min_spend <= data.value) {
             anomalous.push(data)
           }
         }
       })
+
       if (anomalous.length > 0) {
         dimensionKey = ""
-        Object.keys(timeSeriesEntry.timeSeries.dimensions).forEach(function(key) {
-          chunk = timeSeriesEntry.timeSeries.dimensions[key]
+        Object.keys(timeSeries.dimensions).forEach(function(key) {
+          chunk = timeSeries.dimensions[key]
           if (key === "billing_center_id") {
-            var bc_id = timeSeriesEntry.timeSeries.dimensions[key]
+            var bc_id = timeSeries.dimensions[key]
             chunk = _.find(billing_centers, function(bc) { return bc.id === bc_id }).name
           }
           dimensionKey = dimensionKey + chunk + "|"
