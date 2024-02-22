@@ -412,6 +412,7 @@ These templates can generate savings estimates for your environment.
 
 - Compute
 
+  - [Azure Bring-Your-Own-License (BYOL) Report](./operational/azure/byol_report)
   - [Azure Long Running Instances](./operational/azure/azure_long_running_instances)
   - [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks)
   - [Expiring Azure Certificates](./operational/azure/azure_certificates)
@@ -421,6 +422,10 @@ These templates can generate savings estimates for your environment.
   - [Azure Tag Cardinality Report](./operational/azure/tag_cardinality)
 
 #### Flexera
+
+- Automation
+
+  - [Flexera Automation Outdated Applied Policies](./automation/flexera/outdated_applied_policies)
 
 - CCO
 
@@ -629,7 +634,7 @@ These templates can generate savings estimates for your environment.
 :categories:
   Compliance: 34
   Cost: 97
-  Operational: 23
+  Operational: 25
   SaaS Management: 12
   Security: 74
 :optimization_count: 44
@@ -637,6 +642,7 @@ These templates can generate savings estimates for your environment.
   '': 82
   AWS Config: 1
   Allocate VMs: 3
+  Automation: 1
   CIS: 61
   Committed Use Discount: 1
   Common Bill Ingestion: 2
@@ -644,7 +650,7 @@ These templates can generate savings estimates for your environment.
   Databricks: 1
   Disallowed Regions: 2
   Forecasting: 4
-  Hybrid Use Benefit: 3
+  Hybrid Use Benefit: 4
   ITAM: 4
   Idle Compute Instances: 1
   Inefficient Disk Usage: 1
@@ -688,9 +694,9 @@ These templates can generate savings estimates for your environment.
 :providers:
   '': 1
   AWS: 76
-  Azure: 80
+  Azure: 81
   Azure China: 1
-  Flexera: 6
+  Flexera: 7
   Flexera Cloud Management: 3
   Flexera FNMS: 1
   Flexera ITAM: 5
@@ -710,11 +716,12 @@ These templates can generate savings estimates for your environment.
   AKS: 3
   All: 1
   App Service: 1
+  Automation: 1
   CCO: 1
   Cloud Cost Optimization: 1
   CloudTrail: 7
   Common Bill Ingestion: 2
-  Compute: 51
+  Compute: 52
   Config: 1
   Cost Explorer: 1
   DBS: 1
@@ -747,7 +754,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 240
+:total_count: 242
 -->
 <!-- End Policy Template Stats -->
 
