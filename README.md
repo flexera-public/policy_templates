@@ -180,7 +180,7 @@ These templates can generate savings estimates for your environment.
 
 - Compute
 
-  - [AWS Burstable Instance CloudWatch Utilization](./cost/aws/burstable_instance_cloudwatch_credit_utilization)
+  - [AWS Burstable EC2 Instances](./cost/aws/burstable_ec2_instances)
   - [AWS Inefficient Instance Utilization using CloudWatch](./cost/aws/instance_cloudwatch_utilization)
   - [AWS Reserved Instances Recommendations](./cost/aws/reserved_instances/recommendations)
   - [AWS Rightsize EBS Volumes](./cost/aws/rightsize_ebs_volumes)
@@ -639,10 +639,11 @@ These templates can generate savings estimates for your environment.
   Security: 74
 :optimization_count: 44
 :policy_sets:
-  '': 82
+  '': 81
   AWS Config: 1
   Allocate VMs: 3
   Automation: 1
+  Burstable Compute Instances: 1
   CIS: 61
   Committed Use Discount: 1
   Common Bill Ingestion: 2
