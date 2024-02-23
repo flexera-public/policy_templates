@@ -27,7 +27,7 @@ The policy queries the `/anomalies/report` endpoint of the Flexera CCO Bill Anal
   - Filters are also automatically included as dimensions. For example, there is no need to specify both `Cloud Vendor` and `Cloud Vendor=AWS` in this parameter because the latter will automatically include the functionality of the former.
 - *Cost Anomaly Limit* - Number of anomalies to include in the incident
 - *Window Size* - Window size to use for [Bollinger Bands](https://en.wikipedia.org/wiki/Bollinger_Bands)
-- *Standard Deviations* - Number of standard deviations for the [Bollinger Band](https://en.wikipedia.org/wiki/Bollinger_Bands)
+- *Standard Deviations* - Number of [standard deviations](https://en.wikipedia.org/wiki/Standard_deviation) for the [Bollinger Band](https://en.wikipedia.org/wiki/Bollinger_Bands)
 
 ## Policy Actions
 
