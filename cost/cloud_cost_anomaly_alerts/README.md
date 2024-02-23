@@ -32,7 +32,6 @@ The policy queries the `/anomalies/report` endpoint of the Flexera CCO Bill Anal
 ## Policy Actions
 
 - Sends an email notification
-- Change instance type after approval
 
 ## Prerequisites
 
