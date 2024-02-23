@@ -2,7 +2,6 @@
 
 > Note: This is an **alpha** feature and should only be used with guidance from your Flexera Account Manager
 
-
 ## Usage
 
 1. **Create AWS IAM Roles in AWS Account(s)**
@@ -19,6 +18,51 @@
    - Org "Master" Project must be used for recommendations to get created from policy incidents
    - "15 Minute" frequency recommended for all Meta Parent Policies
    - "Daily" frequency is currently suggested for all Child Policies frequency due to limitations on Policies Engine.
+
+### Credential Configuration
+
+For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
+
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following permissions:
+  - `governance:action_status:index`
+  - `governance:action_status:show`
+  - `governance:applied_policy:create`
+  - `governance:applied_policy:delete`
+  - `governance:applied_policy:index`
+  - `governance:applied_policy:show`
+  - `governance:applied_policy:update`
+  - `governance:incident:index`
+  - `governance:incident:run_action`
+  - `governance:incident:show`
+  - `governance:policy_aggregate:create`
+  - `governance:policy_aggregate:delete`
+  - `governance:policy_aggregate:index`
+  - `governance:policy_aggregate:show`
+  - `governance:policy_aggregate:update`
+  - `governance:policy_template:index`
+  - `governance:policy_template:retrieve_data`
+  - `governance:policy_template:show`
+  - `governance:published_template:index`
+  - `governance:published_template:show`
+  - `optima:billing_center:index`
+  - `optima:billing_center:show`
+  - `optima:cloud_vendor_account:index`
+  - `optima:custom_dimension:index`
+  - `optima:custom_dimension:show`
+  - `optima:recommendation:index`
+  - `optima:recommendation:show`
+
+- The above correspond to the following roles in the Flexera CCO platform:
+  - `Automation: Approve policies`
+  - `Automation: Create policies`
+  - `Automation: Manage policies`
+  - `Automation: Publish policies`
+  - `Automation: View policies`
+  - `Cloud: View bill adjustments`
+  - `Cloud: View cloud`
+  - `Cloud: View cloud costs`
+
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ### Expected lifecycle
 #### First Parent Policy run

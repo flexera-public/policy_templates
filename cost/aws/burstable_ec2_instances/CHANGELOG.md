@@ -1,5 +1,20 @@
 # Changelog
 
+## v4.0
+
+- Policy name changed to reference EC2 service directly
+- Policy now consistently gathers correct CloudWatch statistics
+- Several parameters altered to be more descriptive and human-readable
+- Added ability to filter resources by multiple tag key:value pairs
+- Added support for regex when filtering resources by tag
+- Removed cooldown parameter/functionality and set default policy frequency to "monthly"
+- Normalized incident export to be consistent with other policies
+- Added additional fields to incident export for added context
+- Policy no longer raises new escalations if tag data has changed but nothing else has
+- Streamlined code for better readability and faster execution
+- Added logic required for "Meta Policy" use-cases
+- Flexera credential now required to facilitate meta policy use cases
+
 ## v3.2
 
 - Updated description of `Account Number` parameter
