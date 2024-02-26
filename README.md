@@ -307,6 +307,10 @@ These templates can generate savings estimates for your environment.
 
   - [Scheduled Report](./cost/scheduled_reports)
 
+- Optima
+
+  - [Cloud Cost Anomaly Alerts](./cost/cloud_cost_anomaly_alerts)
+
 #### Flexera Cloud Management
 
 - [Inefficient Instance Utilization using RightLink Add Tags](./cost/rightlink_rightsize)
@@ -320,7 +324,6 @@ These templates can generate savings estimates for your environment.
 - [Budget Alerts](./cost/budget_report_alerts)
 - [Budget Alerts by Cloud Account](./cost/budget_alerts_by_account)
 - [Cheaper Regions](./cost/cheaper_regions)
-- [Cloud Cost Anomaly Alerts](./cost/cloud_cost_anomaly_alerts)
 - [Cloud Spend Forecast - Moving Average](./cost/forecasting/moving_average)
 - [Cloud Spend Forecast - Straight-Line (Linear Regression Model)](./cost/forecasting/straight_line_forecast/linear_regression)
 - [Cloud Spend Forecast - Straight-Line (Simple Model)](./cost/forecasting/straight_line_forecast/simple)
@@ -702,11 +705,11 @@ These templates can generate savings estimates for your environment.
   AWS: 76
   Azure: 82
   Azure China: 1
-  Flexera: 7
+  Flexera: 8
   Flexera Cloud Management: 3
   Flexera FNMS: 1
   Flexera ITAM: 5
-  Flexera Optima: 24
+  Flexera Optima: 23
   Flexera RISC: 2
   Flexera SaaS Manager: 9
   GCE: 6
@@ -718,7 +721,7 @@ These templates can generate savings estimates for your environment.
   Oracle: 1
   ServiceNow: 1
 :services:
-  '': 59
+  '': 58
   AKS: 3
   All: 1
   App Service: 1
@@ -748,6 +751,7 @@ These templates can generate savings estimates for your environment.
   Network: 1
   Network Security Group: 2
   Office 365: 1
+  Optima: 1
   Org: 1
   Policy: 1
   PostgreSQL: 4

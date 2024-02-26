@@ -1,5 +1,9 @@
 # Changelog
 
+## v7.0
+
+- Added support for regex when filtering resources by tag
+
 ## v6.9
 
 - Fixed issue where currency conversion would sometimes not work as expected.
