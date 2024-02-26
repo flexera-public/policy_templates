@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1
+
+- Fixed bug where incident link would render incorrectly if spaces were present in filter value
+
 ## v3.0
 
 - Link to Flexera One Cloud Cost Anomalies page now includes filters
