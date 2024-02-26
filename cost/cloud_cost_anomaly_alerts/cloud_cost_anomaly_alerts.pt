@@ -1,81 +1,91 @@
 name "Cloud Cost Anomaly Alerts"
 rs_pt_ver 20180301
 type "policy"
-short_description "Uses the /anomalies/report for a specified number of days and dimensions. Will raise an incident if the algorythm catches anomalies. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/cloud_cost_anomaly_alerts/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Report any cloud cost anomalies detected by Flexera CCO. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/cloud_cost_anomaly_alerts/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
-severity "high"
 category "Cost"
-tenancy "single"
+severity "high"
 default_frequency "daily"
 info(
-  version: "2.5",
-  provider: "Flexera Optima",
-  service: "",
-  policy_set:""
+  version: "3.0",
+  provider: "Flexera",
+  service: "Optima",
+  policy_set: ""
 )
 
 ###############################################################################
 # Parameters
 ###############################################################################
 
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email addresses to notify"
+  description "A list of email addresses to notify."
+  default []
+end
+
 parameter "param_days" do
-  label "Time Period"
-  description "Number of days to analyze"
   type "number"
+  category "Policy Settings"
+  label "Time Period"
+  description "Number of days back to analyze for anomalies"
   default 30
   min_value 1
   max_value 31
 end
 
 parameter "param_min_spend" do
-  label "Minimum Period Spend"
-  description "Minimum spend for the specified period required to trigger incidents"
   type "number"
+  category "Policy Settings"
+  label "Minimum Period Spend"
+  description "Minimum spend over the time period required to include anomaly in results"
   default 1000
   min_value 0
 end
 
 parameter "param_cost_metric" do
   type "string"
+  category "Policy Settings"
   label "Cost Metric"
-  allowed_values "Unamortized Unblended","Amortized Unblended","Unamortized Blended","Amortized Blended"
+  description "Cost metric to use when analyzing spend for anomalies"
   default "Amortized Unblended"
-  description "Select the cost metric for your report.  See the README file for more details"
+  allowed_values "Unamortized Unblended", "Amortized Unblended", "Unamortized Blended", "Amortized Blended"
 end
 
 parameter "param_dimensions" do
   type "list"
+  category "Policy Settings"
   label "Cost Anomaly Dimensions"
-  description "You need to specify the exact case sensitive name(s) or ID(s) of the Default or Rule Based Dimension(s) you would like to run anomaly reports on. E.g. 'CCO Environments' for name / E.g. 'rbd_cost_center' for id. Additionally, you can add more filters for anomalies on a specific dimension by adding 'Vendor=AWS'; the first criteria will be mandatory for subsequent filters"
+  description "Dimension names/IDs to report anomalies for. Use Dimension=Value to filter by a dimension. See the README for more details"
   default ["Cloud Vendor Account Name", "Cloud Vendor", "Service"]
+end
+
+parameter "param_anomaly_limit" do
+  type "number"
+  category "Policy Settings"
+  label "Cost Anomaly Limit"
+  description "Number of anomalies to include in the incident"
+  default 10
+  min_value 1
 end
 
 parameter "param_window_size" do
   type "number"
+  category "Anomaly Settings"
   label "Window Size"
-  description "	Window size to use for bollinger bands"
+  description "Window size to use for Bollinger Bands"
   default 10
   min_value 0
 end
 
 parameter "param_standard_deviations" do
   type "number"
+  category "Anomaly Settings"
   label "Standard Deviations"
-  description "The standard deviation number for the bollinger band"
+  description "Number of standard deviations for the Bollinger Band"
   default 2
   min_value 0
-end
-
-parameter "param_anomaly_limit" do
-  type "number"
-  label "Cost anomaly Limit"
-  description "Number of anomaly rows to return in the response"
-  default 10
-end
-
-parameter "param_email" do
-  label "Email addresses of the recipients you wish to notify"
-  type "list"
 end
 
 ###############################################################################
@@ -84,7 +94,7 @@ end
 
 credentials "auth_flexera" do
   schemes "oauth2"
-  label "flexera"
+  label "Flexera"
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
@@ -92,6 +102,16 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
 
 datasource "ds_currency_reference" do
   request do
@@ -105,22 +125,91 @@ datasource "ds_currency_code" do
   request do
     auth $auth_flexera
     host rs_optima_host
-    path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
     header "Api-Version", "0.1"
     header "User-Agent", "RS Policies"
+    ignore_status [403]
   end
   result do
     encoding "json"
-    field "id", jmes_path(response,"id")
-    field "value", jmes_path(response,"value")
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
   end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
+end
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-EOS
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
 end
 
 datasource "ds_dimensions_incomplete" do
   request do
     auth $auth_flexera
     host rs_optima_host
-    path join(["/bill-analysis/orgs/",rs_org_id,"/costs/dimensions"])
+    path join(["/bill-analysis/orgs/", rs_org_id, "/costs/dimensions"])
     header "Api-Version", "0.1"
     header "User-Agent", "RS Policies"
   end
@@ -135,443 +224,287 @@ datasource "ds_dimensions_incomplete" do
 end
 
 datasource "ds_dimensions" do
-  run_script $js_add_billing_center_dimension, $ds_dimensions_incomplete
+  run_script $js_dimensions, $ds_dimensions_incomplete
 end
 
-script "js_add_billing_center_dimension", type: "javascript" do
+script "js_dimensions", type: "javascript" do
   parameters "ds_dimensions_incomplete"
-  result "ds_dimensions"
+  result "result"
   code <<-EOS
-  var ds_dimensions = [{id: "billing_center_id", name: "Billing Centers", type: "Tags"}]
-  _.each(ds_dimensions_incomplete, function(dimension) {
-    ds_dimensions.push(dimension)
-  })
-  EOS
+  result = [{ id: "billing_center_id", name: "Billing Centers", type: "Billing Centers" }]
+  result = result.concat(ds_dimensions_incomplete)
+EOS
 end
 
 datasource "ds_filter_dimensions" do
-  run_script $js_filter_dimensions, $param_dimensions, $ds_dimensions, $billing_centers
+  run_script $js_filter_dimensions, $ds_dimensions, $ds_billing_centers, $param_dimensions
 end
 
 script "js_filter_dimensions", type: "javascript" do
-  parameters "param_dimensions", "ds_dimensions", "billing_centers"
-  result "filtered_dimensions"
+  parameters "ds_dimensions", "ds_billing_centers", "param_dimensions"
+  result "result"
   code <<-EOS
-    var filtered_dimensions = {
-      ids: [],
-      names: [],
-      invalid_ids: [],
-      filters:[]
-    };
-    var exist = false;
+  result = { ids: [], names: [], filters: [], bc_filters: [], invalid_ids: [] }
 
-    _.each(param_dimensions, function(user_input_dimension, index) {
-      exist = false;
-      filter = {
-        "dimensionid":"",
-        "dimensionname":"",
-        "type":"",
-        "value":""
-      }
-      dimension_filter_map = user_input_dimension.split("=")
-      hasfilter = false;
-      if (dimension_filter_map.length > 1){
-        hasfilter=true
-      }
-      _.each(ds_dimensions, function(dimension) {
-        if (dimension_filter_map[0] === dimension.name || dimension_filter_map[0] === dimension.id) {
-          filtered_dimensions.ids.push(dimension.id);
-          filtered_dimensions.names.push(dimension.name);
-          exist = true;
-          if (hasfilter) {
-            filter.dimensionid=dimension.id;
-            filter.dimensionname=dimension.name;
-            filter.type="equal";
-            dimension_filter_value = dimension_filter_map[1];
-            if (dimension.id === "billing_center_id") {
-              var billing_center = _.find(billing_centers, function(bc) { return bc.id === dimension_filter_value })
-              if (billing_center !== undefined && billing_center !== null) {
-                dimension_filter_value = billing_center.id
-              } else {
-                billing_center = _.find(billing_centers, function(bc) { return bc.name === dimension_filter_value  })
-                dimension_filter_value = billing_center.id
-              }
-            }
-            filter.value=dimension_filter_value
-            filtered_dimensions.filters.push(filter);
+  _.each(param_dimensions, function(user_input_dimension, index) {
+    dimension_filter_name = user_input_dimension.split('=')[0]
+    dimension_filter_value = user_input_dimension.split('=')[1]
+
+    dimensions = _.filter(ds_dimensions, function(dimension) {
+      return dimension_filter_name == dimension['name'] || dimension_filter_name == dimension['id']
+    })
+
+    if (dimensions.length == 0) { result['invalid_ids'].push(user_input_dimension) }
+
+    _.each(dimensions, function(dimension) {
+      result['ids'].push(dimension['id'])
+      result['names'].push(dimension['name'])
+
+      if (dimension_filter_value != undefined) {
+        filter = {
+          id: dimension['id'],
+          name: dimension['name'],
+          type: "equal",
+          value: dimension_filter_value
+        }
+
+        if (dimension['id'] == "billing_center_id") {
+          billing_center = _.find(ds_billing_centers, function(bc) {
+            return bc['id'] == dimension_filter_value || bc['name'] == dimension_filter_value
+          })
+
+          if (billing_center != undefined) {
+            filter['value'] = billing_center['id']
+            filter['bc_name'] = billing_center['name']
+            result['bc_filters'].push(filter)
           }
+        } else {
+          result['filters'].push(filter)
         }
-      });
-      if (!exist) {
-        filtered_dimensions.invalid_ids.push(user_input_dimension);
       }
-    });
-  EOS
+    })
+  })
+EOS
 end
 
-datasource "billing_centers" do
-  request do
-    auth $auth_flexera
-    host rs_optima_host
-    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
-    header "Api-Version", "1.0"
-    header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "href", jmes_path(col_item,"href")
-      field "id", jmes_path(col_item,"id")
-      field "name", jmes_path(col_item,"name")
-      field "parent_id", jmes_path(col_item,"parent_id")
-      field "ancestor_ids", jmes_path(col_item,"ancestor_ids")
-      field "allocation_table", jmes_path(col_item,"allocation_table")
-    end
-  end
+datasource "ds_request_variables" do
+  run_script $js_request_variables, $param_cost_metric, $param_days
 end
 
-datasource "ds_top_level_billing_centers" do
-  run_script $js_top_level_bc, $ds_listed_billing_centers
-end
-
-script "js_top_level_bc", type: "javascript" do
-  parameters "billing_centers"
-  result "filtered_billing_centers"
+script "js_request_variables", type: "javascript" do
+  parameters "param_cost_metric", "param_days"
+  result "result"
   code <<-EOS
-    var filtered_billing_centers =_.reject(billing_centers, function(bc){ return bc.parent_id != null });
-  EOS
-end
+  cost_metric = {
+    "Unamortized Unblended": "cost_nonamortized_unblended_adj",
+    "Amortized Unblended": "cost_amortized_unblended_adj",
+    "Unamortized Blended": "cost_nonamortized_blended_adj",
+    "Amortized Blended": "cost_amortized_blended_adj"
+  }
 
-datasource "ds_listed_billing_centers" do
-  run_script $js_listed_billing_centers, $billing_centers
-end
+  endAt = new Date()
+  endAt.setHours(-48)
+  endAt = endAt.toISOString().split('T')[0]
 
-script "js_listed_billing_centers", type: "javascript" do
-  parameters "billing_centers"
-  result "billing_center_list"
-  code <<-EOS
-    var billing_center_list = [];
+  startAt = new Date()
+  startAt.setHours(-24 * (2 + param_days))
+  startAt = startAt.toISOString().split('T')[0]
 
-    function GetSortOrder(prop) {
-      return function(a, b) {
-        if (a[prop] > b[prop]) {
-          return 1;
-        } else if (a[prop] < b[prop]) {
-          return -1;
-        }
-        return 0;
-      }
-    }
-
-    _.map(billing_centers, function(value, key){
-      billing_center_list.push(value);
-    });
-
-    billing_center_list.sort(GetSortOrder("name"));
-  EOS
+  result = {
+    cost_metric: cost_metric[param_cost_metric],
+    endAt: endAt,
+    startAt: startAt
+  }
+EOS
 end
 
 datasource "ds_get_anomalies" do
   request do
-    run_script $js_get_anomalies, rs_optima_host, rs_org_id, $ds_top_level_billing_centers, $param_cost_metric, $param_days, $param_dimensions,$ds_filter_dimensions, $param_window_size, $param_standard_deviations, $param_anomaly_limit
+    run_script $js_get_anomalies, $ds_filter_dimensions, $ds_top_level_bcs, $ds_request_variables, $param_dimensions, $param_window_size, $param_standard_deviations, $param_anomaly_limit, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
-    collect jmes_path(response,"values[*]") do
+    collect jmes_path(response, "values[*]") do
       field "timeSeries", jmes_path(col_item, "timeSeries")
     end
   end
 end
 
 script "js_get_anomalies", type: "javascript" do
-  parameters "rs_optima_host", "org_id","bc_ids","param_cost_metric","param_days", "param_dimensions", "ds_filter_dimensions", "param_window_size", "param_standard_deviations", "param_anomaly_limit"
+  parameters "ds_filter_dimensions", "ds_top_level_bcs", "ds_request_variables", "param_dimensions", "param_window_size", "param_standard_deviations", "param_anomaly_limit", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
-    var start_at = "";
-    var end_at = "";
-    var cost_metric = {
-      "Unamortized Unblended":"cost_nonamortized_unblended_adj",
-      "Amortized Unblended":"cost_amortized_unblended_adj",
-      "Unamortized Blended": "cost_nonamortized_blended_adj",
-      "Amortized Blended":"cost_amortized_blended_adj"
-    }
+  bc_filters = ds_filter_dimensions['bc_filters']
+  other_filters = ds_filter_dimensions['filters']
 
-    // format the date for the `daily` API
-    // returns date formatted as string: YYYY-mm-dd
-    function getFormattedDailyDate(date) {
-      var year = date.getFullYear();
-      var month = (1 + date.getMonth()).toString();
-      month = month.length > 1 ? month : '0' + month;
-      var day = date.getDate().toString();
-      day = day.length > 1 ? day : '0' + day;
-      return year + '-' + month + '-' + day;
-    }
+  billingCenterIds = ds_top_level_bcs
+  if (bc_filters.length > 0) { billingCenterIds = [ _.pluck(bc_filters, 'value') ] }
 
-    function getStartDate( date ) {
-      var days = 2 + param_days ;
-      date.setHours(-24 * days);
-      return date;
-    }
-
-    function getEndDate( date ) {
-      date.setHours(-48);
-      return date;
-    }
-
-    billingIDs = []
-    _.each(bc_ids, function(bCenter){
-      billingSlice = []
-      billingIDs.push(bCenter.id)
-    })
-
-    dimensions = []
-    _.each(ds_filter_dimensions.ids, function(dimension){
-      dimensions.push(dimension)
-    })
-
-    _.each(ds_filter_dimensions.invalid_ids, function(dimension, index){
-      dimensions.push(dimension)
-    })
-
-    start_at = getFormattedDailyDate(getStartDate(new Date()))
-    end_at = getFormattedDailyDate(getEndDate(new Date()))
-
-    var request = {
-      auth: "auth_flexera",
-      verb: "POST",
-      host: rs_optima_host,
-      path: "/bill-analysis/orgs/" + org_id + "/anomalies/report",
-      body_fields: {
-        "dimensions": dimensions,
-        "granularity": "day",
-        "windowSize": param_window_size,
-        "standardDeviations": param_standard_deviations,
-        "limit": param_anomaly_limit,
-        "metric": cost_metric[param_cost_metric],
-        "billingCenterIds": billingIDs,
-        "startAt": start_at,
-        "endAt": end_at
-      },
-      headers: {
-        "Api-Version": "1.0",
-        "User-Agent": "RS Policies",
-      }
-    }
-
-    expressions = [];
-    _.each(ds_filter_dimensions.filters, function (filter) {
-      if (filter.dimensionid == "billing_center_id") {
-        request.body_fields.billingCenterIds = [filter.value]
-      } else {
-        expression = {
-         "type": "",
-         "dimension": "",
-         "value": ""
-        }
-        expression.type = "equal";
-        expression.dimension = filter.dimensionid;
-        expression.value = filter.value;
-        expressions.push(expression)
-      }
-    })
-
-    switch (true) {
-      case ds_filter_dimensions.filters.length === 1 && ds_filter_dimensions.filters[0].dimensionid !== "billing_center_id" :
-        filter = {
-          "dimension": ds_filter_dimensions.filters[0].dimensionid,
-          "type": ds_filter_dimensions.filters[0].type,
-          "value": ds_filter_dimensions.filters[0].value
-        }
-        request.body_fields.filter = filter
-        break;
-      case ds_filter_dimensions.filters.length > 1 :
-         filter = {
-            "type": "and",
-            "expressions": expressions
-          }
-          request.body_fields.filter = filter
-          break;
+  body_fields = {
+    startAt: ds_request_variables['startAt'],
+    endAt: ds_request_variables['endAt'],
+    metric: ds_request_variables['cost_metric'],
+    dimensions: ds_filter_dimensions['ids'],
+    billingCenterIds: billingCenterIds,
+    windowSize: param_window_size,
+    standardDeviations: param_standard_deviations,
+    limit: param_anomaly_limit,
+    granularity: "day"
   }
-  EOS
+
+  if (other_filters.length == 1) {
+    body_fields['filter'] = {
+      type: other_filters[0]['type'],
+      dimension: other_filters[0]['id'],
+      value: other_filters[0]['value']
+    }
+  }
+
+  if (other_filters.length > 1) {
+    expressions = _.map(other_filters, function(filter) {
+      return { type: filter['type'], dimension: filter['id'], value: filter['value'] }
+    })
+
+    body_fields['filter'] = { type: "and", expressions: expressions }
+  }
+
+  var request = {
+    auth: "auth_flexera",
+    verb: "POST",
+    host: rs_optima_host,
+    path: "/bill-analysis/orgs/" + rs_org_id + "/anomalies/report",
+    headers: {
+      "Api-Version": "1.0",
+      "User-Agent": "RS Policies"
+    },
+    body_fields: body_fields
+  }
+EOS
 end
 
 datasource "ds_filter_anomalies" do
-  run_script $js_filter_anomalies, $ds_get_anomalies, $param_min_spend, rs_org_id, $param_days, $param_dimensions,$ds_filter_dimensions, $param_cost_metric, $param_anomaly_limit, f1_app_host, $billing_centers
+  run_script $js_filter_anomalies, $ds_get_anomalies, $ds_dimensions, $ds_filter_dimensions, $ds_request_variables, $ds_billing_centers, $ds_currency, $ds_applied_policy, $param_min_spend, $param_days, $param_dimensions, $param_cost_metric, $param_anomaly_limit, rs_org_id, f1_app_host
 end
 
 script "js_filter_anomalies", type: "javascript" do
-  parameters "ds_get_anomalies", "param_min_spend", "org_id", "param_days", "param_dimensions", "ds_filter_dimensions","param_cost_metric", "param_anomaly_limit", "f1_app_host", "billing_centers"
+  parameters "ds_get_anomalies", "ds_dimensions", "ds_filter_dimensions", "ds_request_variables", "ds_billing_centers", "ds_currency", "ds_applied_policy", "param_min_spend", "param_days", "param_dimensions", "param_cost_metric", "param_anomaly_limit", "rs_org_id", "f1_app_host"
   result "result"
   code <<-EOS
-    var start_at = "";
-    var end_at = "";
+  dimensions = ds_filter_dimensions['ids']
+  filters = ds_filter_dimensions['filters'].concat(ds_filter_dimensions['bc_filters'])
 
-    var cost_metric = {
-      "Unamortized Unblended":"cost_nonamortized_unblended_adj",
-      "Amortized Unblended":"cost_amortized_unblended_adj",
-      "Unamortized Blended": "cost_nonamortized_blended_adj",
-      "Amortized Blended":"cost_amortized_blended_adj"
-    }
+  dimensions_groupby_string = _.map(dimensions, function(id) {
+    return "&groupBy=" + id
+  }).join('')
 
-    // format the date for the `daily` API
-    // returns date formatted as string: YYYY-mm-dd
-    function getFormattedDailyDate(date) {
-      var year = date.getFullYear();
-      var month = (1 + date.getMonth()).toString();
-      month = month.length > 1 ? month : '0' + month;
-      var day = date.getDate().toString();
-      day = day.length > 1 ? day : '0' + day;
-      return year + '-' + month + '-' + day;
-    }
+  dimensions_filterby_string = _.map(filters, function(filter) {
+    return "&filterBy=anomaly." + filter['id'] + "." + filter['value']
+  }).join('')
 
-    function getStartDate( date ) {
-      var days = 2 + param_days ;
-      date.setHours(-24 * days);
-      return date;
-    }
+  link = [
+    "https://", f1_app_host, "/orgs/", rs_org_id, "/optima/anomalies?granularity=day&startDate=",
+    ds_request_variables['startAt'], "&endDate=", ds_request_variables['endAt'],
+    "&costType=", ds_request_variables['cost_metric'],
+    dimensions_groupby_string, dimensions_filterby_string
+  ].join('')
 
-    function getEndDate( date ) {
-      date.setHours(-48);
-      return date;
-    }
+  used_filters = _.map(ds_filter_dimensions['bc_filters'], function(filter) {
+    return { id: filter['id'], name: filter['name'], type: filter['type'], value: filter['bc_name'] }
+  })
 
-    dimensions = []
-    dimensionAPIString = ""
-    dimensionsReadable = ""
-    _.each(ds_filter_dimensions.ids, function(dimension, index){
-      dimensions.push(dimension)
-      dimensionAPIString = dimensionAPIString + "&" + "groupBy=" + dimension
-      dimensionsReadable =  dimensionsReadable + " " + ds_filter_dimensions.names[index] + ","
+  used_filters = used_filters.concat(ds_filter_dimensions['filters'])
+
+  anomalies = []
+
+  _.each(ds_get_anomalies, function(timeSeriesEntry) {
+    timeSeries = timeSeriesEntry['timeSeries']
+
+    anomalous = _.filter(timeSeries['data'], function(data) {
+      return data['anomalous'] && data['value'] >= param_min_spend
     })
 
-    dimensionsReadable = dimensionsReadable.substring(0, dimensionsReadable.length - 1);
-    start_at = getFormattedDailyDate(getStartDate(new Date()))
-    end_at = getFormattedDailyDate(getEndDate(new Date()))
-
-    anomalies = []
-    _.each(ds_get_anomalies, function(timeSeriesEntry){
-        anomalous = []
-        _.each(timeSeriesEntry.timeSeries.data, function(data){
-          if (data.anomalous != null) {
-            if (data.anomalous == true && param_min_spend <= data.value) {
-              anomalous.push(data)
-            }
-          }
-        })
-        if (anomalous.length > 0) {
-          dimensionKey = ""
-          Object.keys(timeSeriesEntry.timeSeries.dimensions).forEach(function(key) {
-            chunk = timeSeriesEntry.timeSeries.dimensions[key]
-            if (key === "billing_center_id") {
-              var bc_id = timeSeriesEntry.timeSeries.dimensions[key]
-              chunk = _.find(billing_centers, function(bc) { return bc.id === bc_id }).name
-            }
-            dimensionKey = dimensionKey + chunk + "|"
-          });
-          dimensionKey = dimensionKey.substring(0, dimensionKey.length - 1);
-          i = 0
-          _.each(anomalous, function(data){
-            anomalies.push({
-              dimensions: dimensionKey,
-              cost: (Math.round(data.value * 1000) / 1000),
-              date: data.date,
-              movingAverage: (Math.round(data.annotations.movingAverage * 100) / 100),
-              upperLimit: (Math.round(data.annotations.upperLimit * 100) / 100),
-              lowerLimit: (Math.round(data.annotations.lowerLimit * 100) / 100),
-              costMetric: param_cost_metric
-            })
-            i++
+    if (anomalous.length > 0) {
+      dimension_key = _.map(_.keys(timeSeries['dimensions']), function(key) {
+        if (key == "billing_center_id") {
+          billing_center = _.find(billing_centers, function(bc) {
+            return bc['id'] == timeSeries['dimensions'][key]
           })
+
+          return billing_center['name']
+        } else {
+          return timeSeries['dimensions'][key]
         }
-    })
+      }).join('; ')
 
-    message = "https://" + f1_app_host + "/orgs/" + org_id +"/optima/anomalies?granularity=day&startDate=" + start_at + "&endDate=" + end_at + dimensionAPIString + "&costType=" + cost_metric[param_cost_metric]
-
-    var used_filters = []
-    _.each(ds_filter_dimensions.filters, function(f) {
-      if (f.dimensionid === "billing_center_id") {
-        f.value = _.find(billing_centers, function(bc) { return bc.id === f.value }).name
-      }
-      used_filters.push(f)
-    })
-
-    result={
-      "anomalies":anomalies,
-      "message":message,
-      "dimensionsReadable":dimensionsReadable,
-      "errors": ds_filter_dimensions.invalid_ids,
-      "used_filters": used_filters,
-      "used_dimensions": ds_filter_dimensions.names,
+      _.each(anomalous, function(data){
+        anomalies.push({
+          id: dimension_key,
+          cost: Math.round(data['value'] * 1000) / 1000,
+          date: data['date'].split('T')[0],
+          movingAverage: Math.round(data['annotations']['movingAverage'] * 100) / 100,
+          upperLimit: Math.round(data['annotations']['upperLimit'] * 100) / 100,
+          lowerLimit: Math.round(data['annotations']['lowerLimit'] * 100) / 100,
+          metric: param_cost_metric,
+          currency: ds_currency['symbol']
+        })
+      })
     }
-    result.anomalies=_.sortBy(result.anomalies, 'cost');
-    result.anomalies = result.anomalies.reverse().slice(0, param_anomaly_limit);
-  EOS
-end
+  })
 
-###############################################################################
-# Escalations
-###############################################################################
+  anomalies = _.sortBy(anomalies, 'cost').reverse().slice(0, param_anomaly_limit)
 
-escalation "esc_budget_alert" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
+  result = {
+    anomalies: anomalies,
+    link: link,
+    invalid_ids: ds_filter_dimensions['invalid_ids'],
+    valid_dimensions: _.sortBy(ds_dimensions, 'name'),
+    used_filters: used_filters,
+    used_dimensions: ds_filter_dimensions['names'],
+    currency: ds_currency['symbol'],
+    policy_name: ds_applied_policy['name']
+  }
+EOS
 end
 
 ###############################################################################
 # Policy
 ###############################################################################
 
-policy "budget_alert" do
-  validate $ds_filter_dimensions do
-    summary_template "Cloud Cost Anomalies : Invalid dimension(s) {{ data.invalid_ids}}"
-    detail_template <<-EOS
-      The following provided dimension are invalid
-      \n
-      Invalid dimension(s) :
-      {{ range data.invalid_ids }}
-      \n + {{ . }}
-      {{ end }}
-      \n
-    EOS
-    check eq(size(val(data,"invalid_ids")),0)
-    escalate $esc_budget_alert
-  end
-
+policy "pol_anomaly_alert" do
   validate $ds_filter_anomalies do
-    summary_template "Cloud Cost Anomalies: {{ len data.anomalies}} rows of detected anomalies for dimensions: {{ data.dimensionsReadable }}"
+    summary_template "{{ data.policy_name }}: {{ len data.anomalies}} Cloud Cost Anomalies Detected"
     detail_template <<-EOS
-      Cost anomalies reference link: {{data.message}}
+      ### **[View Detailed Report]({{ data.link }})**
       \n
-      Group by dimension(s):
+      #### Dimension(s):
       {{ range data.used_dimensions }}
       \n   + {{ . }}
       {{ end }}
 
       {{ if data.used_filters }}
-        Filter(s):
+        #### Filter(s):
         {{ range data.used_filters }}
-        \n   + {{ .dimensionname }} = {{ .value }}
+        \n   + {{ .name }} = {{ .value }}
         {{ end }}
       {{ end }}
     EOS
-    escalate $esc_budget_alert
     check eq(size(val(data, "anomalies")), 0)
+    escalate $esc_email
     export "anomalies" do
       resource_level true
       field "id" do
         label "Grouping Dimensions"
-        path "dimensions"
       end
       field "cost" do
         label "Cost"
       end
+      field "currency" do
+        label "Currency"
+      end
       field "date" do
         label "Date"
       end
-      field "costMetric" do
+      field "metric" do
         label "Cost Metric"
       end
       field "movingAverage" do
@@ -585,8 +518,42 @@ policy "budget_alert" do
       end
     end
   end
+  validate $ds_filter_anomalies do
+    summary_template "{{ data.policy_name }}: {{ len data.invalid_ids }} Invalid Dimension(s)"
+    detail_template <<-EOS
+      The following provided dimensions are invalid. Please reapply the policy with valid dimensions.
+      \n
+      #### Invalid dimension(s):
+      {{ range data.invalid_ids }}
+      \n + {{ . }}
+      {{ end }}
+
+      The below table includes a full list of valid dimensions. Dimensions can be referenced by ID or name in the *Cost Anomaly Dimensions* parameter.
+    EOS
+    check eq(size(val(data, "invalid_ids")), 0)
+    escalate $esc_email
+    export "valid_dimensions" do
+      resource_level true
+      field "id" do
+        label "ID"
+      end
+      field "name" do
+        label "Name"
+      end
+      field "type" do
+        label "Type"
+      end
+    end
+  end
 end
 
 ###############################################################################
-# Cloud Workflow
+# Escalations
 ###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
