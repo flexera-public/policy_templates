@@ -2,6 +2,7 @@
 
 ## v3.0
 
+- Fixed issue where some open buckets were not being reported on
 - Added ability to filter resources by project
 - Added ability to filter resources by region
 - Added ability to filter resources by label
