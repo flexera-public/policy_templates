@@ -52,6 +52,7 @@ These templates can generate savings estimates for your environment.
 - [Azure Reserved Instances Recommendations](./cost/azure/reserved_instances/recommendations)
 - [Azure Rightsize Compute Instances](./cost/azure/rightsize_compute_instances)
 - [Azure Rightsize Managed Disks](./cost/azure/rightsize_managed_disks)
+- [Azure Rightsize NetApp Files](./cost/azure/rightsize_netapp_files)
 - [Azure Rightsize SQL Databases](./cost/azure/rightsize_sql_instances)
 - [Azure Savings Plan Recommendations](./cost/azure/savings_plan/recommendations)
 - [Azure Superseded Compute Instances](./cost/azure/superseded_instances)
@@ -180,7 +181,7 @@ These templates can generate savings estimates for your environment.
 
 - Compute
 
-  - [AWS Burstable Instance CloudWatch Utilization](./cost/aws/burstable_instance_cloudwatch_credit_utilization)
+  - [AWS Burstable EC2 Instances](./cost/aws/burstable_ec2_instances)
   - [AWS Inefficient Instance Utilization using CloudWatch](./cost/aws/instance_cloudwatch_utilization)
   - [AWS Reserved Instances Recommendations](./cost/aws/reserved_instances/recommendations)
   - [AWS Rightsize EBS Volumes](./cost/aws/rightsize_ebs_volumes)
@@ -261,6 +262,10 @@ These templates can generate savings estimates for your environment.
 - Marketplace
 
   - [Azure New Marketplace Products](./operational/azure/marketplace_new_products)
+
+- NetApp Files
+
+  - [Azure Rightsize NetApp Files](./cost/azure/rightsize_netapp_files)
 
 - SQL
 
@@ -633,16 +638,17 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 34
-  Cost: 97
+  Cost: 98
   Operational: 25
   SaaS Management: 12
   Security: 74
-:optimization_count: 44
+:optimization_count: 45
 :policy_sets:
-  '': 82
+  '': 81
   AWS Config: 1
   Allocate VMs: 3
   Automation: 1
+  Burstable Compute Instances: 1
   CIS: 61
   Committed Use Discount: 1
   Common Bill Ingestion: 2
@@ -674,7 +680,7 @@ These templates can generate savings estimates for your environment.
   Rightsize Containers: 1
   Rightsize Database Instances: 4
   Rightsize Database Services: 1
-  Rightsize Storage: 1
+  Rightsize Storage: 2
   Rightsize Volumes: 2
   Savings Plan Utilization: 1
   Savings Plans: 2
@@ -694,7 +700,7 @@ These templates can generate savings estimates for your environment.
 :providers:
   '': 1
   AWS: 76
-  Azure: 81
+  Azure: 82
   Azure China: 1
   Flexera: 7
   Flexera Cloud Management: 3
@@ -738,6 +744,7 @@ These templates can generate savings estimates for your environment.
   Managed Disks: 1
   Marketplace: 2
   MySQL: 2
+  NetApp Files: 1
   Network: 1
   Network Security Group: 2
   Office 365: 1
@@ -754,7 +761,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 242
+:total_count: 243
 -->
 <!-- End Policy Template Stats -->
 
