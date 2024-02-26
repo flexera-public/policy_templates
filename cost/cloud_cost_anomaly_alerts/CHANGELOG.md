@@ -2,11 +2,11 @@
 
 ## v3.0
 
-- link to Flexera One Cloud Cost Anomalies page now includes filters
-- incident for invalid dimensions now includes list of valid dimensions
-- improved text formatting and presentation of incidents
-- incident now includes currency
-- streamlined code for better readability and faster execution
+- Link to Flexera One Cloud Cost Anomalies page now includes filters
+- Incident for invalid dimensions now includes list of valid dimensions
+- Improved text formatting and presentation of incidents
+- Incident now includes currency
+- Streamlined code for better readability and faster execution
 
 ## v2.5
 
