@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "5.0",
+  version: "5.1",
   provider: "AWS",
   service: "RDS",
   policy_set: "Rightsize Database Instances",
@@ -515,6 +515,14 @@ datasource "ds_rds_instances_set" do
       field "privateDnsName", xpath(col_item, "Endpoint/Address")
       field "databaseEngine", xpath(col_item, "Engine")
       field "engineVersion", xpath(col_item, "EngineVersion")
+      field "availabilityZone", xpath(col_item, "AvailabilityZone")
+      field "licenseModel", xpath(col_item, "LicenseModel")
+      field "processorFeatures" do
+        collect xpath(col_item, "ProcessorFeatures/ProcessorFeature") do
+          field "name", xpath(col_item, "Name")
+          field "value", xpath(col_item, "Value")
+        end
+      end
       field "region", val(iter_item, "region")
     end
   end
@@ -593,11 +601,11 @@ EOS
 end
 
 datasource "ds_rds_instances" do
-  run_script $js_rds_instances, $ds_rds_instances_set, $ds_resource_tags, $param_exclusion_tags, $param_exclusion_tags_boolean
+  run_script $js_rds_instances, $ds_rds_instances_set, $ds_resource_tags, $ds_aws_instance_size_map, $param_exclusion_tags, $param_exclusion_tags_boolean
 end
 
 script "js_rds_instances", type: "javascript" do
-  parameters "ds_rds_instances_set", "ds_resource_tags", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  parameters "ds_rds_instances_set", "ds_resource_tags", "ds_aws_instance_size_map", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-EOS
   comparators = _.map(param_exclusion_tags, function(item) {
@@ -687,6 +695,18 @@ script "js_rds_instances", type: "javascript" do
 
       tag_string = tag_string.join(', ')
 
+      vcpus = null
+
+      if (typeof(instance["processorFeatures"]) == 'object') {
+        cores = _.findWhere(instance["processorFeatures"], { "name": "coreCount" })["value"]
+        threads = _.findWhere(instance["processorFeatures"], { "name": "threadsPerCore" })["value"]
+        vcpus = cores * threads
+      }
+
+      if (vcpus == null && ds_aws_instance_size_map[instance["resourceType"]] != undefined) {
+        vcpus = ds_aws_instance_size_map[instance["resourceType"]]["vcpu"]
+      }
+
       result.push({
         instanceId: instance['instanceId'],
         instanceArn: instance['instanceArn'],
@@ -697,6 +717,10 @@ script "js_rds_instances", type: "javascript" do
         engineVersion: instance['engineVersion'],
         privateDnsName: instance['privateDnsName'],
         region: instance['region'],
+        availabilityZone: instance['availabilityZone'],
+        licenseModel: instance['licenseModel'],
+        processorFeatures: instance['processorFeatures'],
+        vcpus: vcpus,
         tags: tag_string
       })
     }
@@ -882,6 +906,10 @@ script "js_rds_idle_instances", type: "javascript" do
         privateDnsName: instance['privateDnsName'],
         region: instance['region'],
         tags: instance['tags'],
+        availabilityZone: instance['availabilityZone'],
+        licenseModel: instance['licenseModel'],
+        processorFeatures: instance['processorFeatures'],
+        vcpus: instance['vcpus'],
         savings: savings,
         instance_activity: instance_activity
       })
@@ -1120,6 +1148,10 @@ script "js_rds_nonidle_instances_with_metrics", type: "javascript" do
           privateDnsName: instance['privateDnsName'],
           region: instance['region'],
           tags: instance['tags'],
+          availabilityZone: instance['availabilityZone'],
+          licenseModel: instance['licenseModel'],
+          processorFeatures: instance['processorFeatures'],
+          vcpus: instance['vcpus'],
           savings: savings,
           newResourceType: newResourceType
         }
@@ -1329,6 +1361,10 @@ script "js_rds_idle_incident", type: "javascript" do
         databaseEngine: instance['databaseEngine'],
         platform: instance['databaseEngine'],
         engineVersion: instance['engineVersion'],
+        availabilityZone: instance['availabilityZone'],
+        licenseModel: instance['licenseModel'],
+        processorFeatures: instance['processorFeatures'],
+        vcpus: instance['vcpus'],
         savings: parseFloat(savings.toFixed(3)),
         savingsCurrency: ds_currency['symbol'],
         lookbackPeriod: param_stats_lookback,
@@ -1456,6 +1492,10 @@ script "js_rds_underutil_incident", type: "javascript" do
         cpuP99: instance['cpu_p99'],
         cpuP95: instance['cpu_p95'],
         cpuP90: instance['cpu_p90'],
+        availabilityZone: instance['availabilityZone'],
+        licenseModel: instance['licenseModel'],
+        processorFeatures: instance['processorFeatures'],
+        vcpus: instance['vcpus'],
         savings: parseFloat(savings.toFixed(3)),
         savingsCurrency: ds_currency['symbol'],
         lookbackPeriod: param_stats_lookback,
@@ -1563,6 +1603,9 @@ policy "pol_rightsize_rds" do
       field "region" do
         label "Region"
       end
+      field "availabilityZone" do
+        label "Availability Zone"
+      end
       field "state" do
         label "State"
       end
@@ -1604,6 +1647,12 @@ policy "pol_rightsize_rds" do
       end
       field "engineVersion" do
         label "Engine Version"
+      end
+      field "vcpus" do
+        label "vCPUs"
+      end
+      field "licenseModel" do
+        label "License Model"
       end
       field "arn" do
         label "ARN"
@@ -1658,6 +1707,9 @@ policy "pol_rightsize_rds" do
       field "region" do
         label "Region"
       end
+      field "availabilityZone" do
+        label "Availability Zone"
+      end
       field "state" do
         label "State"
       end
@@ -1678,6 +1730,12 @@ policy "pol_rightsize_rds" do
       end
       field "engineVersion" do
         label "Engine Version"
+      end
+      field "vcpus" do
+        label "vCPUs"
+      end
+      field "licenseModel" do
+        label "License Model"
       end
       field "arn" do
         label "ARN"
