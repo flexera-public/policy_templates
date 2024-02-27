@@ -182,7 +182,6 @@ These templates can generate savings estimates for your environment.
 - Compute
 
   - [AWS Burstable EC2 Instances](./cost/aws/burstable_ec2_instances)
-  - [AWS Inefficient Instance Utilization using CloudWatch](./cost/aws/instance_cloudwatch_utilization)
   - [AWS Reserved Instances Recommendations](./cost/aws/reserved_instances/recommendations)
   - [AWS Rightsize EBS Volumes](./cost/aws/rightsize_ebs_volumes)
   - [AWS Rightsize EC2 Instances](./cost/aws/rightsize_ec2_instances)
@@ -639,7 +638,7 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 34
-  Cost: 96
+  Cost: 95
   Operational: 25
   SaaS Management: 12
   Security: 74
@@ -661,7 +660,6 @@ These templates can generate savings estimates for your environment.
   ITAM: 4
   Idle Compute Instances: 1
   Inefficient Disk Usage: 1
-  Inefficient Instance Usage: 1
   Instances not running FlexNet Inventory Agent: 2
   Lifecycle Management: 1
   Long Running Instances: 2
@@ -700,7 +698,7 @@ These templates can generate savings estimates for your environment.
   Unused Volumes: 6
 :providers:
   '': 1
-  AWS: 76
+  AWS: 75
   Azure: 82
   Azure China: 1
   Flexera: 8
@@ -728,7 +726,7 @@ These templates can generate savings estimates for your environment.
   Cloud Cost Optimization: 1
   CloudTrail: 7
   Common Bill Ingestion: 2
-  Compute: 52
+  Compute: 51
   Config: 1
   Cost Explorer: 1
   DBS: 1
@@ -763,7 +761,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 241
+:total_count: 240
 -->
 <!-- End Policy Template Stats -->
 
