@@ -1,5 +1,9 @@
 # Google Rightsize VM Recommender
 
+## v3.0
+
+- Added support for regex when filtering resources by label
+
 ## v2.2
 
 - Fixed issue where currency conversion would sometimes not work as expected.
