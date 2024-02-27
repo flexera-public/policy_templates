@@ -1,5 +1,9 @@
 # AWS Inefficient Instance Utilization using CloudWatch
 
+## Deprecated
+
+This policy is no longer being updated. The [AWS Rightsize EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/) policy now includes this functionality and is the recommended policy for obtaining these recommendations.
+
 ## What it does
 
 This Policy Template gathers AWS instances with inefficient utilization using CloudWatch CPU and Memory Metrics over a 30 day average and downsized after approval.
