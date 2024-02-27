@@ -1,14 +1,14 @@
-name "Azure Hybrid Use Benefit for Linux Server Meta Parent"
+name "AKS Node Pools Without Autoscaling Meta Parent"
 rs_pt_ver 20180301
 type "policy"
-short_description "Applies and manages \"child\" [Azure Hybrid Use Benefit for Linux Server](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/hybrid_use_benefit_linux) Policies."
+short_description "Applies and manages \"child\" [AKS Node Pools Without Autoscaling](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/aks_nodepools_without_autoscaling) Policies."
 severity "low"
 category "Cost"
 tenancy "single"
 default_frequency "15 minutes"
 info(
   provider: "Azure",
-  version: "5.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "3.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "false"
 )
 
@@ -62,7 +62,7 @@ end
 parameter "param_template_source" do
   type "string"
   label "Child Policy Template Source"
-  description "By default, will use the \"Azure Hybrid Use Benefit for Linux Server\" Policy Template from Catalog.  Optionally, you can use the \"Azure Hybrid Use Benefit for Linux Server\" Policy Template uploaded in the current Flexera Project."
+  description "By default, will use the \"AKS Node Pools Without Autoscaling\" Policy Template from Catalog.  Optionally, you can use the \"AKS Node Pools Without Autoscaling\" Policy Template uploaded in the current Flexera Project."
   default "Published Catalog Template"
   allowed_values "Published Catalog Template", "Uploaded Template"
 end
@@ -75,23 +75,6 @@ parameter "param_azure_endpoint" do
   description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
   allowed_values "management.azure.com", "management.chinacloudapi.cn"
   default "management.azure.com"
-end
-
-parameter "param_regions_allow_or_deny" do
-  type "string"
-  category "Filters"
-  label "Allow/Deny Regions"
-  description "Allow or Deny entered regions."
-  allowed_values "Allow", "Deny"
-  default "Allow"
-end
-
-parameter "param_regions_list" do
-  type "list"
-  category "Filters"
-  label "Allow/Deny Regions List"
-  description "A list of allowed or denied regions. Leave blank to check all regions."
-  default []
 end
 
 parameter "param_exclusion_tags" do
@@ -111,12 +94,20 @@ parameter "param_exclusion_tags_boolean" do
   default "Any"
 end
 
-parameter "param_automatic_action" do
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
   type "list"
-  category "Actions"
-  label "Automatic Actions"
-  description "When this value is set, this policy will automatically take the selected action."
-  allowed_values ["Apply Hybrid Use Benefit"]
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
   default []
 end
 
@@ -241,7 +232,7 @@ datasource "ds_published_child_policy_information" do
   result do
     encoding "json"
     # Select the published policy that is published by "support@flexera.com" and matches the name of the child policy template
-    collect jq(response, '.items[] | select(.name == "Azure Hybrid Use Benefit for Linux Server" and .created_by.email == "support@flexera.com")' ) do
+    collect jq(response, '.items[] | select(.name == "AKS Node Pools Without Autoscaling" and .created_by.email == "support@flexera.com")' ) do
       field "name", jmes_path(col_item, "name")
       field "href", jmes_path(col_item, "href")
       field "short_description", jmes_path(col_item, "short_description")
@@ -260,7 +251,7 @@ datasource "ds_project_child_policy_information" do
   result do
     encoding "json"
     # Select the uploaded policy that matches the name of the child policy template
-    collect jq(response, '.items[] | select(.name == "Azure Hybrid Use Benefit for Linux Server")' ) do
+    collect jq(response, '.items[] | select(.name == "AKS Node Pools Without Autoscaling")' ) do
       field "name", jmes_path(col_item, "name")
       field "href", jmes_path(col_item, "href")
       field "short_description", jmes_path(col_item, "short_description")
@@ -789,19 +780,19 @@ datasource "ds_child_incident_details" do
   end
 end
 
-datasource "ds_ahub_recommendations_combined_incidents" do
-  run_script $js_ds_ahub_recommendations_combined_incidents, $ds_child_incident_details
+datasource "ds_aks_nodepools_without_autoscaling_combined_incidents" do
+  run_script $js_ds_aks_nodepools_without_autoscaling_combined_incidents, $ds_child_incident_details
 end
 
-script "js_ds_ahub_recommendations_combined_incidents", type: "javascript" do
+script "js_ds_aks_nodepools_without_autoscaling_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-EOS
   result = []
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
-    // If the incident summary contains "Azure Linux Virtual Machines Without Hybrid Use Benefit Found" then include it in the filter result
-    if (s.indexOf("Azure Linux Virtual Machines Without Hybrid Use Benefit Found") > -1) {
+    // If the incident summary contains "AKS Node Pools Without Autoscaling Found" then include it in the filter result
+    if (s.indexOf("AKS Node Pools Without Autoscaling Found") > -1) {
       _.each(incident["violation_data"], function(violation) {
         violation["incident_id"] = incident["id"];
         result.push(violation);
@@ -812,16 +803,6 @@ EOS
 end
 
 
-# Escalation for Apply Hybrid Use Benefit
-escalation "esc_license_instances" do
-  automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
-  label "Apply Hybrid Use Benefit"
-  description "Apply Hybrid Use Benefit to the selected instances"
-  run "esc_license_instances", data, rs_governance_host, rs_project_id
-end
-define esc_license_instances($data, $governance_host, $rs_project_id) do
-  call child_run_action($data, $governance_host, $rs_project_id, "Apply Hybrid Use Benefit")
-end
 
 
 # Summary and a conditional incident which will show up if any policy is being applied, updated or deleted.
@@ -830,11 +811,11 @@ end
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
-    # Consolidated incident for Azure Linux Virtual Machines Without Hybrid Use Benefit Found
-  validate $ds_ahub_recommendations_combined_incidents do
-    summary_template "Consolidated Incident: {{ len data }} Azure Linux Virtual Machines Without Hybrid Use Benefit Found"
+    # Consolidated incident for AKS Node Pools Without Autoscaling Found
+  validate $ds_aks_nodepools_without_autoscaling_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} AKS Node Pools Without Autoscaling Found"
     escalate $esc_email
-    escalate $esc_license_instances
+    
     check eq(size(data), 0)
     export do
       resource_level true
@@ -848,46 +829,28 @@ policy "policy_scheduled_report" do
         label "Resource Group"
       end
       field "resourceName" do
-        label "Resource Name"
+        label "Node Pool Name"
+      end
+      field "resourceID" do
+        label "Node Pool ID"
+      end
+      field "clusterName" do
+        label "AKS Cluster Name"
       end
       field "tags" do
-        label "Resource Tags"
-      end
-      field "resourceType" do
-        label "Instance Size"
-      end
-      field "resourceKind" do
-        label "Resource Kind"
+        label "AKS Cluster Tags"
       end
       field "region" do
         label "Region"
       end
-      field "recommendationDetails" do
-        label "Recommendation"
+      field "k8s_version" do
+        label "Kubernetes Version"
       end
-      field "osType" do
-        label "Operating System"
+      field "fqdn" do
+        label "FQDN"
       end
-      field "imagePublisher" do
-        label "Image Publisher"
-      end
-      field "imageOffer" do
-        label "Image Offer"
-      end
-      field "imageId" do
-        label "Image SKU"
-      end
-      field "imageVersion" do
-        label "Image Version"
-      end
-      field "license" do
-        label "License Type"
-      end
-      field "service" do
-        label "Service"
-      end
-      field "resourceID" do
-        label "Resource ID"
+      field "autoscaling" do
+        label "Autoscaling"
       end
       field "id" do
         label "ID"

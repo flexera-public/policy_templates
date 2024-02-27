@@ -16,7 +16,13 @@ the policy can be applied.
 - *Allow/Deny Subscriptions List* - A list of allowed or denied Subscription IDs/names. If empty, no filtering will occur and recommendations will be produced for all subscriptions.
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
 - *Allow/Deny Regions List* - Filter results by region, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all the regions.
-- *Exclusion Tags (Key:Value)* - Cloud native tags to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:\* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:\*
+- *Exclusion Tags* - The policy will filter resources containing the specified tags from the results. The following formats are supported:
+  - `Key` - Filter all resources with the specified tag key.
+  - `Key==Value` - Filter all resources with the specified tag key:value pair.
+  - `Key!=Value` - Filter all resources missing the specified tag key:value pair. This will also filter all resources missing the specified tag key.
+  - `Key=~/Regex/` - Filter all resources where the value for the specified key matches the specified regex string.
+  - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified tag key.
+- *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
 - *Automatic Actions* - The policy will automatically take the selected action.
 - *Power Off Type* - Whether to perform a graceful shutdown or a forced shutdown when powering off idle instances. Only applicable when taking action against instances.
 
