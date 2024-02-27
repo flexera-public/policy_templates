@@ -52,6 +52,7 @@ These templates can generate savings estimates for your environment.
 - [Azure Reserved Instances Recommendations](./cost/azure/reserved_instances/recommendations)
 - [Azure Rightsize Compute Instances](./cost/azure/rightsize_compute_instances)
 - [Azure Rightsize Managed Disks](./cost/azure/rightsize_managed_disks)
+- [Azure Rightsize NetApp Files](./cost/azure/rightsize_netapp_files)
 - [Azure Rightsize SQL Databases](./cost/azure/rightsize_sql_instances)
 - [Azure Savings Plan Recommendations](./cost/azure/savings_plan/recommendations)
 - [Azure Superseded Compute Instances](./cost/azure/superseded_instances)
@@ -180,7 +181,7 @@ These templates can generate savings estimates for your environment.
 
 - Compute
 
-  - [AWS Burstable Instance CloudWatch Utilization](./cost/aws/burstable_instance_cloudwatch_credit_utilization)
+  - [AWS Burstable EC2 Instances](./cost/aws/burstable_ec2_instances)
   - [AWS Inefficient Instance Utilization using CloudWatch](./cost/aws/instance_cloudwatch_utilization)
   - [AWS Reserved Instances Recommendations](./cost/aws/reserved_instances/recommendations)
   - [AWS Rightsize EBS Volumes](./cost/aws/rightsize_ebs_volumes)
@@ -262,6 +263,10 @@ These templates can generate savings estimates for your environment.
 
   - [Azure New Marketplace Products](./operational/azure/marketplace_new_products)
 
+- NetApp Files
+
+  - [Azure Rightsize NetApp Files](./cost/azure/rightsize_netapp_files)
+
 - SQL
 
   - [Azure Rightsize SQL Databases](./cost/azure/rightsize_sql_instances)
@@ -302,6 +307,10 @@ These templates can generate savings estimates for your environment.
 
   - [Scheduled Report](./cost/scheduled_reports)
 
+- Optima
+
+  - [Cloud Cost Anomaly Alerts](./cost/cloud_cost_anomaly_alerts)
+
 #### Flexera Cloud Management
 
 - [Inefficient Instance Utilization using RightLink Add Tags](./cost/rightlink_rightsize)
@@ -315,7 +324,6 @@ These templates can generate savings estimates for your environment.
 - [Budget Alerts](./cost/budget_report_alerts)
 - [Budget Alerts by Cloud Account](./cost/budget_alerts_by_account)
 - [Cheaper Regions](./cost/cheaper_regions)
-- [Cloud Cost Anomaly Alerts](./cost/cloud_cost_anomaly_alerts)
 - [Cloud Spend Forecast - Moving Average](./cost/forecasting/moving_average)
 - [Cloud Spend Forecast - Straight-Line (Linear Regression Model)](./cost/forecasting/straight_line_forecast/linear_regression)
 - [Cloud Spend Forecast - Straight-Line (Simple Model)](./cost/forecasting/straight_line_forecast/simple)
@@ -633,16 +641,17 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 34
-  Cost: 97
+  Cost: 98
   Operational: 25
   SaaS Management: 12
   Security: 74
-:optimization_count: 44
+:optimization_count: 45
 :policy_sets:
-  '': 82
+  '': 81
   AWS Config: 1
   Allocate VMs: 3
   Automation: 1
+  Burstable Compute Instances: 1
   CIS: 61
   Committed Use Discount: 1
   Common Bill Ingestion: 2
@@ -674,7 +683,7 @@ These templates can generate savings estimates for your environment.
   Rightsize Containers: 1
   Rightsize Database Instances: 4
   Rightsize Database Services: 1
-  Rightsize Storage: 1
+  Rightsize Storage: 2
   Rightsize Volumes: 2
   Savings Plan Utilization: 1
   Savings Plans: 2
@@ -694,13 +703,13 @@ These templates can generate savings estimates for your environment.
 :providers:
   '': 1
   AWS: 76
-  Azure: 81
+  Azure: 82
   Azure China: 1
-  Flexera: 7
+  Flexera: 8
   Flexera Cloud Management: 3
   Flexera FNMS: 1
   Flexera ITAM: 5
-  Flexera Optima: 24
+  Flexera Optima: 23
   Flexera RISC: 2
   Flexera SaaS Manager: 9
   GCE: 6
@@ -712,7 +721,7 @@ These templates can generate savings estimates for your environment.
   Oracle: 1
   ServiceNow: 1
 :services:
-  '': 59
+  '': 58
   AKS: 3
   All: 1
   App Service: 1
@@ -738,9 +747,11 @@ These templates can generate savings estimates for your environment.
   Managed Disks: 1
   Marketplace: 2
   MySQL: 2
+  NetApp Files: 1
   Network: 1
   Network Security Group: 2
   Office 365: 1
+  Optima: 1
   Org: 1
   Policy: 1
   PostgreSQL: 4
@@ -754,7 +765,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 242
+:total_count: 243
 -->
 <!-- End Policy Template Stats -->
 

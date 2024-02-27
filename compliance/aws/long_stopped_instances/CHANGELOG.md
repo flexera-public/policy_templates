@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.0
+
+- Added support for regex when filtering resources by tag
+
 ## v5.0
 
 - Several parameters altered to be more descriptive and human-readable
