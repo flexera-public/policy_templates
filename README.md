@@ -317,10 +317,8 @@ These templates can generate savings estimates for your environment.
 
 #### Flexera Optima
 
-- [AWS Expiring Reserved Instances](./cost/aws/reserved_instances/expiration)
 - [AWS Expiring Savings Plans](./cost/aws/savings_plan/expiration)
 - [AWS Reserved Instances Utilization](./cost/aws/reserved_instances/utilization)
-- [Azure Expiring Reserved Instances](./cost/azure/reserved_instances/expiration)
 - [Budget Alerts](./cost/budget_report_alerts)
 - [Budget Alerts by Cloud Account](./cost/budget_alerts_by_account)
 - [Cheaper Regions](./cost/cheaper_regions)
@@ -641,13 +639,13 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 34
-  Cost: 98
+  Cost: 96
   Operational: 25
   SaaS Management: 12
   Security: 74
 :optimization_count: 45
 :policy_sets:
-  '': 81
+  '': 79
   AWS Config: 1
   Allocate VMs: 3
   Automation: 1
@@ -709,7 +707,7 @@ These templates can generate savings estimates for your environment.
   Flexera Cloud Management: 3
   Flexera FNMS: 1
   Flexera ITAM: 5
-  Flexera Optima: 23
+  Flexera Optima: 21
   Flexera RISC: 2
   Flexera SaaS Manager: 9
   GCE: 6
@@ -721,7 +719,7 @@ These templates can generate savings estimates for your environment.
   Oracle: 1
   ServiceNow: 1
 :services:
-  '': 58
+  '': 56
   AKS: 3
   All: 1
   App Service: 1
@@ -765,7 +763,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 243
+:total_count: 241
 -->
 <!-- End Policy Template Stats -->
 
