@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.0
+
+- Added support for regex when filtering resources by label
+
 ## v3.1
 
 - Fixed issue where currency conversion would sometimes not work as expected.

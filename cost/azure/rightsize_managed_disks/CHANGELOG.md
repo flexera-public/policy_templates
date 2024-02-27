@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.0
+
+- Added support for regex when filtering resources by tag
+
 ## v1.2
 
 - Updated the descriptions and labels of the IOPS and throughput parameters in the README and policy template files.
