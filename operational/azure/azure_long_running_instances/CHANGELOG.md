@@ -1,5 +1,19 @@
 # Changelog
 
+## v6.0
+
+- Added support for regex when filtering resources by tag
+
+## v5.1
+
+- Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.
+
+## v5.0
+
+- Added option to either gracefully or forcefully power off instances
+- Renamed policy actions to conform with Azure's own terminology and documentation
+- Policy action error logging modernized and now works as expected in EU/APAC
+
 ## v4.2
 
 - Fixed error where policy would sometimes report on stopped instances

@@ -1,5 +1,13 @@
 # Changelog
 
+## v5.0
+
+- Added support for regex when filtering resources by tag
+
+## v4.3
+
+- Policy action error logging modernized and now works as expected in EU/APAC
+
 ## v4.2
 
 - Corrected API issue when executing policy in APAC

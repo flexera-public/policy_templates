@@ -1,0 +1,1067 @@
+name "AWS Burstable EC2 Instances"
+rs_pt_ver 20180301
+type "policy"
+short_description "Gathers Burst Credit and AWS CloudWatch CPU data for EC2 instances on 30 day intervals. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/burstable_instance_cloudwatch_credit_utilization/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "low"
+category "Cost"
+default_frequency "monthly"
+info(
+  version: "4.0",
+  provider: "AWS",
+  service: "Compute",
+  policy_set: "Burstable Compute Instances"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+  default []
+end
+
+parameter "param_aws_account_number" do
+  type "string"
+  category "Policy Settings"
+  label "Account Number"
+  description "Leave blank; this is for automated use with Meta Policies. See README for more details."
+  default ""
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details"
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  default []
+end
+
+parameter "param_cpu_surplus_credits" do
+  type "number"
+  category "Policy Settings"
+  label "CPU Surplus Credits"
+  description "Number of CPU Surplus Credits to report on. Set to -1 to ignore CPU burst credits"
+  default -1
+  min_value -1
+end
+
+parameter "param_cpu_burst_credit_balance" do
+  type "string"
+  category "Policy Settings"
+  label "Check Burst Credit Balance"
+  description "Whether to check burst credit balance against max_earnable_credits"
+  allowed_values "Yes", "No"
+  default "No"
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Resize Instances"]
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws", "aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+  aws_account_number $param_aws_account_number
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_aws" do
+  get_page_marker do
+    body_path jmes_path(response, "NextToken")
+  end
+  set_page_marker do
+    body_field "NextToken"
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+datasource "ds_instance_types" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/data/aws/instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get AWS account info
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account", xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_get_caller_identity
+end
+
+script "js_aws_account", type:"javascript" do
+  parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+  result = _.find(ds_cloud_vendor_accounts, function(account) {
+    return account['id'] == ds_get_caller_identity[0]['account']
+  })
+
+  // This is in case the API does not return the relevant account info
+  if (result == undefined) {
+    result = {
+      id: ds_get_caller_identity[0]['account'],
+      name: "",
+      tags: {}
+    }
+  }
+EOS
+end
+
+datasource "ds_describe_regions" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "ec2.amazonaws.com"
+    path "/"
+    query "Action", "DescribeRegions"
+    query "Version", "2016-11-15"
+    query "Filter.1.Name", "opt-in-status"
+    query "Filter.1.Value.1", "opt-in-not-required"
+    query "Filter.1.Value.2", "opted-in"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
+      field "region", xpath(col_item, "regionName")
+    end
+  end
+end
+
+datasource "ds_regions" do
+  run_script $js_regions, $ds_describe_regions, $param_regions_list, $param_regions_allow_or_deny
+end
+
+script "js_regions", type:"javascript" do
+  parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
+  result "result"
+  code <<-EOS
+  allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_describe_regions, function(item) {
+      return _.contains(param_regions_list, item['region']) == allow_deny_test[param_regions_allow_or_deny]
+    })
+  } else {
+    result = ds_describe_regions
+  }
+EOS
+end
+
+datasource "ds_instance_sets" do
+  iterate $ds_regions
+  request do
+    auth $auth_aws
+    host join(['ec2.', val(iter_item, 'region'), '.amazonaws.com'])
+    path '/'
+    header 'User-Agent', 'RS Policies'
+    header 'Content-Type', 'text/xml'
+    query 'Action', 'DescribeInstances'
+    query 'Version', '2016-11-15'
+    query 'Filter.1.Name', 'instance-state-name'
+    query 'Filter.1.Value.1', 'running'
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeInstancesResponse/reservationSet/item", "array") do
+      field "instances_set" do
+        collect xpath(col_item,"instancesSet/item","array") do
+          field "region",val(iter_item, "region")
+          field "instanceId", xpath(col_item, "instanceId")
+          field "imageId", xpath(col_item, "imageId")
+          field "resourceType", xpath(col_item, "instanceType")
+          field "platform", xpath(col_item, "platformDetails")
+          field "privateDnsName", xpath(col_item, "privateDnsName")
+          field "launchTime", xpath(col_item, "launchTime")
+          field "tags" do
+            collect xpath(col_item,"tagSet/item", "array") do
+              field "key", xpath(col_item, "key")
+              field "value", xpath(col_item, "value")
+            end
+          end
+        end
+      end
+    end
+  end
+end
+
+datasource "ds_instances" do
+  run_script $js_instances, $ds_instance_sets, $ds_instance_types, $param_exclusion_tags, $param_exclusion_tags_boolean
+end
+
+script "js_instances", type: "javascript" do
+  parameters "ds_instance_sets", "ds_instance_types", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  result "result"
+  code <<-EOS
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  result = []
+
+  _.each(ds_instance_sets, function(item) {
+    if (param_exclusion_tags.length > 0) {
+      filtered_instances = _.reject(item['instances_set'], function(resource) {
+        resource_tags = {}
+
+        if (typeof(resource['tags']) == 'object') {
+          _.each(resource['tags'], function(tag) {
+            resource_tags[tag['key']] = tag['value']
+          })
+        }
+
+        // Store a list of found tags
+        found_tags = []
+
+        _.each(comparators, function(comparator) {
+          comparison = comparator['comparison']
+          value = comparator['value']
+          string = comparator['string']
+          resource_tag = resource_tags[comparator['key']]
+
+          if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+          if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+          if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+          if (comparison == '=~') {
+            if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+          }
+
+          if (comparison == '!~') {
+            if (resource_tag == undefined) { found_tags.push(string) }
+            if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+          }
+        })
+
+        all_tags_found = found_tags.length == comparators.length
+        any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+        return all_tags_found || any_tags_found
+      })
+
+      result = result.concat(filtered_instances)
+    } else {
+      result = result.concat(item['instances_set'])
+    }
+  })
+
+  result = _.map(result, function(instance) {
+    resourceTypeInfo = ds_instance_types[instance['resourceType']]
+
+    return {
+      region: instance['region'],
+      instanceId: instance['instanceId'],
+      imageId: instance['imageId'],
+      resourceType: instance['resourceType'],
+      platform: instance['platform'],
+      privateDnsName: instance['privateDnsName'],
+      launchTime: instance['launchTime'],
+      tags: instance['tags'],
+      resourceTypeInfo: resourceTypeInfo
+    }
+  })
+EOS
+end
+
+datasource "ds_instances_cpu_usage" do
+  iterate $ds_instances
+  request do
+    run_script $js_get_instance_stats, val(iter_item, "region"), val(iter_item, "instanceId"), "CPUUtilization"
+  end
+  result do
+    encoding "json"
+    field "cpuUsageStats", jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints")
+    field "region", val(iter_item, "region")
+    field "instanceId", val(iter_item, "instanceId")
+    field "imageId", val(iter_item, "imageId")
+    field "resourceType", val(iter_item, "resourceType")
+    field "resourceTypeInfo", val(iter_item, "resourceTypeInfo")
+    field "platform", val(iter_item, "platform")
+    field "privateDnsName", val(iter_item, "privateDnsName")
+    field "launchTime", val(iter_item, "launchTime")
+    field "tags", val(iter_item, "tags")
+  end
+end
+
+datasource "ds_instances_cpu_credit_balance" do
+  iterate $ds_instances_cpu_usage
+  request do
+    run_script $js_get_instance_stats, val(iter_item, "region"), val(iter_item, "instanceId"), "CPUCreditBalance"
+  end
+  result do
+    encoding "json"
+    field "cpuCreditBalanceStats", jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints")
+    field "cpuUsageStats", val(iter_item, "cpuUsageStats")
+    field "region", val(iter_item, "region")
+    field "instanceId", val(iter_item, "instanceId")
+    field "imageId", val(iter_item, "imageId")
+    field "resourceType", val(iter_item, "resourceType")
+    field "resourceTypeInfo", val(iter_item, "resourceTypeInfo")
+    field "platform", val(iter_item, "platform")
+    field "privateDnsName", val(iter_item, "privateDnsName")
+    field "launchTime", val(iter_item, "launchTime")
+    field "tags", val(iter_item, "tags")
+  end
+end
+
+datasource "ds_instances_cpu_credit_surplus" do
+  iterate $ds_instances_cpu_credit_balance
+  request do
+    run_script $js_get_instance_stats, val(iter_item, "region"), val(iter_item, "instanceId"), "CPUSurplusCreditBalance"
+  end
+  result do
+    field "cpuSurplusCreditBalanceStats", jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints")
+    field "cpuCreditBalanceStats", val(iter_item, "cpuCreditBalanceStats")
+    field "cpuUsageStats", val(iter_item, "cpuUsageStats")
+    field "region", val(iter_item, "region")
+    field "instanceId", val(iter_item, "instanceId")
+    field "imageId", val(iter_item, "imageId")
+    field "resourceType", val(iter_item, "resourceType")
+    field "resourceTypeInfo", val(iter_item, "resourceTypeInfo")
+    field "platform", val(iter_item, "platform")
+    field "privateDnsName", val(iter_item, "privateDnsName")
+    field "launchTime", val(iter_item, "launchTime")
+    field "tags", val(iter_item, "tags")
+  end
+end
+
+datasource "ds_instances_cpu_credits_charged" do
+  iterate $ds_instances_cpu_credit_surplus
+  request do
+    run_script $js_get_instance_stats, val(iter_item, "region"), val(iter_item, "instanceId"), "CPUSurplusCreditsCharged"
+  end
+  result do
+    field "cpuSurplusCreditsChargedStats", jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints")
+    field "cpuSurplusCreditBalanceStats", val(iter_item, "cpuSurplusCreditBalanceStats")
+    field "cpuCreditBalanceStats", val(iter_item, "cpuCreditBalanceStats")
+    field "cpuUsageStats", val(iter_item, "cpuUsageStats")
+    field "region", val(iter_item, "region")
+    field "instanceId", val(iter_item, "instanceId")
+    field "imageId", val(iter_item, "imageId")
+    field "resourceType", val(iter_item, "resourceType")
+    field "resourceTypeInfo", val(iter_item, "resourceTypeInfo")
+    field "platform", val(iter_item, "platform")
+    field "privateDnsName", val(iter_item, "privateDnsName")
+    field "launchTime", val(iter_item, "launchTime")
+    field "tags", val(iter_item, "tags")
+  end
+end
+
+script "js_get_instance_stats", type: "javascript" do
+  result "request"
+  parameters "region", "instanceId", "metricName"
+  code <<-EOS
+  start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString()
+  end_date = new Date().toISOString()
+
+  var request = {
+    auth: "auth_aws",
+    host: "monitoring." + region + ".amazonaws.com",
+    path: "/",
+    headers: {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json",
+      "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
+      "Accept": "application/json",
+      "Content-Encoding": "amz-1.0"
+    },
+    query_params: {
+      "Action": "GetMetricStatistics",
+      "Version": "2010-08-01",
+      "Namespace": "AWS/EC2",
+      "MetricName": metricName,
+      "Dimensions.member.1.Name": "InstanceId",
+      "Dimensions.member.1.Value": instanceId,
+      "StartTime": start_date,
+      "EndTime": end_date,
+      "Period": "2592000",
+      "Statistics.member.1": "Maximum",
+      "Statistics.member.2": "Average",
+      "Statistics.member.3": "Minimum"
+    }
+  }
+EOS
+end
+
+datasource "ds_instances_with_stats" do
+  run_script $js_instances_with_stats, $ds_instances_cpu_credits_charged
+end
+
+script "js_instances_with_stats", type: "javascript" do
+  parameters "ds_instances_cpu_credits_charged"
+  result "result"
+  code <<-'EOS'
+  result = _.map(ds_instances_cpu_credits_charged, function(instance) {
+    // Grab last item in case data slicing was imperfect
+    cpuSurplusCreditsChargedStats = instance['cpuSurplusCreditsChargedStats'][instance['cpuSurplusCreditsChargedStats'].length - 1]
+    cpuSurplusCreditBalanceStats = instance['cpuSurplusCreditBalanceStats'][instance['cpuSurplusCreditBalanceStats'].length - 1]
+    cpuCreditBalanceStats = instance['cpuCreditBalanceStats'][instance['cpuCreditBalanceStats'].length - 1]
+    cpuUsageStats = instance['cpuUsageStats'][instance['cpuUsageStats'].length - 1]
+
+    return {
+      cpuSurplusCreditsChargedUnit: cpuSurplusCreditsChargedStats['Unit'],
+      cpuSurplusCreditsChargedMaximum: cpuSurplusCreditsChargedStats['Maximum'],
+      cpuSurplusCreditsChargedMinimum: cpuSurplusCreditsChargedStats['Minimum'],
+      cpuSurplusCreditsChargedAverage: cpuSurplusCreditsChargedStats['Average'],
+      cpuSurplusCreditBalanceUnit: cpuSurplusCreditBalanceStats['Unit'],
+      cpuSurplusCreditBalanceMaximum: cpuSurplusCreditBalanceStats['Maximum'],
+      cpuSurplusCreditBalanceMinimum: cpuSurplusCreditBalanceStats['Minimum'],
+      cpuSurplusCreditBalanceAverage: cpuSurplusCreditBalanceStats['Average'],
+      cpuCreditBalanceUnit: cpuCreditBalanceStats['Unit'],
+      cpuCreditBalanceMaximum: cpuCreditBalanceStats['Maximum'],
+      cpuCreditBalanceMinimum: cpuCreditBalanceStats['Minimum'],
+      cpuCreditBalanceAverage: cpuCreditBalanceStats['Average'],
+      cpuUnit: cpuUsageStats['Unit'],
+      cpuMaximum: cpuUsageStats['Maximum'],
+      cpuMinimum: cpuUsageStats['Minimum'],
+      cpuAverage: cpuUsageStats['Average'],
+      region: instance['region'],
+      instanceId: instance['instanceId'],
+      imageId: instance['imageId'],
+      resourceType: instance['resourceType'],
+      resourceTypeInfo: instance['resourceTypeInfo'],
+      platform: instance['platform'],
+      privateDnsName: instance['privateDnsName'],
+      launchTime: instance['launchTime'],
+      tags: instance['tags']
+    }
+  })
+EOS
+end
+
+datasource "ds_instance_recommendations" do
+  run_script $js_instance_recommendations, $ds_instances_with_stats, $param_cpu_burst_credit_balance, $param_cpu_surplus_credits, $ds_aws_account, $ds_applied_policy
+end
+
+script "js_instance_recommendations", type: "javascript" do
+  parameters "ds_instances_with_stats", "param_cpu_burst_credit_balance", "param_cpu_surplus_credits", "ds_aws_account", "ds_applied_policy"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  _.each(ds_instances_with_stats, function(instance) {
+    newResourceType = null
+
+    if (instance['resourceTypeInfo']['burst_info'] != undefined) {
+      if (param_cpu_burst_credit_balance == "Yes" && instance['cpuCreditBalanceMinimum'] != 'N/A' && instance['cpuCreditBalanceMinimum'] == instance['resourceTypeInfo']['burst_info']['max_earnable_credits'] && instance['resourceTypeInfo']['down'] != undefined) {
+        newResourceType = instance['resourceTypeInfo']['down']
+      }
+    }
+
+    if (param_cpu_surplus_credits != -1 && instance['cpuSurplusCreditBalanceMinimum'] != "N/A" && instance['cpuSurplusCreditBalanceMinimum'] >= param_cpu_surplus_credits && instance['resourceTypeInfo']['up'] != undefined) {
+      newResourceType = instance['resourceTypeInfo']['up']
+    }
+
+    if (newResourceType != null) {
+      tags = []
+      resourceName = ""
+
+      if (instance['tags'] != undefined && instance['tags'] != null) {
+        _.each(instance['tags'], function(tag) {
+          tags.push([tag['key'], tag['value']].join('='))
+          if (tag['key'].toLowerCase() == 'name') { resourceName = tag['value'] }
+        })
+      }
+
+      recommendationDetails = [
+        "Change instance type of EC2 instance ", instance["instanceId"], " ",
+        "in AWS Account ", ds_aws_account['name'], " ",
+        "(", ds_aws_account['id'], ") ",
+        "from ", instance["resourceType"], " ",
+        "to ", newResourceType
+      ].join('')
+
+      cpu_surplus_credits = param_cpu_surplus_credits
+      if (cpu_surplus_credits == -1) { cpu_surplus_credits = "Ignored" }
+
+      result.push({
+        resourceID: instance['instanceId'],
+        region: instance['region'],
+        imageId: instance['imageId'],
+        resourceType: instance['resourceType'],
+        resourceTypeInfo: instance['resourceTypeInfo'],
+        platform: instance['platform'],
+        privateDnsName: instance['privateDnsName'],
+        hostname: instance['privateDnsName'].split('.')[0],
+        launchTime: instance['launchTime'],
+        cpuUnit: instance['cpuUnit'],
+        cpuMaximum: Number(instance['cpuMaximum'].toFixed(2)),
+        cpuMinimum: Number(instance['cpuMinimum'].toFixed(2)),
+        cpuAverage: Number(instance['cpuAverage'].toFixed(2)),
+        cpuCreditBalanceUnit: instance['cpuCreditBalanceUnit'],
+        cpuCreditBalanceMaximum: instance['cpuCreditBalanceMaximum'],
+        cpuCreditBalanceMinimum: instance['cpuCreditBalanceMinimum'],
+        cpuCreditBalanceAverage: instance['cpuCreditBalanceAverage'],
+        cpuSurplusCreditBalanceUnit: instance['cpuSurplusCreditBalanceUnit'],
+        cpuSurplusCreditBalanceMaximum: instance['cpuSurplusCreditBalanceMaximum'],
+        cpuSurplusCreditBalanceMinimum: instance['cpuSurplusCreditBalanceMinimum'],
+        cpuSurplusCreditBalanceAverage: instance['cpuSurplusCreditBalanceAverage'],
+        cpuSurplusCreditsChargedUnit: instance['cpuSurplusCreditsChargedUnit'],
+        cpuSurplusCreditsChargedMaximum: instance['cpuSurplusCreditsChargedMaximum'],
+        cpuSurplusCreditsChargedMinimum: instance['cpuSurplusCreditsChargedMinimum'],
+        cpuSurplusCreditsChargedAverage: instance['cpuSurplusCreditsChargedAverage'],
+        accountID: ds_aws_account['id'],
+        accountName: ds_aws_account['name'],
+        policy_name: ds_applied_policy['name'],
+        resourceName: resourceName,
+        tags: tags.join(', '),
+        recommendationDetails: recommendationDetails,
+        newResourceType: newResourceType,
+        maxEarnableCredits: instance['resourceTypeInfo']['burst_info']['max_earnable_credits'],
+        service: "EC2",
+        param_cpu_surplus_credits: cpu_surplus_credits,
+        param_cpu_burst_credit_balance: param_cpu_burst_credit_balance
+      })
+    }
+  })
+
+  result = _.sortBy(result, 'resourceID')
+  result = _.sortBy(result, 'region')
+
+  // Add a dummy entry to ensure that the policy's check statement executes at least once
+  result.push({
+    resourceID: "", tags: "", policy_name: "",
+    param_cpu_surplus_credits: "",
+    param_cpu_burst_credit_balance: ""
+  })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_utilization" do
+  validate_each $ds_instance_recommendations do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Actionable EC2 Instances Found"
+    detail_template <<-EOS
+The below results were produced with the following settings:\n
+**CPU Surplus Credits:** {{ with index data 0 }}{{ .param_cpu_surplus_credits }}{{ end }}\\
+**Check Burst Credit Balance:** {{ with index data 0 }}{{ .param_cpu_burst_credit_balance }}{{ end }}\n
+The above settings can be modified by editing the applied policy and changing the appropriate parameters.
+    EOS
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    escalate $esc_resize_instances
+    hash_exclude "tags", "param_cpu_surplus_credits", "param_cpu_burst_credit_balance"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "resourceType" do
+        label "Instance Size"
+      end
+      field "newResourceType" do
+        label "Recommended Instance Size"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "platform" do
+        label "Platform"
+      end
+      field "hostname" do
+        label "Hostname"
+      end
+      field "launchTime" do
+        label "Launch Time"
+      end
+      field "cpuMaximum" do
+        label "CPU Maximum %"
+      end
+      field "cpuAverage" do
+        label "CPU Average %"
+      end
+      field "cpuCreditBalanceMinimum" do
+        label "CPU Credit Balance Minimum"
+      end
+      field "cpuSurplusCreditBalanceMinimum" do
+        label "CPU Surplus Credit Balance Minimum"
+      end
+      field "cpuSurplusCreditsChargedMaximum" do
+        label "CPU Surplus Credit Charged Maximum"
+      end
+      field "maxEarnableCredits" do
+        label "Max Earnable Credits"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_resize_instances" do
+  automatic contains($param_automatic_action, "Resize Instances")
+  label "Resize Instances"
+  description "Approval to resize all selected instances"
+  run "resize_instances", data
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+# Core CWF function to resize instances
+define resize_instances($data) do
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      # Get the initial state of the instance before we take any action
+      call get_instance_state($instance) retrieve $initial_state
+
+      # Check to see if the instance is in a state that we can actual change instance type
+      if $initial_state != "terminated" && $initial_state != "pending"
+        # Stop the instance if it's not already stopped
+        if $initial_state != "stopped"
+          call stop_instance($instance)
+        end
+
+        # Resize the instance
+        call resize_instance($instance)
+
+        # Start the instance if it was running before we stopped it
+        if $initial_state == "running"
+          call start_instance($instance)
+        end
+      end
+    end
+  end
+
+  # If we encountered any errors, use `raise` to mark the CWF process as errored
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+# CWF function to start an instance
+define start_instance($instance) return $response do
+  task_label("Starting Instance: " + $instance["id"])
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    href: "/",
+    host: "ec2." + $instance['region'] + ".amazonaws.com",
+    query_strings: {
+      "Action": "StartInstances",
+      "Version": "2016-11-15",
+      "InstanceId.1": $instance["id"]
+    }
+  )
+
+  call handle_response($response)
+
+  task_label("Checking for expected response code for Starting Instance: " + $instance["id"])
+
+  if $response["code"] != 202 && $response["code"] != 200
+    raise 'Unexpected response Starting Instance: '+to_json($response)
+  else
+    task_label("Successful Starting Instance: " + $instance["id"])
+    call get_instance_state($instance) retrieve $instance_state
+
+    while $instance_state != "running" do
+      call get_instance_state($instance) retrieve $instance_state
+      task_label("Waiting for Start.. Instance State: " + $instance["id"] +" "+ $instance_state)
+      sleep(10)
+    end
+
+    task_label("Completed Starting Instance: " + $instance["id"])
+  end
+end
+
+# CWF function to stop an instance
+define stop_instance($instance) return $response do
+  task_label("Stopping Instance: " + $instance["id"])
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    href: "/",
+    host: "ec2." + $instance['region'] + ".amazonaws.com",
+    query_strings: {
+      "Action": "StopInstances",
+      "Version": "2016-11-15",
+      "InstanceId.1": $instance["id"]
+    }
+  )
+
+  call handle_response($response)
+
+  task_label("Checking for expected response code for Stop Instance: " + $instance["id"])
+
+  if $response["code"] != 202 && $response["code"] != 200
+    raise 'Unexpected response Stop Instance: '+to_json($response)
+  else
+    task_label("Successful Stop Instance: " + $instance["id"])
+    call get_instance_state($instance) retrieve $instance_state
+
+    while $instance_state != "stopped" do
+      call get_instance_state($instance) retrieve $instance_state
+      task_label("Waiting for Stop.. Instance State: " + $instance["id"] +" "+ $instance_state)
+      sleep(10)
+    end
+
+    task_label("Completed Stop Instance: " + $instance["id"])
+  end
+end
+
+# CWF function to resize an instance
+define resize_instance($instance) return $response do
+  task_label("Modifying Instance Type: " + $instance["id"])
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    href: "/",
+    host: "ec2." + $instance["region"] + ".amazonaws.com",
+    query_strings: {
+      "Action": "ModifyInstanceAttribute",
+      "Version": "2016-11-15",
+      "InstanceId": $instance["id"],
+      "InstanceType.Value": $instance["newResourceType"]
+    }
+  )
+
+  call handle_response($response)
+
+  task_label("Checking for expected response code for Modify Instance: " + $instance["id"])
+
+  if $response["code"] != 202 && $response["code"] != 200
+    raise 'Unexpected response Modify Instance: '+to_json($response)
+  else
+    task_label("Successful Modify Instance: " + $instance["id"])
+    call get_instance_state($instance) retrieve $instance_state
+
+    while $instance_state != "stopped" do
+      call get_instance_state($instance) retrieve $instance_state
+      task_label("Waiting for \"stopped\".. Instance State: " + $instance["id"] +" "+ $instance_state)
+      sleep(10)
+    end
+
+    task_label("Completed Modify Instance: " + $instance["id"])
+  end
+end
+
+# CWF function to get the current state of an instance
+define get_instance_state($instance) return $instance_state do
+  task_label("Getting Instance State: " + $instance["id"])
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    href: "/",
+    host: "ec2." + $instance["region"] + ".amazonaws.com",
+    query_strings: {
+      "Action": "DescribeInstanceStatus",
+      "Version": "2016-11-15",
+      "IncludeAllInstances": "true",
+      "InstanceId.1": $instance["id"]
+    }
+  )
+
+  call handle_response($response)
+
+  $instance_state = $response["body"]["DescribeInstanceStatusResponse"]["instanceStatusSet"]["item"]["instanceState"]["name"]
+end
+
+# CWF function to handle errors
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
+end
+
+# CWF function to handle responses
+define handle_response($response) do
+  if !$$all_responses
+    $$all_responses = []
+  end
+  # Convert response object to JSON string.  Easier to interpret
+  $$all_responses << to_json($response)
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
+end

@@ -1,62 +1,61 @@
 # AWS Object Storage Optimization
 
-## What it does
+## What It Does
 
-This Policy checks S3 buckets for older objects and can move old object to 'glacier' or 'deep archive' after a given period of time. The user can choose to delete old object by enabling 'delete action' option as mentioned in Enable delete action section below.
-
-## Functional Details
-
-- This policy identifies all S3 objects last updated outside of the specified timeframe
-- For all objects identified as old, the user can choose to move the object to Glacier or Glacier Deep Archive after the specified timeframe.
+This policy checks S3 buckets for objects to move to the 'Glacier' or 'Deep Archive' storage classes based on object age. The user can opt to either delete the objects or move them to the recommended storage class.
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
-
-- *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
-- *Days since last modified to move to Glacier* - Move to glacier after days last modified - leave blank to skip moving
-- *Days since last modified to move to Deep Archive* - Move to glacier deep archive after days last modified- leave blank to skip moving
+- *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
+- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
 - *Bucket List* - A list of S3 buckets to assess objects in. Leave blank to assess all buckets.
-- *Exclude Tag* - List of tags that will exclude s3 objects from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'
+- *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
+- *Allow/Deny Regions List* - A list of regions to allow or deny for an AWS account. Buckets not in an allowed region will be ignored and their objects will not be assessed.
+- *Exclusion Tags (Key:Value)* - Cloud native tags to ignore S3 objects that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:\* format to match any object with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:\*
+- *New Storage Class* - Whether to move objects to Glacier or Deep Archive if they meet the specified age thresholds. Select 'Both' to consider moving objects to either one based on the specified age thresholds.
+- *Glacier Age Threshold (Days)* - Time in days since object was last modified to change storage class to Glacier. Not applicable if 'Deep Archive' is selected for New Storage Class.
+- *Deep Archive Age Threshold (Days)* - Time in days since object was last modified to change storage class to Deep Archive. Not applicable if 'Glacier' is selected for New Storage Class.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
-- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [more](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
 
-Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
-For example if a user selects the "Update S3 Object Class" action while applying the policy, all the objects that didn't satisfy the policy condition will be updated.
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave this parameter blank for *manual* action. For example if a user selects the "Delete S3 Objects" action while applying the policy, all of the S3 objects that didn't satisfy the policy condition will be deleted.
 
 ## Prerequisites
 
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
 - [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
+  - `sts:GetCallerIdentity`
   - `s3:ListAllMyBuckets`
   - `s3:GetBucketLocation`
   - `s3:ListBucket`
   - `s3:GetObject`
   - `s3:GetObjectTagging`
-  - `s3:PutObject`
-  - `s3:DeleteObject`
+  - `s3:PutObject`*
+  - `s3:DeleteObject`*
+
+  \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
 
   Example IAM Permission Policy:
 
   ```json
   {
-    "Version": "2012-10-17",
-    "Statement":[
-      {
-        "Effect":"Allow",
-        "Action":[
-          "s3:ListAllMyBuckets",
-          "s3:GetBucketLocation",
-          "s3:ListBucket",
-          "s3:GetObject",
-          "s3:GetObjectTagging",
-          "s3:PutObject",
-          "s3:DeleteObject"
-        ],
-        "Resource":"*"
-      }
-    ]
+      "Version": "2012-10-17",
+      "Statement": [
+          {
+              "Effect": "Allow",
+              "Action": [
+                  "sts:GetCallerIdentity",
+                  "s3:ListAllMyBuckets",
+                  "s3:GetBucketLocation",
+                  "s3:ListBucket",
+                  "s3:GetObject",
+                  "s3:GetObjectTagging",
+                  "s3:PutObject",
+                  "s3:DeleteObject"
+              ],
+              "Resource": "*"
+          }
+      ]
   }
   ```
 

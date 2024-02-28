@@ -1,5 +1,13 @@
 # Google Rightsize VM Recommender
 
+## v3.0
+
+- Added support for regex when filtering resources by label
+
+## v2.2
+
+- Fixed issue where currency conversion would sometimes not work as expected.
+
 ## v2.1
 
 - Policy metadata and incident export now correctly state that the recommendation for idle instances is to stop them rather than delete them

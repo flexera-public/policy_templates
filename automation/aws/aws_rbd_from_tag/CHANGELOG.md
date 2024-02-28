@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.2
+
+- added ability to specify names for the newly created dimensions
+
 ## v2.1
 
 - Corrected API issue when executing policy in APAC

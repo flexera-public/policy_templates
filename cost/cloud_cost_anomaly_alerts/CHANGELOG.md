@@ -1,5 +1,17 @@
 # Changelog
 
+## v3.1
+
+- Fixed bug where incident link would render incorrectly if spaces were present in filter value
+
+## v3.0
+
+- Link to Flexera One Cloud Cost Anomalies page now includes filters
+- Incident for invalid dimensions now includes list of valid dimensions
+- Improved text formatting and presentation of incidents
+- Incident now includes currency
+- Streamlined code for better readability and faster execution
+
 ## v2.5
 
 - now users can use `Billing Centers` or `billing_center_id` value for parameter `Cost Anomaly Dimensions`

@@ -1,5 +1,9 @@
 # Changelog
 
+## v8.0
+
+- Added support for regex when filtering resources by tag
+
 ## v7.5
 
 - Policy action error logging modernized and now works as expected in EU/APAC

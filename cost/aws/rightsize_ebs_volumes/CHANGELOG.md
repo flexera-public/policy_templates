@@ -1,5 +1,13 @@
 # Changelog
 
+## v5.0
+
+- Added support for regex when filtering resources by tag
+
+## v4.5
+
+- Fixed issue where currency conversion would sometimes not work as expected.
+
 ## v4.4
 
 - Added parameter to override the AWS Pricing API Endpoint

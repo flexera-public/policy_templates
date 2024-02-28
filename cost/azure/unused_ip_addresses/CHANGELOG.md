@@ -1,5 +1,13 @@
 # Changelog
 
+## v7.0
+
+- Added support for regex when filtering resources by tag
+
+## v6.3
+
+- Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.
+
 ## v6.2
 
 - Refactored code for Delete IP Address Action to improve debugging and error handling
