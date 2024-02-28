@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.0
+
+- Updated AWS Pricing API parameter to be more descriptive and user-friendly
+
 ## v5.0
 
 - Added support for regex when filtering resources by tag

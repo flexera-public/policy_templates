@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "7.0",
+  version: "8.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Unused IP Addresses",
@@ -47,10 +47,10 @@ end
 parameter "param_pricing_api_endpoint" do
   type "string"
   category "Policy Settings"
-  label "AWS Pricing API Endpoint"
-  description "The AWS Pricing API endpoint to use when retrieving pricing data for unused IP addresses. Pricing may vary based on region. See README for more details."
-  allowed_values "api.pricing.us-east-1.amazonaws.com", "api.pricing.eu-central-1.amazonaws.com", "api.pricing.ap-south-1.amazonaws.com"
-  default "api.pricing.us-east-1.amazonaws.com"
+  label "AWS Regional Pricing API"
+  description "The regional AWS Pricing API to use when retrieving pricing data for unused IP addresses. Pricing may vary based on region. See README for more details."
+  allowed_values "US East", "EU Central", "AP South"
+  default "US East"
 end
 
 parameter "param_regions_allow_or_deny" do
@@ -129,7 +129,7 @@ pagination "pagination_aws" do
   end
 end
 
-pagination "pagination_aws_products" do
+pagination "pagination_aws_pricing" do
   get_page_marker do
     body_path "NextToken"
   end
@@ -150,6 +150,25 @@ datasource "ds_applied_policy" do
     path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
     header "Api-Version", "1.0"
   end
+end
+
+# Get region-specific AWS API endpoints
+datasource "ds_aws_api_hosts" do
+  run_script $js_aws_api_hosts, $param_pricing_api_endpoint
+end
+
+script "js_aws_api_hosts", type: "javascript" do
+  parameters "param_pricing_api_endpoint"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "US East": "api.pricing.us-east-1.amazonaws.com",
+    "EU Central": "api.pricing.eu-central-1.amazonaws.com",
+    "AP South": "api.pricing.ap-south-1.amazonaws.com"
+  }
+
+  result = { pricing: host_table[param_pricing_api_endpoint] }
+EOS
 end
 
 # Get region-specific Flexera API endpoints
@@ -649,8 +668,8 @@ end
 datasource "ds_ip_address_prices" do
   request do
     auth $auth_aws
-    pagination $pagination_aws_products
-    host $param_pricing_api_endpoint
+    pagination $pagination_aws_pricing
+    host val($ds_aws_api_hosts, 'pricing')
     verb "POST"
     path "/"
     header "Content-Type", "application/x-amz-json-1.1"
