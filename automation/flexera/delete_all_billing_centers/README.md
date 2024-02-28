@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy deletes all Billing Centers in the Flexera organization it is executed within.
+This policy deletes all Billing Centers in the Flexera organization it is executed within. The policy will automatically self-terminate the second time it runs to avoid accidental future deletion of Billing Centers.
 
 ## How It Works
 
