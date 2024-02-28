@@ -2,7 +2,7 @@
 
 ## What it does
 
-This policy generates an email report comparing actual spend to budgeted values. It utilizes the Flexera Budget API to gather details and sends the report via email, eliminating the need for stakeholders to log in to Flexera One for report access.
+This policy generates an email report comparing actual spending to budgeted values. It utilizes the Flexera Budget API to gather details and sends the report via email, eliminating the need for stakeholders to log in to Flexera One for report access.
 
 ## Prerequisites
 
@@ -11,6 +11,7 @@ This policy requires appropriate [Credentials](https://docs.flexera.com/flexera/
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (_provider=flexera_) which has the following roles:
   - `optima:budget:index`
   - `optima:budget:report`
+  - `optima:billing_center:show`
 
 Refer to the [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page for detailed instructions on setting up Credentials.
 
