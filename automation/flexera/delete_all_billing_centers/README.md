@@ -7,10 +7,11 @@ This policy deletes all Billing Centers in the Flexera organization it is execut
 ## How It Works
 
 - During execution, the policy determines if this is the second time it has run since it was applied by comparing the applied policy's `created_at` date/time with the current date/time. If the difference between the two is greater than 1 minute, it is assumed the policy is running a second time.
+- If this is the policy's second time running, the policy self-terminates before completing execution as a failsafe in case the user has forgotten to terminate the policy after usage.
 - An incident is always raised, with the `Self Terminate` field in the incident table being true if this is the policy's second time executing since it was applied.
 - Cloud Workflow is automatically kicked off.
-  - If this is the policy's second time executing, the policy takes no action against Billing Centers and instead terminates itself as a failsafe in case it was applied and forgotten about by the user.
-  - If this is the policy's first time executing, deletes all of the Billing Centers in the Flexera organization.
+  - If this is the policy's second time executing, but for some reason the policy has failed to self-terminate, no action will be taken.
+  - If this is the policy's first time executing, all of the Billing Centers in the Flexera organization are deleted.
 
 ## Prerequisites
 
@@ -26,7 +27,7 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ## Supported Clouds
 
-- Google
+- Flexera
 
 ## Cost
 
