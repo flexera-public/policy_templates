@@ -8,7 +8,9 @@ This policy generates an email report comparing actual spend to budgeted values.
 
 This policy requires appropriate [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authentication. Ensure a Flexera Credential is registered, compatible with this policy.
 
-- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (_provider=flexera_)
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (_provider=flexera_) which has the following roles:
+  - `optima:budget:index`
+  - `optima:budget:report`
 
 Refer to the [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page for detailed instructions on setting up Credentials.
 
