@@ -19,6 +19,7 @@ info(
 ###############################################################################
 
 parameter "param_email" do
+  category "Policy Settings"
   type "list"
   label "Email addresses to notify"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
@@ -26,6 +27,7 @@ parameter "param_email" do
 end
 
 parameter "param_projects_allow_or_deny" do
+  category "Filters"
   type "string"
   category "Filters"
   label "Allow/Deny Projects"
@@ -35,6 +37,7 @@ parameter "param_projects_allow_or_deny" do
 end
 
 parameter "param_projects_list" do
+  category "Filters"
   type "list"
   category "Filters"
   label "Allow/Deny Projects List"
@@ -43,6 +46,7 @@ parameter "param_projects_list" do
 end
 
 parameter "param_regions_allow_or_deny" do
+  category "Filters"
   type "string"
   category "Filters"
   label "Allow/Deny Regions"
@@ -52,6 +56,7 @@ parameter "param_regions_allow_or_deny" do
 end
 
 parameter "param_regions_list" do
+  category "Filters"
   type "list"
   category "Filters"
   label "Allow/Deny Regions List"
@@ -60,6 +65,7 @@ parameter "param_regions_list" do
 end
 
 parameter "param_metric_lookback_time" do
+  category "Statistics"
   label "Lookback Time Period"
   type "string"
   description "The time period to look back for anomalies. The longer the time period, the more accurate the anomaly detection will be."
@@ -68,6 +74,7 @@ parameter "param_metric_lookback_time" do
 end
 
 parameter "param_metric_aggregation" do
+  category "Statistics"
   label "Lookback Aggregation Period"
   type "string"
   description "The time period to aggregate the metric data"
@@ -76,6 +83,7 @@ parameter "param_metric_aggregation" do
 end
 
 parameter "param_threshold_metric_name" do
+  category "Statistics"
   label "Metric Name"
   type "string"
   description "The name of the metric to monitor for anomalies"
@@ -84,6 +92,7 @@ parameter "param_threshold_metric_name" do
 end
 
 parameter "param_threshold_zscore" do
+  category "Filters"
   label "Threshold For Z-Score"
   type "number"
   description "The Z-score is the number of standard deviations by which the value of a raw score (i.e., an observed value or data point) is above or below the mean value of what is being observed or measured"
@@ -92,9 +101,10 @@ parameter "param_threshold_zscore" do
 end
 
 parameter "param_threshold_consequtive_anomalies" do
+  category "Filters"
   label "Threshold For Consequtive Anomalies"
   type "number"
-  description "Number of Consqutive Anomalies to trigger an incident"
+  description "Number of Consequtive Anomalies to trigger an incident"
   default 0
   min_value 0
 end
@@ -383,7 +393,7 @@ script "js_cloud_run_utilization_anomalies", type: "javascript" do
       std = resource_utilization['points_stddev']
       z = (point_value - mean) / std
       // zScore is the number of standard deviations by which the value of a raw score (i.e., an observed value or data point) is above or below the mean value of what is being observed or measured
-      point['value']['zScore'] = z
+      point['value']['zScore'] = z.toFixed(3)
       // Check if we are outside our confidence window
       if (z > param_threshold_zscore || z < (-1 * param_threshold_zscore)) {
         // Anomaly detected
@@ -403,6 +413,7 @@ script "js_cloud_run_utilization_anomalies", type: "javascript" do
         point['parameters']['param_threshold_consequtive_anomalies'] = param_threshold_consequtive_anomalies
         point['parameters']['param_metric_aggregation'] = param_metric_aggregation
         // return true to include point in filter result
+        point['value']['roundedValue'] = point['value']['doubleValue'].toFixed(2)
         return true
       } else {
         // Reset consequtive_anomalies
@@ -424,7 +435,7 @@ end
 
 policy "pol_utilization" do
   validate_each $ds_cloud_run_utilization_anomalies do
-    summary_template "Google Cloud Run Anomaly Detection: {{ len data }} anomalies in {{ parameters.param_metric_lookback_time }} for {{ parameters.param_threshold_metric_name }} metric"
+    summary_template "Google Cloud Run Anomaly Detection: {{ len data }} Anomalies In {{ parameters.param_metric_lookback_time }} For {{ parameters.param_threshold_metric_name }} Metric"
     detail_template " "
     check lt(  val(val(item, "value"), "consequtiveAnomalyIndex")  , $param_threshold_consequtive_anomalies) # Check that the consequtiveAnomalyIndex is less than the param_consequtiveAnomaly_threshold
     escalate $email
@@ -472,7 +483,7 @@ policy "pol_utilization" do
       end
       field "metricValue" do
         label "Metric Value"
-        path "value.doubleValue"
+        path "value.roundedValue"
       end
       field "metricZScore" do
         label "Metric Z-Score"

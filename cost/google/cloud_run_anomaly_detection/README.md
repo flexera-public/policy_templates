@@ -26,8 +26,10 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 This policy has the following input parameters required when launching the policy.
 
-- Allow/Deny Projects
-- Allow/Deny Regions
+- *Allow/Deny Subscriptions* - Determines whether the Allow/Deny Subscriptions List parameter functions as an allow list (only providing results for the listed subscriptions) or a deny list (providing results for all subscriptions except for the listed subscriptions).
+- *Allow/Deny Subscriptions List* - A list of allowed or denied Subscription IDs/names. If empty, no filtering will occur and recommendations will be produced for all subscriptions.
+- *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
+- *Allow/Deny Regions List* - Filter results by region, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all the regions.
 - *Lookback Time Period* - The time period to look back for anomalies. The longer the time period, the more accurate the anomaly detection will be.
 - *Lookback Aggregation Period* - The time period to aggregate the metric data
 - *Metric Name* - The name of the metric to monitor for anomalies
