@@ -86,6 +86,42 @@ changed_files.each do |file|
  end
 end
 
+# check for name field.
+#only check .pt files
+has_app_changes.each do |file|
+  pp.parse(file)
+  name = pp.parsed_name
+  if ! parsed_name
+    fail "Please add a name field. #{file}"
+  end
+end
+
+# check for short_description field.
+#only check .pt files
+has_app_changes.each do |file|
+  pp.parse(file)
+  short_description = pp.parsed_short_description
+  if ! short_description
+    fail "Please add a short_description field. #{file}"
+  end
+  if short_description && short_description == ""
+    fail "Please add a value other than an empty string to the short_description field. #{file}"
+  end
+end
+
+# check for long_description field.
+#only check .pt files
+has_app_changes.each do |file|
+  pp.parse(file)
+  long_description = pp.parsed_long_description
+  if ! long_description
+    fail "Please add a long_description field with an empty string as its value. #{file}"
+  end
+  if long_description && long_description != ""
+    fail "Please make the long_description field an empty string. #{file}"
+  end
+end
+
 # check for valid category values.
 # must be one of the following categories
 # when adding a new category update the Rakefile generate_policy_list task and
@@ -111,6 +147,49 @@ has_app_changes.each do |file|
   # check first character of category is uppercase
   if category !~ /^[A-Z]/
     fail "The First letter of Category is not capitalised: #{category}."
+  end
+end
+
+# check for valid default_frequency values.
+# must be one of the following default_frequency
+frequencies = [
+  '15 minutes',
+  'hourly',
+  'daily',
+  'weekly',
+  'monthly'
+].sort
+#only check .pt files
+has_app_changes.each do |file|
+  pp.parse(file)
+  default_frequency = pp.parsed_default_frequency
+  if ! default_frequency
+    fail "Please add a default_frequency field. #{file}"
+  end
+  # check default_frequency meets the expected list
+  if default_frequency && !frequencies.include?(default_frequency)
+    fail "The default_frequency is not valid: #{default_frequency}.  Valid frequencies include #{frequencies.join(", ")}"
+  end
+end
+
+# check for valid severity values.
+# must be one of the following severity
+severities = [
+  'low',
+  'medium',
+  'high',
+  'critical'
+].sort
+#only check .pt files
+has_app_changes.each do |file|
+  pp.parse(file)
+  severity = pp.parsed_severity
+  if ! severity
+    fail "Please add a severity field. #{file}"
+  end
+  # check default_frequency meets the expected list
+  if severity && !severities.include?(severity)
+    fail "The severity is not valid: #{severity}.  Valid severities include #{severities.join(", ")}"
   end
 end
 
