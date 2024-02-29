@@ -1,4 +1,4 @@
-# Budget vs Actual Spend Policy
+# Budget vs Actual Spend Report
 
 ## What it does
 
@@ -17,15 +17,13 @@ Refer to the [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN
 
 ## Functional Details
 
-- This policy allows dynamic configuration of `activeDeadlineSeconds` via `values.yaml`, enabling users to set the maximum duration for cron job execution.
 - Chart templates are updated for improved configuration adaptability.
 - Various minor enhancements and bug fixes contribute to improved stability and performance.
 
 ## Input Parameters
 
 - _Budget Name or ID_: The name or ID of the target Budget.
-- _Filter Group By Dimensions_: Filter by dimension=value pairs (e.g., 'Cloud Vendor=AWS'). Multiple values for the same dimension can be comma-separated.
-- _Budget Alert Type_: Options are "Actual" or "Forecasted". Actual Spend alerts are based on incurred costs, while Forecasted Spend alerts use monthly runrates.
+- _Filter Group By Dimensions_: Filter by dimension=value pairs (e.g., 'Cloud Vendor=AWS'). Multiple values for the same dimension can be supplied as coma-separated list.
 - _Unbudgeted Spend_: Parameter to include or exclude unbudgeted funds in the calculation.
 - _Email Addresses_: A list of email addresses to notify.
 

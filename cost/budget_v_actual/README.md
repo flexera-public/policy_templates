@@ -1,4 +1,4 @@
-# Monthly Actual v. Budgeted Spend Report (Legacy)
+# Monthly Actual v. Budgeted Spend Report
 
 ## Deprecated
 
