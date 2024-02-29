@@ -36,7 +36,9 @@ This policy has the following input parameters required when launching the polic
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify.
 - *Azure Endpoint* - Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China.
+- *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation.
 - *Days Unattached* - The number of days an IP address needs to be detached to be considered unused. This value cannot be set above 90 due to Azure only storing 90 days of log data. If this value is set to 0, all unattached IP addresses will be considered unused.
+- *Allocation Type* - Whether to include only Dynamic IPs in the results, only Static IPs, or both.
 - *Allow/Deny Subscriptions* - Whether to treat Allow/Deny Subscriptions List parameter as allow or deny list. Has no effect if Allow/Deny Subscriptions List is left empty.
 - *Allow/Deny Subscriptions List* - Filter results by subscription ID/name, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all the subscriptions.
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
