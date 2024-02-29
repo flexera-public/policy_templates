@@ -626,7 +626,7 @@ These templates can generate savings estimates for your environment.
 
   - [Azure Resources with public IP address](./security/azure/resources_with_public_ip_address)
 
-#### GCE
+#### Google
 
 - Storage
 
@@ -707,9 +707,9 @@ These templates can generate savings estimates for your environment.
   Flexera Optima: 21
   Flexera RISC: 2
   Flexera SaaS Manager: 9
-  GCE: 6
+  GCE: 5
   GitHub: 7
-  Google: 13
+  Google: 14
   Kubecost: 2
   Microsoft: 1
   Okta: 1
