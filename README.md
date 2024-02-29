@@ -211,7 +211,6 @@ These templates can generate savings estimates for your environment.
 
 - RDS
 
-  - [AWS RDS Instances](./cost/aws/rds_instance_license_info)
   - [AWS Rightsize RDS Instances](./cost/aws/rightsize_rds_instances)
 
 - S3
@@ -638,13 +637,13 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 34
-  Cost: 95
+  Cost: 94
   Operational: 25
   SaaS Management: 12
   Security: 74
 :optimization_count: 45
 :policy_sets:
-  '': 79
+  '': 78
   AWS Config: 1
   Allocate VMs: 3
   Automation: 1
@@ -698,7 +697,7 @@ These templates can generate savings estimates for your environment.
   Unused Volumes: 6
 :providers:
   '': 1
-  AWS: 75
+  AWS: 74
   Azure: 82
   Azure China: 1
   Flexera: 8
@@ -751,7 +750,7 @@ These templates can generate savings estimates for your environment.
   Org: 1
   Policy: 1
   PostgreSQL: 4
-  RDS: 5
+  RDS: 4
   S3: 8
   SQL: 14
   Security: 3
@@ -761,7 +760,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 240
+:total_count: 239
 -->
 <!-- End Policy Template Stats -->
 
