@@ -1,5 +1,17 @@
 # Changelog
 
+## v3.0
+
+- Fixed issue where some open buckets were not being reported on
+- Added ability to filter resources by project
+- Added ability to filter resources by region
+- Added ability to filter resources by label
+- Normalized incident export to be consistent with other policies
+- Added additional fields to incident export
+- Streamlined code for better readability and faster execution
+- Added logic required for "Meta Policy" use-cases
+- Flexera credential now required to facilitate meta policy use cases.
+
 ## v2.5
 
 - Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`
