@@ -427,8 +427,7 @@ has_app_changes.each do |file|
     fields_to_check = [
       { block: "parameter", fields: ["type", "category", "label", "description"] },
       { block: "credentials", fields: ["schemes", "tags", "label", "description"] },
-      { block: "escalation", fields: ["automatic", "label", "description"] },
-      { block: "parameter", fields: ["type", "category", "label", "description"] }
+      { block: "escalation", fields: ["automatic", "label", "description"] }
     ]
 
     fields_to_check.each do |item|
