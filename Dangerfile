@@ -313,6 +313,12 @@ has_app_changes.each do |file|
     escalation_comment_regex = /^#{79}\n# Escalations\n#{79}$/
     cwf_comment_regex = /^#{79}\n# Cloud Workflow\n#{79}$/
 
+    if param_regex.match?(file_contents)
+      if !param_comment_regex.match?(file_contents)
+        fail "Policy Template file `#{file}` does **not** have a comment indicating where the Parameters begin. Please add a comment like the below:\n\n###############################################################################\n# Parameters\n###############################################################################"
+      end
+    end
+
     if !datasource_comment_regex.match?(file_contents)
       fail "Policy Template file `#{file}` does **not** have a comment indicating where the Datasources & Scripts begin. Please add a comment like the below:\n\n###############################################################################\n# Datasources & Scripts\n###############################################################################"
     end
