@@ -432,9 +432,9 @@ has_app_changes.each do |file|
     ]
 
     fields_to_check.each do |item|
-      item["fields"].each do |field|
-        if block_missing_field?(file_contents, item["block"], field)
-          fail "Policy Template file `#{file}` has #{item["block"]} block that is missing the #{field} field. Please add this field to all #{item["block"]} blocks"
+      item[:fields].each do |field|
+        if block_missing_field?(file_contents, item[:block], field)
+          fail "Policy Template file `#{file}` has #{item[:block]} block that is missing the #{field} field. Please add this field to all #{item[:block]} blocks"
         end
       end
     end
