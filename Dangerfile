@@ -313,32 +313,34 @@ has_app_changes.each do |file|
     escalation_comment_regex = /^\#{79}\n# Escalations\n\#{79}$/
     cwf_comment_regex = /^\#{79}\n# Cloud Workflow\n\#{79}$/
 
+    hash_string = "###############################################################################"
+
     if param_regex.match?(file_contents) && !param_comment_regex.match?(file_contents)
-      fail "Policy Template file `#{file}` does **not** have a comment indicating where the Parameters begin. Please add a comment like the below before the parameters blocks:\n\n\###############################################################################<br>\# Parameters<br>\###############################################################################"
+      fail "Policy Template file `#{file}` does **not** have a comment indicating where the Parameters begin. Please add a comment like the below before the parameters blocks:\n\n#{hash_string}<br>\# Parameters<br>#{hash_string}"
     end
 
     if auth_regex.match?(file_contents) && !auth_comment_regex.match?(file_contents)
-      fail "Policy Template file `#{file}` does **not** have a comment indicating where the Authentication begins. Please add a comment like the below before the credentials blocks:\n\n\################################################################################<br>\# Authentication<br>\###############################################################################"
+      fail "Policy Template file `#{file}` does **not** have a comment indicating where the Authentication begins. Please add a comment like the below before the credentials blocks:\n\n#{hash_string}<br>\# Authentication<br>#{hash_string}"
     end
 
-    if pagination_regex.match?(file_contents) && !pagination_comment_regex.match?(file_contents) == false
-      fail "Policy Template file `#{file}` does **not** have a comment indicating where the Pagination begins. Please add a comment like the below before the pagination blocks:\n\n\################################################################################<br>\# Pagination<br>\###############################################################################"
+    if pagination_regex.match?(file_contents) && !pagination_comment_regex.match?(file_contents)
+      fail "Policy Template file `#{file}` does **not** have a comment indicating where the Pagination begins. Please add a comment like the below before the pagination blocks:\n\n#{hash_string}<br>\# Pagination<br>#{hash_string}"
     end
 
     if !datasource_comment_regex.match?(file_contents)
-      fail "Policy Template file `#{file}` does **not** have a comment indicating where the Datasources & Scripts begin. Please add a comment like the below before the datasources blocks:\n\n\################################################################################<br>\# Datasources & Scripts<br>\###############################################################################"
+      fail "Policy Template file `#{file}` does **not** have a comment indicating where the Datasources & Scripts begin. Please add a comment like the below before the datasources blocks:\n\n#{hash_string}<br>\# Datasources & Scripts<br>#{hash_string}"
     end
 
     if !policy_comment_regex.match?(file_contents)
-      fail "Policy Template file `#{file}` does **not** have a comment indicating where the Policy begins. Please add a comment like the below before the policy block:\n\n\################################################################################<br>\# Policy<br>\###############################################################################"
+      fail "Policy Template file `#{file}` does **not** have a comment indicating where the Policy begins. Please add a comment like the below before the policy block:\n\n#{hash_string}<br>\# Policy<br>#{hash_string}"
     end
 
     if escalation_regex.match?(file_contents) && !escalation_comment_regex.match?(file_contents)
-      fail "Policy Template file `#{file}` does **not** have a comment indicating where the Escalations begin. Please add a comment like the below before the escalation blocks:\n\n\################################################################################<br>\# Escalations<br>\###############################################################################"
+      fail "Policy Template file `#{file}` does **not** have a comment indicating where the Escalations begin. Please add a comment like the below before the escalation blocks:\n\n#{hash_string}<br>\# Escalations<br>#{hash_string}"
     end
 
     if cwf_regex.match?(file_contents) && !cwf_comment_regex.match?(file_contents)
-      fail "Policy Template file `#{file}` does **not** have a comment indicating where the Cloud Workflow begins. Please add a comment like the below before the cloud workflow blocks:\n\n\################################################################################<br>\# Cloud Workflow<br>\###############################################################################"
+      fail "Policy Template file `#{file}` does **not** have a comment indicating where the Cloud Workflow begins. Please add a comment like the below before the cloud workflow blocks:\n\n#{hash_string}<br>\# Cloud Workflow<br>#{hash_string}"
     end
   end
 end
