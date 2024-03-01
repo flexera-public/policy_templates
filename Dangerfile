@@ -291,7 +291,7 @@ has_app_changes.each do |file|
   end
 end
 
-# check for policy section comments
+# check policy code directly for issues
 has_app_changes.each do |file|
   if file.end_with?(".pt") && !file.end_with?("_meta_parent.pt")
     file_contents = File.read(file)
@@ -301,8 +301,12 @@ has_app_changes.each do |file|
     param_regex = /^parameter\s+"[^"]*"\s+do$/
     auth_regex = /^credentials\s+"[^"]*"\s+do$/
     pagination_regex = /^pagination\s+"[^"]*"\s+do$/
+    datasource_regex = /^datasource\s+"[^"]*"\s+do$/
+    policy_regex = /^policy\s+"[^"]*"\s+do$/
     escalation_regex = /^escalation\s+"[^"]*"\s+do$/
     cwf_regex = /^define\s+\w+\(\s*([$]\w+\s*,\s*)*([$]\w+\s*)?\)\s*(return\s+([$]\w+\s*,\s*)*([$]\w+\s*)?)?do$/
+    permission_regex = /^permission\s+"[^"]*"\s+do$/
+    resources_regex = /^resources\s+"[^"]*",\s+type:\s+"[^"]*"\s+do$/
 
     # Regex to test whether the policy section comments exist
     param_comment_regex = /^\#{79}\n# Parameters\n\#{79}$/
@@ -313,6 +317,16 @@ has_app_changes.each do |file|
     escalation_comment_regex = /^\#{79}\n# Escalations\n\#{79}$/
     cwf_comment_regex = /^\#{79}\n# Cloud Workflow\n\#{79}$/
 
+    # Report on invalid/deprecated code blocks
+    if permission_regex.match?(file_contents)
+      warn("Policy Template file `#{file}` has deprecated `permission` code blocks. It is recommended that the policy be refactored to no longer use these code blocks.")
+    end
+
+    if resources_regex.match?(file_contents)
+      warn("Policy Template file `#{file}` has deprecated `resources` code blocks. It is recommended that the policy be refactored to no longer use these code blocks.")
+    end
+
+    # Report on missing policy section comments
     hash_string = "###############################################################################"
 
     if param_regex.match?(file_contents) && !param_comment_regex.match?(file_contents)
@@ -341,6 +355,45 @@ has_app_changes.each do |file|
 
     if cwf_regex.match?(file_contents) && !cwf_comment_regex.match?(file_contents)
       fail "Policy Template file `#{file}` does **not** have a comment indicating where the Cloud Workflow begins. Please add a comment like the below before the cloud workflow blocks:\n\n#{hash_string}<br>\# Cloud Workflow<br>#{hash_string}"
+    end
+
+    # Regex to test whether code blocks have invalid names
+    # These should come back 'true' for invalidly named code blocks
+    param_name_regex = /^parameter\s+"(?!param_[^"]+")[^"]*"\s+do$/
+    auth_name_regex = /^credentials\s+"(?!auth_[^"]+")[^"]*"\s+do$/
+    pagination_name_regex = /^pagination\s+"(?!pagination_[^"]+")[^"]*"\s+do$/
+    datasource_name_regex = /^datasource\s+"(?!ds_[^"]+")[^"]*"\s+do$/
+    script_name_regex = /^script\s+"(?!js_[^"]+)([^"]*)",\s+type:\s+"javascript"\s+do$/
+    policy_name_regex = /^policy\s+"(?!pol_[^"]+")[^"]*"\s+do$/
+    escalation_name_regex = /^escalation\s+"(?!esc_[^"]+")[^"]*"\s+do$/
+
+    # Report on invalidly named code blocks
+    if param_name_regex.match?(file_contents)
+      fail "Policy Template file `#{file}` has invalidly named parameter blocks. Please ensure all parameter blocks have names that begin with param_"
+    end
+
+    if auth_name_regex.match?(file_contents)
+      fail "Policy Template file `#{file}` has invalidly named credentials blocks. Please ensure all credentials blocks have names that begin with auth_"
+    end
+
+    if pagination_name_regex.match?(file_contents)
+      fail "Policy Template file `#{file}` has invalidly named pagination blocks. Please ensure all pagination blocks have names that begin with pagination_"
+    end
+
+    if datasource_name_regex.match?(file_contents)
+      fail "Policy Template file `#{file}` has invalidly named datasource blocks. Please ensure all datasource blocks have names that begin with ds_"
+    end
+
+    if script_name_regex.match?(file_contents)
+      fail "Policy Template file `#{file}` has invalidly named script blocks. Please ensure all script blocks have names that begin with js_"
+    end
+
+    if policy_name_regex.match?(file_contents)
+      fail "Policy Template file `#{file}` has an invalidly named policy block. Please ensure the policy block has a name that begins with pol_"
+    end
+
+    if escalation_name_regex.match?(file_contents)
+      fail "Policy Template file `#{file}` has invalidly named escalation blocks. Please ensure all escalation blocks have names that begin with esc_"
     end
   end
 end
