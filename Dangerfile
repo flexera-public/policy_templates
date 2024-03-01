@@ -295,6 +295,7 @@ end
 has_app_changes.each do |file|
   if file.end_with?(".pt") && !file.end_with?("_meta_parent.pt")
     file_contents = File.read(file)
+    fail file_contents
 
     # Regex to test whether particular kinds of code blocks exist
     # We don't have to check for the entire block because fpt will generate an error if the block is not valid
@@ -315,39 +316,39 @@ has_app_changes.each do |file|
 
     if param_regex.match?(file_contents)
       if !param_comment_regex.match?(file_contents)
-        fail "Policy Template file `#{file}` does **not** have a comment indicating where the Parameters begin. Please add a comment like the below before the parameters blocks:\n\n###############################################################################\n# Parameters\n###############################################################################"
+        fail "Policy Template file `#{file}` does **not** have a comment indicating where the Parameters begin. Please add a comment like the below before the parameters blocks:\n\n```###############################################################################\n# Parameters\n###############################################################################```"
       end
     end
 
     if auth_regex.match?(file_contents)
       if !auth_comment_regex.match?(file_contents)
-        fail "Policy Template file `#{file}` does **not** have a comment indicating where the Authentication begins. Please add a comment like the below before the credentials blocks:\n\n###############################################################################\n# Authentication\n###############################################################################"
+        fail "Policy Template file `#{file}` does **not** have a comment indicating where the Authentication begins. Please add a comment like the below before the credentials blocks:\n\n```###############################################################################\n# Authentication\n###############################################################################```"
       end
     end
 
     if pagination_regex.match?(file_contents)
       if !pagination_comment_regex.match?(file_contents)
-        fail "Policy Template file `#{file}` does **not** have a comment indicating where the Pagination begins. Please add a comment like the below before the pagination blocks:\n\n###############################################################################\n# Pagination\n###############################################################################"
+        fail "Policy Template file `#{file}` does **not** have a comment indicating where the Pagination begins. Please add a comment like the below before the pagination blocks:\n\n```###############################################################################\n# Pagination\n###############################################################################```"
       end
     end
 
     if !datasource_comment_regex.match?(file_contents)
-      fail "Policy Template file `#{file}` does **not** have a comment indicating where the Datasources & Scripts begin. Please add a comment like the below before the datasources blocks:\n\n###############################################################################\n# Datasources & Scripts\n###############################################################################"
+      fail "Policy Template file `#{file}` does **not** have a comment indicating where the Datasources & Scripts begin. Please add a comment like the below before the datasources blocks:\n\n```###############################################################################\n# Datasources & Scripts\n###############################################################################```"
     end
 
     if !policy_comment_regex.match?(file_contents)
-      fail "Policy Template file `#{file}` does **not** have a comment indicating where the Policy begins. Please add a comment like the below before the policy block:\n\n###############################################################################\n# Policy\n###############################################################################"
+      fail "Policy Template file `#{file}` does **not** have a comment indicating where the Policy begins. Please add a comment like the below before the policy block:\n\n```###############################################################################\n# Policy\n###############################################################################```"
     end
 
     if escalation_regex.match?(file_contents)
       if !escalation_comment_regex.match?(file_contents)
-        fail "Policy Template file `#{file}` does **not** have a comment indicating where the Escalations begin. Please add a comment like the below before the escalation blocks:\n\n###############################################################################\n# Escalations\n###############################################################################"
+        fail "Policy Template file `#{file}` does **not** have a comment indicating where the Escalations begin. Please add a comment like the below before the escalation blocks:\n\n```###############################################################################\n# Escalations\n###############################################################################```"
       end
     end
 
     if cwf_regex.match?(file_contents)
       if !cwf_comment_regex.match?(file_contents)
-        fail "Policy Template file `#{file}` does **not** have a comment indicating where the Cloud Workflow begins. Please add a comment like the below before the cloud workflow blocks:\n\n###############################################################################\n# Cloud Workflow\n###############################################################################"
+        fail "Policy Template file `#{file}` does **not** have a comment indicating where the Cloud Workflow begins. Please add a comment like the below before the cloud workflow blocks:\n\n```###############################################################################\n# Cloud Workflow\n###############################################################################```"
       end
     end
   end
