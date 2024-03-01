@@ -1,9 +1,36 @@
-require 'uri'
-require 'yaml'
-
-require_relative 'tools/lib/policy_parser'
 # DangerFile
 # https://danger.systems/reference.html
+
+require 'uri'
+require 'yaml'
+require_relative 'tools/lib/policy_parser'
+
+# Method for finding code blocks that are missing necessary fields
+def block_missing_field?(policy_code, block_name, field_name)
+  in_block = false
+  present = false
+
+  policy_code.each_line do |line|
+    # Check if we're entering the block
+    if line.strip.start_with?(block_name + ' ') && line.strip.end_with?('do')
+      in_block = true
+      present = false
+    end
+
+    # Check for the field if we're in a block
+    present = true if in_block && line.strip.start_with?(field_name + ' ')
+
+    # When we reach the end of a block, check if field was present
+    if line.strip == 'end' && in_block
+      return true unless present
+      in_block = false
+    end
+  end
+
+  # If we've gone through all lines without returning, no block is missing the field
+  false
+end
+
 # get list of old names that were renamed
 renamed_files = (git.renamed_files.collect{|r| r[:before]})
 # get list of all files changes minus the old files renamed
@@ -394,6 +421,28 @@ has_app_changes.each do |file|
 
     if escalation_name_regex.match?(file_contents)
       fail "Policy Template file `#{file}` has invalidly named escalation blocks. Please ensure all escalation blocks have names that begin with esc_"
+    end
+
+    # Report on missing fields in code blocks
+    fields_to_check = [
+      { block: "parameter", fields: ["type", "category", "label", "description"] },
+      { block: "credentials", fields: ["schemes", "tags", "label", "description"] },
+      { block: "escalation", fields: ["automatic", "label", "description"] },
+      { block: "parameter", fields: ["type", "category", "label", "description"] },
+    ]
+
+    fields_to_check.each do |item|
+      item["fields"].each do |field|
+        if block_missing_field?(file_contents, item["block"], field)
+          fail "Policy Template file `#{file}` has #{item["block"]} block that is missing the #{field} field. Please add this field to all #{item["block"]} blocks"
+        end
+      end
+    end
+
+    # Raise warning, not error, if parameter block is missing a default field.
+    # This is because there are occasionally legitimate reasons to not have a default
+    if block_missing_field?(file_contents, "parameter", "default")
+      fail "Policy Template file `#{file}` has parameter block that is missing the default field. It is recommended that every parameter have a default value unless user input for that parameter is required and too specific for any default value to make sense"
     end
   end
 end
