@@ -1,5 +1,9 @@
 # Monthly Actual v. Budgeted Spend Report
 
+## Deprecated
+
+This policy is no longer being updated.
+
 ## What it does
 
 This policy allows you to set up scheduled reports that will provide monthly actual v. budgeted cloud cost across all resources in the Billing Center(s) you specify, delivered to any email addresses you specify.
@@ -36,8 +40,8 @@ There are four cost metrics to choose from.
 This policy has the following input parameters required when launching the policy.
 
 - *Email list* - Email addresses of the recipients you wish to notify
-- *Billing Center List* - List of top level Billing Center names you want to report on.  Names must be exactly as shown in Optima. Leave the field blank to report on all top level Billing Centers.
-- *Cost Metric* -  See Cost Metrics above for details on selection.
+- *Billing Center List* - List of top level Billing Center names you want to report on. Names must be exactly as shown in Optima. Leave the field blank to report on all top level Billing Centers.
+- *Cost Metric* - See Cost Metrics above for details on selection.
 - *January Budgeted Cost* - January budgeted cost for corresponding Billing Center
 - *February Budgeted Cost* - February budgeted cost for corresponding Billing Center
 - *March Budgeted Cost* - March budgeted cost for corresponding Billing Center
