@@ -1,9 +1,36 @@
-require 'uri'
-require 'yaml'
-
-require_relative 'tools/lib/policy_parser'
 # DangerFile
 # https://danger.systems/reference.html
+
+require 'uri'
+require 'yaml'
+require_relative 'tools/lib/policy_parser'
+
+# Method for finding code blocks that are missing necessary fields
+def block_missing_field?(policy_code, block_name, field_name)
+  in_block = false
+  present = false
+
+  policy_code.each_line do |line|
+    # Check if we're entering the block
+    if line.strip.start_with?(block_name + ' ') && line.strip.end_with?('do')
+      in_block = true
+      present = false
+    end
+
+    # Check for the field if we're in a block
+    present = true if in_block && line.strip.start_with?(field_name + ' ')
+
+    # When we reach the end of a block, check if field was present
+    if line.strip == 'end' && in_block
+      return true unless present
+      in_block = false
+    end
+  end
+
+  # If we've gone through all lines without returning, no block is missing the field
+  false
+end
+
 # get list of old names that were renamed
 renamed_files = (git.renamed_files.collect{|r| r[:before]})
 # get list of all files changes minus the old files renamed
@@ -86,6 +113,45 @@ changed_files.each do |file|
  end
 end
 
+# check for name field.
+#only check .pt files
+has_app_changes.each do |file|
+  pp.parse(file)
+  name = pp.parsed_name
+  if ! name
+    fail "Please add a name field. #{file}"
+  end
+  if name && name == ""
+    fail "Please add a value other than an empty string to the name field. #{file}"
+  end
+end
+
+# check for short_description field.
+#only check .pt files
+has_app_changes.each do |file|
+  pp.parse(file)
+  short_description = pp.parsed_short_description
+  if ! short_description
+    fail "Please add a short_description field. #{file}"
+  end
+  if short_description && short_description == ""
+    fail "Please add a value other than an empty string to the short_description field. #{file}"
+  end
+end
+
+# check for long_description field.
+#only check .pt files
+has_app_changes.each do |file|
+  pp.parse(file)
+  long_description = pp.parsed_long_description
+  if ! long_description
+    fail "Please add a long_description field with an empty string as its value. #{file}"
+  end
+  if long_description && long_description != ""
+    fail "Please make the long_description field an empty string. #{file}"
+  end
+end
+
 # check for valid category values.
 # must be one of the following categories
 # when adding a new category update the Rakefile generate_policy_list task and
@@ -111,6 +177,49 @@ has_app_changes.each do |file|
   # check first character of category is uppercase
   if category !~ /^[A-Z]/
     fail "The First letter of Category is not capitalised: #{category}."
+  end
+end
+
+# check for valid default_frequency values.
+# must be one of the following default_frequency
+frequencies = [
+  '15 minutes',
+  'hourly',
+  'daily',
+  'weekly',
+  'monthly'
+].sort
+#only check .pt files
+has_app_changes.each do |file|
+  pp.parse(file)
+  default_frequency = pp.parsed_default_frequency
+  if ! default_frequency
+    fail "Please add a default_frequency field. #{file}"
+  end
+  # check default_frequency meets the expected list
+  if default_frequency && !frequencies.include?(default_frequency)
+    fail "The default_frequency is not valid: #{default_frequency}.  Valid frequencies include #{frequencies.join(", ")}"
+  end
+end
+
+# check for valid severity values.
+# must be one of the following severity
+severities = [
+  'low',
+  'medium',
+  'high',
+  'critical'
+].sort
+#only check .pt files
+has_app_changes.each do |file|
+  pp.parse(file)
+  severity = pp.parsed_severity
+  if ! severity
+    fail "Please add a severity field. #{file}"
+  end
+  # check default_frequency meets the expected list
+  if severity && !severities.include?(severity)
+    fail "The severity is not valid: #{severity}.  Valid severities include #{severities.join(", ")}"
   end
 end
 
@@ -147,23 +256,6 @@ end
 has_app_changes.each do |file|
   if file.scan(/^[a-z0-9.\/_-]+$/).empty?
     fail "Policy Template path should be lowercase. #{file}"
-  end
-end
-
-# check for default_frequency
-# only check .pt files
-frequencies = [
-  '15 minutes',
-  'hourly',
-  'daily',
-  'weekly',
-  'monthly'
-].sort
-has_app_changes.each do |file|
-  pp.parse(file)
-  default_frequency = pp.parsed_default_frequency
-  if ! default_frequency
-    fail "Please add a 'default_frequency' property field and value. #{file}"
   end
 end
 
@@ -222,6 +314,134 @@ has_app_changes.each do |file|
     elsif diff && diff.patch =~ regex
       # If the PT file has been manually validated, but there are new datasources, then print a warning message
       warn("Detected new request datasource in Policy Template file `#{file}`.  Please verify the README.md has any new permissions that may be required.")
+    end
+  end
+end
+
+# check policy code directly for issues
+has_app_changes.each do |file|
+  if file.end_with?(".pt") && !file.end_with?("_meta_parent.pt")
+    file_contents = File.read(file)
+
+    # Regex to test whether particular kinds of code blocks exist
+    # We don't have to check for the entire block because fpt will generate an error if the block is not valid
+    param_regex = /^parameter\s+"[^"]*"\s+do$/
+    auth_regex = /^credentials\s+"[^"]*"\s+do$/
+    pagination_regex = /^pagination\s+"[^"]*"\s+do$/
+    datasource_regex = /^datasource\s+"[^"]*"\s+do$/
+    policy_regex = /^policy\s+"[^"]*"\s+do$/
+    escalation_regex = /^escalation\s+"[^"]*"\s+do$/
+    cwf_regex = /^define\s+\w+\(\s*([$]\w+\s*,\s*)*([$]\w+\s*)?\)\s*(return\s+([$]\w+\s*,\s*)*([$]\w+\s*)?)?do$/
+    permission_regex = /^permission\s+"[^"]*"\s+do$/
+    resources_regex = /^resources\s+"[^"]*",\s+type:\s+"[^"]*"\s+do$/
+
+    # Regex to test whether the policy section comments exist
+    param_comment_regex = /^\#{79}\n# Parameters\n\#{79}$/
+    auth_comment_regex = /^\#{79}\n# Authentication\n\#{79}$/
+    pagination_comment_regex = /^\#{79}\n# Pagination\n\#{79}$/
+    datasource_comment_regex = /^\#{79}\n# Datasources & Scripts\n\#{79}$/
+    policy_comment_regex = /^\#{79}\n# Policy\n\#{79}$/
+    escalation_comment_regex = /^\#{79}\n# Escalations\n\#{79}$/
+    cwf_comment_regex = /^\#{79}\n# Cloud Workflow\n\#{79}$/
+
+    # Report on invalid/deprecated code blocks
+    if permission_regex.match?(file_contents)
+      warn("Policy Template file `#{file}` has deprecated `permission` code blocks. It is recommended that the policy be refactored to no longer use these code blocks.")
+    end
+
+    if resources_regex.match?(file_contents)
+      warn("Policy Template file `#{file}` has deprecated `resources` code blocks. It is recommended that the policy be refactored to no longer use these code blocks.")
+    end
+
+    # Report on missing policy section comments
+    hash_string = "###############################################################################"
+
+    if param_regex.match?(file_contents) && !param_comment_regex.match?(file_contents)
+      fail "Policy Template file `#{file}` does **not** have a comment indicating where the Parameters begin. Please add a comment like the below before the parameters blocks:\n\n#{hash_string}<br>\# Parameters<br>#{hash_string}"
+    end
+
+    if auth_regex.match?(file_contents) && !auth_comment_regex.match?(file_contents)
+      fail "Policy Template file `#{file}` does **not** have a comment indicating where the Authentication begins. Please add a comment like the below before the credentials blocks:\n\n#{hash_string}<br>\# Authentication<br>#{hash_string}"
+    end
+
+    if pagination_regex.match?(file_contents) && !pagination_comment_regex.match?(file_contents)
+      fail "Policy Template file `#{file}` does **not** have a comment indicating where the Pagination begins. Please add a comment like the below before the pagination blocks:\n\n#{hash_string}<br>\# Pagination<br>#{hash_string}"
+    end
+
+    if !datasource_comment_regex.match?(file_contents)
+      fail "Policy Template file `#{file}` does **not** have a comment indicating where the Datasources & Scripts begin. Please add a comment like the below before the datasources blocks:\n\n#{hash_string}<br>\# Datasources & Scripts<br>#{hash_string}"
+    end
+
+    if !policy_comment_regex.match?(file_contents)
+      fail "Policy Template file `#{file}` does **not** have a comment indicating where the Policy begins. Please add a comment like the below before the policy block:\n\n#{hash_string}<br>\# Policy<br>#{hash_string}"
+    end
+
+    if escalation_regex.match?(file_contents) && !escalation_comment_regex.match?(file_contents)
+      fail "Policy Template file `#{file}` does **not** have a comment indicating where the Escalations begin. Please add a comment like the below before the escalation blocks:\n\n#{hash_string}<br>\# Escalations<br>#{hash_string}"
+    end
+
+    if cwf_regex.match?(file_contents) && !cwf_comment_regex.match?(file_contents)
+      fail "Policy Template file `#{file}` does **not** have a comment indicating where the Cloud Workflow begins. Please add a comment like the below before the cloud workflow blocks:\n\n#{hash_string}<br>\# Cloud Workflow<br>#{hash_string}"
+    end
+
+    # Regex to test whether code blocks have invalid names
+    # These should come back 'true' for invalidly named code blocks
+    param_name_regex = /^parameter\s+"(?!param_[^"]+")[^"]*"\s+do$/
+    auth_name_regex = /^credentials\s+"(?!auth_[^"]+")[^"]*"\s+do$/
+    pagination_name_regex = /^pagination\s+"(?!pagination_[^"]+")[^"]*"\s+do$/
+    datasource_name_regex = /^datasource\s+"(?!ds_[^"]+")[^"]*"\s+do$/
+    script_name_regex = /^script\s+"(?!js_[^"]+)([^"]*)",\s+type:\s+"javascript"\s+do$/
+    policy_name_regex = /^policy\s+"(?!pol_[^"]+")[^"]*"\s+do$/
+    escalation_name_regex = /^escalation\s+"(?!esc_[^"]+")[^"]*"\s+do$/
+
+    # Report on invalidly named code blocks
+    if param_name_regex.match?(file_contents)
+      fail "Policy Template file `#{file}` has invalidly named parameter blocks. Please ensure all parameter blocks have names that begin with param_"
+    end
+
+    if auth_name_regex.match?(file_contents)
+      fail "Policy Template file `#{file}` has invalidly named credentials blocks. Please ensure all credentials blocks have names that begin with auth_"
+    end
+
+    if pagination_name_regex.match?(file_contents)
+      fail "Policy Template file `#{file}` has invalidly named pagination blocks. Please ensure all pagination blocks have names that begin with pagination_"
+    end
+
+    if datasource_name_regex.match?(file_contents)
+      fail "Policy Template file `#{file}` has invalidly named datasource blocks. Please ensure all datasource blocks have names that begin with ds_"
+    end
+
+    if script_name_regex.match?(file_contents)
+      fail "Policy Template file `#{file}` has invalidly named script blocks. Please ensure all script blocks have names that begin with js_"
+    end
+
+    if policy_name_regex.match?(file_contents)
+      fail "Policy Template file `#{file}` has an invalidly named policy block. Please ensure the policy block has a name that begins with pol_"
+    end
+
+    if escalation_name_regex.match?(file_contents)
+      fail "Policy Template file `#{file}` has invalidly named escalation blocks. Please ensure all escalation blocks have names that begin with esc_"
+    end
+
+    # Report on missing fields in code blocks
+    fields_to_check = [
+      { block: "parameter", fields: ["type", "category", "label", "description"] },
+      { block: "credentials", fields: ["schemes", "tags", "label", "description"] },
+      { block: "escalation", fields: ["automatic", "label", "description"] }
+    ]
+
+    fields_to_check.each do |item|
+      item[:fields].each do |field|
+        if block_missing_field?(file_contents, item[:block], field)
+          fail "Policy Template file `#{file}` has #{item[:block]} block that is missing the #{field} field. Please add this field to all #{item[:block]} blocks"
+        end
+      end
+    end
+
+    # Raise warning, not error, if parameter block is missing a default field.
+    # This is because there are occasionally legitimate reasons to not have a default
+    if block_missing_field?(file_contents, "parameter", "default")
+      warn("Policy Template file `#{file}` has parameter block that is missing the default field. It is recommended that every parameter have a default value unless user input for that parameter is required and too specific for any default value to make sense")
     end
   end
 end
