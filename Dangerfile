@@ -232,23 +232,6 @@ has_app_changes.each do |file|
   end
 end
 
-# check for default_frequency
-# only check .pt files
-frequencies = [
-  '15 minutes',
-  'hourly',
-  'daily',
-  'weekly',
-  'monthly'
-].sort
-has_app_changes.each do |file|
-  pp.parse(file)
-  default_frequency = pp.parsed_default_frequency
-  if ! default_frequency
-    fail "Please add a 'default_frequency' property field and value. #{file}"
-  end
-end
-
 # check for info field required fields
 has_app_changes.each do |file|
   # get info field data
@@ -289,6 +272,50 @@ has_app_changes.each do |file|
     # Example String:
     #   "diff --git a/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt b/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt\nindex 14b3236f..bf6a161d 100644\n--- a/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt\n+++ b/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt\n@@ -193,6 +193,16 @@ datasource \"ds_applied_policy\" do\n   end\n end\n \n+datasource \"ds_applied_policy_test_will_be_removed_later\" do\n+  request do\n+    auth $auth_flexera\n+    host rs_governance_host\n+    path join([\"/api/governance/projects/\", rs_project_id, \"/applied_policies/\", policy_id])\n+    header \"Api-Version\", \"1.0\"\n+    header \"Test\", \"True\"\n+  end\n+end\n+\n # Get region-specific Flexera API endpoints\n datasource \"ds_flexera_api_hosts\" do\n   run_script $js_flexera_api_hosts, rs_optima_host"
     regex = /datasource.*do(\s)+.*request.*do(\s)+.*auth.*([\s\S])+end([\s\+])+end/
+
+    # Print some debug info about diff patch
+    # puts "Diff Patch:"
+    # puts diff.patch
+    # puts "---"
+
+    # First check if the PT file has been manually validated and enabled for permission generation
+    pt_file_enabled = permissions_verified_pt_file_yaml["validated_policy_templates"].select { |pt| pt.include?(file) }
+    if pt_file_enabled.empty?
+      # If the PT file has not been manually validated, then print an error message which will block the PR from being merged
+      # This will help improve coverage as we touch more PT files
+      fail "Policy Template file `#{file}` has **not** yet been enabled for automated permission generation.  Please help us improve coverage by [following the steps documented in `tools/policy_master_permission_generation/`](https://github.com/flexera-public/policy_templates/tree/master/tools/policy_master_permission_generation) to resolve this"
+    elsif diff && diff.patch =~ regex
+      # If the PT file has been manually validated, but there are new datasources, then print a warning message
+      warn("Detected new request datasource in Policy Template file `#{file}`.  Please verify the README.md has any new permissions that may be required.")
+    end
+  end
+end
+
+# check for policy section comments
+has_app_changes.each do |file|
+  if file.end_with?(".pt") && !file.end_with?("_meta_parent.pt")
+    file_contents = File.read(file)
+
+    # Regex to test whether particular kinds of code blocks exist
+    # We don't have to check for the entire block because fpt will generate an error if the block is not valid
+    param_regex = /^parameter\s+"[^"]*"\s+do$/
+    auth_regex = /^credentials\s+"[^"]*"\s+do$/
+    pagination_regex = /^pagination\s+"[^"]*"\s+do$/
+    escalation_regex = /^escalation\s+"[^"]*"\s+do$/
+    cwf_regex = /^define\s+\w+\(\s*([$]\w+\s*,\s*)*([$]\w+\s*)?\)\s*(return\s+([$]\w+\s*,\s*)*([$]\w+\s*)?)?do$/
+
+    # Regex to test whether the policy section comments exist
+    param_comment_regex = /^#{79}\n# Parameters\n#{79}$/
+    auth_comment_regex = /^#{79}\n# Authentication\n#{79}$/
+    pagination_comment_regex = /^#{79}\n# Pagination\n#{79}$/
+    datasource_comment_regex = /^#{79}\n# Datasources & Scripts\n#{79}$/
+    policy_comment_regex = /^#{79}\n# Policy\n#{79}$/
+    escalation_comment_regex = /^#{79}\n# Escalations\n#{79}$/
+    cwf_comment_regex = /^#{79}\n# Cloud Workflow\n#{79}$/
+
+    if !datasource_comment_regex.match?(datasource_comment_regex)
+      fail "Policy Template file `#{file}` does **not** have a comment indicating where the Datasources & Scripts begin. Please add a comment like the below:\n\n###############################################################################\n# Datasources & Scripts\n###############################################################################"
+    end
 
     # Print some debug info about diff patch
     # puts "Diff Patch:"
