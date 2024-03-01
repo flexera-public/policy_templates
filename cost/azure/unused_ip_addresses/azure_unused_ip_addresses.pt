@@ -6,7 +6,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "6.3",
+  version: "7.1",
   provider: "Azure",
   service: "Compute",
   policy_set: "Unused IP Addresses",
@@ -34,6 +34,15 @@ parameter "param_azure_endpoint" do
   default "management.azure.com"
 end
 
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation"
+  min_value 0
+  default 0
+end
+
 parameter "param_days_unattached" do
   type "number"
   category "Policy Settings"
@@ -42,6 +51,15 @@ parameter "param_days_unattached" do
   default 30
   min_value 0
   max_value 90
+end
+
+parameter "param_allocation_type" do
+  type "string"
+  category "Filters"
+  label "Allocation Type"
+  description "Whether to include only Dynamic IPs in the results, only Static IPs, or both."
+  allowed_values "Dynamic", "Static", "Both"
+  default "Both"
 end
 
 parameter "param_subscriptions_allow_or_deny" do
@@ -315,12 +333,30 @@ datasource "ds_ip_addresses" do
   end
 end
 
+datasource "ds_ip_addresses_alloc_filtered" do
+  run_script $js_ip_addresses_alloc_filtered, $ds_ip_addresses, $param_allocation_type
+end
+
+script "js_ip_addresses_alloc_filtered", type: "javascript" do
+  parameters "ds_ip_addresses", "param_allocation_type"
+  result "result"
+  code <<-EOS
+  if (param_allocation_type != "Both") {
+    result = _.filter(ds_ip_addresses, function(ip) {
+      return ip['properties']['publicIPAllocationMethod'] == param_allocation_type
+    })
+  } else {
+    result = ds_ip_addresses
+  }
+EOS
+end
+
 datasource "ds_ip_addresses_tag_filtered" do
-  run_script $js_ip_addresses_tag_filtered, $ds_ip_addresses, $param_exclusion_tags, $param_exclusion_tags_boolean
+  run_script $js_ip_addresses_tag_filtered, $ds_ip_addresses_alloc_filtered, $param_exclusion_tags, $param_exclusion_tags_boolean
 end
 
 script "js_ip_addresses_tag_filtered", type: "javascript" do
-  parameters "ds_ip_addresses", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  parameters "ds_ip_addresses_alloc_filtered", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-EOS
   comparators = _.map(param_exclusion_tags, function(item) {
@@ -354,7 +390,7 @@ script "js_ip_addresses_tag_filtered", type: "javascript" do
   })
 
   if (param_exclusion_tags.length > 0) {
-    result = _.reject(ds_ip_addresses, function(resource) {
+    result = _.reject(ds_ip_addresses_alloc_filtered, function(resource) {
       resource_tags = {}
       if (typeof(resource['tags']) == 'object') { resource_tags = resource['tags'] }
 
@@ -387,7 +423,7 @@ script "js_ip_addresses_tag_filtered", type: "javascript" do
       return all_tags_found || any_tags_found
     })
   } else {
-    result = ds_ip_addresses
+    result = ds_ip_addresses_alloc_filtered
   }
 EOS
 end
@@ -663,11 +699,11 @@ EOS
 end
 
 datasource "ds_ip_cost_mapping" do
-  run_script $js_ip_cost_mapping, $ds_unused_ip_addresses, $ds_ip_addresses_region_filtered, $ds_ip_costs_grouped, $ds_applied_policy, $ds_currency, $param_days_unattached
+  run_script $js_ip_cost_mapping, $ds_unused_ip_addresses, $ds_ip_addresses_region_filtered, $ds_ip_costs_grouped, $ds_applied_policy, $ds_currency, $param_days_unattached, $param_min_savings
 end
 
 script "js_ip_cost_mapping", type:"javascript" do
-  parameters "ds_unused_ip_addresses", "ds_ip_addresses_region_filtered", "ds_ip_costs_grouped", "ds_applied_policy", "ds_currency", "param_days_unattached"
+  parameters "ds_unused_ip_addresses", "ds_ip_addresses_region_filtered", "ds_ip_costs_grouped", "ds_applied_policy", "ds_currency", "param_days_unattached", "param_min_savings"
   result "result"
   code <<-'EOS'
   // Function for formatting currency numbers later
@@ -700,50 +736,53 @@ script "js_ip_cost_mapping", type:"javascript" do
       savings = 0.0
     }
 
-    total_savings += savings
+    if (savings >= param_min_savings) {
+      total_savings += savings
 
-    ip_message = ''
+      ip_message = ''
 
-    if (typeof(ip['properties']['ipAddress']) == 'string') {
-      ip_message = "(" + ip['properties']['ipAddress'] + ") "
-    }
+      if (typeof(ip['properties']['ipAddress']) == 'string') {
+        ip_message = "(" + ip['properties']['ipAddress'] + ") "
+      }
 
-    recommendationDetails = [
-      "Delete IP address ", ip["resourceName"], " ", ip_message,
-      "in Azure Subscription ", ip["subscriptionName"],
-      " (", ip["subscriptionID"], ")"
-    ].join('')
+      recommendationDetails = [
+        "Delete IP address ", ip["resourceName"], " ", ip_message,
+        "in Azure Subscription ", ip["subscriptionName"],
+        " (", ip["subscriptionID"], ")"
+      ].join('')
 
-    tags = []
+      tags = []
 
-    if (typeof(ip['tags']) == 'object') {
-      _.each(Object.keys(ip['tags']), function(key) {
-        tags.push([key, "=", ip['tags'][key]].join(''))
+      if (typeof(ip['tags']) == 'object') {
+        _.each(Object.keys(ip['tags']), function(key) {
+          tags.push([key, "=", ip['tags'][key]].join(''))
+        })
+      }
+
+      result.push({
+        accountID: ip["subscriptionID"],
+        accountName: ip["subscriptionName"],
+        resourceID: ip['resourceID'],
+        resourceName: ip['resourceName'],
+        resourceGroup: ip['resourceGroup'],
+        resourceType: ip['resourceType'],
+        ipAddress: ip['properties']['ipAddress'],
+        allocation: ip['properties']['publicIPAllocationMethod'],
+        region: ip['region'],
+        service: ip['service'],
+        age: ip['age'],
+        tags: tags.join(', '),
+        savings: parseFloat(savings.toFixed(3)),
+        savingsCurrency: ds_currency['symbol'],
+        recommendationDetails: recommendationDetails,
+        lookbackPeriod: param_days_unattached,
+        service: "Microsoft.Network",
+        // These are to avoid errors when we hash_exclude these fields
+        total_savings: '',
+        message: '',
+        policy_name: ''
       })
     }
-
-    result.push({
-      accountID: ip["subscriptionID"],
-      accountName: ip["subscriptionName"],
-      resourceID: ip['resourceID'],
-      resourceName: ip['resourceName'],
-      resourceGroup: ip['resourceGroup'],
-      resourceType: ip['resourceType'],
-      ipAddress: ip['properties']['ipAddress'],
-      region: ip['region'],
-      service: ip['service'],
-      age: ip['age'],
-      tags: tags.join(', '),
-      savings: parseFloat(savings.toFixed(3)),
-      savingsCurrency: ds_currency['symbol'],
-      recommendationDetails: recommendationDetails,
-      lookbackPeriod: param_days_unattached,
-      service: "Microsoft.Network",
-      // These are to avoid errors when we hash_exclude these fields
-      total_savings: '',
-      message: '',
-      policy_name: ''
-    })
   })
 
   // Message for incident output
@@ -846,6 +885,9 @@ policy "pol_unused_ip_addresses" do
       end
       field "region" do
         label "Region"
+      end
+      field "allocation" do
+        label "Allocation"
       end
       field "tags" do
         label "Tags"

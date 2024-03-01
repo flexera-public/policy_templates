@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.1
+
+- Added Availability Zone, License Model, and vCPUs to incident output
+
 ## v5.0
 
 - Added support for regex when filtering resources by tag

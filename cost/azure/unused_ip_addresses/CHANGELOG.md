@@ -1,5 +1,11 @@
 # Changelog
 
+## v7.1
+
+- Added IP allocation type (Dynamic or Static) to incident output
+- Added ability to filter results by allocation type via parameter
+- Added ability to filter results by minimum savings via parameter
+
 ## v7.0
 
 - Added support for regex when filtering resources by tag
