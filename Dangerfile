@@ -91,8 +91,11 @@ end
 has_app_changes.each do |file|
   pp.parse(file)
   name = pp.parsed_name
-  if ! parsed_name
+  if ! name
     fail "Please add a name field. #{file}"
+  end
+  if name && name == ""
+    fail "Please add a value other than an empty string to the name field. #{file}"
   end
 end
 
