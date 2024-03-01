@@ -441,7 +441,7 @@ has_app_changes.each do |file|
     # Raise warning, not error, if parameter block is missing a default field.
     # This is because there are occasionally legitimate reasons to not have a default
     if block_missing_field?(file_contents, "parameter", "default")
-      fail "Policy Template file `#{file}` has parameter block that is missing the default field. It is recommended that every parameter have a default value unless user input for that parameter is required and too specific for any default value to make sense"
+      warn("Policy Template file `#{file}` has parameter block that is missing the default field. It is recommended that every parameter have a default value unless user input for that parameter is required and too specific for any default value to make sense")
     end
   end
 end
