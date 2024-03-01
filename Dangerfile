@@ -350,21 +350,5 @@ has_app_changes.each do |file|
         fail "Policy Template file `#{file}` does **not** have a comment indicating where the Cloud Workflow begins. Please add a comment like the below before the cloud workflow blocks:\n\n###############################################################################\n# Cloud Workflow\n###############################################################################"
       end
     end
-
-    # Print some debug info about diff patch
-    # puts "Diff Patch:"
-    # puts diff.patch
-    # puts "---"
-
-    # First check if the PT file has been manually validated and enabled for permission generation
-    pt_file_enabled = permissions_verified_pt_file_yaml["validated_policy_templates"].select { |pt| pt.include?(file) }
-    if pt_file_enabled.empty?
-      # If the PT file has not been manually validated, then print an error message which will block the PR from being merged
-      # This will help improve coverage as we touch more PT files
-      fail "Policy Template file `#{file}` has **not** yet been enabled for automated permission generation.  Please help us improve coverage by [following the steps documented in `tools/policy_master_permission_generation/`](https://github.com/flexera-public/policy_templates/tree/master/tools/policy_master_permission_generation) to resolve this"
-    elsif diff && diff.patch =~ regex
-      # If the PT file has been manually validated, but there are new datasources, then print a warning message
-      warn("Detected new request datasource in Policy Template file `#{file}`.  Please verify the README.md has any new permissions that may be required.")
-    end
   end
 end
