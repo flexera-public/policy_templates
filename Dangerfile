@@ -288,8 +288,8 @@ def blocks_ungrouped?(file)
           end
         end
 
-        # If we've found the block we're testing, and then other blocks, and then
-        # found the block we're testing again, return error
+        # If we've found the block we're testing, and then other blocks,
+        # and then found the block we're testing again, return error
         if line.strip.start_with?(block) && found_other_blocks
           return "Policy Template file `#{file}` has unsorted #{block.strip} code blocks. Code blocks should be grouped together in sections by type e.g. all parameter blocks should be next to each other, all credentials blocks should be next to each other, etc. with the exception of Meta Policy code"
         end
