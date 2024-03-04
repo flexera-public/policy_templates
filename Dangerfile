@@ -39,13 +39,16 @@ new_pt_files = git.added_files.select{ |file| file.end_with?(".pt") && !file.end
 # Return false if linter finds no problems
 def bad_markdown?(file)
   # Adjust testing based on which README file we're doing
-  if file != 'README.md' && file != 'tools/cloudformation-template/README.md' && file != '.github/PULL_REQUEST_TEMPLATE.md'
+  case file
+  when "README.md"
+    mdl = `mdl -r "~MD024","~MD013" #{file}`
+  when "tools/cloudformation-template/README.md"
+    mdl = `mdl -r "~MD013","~MD033","~MD034" #{file}`
+  when ".github/PULL_REQUEST_TEMPLATE.md"
+    mdl = `mdl -r "~MD002","~MD013" #{file}`
+  else
     mdl = `mdl #{file}`
   end
-
-  mdl = `mdl -r "~MD024","~MD013" #{file}` if file == 'README.md'
-  mdl = `mdl -r "~MD013","~MD033","~MD034" #{file}` if file == 'tools/cloudformation-template/README.md'
-  mdl = `mdl -r "~MD002","~MD013" #{file}` if file == '.github/PULL_REQUEST_TEMPLATE.md'
 
   # Return the problems found if the md1 file is not empty. Otherwise, return false
   return md1 if !mdl.empty?
