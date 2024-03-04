@@ -410,8 +410,8 @@ def deprecated_code_blocks?(file, block_name)
   permission_regex = /^permission\s+"[^"]*"\s+do$/
   resources_regex = /^resources\s+"[^"]*",\s+type:\s+"[^"]*"\s+do$/
 
-  return fail_message if permission_regex.match?(policy_code) && block_name = "permission"
-  return fail_message if resources_regex.match?(policy_code) && block_name = "resources"
+  return fail_message if permission_regex.match?(policy_code) && block_name == "permission"
+  return fail_message if resources_regex.match?(policy_code) && block_name == "resources"
   return false
 end
 
