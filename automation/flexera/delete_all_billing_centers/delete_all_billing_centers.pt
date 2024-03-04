@@ -1,0 +1,233 @@
+name "Flexera CCO Delete All Billing Centers"
+rs_pt_ver 20180301
+type "policy"
+short_description "Deletes all Billing Centers in the Flexera organization. See the [README](https://github.com/flexera-public/policy_templates/tree/master/automation/flexera/delete_all_billing_centers) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "high"
+category "Cost"
+default_frequency "15 minutes"
+info(
+  version: "1.0",
+  provider: "Flexera",
+  service: "Optima",
+  policy_set: "Automation",
+  publish: "false"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select FlexeraOne OAuth2 credential."
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_second_execution" do
+  run_script $js_second_execution, $ds_applied_policy
+end
+
+script "js_second_execution", type: "javascript" do
+  parameters "ds_applied_policy"
+  result "result"
+  code <<-'EOS'
+  result = [{ id: ds_applied_policy['href'], terminate: false }]
+
+  now = new Date()
+  created_at = new Date(ds_applied_policy['created_at'])
+
+  // If applied policy was created over 1 minute ago, assume this is the second time it is running
+  if (now - created_at > 60000) { result[0]['terminate'] = true }
+EOS
+end
+
+datasource "ds_self_terminate_boolean" do
+  run_script $js_self_terminate_boolean, $ds_second_execution
+end
+
+script "js_self_terminate_boolean", type: "javascript" do
+  parameters "ds_second_execution"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  if (ds_second_execution[0]['terminate']) { result = ds_second_execution }
+EOS
+end
+
+datasource "ds_self_terminate" do
+  iterate $ds_self_terminate_boolean
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    verb "DELETE"
+    path val(iter_item, 'id')
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_incident" do
+  run_script $js_incident, $ds_second_execution, $ds_self_terminate
+end
+
+script "js_incident", type: "javascript" do
+  parameters "ds_second_execution", "ds_self_terminate"
+  result "result"
+  code <<-'EOS'
+  result = ds_second_execution
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_delete_bcs" do
+  validate_each $ds_incident do
+    summary_template "Deleting Billing Centers"
+    check eq(0, 1)
+    escalate $esc_delete_billing_centers
+    export do
+      resource_level true
+      field "id" do
+        label "Policy HREF"
+      end
+      field "terminate" do
+        label "Self Terminate"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_delete_billing_centers" do
+  automatic true
+  label "Delete Billing Centers"
+  description "Approval to delete all billing centers"
+  run "delete_billing_centers", data, rs_org_id, rs_optima_host
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define delete_billing_centers($data, $rs_org_id, $rs_optima_host) return $all_responses do
+  $$all_responses = []
+
+  # Policy will only run if it isn't self-terminating
+  if $data[0]["terminate"] == false
+    call list_childless_billing_centers($rs_org_id, $rs_optima_host) retrieve $billing_centers
+
+    while size($billing_centers) > 0 do
+      foreach $billing_center in $billing_centers do
+        sub on_error: handle_error() do
+          call delete_billing_center($billing_center, $rs_org_id, $rs_optima_host) retrieve $delete_response
+        end
+      end
+
+      sleep(10)
+
+      call list_childless_billing_centers($rs_org_id, $rs_optima_host) retrieve $billing_centers
+    end
+  end
+end
+
+define list_childless_billing_centers($rs_org_id, $rs_optima_host) return $billing_centers do
+  $billing_centers = []
+
+  task_label("Listing All Billing Centers")
+
+  $response = http_request(
+    auth: $$auth_flexera,
+    https: true,
+    verb: "get",
+    href: "/analytics/orgs/" + $rs_org_id + "/billing_centers",
+    host: $rs_optima_host,
+    headers: {
+      "Api-Version": "1.0",
+      "User-Agent": "RS Policies"
+    }
+  )
+
+  task_label("Listing All Billing Centers response: " + to_json($response))
+  $$all_responses << to_json({"req": "GET /billing_centers", "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response Listing All Billing Centers: " + to_json($response)
+  else
+    task_label("Listing All Billing Centers successful")
+
+    $parent_ids = []
+
+    foreach $item in $response["body"] do
+      if $item["name"] != "Unallocated" && $item["parent_id"] != null && $item["parent_id"] != ""
+        $parent_ids << $item["parent_id"]
+      end
+    end
+
+    foreach $item in $response["body"] do
+      if $item["name"] != "Unallocated" && contains?($parent_ids, [ $item["id"] ]) == false
+        $billing_centers << $item
+      end
+    end
+  end
+end
+
+define delete_billing_center($billing_center, $rs_org_id, $rs_optima_host) return $response do
+  $bc_label = $billing_center["name"] + " (" + $billing_center["id"] + ")"
+
+  task_label("Delete Billing Center: " + $bc_label)
+
+  $response = http_request(
+    auth: $$auth_flexera,
+    https: true,
+    verb: "delete",
+    href: "/analytics/orgs/" + $rs_org_id + "/billing_centers/" + $billing_center["id"],
+    host: $rs_optima_host,
+    headers: {
+      "Api-Version": "1.0",
+      "User-Agent": "RS Policies"
+    }
+  )
+
+  task_label("Delete Billing Center response: " + $bc_label + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE /billing_centers/" + $billing_center["id"], "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response Deleting Billing Centers: " + $bc_label + " " + to_json($response)
+  else
+    task_label("Delete Billing Center successful: " + $bc_label)
+  end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
+end
