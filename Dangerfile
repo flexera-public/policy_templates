@@ -38,7 +38,7 @@ new_pt_files = git.added_files.select{ |file| file.end_with?(".pt") && !file.end
 ### Markdown lint test
 # Return false if linter finds no problems
 def bad_markdown?(file)
-  # Adjust testing based on which README file we're doing
+  # Adjust testing based on which file we're doing
   case file
   when "README.md"
     mdl = `mdl -r "~MD024","~MD013" #{file}`
