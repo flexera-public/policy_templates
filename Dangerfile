@@ -468,15 +468,15 @@ renamed_files = (git.renamed_files.collect{|r| r[:before]})
 # Changed Files. Ignores renamed files to prevent errors on files that don't exist
 changed_files = (git.added_files + git.modified_files - renamed_files)
 # Changed Policy Template files. Ignore meta policy files.
-changed_pt_files = changed_files.select{ |file| file.end_with? ".pt" && !file.end_with? "meta_parent.pt" }
+changed_pt_files = changed_files.select{ |file| file.end_with?(".pt") && !file.end_with?("meta_parent.pt") }
 # Changed README files.
-changed_readme_files = changed_files.select{ |file| file.end_with? "/README.md" }
+changed_readme_files = changed_files.select{ |file| file.end_with?("/README.md") }
 # Changed Changelog files.
-changed_changelog_files = changed_files.select{ |file| file.end_with? "/CHANGELOG.md" }
+changed_changelog_files = changed_files.select{ |file| file.end_with?("/CHANGELOG.md") }
 # Changed MD files other than the above.
-changed_misc_md_files = changed_files.select{ |file| file.end_with? ".md" && !file.end_with? "/README.md" && !file.end_with? "/CHANGELOG.md" }
+changed_misc_md_files = changed_files.select{ |file| file.end_with?(".md") && !file.end_with?("/README.md") && !file.end_with?("/CHANGELOG.md") }
 # New Policy Template files. Ignore meta policy files.
-new_pt_files = git.added_files.select{ |file| file.end_with? ".pt" && !file.end_with? "meta_parent.pt" }
+new_pt_files = git.added_files.select{ |file| file.end_with?(".pt") && !file.end_with?("meta_parent.pt") }
 
 ###############################################################################
 # File Structure Testing
