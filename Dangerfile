@@ -306,44 +306,51 @@ def missing_section_comments?(file, section_name)
   # Store contents of file for direct analysis
   policy_code = File.read(file)
 
-  # Message to return of test fails
-  section_table = {
-    "parameter": "Parameters",
-    "credentials": "Authentication",
-    "pagination": "Pagination",
-    "datasource": "Datasources & Scripts",
-    "policy": "Policy",
-    "escalation": "Escalations",
-    "cwf": "Cloud Workflow"
-  }
+  # Set values based on which section we're checking.
+  # block_regex: Test for presence of block
+  # comment_regex: Test for presence of section comment for that block
+  # pretty_name: Name as it should appear in section comment
+  case section_name
+  when "parameter"
+    block_regex = /^parameter\s+"[^"]*"\s+do$/
+    comment_regex = /^\#{79}\n# Parameters\n\#{79}$/
+    pretty_name = "Parameters"
+  when "credentials"
+    block_regex = /^credentials\s+"[^"]*"\s+do$/
+    comment_regex = /^\#{79}\n# Authentication\n\#{79}$/
+    pretty_name = "Authentication"
+  when "pagination"
+    block_regex = /^pagination\s+"[^"]*"\s+do$/
+    comment_regex = /^\#{79}\n# Pagination\n\#{79}$/
+    pretty_name = "Pagination"
+  when "datasource"
+    block_regex = /^datasource\s+"[^"]*"\s+do$/
+    comment_regex = /^\#{79}\n# Datasources & Scripts\n\#{79}$/
+    pretty_name = "Datasources & Scripts"
+  when "policy"
+    block_regex = /^policy\s+"[^"]*"\s+do$/
+    comment_regex = /^\#{79}\n# Policy\n\#{79}$/
+    pretty_name = "Policy"
+  when "escalation"
+    block_regex = /^escalation\s+"[^"]*"\s+do$/
+    comment_regex = /^\#{79}\n# Escalations\n\#{79}$/
+    pretty_name = "Escalations"
+  when "cwf"
+    block_regex = /^define\s+\w+\(\s*([$]\w+\s*,\s*)*([$]\w+\s*)?\)\s*(return\s+([$]\w+\s*,\s*)*([$]\w+\s*)?)?do$/
+    comment_regex = /^\#{79}\n# Cloud Workflow\n\#{79}$/
+    pretty_name = "Cloud Workflow"
+  else
+    block_regex = /.*/
+    comment_regex = /.*/
+    pretty_name = ""
+  end
 
+  # Failure message to return if problem is detected
   hash_string = "###############################################################################"
-  fail_message = "Policy Template file `#{file}` does **not** have a comment indicating where the #{section_table[section_name]} section begins. Please add a comment like the below before the parameters blocks:\n\n#{hash_string}<br>\# #{section_table[section_name]}<br>#{hash_string}"
-
-  # Regex to test whether particular kinds of code blocks exist
-  block_regex = {
-    "parameter": /^parameter\s+"[^"]*"\s+do$/,
-    "credentials": /^credentials\s+"[^"]*"\s+do$/,
-    "pagination": /^pagination\s+"[^"]*"\s+do$/,
-    "datasource": /^datasource\s+"[^"]*"\s+do$/,
-    "policy": /^policy\s+"[^"]*"\s+do$/,
-    "escalation": /^escalation\s+"[^"]*"\s+do$/,
-    "cwf": /^define\s+\w+\(\s*([$]\w+\s*,\s*)*([$]\w+\s*)?\)\s*(return\s+([$]\w+\s*,\s*)*([$]\w+\s*)?)?do$/
-  }
-
-  # Regex to test whether the policy section comments exist
-  comment_regex = {
-    "parameter": /^\#{79}\n# Parameters\n\#{79}$/,
-    "credentials": /^\#{79}\n# Authentication\n\#{79}$/,
-    "pagination": /^\#{79}\n# Pagination\n\#{79}$/,
-    "datasource": /^\#{79}\n# Datasources & Scripts\n\#{79}$/,
-    "policy": /^\#{79}\n# Policy\n\#{79}$/,
-    "escalation": /^\#{79}\n# Escalations\n\#{79}$/,
-    "cwf": /^\#{79}\n# Cloud Workflow\n\#{79}$/
-  }
+  fail_message = "Policy Template file `#{file}` does **not** have a comment indicating where the #{pretty_name} section begins. Please add a comment like the below before the parameters blocks:\n\n#{hash_string}<br>\# #{pretty_name}<br>#{hash_string}"
 
   # Return fail message if the block exists but the comment for it does not
-  return fail_message if block_regex[section_name].match?(policy_code) && !comment_regex[section_name].match?(policy_code)
+  return fail_message if block_regex.match?(policy_code) && !comment_regex.match?(policy_code)
   return false
 end
 
@@ -353,32 +360,42 @@ def bad_block_name?(file, block_name)
   # Store contents of file for direct analysis
   policy_code = File.read(file)
 
-  # Message to return of test fails
-  block_table = {
-    "parameter": "param_",
-    "credentials": "auth_",
-    "pagination": "pagination_",
-    "datasource": "ds_",
-    "script": "js_",
-    "policy": "pol_",
-    "escalation": "esc_"
-  }
+  # Set values based on which section we're checking.
+  # block_regex: Test for presence of block
+  # comment_regex: Test for presence of section comment for that block
+  # pretty_name: Name as it should appear in section comment
+  case section_name
+  when "parameter"
+    proper_name = "param_"
+    block_regex = /^parameter\s+"(?!param_[^"]+")[^"]*"\s+do$/
+  when "credentials"
+    proper_name = "auth_"
+    block_regex = /^credentials\s+"(?!auth_[^"]+")[^"]*"\s+do$/
+  when "pagination"
+    proper_name = "pagination_"
+    block_regex = /^pagination\s+"(?!pagination_[^"]+")[^"]*"\s+do$/
+  when "datasource"
+    proper_name = "ds_"
+    block_regex = /^datasource\s+"(?!ds_[^"]+")[^"]*"\s+do$/
+  when "script"
+    proper_name = "js_"
+    block_regex = /^script\s+"(?!js_[^"]+)([^"]*)",\s+type:\s+"javascript"\s+do$/
+  when "policy"
+    proper_name = "pol_"
+    block_regex = /^policy\s+"(?!pol_[^"]+")[^"]*"\s+do$/
+  when "escalation"
+    proper_name = "esc_"
+    block_regex = /^escalation\s+"(?!esc_[^"]+")[^"]*"\s+do$/
+  else
+    proper_name = ""
+    block_regex = /.*/
+  end
 
-  fail_message = "Policy Template file `#{file}` has invalidly named #{block_name} blocks. Please ensure all #{block_name} blocks have names that begin with #{block_table[block_name]}"
-
-  # Regex to test whether incorrectly named code blocks exist
-  block_regex = {
-    "parameter": /^parameter\s+"(?!param_[^"]+")[^"]*"\s+do$/,
-    "credentials": /^credentials\s+"(?!auth_[^"]+")[^"]*"\s+do$/,
-    "pagination": /^pagination\s+"(?!pagination_[^"]+")[^"]*"\s+do$/,
-    "datasource": /^datasource\s+"(?!ds_[^"]+")[^"]*"\s+do$/,
-    "script": /^script\s+"(?!js_[^"]+)([^"]*)",\s+type:\s+"javascript"\s+do$/,
-    "policy": /^policy\s+"(?!pol_[^"]+")[^"]*"\s+do$/,
-    "escalation": /^escalation\s+"(?!esc_[^"]+")[^"]*"\s+do$/
-  }
+  # Message to return if test fails
+  fail_message = "Policy Template file `#{file}` has invalidly named #{block_name} blocks. Please ensure all #{block_name} blocks have names that begin with #{proper_name}"
 
   # Return fail message if an invalidly named block exists
-  return fail_message if block_regex[block_name].match?(policy_code)
+  return fail_message if block_regex.match?(policy_code)
   return false
 end
 
