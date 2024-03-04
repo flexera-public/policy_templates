@@ -35,6 +35,16 @@ new_pt_files = git.added_files.select{ |file| file.end_with?(".pt") && !file.end
 # Methods
 ###############################################################################
 
+### Spellcheck
+# Return false if spell checker finds no issues
+def bad_spelling?(file)
+  mdspell = `mdspell #{file} spec`
+
+  # Return the problems found if the mdspell file is not empty. Otherwise, return false
+  return mdspell if !mdspell.empty?
+  return false
+end
+
 ### Markdown lint test
 # Return false if linter finds no problems
 def bad_markdown?(file)
@@ -544,6 +554,9 @@ end
 
 # Check README.md contents for issues for each file
 changed_readme_files.each do |file|
+  # Raise warning if any spelling errors are found
+  test = bad_spelling?(file); warn test if test
+
   # Raise error if the file contains any bad urls
   test = bad_urls?(file); fail test if test
 
@@ -570,6 +583,9 @@ end
 
 # Check Markdown contents for issues for each file
 changed_misc_md_files.each do |file|
+  # Raise warning if any spelling errors are found
+  test = bad_spelling?(file); warn test if test
+
   # Raise error if the file contains any bad urls
   test = bad_urls?(file); fail test if test
 
