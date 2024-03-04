@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "5.0",
+  version: "6.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Inefficient Disk Usage",
@@ -46,10 +46,10 @@ end
 parameter "param_pricing_api_endpoint" do
   type "string"
   category "Policy Settings"
-  label "AWS Pricing API Endpoint"
-  description "See AWS Docs for more details: https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/using-price-list-query-api.html#price-list-query-api-endpoints"
-  allowed_values "api.pricing.us-east-1.amazonaws.com", "api.pricing.eu-central-1.amazonaws.com", "api.pricing.ap-south-1.amazonaws.com"
-  default "api.pricing.us-east-1.amazonaws.com"
+  label "AWS Regional Pricing API"
+  description "The regional AWS Pricing API to use when retrieving pricing data for unused IP addresses. Pricing may vary based on region. See README for more details."
+  allowed_values "US East", "EU Central", "AP South"
+  default "US East"
 end
 
 parameter "param_regions_allow_or_deny" do
@@ -149,6 +149,25 @@ datasource "ds_applied_policy" do
     path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
     header "Api-Version", "1.0"
   end
+end
+
+# Get region-specific AWS API endpoints
+datasource "ds_aws_api_hosts" do
+  run_script $js_aws_api_hosts, $param_pricing_api_endpoint
+end
+
+script "js_aws_api_hosts", type: "javascript" do
+  parameters "param_pricing_api_endpoint"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "US East": "api.pricing.us-east-1.amazonaws.com",
+    "EU Central": "api.pricing.eu-central-1.amazonaws.com",
+    "AP South": "api.pricing.ap-south-1.amazonaws.com"
+  }
+
+  result = { pricing: host_table[param_pricing_api_endpoint] }
+EOS
 end
 
 # Get region-specific Flexera API endpoints
@@ -556,23 +575,23 @@ end
 
 datasource "ds_gp2_prices" do
   request do
-    run_script $js_volume_prices, $param_pricing_api_endpoint, "gp2"
+    run_script $js_volume_prices, $ds_aws_api_hosts, "gp2"
   end
 end
 
 datasource "ds_gp3_prices" do
   request do
-    run_script $js_volume_prices, $param_pricing_api_endpoint, "gp3"
+    run_script $js_volume_prices, $ds_aws_api_hosts, "gp3"
   end
 end
 
 script "js_volume_prices", type: "javascript" do
-  parameters "param_pricing_api_endpoint", "volumeApiName"
+  parameters "ds_aws_api_hosts", "volumeApiName"
   result "request"
   code <<-EOS
   var request = {
     "auth": "auth_aws",
-    "host": param_pricing_api_endpoint,
+    "host": ds_aws_api_hosts['pricing'],
     "verb": "POST",
     "path": "/",
     "headers": {
