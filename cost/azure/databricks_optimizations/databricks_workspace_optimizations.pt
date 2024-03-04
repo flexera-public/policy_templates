@@ -1,0 +1,261 @@
+name "Azure Databricks Workspace Optimization"
+rs_pt_ver 20180301
+type "policy"
+short_description "Identify workspaces/clusters that do not have auto-terminate enabled, , or set to a threshold > the desired auto-terminate threshold."
+severity "low"
+category "Cost"
+default_frequency "weekly"
+info(
+  version: "1.0",
+  provider: "Azure",
+  service: "Databricks",
+  policy_set: "Databricks Optimizations",
+  recommendation_type: "Optimization"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email Address"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_subscriptions_list" do
+  label "Subscription Allowed List"
+  type "list"
+  description "Allowed Subscriptions, if empty, all subscriptions will be checked"
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  label "Azure Endpoint"
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_log_to_cm_audit_entries" do
+  type "string"
+  label "Log to CM Audit Entries"
+  description "Boolean for whether or not to log any debugging information to CM Audit Entries"
+  default "No"
+  allowed_values "Yes", "No"
+end
+
+# parameter "param_databircks_workspace_url" do
+#   type "string"
+#   label "The Unique value for a workspace URL"
+# end
+
+parameter "param_desired_autoterminate_threshold" do
+  type "string"
+  label "Please enter the threshold not to exceed for autoterminate in minutes"
+  default "10"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+# Authenticate with Azure
+credentials "auth_azure" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+credentials "auth_databricks" do
+  schemes "api_key"
+  label "Databricks"
+  description "Select the Databricks API credential from the list"
+  tags "provider=databricks"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+# Pagination support
+pagination "azure_pagination" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get all subscriptions
+datasource "ds_subscriptions" do
+  request do
+    auth $auth_azure
+    pagination $azure_pagination
+    host $param_azure_endpoint
+    path "/subscriptions"
+    query "api-version", "2020-01-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscriptionId", jmes_path(col_item, "subscriptionId")
+      field "subscriptionName", jmes_path(col_item, "displayName")
+    end
+  end
+end
+
+datasource "ds_filtered_subscriptions" do
+  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscriptions_list
+end
+
+script "js_filtered_subscriptions", type: "javascript" do
+  parameters "ds_subscriptions", "param_subscriptions_list"
+  result "results"
+  code <<-EOS
+  var results = []
+  if ( param_subscriptions_list.length != 0){
+    results = []
+    _.each(param_subscriptions_list, function(sub){
+      var found = _.find(ds_subscriptions, function(item){
+        return item.subscriptionID == sub || item.displayName.toLowerCase() == sub.toLowerCase();
+      })
+      results.push(found)
+    })
+
+  } else {
+    results = ds_subscriptions
+  }
+EOS
+end
+
+# Get all resource groups in each subscription
+datasource "ds_resource_groups" do
+  iterate $ds_filtered_subscriptions
+  request do
+    auth $auth_azure
+    pagination $azure_pagination
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "subscriptionId"), "/resourcegroups"])
+    query "api-version", "2023-07-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "resourceGroup", jmes_path(col_item, "name")
+      field "managedBy", jmes_path(col_item, "managedBy")
+    end
+  end
+end
+
+#get filtered resource groups for databricks
+
+#get workspaces, and urls
+datasource "ds_databricks_workspaces" do
+  iterate $ds_filtered_subscriptions
+  request do
+    auth $auth_azure
+    pagination $azure_pagination
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "subscriptionId"), "/providers", "/Microsoft.Databricks", "/workspaces"])
+    query "api-version", "2023-02-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "workspaceId", jmes_path(col_item, "properties.workspaceId")
+      field "workspaceUrl", jmes_path(col_item, "properties.workspaceUrl")
+    end
+  end
+end
+
+datasource "ds_databricks_clusters" do
+  iterate $ds_databricks_workspaces
+  request do
+    auth $auth_databricks
+    #use this and the optional parameter to target a specific DB url
+    #host $param_databircks_workspace_url
+    host val(iter_item, "workspaceUrl")
+    path "/api/2.0/clusters/list"
+  end
+end
+
+datasource "ds_filtered_db_clusters" do
+  run_script $js_filter_db_clusters, $ds_databricks_clusters, $param_desired_autoterminate_threshold
+end
+
+script "js_filter_db_clusters", type: "javascript" do
+  parameters "ds_databricks_clusters", "param_desired_autoterminate_threshold"
+  result "result"
+  code <<-EOS
+  var result = [];
+
+  _.each(ds_databricks_clusters[0].clusters, function(cluster){
+    if(
+      cluster.autotermination_minutes === 0 || // Auto-terminate disabled
+      cluster.autotermination_minutes > param_desired_autoterminate_threshold
+    ){
+      result.push(cluster);
+    }
+  });
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_databricks_optimizations" do
+  validate $ds_filtered_db_clusters do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Databricks workspaces and clusters without auto mterminate enabled or auto terminate is greater than the desired threshold"
+    detail_template "Identify workspaces/clusters that do not have auto-terminate enabled, or set to a threshold > the desired auto-terminate threshold."
+    check eq(size(data),0)
+    export do
+      resource_level true
+      field "accountName" do
+        label "Subscription Name"
+        path "subscriptionName"
+      end
+      field "accountID" do
+        label "Subscription ID"
+        path "subscriptionID"
+      end
+      field "id" do
+        label "Cluster ID"
+      end
+      field "name" do
+        label "Cluster Name"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "workspaceId" do
+        label "Workspace ID"
+      end
+      field "workspaceUrl" do
+        label "Workspace Url"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "send_email_report" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
