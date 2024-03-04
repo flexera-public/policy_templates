@@ -1,9 +1,35 @@
 # DangerFile
 # https://danger.systems/reference.html
 
+###############################################################################
+# Required Libraries
+###############################################################################
+
 require 'uri'
 require 'yaml'
 require_relative 'tools/lib/policy_parser'
+
+###############################################################################
+# File Sorting
+###############################################################################
+
+# Create lists of files based on specific attributes for testing
+# Renamed Files.
+renamed_files = (git.renamed_files.collect{|r| r[:before]})
+# Changed Files. Ignores renamed files to prevent errors on files that don't exist
+changed_files = (git.added_files + git.modified_files - renamed_files)
+# Changed Policy Template files. Ignore meta policy files.
+changed_pt_files = changed_files.select{ |file| file.end_with?(".pt") && !file.end_with?("meta_parent.pt") }
+# Changed Meta Policy Template files.
+changed_meta_pt_files = changed_files.select{ |file| file.end_with?("meta_parent.pt") }
+# Changed README files.
+changed_readme_files = changed_files.select{ |file| file.end_with?("/README.md") }
+# Changed Changelog files.
+changed_changelog_files = changed_files.select{ |file| file.end_with?("/CHANGELOG.md") }
+# Changed MD files other than the above.
+changed_misc_md_files = changed_files.select{ |file| file.end_with?(".md") && !file.end_with?("/README.md") && !file.end_with?("/CHANGELOG.md") }
+# New Policy Template files. Ignore meta policy files.
+new_pt_files = git.added_files.select{ |file| file.end_with?(".pt") && !file.end_with?("meta_parent.pt") }
 
 ###############################################################################
 # Methods
@@ -239,7 +265,7 @@ def blocks_ungrouped?(file)
     'datasource ', 'policy ', 'escalation ', 'define '
   ]
 
-  block_names.each_line do |block|
+  block_names.each do |block|
     found_block = false
     found_other_blocks = false
 
@@ -252,7 +278,7 @@ def blocks_ungrouped?(file)
       if !found_meta
         # Once we've found the block we're testing, start looking for other blocks
         if found_block
-          block_names.each_line do |other_block|
+          block_names.each do |other_block|
             if other_block != block
               found_other_blocks = true if line.strip.start_with?(other_block)
             end
@@ -459,26 +485,6 @@ fail 'Please provide a summary of your Pull Request.' if github.pr_body.length <
 fail 'Please add labels to this Pull Request' if github.pr_labels.empty?
 
 ###############################################################################
-# File Sorting
-###############################################################################
-
-# Create lists of files based on specific attributes for testing
-# Renamed Files.
-renamed_files = (git.renamed_files.collect{|r| r[:before]})
-# Changed Files. Ignores renamed files to prevent errors on files that don't exist
-changed_files = (git.added_files + git.modified_files - renamed_files)
-# Changed Policy Template files. Ignore meta policy files.
-changed_pt_files = changed_files.select{ |file| file.end_with?(".pt") && !file.end_with?("meta_parent.pt") }
-# Changed README files.
-changed_readme_files = changed_files.select{ |file| file.end_with?("/README.md") }
-# Changed Changelog files.
-changed_changelog_files = changed_files.select{ |file| file.end_with?("/CHANGELOG.md") }
-# Changed MD files other than the above.
-changed_misc_md_files = changed_files.select{ |file| file.end_with?(".md") && !file.end_with?("/README.md") && !file.end_with?("/CHANGELOG.md") }
-# New Policy Template files. Ignore meta policy files.
-new_pt_files = git.added_files.select{ |file| file.end_with?(".pt") && !file.end_with?("meta_parent.pt") }
-
-###############################################################################
 # File Structure Testing
 ###############################################################################
 
@@ -639,4 +645,13 @@ changed_pt_files.each do |file|
   # Raise warning if policy is in this file, but datasources have been added.
   test = missing_master_permissions?(file, permissions_verified_pt_file_yaml); fail test if test
   ds_test = new_datasource?(file, permissions_verified_pt_file_yaml); warn ds_test if ds_test && !test
+end
+
+###############################################################################
+# Meta Policy Code Testing
+###############################################################################
+
+# Check meta policy code itself for issues for each file
+changed_meta_pt_files.each do |file|
+  # TBD
 end
