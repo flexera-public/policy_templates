@@ -361,10 +361,9 @@ def bad_block_name?(file, block_name)
   policy_code = File.read(file)
 
   # Set values based on which section we're checking.
-  # block_regex: Test for presence of block
-  # comment_regex: Test for presence of section comment for that block
-  # pretty_name: Name as it should appear in section comment
-  case section_name
+  # proper_name: Correct prefix that block name ought to have
+  # block_regex: Test for presence of block with an invalid name
+  case block_name
   when "parameter"
     proper_name = "param_"
     block_regex = /^parameter\s+"(?!param_[^"]+")[^"]*"\s+do$/
