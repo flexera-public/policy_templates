@@ -25,3 +25,6 @@ gem "rb-readline", "~> 0.5.5"
 gem "mdl"
 
 gem "danger-textlint"
+
+# Added for spell check
+gem "mdspell", "~> 0.2.0"
