@@ -26,6 +26,63 @@ def bad_markdown?(file)
   return false
 end
 
+### Bad URL test
+# Return false if no invalid URLs are found.
+def bad_urls?(file)
+  # List of hosts to ignore in the analysis
+  exclude_hosts = [
+    'api.loganalytics.io',          'management.azure.com',
+    'management.core.windows.net',  'login.microsoftonline.com',
+    'oauth2.googleapis.com',        'www.googleapis.com',
+    'image-charts.com',             'graph.microsoft.com',
+    'www.w3.org',                   'tempuri.org',
+    'us-3.rightscale.com',          'us-4.rightscale.com'
+  ]
+
+  diff = git.diff_for_file(file)
+  regex = /(^\+)/
+
+  if diff && diff.patch =~ regex
+    diff.patch.each_line do |line|
+      if line =~ regex
+        URI.extract(line,['http', 'https']).each do |url|
+          # Skip excluded hosts
+          next if exclude_hosts.include?(url.scan(URI.regexp)[0][3])
+
+          # Clean up URL string and convert it into a proper URI object
+          url_string = url.to_s.gsub(/[!@#$%^&*(),.?":{}|<>]/,'')
+          url = URI(url_string)
+
+          # Check for a valid host. Skip URLs that are dynamicly constructed and may not have a valid hostname.
+          # Example: http://ec2. + $region + .awsamazon.com/... does not have a valid hostname to query.
+          next if url.host !~ /(?=^.{4,253}$)(^((?!-)[a-zA-Z0-9-]{1,63}(?<!-)\.)+[a-zA-Z]{2,63}$)/
+
+          # Make HTTP request to URL
+          response = Net::HTTP.get_response(url)
+
+          # Test again when the file isn't found and path includes tree/master
+          # This is in case it is the README link or a new file included in the repo
+          if response.code == '404' && url_string =~ /tree\/master/
+            # Modify URL string and convert it back into a proper URI object
+            url_string = url.to_s.gsub('tree/master',"tree/#{github.branch_for_head}").gsub(')','')
+            url = URI(url_string)
+
+            # Make HTTP request to URL again
+            response = Net::HTTP.get_response(url) #make request
+          end
+
+          # Return error details if a proper response code was not received
+          if response.code !~ /200|302/
+            return "The URL is not valid: #{url_string} in #{file} Status: #{response.code}"
+          end
+        end
+      end
+    end
+  end
+
+  return false
+end
+
 ### Policy syntax error test
 # Return false if no syntax errors are found using fpt.
 def fpt_syntax_error?(file)
@@ -122,63 +179,6 @@ def missing_info_field?(file, field_name)
   return false
 end
 
-### Bad URL test
-# Return false if no invalid URLs are found.
-def bad_urls?(file)
-  # List of hosts to ignore in the analysis
-  exclude_hosts = [
-    'api.loganalytics.io',          'management.azure.com',
-    'management.core.windows.net',  'login.microsoftonline.com',
-    'oauth2.googleapis.com',        'www.googleapis.com',
-    'image-charts.com',             'graph.microsoft.com',
-    'www.w3.org',                   'tempuri.org',
-    'us-3.rightscale.com',          'us-4.rightscale.com'
-  ]
-
-  diff = git.diff_for_file(file)
-  regex = /(^\+)/
-
-  if diff && diff.patch =~ regex
-    diff.patch.each_line do |line|
-      if line =~ regex
-        URI.extract(line,['http', 'https']).each do |url|
-          # Skip excluded hosts
-          next if exclude_hosts.include?(url.scan(URI.regexp)[0][3])
-
-          # Clean up URL string and convert it into a proper URI object
-          url_string = url.to_s.gsub(/[!@#$%^&*(),.?":{}|<>]/,'')
-          url = URI(url_string)
-
-          # Check for a valid host. Skip URLs that are dynamicly constructed and may not have a valid hostname.
-          # Example: http://ec2. + $region + .awsamazon.com/... does not have a valid hostname to query.
-          next if url.host !~ /(?=^.{4,253}$)(^((?!-)[a-zA-Z0-9-]{1,63}(?<!-)\.)+[a-zA-Z]{2,63}$)/
-
-          # Make HTTP request to URL
-          response = Net::HTTP.get_response(url)
-
-          # Test again when the file isn't found and path includes tree/master
-          # This is in case it is the README link or a new file included in the repo
-          if response.code == '404' && url_string =~ /tree\/master/
-            # Modify URL string and convert it back into a proper URI object
-            url_string = url.to_s.gsub('tree/master',"tree/#{github.branch_for_head}").gsub(')','')
-            url = URI(url_string)
-
-            # Make HTTP request to URL again
-            response = Net::HTTP.get_response(url) #make request
-          end
-
-          # Return error details if a proper response code was not received
-          if response.code !~ /200|302/
-            return "The URL is not valid: #{url_string} in #{file} Status: #{response.code}"
-          end
-        end
-      end
-    end
-  end
-
-  return false
-end
-
 ### Section order test
 # Return false if policy sections are in the correct order.
 def sections_out_of_order?(file)
@@ -233,11 +233,11 @@ def blocks_ungrouped?(file)
   # Store contents of file for direct analysis
   policy_code = File.read(file)
 
-  # Message to return of test fails
-  fail_message = "Policy Template file `#{file}` has unsorted code blocks. Code blocks should be grouped together in sections by type e.g. all parameter blocks should be next to each other, all credentials blocks should be next to each other, etc. with the exception of Meta Policy code"
-
   # Report back 'true' if specific block types are not organized together in the policy
-  block_names = ['parameter ', 'credentials ', 'pagination ', 'datasource ', 'policy ', 'escalation ', 'define ']
+  block_names = [
+    'parameter ', 'credentials ', 'pagination ',
+    'datasource ', 'policy ', 'escalation ', 'define '
+  ]
 
   block_names.each_line do |block|
     found_block = false
@@ -260,8 +260,10 @@ def blocks_ungrouped?(file)
         end
 
         # If we've found the block we're testing, and then other blocks, and then
-        # found the block we're testing again, return 'true'
-        return fail_message if line.strip.start_with?(block) && found_other_blocks
+        # found the block we're testing again, return error
+        if line.strip.start_with?(block) && found_other_blocks
+          return "Policy Template file `#{file}` has unsorted #{block.strip} code blocks. Code blocks should be grouped together in sections by type e.g. all parameter blocks should be next to each other, all credentials blocks should be next to each other, etc. with the exception of Meta Policy code"
+        end
 
         found_block = true if line.strip.start_with?(block)
       end
@@ -512,6 +514,45 @@ changed_files.each do |file|
 end
 
 ###############################################################################
+# README Contents Testing
+###############################################################################
+
+# Check README.md contents for issues for each file
+changed_readme_files.each do |file|
+  # Raise error if the file contains any bad urls
+  test = bad_urls?(file); fail test if test
+
+  # Raise error if improper markdown is found via linter
+  test = bad_markdown?(file); fail test if test
+end
+
+###############################################################################
+# CHANGELOG Contents Testing
+###############################################################################
+
+# Check CHANGELOG.md contents for issues for each file
+changed_changelog_files.each do |file|
+  # Raise error if the file contains any bad urls
+  test = bad_urls?(file); fail test if test
+
+  # Raise error if improper markdown is found via linter
+  test = bad_markdown?(file); fail test if test
+end
+
+###############################################################################
+# Misc. Markdown Contents Testing
+###############################################################################
+
+# Check Markdown contents for issues for each file
+changed_misc_md_files.each do |file|
+  # Raise error if the file contains any bad urls
+  test = bad_urls?(file); fail test if test
+
+  # Raise error if improper markdown is found via linter
+  test = bad_markdown?(file); fail test if test
+end
+
+###############################################################################
 # Policy Code Testing
 ###############################################################################
 
@@ -524,11 +565,11 @@ changed_pt_files.each do |file|
   # These methods will return false if no problems are found.
   # Otherwise, they return the warning or error message that should be raised.
 
-  # Run policy through fpt testing. Only raise error if there is a syntax error.
-  test = fpt_syntax_error?(file); fail test if test
-
   # Raise error if the file contains any bad urls
   test = bad_urls?(file); fail test if test
+
+  # Run policy through fpt testing. Only raise error if there is a syntax error.
+  test = fpt_syntax_error?(file); fail test if test
 
   # Raise errors or warnings if bad metadata is found
   test = bad_metadata?(file, "name"); fail test if test
@@ -598,43 +639,4 @@ changed_pt_files.each do |file|
   # Raise warning if policy is in this file, but datasources have been added.
   test = missing_master_permissions?(file, permissions_verified_pt_file_yaml); fail test if test
   ds_test = new_datasource?(file, permissions_verified_pt_file_yaml); warn ds_test if ds_test && !test
-end
-
-###############################################################################
-# README Contents Testing
-###############################################################################
-
-# Check README.md contents for issues for each file
-changed_readme_files.each do |file|
-  # Raise error if the file contains any bad urls
-  test = bad_urls?(file); fail test if test
-
-  # Raise error if improper markdown is found via linter
-  test = bad_markdown?(file); fail test if test
-end
-
-###############################################################################
-# CHANGELOG Contents Testing
-###############################################################################
-
-# Check CHANGELOG.md contents for issues for each file
-changed_changelog_files.each do |file|
-  # Raise error if the file contains any bad urls
-  test = bad_urls?(file); fail test if test
-
-  # Raise error if improper markdown is found via linter
-  test = bad_markdown?(file); fail test if test
-end
-
-###############################################################################
-# Misc. Markdown Contents Testing
-###############################################################################
-
-# Check Markdown contents for issues for each file
-changed_misc_md_files.each do |file|
-  # Raise error if the file contains any bad urls
-  test = bad_urls?(file); fail test if test
-
-  # Raise error if improper markdown is found via linter
-  test = bad_markdown?(file); fail test if test
 end
