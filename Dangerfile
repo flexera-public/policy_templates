@@ -13,7 +13,10 @@ require_relative 'tools/lib/policy_parser'
 # Return false if linter finds no problems
 def bad_markdown?(file)
   # Adjust testing based on which README file we're doing
-  mdl = `mdl #{file}`
+  if file != 'README.md' && file != 'tools/cloudformation-template/README.md' && file != '.github/PULL_REQUEST_TEMPLATE.md'
+    mdl = `mdl #{file}`
+  end
+
   mdl = `mdl -r "~MD024","~MD013" #{file}` if file == 'README.md'
   mdl = `mdl -r "~MD013","~MD033","~MD034" #{file}` if file == 'tools/cloudformation-template/README.md'
   mdl = `mdl -r "~MD002","~MD013" #{file}` if file == '.github/PULL_REQUEST_TEMPLATE.md'
