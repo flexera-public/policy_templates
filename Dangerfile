@@ -453,7 +453,7 @@ end
 
 ### Master permissions test
 # Return false if master permissions have been recorded for the policy
-def missing_master_permissions?(file, permissions_verified_pt_file_yaml)
+def missing_master_permissions?(file, permissions_yaml)
   # Get the diff to see only the new changes
   diff = git.diff_for_file(file)
 
@@ -463,7 +463,7 @@ def missing_master_permissions?(file, permissions_verified_pt_file_yaml)
   regex = /datasource.*do(\s)+.*request.*do(\s)+.*auth.*([\s\S])+end([\s\+])+end/
 
   # First check if the PT file has been manually validated and enabled for permission generation
-  pt_file_enabled = permissions_verified_pt_file_yaml["validated_policy_templates"].select { |pt| pt.include?(file) }
+  pt_file_enabled = permissions_yaml["validated_policy_templates"].select { |pt| pt.include?(file) }
 
   if pt_file_enabled.empty?
     # If the PT file has not been manually validated, then print an error message which will block the PR from being merged
@@ -476,7 +476,7 @@ end
 
 ### New datasource test
 # Return false if no new datasources are found.
-def new_datasource?(file, permissions_verified_pt_file_yaml)
+def new_datasource?(file, permissions_yaml)
   # Get the diff to see only the new changes
   diff = git.diff_for_file(file)
 
@@ -486,7 +486,7 @@ def new_datasource?(file, permissions_verified_pt_file_yaml)
   regex = /datasource.*do(\s)+.*request.*do(\s)+.*auth.*([\s\S])+end([\s\+])+end/
 
   # First check if the PT file has been manually validated and enabled for permission generation
-  pt_file_enabled = permissions_verified_pt_file_yaml["validated_policy_templates"].select { |pt| pt.include?(file) }
+  pt_file_enabled = permissions_yaml["validated_policy_templates"].select { |pt| pt.include?(file) }
 
   if diff && diff.patch =~ regex && !pt_file_enabled.empty?
     # If the PT file has been manually validated, but there are new datasources, then print a warning message
@@ -582,7 +582,7 @@ end
 ###############################################################################
 
 # Load external YAML file for testing
-permissions_verified_pt_file_yaml = YAML.load_file('tools/policy_master_permission_generation/validated_policy_templates.yaml')
+permissions_yaml = YAML.load_file('tools/policy_master_permission_generation/validated_policy_templates.yaml')
 
 # Check policy code itself for issues for each file
 changed_pt_files.each do |file|
@@ -662,8 +662,8 @@ changed_pt_files.each do |file|
 
   # Raise error if policy is not in the master permissions file.
   # Raise warning if policy is in this file, but datasources have been added.
-  test = missing_master_permissions?(file, permissions_verified_pt_file_yaml); fail test if test
-  ds_test = new_datasource?(file, permissions_verified_pt_file_yaml); warn ds_test if ds_test && !test
+  test = missing_master_permissions?(file, permissions_yaml); fail test if test
+  ds_test = new_datasource?(file, permissions_yaml); warn ds_test if ds_test && !test
 end
 
 ###############################################################################
