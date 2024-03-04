@@ -2,7 +2,7 @@ name "AWS Old Snapshots"
 rs_pt_ver 20180301
 type "policy"
 short_description "Checks for snapshots older than a specified number of days and, optionally, deletes them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/old_snapshots) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
-long_description ""
+long_description "sdfsdf"
 category "Cost"
 severity "low"
 default_frequency "weekly"
@@ -10,9 +10,24 @@ info(
   version: "8.0",
   provider: "AWS",
   service: "Storage",
-  policy_set: "Old Snapshots",
   recommendation_type: "Usage Reduction"
 )
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_instances" do
+  label "Permissions for instances"
+  actions "rs_cm.index", "rs_cm.show", "rs_cm.stop", "rs_cm.start", "rs_cm.update"
+  resources "rs_cm.instances"
+end
+
+permission "perm_clouds" do
+  label "Permissions for instances"
+  actions "rs_cm.index", "rs_cm.show"
+  resources "rs_cm.clouds"
+end
 
 ###############################################################################
 # User inputs
@@ -26,17 +41,8 @@ parameter "parm_email" do
   default []
 end
 
-parameter "param_aws_account_number" do
-  type "string"
-  category "Policy Settings"
-  label "Account Number"
-  description "Leave blank; this is for automated use with Meta Policies. See README for more details."
-  default ""
-end
-
 parameter "param_snapshot_age" do
   type "number"
-  category "Policy Settings"
   label "Snapshot Age Threshold"
   default 30
   description "The number of days since the snapshot was created to consider a snapshot old."
@@ -132,7 +138,7 @@ parameter "param_automatic_action" do
 end
 
 ###############################################################################
-# Authentication
+# Authenticassstion
 ###############################################################################
 
 credentials "auth_aws" do
@@ -141,6 +147,14 @@ credentials "auth_aws" do
   description "Select the AWS Credential from the list"
   tags "provider=aws"
   aws_account_number $param_aws_account_number
+end
+
+parameter "param_aws_account_number" do
+  type "string"
+  category "Policy Settings"
+  label "Account Number"
+  description "Leave blank; this is for automated use with Meta Policies. See README for more details."
+  default ""
 end
 
 credentials "auth_flexera" do
@@ -208,6 +222,16 @@ end
 
 # Get applied policy metadata for use later
 datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy_the_sequel" do
   request do
     auth $auth_flexera
     host rs_governance_host
@@ -1030,6 +1054,24 @@ EOS
 end
 
 ###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_delete_snapshot" do
+  automatic contains($param_automatic_action, "Delete Snapshots")
+  label "Delete Snapshots"
+  description "Approval to delete all selected snapshots"
+  run "delete_snapshots", data, $param_snapshot_include_ami
+end
+
+###############################################################################
 # Policy
 ###############################################################################
 
@@ -1117,24 +1159,6 @@ policy "pol_utilization" do
       end
     end
   end
-end
-
-###############################################################################
-# Escalations
-###############################################################################
-
-escalation "esc_email" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
-end
-
-escalation "esc_delete_snapshot" do
-  automatic contains($param_automatic_action, "Delete Snapshots")
-  label "Delete Snapshots"
-  description "Approval to delete all selected snapshots"
-  run "delete_snapshots", data, $param_snapshot_include_ami
 end
 
 ###############################################################################
