@@ -704,12 +704,7 @@ end
 ###############################################################################
 
 all_readmes = [
-  "tools/meta_parent_policy_compiler/README.md",
-  "tools/policy_master_permission_generation/README.md",
-  "tools/readme_policy_table_of_contents/README.md",
-  "tools/cloudformation-template/README.md",
-  "tools/instance_types/README.md",
-  "tools/policy_sync/README.md"
+  "README.md"
 ]
 
 # Check meta policy code itself for issues for each file
