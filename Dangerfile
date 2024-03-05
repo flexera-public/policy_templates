@@ -469,6 +469,114 @@ def block_missing_field?(file, block_name, field_name)
   return false
 end
 
+### Datasource/script name matching test
+# Return message if datasource and script do not have matching names. Otherwise, return false
+def ds_js_name_mismatch?(file)
+  # Store contents of file for direct analysis
+  policy_code = File.read(file)
+
+  fail_message = nil
+  ds_name = nil
+  js_name = nil
+
+  policy_code.each_line do |line|
+    case line
+    # Stop doing the check once we hit the Meta Policy section
+    when line.strip.start_with?('# Meta Policy [alpha]')
+      break
+    # When we find a datasource, store its name
+    when line.strip.start_with?("datasource ")
+      name_test = line.match(/"([^"]*)"/)
+      ds_name = name_test[1] if name_test
+    # When we find a run_script, store its name and compare to datasource
+    when line.strip.start_with?("run_script ")
+      name_test = line.match(/run_script \$([a-zA-Z0-9_]+)/)
+      js_name = name_test[1] if name_test
+
+      if ds_name != nil && js_name != nil
+        if ds_name[3..-1] != js_name[3..-1]
+          if !fail_message
+            fail_message = "Policy Template file `#{file}` haas datasources and scripts with mismatched names. These names should match; for example, a datasource named ds_currency should be paired with a script named js_currency. This convention should only be ignored when the same script is called by multiple datasources. The following datasource/script pairs have mismatched names:\n\n"
+          end
+
+          fail_message += "#{ds_name} / #{js_name}\n"
+        end
+      end
+
+      # Reset both variables to start the process over for the next datasource we find
+      ds_name = nil
+      js_name = nil
+    end
+  end
+
+  # Return the failure message if it exists. Otherwise, return false.
+  return fail_message if fail_message
+  return false
+end
+
+### Script parameter order test
+# Return message if script parameters are not in the correct order. Otherwise, return false
+def run_script_incorrect_order?(file)
+  # Store contents of file for direct analysis
+  policy_code = File.read(file)
+
+  fail_message = nil
+  ds_name = nil
+
+  policy_code.each_line do |line|
+    # Stop doing the check if we've reached the meta policy section
+    break if line.strip.start_with?('# Meta Policy [alpha]')
+
+    if line.strip.start_with?("datasource ")
+      name_test = line.match(/"([^"]*)"/)
+      ds_name = name_test[1] if name_test
+    end
+
+    disordered = false
+
+    if line.strip.starts_with?("run_script")
+      # Store a list of all of the parameters for the run_script
+      parameters = line.strip.sub('run_script ', '').split(',').map(&:strip)
+
+      # Remove the first item because it's just the name of the script itself
+      script_name = parameters.shift
+
+      ds_found = false       # Whether we've found a datasource parameter
+      param_found = false    # Whether we've found a parameter parameter
+      constant_found = false # Whether we've found a constant, like rs_org_id
+      value_found = false    # Whether we've found a raw value, like a number or string
+
+      parameters.each do |parameter|
+        case parameter
+        when parameter.starts_with?('$ds')
+          ds_found = true
+          disordered = true if param_found || constant_found || value_found
+        when parameter.starts_with?('$param')
+          param_found = true
+          disordered = true if constant_found || value_found
+        when /[A-Za-z]/.match(parameter[0]) # If parameter starts with a letter
+          constant_found = true
+          disordered = true if value_found
+        else # Assume a raw value, like a number or string, if none of the above
+          value_found = true
+        end
+      end
+    end
+
+    if disordered
+      if !fail_message
+        fail_message = "Policy Template file `#{file}` haas run_script statements whose parameters are not in the correct order. run_script parameters should be in the following order: script, datasources, parameters, variables, raw values. The following datasources have out-of-order run_script statements:\n\n"
+      end
+
+      fail_message += "#{ds_name} / run_script #{script_name}\n"
+    end
+  end
+
+  # Return the failure message if it exists. Otherwise, return false.
+  return fail_message if fail_message
+  return false
+end
+
 ### Master permissions test
 # Return false if master permissions have been recorded for the policy
 def missing_master_permissions?(file, permissions_yaml)
@@ -683,6 +791,13 @@ changed_pt_files.each do |file|
   if block_missing_field?(file, "parameter", "default")
     warn "Policy Template file `#{file}` has parameter block that is missing the default field. It is recommended that every parameter have a default value unless user input for that parameter is required and too specific for any default value to make sense"
   end
+
+  # Raise warning, not error, if a datasource and the script it calls have mismatched names.
+  # Warning because there are occasionally legitimate reasons to do this.
+  test = ds_js_name_mismatch?(file); warn test if test
+
+  # Raise error if run_script statements with incorrect parameter ordering are found
+  test = run_script_incorrect_order?(file); fail test if test
 
   # Raise error if policy is not in the master permissions file.
   # Raise warning if policy is in this file, but datasources have been added.
