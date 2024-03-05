@@ -702,3 +702,15 @@ end
 changed_meta_pt_files.each do |file|
   # TBD
 end
+
+###############################################################################
+# Temporary
+###############################################################################
+
+# all_readmes = `find . -name README.md`
+
+# # Check meta policy code itself for issues for each file
+# all_readmes.each_line do |file|
+#   # Raise warning if spelling errors are found
+#   test = bad_spelling?(file); warn test if test
+# end
