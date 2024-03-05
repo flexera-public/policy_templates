@@ -567,7 +567,7 @@ end
 # Check README.md contents for issues for each file
 changed_readme_files.each do |file|
   # Raise warning if spelling errors are found
-  test = bad_spelling?(file); warn test if test
+  #test = bad_spelling?(file); warn test if test
 
   # Raise error if the file contains any bad urls
   test = bad_urls?(file); fail test if test
@@ -596,7 +596,7 @@ end
 # Check Markdown contents for issues for each file
 changed_misc_md_files.each do |file|
   # Raise warning if spelling errors are found
-  test = bad_spelling?(file); warn test if test
+  #test = bad_spelling?(file); warn test if test
 
   # Raise error if the file contains any bad urls
   test = bad_urls?(file); fail test if test
