@@ -36,8 +36,8 @@ new_pt_files = git.added_files.select{ |file| file.end_with?(".pt") && !file.end
 ###############################################################################
 
 ### Spell check test
-# Return false if no spelling errors are found
-def bad_spelling?(file)
+# Run the Danger spell checker on a file
+def danger_spellcheck(file)
   # Import the ignore list from a file but ignore entries starting with #
   # This is so we can have comments in this file
   prose.ignored_words = File.readlines('.spellignore').map(&:chomp).select{ |entry| !entry.start_with?("#") }
@@ -49,12 +49,8 @@ def bad_spelling?(file)
   # Set language
   prose.language = "en-us"
 
-  # Test file for spelling errors
-  spelling_errors = prose.check_spelling(file)
-
-  # Return the errors if any are found. Otherwise, return false.
-  return spelling_errors if !spelling_errors.empty?
-  return false
+  # Check spelling
+  prose.check_spelling(file)
 end
 
 ### Markdown lint test
@@ -566,8 +562,8 @@ end
 
 # Check README.md contents for issues for each file
 changed_readme_files.each do |file|
-  # Raise warning if spelling errors are found
-  #test = bad_spelling?(file); warn test if test
+  # Run Danger spell check on file
+  danger_spellcheck(file)
 
   # Raise error if the file contains any bad urls
   test = bad_urls?(file); fail test if test
@@ -595,8 +591,8 @@ end
 
 # Check Markdown contents for issues for each file
 changed_misc_md_files.each do |file|
-  # Raise warning if spelling errors are found
-  #test = bad_spelling?(file); warn test if test
+  # Run Danger spell check on file
+  danger_spellcheck(file)
 
   # Raise error if the file contains any bad urls
   test = bad_urls?(file); fail test if test
