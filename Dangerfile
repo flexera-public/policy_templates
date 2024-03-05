@@ -698,16 +698,3 @@ end
 changed_meta_pt_files.each do |file|
   # TBD
 end
-
-###############################################################################
-# Temporary
-###############################################################################
-
-all_readmes = [
-  "README.md"
-]
-
-# Check meta policy code itself for issues for each file
-all_readmes.each do |file|
-  danger_spellcheck(file)
-end
