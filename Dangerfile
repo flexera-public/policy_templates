@@ -72,8 +72,8 @@ def bad_markdown?(file)
     mdl = `mdl #{file}`
   end
 
-  # Return the problems found if the md1 file is not empty. Otherwise, return false
-  return md1 if !mdl.empty?
+  # Return the problems found if the mdl file is not empty. Otherwise, return false
+  return mdl if !mdl.empty?
   return false
 end
 
