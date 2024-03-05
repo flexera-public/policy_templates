@@ -907,7 +907,7 @@ all_readmes = [
   "cost/aws/s3_storage_policy/README.md",
   "cost/aws/rightsize_rds_instances/README.md",
   "cost/aws/old_snapshots/README.md",
-  # "cost/terminate_policy/README.md"
+  "cost/terminate_policy/README.md",
   # "msp/README.md",
   # "msp/compliance/orgs_and_cloud_accounts_report/README.md",
   # "msp/cost/master_org_cost_policy_currency/README.md",
