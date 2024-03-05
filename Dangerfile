@@ -35,23 +35,41 @@ new_pt_files = git.added_files.select{ |file| file.end_with?(".pt") && !file.end
 # Methods
 ###############################################################################
 
+### Spell check test
+# Run the Danger spell checker on a file
+def danger_spellcheck(file)
+  # Import the ignore list from a file but ignore entries starting with #
+  # This is so we can have comments in this file
+  prose.ignored_words = File.readlines('.spellignore').map(&:chomp).select{ |entry| !entry.start_with?("#") }
+
+  # Disable functionality to prevent a lot of pointless results
+  prose.ignore_numbers = true
+  prose.ignore_acronyms = true
+
+  # Set language
+  prose.language = "en-us"
+
+  # Check spelling
+  prose.check_spelling(file)
+end
+
 ### Markdown lint test
 # Return false if linter finds no problems
 def bad_markdown?(file)
   # Adjust testing based on which file we're doing
   case file
   when "README.md"
-    mdl = `mdl -r "~MD024","~MD013" #{file}`
+    mdl = `mdl -r "~MD007","~MD013","~MD024" #{file}`
   when "tools/cloudformation-template/README.md"
-    mdl = `mdl -r "~MD013","~MD033","~MD034" #{file}`
+    mdl = `mdl -r "~MD007","~MD013","~MD033","~MD034" #{file}`
   when ".github/PULL_REQUEST_TEMPLATE.md"
-    mdl = `mdl -r "~MD002","~MD013" #{file}`
+    mdl = `mdl -r "~MD002","~MD007","~MD013" #{file}`
   else
-    mdl = `mdl #{file}`
+    mdl = `mdl -r "~MD007","~MD013" #{file}`
   end
 
-  # Return the problems found if the md1 file is not empty. Otherwise, return false
-  return md1 if !mdl.empty?
+  # Return the problems found if the mdl file is not empty. Otherwise, return false
+  return mdl if !mdl.empty?
   return false
 end
 
@@ -544,6 +562,9 @@ end
 
 # Check README.md contents for issues for each file
 changed_readme_files.each do |file|
+  # Run Danger spell check on file
+  danger_spellcheck(file)
+
   # Raise error if the file contains any bad urls
   test = bad_urls?(file); fail test if test
 
@@ -570,6 +591,9 @@ end
 
 # Check Markdown contents for issues for each file
 changed_misc_md_files.each do |file|
+  # Run Danger spell check on file
+  danger_spellcheck(file)
+
   # Raise error if the file contains any bad urls
   test = bad_urls?(file); fail test if test
 
