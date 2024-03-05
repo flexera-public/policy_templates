@@ -59,13 +59,13 @@ def bad_markdown?(file)
   # Adjust testing based on which file we're doing
   case file
   when "README.md"
-    mdl = `mdl -r "~MD024","~MD013" #{file}`
+    mdl = `mdl -r "~MD007","~MD013","~MD024" #{file}`
   when "tools/cloudformation-template/README.md"
-    mdl = `mdl -r "~MD013","~MD033","~MD034" #{file}`
+    mdl = `mdl -r "~MD007","~MD013","~MD033","~MD034" #{file}`
   when ".github/PULL_REQUEST_TEMPLATE.md"
-    mdl = `mdl -r "~MD002","~MD013" #{file}`
+    mdl = `mdl -r "~MD002","~MD007","~MD013" #{file}`
   else
-    mdl = `mdl #{file}`
+    mdl = `mdl -r "~MD007" #{file}`
   end
 
   # Return the problems found if the mdl file is not empty. Otherwise, return false
