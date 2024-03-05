@@ -704,39 +704,12 @@ end
 ###############################################################################
 
 all_readmes = [
-  "security/aws/loadbalancer_internet_facing/README.md",
-  "security/aws/iam_min_password_length/README.md",
-  "security/aws/iam_disable_45_day_creds/README.md",
-  "security/aws/log_ensure_cloudtrail_bucket_access_logging/README.md",
-  "security/aws/iam_mfa_enabled_for_iam_users/README.md",
-  "security/aws/iam_users_perms_via_groups_only/README.md",
-  "security/aws/rds_publicly_accessible/README.md",
-  "security/aws/iam_expired_ssl_certs/README.md",
-  "security/aws/iam_mfa_enabled_for_root/README.md",
-  "security/aws/s3_ensure_buckets_block_public_access/README.md",
-  "security/aws/log_cloudtrail_cloudwatch_integrated/README.md",
-  "security/aws/kms_rotation/README.md",
-  "security/aws/rds_unencrypted/README.md",
-  "security/aws/log_file_validation_enabled/README.md",
-  "security/aws/iam_hwmfa_enabled_for_root/README.md",
-  "security/aws/clb_unencrypted/README.md",
-  "security/aws/log_ensure_cloudtrail_bucket_not_public/README.md",
-  "security/aws/vpcs_without_flow_logs_enabled/README.md",
-  "security/aws/iam_rotate_access_keys/README.md",
-  "security/aws/log_ensure_cloudtrail_encrypted/README.md",
-  "security/aws/iam_prevent_password_reuse/README.md",
-  "security/aws/iam_access_analyzer_enabled/README.md",
-  "security/aws/ebs_unencrypted_volumes/README.md",
-  "security/aws/log_ensure_cloudtrail_bucket_object_logging/README.md",
-  "security/aws/iam_no_root_access_keys/README.md",
-  "security/aws/aws_config_enabled/README.md",
-  "security/aws/iam_support_role_created/README.md",
-  # "tools/meta_parent_policy_compiler/README.md",
-  # "tools/policy_master_permission_generation/README.md",
-  # "tools/readme_policy_table_of_contents/README.md",
-  # "tools/cloudformation-template/README.md",
-  # "tools/instance_types/README.md",
-  # "tools/policy_sync/README.md"
+  "tools/meta_parent_policy_compiler/README.md",
+  "tools/policy_master_permission_generation/README.md",
+  "tools/readme_policy_table_of_contents/README.md",
+  "tools/cloudformation-template/README.md",
+  "tools/instance_types/README.md",
+  "tools/policy_sync/README.md"
 ]
 
 # Check meta policy code itself for issues for each file
