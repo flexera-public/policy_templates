@@ -412,12 +412,12 @@ These templates can generate savings estimates for your environment.
 
   - [AKS Node Pools Without Autoscaling](./operational/azure/aks_nodepools_without_autoscaling)
   - [AKS Node Pools Without Zero Autoscaling](./operational/azure/aks_nodepools_without_zero_autoscaling)
-  - [Azure Migrate Integration](./operational/azure/azure_migrate)
 
 - Compute
 
   - [Azure Bring-Your-Own-License (BYOL) Report](./operational/azure/byol_report)
   - [Azure Long Running Instances](./operational/azure/azure_long_running_instances)
+  - [Azure Migrate Integration](./operational/azure/azure_migrate)
   - [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks)
   - [Expiring Azure Certificates](./operational/azure/azure_certificates)
 
@@ -643,7 +643,7 @@ These templates can generate savings estimates for your environment.
   Security: 74
 :optimization_count: 45
 :policy_sets:
-  '': 78
+  '': 77
   AWS Config: 1
   Allocate VMs: 3
   Automation: 1
@@ -661,7 +661,7 @@ These templates can generate savings estimates for your environment.
   Inefficient Disk Usage: 1
   Instances not running FlexNet Inventory Agent: 2
   Lifecycle Management: 1
-  Long Running Instances: 2
+  Long Running Instances: 3
   Long Stopped Instances: 3
   N/A: 1
   Native Recommendations: 1
@@ -717,7 +717,7 @@ These templates can generate savings estimates for your environment.
   ServiceNow: 1
 :services:
   '': 56
-  AKS: 3
+  AKS: 2
   All: 1
   App Service: 1
   Automation: 1
@@ -725,7 +725,7 @@ These templates can generate savings estimates for your environment.
   Cloud Cost Optimization: 1
   CloudTrail: 7
   Common Bill Ingestion: 2
-  Compute: 51
+  Compute: 52
   Config: 1
   Cost Explorer: 1
   DBS: 1
