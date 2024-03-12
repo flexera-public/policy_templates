@@ -411,7 +411,7 @@ def blocks_ungrouped?(file)
       if !found_meta
         # If we've found the block we're testing, and then other blocks,
         # and then found the block we're testing again, return error
-        if line.strip.start_with?(block) && found_other_blocks
+        if line.strip.start_with?(block) && line.strip.end_with?('do') && found_other_blocks
           fail_message += "Line #{line_number.to_s}: Unsorted #{block.strip} code block found\n"
           found_block = false
           found_other_blocks = false
@@ -421,12 +421,12 @@ def blocks_ungrouped?(file)
         if found_block
           block_names.each do |other_block|
             if other_block != block
-              found_other_blocks = true if line.strip.start_with?(other_block)
+              found_other_blocks = true if line.strip.start_with?(other_block) && line.strip.end_with?('do')
             end
           end
         end
 
-        found_block = true if line.strip.start_with?(block)
+        found_block = true if line.strip.start_with?(block) && line.strip.end_with?('do')
       end
     end
   end
@@ -539,7 +539,7 @@ def bad_block_name?(file, block_name)
     fail_message += "Line #{line_number.to_s}\n" if block_regex.match?(line)
   end
 
-  fail_message = "**#{file}**\nInvalidly named #{block_name} blocks. Please ensure all #{block_name} blocks have names that begin with #{proper_name}:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "**#{file}**\nInvalidly named #{block_name} blocks. Please ensure all #{block_name} blocks have names that begin with `#{proper_name}`:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
