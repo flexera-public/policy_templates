@@ -101,7 +101,7 @@ def bad_urls?(file)
   fail_message = ""
 
   if diff && diff.patch =~ regex
-    diff.patch.each_line do |line, index|
+    diff.patch.each_line.with_index do |line, index|
       line_number = index + 1
 
       if line =~ regex
@@ -267,7 +267,7 @@ def sections_out_of_order?(file)
   # Failsafe for meta policy code which won't be in the correct order by design
   found_meta = false
 
-  policy_code.each_line do |line, index|
+  policy_code.each_line.with_index do |line, index|
     line_number = index + 1
 
     found_meta = true if line.strip.start_with?('# Meta Policy [alpha]')
@@ -349,7 +349,7 @@ def blocks_ungrouped?(file)
     # Failsafe for meta policy code which won't be in the correct order by design
     found_meta = false
 
-    policy_code.each_line do |line, index|
+    policy_code.each_line.with_index do |line, index|
       line_number = index + 1
 
       found_meta = true if line.strip.start_with?('# Meta Policy [alpha]')
@@ -478,7 +478,7 @@ def bad_block_name?(file, block_name)
     block_regex = /.*/
   end
 
-  policy_code.each_line do |line, index|
+  policy_code.each_line.with_index do |line, index|
     line_number = index + 1
     fail_message += "Line #{line_number.to_s}\n" if block_regex.match?(line)
   end
@@ -500,7 +500,7 @@ def deprecated_code_blocks?(file, block_name)
 
   fail_message = ""
 
-  policy_code.each_line do |line, index|
+  policy_code.each_line.with_index do |line, index|
     line_number = index + 1
     fail_message += "Line #{line_number.to_s}: Permission block found\n" if permission_regex.match?(line)
     fail_message += "Line #{line_number.to_s}: Resources block found\n" if resources_regex.match?(line)
@@ -523,7 +523,7 @@ def block_missing_field?(file, block_name, field_name)
   present = false
   line_number = nil
 
-  policy_code.each_line do |line, index|
+  policy_code.each_line.with_index do |line, index|
     # Check if we're entering the block
     if line.strip.start_with?(block_name + ' ') && line.strip.end_with?('do')
       present = false
@@ -557,7 +557,7 @@ def ds_js_name_mismatch?(file)
   js_name = nil
   line_number = nil
 
-  policy_code.each_line do |line, index|
+  policy_code.each_line.with_index do |line, index|
     case line
     # Stop doing the check once we hit the Meta Policy section
     when line.strip.start_with?('# Meta Policy [alpha]')
@@ -600,7 +600,7 @@ def run_script_incorrect_order?(file)
   fail_message = ""
   ds_name = nil
 
-  policy_code.each_line do |line, index|
+  policy_code.each_line.with_index do |line, index|
     line_number = index + 1
 
     # Stop doing the check if we've reached the meta policy section
