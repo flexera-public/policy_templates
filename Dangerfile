@@ -448,6 +448,8 @@ def bad_block_name?(file, block_name)
   # Store contents of file for direct analysis
   policy_code = File.read(file)
 
+  fail_message = ""
+
   # Set values based on which section we're checking.
   # proper_name: Correct prefix that block name ought to have
   # block_regex: Test for presence of block with an invalid name
