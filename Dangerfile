@@ -509,7 +509,7 @@ def deprecated_code_blocks?(file, block_name)
     fail_message += "Line #{line_number.to_s}: Resources block found\n" if resources_regex.match?(line)
   end
 
-  fail_message = "**#{file}**\nDeprecated code blocks found. It is recommended that the policy be refactored to no longer use these code blocks:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "**#{file}**\nDeprecated #{block_name} blocks found. It is recommended that the policy be refactored to no longer use these code blocks:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
@@ -534,7 +534,7 @@ def block_missing_field?(file, block_name, field_name)
     end
 
     # Check for the field if we're in a block
-    present = true if in_block && line.strip.start_with?(field_name + ' ')
+    present = true if line_number && line.strip.start_with?(field_name + ' ')
 
     # When we reach the end of a block, check if field was present
     if line.strip == 'end' && line_number
