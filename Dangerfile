@@ -264,6 +264,14 @@ def sections_out_of_order?(file)
   found_escalations = false
   found_cwf = false
 
+  # Ensure that each type of error is only reported once
+  metadata_fail = false
+  parameters_fail = false
+  credentials_fail = false
+  datasources_fail = false
+  policy_fail = false
+  escalations_fail = false
+
   # Failsafe for meta policy code which won't be in the correct order by design
   found_meta = false
 
@@ -282,40 +290,33 @@ def sections_out_of_order?(file)
       found_escalations = true if line.strip.start_with?('escalation ')
       found_cwf = true if line.strip.start_with?('define ')
 
-      metadata_fail = false
-      parameters_fail = false
-      credentials_fail = false
-      datasources_fail = false
-      policy_fail = false
-      escalations_fail = false
-
       if !metadata_fail && !found_metadata && (found_parameters || found_credentials || found_pagination || found_datasources || found_policy || found_escalations || found_cwf)
-        fail_message += "Invalid policy blocks found before metadata on line #{line_number.to_s}\n\n"
+        fail_message += "Invalid blocks found before metadata on line #{line_number.to_s}\n\n"
         metadata_fail = true
       end
 
       if !parameters_fail && !found_parameters && (found_credentials || found_pagination || found_datasources || found_policy || found_escalations || found_cwf)
-        fail_message += "Invalid policy blocks found before parameters on line #{line_number.to_s}\n\n"
+        fail_message += "Invalid blocks found before parameters on line #{line_number.to_s}\n\n"
         parameters_fail = true
       end
 
       if !credentials_fail && !found_credentials && (found_pagination || found_datasources || found_policy || found_escalations || found_cwf)
-        fail_message += "Invalid policy blocks found before credentials on line #{line_number.to_s}\n\n"
+        fail_message += "Invalid blocks found before credentials on line #{line_number.to_s}\n\n"
         credentials_fail = true
       end
 
       if !datasources_fail && !found_datasources && (found_policy || found_escalations || found_cwf)
-        fail_message += "Invalid policy blocks found before datasources on line #{line_number.to_s}\n\n"
+        fail_message += "Invalid blocks found before datasources on line #{line_number.to_s}\n\n"
         datasources_fail = true
       end
 
       if !policy_fail && !found_policy && (found_escalations || found_cwf)
-        fail_message += "Invalid policy blocks found before policy block on line #{line_number.to_s}\n\n"
+        fail_message += "Invalid blocks found before policy block on line #{line_number.to_s}\n\n"
         policy_fail = true
       end
 
       if !escalations_fail && !found_escalations && (found_cwf)
-        fail_message += "Invalid policy blocks found before escalations on line #{line_number.to_s}\n\n"
+        fail_message += "Invalid blocks found before escalations on line #{line_number.to_s}\n\n"
         escalations_fail = true
       end
     end
