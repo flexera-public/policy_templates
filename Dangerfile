@@ -614,17 +614,16 @@ def ds_js_name_mismatch?(file)
   line_number = nil
 
   policy_code.each_line.with_index do |line, index|
-    case line
     # Stop doing the check once we hit the Meta Policy section
-    when line.strip.start_with?('# Meta Policy [alpha]')
+    if line.strip.start_with?('# Meta Policy [alpha]')
       break
     # When we find a datasource, store its name
-    when line.strip.start_with?("datasource ") && line.strip.end_with?('do')
+    elsif line.strip.start_with?("datasource ") && line.strip.end_with?('do')
       name_test = line.match(/"([^"]*)"/)
       ds_name = name_test[1] if name_test
       line_number = index + 1
     # When we find a run_script, store its name and compare to datasource
-    when line.strip.start_with?("run_script ")
+    elsif line.strip.start_with?("run_script ")
       name_test = line.match(/run_script \$([a-zA-Z0-9_]+)/)
       js_name = name_test[1] if name_test
 
@@ -682,14 +681,14 @@ def run_script_incorrect_order?(file)
       value_found = false    # Whether we've found a raw value, like a number or string
 
       parameters.each do |parameter|
-        case parameter
-        when parameter.start_with?('$ds')
+        if parameter.start_with?('$ds')
           ds_found = true
           disordered = true if param_found || constant_found || value_found
-        when parameter.start_with?('$param')
+          puts parameter
+        elsif parameter.start_with?('$param')
           param_found = true
           disordered = true if constant_found || value_found
-        when /[A-Za-z]/.match(parameter[0]) # If parameter starts with a letter
+        elsif /[A-Za-z]/.match(parameter[0]) # If parameter starts with a letter
           constant_found = true
           disordered = true if value_found
         else # Assume a raw value, like a number or string, if none of the above
