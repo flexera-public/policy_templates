@@ -8,6 +8,7 @@ severity "low"
 default_frequency "weekly"
 info(
   version: "8.0",
+  provider: "AWS",
   service: "Storage",
   policy_set: "Old Snapshots",
   recommendation_type: "Usage Reduction"
@@ -25,7 +26,7 @@ parameter "param_email" do
   default []
 end
 
-parameter "paramaws_account_number" do
+parameter "param_aws_account_number" do
   type "string"
   category "Policy Settings"
   label "Account Number"
@@ -123,6 +124,7 @@ end
 
 parameter "param_automatic_action" do
   type "list"
+  category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action."
   allowed_values ["Delete Snapshots"]
@@ -138,7 +140,7 @@ credentials "auth_aws" do
   label "AWS"
   description "Select the AWS Credential from the list"
   tags "provider=aws"
-  aws_account_number $paramaws_account_number
+  aws_account_number $param_aws_account_number
 end
 
 credentials "auth_flexera" do
@@ -190,16 +192,6 @@ pagination "pagination_aws_describe_db_snapshots_xml" do
   end
 end
 
-# Get applied policy metadata for use later
-datasource "ds_applied_policy" do
-  request do
-    auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
-    header "Api-Version", "1.0"
-  end
-end
-
 # https://docs.aws.amazon.com/AmazonRDS/latest/APIReference/API_DescribeDBClusterSnapshots.html
 pagination "pagination_aws_describe_db_cluster_snapshots_xml" do
   get_page_marker do
@@ -207,6 +199,20 @@ pagination "pagination_aws_describe_db_cluster_snapshots_xml" do
   end
   set_page_marker do
     query "Marker"
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
   end
 end
 
@@ -873,10 +879,10 @@ EOS
 end
 
 datasource "ds_snapshot_costs_grouped" do
-  run_script $js_snapshot_costs_grouped_lolol, $ds_snapshot_costs
+  run_script $js_snapshot_costs_grouped, $ds_snapshot_costs
 end
 
-script "js_snapshot_costs_grouped_lolol", type: "javascript" do
+script "js_snapshot_costs_grouped", type: "javascript" do
   parameters "ds_snapshot_costs"
   result "result"
   code <<-EOS
@@ -897,11 +903,11 @@ EOS
 end
 
 datasource "ds_snapshots_cost_mapping" do
-  run_script $js_snapshots_cost_mapping, $param_snapshot_include_ami, $ds_filter_ami_snapshots, $ds_snapshot_costs_grouped, $ds_snapshots_combined, $ds_currency, $ds_applied_policy, $ds_aws_account, $param_min_savings, $param_snapshot_age
+  run_script $js_snapshots_cost_mapping, $ds_filter_ami_snapshots, $ds_snapshot_costs_grouped, $ds_snapshots_combined, $ds_currency, $ds_applied_policy, $ds_aws_account, $param_min_savings, $param_snapshot_age, $param_snapshot_include_ami
 end
 
 script "js_snapshots_cost_mapping", type: "javascript" do
-  parameters "param_snapshot_include_ami", "ds_filter_ami_snapshots", "ds_snapshot_costs_grouped", "ds_snapshots_combined", "ds_currency", "ds_applied_policy", "ds_aws_account", "param_min_savings", "param_snapshot_age"
+  parameters "ds_filter_ami_snapshots", "ds_snapshot_costs_grouped", "ds_snapshots_combined", "ds_currency", "ds_applied_policy", "ds_aws_account", "param_min_savings", "param_snapshot_age", "param_snapshot_include_ami"
   result "result"
   code <<-'EOS'
   // Function for formatting currency numbers later
@@ -1024,28 +1030,10 @@ EOS
 end
 
 ###############################################################################
-# Escalations
-###############################################################################
-
-escalation "email" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
-end
-
-escalation "esc_delete_snapshot" do
-  automatic contains($param_automatic_action, "Delete Snapshots")
-  label "Delete Snapshots"
-  description "Approval to delete all selected snapshots"
-  run "delete_snapshots", data, $param_snapshot_include_ami
-end
-
-###############################################################################
 # Policy
 ###############################################################################
 
-policy "utilization" do
+policy "pol_utilization" do
   validate_each $ds_snapshots_cost_mapping do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Old Snapshots Found"
     detail_template <<-'EOS'
@@ -1055,7 +1043,7 @@ policy "utilization" do
     EOS
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
-    escalate $email
+    escalate $esc_email
     escalate $esc_delete_snapshot
     hash_exclude "total_savings", "message", "tags", "age", "savings", "savingsCurrency"
     export do
@@ -1129,6 +1117,24 @@ policy "utilization" do
       end
     end
   end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_delete_snapshot" do
+  automatic contains($param_automatic_action, "Delete Snapshots")
+  label "Delete Snapshots"
+  description "Approval to delete all selected snapshots"
+  run "delete_snapshots", data, $param_snapshot_include_ami
 end
 
 ###############################################################################
