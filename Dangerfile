@@ -227,7 +227,7 @@ def missing_info_field?(file, field_name)
     end
 
     if field_name == "provider"
-      fail_message += "Please add provider to the info field.\n\n}" if info[:provider].nil?
+      fail_message += "Please add provider to the info field.\n\n" if info[:provider].nil?
     end
 
     if field_name == "service"
@@ -281,48 +281,48 @@ def sections_out_of_order?(file)
     found_meta = true if line.strip.start_with?('# Meta Policy [alpha]')
 
     if !found_meta
-      found_metadata = true if line.strip.start_with?('name ')
-      found_parameters = true if line.strip.start_with?('parameter ')
-      found_credentials = true if line.strip.start_with?('credentials ')
-      found_pagination = true if line.strip.start_with?('pagination ')
-      found_datasources = true if line.strip.start_with?('datasource ')
-      found_policy = true if line.strip.start_with?('policy ')
-      found_escalations = true if line.strip.start_with?('escalation ')
-      found_cwf = true if line.strip.start_with?('define ')
+      found_metadata = true if line.start_with?('name ')
+      found_parameters = true if line.strip.start_with?('parameter ') && line.strip.end_with?('do')
+      found_credentials = true if line.strip.start_with?('credentials ') && line.strip.end_with?('do')
+      found_pagination = true if line.strip.start_with?('pagination ') && line.strip.end_with?('do')
+      found_datasources = true if line.strip.start_with?('datasource ') && line.strip.end_with?('do')
+      found_policy = true if line.strip.start_with?('policy ') && line.strip.end_with?('do')
+      found_escalations = true if line.strip.start_with?('escalation ') && line.strip.end_with?('do')
+      found_cwf = true if line.strip.start_with?('define ') && line.strip.end_with?('do')
 
       if !metadata_fail && !found_metadata && (found_parameters || found_credentials || found_pagination || found_datasources || found_policy || found_escalations || found_cwf)
-        fail_message += "Invalid blocks found before metadata on line #{line_number.to_s}\n\n"
+        fail_message += "Line #{line_number.to_s}: Invalid blocks found before metadata\n\n"
         metadata_fail = true
       end
 
       if !parameters_fail && !found_parameters && (found_credentials || found_pagination || found_datasources || found_policy || found_escalations || found_cwf)
-        fail_message += "Invalid blocks found before parameters on line #{line_number.to_s}\n\n"
+        fail_message += "Line #{line_number.to_s}: Invalid blocks found before parameter\n\n"
         parameters_fail = true
       end
 
       if !credentials_fail && !found_credentials && (found_pagination || found_datasources || found_policy || found_escalations || found_cwf)
-        fail_message += "Invalid blocks found before credentials on line #{line_number.to_s}\n\n"
+        fail_message += "Line #{line_number.to_s}: Invalid blocks found before credentials\n\n"
         credentials_fail = true
       end
 
       if !datasources_fail && !found_datasources && (found_policy || found_escalations || found_cwf)
-        fail_message += "Invalid blocks found before datasources on line #{line_number.to_s}\n\n"
+        fail_message += "Line #{line_number.to_s}: Invalid blocks found before datasources\n\n"
         datasources_fail = true
       end
 
       if !policy_fail && !found_policy && (found_escalations || found_cwf)
-        fail_message += "Invalid blocks found before policy block on line #{line_number.to_s}\n\n"
+        fail_message += "Line #{line_number.to_s}: Invalid blocks found before policy block\n\n"
         policy_fail = true
       end
 
       if !escalations_fail && !found_escalations && (found_cwf)
-        fail_message += "Invalid blocks found before escalations on line #{line_number.to_s}\n\n"
+        fail_message += "Line #{line_number.to_s}: Invalid blocks found before escalations\n\n"
         escalations_fail = true
       end
     end
   end
 
-  fail_message = "**#{file}**\nPolicy Template does not have code blocks in the correct order. Code blocks should be in the following order: Metadata, Parameters, Credentials, Pagination, Datasources & Scripts, Policy, Escalations, Cloud Workflow, Meta Policy:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "**#{file}**\nPolicy Template does not have code blocks in the correct order.\nCode blocks should be in the following order: Metadata, Parameters, Credentials, Pagination, Datasources & Scripts, Policy, Escalations, Cloud Workflow, Meta Policy\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
