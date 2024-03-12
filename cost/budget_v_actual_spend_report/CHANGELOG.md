@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.2
+
+- Fixed work with unbudgeted spend for new API
+- Added formatting of sums in labels axis
+- The "Unbudgeted spend" parameter has been changed to "Include unbudgeted spend" by default to match the chart in Flexera One panel
+
 ## v2.1
 
 - Added links to documentation in the policy short description
