@@ -596,7 +596,7 @@ def block_missing_field?(file, block_name, field_name)
     end
   end
 
-  fail_message = "**#{file}**\n#{block_name} code blocks with missing #{field_name} field found. Please add the #{field_name} field to these blocks:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "**#{file}**\n#{block_name} code blocks with missing `#{field_name}` field found. Please add the `#{field_name}` field to these blocks:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
