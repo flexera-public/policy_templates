@@ -35,6 +35,59 @@ new_pt_files = git.added_files.select{ |file| file.end_with?(".pt") && !file.end
 # Methods
 ###############################################################################
 
+### README test
+# Verify that .pt file also has an updated README
+def unmodified_readme?(file, changed_readme_files)
+  fail_message = ""
+
+  # Get file path for readme file
+  file_sections = file.split('/')
+  file_sections.pop
+  readme_file_path = file_sections.join('/') + "/README.md"
+
+  if !File.exist?(readme_file_path)
+    fail_message = "**#{file}**\nPolicy template has no README.md file. Please create this file and document the policy's functionality within."
+  elsif !changed_readme_files.include?(readme_file_path)
+    fail_message = "**#{file}**\nPolicy template updated but associated README.md file has not been. Please verify that any necessary changes have been made to the README."
+  end
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### CHANGELOG test
+# Verify that .pt file also has an updated CHANGELOG
+def unmodified_changelog?(file, changed_changelog_files)
+  fail_message = ""
+
+  # Get file path for changelog file
+  file_sections = file.split('/')
+  file_sections.pop
+  changelog_file_path = file_sections.join('/') + "/CHANGELOG.md"
+
+  if !File.exist?(changelog_file_path)
+    fail_message = "**#{file}**\nPolicy template has no CHANGELOG.md file. Please create this file and document the policy's version changes within."
+  elsif !changed_changelog_files.include?(changelog_file_path)
+    fail_message = "**#{file}**\nPolicy template updated but associated CHANGELOG.md file has not been. Please increment version number and update CHANGELOG.md accordingly."
+  end
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### Filename Casing test
+# Verify that the filename is in lowercase
+def bad_policy_filename_casing?(file)
+  fail_message = ""
+
+  if file.match?(/[A-Z]/)
+    fail_message = "**#{file}**\nPolicy template name and file path should be in lowercase. Please remove any uppercase [A-Z] characters."
+  end
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
 ### Spell check test
 # Run the Danger spell checker on a file
 def danger_spellcheck(file)
@@ -709,29 +762,8 @@ end
 # Github Pull Request Testing
 ###############################################################################
 
-fail 'Please provide a summary of your Pull Request.' if github.pr_body.length < 10
-fail 'Please add labels to this Pull Request' if github.pr_labels.empty?
-
-###############################################################################
-# File Structure Testing
-###############################################################################
-
-# Raise error if a policy has been modified but its corresponding CHANGELOG file has not.
-no_changelog_entry = (changed_files.grep(/[\w]+CHANGELOG.md/i) + changed_files.grep(/CHANGELOG.md/i)).empty?
-fail "Please add a CHANGELOG.md file" if changed_pt_files.length != 0 && no_changelog_entry
-
-# Raise warning if a policy has been modified but its corresponding README file has not.
-# This is just a warning because bug fixes and other minor changes may not require this.
-missing_doc_changes = (changed_files.grep(/[\w]+README.md/i) + changed_files.grep(/README.md/i)).empty?
-warn "Should this include README.md changes?" if changed_pt_files.length != 0 && missing_doc_changes
-
-# Raise error if a new policy is missing a README.md file
-fail "A README.md is required for new templates" if new_pt_files.length != 0 && missing_doc_changes
-
-# check for lowercase files and directories
-changed_pt_files.each do |file|
-  fail "Policy Template path should be lowercase. #{file}" if file.scan(/^[a-z0-9.\/_-]+$/).empty?
-end
+fail "**Github Pull Request**\nPull Request is missing summary. Please provide a summary of your Pull Request." if github.pr_body.length < 10
+fail "**Github Pull Request**\nPull Request is missing labels. Please add labels to this Pull Request." if github.pr_labels.empty?
 
 ###############################################################################
 # All Files Testing
@@ -748,10 +780,10 @@ changed_files.each do |file|
 end
 
 ###############################################################################
-# README Contents Testing
+# README Testing
 ###############################################################################
 
-# Check README.md contents for issues for each file
+# Check README.md for issues for each file
 changed_readme_files.each do |file|
   # Run Danger spell check on file
   danger_spellcheck(file)
@@ -764,10 +796,10 @@ changed_readme_files.each do |file|
 end
 
 ###############################################################################
-# CHANGELOG Contents Testing
+# CHANGELOG Testing
 ###############################################################################
 
-# Check CHANGELOG.md contents for issues for each file
+# Check CHANGELOG.md for issues for each file
 changed_changelog_files.each do |file|
   # Raise error if the file contains any bad urls
   test = bad_urls?(file); fail test if test
@@ -777,10 +809,10 @@ changed_changelog_files.each do |file|
 end
 
 ###############################################################################
-# Misc. Markdown Contents Testing
+# Misc. Markdown Testing
 ###############################################################################
 
-# Check Markdown contents for issues for each file
+# Check Markdown files for issues for each file
 changed_misc_md_files.each do |file|
   # Run Danger spell check on file
   danger_spellcheck(file)
@@ -793,17 +825,26 @@ changed_misc_md_files.each do |file|
 end
 
 ###############################################################################
-# Policy Code Testing
+# Policy Testing
 ###############################################################################
 
 # Load external YAML file for testing
 permissions_yaml = YAML.load_file('tools/policy_master_permission_generation/validated_policy_templates.yaml')
 
-# Check policy code itself for issues for each file
+# Check policies for issues for each file
 changed_pt_files.each do |file|
   # Run policy through various methods that test for problems.
   # These methods will return false if no problems are found.
   # Otherwise, they return the warning or error message that should be raised.
+
+  # Raise error if policy changed but changelog has not been
+  test = unmodified_changelog?(file, changed_changelog_files); fail test if test
+
+  # Raise warning if policy changed but readme has not been
+  test = unmodified_readme?(file, changed_readme_files); warn test if test
+
+  # Raise error if policy filename/path contains any uppercase letters
+  test = bad_policy_filename_casing?(file); fail test if test
 
   # Raise error if the file contains any bad urls
   test = bad_urls?(file); fail test if test
@@ -889,10 +930,10 @@ changed_pt_files.each do |file|
 end
 
 ###############################################################################
-# Meta Policy Code Testing
+# Meta Policy Testing
 ###############################################################################
 
-# Check meta policy code itself for issues for each file
+# Check meta policies for issues for each file
 changed_meta_pt_files.each do |file|
   # TBD
 end
