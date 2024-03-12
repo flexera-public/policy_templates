@@ -616,7 +616,7 @@ def run_script_incorrect_order?(file)
 
     disordered = false
 
-    if line.strip.starts_with?("run_script")
+    if line.strip.start_with?("run_script")
       # Store a list of all of the parameters for the run_script
       parameters = line.strip.sub('run_script ', '').split(',').map(&:strip)
 
@@ -630,10 +630,10 @@ def run_script_incorrect_order?(file)
 
       parameters.each do |parameter|
         case parameter
-        when parameter.starts_with?('$ds')
+        when parameter.start_with?('$ds')
           ds_found = true
           disordered = true if param_found || constant_found || value_found
-        when parameter.starts_with?('$param')
+        when parameter.start_with?('$param')
           param_found = true
           disordered = true if constant_found || value_found
         when /[A-Za-z]/.match(parameter[0]) # If parameter starts with a letter
