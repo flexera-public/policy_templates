@@ -619,7 +619,7 @@ def ds_js_name_mismatch?(file)
     when line.strip.start_with?('# Meta Policy [alpha]')
       break
     # When we find a datasource, store its name
-    when line.strip.start_with?("datasource ")
+    when line.strip.start_with?("datasource ") && line.strip.end_with?('do')
       name_test = line.match(/"([^"]*)"/)
       ds_name = name_test[1] if name_test
       line_number = index + 1
@@ -662,7 +662,7 @@ def run_script_incorrect_order?(file)
     # Stop doing the check if we've reached the meta policy section
     break if line.strip.start_with?('# Meta Policy [alpha]')
 
-    if line.strip.start_with?("datasource ")
+    if line.strip.start_with?("datasource ") && line.strip.end_with?('do')
       name_test = line.match(/"([^"]*)"/)
       ds_name = name_test[1] if name_test
     end
