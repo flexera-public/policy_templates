@@ -155,8 +155,10 @@ def bad_changelog_formatting?(file)
   changelog_text.each_line.with_index do |line, index|
     line_number = index + 1
 
-    if line_number == 1 && line != "# Changelog"
-      fail_message += "Line #{line_number.to_s}: Invalid first line. The first line should always be: # Changelog\n"
+    if line_number == 1
+      if line.chomp != "# Changelog"
+        fail_message += "Line #{line_number.to_s}: Invalid first line. The first line should always be: # Changelog\n"
+      end
     else
       if line.strip.start_with?("#")
         if !line.start_with?("## v")
