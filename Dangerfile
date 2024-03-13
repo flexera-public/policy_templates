@@ -841,7 +841,7 @@ end
 
 # Perform testing on Dangerfile itself if it has been modified
 changed_dangerfile.each do |file|
-  warn "**#{file}**\nDangerfile has been modified! Please ensure changes have been tested and do not break existing tests."
+  warn "**#{file}**\nDangerfile has been modified! Please ensure changes were intentional, have been tested, and do not break existing tests."
 end
 
 ###############################################################################
