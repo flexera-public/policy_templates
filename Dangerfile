@@ -32,61 +32,8 @@ changed_misc_md_files = changed_files.select{ |file| file.end_with?(".md") && !f
 new_pt_files = git.added_files.select{ |file| file.end_with?(".pt") && !file.end_with?("meta_parent.pt") }
 
 ###############################################################################
-# Methods
+# Methods: General
 ###############################################################################
-
-### README test
-# Verify that .pt file also has an updated README
-def unmodified_readme?(file, changed_readme_files)
-  fail_message = ""
-
-  # Get file path for readme file
-  file_sections = file.split('/')
-  file_sections.pop
-  readme_file_path = file_sections.join('/') + "/README.md"
-
-  if !File.exist?(readme_file_path)
-    fail_message = "**#{file}**\nPolicy template has no README.md file. Please create this file and document the policy's functionality within."
-  elsif !changed_readme_files.include?(readme_file_path)
-    fail_message = "**#{file}**\nPolicy template updated but associated README.md file has not been. Please verify that any necessary changes have been made to the README."
-  end
-
-  return fail_message.strip if !fail_message.empty?
-  return false
-end
-
-### CHANGELOG test
-# Verify that .pt file also has an updated CHANGELOG
-def unmodified_changelog?(file, changed_changelog_files)
-  fail_message = ""
-
-  # Get file path for changelog file
-  file_sections = file.split('/')
-  file_sections.pop
-  changelog_file_path = file_sections.join('/') + "/CHANGELOG.md"
-
-  if !File.exist?(changelog_file_path)
-    fail_message = "**#{file}**\nPolicy template has no CHANGELOG.md file. Please create this file and document the policy's version changes within."
-  elsif !changed_changelog_files.include?(changelog_file_path)
-    fail_message = "**#{file}**\nPolicy template updated but associated CHANGELOG.md file has not been. Please increment version number and update CHANGELOG.md accordingly."
-  end
-
-  return fail_message.strip if !fail_message.empty?
-  return false
-end
-
-### Filename Casing test
-# Verify that the filename is in lowercase
-def bad_policy_filename_casing?(file)
-  fail_message = ""
-
-  if file.match?(/[A-Z]/)
-    fail_message = "**#{file}**\nPolicy template name and file path should be in lowercase. Please remove any uppercase [A-Z] characters."
-  end
-
-  return fail_message.strip if !fail_message.empty?
-  return false
-end
 
 ### Spell check test
 # Run the Danger spell checker on a file
@@ -123,16 +70,6 @@ def bad_markdown?(file)
 
   # Return the problems found if the mdl file is not empty. Otherwise, return false
   return "**#{file}**\nMarkdown syntax errors found:\n\n#{mdl}" if !mdl.empty?
-  return false
-end
-
-### Policy syntax error test
-# Return false if no syntax errors are found using fpt.
-def fpt_syntax_error?(file)
-  fpt = `[ -x ./fpt ] && ./fpt check #{file} | grep -v Checking`
-
-  # Return errors if any are found. Otherwise, return false
-  return "**#{file}**\nfpt has detected errors:\n\n#{fpt}" if !fpt.empty?
   return false
 end
 
@@ -194,6 +131,117 @@ def bad_urls?(file)
   end
 
   fail_message = "**#{file}**\nBad URLs found:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+###############################################################################
+# Methods: Changelog
+###############################################################################
+
+### Bad CHANGELOG Formatting test
+# Verify that CHANGELOG is formatted correctly
+# This only covers details that won't be picked up by the Markdown linter
+def bad_changelog_formatting?(file)
+  fail_message = ""
+
+  # Store contents of file for direct analysis
+  changelog_text = File.read(file)
+
+  # Regex to test proper formatting of version numbers
+  version_tester = /^\d+\.\d+(\.\d+)?$/
+
+  policy_code.each_line.with_index do |line, index|
+    line_number = index + 1
+
+    if line_number == 1 && line != "# Changelog"
+      fail_message += "Line #{line_number.to_s}: Invalid first line. The first line should always be: # Changelog\n"
+    else
+      if line.strip.start_with?("#")
+        if !line.start_with?("## v")
+          fail_message += "Line #{line_number.to_s}: Invalid hash. Hash (#) should always precede a version number formatted like so: `## v1.0`\n"
+        elsif !line.split("v")[1].match?(version_tester)
+          fail_message += "Line #{line_number.to_s}: Invalid version number. Version numbers should always consist of two or three integers separated by periods. Valid examples: `1.0` `2.3.76` `11.5`\n"
+        end
+      elsif line.strip.start_with?("-")
+        if !line.start_with?("- ")
+          fail_message += "Line #{line_number.to_s}: Invalid list formatting. List items under a version number should always begin with `- ` followed by some text explaining the change.\n"
+        end
+      elsif !line.strip.empty?
+        fail_message += "Line #{line_number.to_s}: Invalid content. After the first line, CHANGELOG files should only have version numbers preceded by `##`, changes preceded by `-`, and empty lines.\n"
+      end
+    end
+  end
+
+  fail_message = "**#{file}**\nCHANGELOG.md has formatting problems. Please correct the below:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+###############################################################################
+# Methods: Policy
+###############################################################################
+
+### Unmodified README test
+# Verify that .pt file also has an updated README
+def unmodified_readme?(file, changed_readme_files)
+  fail_message = ""
+
+  # Get file path for readme file
+  file_sections = file.split('/')
+  file_sections.pop
+  readme_file_path = file_sections.join('/') + "/README.md"
+
+  if !File.exist?(readme_file_path)
+    fail_message = "**#{file}**\nPolicy template has no README.md file. Please create this file and document the policy's functionality within."
+  elsif !changed_readme_files.include?(readme_file_path)
+    fail_message = "**#{file}**\nPolicy template updated but associated README.md file has not been. Please verify that any necessary changes have been made to the README."
+  end
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### Unmodified CHANGELOG test
+# Verify that .pt file also has an updated CHANGELOG
+def unmodified_changelog?(file, changed_changelog_files)
+  fail_message = ""
+
+  # Get file path for changelog file
+  file_sections = file.split('/')
+  file_sections.pop
+  changelog_file_path = file_sections.join('/') + "/CHANGELOG.md"
+
+  if !File.exist?(changelog_file_path)
+    fail_message = "**#{file}**\nPolicy template has no CHANGELOG.md file. Please create this file and document the policy's version changes within."
+  elsif !changed_changelog_files.include?(changelog_file_path)
+    fail_message = "**#{file}**\nPolicy template updated but associated CHANGELOG.md file has not been. Please increment version number and update CHANGELOG.md accordingly."
+  end
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### Policy syntax error test
+# Return false if no syntax errors are found using fpt.
+def fpt_syntax_error?(file)
+  fpt = `[ -x ./fpt ] && ./fpt check #{file} | grep -v Checking`
+
+  # Return errors if any are found. Otherwise, return false
+  return "**#{file}**\nfpt has detected errors:\n\n#{fpt}" if !fpt.empty?
+  return false
+end
+
+### Filename Casing test
+# Verify that the filename is in lowercase
+def bad_policy_filename_casing?(file)
+  fail_message = ""
+
+  if file.match?(/[A-Z]/)
+    fail_message = "**#{file}**\nPolicy template name and file path should be in lowercase. Please remove any uppercase [A-Z] characters."
+  end
 
   return fail_message.strip if !fail_message.empty?
   return false
@@ -805,6 +853,9 @@ changed_changelog_files.each do |file|
 
   # Raise error if improper markdown is found via linter
   test = bad_markdown?(file); fail test if test
+
+  # Raise error if CHANGELOG is incorrectly formatted
+  test = bad_changelog_formatting?(file); fail test if test
 end
 
 ###############################################################################
