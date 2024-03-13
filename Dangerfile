@@ -18,6 +18,13 @@ require_relative 'tools/lib/policy_parser'
 renamed_files = git.renamed_files.collect{ |r| r[:before] }
 # Changed Files. Ignores renamed files to prevent errors on files that don't exist
 changed_files = git.added_files + git.modified_files - renamed_files
+# Changed Dangerfile
+changed_dangerfile = changed_files.select{ |file| file == "Dangerfile" }
+# Changed Dot Files
+changed_dot_files = changed_files.select{ |file| file.start_with?(".") }
+# Changed Config Files
+config_files = ["Gemfile", "Gemfile.lock", "Rakefile", "package.json", "package-lock.json"]
+changed_config_files = changed_files.select{ |file| config_files.include?(file) }
 # Changed Policy Template files. Ignore meta policy files.
 changed_pt_files = changed_files.select{ |file| file.end_with?(".pt") && !file.end_with?("meta_parent.pt") }
 # Changed Meta Policy Template files.
@@ -32,7 +39,7 @@ changed_misc_md_files = changed_files.select{ |file| file.end_with?(".md") && !f
 new_pt_files = git.added_files.select{ |file| file.end_with?(".pt") && !file.end_with?("meta_parent.pt") }
 
 ###############################################################################
-# Methods
+# Methods: General
 ###############################################################################
 
 ### Spell check test
@@ -69,7 +76,7 @@ def bad_markdown?(file)
   end
 
   # Return the problems found if the mdl file is not empty. Otherwise, return false
-  return mdl if !mdl.empty?
+  return "**#{file}**\nMarkdown syntax errors found:\n\n#{mdl}" if !mdl.empty?
   return false
 end
 
@@ -88,9 +95,12 @@ def bad_urls?(file)
 
   diff = git.diff_for_file(file)
   regex = /(^\+)/
+  fail_message = ""
 
   if diff && diff.patch =~ regex
-    diff.patch.each_line do |line|
+    diff.patch.each_line.with_index do |line, index|
+      line_number = index + 1
+
       if line =~ regex
         URI.extract(line,['http', 'https']).each do |url|
           # Skip excluded hosts
@@ -120,13 +130,106 @@ def bad_urls?(file)
 
           # Return error details if a proper response code was not received
           if response.code !~ /200|302/
-            return "The URL is not valid: #{url_string} in #{file} Status: #{response.code}"
+            fail_message += "Line: #{line_number.to_s}\nURL: #{url_string}\nResponse Code: #{response.code}\n\n"
           end
         end
       end
     end
   end
 
+  fail_message = "**#{file}**\nBad URLs found:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+###############################################################################
+# Methods: Changelog
+###############################################################################
+
+### Bad CHANGELOG Formatting test
+# Verify that CHANGELOG is formatted correctly
+# This only covers details that won't be picked up by the Markdown linter
+def bad_changelog_formatting?(file)
+  fail_message = ""
+
+  # Store contents of file for direct analysis
+  changelog_text = File.read(file)
+
+  # Regex to test proper formatting of version numbers
+  version_tester = /^\d+\.\d+(\.\d+)?$/
+
+  changelog_text.each_line.with_index do |line, index|
+    line_number = index + 1
+
+    if line_number == 1
+      if line.chomp != "# Changelog"
+        fail_message += "Line #{line_number.to_s}: Invalid first line. The first line should always be: # Changelog\n"
+      end
+    else
+      if line.strip.start_with?("#")
+        if !line.start_with?("## v")
+          fail_message += "Line #{line_number.to_s}: Invalid hash. Hash (#) should always precede a version number formatted like so: `## v1.0`\n"
+        elsif !line.split("v")[1].match?(version_tester)
+          fail_message += "Line #{line_number.to_s}: Invalid version number. Version numbers should always consist of two or three integers separated by periods. Valid examples: `1.0` `2.3.76` `11.5`\n"
+        end
+      elsif line.strip.start_with?("-")
+        if !line.start_with?("- ")
+          fail_message += "Line #{line_number.to_s}: Invalid list formatting. List items under a version number should always begin with `- ` followed by some text explaining the change.\n"
+        end
+      elsif !line.strip.empty?
+        fail_message += "Line #{line_number.to_s}: Invalid content. After the first line, CHANGELOG files should only have version numbers preceded by `##`, changes preceded by `-`, and empty lines.\n"
+      end
+    end
+  end
+
+  fail_message = "**#{file}**\nCHANGELOG.md has formatting problems. Please correct the below:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+###############################################################################
+# Methods: Policy
+###############################################################################
+
+### Unmodified README test
+# Verify that .pt file also has an updated README
+def unmodified_readme?(file, changed_readme_files)
+  fail_message = ""
+
+  # Get file path for readme file
+  file_sections = file.split('/')
+  file_sections.pop
+  readme_file_path = file_sections.join('/') + "/README.md"
+
+  if !File.exist?(readme_file_path)
+    fail_message = "**#{file}**\nPolicy template has no README.md file. Please create this file and document the policy's functionality within."
+  elsif !changed_readme_files.include?(readme_file_path)
+    fail_message = "**#{file}**\nPolicy template updated but associated README.md file has not been. Please verify that any necessary changes have been made to the README."
+  end
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### Unmodified CHANGELOG test
+# Verify that .pt file also has an updated CHANGELOG
+def unmodified_changelog?(file, changed_changelog_files)
+  fail_message = ""
+
+  # Get file path for changelog file
+  file_sections = file.split('/')
+  file_sections.pop
+  changelog_file_path = file_sections.join('/') + "/CHANGELOG.md"
+
+  if !File.exist?(changelog_file_path)
+    fail_message = "**#{file}**\nPolicy template has no CHANGELOG.md file. Please create this file and document the policy's version changes within."
+  elsif !changed_changelog_files.include?(changelog_file_path)
+    fail_message = "**#{file}**\nPolicy template updated but associated CHANGELOG.md file has not been. Please increment version number and update CHANGELOG.md accordingly."
+  end
+
+  return fail_message.strip if !fail_message.empty?
   return false
 end
 
@@ -136,7 +239,20 @@ def fpt_syntax_error?(file)
   fpt = `[ -x ./fpt ] && ./fpt check #{file} | grep -v Checking`
 
   # Return errors if any are found. Otherwise, return false
-  return "Checking #{file}\n#{fpt}" if !fpt.empty?
+  return "**#{file}**\nfpt has detected errors:\n\n#{fpt}" if !fpt.empty?
+  return false
+end
+
+### Filename Casing test
+# Verify that the filename is in lowercase
+def bad_policy_filename_casing?(file)
+  fail_message = ""
+
+  if file.match?(/[A-Z]/)
+    fail_message = "**#{file}**\nPolicy template name and file path should be in lowercase. Please remove any uppercase [A-Z] characters."
+  end
+
+  return fail_message.strip if !fail_message.empty?
   return false
 end
 
@@ -160,41 +276,46 @@ def bad_metadata?(file, field_name)
   severity = pp.parsed_severity
   info = pp.parsed_info
 
+  fail_message = ""
+
   if field_name == "name"
-    return "Please add a name field. #{file}" if !name
-    return "Please add a value other than an empty string to the name field. #{file}" if name && name == ""
+    fail_message += "Please add a name field.\n\n" if !name
+    fail_message += "Please add a value other than an empty string to the name field.\n\n" if name && name == ""
   end
 
   if field_name == "short_description"
-    return "Please add a short_description field. #{file}" if !short_description
-    return "Please add a value other than an empty string to the short_description field. #{file}" if short_description && short_description == ""
+    fail_message += "Please add a short_description field.\n\n" if !short_description
+    fail_message += "Please add a value other than an empty string to the short_description field.\n\n" if short_description && short_description == ""
   end
 
   if field_name == "long_description"
-    return "Please add a long_description field with an empty string as its value. #{file}" if !long_description
-    return "Please make the long_description field an empty string. #{file}" if long_description && long_description != ""
+    fail_message += "Please add a long_description field with an empty string as its value.\n\n" if !long_description
+    fail_message += "Please make the long_description field an empty string.\n\n" if long_description && long_description != ""
   end
 
   if field_name == "category"
-    return "Please add a category field. #{file}" if !category
-    return "The Category is not valid: #{category}. Valid Categories include #{categories.join(", ")}" if category && !categories.include?(category.downcase)
-    return "The First letter of Category is not capitalized: #{category}." if category !~ /^[A-Z]/
+    fail_message += "Please add a category field.\n\n" if !category
+    fail_message += "The Category is not valid: #{category}. Valid Categories include #{categories.join(', ')}\n\n" if category && !categories.include?(category.downcase)
+    fail_message += "The First letter of Category is not capitalized: #{category}.\n\n" if category !~ /^[A-Z]/
   end
 
   if field_name == "default_frequency"
-    return "Please add a default_frequency field. #{file}" if !default_frequency
-    return "The default_frequency is not valid: #{default_frequency}. Valid frequencies include #{frequencies.join(", ")}" if default_frequency && !frequencies.include?(default_frequency)
+    fail_message += "Please add a default_frequency field.\n\n" if !default_frequency
+    fail_message += "The default_frequency is not valid: #{default_frequency}. Valid frequencies include #{frequencies.join(', ')}\n\n" if default_frequency && !frequencies.include?(default_frequency)
   end
 
   if field_name == "severity"
-    return "Please add a severity field. #{file}" if !severity
-    return "The severity is not valid: #{severity}. Valid severities include #{severities.join(", ")}" if severity && !severities.include?(severity)
+    fail_message += "Please add a severity field.\n\n" if !severity
+    fail_message += "The severity is not valid: #{severity}. Valid severities include #{severities.join(', ')}\n\n" if severity && !severities.include?(severity)
   end
 
   if field_name == "info"
-    return "Please add the info field. #{file}" if info.nil?
+    fail_message += "Please add an info field.\n\n" if info.nil?
   end
 
+  fail_message = "**#{file}**\nBad #{field_name} metadata found:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
   return false
 end
 
@@ -205,24 +326,32 @@ def missing_info_field?(file, field_name)
   pp.parse(file)
 
   info = pp.parsed_info
-  return "Please add the info field. #{file}" if info.nil?
 
-  if field_name == "version"
-    return "Please add version to the info field. #{file}" if info[:version].nil?
+  fail_message = ""
+
+  if info.nil?
+    fail_message += "Please add the info field.\n\n" if info.nil?
+  else
+    if field_name == "version"
+      fail_message += "Please add version to the info field.\n\n" if info[:version].nil?
+    end
+
+    if field_name == "provider"
+      fail_message += "Please add provider to the info field.\n\n" if info[:provider].nil?
+    end
+
+    if field_name == "service"
+      fail_message += "Should this include service in the info field?\n\n" if info[:service].nil?
+    end
+
+    if field_name == "policy_set"
+      fail_message += "Should this include policy_set in the info field?\n\n" if info[:policy_set].nil?
+    end
   end
 
-  if field_name == "provider"
-    return "Please add provider to the info field. #{file}" if info[:provider].nil?
-  end
+  fail_message = "**#{file}**\nBad #{field_name} info metadata field found:\n\n" + fail_message if !fail_message.empty?
 
-  if field_name == "service"
-    return "Should this include service in the info field? #{file}" if info[:service].nil?
-  end
-
-  if field_name == "policy_set"
-    return "Should this include policy_set in the info field? #{file}" if info[:policy_set].nil?
-  end
-
+  return fail_message.strip if !fail_message.empty?
   return false
 end
 
@@ -233,7 +362,7 @@ def sections_out_of_order?(file)
   policy_code = File.read(file)
 
   # Message to return of test fails
-  fail_message = "Policy Template file `#{file}` does not have code blocks in the correct order. Code blocks should be in the following order: Metadata, Parameters, Credentials, Pagination, Datasources & Scripts, Policy, Escalations, Cloud Workflow, Meta Policy"
+  fail_message = ""
 
   # Report back 'true' if policy sections are not properly ordered based on blocks
   found_metadata = false
@@ -245,32 +374,67 @@ def sections_out_of_order?(file)
   found_escalations = false
   found_cwf = false
 
+  # Ensure that each type of error is only reported once
+  metadata_fail = false
+  parameters_fail = false
+  credentials_fail = false
+  datasources_fail = false
+  policy_fail = false
+  escalations_fail = false
+
   # Failsafe for meta policy code which won't be in the correct order by design
   found_meta = false
 
-  policy_code.each_line do |line|
+  policy_code.each_line.with_index do |line, index|
+    line_number = index + 1
+
     found_meta = true if line.strip.start_with?('# Meta Policy [alpha]')
 
     if !found_meta
-      found_metadata = true if line.strip.start_with?('name ')
-      found_parameters = true if line.strip.start_with?('parameter ')
-      found_credentials = true if line.strip.start_with?('credentials ')
-      found_pagination = true if line.strip.start_with?('pagination ')
-      found_datasources = true if line.strip.start_with?('datasource ')
-      found_policy = true if line.strip.start_with?('policy ')
-      found_escalations = true if line.strip.start_with?('escalation ')
-      found_cwf = true if line.strip.start_with?('define ')
+      found_metadata = true if line.start_with?('name ')
+      found_parameters = true if line.strip.start_with?('parameter ') && line.strip.end_with?('do')
+      found_credentials = true if line.strip.start_with?('credentials ') && line.strip.end_with?('do')
+      found_pagination = true if line.strip.start_with?('pagination ') && line.strip.end_with?('do')
+      found_datasources = true if line.strip.start_with?('datasource ') && line.strip.end_with?('do')
+      found_policy = true if line.strip.start_with?('policy ') && line.strip.end_with?('do')
+      found_escalations = true if line.strip.start_with?('escalation ') && line.strip.end_with?('do')
+      found_cwf = true if line.strip.start_with?('define ') && line.strip.end_with?('do')
 
-      return fail_message if !found_metadata && (found_parameters || found_credentials || found_pagination || found_datasources || found_policy || found_escalations || found_cwf)
-      return fail_message if !found_parameters && (found_credentials || found_pagination || found_datasources || found_policy || found_escalations || found_cwf)
-      return fail_message if !found_credentials && (found_pagination || found_datasources || found_policy || found_escalations || found_cwf)
-      return fail_message if !found_datasources && (found_policy || found_escalations || found_cwf)
-      return fail_message if !found_policy && (found_escalations || found_cwf)
-      return fail_message if !found_escalations && (found_cwf)
+      if !metadata_fail && !found_metadata && (found_parameters || found_credentials || found_pagination || found_datasources || found_policy || found_escalations || found_cwf)
+        fail_message += "Line #{line_number.to_s}: Invalid blocks found before metadata\n\n"
+        metadata_fail = true
+      end
+
+      if !parameters_fail && !found_parameters && (found_credentials || found_pagination || found_datasources || found_policy || found_escalations || found_cwf)
+        fail_message += "Line #{line_number.to_s}: Invalid blocks found before parameter\n\n"
+        parameters_fail = true
+      end
+
+      if !credentials_fail && !found_credentials && (found_pagination || found_datasources || found_policy || found_escalations || found_cwf)
+        fail_message += "Line #{line_number.to_s}: Invalid blocks found before credentials\n\n"
+        credentials_fail = true
+      end
+
+      if !datasources_fail && !found_datasources && (found_policy || found_escalations || found_cwf)
+        fail_message += "Line #{line_number.to_s}: Invalid blocks found before datasources\n\n"
+        datasources_fail = true
+      end
+
+      if !policy_fail && !found_policy && (found_escalations || found_cwf)
+        fail_message += "Line #{line_number.to_s}: Invalid blocks found before policy block\n\n"
+        policy_fail = true
+      end
+
+      if !escalations_fail && !found_escalations && (found_cwf)
+        fail_message += "Line #{line_number.to_s}: Invalid blocks found before escalations\n\n"
+        escalations_fail = true
+      end
     end
   end
 
-  # Return false if no problems were found
+  fail_message = "**#{file}**\nPolicy Template does not have code blocks in the correct order.\nCode blocks should be in the following order: Metadata, Parameters, Credentials, Pagination, Datasources & Scripts, Policy, Escalations, Cloud Workflow, Meta Policy\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
   return false
 end
 
@@ -279,6 +443,9 @@ end
 def blocks_ungrouped?(file)
   # Store contents of file for direct analysis
   policy_code = File.read(file)
+
+  # Store failure message
+  fail_message = ""
 
   # Report back 'true' if specific block types are not organized together in the policy
   block_names = [
@@ -293,31 +460,37 @@ def blocks_ungrouped?(file)
     # Failsafe for meta policy code which won't be in the correct order by design
     found_meta = false
 
-    policy_code.each_line do |line|
+    policy_code.each_line.with_index do |line, index|
+      line_number = index + 1
+
       found_meta = true if line.strip.start_with?('# Meta Policy [alpha]')
 
       if !found_meta
+        # If we've found the block we're testing, and then other blocks,
+        # and then found the block we're testing again, return error
+        if line.strip.start_with?(block) && line.strip.end_with?('do') && found_other_blocks
+          fail_message += "Line #{line_number.to_s}: Unsorted #{block.strip} code block found\n"
+          found_block = false
+          found_other_blocks = false
+        end
+
         # Once we've found the block we're testing, start looking for other blocks
         if found_block
           block_names.each do |other_block|
             if other_block != block
-              found_other_blocks = true if line.strip.start_with?(other_block)
+              found_other_blocks = true if line.strip.start_with?(other_block) && line.strip.end_with?('do')
             end
           end
         end
 
-        # If we've found the block we're testing, and then other blocks,
-        # and then found the block we're testing again, return error
-        if line.strip.start_with?(block) && found_other_blocks
-          return "Policy Template file `#{file}` has unsorted #{block.strip} code blocks. Code blocks should be grouped together in sections by type e.g. all parameter blocks should be next to each other, all credentials blocks should be next to each other, etc. with the exception of Meta Policy code"
-        end
-
-        found_block = true if line.strip.start_with?(block)
+        found_block = true if line.strip.start_with?(block) && line.strip.end_with?('do')
       end
     end
   end
 
-  # Return false if no problems were found
+  fail_message = "**#{file}**\nUngrouped code blocks found. Code blocks should be grouped together in sections by type e.g. all parameter blocks should be next to each other, all credentials blocks should be next to each other, etc. with the exception of Meta Policy code:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
   return false
 end
 
@@ -326,6 +499,8 @@ end
 def missing_section_comments?(file, section_name)
   # Store contents of file for direct analysis
   policy_code = File.read(file)
+
+  fail_message = ""
 
   # Set values based on which section we're checking.
   # block_regex: Test for presence of block
@@ -367,11 +542,14 @@ def missing_section_comments?(file, section_name)
   end
 
   # Failure message to return if problem is detected
-  hash_string = "###############################################################################"
-  fail_message = "Policy Template file `#{file}` does **not** have a comment indicating where the #{pretty_name} section begins. Please add a comment like the below before the parameters blocks:\n\n#{hash_string}<br>\# #{pretty_name}<br>#{hash_string}"
+  if block_regex.match?(policy_code) && !comment_regex.match?(policy_code)
+    hash_string = "###############################################################################"
+    fail_message += "Policy Template does **not** have a comment indicating where the #{pretty_name} section begins. Please add a comment like the below before the parameters blocks:\n\n#{hash_string}<br>\# #{pretty_name}<br>#{hash_string}\n\n"
+  end
 
-  # Return fail message if the block exists but the comment for it does not
-  return fail_message if block_regex.match?(policy_code) && !comment_regex.match?(policy_code)
+  fail_message = "**#{file}**\nMissing policy section comments:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
   return false
 end
 
@@ -380,6 +558,8 @@ end
 def bad_block_name?(file, block_name)
   # Store contents of file for direct analysis
   policy_code = File.read(file)
+
+  fail_message = ""
 
   # Set values based on which section we're checking.
   # proper_name: Correct prefix that block name ought to have
@@ -411,11 +591,14 @@ def bad_block_name?(file, block_name)
     block_regex = /.*/
   end
 
-  # Message to return if test fails
-  fail_message = "Policy Template file `#{file}` has invalidly named #{block_name} blocks. Please ensure all #{block_name} blocks have names that begin with #{proper_name}"
+  policy_code.each_line.with_index do |line, index|
+    line_number = index + 1
+    fail_message += "Line #{line_number.to_s}\n" if block_regex.match?(line)
+  end
 
-  # Return fail message if an invalidly named block exists
-  return fail_message if block_regex.match?(policy_code)
+  fail_message = "**#{file}**\nInvalidly named #{block_name} blocks. Please ensure all #{block_name} blocks have names that begin with `#{proper_name}`:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
   return false
 end
 
@@ -425,14 +608,20 @@ def deprecated_code_blocks?(file, block_name)
   # Store contents of file for direct analysis
   policy_code = File.read(file)
 
-  # Message to return of test fails
-  fail_message = "Policy Template file `#{file}` has deprecated `#{block_name}` code blocks. It is recommended that the policy be refactored to no longer use these code blocks."
-
   permission_regex = /^permission\s+"[^"]*"\s+do$/
   resources_regex = /^resources\s+"[^"]*",\s+type:\s+"[^"]*"\s+do$/
 
-  return fail_message if permission_regex.match?(policy_code) && block_name == "permission"
-  return fail_message if resources_regex.match?(policy_code) && block_name == "resources"
+  fail_message = ""
+
+  policy_code.each_line.with_index do |line, index|
+    line_number = index + 1
+    fail_message += "Line #{line_number.to_s}: Permission block found\n" if permission_regex.match?(line)
+    fail_message += "Line #{line_number.to_s}: Resources block found\n" if resources_regex.match?(line)
+  end
+
+  fail_message = "**#{file}**\nDeprecated #{block_name} blocks found. It is recommended that the policy be refactored to no longer use these code blocks:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
   return false
 end
 
@@ -442,30 +631,135 @@ def block_missing_field?(file, block_name, field_name)
   # Store contents of file for direct analysis
   policy_code = File.read(file)
 
-  # Message to return of test fails
-  fail_message = "Policy Template file `#{file}` has #{block_name} block that is missing the #{field_name} field. Please add this field to all #{block_name} blocks"
+  fail_message = ""
 
-  in_block = false
   present = false
+  line_number = nil
 
-  policy_code.each_line do |line|
+  policy_code.each_line.with_index do |line, index|
     # Check if we're entering the block
     if line.strip.start_with?(block_name + ' ') && line.strip.end_with?('do')
-      in_block = true
       present = false
+      line_number = index + 1
     end
 
     # Check for the field if we're in a block
-    present = true if in_block && line.strip.start_with?(field_name + ' ')
+    present = true if line_number && line.strip.start_with?(field_name + ' ')
 
     # When we reach the end of a block, check if field was present
-    if line.strip == 'end' && in_block
-      return fail_message unless present
-      in_block = false
+    if line.strip == 'end' && line_number
+      fail_message += "Line #{line_number.to_s}\n" unless present
+      line_number = nil
     end
   end
 
-  # Return false if no problems were found
+  fail_message = "**#{file}**\n#{block_name} code blocks with missing `#{field_name}` field found. Please add the `#{field_name}` field to these blocks:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### Datasource/script name matching test
+# Return message if datasource and script do not have matching names. Otherwise, return false
+def ds_js_name_mismatch?(file)
+  # Store contents of file for direct analysis
+  policy_code = File.read(file)
+
+  fail_message = ""
+  ds_name = nil
+  js_name = nil
+  line_number = nil
+
+  policy_code.each_line.with_index do |line, index|
+    # Stop doing the check once we hit the Meta Policy section
+    if line.strip.start_with?('# Meta Policy [alpha]')
+      break
+    # When we find a datasource, store its name
+    elsif line.strip.start_with?("datasource ") && line.strip.end_with?('do')
+      name_test = line.match(/"([^"]*)"/)
+      ds_name = name_test[1] if name_test
+      line_number = index + 1
+    # When we find a run_script, store its name and compare to datasource
+    elsif line.strip.start_with?("run_script ")
+      name_test = line.match(/run_script \$([a-zA-Z0-9_]+)/)
+      js_name = name_test[1] if name_test
+
+      if ds_name != nil && js_name != nil
+        if ds_name[3..-1] != js_name[3..-1]
+          fail_message += "Line #{line_number.to_s}: #{ds_name} / #{js_name}\n"
+        end
+      end
+
+      # Reset all variables to start the process over for the next datasource we find
+      ds_name = nil
+      js_name = nil
+      line_number = nil
+    end
+  end
+
+  fail_message = "**#{file}**\nDatasources and scripts with mismatched names found. These names should match; for example, a datasource named ds_currency should be paired with a script named js_currency. This convention should only be ignored when the same script is called by multiple datasources. The following datasource/script pairs have mismatched names:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### Script parameter order test
+# Return message if script parameters are not in the correct order. Otherwise, return false
+def run_script_incorrect_order?(file)
+  # Store contents of file for direct analysis
+  policy_code = File.read(file)
+
+  fail_message = ""
+  ds_name = nil
+
+  policy_code.each_line.with_index do |line, index|
+    line_number = index + 1
+
+    # Stop doing the check if we've reached the meta policy section
+    break if line.strip.start_with?('# Meta Policy [alpha]')
+
+    if line.strip.start_with?("datasource ") && line.strip.end_with?('do')
+      name_test = line.match(/"([^"]*)"/)
+      ds_name = name_test[1] if name_test
+    end
+
+    disordered = false
+
+    if line.strip.start_with?("run_script")
+      # Store a list of all of the parameters for the run_script
+      parameters = line.strip.sub('run_script ', '').split(',').map(&:strip)
+
+      # Remove the first item because it's just the name of the script itself
+      script_name = parameters.shift
+
+      ds_found = false       # Whether we've found a datasource parameter
+      param_found = false    # Whether we've found a parameter parameter
+      constant_found = false # Whether we've found a constant, like rs_org_id
+      value_found = false    # Whether we've found a raw value, like a number or string
+
+      parameters.each do |parameter|
+        if parameter.start_with?('$ds')
+          ds_found = true
+          disordered = true if param_found || constant_found || value_found
+          puts parameter
+        elsif parameter.start_with?('$param')
+          param_found = true
+          disordered = true if constant_found || value_found
+        elsif /[A-Za-z]/.match(parameter[0]) # If parameter starts with a letter
+          constant_found = true
+          disordered = true if value_found
+        else # Assume a raw value, like a number or string, if none of the above
+          value_found = true
+        end
+      end
+    end
+
+    fail_message += "Line #{line_number.to_s}: #{ds_name} / run_script #{script_name}\n" if disordered
+  end
+
+  fail_message = "**#{file}**\nrun_script statements found whose parameters are not in the correct order. run_script parameters should be in the following order: script, datasources, parameters, variables, raw values:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
   return false
 end
 
@@ -474,6 +768,8 @@ end
 def missing_master_permissions?(file, permissions_yaml)
   # Get the diff to see only the new changes
   diff = git.diff_for_file(file)
+
+  fail_message = ""
 
   # Use regex to look for blocks that have a "datasource", "request", and "auth" sections of the datasource
   # Example String:
@@ -486,9 +782,10 @@ def missing_master_permissions?(file, permissions_yaml)
   if pt_file_enabled.empty?
     # If the PT file has not been manually validated, then print an error message which will block the PR from being merged
     # This will help improve coverage as we touch more PT files
-    return "Policy Template file `#{file}` has **not** yet been enabled for automated permission generation. Please help us improve coverage by [following the steps documented in `tools/policy_master_permission_generation/`](https://github.com/flexera-public/policy_templates/tree/master/tools/policy_master_permission_generation) to resolve this"
+    fail_message = "**#{file}**\nPolicy Template file has **not** yet been enabled for automated permission generation. Please help us improve coverage by [following the steps documented in `tools/policy_master_permission_generation/`](https://github.com/flexera-public/policy_templates/tree/master/tools/policy_master_permission_generation) to resolve this."
   end
 
+  return fail_message.strip if !fail_message.empty?
   return false
 end
 
@@ -497,6 +794,8 @@ end
 def new_datasource?(file, permissions_yaml)
   # Get the diff to see only the new changes
   diff = git.diff_for_file(file)
+
+  fail_message = ""
 
   # Use regex to look for blocks that have a "datasource", "request", and "auth" sections of the datasource
   # Example String:
@@ -508,9 +807,10 @@ def new_datasource?(file, permissions_yaml)
 
   if diff && diff.patch =~ regex && !pt_file_enabled.empty?
     # If the PT file has been manually validated, but there are new datasources, then print a warning message
-    return "Detected new request datasource in Policy Template file `#{file}`. Please verify the README.md has any new permissions that may be required."
+    fail_message = "**#{file}**\nDetected new request datasource(s) in Policy Template file. Please verify the README.md has any new permissions that may be required."
   end
 
+  return fail_message.strip if !fail_message.empty?
   return false
 end
 
@@ -518,29 +818,8 @@ end
 # Github Pull Request Testing
 ###############################################################################
 
-fail 'Please provide a summary of your Pull Request.' if github.pr_body.length < 10
-fail 'Please add labels to this Pull Request' if github.pr_labels.empty?
-
-###############################################################################
-# File Structure Testing
-###############################################################################
-
-# Raise error if a policy has been modified but its corresponding CHANGELOG file has not.
-no_changelog_entry = (changed_files.grep(/[\w]+CHANGELOG.md/i) + changed_files.grep(/CHANGELOG.md/i)).empty?
-fail "Please add a CHANGELOG.md file" if changed_pt_files.length != 0 && no_changelog_entry
-
-# Raise warning if a policy has been modified but its corresponding README file has not.
-# This is just a warning because bug fixes and other minor changes may not require this.
-missing_doc_changes = (changed_files.grep(/[\w]+README.md/i) + changed_files.grep(/README.md/i)).empty?
-warn "Should this include README.md changes?" if changed_pt_files.length != 0 && missing_doc_changes
-
-# Raise error if a new policy is missing a README.md file
-fail "A README.md is required for new templates" if new_pt_files.length != 0 && missing_doc_changes
-
-# check for lowercase files and directories
-changed_pt_files.each do |file|
-  fail "Policy Template path should be lowercase. #{file}" if file.scan(/^[a-z0-9.\/_-]+$/).empty?
-end
+fail "**Github Pull Request**\nPull Request is missing summary. Please provide a summary of your Pull Request." if github.pr_body.length < 10
+fail "**Github Pull Request**\nPull Request is missing labels. Please add labels to this Pull Request." if github.pr_labels.empty?
 
 ###############################################################################
 # All Files Testing
@@ -552,15 +831,42 @@ changed_files.each do |file|
 
   if $?.exitstatus != 0
     message `cat textlint.log`
-    fail "Textlint failed on #{file}"
+    fail "**#{file}**\nTextlint failed"
   end
 end
 
 ###############################################################################
-# README Contents Testing
+# Dangerfile Testing
 ###############################################################################
 
-# Check README.md contents for issues for each file
+# Perform testing on Dangerfile itself if it has been modified
+changed_dangerfile.each do |file|
+  warn "**#{file}**\nDangerfile has been modified! Please ensure changes were intentional, have been tested, and do not break existing tests."
+end
+
+###############################################################################
+# Dot File Testing
+###############################################################################
+
+# Perform testing on modified dot files
+changed_dot_files.each do |file|
+  warn "**#{file}**\nDot file `#{file}` has been modified! Please make sure these modifications were intentional and have been tested. Dot files are necessary for configuring the Github repository and managing automation."
+end
+
+###############################################################################
+# Config File Testing
+###############################################################################
+
+# Perform testing on modified config files
+changed_config_files.each do |file|
+  warn "**#{file}**\nConfig file `#{file}` has been modified! Please make sure these modifications were intentional and have been tested. Config files are necessary for configuring the Github repository and managing automation."
+end
+
+###############################################################################
+# README Testing
+###############################################################################
+
+# Check README.md for issues for each file
 changed_readme_files.each do |file|
   # Run Danger spell check on file
   danger_spellcheck(file)
@@ -573,23 +879,26 @@ changed_readme_files.each do |file|
 end
 
 ###############################################################################
-# CHANGELOG Contents Testing
+# CHANGELOG Testing
 ###############################################################################
 
-# Check CHANGELOG.md contents for issues for each file
+# Check CHANGELOG.md for issues for each file
 changed_changelog_files.each do |file|
   # Raise error if the file contains any bad urls
   test = bad_urls?(file); fail test if test
 
   # Raise error if improper markdown is found via linter
   test = bad_markdown?(file); fail test if test
+
+  # Raise error if CHANGELOG is incorrectly formatted
+  test = bad_changelog_formatting?(file); fail test if test
 end
 
 ###############################################################################
-# Misc. Markdown Contents Testing
+# Misc. Markdown Testing
 ###############################################################################
 
-# Check Markdown contents for issues for each file
+# Check Markdown files for issues for each file
 changed_misc_md_files.each do |file|
   # Run Danger spell check on file
   danger_spellcheck(file)
@@ -602,17 +911,26 @@ changed_misc_md_files.each do |file|
 end
 
 ###############################################################################
-# Policy Code Testing
+# Policy Testing
 ###############################################################################
 
 # Load external YAML file for testing
 permissions_yaml = YAML.load_file('tools/policy_master_permission_generation/validated_policy_templates.yaml')
 
-# Check policy code itself for issues for each file
+# Check policies for issues for each file
 changed_pt_files.each do |file|
   # Run policy through various methods that test for problems.
   # These methods will return false if no problems are found.
   # Otherwise, they return the warning or error message that should be raised.
+
+  # Raise error if policy changed but changelog has not been
+  test = unmodified_changelog?(file, changed_changelog_files); fail test if test
+
+  # Raise warning if policy changed but readme has not been
+  test = unmodified_readme?(file, changed_readme_files); warn test if test
+
+  # Raise error if policy filename/path contains any uppercase letters
+  test = bad_policy_filename_casing?(file); fail test if test
 
   # Raise error if the file contains any bad urls
   test = bad_urls?(file); fail test if test
@@ -680,9 +998,18 @@ changed_pt_files.each do |file|
 
   # Raise warning, not error, if parameter block is missing a default field.
   # This is because there are occasionally legitimate reasons to not have a default
-  if block_missing_field?(file, "parameter", "default")
-    warn "Policy Template file `#{file}` has parameter block that is missing the default field. It is recommended that every parameter have a default value unless user input for that parameter is required and too specific for any default value to make sense"
+  test = block_missing_field?(file, "parameter", "default")
+
+  if test
+    warn test + "\n\nWhile not required, it is recommended that every parameter have a default value unless user input for that parameter is required and too specific for any default value to make sense"
   end
+
+  # Raise warning, not error, if a datasource and the script it calls have mismatched names.
+  # Warning because there are occasionally legitimate reasons to do this.
+  test = ds_js_name_mismatch?(file); warn test if test
+
+  # Raise error if run_script statements with incorrect parameter ordering are found
+  test = run_script_incorrect_order?(file); fail test if test
 
   # Raise error if policy is not in the master permissions file.
   # Raise warning if policy is in this file, but datasources have been added.
@@ -691,10 +1018,10 @@ changed_pt_files.each do |file|
 end
 
 ###############################################################################
-# Meta Policy Code Testing
+# Meta Policy Testing
 ###############################################################################
 
-# Check meta policy code itself for issues for each file
+# Check meta policies for issues for each file
 changed_meta_pt_files.each do |file|
   # TBD
 end
