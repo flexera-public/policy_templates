@@ -152,7 +152,7 @@ def bad_changelog_formatting?(file)
   # Regex to test proper formatting of version numbers
   version_tester = /^\d+\.\d+(\.\d+)?$/
 
-  policy_code.each_line.with_index do |line, index|
+  changelog_text.each_line.with_index do |line, index|
     line_number = index + 1
 
     if line_number == 1 && line != "# Changelog"
