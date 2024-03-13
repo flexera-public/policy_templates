@@ -44,7 +44,7 @@ new_pt_files = git.added_files.select{ |file| file.end_with?(".pt") && !file.end
 
 ### Spell check test
 # Run the Danger spell checker on a file
-def danger_spellcheck(file)
+def general_spellcheck?(file)
   # Import the ignore list from a file but ignore entries starting with #
   # This is so we can have comments in this file
   prose.ignored_words = File.readlines('.spellignore').map(&:chomp).select{ |entry| !entry.start_with?("#") }
@@ -62,7 +62,7 @@ end
 
 ### Markdown lint test
 # Return false if linter finds no problems
-def bad_markdown?(file)
+def general_bad_markdown?(file)
   # Adjust testing based on which file we're doing
   case file
   when "README.md"
@@ -82,7 +82,7 @@ end
 
 ### Bad URL test
 # Return false if no invalid URLs are found.
-def bad_urls?(file)
+def general_bad_urls?(file)
   # List of hosts to ignore in the analysis
   exclude_hosts = [
     'api.loganalytics.io',          'management.azure.com',
@@ -144,13 +144,253 @@ def bad_urls?(file)
 end
 
 ###############################################################################
+# Methods: README
+###############################################################################
+
+### Missing README Sections
+# Verify that README file has all required sections
+def readme_missing_sections?(file)
+  fail_message = ""
+
+  # Store contents of file for direct analysis
+  readme_text = File.read(file)
+
+  # Flags for whether sections are found
+  name_found = false
+  what_it_does_found = false
+  input_parameters_found = false
+  policy_actions_found = false
+  prerequisites_found = false
+  supported_clouds_found = false
+  cost_found = false
+
+  readme_text.each_line.with_index do |line, index|
+    name_found = true if index == 0 && line.start_with?("# ")
+    what_it_does_found = true if line.start_with?("## What It Does")
+    input_parameters_found = true if line.start_with?("## Input Parameters")
+    policy_actions_found = true if line.start_with?("## Policy Actions")
+    prerequisites_found = true if line.start_with?("## Prerequisites")
+    supported_clouds_found = true if line.start_with?("## Supported Clouds")
+    cost_found = true if line.start_with?("## Cost")
+  end
+
+  fail_message += "```# Policy Name```\n" if !name_found
+  fail_message += "```## What It Does```\n" if !what_it_does_found
+  fail_message += "```## Input Parameters```\n" if !input_parameters_found
+  fail_message += "```## Policy Actions```\n" if !policy_actions_found
+  fail_message += "```## Prerequisites```\n" if !prerequisites_found
+  fail_message += "```## Supported Clouds```\n" if !supported_clouds_found
+  fail_message += "```## Cost```\n" if !cost_found
+
+  fail_message = "**#{file}**\nREADME.md is missing required sections. Please make sure the following sections exist and are indicated with the below markdown. Spelling, spacing, and capitalization should conform to the below:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### Out of order README Sections
+# Verify that README file has the various sections in the correct order
+def readme_policy_sections_out_of_order?(file)
+  fail_message = ""
+
+  # Store contents of file for direct analysis
+  readme_text = File.read(file)
+
+  # Flags for whether sections are found
+  name_found = false
+  what_it_does_found = false
+  how_it_works_found = false
+  policy_savings_found = false
+  input_parameters_found = false
+  policy_actions_found = false
+  prerequisites_found = false
+  supported_clouds_found = false
+  cost_found = false
+
+  what_it_does_raised = false
+  how_it_works_raised = false
+  policy_savings_raised = false
+  input_parameters_raised = false
+  policy_actions_raised = false
+  prerequisites_raised = false
+  supported_clouds_raised = false
+  cost_raised = false
+
+  readme_text.each_line.with_index do |line, index|
+    line_number = index + 1
+
+    name_found = true if index == 0 && line.start_with?("# ")
+    what_it_does_found = true if line.start_with?("## What It Does")
+    how_it_works_found = true if line.start_with?("## How It Works")
+    policy_savings_found = true if line.start_with?("### Policy Savings Details")
+    input_parameters_found = true if line.start_with?("## Input Parameters")
+    policy_actions_found = true if line.start_with?("## Policy Actions")
+    prerequisites_found = true if line.start_with?("## Prerequisites")
+    supported_clouds_found = true if line.start_with?("## Supported Clouds")
+    cost_found = true if line.start_with?("## Cost")
+
+    if !what_it_does_raised && what_it_does_found && !name
+      fail_message += "Line #{line_number.to_s}: What It Does out of order.\n"
+      what_it_does_raised = true
+    end
+
+    if !how_it_works_raised && how_it_works_found && (!name || !what_it_does_found)
+      fail_message += "Line #{line_number.to_s}: How It Works out of order.\n"
+      how_it_works_raised = true
+    end
+
+    if !policy_savings_raised && policy_savings_found && (!name || !what_it_does_found)
+      fail_message += "Line #{line_number.to_s}: Policy Savings Details out of order.\n"
+      policy_savings_raised = true
+    end
+
+    if !input_parameters_raised && input_parameters_found && (!name || !what_it_does_found)
+      fail_message += "Line #{line_number.to_s}: Input Parameters out of order.\n"
+      input_parameters_raised = true
+    end
+
+    if !policy_actions_raised && policy_actions_found && (!name || !what_it_does_found || !input_parameters_found)
+      fail_message += "Line #{line_number.to_s}: Policy Actions out of order.\n"
+      policy_actions_raised = true
+    end
+
+    if !prerequisites_raised && prerequisites_found && (!name || !what_it_does_found || !input_parameters_found || !policy_actions_found)
+      fail_message += "Line #{line_number.to_s}: Prerequisites out of order.\n"
+      prerequisites_raised = true
+    end
+
+    if !supported_clouds_raised && supported_clouds_found && (!name || !what_it_does_found || !input_parameters_found || !policy_actions_found || !prerequisites_found)
+      fail_message += "Line #{line_number.to_s}: Supported Clouds out of order.\n"
+      supported_clouds_raised = true
+    end
+
+    if !cost_raised && cost_found && (!name || !what_it_does_found || !input_parameters_found || !policy_actions_found || !prerequisites_found)
+      fail_message += "Line #{line_number.to_s}: Cost out of order.\n"
+      cost_raised = true
+    end
+  end
+
+  fail_message = "**#{file}**\nREADME.md sections are out of order. Sections should be in the following order: Policy Name, What It Does, How It Works, Policy Savings Details, Input Parameters, Policy Actions, Prerequisites, Supported Clouds, Cost\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+
+### README Credentials formatting
+# Verify that README file has credentials in the proper formatting
+def readme_invalid_credentials?(file)
+  fail_message = ""
+
+  # Store contents of file for direct analysis
+  readme_text = File.read(file)
+
+  prereq_line_number = -1
+
+  azure_line_number = -1
+  google_line_number = -1
+  flexera_line_number = -1
+
+  aws_line_number = -1
+  aws_perm_endline = -1
+  aws_perm_section = false
+  aws_perm_asterix = false
+  aws_json_line = -1
+
+  aws_perm_tester = /^ *- *`[a-zA-Z]+:[a-zA-Z]+`\*?$/
+  aws_json_tester = /^\s{2}```json\n\s{2}\{\n\s{6}"Version": "2012-10-17",\n\s{6}"Statement": \[\n\s{10}\{\n\s{14}"Effect": "Allow",\n\s{14}"Action": \[\n[\s\S]*?\n\s{10}\}\n\s{6}\]\n\s{2}\}\n\s{2}```$/
+
+
+  readme_text.each_line.with_index do |line, index|
+    line_number = index + 1
+
+    # Description check
+    prereq_line_number = line_number if line.start_with?("## Prerequisites")
+
+    if line_number == prereq_line_number + 2
+      if !line.start_with?("This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).")
+        fail_message += "Line #{line_number.to_s}: README has invalid description for credentials section or description is not correctly located two lines below `## Prerequisites`. Credentials section should contain the following description text before the credential list:\n\n"
+        fail_message += "```This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).```\n\n"
+      end
+    end
+
+    # AWS check
+    aws_json_line = line_number if aws_line_number != -1 && line.include?("json")
+
+    if line_number == aws_perm_endline + 1 && !aws_perm_asterix
+      if !line.start_with?("  Example IAM Permission Policy:")
+        fail_message += "Line #{line_number.to_s}: AWS permissions missing example IAM permission policy or proper text indicating this section of the policy. The following line should exist in the README followed by a JSON example:\n\n"
+        fail_message += "```  Example IAM Permission Policy:```\n\n"
+      end
+    end
+
+    if line_number == aws_perm_endline + 1 && aws_perm_asterix
+      if !line.start_with?("  \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.")
+        fail_message += "Line #{line_number.to_s}: AWS permissions contain potentially destructive permissions, signified by an *, but no disclaimer. The following disclaimer should be present below the permissions list:\n\n"
+        fail_message += "```  \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.```\n\n"
+      end
+
+      aws_perm_endline = line_number + 1
+      aws_perm_asterix = false
+    end
+
+    if aws_perm_section
+      if line.strip.empty?
+        aws_perm_section = false
+        aws_perm_endline = line_number
+      else
+        aws_perm_asterix = true if line.include?("*")
+
+        if !line.start_with?("  - ")
+          fail_message += "Line #{line_number.to_s}: Incorrectly formatted AWS permission. AWS permissions should be formatted in a markdown list with the first 4 characters being [space][space][hyphen][space] like in the below examples:\n\n"
+          fail_message += "```  - `sts:GetCallerIdentity` ```\n"
+          fail_message += "```  - `s3:DeleteObject`* ```\n"
+          fail_message += "```  - `ec2:DescribeSnapshots` ```\n\n"
+        elsif !line.match?(aws_perm_tester)
+          fail_message += "Line #{line_number.to_s}: Incorrectly formatted AWS permission. AWS permissions should be formatted like the following examples, with an optional * at the end to signify if a permission enables changes to be made to the cloud environment:\n\n"
+          fail_message += "```  - `sts:GetCallerIdentity` ```\n"
+          fail_message += "```  - `s3:DeleteObject`* ```\n"
+          fail_message += "```  - `ec2:DescribeSnapshots` ```\n\n"
+        elsif line == line.downcase || line == line.upcase || line.split(':')[0] != line.split(':')[0].downcase || string.split(':')[1][0] != string.split(':')[1][0].upcase
+          fail_message += "Line #{line_number.to_s}: Incorrectly cased AWS permission. AWS permissions should have a mix of uppercase and lowercase like the following examples:\n\n"
+          fail_message += "```  - `sts:GetCallerIdentity` ```\n"
+          fail_message += "```  - `s3:DeleteObject`* ```\n"
+          fail_message += "```  - `ec2:DescribeSnapshots` ```\n\n"
+        end
+      end
+    end
+
+    aws_line_number = line_number if aws_line_number == -1 && prereq_line_number != -1 && (line.include?("AWS") || line.include?("aws"))
+
+    if aws_line_number == line_number
+      if line.strip != "- [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:"
+        fail_message += "Line #{line_number.to_s}: README has invalid description for AWS credential. AWS credentials should always have the following description:\n\n"
+        fail_message += "```- [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:```\n\n"
+      end
+
+      aws_perm_section = true
+    end
+  end
+
+  # AWS JSON Testing
+  if aws_line_number != -1 && !readme_text.match?(aws_json_tester)
+    fail_message += "Line #{aws_json_line.to_s}: Correctly-formatted JSON example of AWS permissions missing. Please ensure this JSON is present and correctly formatted. See other AWS policy READMEs for examples.\n\n"
+  end
+
+  fail_message = "**#{file}**\nREADME.md sections are out of order. Sections should be in the following order: Policy Name, What It Does, How It Works, Policy Savings Details, Input Parameters, Policy Actions, Prerequisites, Supported Clouds, Cost\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+###############################################################################
 # Methods: Changelog
 ###############################################################################
 
 ### Bad CHANGELOG Formatting test
 # Verify that CHANGELOG is formatted correctly
 # This only covers details that won't be picked up by the Markdown linter
-def bad_changelog_formatting?(file)
+def changelog_bad_formatting?(file)
   fail_message = ""
 
   # Store contents of file for direct analysis
@@ -195,7 +435,7 @@ end
 
 ### Unmodified README test
 # Verify that .pt file also has an updated README
-def unmodified_readme?(file, changed_readme_files)
+def policy_unmodified_readme?(file, changed_readme_files)
   fail_message = ""
 
   # Get file path for readme file
@@ -215,7 +455,7 @@ end
 
 ### Unmodified CHANGELOG test
 # Verify that .pt file also has an updated CHANGELOG
-def unmodified_changelog?(file, changed_changelog_files)
+def policy_unmodified_changelog?(file, changed_changelog_files)
   fail_message = ""
 
   # Get file path for changelog file
@@ -235,7 +475,7 @@ end
 
 ### Policy syntax error test
 # Return false if no syntax errors are found using fpt.
-def fpt_syntax_error?(file)
+def policy_fpt_syntax_error?(file)
   fpt = `[ -x ./fpt ] && ./fpt check #{file} | grep -v Checking`
 
   # Return errors if any are found. Otherwise, return false
@@ -245,7 +485,7 @@ end
 
 ### Filename Casing test
 # Verify that the filename is in lowercase
-def bad_policy_filename_casing?(file)
+def policy_bad_filename_casing?(file)
   fail_message = ""
 
   if file.match?(/[A-Z]/)
@@ -258,7 +498,7 @@ end
 
 ### Metadata test
 # Return false if policy metadata has missing or problematic field
-def bad_metadata?(file, field_name)
+def policy_bad_metadata?(file, field_name)
   # Valid values
   # https://docs.flexera.com/flexera/EN/Automation/PoliciesList.htm
   categories = [ 'cost', 'compliance', 'operational', 'saas management', 'security' ]
@@ -321,7 +561,7 @@ end
 
 ### Info block test
 # Return false if policy info block has missing or problematic fields
-def missing_info_field?(file, field_name)
+def policy_missing_info_field?(file, field_name)
   pp = PolicyParser.new
   pp.parse(file)
 
@@ -357,7 +597,7 @@ end
 
 ### Section order test
 # Return false if policy sections are in the correct order.
-def sections_out_of_order?(file)
+def policy_sections_out_of_order?(file)
   # Store contents of file for direct analysis
   policy_code = File.read(file)
 
@@ -440,7 +680,7 @@ end
 
 ### Block grouping test
 # Return false if code blocks are all grouped together by type.
-def blocks_ungrouped?(file)
+def policy_blocks_ungrouped?(file)
   # Store contents of file for direct analysis
   policy_code = File.read(file)
 
@@ -496,7 +736,7 @@ end
 
 ### Section comment test
 # Return false if all required policy section comments are present.
-def missing_section_comments?(file, section_name)
+def policy_missing_section_comments?(file, section_name)
   # Store contents of file for direct analysis
   policy_code = File.read(file)
 
@@ -555,7 +795,7 @@ end
 
 ### Bad block name test
 # Return false if no invalidly named code blocks are found.
-def bad_block_name?(file, block_name)
+def policy_bad_block_name?(file, block_name)
   # Store contents of file for direct analysis
   policy_code = File.read(file)
 
@@ -604,7 +844,7 @@ end
 
 ### Deprecated block test
 # Return false if no deprecated blocks are found.
-def deprecated_code_blocks?(file, block_name)
+def policy_deprecated_code_blocks?(file, block_name)
   # Store contents of file for direct analysis
   policy_code = File.read(file)
 
@@ -627,7 +867,7 @@ end
 
 ### Missing block field test
 # Return false if specified field is not missing from any of the specified blocks.
-def block_missing_field?(file, block_name, field_name)
+def policy_block_missing_field?(file, block_name, field_name)
   # Store contents of file for direct analysis
   policy_code = File.read(file)
 
@@ -661,7 +901,7 @@ end
 
 ### Datasource/script name matching test
 # Return message if datasource and script do not have matching names. Otherwise, return false
-def ds_js_name_mismatch?(file)
+def policy_ds_js_name_mismatch?(file)
   # Store contents of file for direct analysis
   policy_code = File.read(file)
 
@@ -705,7 +945,7 @@ end
 
 ### Script parameter order test
 # Return message if script parameters are not in the correct order. Otherwise, return false
-def run_script_incorrect_order?(file)
+def policy_run_script_incorrect_order?(file)
   # Store contents of file for direct analysis
   policy_code = File.read(file)
 
@@ -765,7 +1005,7 @@ end
 
 ### Master permissions test
 # Return false if master permissions have been recorded for the policy
-def missing_master_permissions?(file, permissions_yaml)
+def policy_missing_master_permissions?(file, permissions_yaml)
   # Get the diff to see only the new changes
   diff = git.diff_for_file(file)
 
@@ -791,7 +1031,7 @@ end
 
 ### New datasource test
 # Return false if no new datasources are found.
-def new_datasource?(file, permissions_yaml)
+def policy_new_datasource?(file, permissions_yaml)
   # Get the diff to see only the new changes
   diff = git.diff_for_file(file)
 
@@ -869,13 +1109,13 @@ end
 # Check README.md for issues for each file
 changed_readme_files.each do |file|
   # Run Danger spell check on file
-  danger_spellcheck(file)
+  general_spellcheck?(file)
 
   # Raise error if the file contains any bad urls
-  test = bad_urls?(file); fail test if test
+  test = general_bad_urls?(file); fail test if test
 
   # Raise error if improper markdown is found via linter
-  test = bad_markdown?(file); fail test if test
+  test = general_bad_markdown?(file); fail test if test
 end
 
 ###############################################################################
@@ -885,13 +1125,13 @@ end
 # Check CHANGELOG.md for issues for each file
 changed_changelog_files.each do |file|
   # Raise error if the file contains any bad urls
-  test = bad_urls?(file); fail test if test
+  test = general_bad_urls?(file); fail test if test
 
   # Raise error if improper markdown is found via linter
-  test = bad_markdown?(file); fail test if test
+  test = general_bad_markdown?(file); fail test if test
 
   # Raise error if CHANGELOG is incorrectly formatted
-  test = bad_changelog_formatting?(file); fail test if test
+  test = changelog_bad_formatting?(file); fail test if test
 end
 
 ###############################################################################
@@ -901,13 +1141,13 @@ end
 # Check Markdown files for issues for each file
 changed_misc_md_files.each do |file|
   # Run Danger spell check on file
-  danger_spellcheck(file)
+  general_spellcheck?(file)
 
   # Raise error if the file contains any bad urls
-  test = bad_urls?(file); fail test if test
+  test = general_bad_urls?(file); fail test if test
 
   # Raise error if improper markdown is found via linter
-  test = bad_markdown?(file); fail test if test
+  test = general_bad_markdown?(file); fail test if test
 end
 
 ###############################################################################
@@ -924,64 +1164,64 @@ changed_pt_files.each do |file|
   # Otherwise, they return the warning or error message that should be raised.
 
   # Raise error if policy changed but changelog has not been
-  test = unmodified_changelog?(file, changed_changelog_files); fail test if test
+  test = policy_unmodified_changelog?(file, changed_changelog_files); fail test if test
 
   # Raise warning if policy changed but readme has not been
-  test = unmodified_readme?(file, changed_readme_files); warn test if test
+  test = policy_unmodified_readme?(file, changed_readme_files); warn test if test
 
   # Raise error if policy filename/path contains any uppercase letters
-  test = bad_policy_filename_casing?(file); fail test if test
+  test = policy_bad_filename_casing?(file); fail test if test
 
   # Raise error if the file contains any bad urls
-  test = bad_urls?(file); fail test if test
+  test = general_bad_urls?(file); fail test if test
 
   # Run policy through fpt testing. Only raise error if there is a syntax error.
-  test = fpt_syntax_error?(file); fail test if test
+  test = policy_fpt_syntax_error?(file); fail test if test
 
   # Raise errors or warnings if bad metadata is found
-  test = bad_metadata?(file, "name"); fail test if test
-  test = bad_metadata?(file, "short_description"); fail test if test
-  test = bad_metadata?(file, "long_description"); fail test if test
-  test = bad_metadata?(file, "category"); fail test if test
-  test = bad_metadata?(file, "default_frequency"); fail test if test
-  test = bad_metadata?(file, "severity"); fail test if test
-  test = bad_metadata?(file, "info"); fail test if test
+  test = policy_bad_metadata?(file, "name"); fail test if test
+  test = policy_bad_metadata?(file, "short_description"); fail test if test
+  test = policy_bad_metadata?(file, "long_description"); fail test if test
+  test = policy_bad_metadata?(file, "category"); fail test if test
+  test = policy_bad_metadata?(file, "default_frequency"); fail test if test
+  test = policy_bad_metadata?(file, "severity"); fail test if test
+  test = policy_bad_metadata?(file, "info"); fail test if test
 
   # Raise errors or warnings if bad info block metadata is found
   if !test
-    info_test = missing_info_field?(file, "version"); fail info_test if info_test
-    info_test = missing_info_field?(file, "provider"); fail info_test if info_test
-    info_test = missing_info_field?(file, "service"); warn info_test if info_test
-    info_test = missing_info_field?(file, "policy_set"); warn info_test if info_test
+    info_test = policy_missing_info_field?(file, "version"); fail info_test if info_test
+    info_test = policy_missing_info_field?(file, "provider"); fail info_test if info_test
+    info_test = policy_missing_info_field?(file, "service"); warn info_test if info_test
+    info_test = policy_missing_info_field?(file, "policy_set"); warn info_test if info_test
   end
 
   # Raise error if policy sections are out of order
-  test = sections_out_of_order?(file); fail test if test
+  test = policy_sections_out_of_order?(file); fail test if test
 
   # Raise error if policy blocks are not grouped together by type
-  test = blocks_ungrouped?(file); fail test if test
+  test = policy_blocks_ungrouped?(file); fail test if test
 
   # Report on missing policy section comments
-  test = missing_section_comments?(file, "parameter"); fail test if test
-  test = missing_section_comments?(file, "credentials"); fail test if test
-  test = missing_section_comments?(file, "pagination"); fail test if test
-  test = missing_section_comments?(file, "datasource"); fail test if test
-  test = missing_section_comments?(file, "policy"); fail test if test
-  test = missing_section_comments?(file, "escalation"); fail test if test
-  test = missing_section_comments?(file, "cwf"); fail test if test
+  test = policy_missing_section_comments?(file, "parameter"); fail test if test
+  test = policy_missing_section_comments?(file, "credentials"); fail test if test
+  test = policy_missing_section_comments?(file, "pagination"); fail test if test
+  test = policy_missing_section_comments?(file, "datasource"); fail test if test
+  test = policy_missing_section_comments?(file, "policy"); fail test if test
+  test = policy_missing_section_comments?(file, "escalation"); fail test if test
+  test = policy_missing_section_comments?(file, "cwf"); fail test if test
 
   # Report on invalidly named code blocks
-  test = bad_block_name?(file, "parameter"); fail test if test
-  test = bad_block_name?(file, "credentials"); fail test if test
-  test = bad_block_name?(file, "pagination"); fail test if test
-  test = bad_block_name?(file, "datasource"); fail test if test
-  test = bad_block_name?(file, "script"); fail test if test
-  test = bad_block_name?(file, "policy"); fail test if test
-  test = bad_block_name?(file, "escalation"); fail test if test
+  test = policy_bad_block_name?(file, "parameter"); fail test if test
+  test = policy_bad_block_name?(file, "credentials"); fail test if test
+  test = policy_bad_block_name?(file, "pagination"); fail test if test
+  test = policy_bad_block_name?(file, "datasource"); fail test if test
+  test = policy_bad_block_name?(file, "script"); fail test if test
+  test = policy_bad_block_name?(file, "policy"); fail test if test
+  test = policy_bad_block_name?(file, "escalation"); fail test if test
 
   # Report on invalid/deprecated code blocks
-  test = deprecated_code_blocks?(file, "permission"); warn test if test
-  test = deprecated_code_blocks?(file, "resources"); warn test if test
+  test = policy_deprecated_code_blocks?(file, "permission"); warn test if test
+  test = policy_deprecated_code_blocks?(file, "resources"); warn test if test
 
   # Report on missing fields in code blocks
   fields_to_check = [
@@ -992,13 +1232,13 @@ changed_pt_files.each do |file|
 
   fields_to_check.each do |item|
     item[:fields].each do |field|
-      test = block_missing_field?(file, item[:block], field); fail test if test
+      test = policy_block_missing_field?(file, item[:block], field); fail test if test
     end
   end
 
   # Raise warning, not error, if parameter block is missing a default field.
   # This is because there are occasionally legitimate reasons to not have a default
-  test = block_missing_field?(file, "parameter", "default")
+  test = policy_block_missing_field?(file, "parameter", "default")
 
   if test
     warn test + "\n\nWhile not required, it is recommended that every parameter have a default value unless user input for that parameter is required and too specific for any default value to make sense"
@@ -1006,15 +1246,15 @@ changed_pt_files.each do |file|
 
   # Raise warning, not error, if a datasource and the script it calls have mismatched names.
   # Warning because there are occasionally legitimate reasons to do this.
-  test = ds_js_name_mismatch?(file); warn test if test
+  test = policy_ds_js_name_mismatch?(file); warn test if test
 
   # Raise error if run_script statements with incorrect parameter ordering are found
-  test = run_script_incorrect_order?(file); fail test if test
+  test = policy_run_script_incorrect_order?(file); fail test if test
 
   # Raise error if policy is not in the master permissions file.
   # Raise warning if policy is in this file, but datasources have been added.
-  test = missing_master_permissions?(file, permissions_yaml); fail test if test
-  ds_test = new_datasource?(file, permissions_yaml); warn ds_test if ds_test && !test
+  test = policy_missing_master_permissions?(file, permissions_yaml); fail test if test
+  ds_test = policy_new_datasource?(file, permissions_yaml); warn ds_test if ds_test && !test
 end
 
 ###############################################################################
