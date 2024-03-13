@@ -20,6 +20,8 @@ renamed_files = git.renamed_files.collect{ |r| r[:before] }
 changed_files = git.added_files + git.modified_files - renamed_files
 # Changed Dangerfile
 changed_dangerfile = changed_files.select{ |file| file == "Dangerfile" }
+# Changed Dangerfile
+changed_dot_files = changed_files.select{ |file| file.start_with?(".") }
 # Changed Policy Template files. Ignore meta policy files.
 changed_pt_files = changed_files.select{ |file| file.end_with?(".pt") && !file.end_with?("meta_parent.pt") }
 # Changed Meta Policy Template files.
@@ -837,6 +839,15 @@ end
 # Perform testing on Dangerfile itself if it has been modified
 changed_dangerfile.each do |file|
   warn "**#{file}**\nDangerfile has been modified! Please ensure changes have been tested and do not break existing tests."
+end
+
+###############################################################################
+# Dot File Testing
+###############################################################################
+
+# Perform testing on modified dot files
+changed_dot_files.each do |file|
+  warn "**#{file}**\nDot file has been modified! Please make sure these modifications were intentional and have been tested. Dot files are necessary for configuring the Github repository and managing automation."
 end
 
 ###############################################################################
