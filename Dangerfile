@@ -18,6 +18,8 @@ require_relative 'tools/lib/policy_parser'
 renamed_files = git.renamed_files.collect{ |r| r[:before] }
 # Changed Files. Ignores renamed files to prevent errors on files that don't exist
 changed_files = git.added_files + git.modified_files - renamed_files
+# Changed Dangerfile
+changed_dangerfile = changed_files.select{ |file| file == "Dangerfile" }
 # Changed Policy Template files. Ignore meta policy files.
 changed_pt_files = changed_files.select{ |file| file.end_with?(".pt") && !file.end_with?("meta_parent.pt") }
 # Changed Meta Policy Template files.
@@ -824,8 +826,17 @@ changed_files.each do |file|
 
   if $?.exitstatus != 0
     message `cat textlint.log`
-    fail "Textlint failed on #{file}"
+    fail "**#{file}**\nTextlint failed"
   end
+end
+
+###############################################################################
+# Dangerfile Testing
+###############################################################################
+
+# Perform testing on Dangerfile itself if it has been modified
+changed_dangerfile.each do |file|
+  warn "**#{file}**\nDangerfile has been modified! Please ensure changes have been tested and do not break existing tests."
 end
 
 ###############################################################################
@@ -965,7 +976,7 @@ changed_pt_files.each do |file|
   # Raise warning, not error, if parameter block is missing a default field.
   # This is because there are occasionally legitimate reasons to not have a default
   if block_missing_field?(file, "parameter", "default")
-    warn "Policy Template file `#{file}` has parameter block that is missing the default field. It is recommended that every parameter have a default value unless user input for that parameter is required and too specific for any default value to make sense"
+    warn "**#{file}**\nPolicy Template file has parameter block that is missing the default field. It is recommended that every parameter have a default value unless user input for that parameter is required and too specific for any default value to make sense"
   end
 
   # Raise warning, not error, if a datasource and the script it calls have mismatched names.
