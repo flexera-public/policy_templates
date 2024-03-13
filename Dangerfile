@@ -850,7 +850,7 @@ end
 
 # Perform testing on modified dot files
 changed_dot_files.each do |file|
-  warn "**#{file}**\nDot file has been modified! Please make sure these modifications were intentional and have been tested. Dot files are necessary for configuring the Github repository and managing automation."
+  warn "**#{file}**\nDot file `#{file}` has been modified! Please make sure these modifications were intentional and have been tested. Dot files are necessary for configuring the Github repository and managing automation."
 end
 
 ###############################################################################
@@ -859,7 +859,7 @@ end
 
 # Perform testing on modified config files
 changed_config_files.each do |file|
-  warn "**#{file}**\nConfig file has been modified! Please make sure these modifications were intentional and have been tested. Config files are necessary for configuring the Github repository and managing automation."
+  warn "**#{file}**\nConfig file `#{file}` has been modified! Please make sure these modifications were intentional and have been tested. Config files are necessary for configuring the Github repository and managing automation."
 end
 
 ###############################################################################
