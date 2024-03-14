@@ -284,17 +284,17 @@ def readme_invalid_credentials?(file)
   # Store contents of file for direct analysis
   readme_text = File.read(file)
 
-  prereq_line_number = -1
+  prereq_line_number = -100
 
-  azure_line_number = -1
-  google_line_number = -1
-  flexera_line_number = -1
+  azure_line_number = -100
+  google_line_number = -100
+  flexera_line_number = -100
 
-  aws_line_number = -1
-  aws_perm_endline = -1
+  aws_line_number = -100
+  aws_perm_endline = -100
   aws_perm_section = false
   aws_perm_asterix = false
-  aws_json_line = -1
+  aws_json_line = -100
 
   aws_perm_tester = /^ *- *`[a-zA-Z]+:[a-zA-Z]+`\*?$/
   aws_json_tester = /^\s{2}```json\n\s{2}\{\n\s{6}"Version": "2012-10-17",\n\s{6}"Statement": \[\n\s{10}\{\n\s{14}"Effect": "Allow",\n\s{14}"Action": \[\n[\s\S]*?\n\s{10}\}\n\s{6}\]\n\s{2}\}\n\s{2}```$/
@@ -314,7 +314,7 @@ def readme_invalid_credentials?(file)
     end
 
     # AWS check
-    aws_json_line = line_number if aws_line_number != -1 && line.include?("json")
+    aws_json_line = line_number if aws_line_number > 0 && line.include?("json")
 
     if line_number == aws_perm_endline + 1 && !aws_perm_asterix
       if !line.start_with?("  Example IAM Permission Policy:")
@@ -359,7 +359,7 @@ def readme_invalid_credentials?(file)
       end
     end
 
-    aws_line_number = line_number if aws_line_number == -1 && prereq_line_number != -1 && (line.include?("AWS") || line.include?("aws"))
+    aws_line_number = line_number if aws_line_number < 0 && prereq_line_number > 0 && (line.include?("AWS") || line.include?("aws"))
 
     if aws_line_number == line_number
       if line.strip != "- [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:"
@@ -372,7 +372,7 @@ def readme_invalid_credentials?(file)
   end
 
   # AWS JSON Testing
-  if aws_line_number != -1 && !readme_text.match?(aws_json_tester)
+  if aws_line_number > 0 && !readme_text.match?(aws_json_tester)
     fail_message += "Line #{aws_json_line.to_s}: Correctly-formatted JSON example of AWS permissions missing. Please ensure this JSON is present and correctly formatted. See other AWS policy READMEs for examples.\n\n"
   end
 
