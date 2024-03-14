@@ -190,7 +190,7 @@ end
 
 ### Out of order README Sections
 # Verify that README file has the various sections in the correct order
-def readme_policy_sections_out_of_order?(file)
+def readme_sections_out_of_order?(file)
   fail_message = ""
 
   # Store contents of file for direct analysis
@@ -1116,6 +1116,15 @@ changed_readme_files.each do |file|
 
   # Raise error if improper markdown is found via linter
   test = general_bad_markdown?(file); fail test if test
+
+  # Raise error if README is missing required sections
+  test = readme_missing_sections?(file); fail test if test
+
+  # Raise error if README sections are out of order
+  test = readme_sections_out_of_order?(file); fail test if test
+
+  # Raise error if README credentials are formatted incorrectly
+  test = readme_invalid_credentials?(file); fail test if test
 end
 
 ###############################################################################
