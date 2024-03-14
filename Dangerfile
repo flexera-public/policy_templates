@@ -229,42 +229,42 @@ def readme_sections_out_of_order?(file)
     supported_clouds_found = true if line.start_with?("## Supported Clouds")
     cost_found = true if line.start_with?("## Cost")
 
-    if !what_it_does_raised && what_it_does_found && !name
+    if !what_it_does_raised && what_it_does_found && !name_found
       fail_message += "Line #{line_number.to_s}: What It Does out of order.\n"
       what_it_does_raised = true
     end
 
-    if !how_it_works_raised && how_it_works_found && (!name || !what_it_does_found)
+    if !how_it_works_raised && how_it_works_found && (!name_found || !what_it_does_found)
       fail_message += "Line #{line_number.to_s}: How It Works out of order.\n"
       how_it_works_raised = true
     end
 
-    if !policy_savings_raised && policy_savings_found && (!name || !what_it_does_found)
+    if !policy_savings_raised && policy_savings_found && (!name_found || !what_it_does_found)
       fail_message += "Line #{line_number.to_s}: Policy Savings Details out of order.\n"
       policy_savings_raised = true
     end
 
-    if !input_parameters_raised && input_parameters_found && (!name || !what_it_does_found)
+    if !input_parameters_raised && input_parameters_found && (!name_found || !what_it_does_found)
       fail_message += "Line #{line_number.to_s}: Input Parameters out of order.\n"
       input_parameters_raised = true
     end
 
-    if !policy_actions_raised && policy_actions_found && (!name || !what_it_does_found || !input_parameters_found)
+    if !policy_actions_raised && policy_actions_found && (!name_found || !what_it_does_found || !input_parameters_found)
       fail_message += "Line #{line_number.to_s}: Policy Actions out of order.\n"
       policy_actions_raised = true
     end
 
-    if !prerequisites_raised && prerequisites_found && (!name || !what_it_does_found || !input_parameters_found || !policy_actions_found)
+    if !prerequisites_raised && prerequisites_found && (!name_found || !what_it_does_found || !input_parameters_found || !policy_actions_found)
       fail_message += "Line #{line_number.to_s}: Prerequisites out of order.\n"
       prerequisites_raised = true
     end
 
-    if !supported_clouds_raised && supported_clouds_found && (!name || !what_it_does_found || !input_parameters_found || !policy_actions_found || !prerequisites_found)
+    if !supported_clouds_raised && supported_clouds_found && (!name_found || !what_it_does_found || !input_parameters_found || !policy_actions_found || !prerequisites_found)
       fail_message += "Line #{line_number.to_s}: Supported Clouds out of order.\n"
       supported_clouds_raised = true
     end
 
-    if !cost_raised && cost_found && (!name || !what_it_does_found || !input_parameters_found || !policy_actions_found || !prerequisites_found)
+    if !cost_raised && cost_found && (!name_found || !what_it_does_found || !input_parameters_found || !policy_actions_found || !prerequisites_found)
       fail_message += "Line #{line_number.to_s}: Cost out of order.\n"
       cost_raised = true
     end
@@ -275,7 +275,6 @@ def readme_sections_out_of_order?(file)
   return fail_message.strip if !fail_message.empty?
   return false
 end
-
 
 ### README Credentials formatting
 # Verify that README file has credentials in the proper formatting
