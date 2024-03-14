@@ -296,7 +296,7 @@ def readme_invalid_credentials?(file)
   aws_perm_asterix = false
   aws_json_line = -100
 
-  aws_perm_tester = /^ *- *`[a-zA-Z]+:[a-zA-Z]+`\*?$/
+  aws_perm_tester = /^`[a-z0-9]+:[A-Z][a-zA-Z0-9]*`$/
   aws_json_tester = /^\s{2}```json\n\s{2}\{\n\s{6}"Version": "2012-10-17",\n\s{6}"Statement": \[\n\s{10}\{\n\s{14}"Effect": "Allow",\n\s{14}"Action": \[\n[\s\S]*?\n\s{10}\}\n\s{6}\]\n\s{2}\}\n\s{2}```$/
 
 
@@ -345,7 +345,7 @@ def readme_invalid_credentials?(file)
           fail_message += "```  - `sts:GetCallerIdentity` ```\n"
           fail_message += "```  - `s3:DeleteObject`* ```\n"
           fail_message += "```  - `ec2:DescribeSnapshots` ```\n\n"
-        elsif !line.match?(aws_perm_tester)
+        elsif !line.split("  - ")[1].match?(aws_perm_tester)
           fail_message += "Line #{line_number.to_s}: Incorrectly formatted AWS permission. AWS permissions should be formatted like the following examples, with an optional * at the end to signify if a permission enables changes to be made to the cloud environment:\n\n"
           fail_message += "```  - `sts:GetCallerIdentity` ```\n"
           fail_message += "```  - `s3:DeleteObject`* ```\n"
