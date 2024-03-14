@@ -4,16 +4,6 @@
 
 This policy finds AWS snapshots in the given account which are older than the specified days and deletes them after user approval. Snapshots with an associated AMI can be included or excluded depending on the settings selected when applying the policy; if included, the AMI will be deleted along with the snapshot if the snapshot is deleted.
 
-### Policy Savings Details
-
-The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the resource is terminated.
-
-- The `Estimated Monthly Savings` is calculated by multiplying the amortized cost of the resource for 1 day, as found within Flexera CCO, by 30.44, which is the average number of days in a month.
-- Since the costs of individual resources are obtained from Flexera CCO, they will take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
-- If the resource cannot be found in Flexera CCO, the `Estimated Monthly Savings` is 0.
-- The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
-- Both `Estimated Monthly Savings` and `Potential Monthly Savings` will be reported in the currency of the Flexera organization the policy is applied in.
-
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
@@ -39,6 +29,16 @@ This policy has the following input parameters required when launching the polic
 
 Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
 For example, if a user selects the "Delete Snapshots" action while applying the policy, all the snapshots that didn't satisfy the policy condition will be deleted.
+
+### Policy Savings Detailss
+
+The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the resource is terminated.
+
+- The `Estimated Monthly Savings` is calculated by multiplying the amortized cost of the resource for 1 day, as found within Flexera CCO, by 30.44, which is the average number of days in a month.
+- Since the costs of individual resources are obtained from Flexera CCO, they will take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
+- If the resource cannot be found in Flexera CCO, the `Estimated Monthly Savings` is 0.
+- The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
+- Both `Estimated Monthly Savings` and `Potential Monthly Savings` will be reported in the currency of the Flexera organization the policy is applied in.
 
 ## Policy Actions
 
@@ -66,11 +66,9 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   - `sts:GetCallerIdentity`
   - `cloudtrail:LookupEvents`
 
-  \* Only required for taking action (deletion); the policy will still function in a read-only capacity without these permissions.
-
   Example IAM Permission Policy:
 
-  ```json
+  ```jsonn
   {
       "Version": "2012-10-17",
       "Statement": [
