@@ -350,7 +350,7 @@ def readme_invalid_credentials?(file)
           fail_message += "```  - `sts:GetCallerIdentity` ```\n"
           fail_message += "```  - `s3:DeleteObject`* ```\n"
           fail_message += "```  - `ec2:DescribeSnapshots` ```\n\n"
-        elsif line == line.downcase || line == line.upcase || line.split(':')[0] != line.split(':')[0].downcase || string.split(':')[1][0] != string.split(':')[1][0].upcase
+        elsif line == line.downcase || line == line.upcase || line.split(':')[0] != line.split(':')[0].downcase || line.split(':')[1][0] != line.split(':')[1][0].upcase
           fail_message += "Line #{line_number.to_s}: Incorrectly cased AWS permission. AWS permissions should have a mix of uppercase and lowercase like the following examples:\n\n"
           fail_message += "```  - `sts:GetCallerIdentity` ```\n"
           fail_message += "```  - `s3:DeleteObject`* ```\n"
