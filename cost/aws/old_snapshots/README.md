@@ -1,6 +1,6 @@
 # AWS Old Snapshots
 
-## What It Does
+## What Does
 
 This policy finds AWS snapshots in the given account which are older than the specified days and deletes them after user approval. Snapshots with an associated AMI can be included or excluded depending on the settings selected when applying the policy; if included, the AMI will be deleted along with the snapshot if the snapshot is deleted.
 

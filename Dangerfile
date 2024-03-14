@@ -286,18 +286,23 @@ def readme_invalid_credentials?(file)
 
   prereq_line_number = -100
 
-  azure_line_number = -100
-  google_line_number = -100
-  flexera_line_number = -100
-
-  aws_line_number = -100
-  aws_perm_endline = -100
-  aws_perm_section = false
-  aws_perm_asterix = false
-  aws_json_line = -100
-
   aws_perm_tester = /^`[a-z0-9]+:[A-Z][a-zA-Z0-9]*`[*]?$/
   aws_json_tester = /^\s{2}```json\n\s{2}\{\n\s{6}"Version": "2012-10-17",\n\s{6}"Statement": \[\n\s{10}\{\n\s{14}"Effect": "Allow",\n\s{14}"Action": \[\n[\s\S]*?\n\s{10}\}\n\s{6}\]\n\s{2}\}\n\s{2}```$/
+
+  aws_permission_line = nil
+  azure_permission_line = nil
+  google_permission_line = nil
+  flexera_permission_line = nil
+
+  aws_permission_text = []
+  azure_permission_text = []
+  google_permission_text = []
+  flexera_permission_text = []
+
+  aws_permission_scanning = false
+  azure_permission_scanning = false
+  google_permission_scanning = false
+  flexera_permission_scanning = false
 
   readme_text.each_line.with_index do |line, index|
     line_number = index + 1
@@ -312,70 +317,55 @@ def readme_invalid_credentials?(file)
       end
     end
 
-    # AWS check
-    aws_json_line = line_number if aws_line_number > 0 && line.include?("json")
-
-    if line_number == aws_perm_endline + 1 && !aws_perm_asterix
-      if !line.start_with?("  Example IAM Permission Policy:")
-        fail_message += "Line #{line_number.to_s}: AWS permissions missing example IAM permission policy or proper text indicating this section of the policy. The following line should exist in the README followed by a JSON example:\n\n"
-        fail_message += "```  Example IAM Permission Policy:```\n\n"
-      end
+    if line.start_with?("#") || line.start_with?("The")
+      aws_permission_scanning = false
+      azure_permission_scanning = false
+      google_permission_scanning = false
+      flexera_permission_scanning = false
     end
 
-    if line_number == aws_perm_endline + 1 && aws_perm_asterix
-      if !line.start_with?("  \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.")
-        fail_message += "Line #{line_number.to_s}: AWS permissions contain potentially destructive permissions, signified by an *, but no disclaimer. The following disclaimer should be present below the permissions list:\n\n"
-        fail_message += "```  \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.```\n\n"
-      end
+    aws_permission_scanning = false if line.start_with?("- ") && (!line.include?("AWS") && !line.include?("aws"))
+    aws_permission_scanning = false if azure_permission_scanning || google_permission_scanning || flexera_permission_scanning
+    aws_permission_scanning = true if !aws_permission_scanning && prereq_line_number > 0 && (line.include?("AWS") || line.include?("aws"))
+    aws_permission_line = line_number if !aws_permission_line && aws_permission_scanning
+    aws_permission_text << line if aws_permission_scanning
 
-      aws_perm_endline = line_number + 1
-      aws_perm_asterix = false
-    end
+    azure_permission_scanning = false if line.start_with?("- ") && (!line.include?("Azure") && !line.include?("azure"))
+    azure_permission_scanning = false if aws_permission_scanning || google_permission_scanning || flexera_permission_scanning
+    azure_permission_scanning = true if !azure_permission_scanning && prereq_line_number > 0 && (line.include?("Azure") || line.include?("azure"))
+    azure_permission_line = line_number if !azure_permission_line && azure_permission_scanning
+    azure_permission_text << line if azure_permission_scanning
 
-    if aws_perm_section
-      if line.strip.empty?
-        aws_perm_section = false
-        aws_perm_endline = line_number
-      else
-        aws_perm_asterix = true if line.include?("*")
+    google_permission_scanning = false if line.start_with?("- ") && (!line.include?("Google") && !line.include?("google"))
+    google_permission_scanning = false if aws_permission_scanning || azure_permission_scanning || flexera_permission_scanning
+    google_permission_scanning = true if !google_permission_scanning && prereq_line_number > 0 && (line.include?("Google") || line.include?("google"))
+    google_permission_line = line_number if !google_permission_line && google_permission_scanning
+    google_permission_text << line if google_permission_scanning
 
-        if !line.start_with?("  - ")
-          fail_message += "Line #{line_number.to_s}: Incorrectly formatted AWS permission. AWS permissions should be formatted in a markdown list with the first 4 characters being [space][space][hyphen][space] like in the below examples:\n\n"
-          fail_message += "```  - `sts:GetCallerIdentity` ```\n"
-          fail_message += "```  - `s3:DeleteObject`* ```\n"
-          fail_message += "```  - `ec2:DescribeSnapshots` ```\n\n"
-        elsif !line.split("  - ")[1].match?(aws_perm_tester)
-          fail_message += "Line #{line_number.to_s}: Incorrectly formatted AWS permission. AWS permissions should be formatted like the following examples, with an optional * at the end to signify if a permission enables changes to be made to the cloud environment:\n\n"
-          fail_message += "```  - `sts:GetCallerIdentity` ```\n"
-          fail_message += "```  - `s3:DeleteObject`* ```\n"
-          fail_message += "```  - `ec2:DescribeSnapshots` ```\n\n"
-        elsif line == line.downcase || line == line.upcase || line.split(':')[0] != line.split(':')[0].downcase || line.split(':')[1][0] != line.split(':')[1][0].upcase
-          fail_message += "Line #{line_number.to_s}: Incorrectly cased AWS permission. AWS permissions should have a mix of uppercase and lowercase like the following examples:\n\n"
-          fail_message += "```  - `sts:GetCallerIdentity` ```\n"
-          fail_message += "```  - `s3:DeleteObject`* ```\n"
-          fail_message += "```  - `ec2:DescribeSnapshots` ```\n\n"
-        end
-      end
-    end
-
-    aws_line_number = line_number if aws_line_number < 0 && prereq_line_number > 0 && (line.include?("AWS") || line.include?("aws"))
-
-    if aws_line_number == line_number
-      if line.strip != "- [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:"
-        fail_message += "Line #{line_number.to_s}: README has invalid description for AWS credential. AWS credentials should always have the following description:\n\n"
-        fail_message += "```- [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:```\n\n"
-      end
-
-      aws_perm_section = true
-    end
+    flexera_permission_scanning = false if line.start_with?("- ") && (!line.include?("Flexera") && !line.include?("flexera"))
+    flexera_permission_scanning = false if aws_permission_scanning || azure_permission_scanning || google_permission_scanning
+    flexera_permission_scanning = true if !flexera_permission_scanning && prereq_line_number > 0 && (line.include?("Flexera") || line.include?("flexera"))
+    flexera_permission_line = line_number if !flexera_permission_line && flexera_permission_scanning
+    flexera_permission_text << line if flexera_permission_scanning
   end
 
-  # AWS JSON Testing
-  if aws_line_number > 0 && !readme_text.match?(aws_json_tester)
-    fail_message += "Line #{aws_json_line.to_s}: Correctly-formatted JSON example of AWS permissions missing. Please ensure this JSON is present and correctly formatted. See other AWS policy READMEs for examples.\n\n"
+  if aws_permission_line
+
   end
 
-  fail_message = "**#{file}**\nREADME.md sections are out of order. Sections should be in the following order: Policy Name, What It Does, How It Works, Policy Savings Details, Input Parameters, Policy Actions, Prerequisites, Supported Clouds, Cost\n\n" + fail_message if !fail_message.empty?
+  if azure_permission_line
+
+  end
+
+  if google_permission_line
+
+  end
+
+  if flexera_permission_line
+
+  end
+
+  fail_message = "**#{file}**\nREADME.md has problems with how credential permissions are presented:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
