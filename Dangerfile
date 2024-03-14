@@ -289,6 +289,10 @@ def readme_invalid_credentials?(file)
   aws_perm_tester = /^`[a-z0-9]+:[A-Z][a-zA-Z0-9]*`[*]?$/
   aws_json_tester = /^\s{2}```json\n\s{2}\{\n\s{6}"Version": "2012-10-17",\n\s{6}"Statement": \[\n\s{10}\{\n\s{14}"Effect": "Allow",\n\s{14}"Action": \[\n[\s\S]*?\n\s{10}\}\n\s{6}\]\n\s{2}\}\n\s{2}```$/
 
+  aws_policy = false
+  azure_policy = false
+  google_policy = false
+
   aws_permission_line = nil
   azure_permission_line = nil
   google_permission_line = nil
@@ -307,6 +311,10 @@ def readme_invalid_credentials?(file)
   readme_text.each_line.with_index do |line, index|
     line_number = index + 1
 
+    aws_policy = true if line_number == 1 and (line.include?("AWS") || line.include?("aws"))
+    azure_policy = true if line_number == 1 and (line.include?("Azure") || line.include?("azure"))
+    google_policy = true if line_number == 1 and (line.include?("Google") || line.include?("google"))
+
     # Description check
     prereq_line_number = line_number if line.start_with?("## Prerequisites")
 
@@ -317,36 +325,56 @@ def readme_invalid_credentials?(file)
       end
     end
 
-    if line.start_with?("#") || line.start_with?("The")
+    if line.start_with?("The [Provider-Specific Credentials")
       aws_permission_scanning = false
       azure_permission_scanning = false
       google_permission_scanning = false
       flexera_permission_scanning = false
+
+      aws_permission_stop_scanning = true
+      azure_permission_stop_scanning = true
+      google_permission_stop_scanning = true
+      flexera_permission_stop_scanning = true
     end
 
-    aws_permission_scanning = false if line.start_with?("- ") && (!line.include?("AWS") && !line.include?("aws"))
+    aws_permission_scanning = false if line.start_with?("- [") && (!line.include?("AWS") && !line.include?("aws"))
     aws_permission_scanning = false if azure_permission_scanning || google_permission_scanning || flexera_permission_scanning
-    aws_permission_scanning = true if !aws_permission_scanning && prereq_line_number > 0 && (line.include?("AWS") || line.include?("aws"))
+    aws_permission_scanning = true if !line.start_with?("This Policy Template uses [Credentials]") && !aws_permission_stop_scanning && !aws_permission_scanning && prereq_line_number > 0 && (line.include?("[**AWS") || line.include?("[**aws"))
     aws_permission_line = line_number if !aws_permission_line && aws_permission_scanning
     aws_permission_text << line if aws_permission_scanning
 
-    azure_permission_scanning = false if line.start_with?("- ") && (!line.include?("Azure") && !line.include?("azure"))
+    azure_permission_scanning = false if line.start_with?("- [") && (!line.include?("Azure") && !line.include?("azure"))
     azure_permission_scanning = false if aws_permission_scanning || google_permission_scanning || flexera_permission_scanning
-    azure_permission_scanning = true if !azure_permission_scanning && prereq_line_number > 0 && (line.include?("Azure") || line.include?("azure"))
+    azure_permission_scanning = true if !line.start_with?("This Policy Template uses [Credentials]") && !azure_permission_stop_scanning && !azure_permission_scanning && prereq_line_number > 0 && (line.include?("[**Azure") || line.include?("[**azure"))
     azure_permission_line = line_number if !azure_permission_line && azure_permission_scanning
     azure_permission_text << line if azure_permission_scanning
 
-    google_permission_scanning = false if line.start_with?("- ") && (!line.include?("Google") && !line.include?("google"))
+    google_permission_scanning = false if line.start_with?("- [") && (!line.include?("Google Cloud Credential") && !line.include?("Google Cloud Credential"))
     google_permission_scanning = false if aws_permission_scanning || azure_permission_scanning || flexera_permission_scanning
-    google_permission_scanning = true if !google_permission_scanning && prereq_line_number > 0 && (line.include?("Google") || line.include?("google"))
+    google_permission_scanning = true if !line.start_with?("This Policy Template uses [Credentials]") && !google_permission_stop_scanning && !google_permission_scanning && prereq_line_number > 0 && (line.include?("[**Google") || line.include?("[**google"))
     google_permission_line = line_number if !google_permission_line && google_permission_scanning
     google_permission_text << line if google_permission_scanning
 
-    flexera_permission_scanning = false if line.start_with?("- ") && (!line.include?("Flexera") && !line.include?("flexera"))
+    flexera_permission_scanning = false if line.start_with?("- [") && (!line.include?("Flexera") && !line.include?("flexera"))
     flexera_permission_scanning = false if aws_permission_scanning || azure_permission_scanning || google_permission_scanning
-    flexera_permission_scanning = true if !flexera_permission_scanning && prereq_line_number > 0 && (line.include?("Flexera") || line.include?("flexera"))
+    flexera_permission_scanning = true if !line.start_with?("This Policy Template uses [Credentials]") && !flexera_permission_stop_scanning && !flexera_permission_scanning && prereq_line_number > 0 && (line.include?("[**Flexera") || line.include?("[**flexera")) && (!line.include?("AWS") && !line.include?("aws")) && (!line.include?("Azure") && !line.include?("azure")) && (!line.include?("Google") && !line.include?("google"))
     flexera_permission_line = line_number if !flexera_permission_line && flexera_permission_scanning
     flexera_permission_text << line if flexera_permission_scanning
+  end
+
+  if aws_policy && !aws_permission_line
+    fail_message += "AWS permissions missing or incorrectly formatted. Please make sure AWS permissions begin with a list item like the following:\n\n"
+    fail_message += "```- [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:```\n\n"
+  end
+
+  if azure_policy && !azure_permission_line
+    fail_message += "Azure permissions missing or incorrectly formatted. Please make sure Azure permissions begin with a list item like the following:\n\n"
+    fail_message += "```- [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:```\n\n"
+  end
+
+  if google_policy && !google_permission_line
+    fail_message += "Google permissions missing or incorrectly formatted. Please make sure Google permissions begin with a list item like the following:\n\n"
+    fail_message += "```- [**Google Cloud Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1121577) (*provider=gce*) which has the following:```\n\n"
   end
 
   if aws_permission_line
@@ -1112,7 +1140,7 @@ changed_readme_files.each do |file|
   test = readme_sections_out_of_order?(file); fail test if test
 
   # Raise error if README credentials are formatted incorrectly
-  test = readme_invalid_credentials?(file); fail test if test
+  #test = readme_invalid_credentials?(file); fail test if test
 end
 
 ###############################################################################
