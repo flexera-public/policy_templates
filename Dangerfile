@@ -296,9 +296,8 @@ def readme_invalid_credentials?(file)
   aws_perm_asterix = false
   aws_json_line = -100
 
-  aws_perm_tester = /^`[a-z0-9]+:[A-Z][a-zA-Z0-9]*`$/
+  aws_perm_tester = /^`[a-z0-9]+:[A-Z][a-zA-Z0-9]*`[*]?$/
   aws_json_tester = /^\s{2}```json\n\s{2}\{\n\s{6}"Version": "2012-10-17",\n\s{6}"Statement": \[\n\s{10}\{\n\s{14}"Effect": "Allow",\n\s{14}"Action": \[\n[\s\S]*?\n\s{10}\}\n\s{6}\]\n\s{2}\}\n\s{2}```$/
-
 
   readme_text.each_line.with_index do |line, index|
     line_number = index + 1
