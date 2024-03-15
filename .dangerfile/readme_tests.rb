@@ -408,14 +408,24 @@ def readme_invalid_credentials?(file)
 
           if !line.split("  - ")[1].match?(flexera_perm_tester)
             fail_message += "Line #{line_number.to_s}: Flexera permission list item formatted incorrectly. Please make sure all list items are formatted like the following examples:\n\n"
-            fail_message += "```  - `resourcemanager.projects.get`*```\n"
-            fail_message += "```  - `compute.regions.list` ```\n"
-            fail_message += "```  - `billing.resourceCosts.get` ```\n\n"
+            fail_message += "```  - `billing_center_viewer`*```\n"
+            fail_message += "```  - `common:org:own` ```\n\n"
           end
         end
       end
 
       asterix_found == 2 if asterix_found == 1 && line.start_with?("  \* ")
+    end
+
+    if permission_list_found == 0
+      fail_message += "Flexera permission list missing or formatted incorrectly. Please ensure there is a list of permissions beneath the Flexera permission statement. Each list item should begin with [space][space][hyphen][space] like so:\n\n"
+      fail_message += "```  - `billing_center_viewer`*```\n"
+      fail_message += "```  - `common:org:own` ```\n\n"
+    end
+
+    if asterix_found == 1
+      fail_message += "Flexera permission list contains a permission with an asterix but no footnote explaning why or the footnote is formatted incorrectly. The footnote should indicate what is special about these permissions; in most cases, this will be an explanation that the permission is optional and only needed for policy actions. Please add a footnote that begins with [space][space][backslash][asterix][space] like so:\n\n"
+      fail_message += "```  \\* Only required for taking action; the policy will still function in a read-only capacity without these permissions.```\n\n"
     end
   end
 
