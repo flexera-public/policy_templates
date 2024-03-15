@@ -280,7 +280,7 @@ def readme_invalid_credentials?(file)
 
     if asterix_found == 1
       fail_message += "AWS permission list contains a permission with an asterix but no footnote explaning why or the footnote is formatted incorrectly. The footnote should indicate what is special about these permissions; in most cases, this will be an explanation that the permission is optional and only needed for policy actions. Please add a footnote that begins with [space][space][backslash][asterix][space] like so:\n\n"
-      fail_message += "```  \* Only required for taking action (deletion); the policy will still function in a read-only capacity without these permissions.```\n\n"
+      fail_message += "```  \\* Only required for taking action (deletion); the policy will still function in a read-only capacity without these permissions.```\n\n"
     end
   end
 
