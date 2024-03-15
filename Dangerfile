@@ -73,7 +73,7 @@ end
 # Dangerfile Testing
 ###############################################################################
 
-# Perform testing on Dangerfile itself if it has been modified
+# Perform testing on Dangerfile and .dangerfile files if they have been modified
 changed_dangerfiles.each do |file|
   warn "**#{file}**\nDangerfile or related file has been modified! Please ensure changes were intentional, have been tested, and do not break existing tests."
 end
