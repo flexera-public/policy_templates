@@ -1,5 +1,9 @@
 # AWS Old Snapshots
 
+## What It Does
+
+This policy finds AWS snapshots in the given account which are older than the specified days and deletes them after user approval. Snapshots with an associated AMI can be included or excluded depending on the settings selected when applying the policy; if included, the AMI will be deleted along with the snapshot if the snapshot is deleted.
+
 ### Policy Savings Details
 
 The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the resource is terminated.
@@ -9,10 +13,6 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - If the resource cannot be found in Flexera CCO, the `Estimated Monthly Savings` is 0.
 - The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
 - Both `Estimated Monthly Savings` and `Potential Monthly Savings` will be reported in the currency of the Flexera organization the policy is applied in.
-
-## What It Does
-
-This policy finds AWS snapshots in the given account which are older than the specified days and deletes them after user approval. Snapshots with an associated AMI can be included or excluded depending on the settings selected when applying the policy; if included, the AMI will be deleted along with the snapshot if the snapshot is deleted.
 
 ## Input Parameters
 
