@@ -163,8 +163,12 @@ def readme_invalid_credentials?(file)
   google_permission_scanning = false
   flexera_permission_scanning = false
 
+  credential_footnote = false
+
   readme_text.each_line.with_index do |line, index|
     line_number = index + 1
+
+    credential_footnote = true if line.start_with?("The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.")
 
     aws_policy = true if line_number == 1 and (line.include?("AWS") || line.include?("aws"))
     azure_policy = true if line_number == 1 and (line.include?("Azure") || line.include?("azure"))
@@ -180,7 +184,7 @@ def readme_invalid_credentials?(file)
       end
     end
 
-    if line.start_with?("The [Provider-Specific Credentials")
+    if line.start_with?("The [Provider-Specific Credentials") || (line.start_with?("#") && (aws_permission_scanning || azure_permission_scanning || google_permission_scanning || flexera_permission_scanning))
       aws_permission_scanning = false
       azure_permission_scanning = false
       google_permission_scanning = false
@@ -215,6 +219,11 @@ def readme_invalid_credentials?(file)
     flexera_permission_scanning = true if !line.start_with?("This Policy Template uses [Credentials]") && !flexera_permission_stop_scanning && !flexera_permission_scanning && prereq_line_number > 0 && (line.include?("[**Flexera") || line.include?("[**flexera")) && (!line.include?("AWS") && !line.include?("aws")) && (!line.include?("Azure") && !line.include?("azure")) && (!line.include?("Google") && !line.include?("google"))
     flexera_permission_line = line_number if !flexera_permission_line && flexera_permission_scanning
     flexera_permission_text << line if flexera_permission_scanning
+  end
+
+  if !credential_footnote
+    fail_message += "Permissions section missing footnote. Please make sure the following footnote is at the end of the permissions section of the README:\n\n"
+    fail_message += "```The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.```\n\n"
   end
 
   if aws_policy && !aws_permission_line
@@ -280,7 +289,7 @@ def readme_invalid_credentials?(file)
 
     if asterix_found == 1
       fail_message += "AWS permission list contains a permission with an asterix but no footnote explaning why or the footnote is formatted incorrectly. The footnote should indicate what is special about these permissions; in most cases, this will be an explanation that the permission is optional and only needed for policy actions. Please add a footnote that begins with [space][space][backslash][asterix][space] like so:\n\n"
-      fail_message += "```  \\* Only required for taking action (deletion); the policy will still function in a read-only capacity without these permissions.```\n\n"
+      fail_message += "```  \\* Only required for taking action; the policy will still function in a read-only capacity without these permissions.```\n\n"
     end
   end
 
@@ -290,6 +299,44 @@ def readme_invalid_credentials?(file)
       fail_message += "```- [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:```\n\n"
     end
 
+    azure_perm_tester = /^`Microsoft\.[a-zA-Z]+\/[a-zA-Z]+\/[a-zA-Z]+(?:\/[a-zA-Z]+)*`(?:\*)?$/
+    asterix_found = 0
+    permission_list_found = 0
+
+    azure_permission_text.each_with_index do |line, index|
+      line_number = index + azure_permission_line
+
+      permission_list_found = 1 if index == 1 && line.start_with?("  - ")
+
+      if permission_list_found == 1
+        if !line.start_with?("  - ")
+          permission_list_found = 2
+        else
+          asterix_found = 1 if line.strip.end_with?("*")
+
+          if !line.split("  - ")[1].match?(azure_perm_tester)
+            fail_message += "Line #{line_number.to_s}: Azure permission list item formatted incorrectly. Please make sure all list items are formatted like the following examples:\n\n"
+            fail_message += "```  - `Microsoft.Compute/snapshots/delete`*```\n"
+            fail_message += "```  - `Microsoft.Compute/snapshots/read` ```\n"
+            fail_message += "```  - `Microsoft.Insights/metrics/read` ```\n\n"
+          end
+        end
+      end
+
+      asterix_found == 2 if asterix_found == 1 && line.start_with?("  \* ")
+    end
+
+    if permission_list_found == 0
+      fail_message += "Azure permission list missing or formatted incorrectly. Please ensure there is a list of permissions beneath the Azure permission statement. Each list item should begin with [space][space][hyphen][space] like so:\n\n"
+      fail_message += "```  - `Microsoft.Compute/snapshots/delete`*```\n"
+      fail_message += "```  - `Microsoft.Compute/snapshots/read` ```\n"
+      fail_message += "```  - `Microsoft.Insights/metrics/read` ```\n\n"
+    end
+
+    if asterix_found == 1
+      fail_message += "Azure permission list contains a permission with an asterix but no footnote explaning why or the footnote is formatted incorrectly. The footnote should indicate what is special about these permissions; in most cases, this will be an explanation that the permission is optional and only needed for policy actions. Please add a footnote that begins with [space][space][backslash][asterix][space] like so:\n\n"
+      fail_message += "```  \\* Only required for taking action; the policy will still function in a read-only capacity without these permissions.```\n\n"
+    end
   end
 
   if google_permission_line
@@ -297,12 +344,78 @@ def readme_invalid_credentials?(file)
       fail_message += "Line #{google_permission_line.to_s}: Google permission statement does not use the standard text. Please make sure Google permissions begin with the following text followed by a list:\n\n"
       fail_message += "```- [**Google Cloud Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1121577) (*provider=gce*) which has the following:```\n\n"
     end
+
+    google_perm_tester = /^`[a-zA-Z]+\.[a-zA-Z]+\.[a-zA-Z]+(?:\.[a-zA-Z]+)*`(?:\*)?$/
+    asterix_found = 0
+    permission_list_found = 0
+
+    google_permission_text.each_with_index do |line, index|
+      line_number = index + google_permission_line
+
+      permission_list_found = 1 if index == 1 && line.start_with?("  - ")
+
+      if permission_list_found == 1
+        if !line.start_with?("  - ")
+          permission_list_found = 2
+        else
+          asterix_found = 1 if line.strip.end_with?("*")
+
+          if !line.split("  - ")[1].match?(google_perm_tester)
+            fail_message += "Line #{line_number.to_s}: Google permission list item formatted incorrectly. Please make sure all list items are formatted like the following examples:\n\n"
+            fail_message += "```  - `resourcemanager.projects.get`*```\n"
+            fail_message += "```  - `compute.regions.list` ```\n"
+            fail_message += "```  - `billing.resourceCosts.get` ```\n\n"
+          end
+        end
+      end
+
+      asterix_found == 2 if asterix_found == 1 && line.start_with?("  \* ")
+    end
+
+    if permission_list_found == 0
+      fail_message += "Google permission list missing or formatted incorrectly. Please ensure there is a list of permissions beneath the Google permission statement. Each list item should begin with [space][space][hyphen][space] like so:\n\n"
+      fail_message += "```  - `resourcemanager.projects.get`*```\n"
+      fail_message += "```  - `compute.regions.list` ```\n"
+      fail_message += "```  - `billing.resourceCosts.get` ```\n\n"
+    end
+
+    if asterix_found == 1
+      fail_message += "Google permission list contains a permission with an asterix but no footnote explaning why or the footnote is formatted incorrectly. The footnote should indicate what is special about these permissions; in most cases, this will be an explanation that the permission is optional and only needed for policy actions. Please add a footnote that begins with [space][space][backslash][asterix][space] like so:\n\n"
+      fail_message += "```  \\* Only required for taking action; the policy will still function in a read-only capacity without these permissions.```\n\n"
+    end
   end
 
   if flexera_permission_line
     if !flexera_permission_text[0].start_with?("- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:")
       fail_message += "Line #{flexera_permission_line.to_s}: Flexera permission statement does not use the standard text. Please make sure Flexera permissions begin with the following text followed by a list:\n\n"
       fail_message += "```- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:```\n\n"
+    end
+
+    flexera_perm_tester = /^`[a-zA-Z0-9\-_\.]+`(?:\*)?$/
+    asterix_found = 0
+    permission_list_found = 0
+
+    flexera_permission_text.each_with_index do |line, index|
+      line_number = index + flexera_permission_line
+
+      permission_list_found = 1 if index == 1 && line.start_with?("  - ")
+
+      if permission_list_found == 1
+        if !line.start_with?("  - ")
+          permission_list_found = 2
+        else
+          asterix_found = 1 if line.strip.end_with?("*")
+
+          if !line.split("  - ")[1].match?(flexera_perm_tester)
+            fail_message += "Line #{line_number.to_s}: Flexera permission list item formatted incorrectly. Please make sure all list items are formatted like the following examples:\n\n"
+            fail_message += "```  - `resourcemanager.projects.get`*```\n"
+            fail_message += "```  - `compute.regions.list` ```\n"
+            fail_message += "```  - `billing.resourceCosts.get` ```\n\n"
+          end
+        end
+      end
+
+      asterix_found == 2 if asterix_found == 1 && line.start_with?("  \* ")
     end
   end
 
