@@ -175,6 +175,7 @@ def readme_invalid_credentials?(file)
 
     if line_number == prereq_line_number + 2
       if !line.start_with?("This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).")
+        fail_message += "---\n\n"
         fail_message += "Line #{line_number.to_s}: README has invalid description for credentials section or description is not correctly located two lines below `## Prerequisites`. Credentials section should contain the following description text before the credential list:\n\n"
         fail_message += "```This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).```\n\n"
       end
@@ -218,16 +219,19 @@ def readme_invalid_credentials?(file)
   end
 
   if aws_policy && !aws_permission_line
+    fail_message += "---\n\n"
     fail_message += "AWS permissions missing or incorrectly formatted. Please make sure AWS permissions begin with a list item like the following:\n\n"
     fail_message += "```- [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:```\n\n"
   end
 
   if azure_policy && !azure_permission_line
+    fail_message += "---\n\n"
     fail_message += "Azure permissions missing or incorrectly formatted. Please make sure Azure permissions begin with a list item like the following:\n\n"
     fail_message += "```- [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:```\n\n"
   end
 
   if google_policy && !google_permission_line
+    fail_message += "---\n\n"
     fail_message += "Google permissions missing or incorrectly formatted. Please make sure Google permissions begin with a list item like the following:\n\n"
     fail_message += "```- [**Google Cloud Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1121577) (*provider=gce*) which has the following:```\n\n"
   end
@@ -236,10 +240,12 @@ def readme_invalid_credentials?(file)
     aws_json_tester = /^\s{2}```json\n\s{2}\{\n\s{6}"Version": "2012-10-17",\n\s{6}"Statement": \[\n\s{10}\{\n\s{14}"Effect": "Allow",\n\s{14}"Action": \[\n[\s\S]*?\n\s{10}\}\n\s{6}\]\n\s{2}\}\n\s{2}```$/
 
     if !readme_text.match?(aws_json_tester)
+      fail_message += "---\n\n"
       fail_message += "AWS permission JSON example missing or formatted incorrectly. Please see other AWS READMEs for correctly formatted examples.\n\n"
     end
 
     if !aws_permission_text[0].start_with?("- [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:")
+      fail_message += "---\n\n"
       fail_message += "Line #{aws_permission_line.to_s}: AWS permission statement does not use the standard text. Please make sure AWS permissions begin with the following text followed by a list:\n\n"
       fail_message += "```- [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:```\n\n"
     end
@@ -260,6 +266,7 @@ def readme_invalid_credentials?(file)
           asterix_found = 1 if line.strip.end_with?("*")
 
           if !line.split("  - ")[1].match?(aws_perm_tester)
+            fail_message += "---\n\n"
             fail_message += "Line #{line_number.to_s}: AWS permission list item formatted incorrectly. Please make sure all list items are formatted like the following examples:\n\n"
             fail_message += "```  - `rds:DeleteDBSnapshot`*```\n"
             fail_message += "```  - `sts:GetCallerIdentity` ```\n"
@@ -272,6 +279,7 @@ def readme_invalid_credentials?(file)
     end
 
     if permission_list_found == 0
+      fail_message += "---\n\n"
       fail_message += "AWS permission list missing or formatted incorrectly. Please ensure there is a list of permissions beneath the AWS permission statement. Each list item should begin with [space][space][hyphen][space] like so:\n\n"
       fail_message += "```  - `rds:DeleteDBSnapshot`*```\n"
       fail_message += "```  - `sts:GetCallerIdentity` ```\n"
@@ -279,6 +287,7 @@ def readme_invalid_credentials?(file)
     end
 
     if asterix_found == 1
+      fail_message += "---\n\n"
       fail_message += "AWS permission list contains a permission with an asterix but no footnote explaning why or the footnote is formatted incorrectly. The footnote should indicate what is special about these permissions; in most cases, this will be an explanation that the permission is optional and only needed for policy actions. Please add a footnote that begins with [space][space][backslash][asterix][space] like so:\n\n"
       fail_message += "```  \\* Only required for taking action (deletion); the policy will still function in a read-only capacity without these permissions.```\n\n"
     end
@@ -286,6 +295,7 @@ def readme_invalid_credentials?(file)
 
   if azure_permission_line
     if !azure_permission_text[0].start_with?("- [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:")
+      fail_message += "---\n\n"
       fail_message += "Line #{azure_permission_line.to_s}: Azure permission statement does not use the standard text. Please make sure Azure permissions begin with the following text followed by a list:\n\n"
       fail_message += "```- [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:```\n\n"
     end
@@ -294,6 +304,7 @@ def readme_invalid_credentials?(file)
 
   if google_permission_line
     if !google_permission_text[0].start_with?("- [**Google Cloud Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1121577) (*provider=gce*) which has the following:")
+      fail_message += "---\n\n"
       fail_message += "Line #{google_permission_line.to_s}: Google permission statement does not use the standard text. Please make sure Google permissions begin with the following text followed by a list:\n\n"
       fail_message += "```- [**Google Cloud Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1121577) (*provider=gce*) which has the following:```\n\n"
     end
@@ -301,6 +312,7 @@ def readme_invalid_credentials?(file)
 
   if flexera_permission_line
     if !flexera_permission_text[0].start_with?("- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:")
+      fail_message += "---\n\n"
       fail_message += "Line #{flexera_permission_line.to_s}: Flexera permission statement does not use the standard text. Please make sure Flexera permissions begin with the following text followed by a list:\n\n"
       fail_message += "```- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:```\n\n"
     end
