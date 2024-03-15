@@ -1,5 +1,6 @@
 # DangerFile
 # https://danger.systems/reference.html
+# Tests located in .dangerfile directory
 
 ###############################################################################
 # Required Libraries
@@ -28,9 +29,9 @@ renamed_files = git.renamed_files.collect{ |r| r[:before] }
 # Changed Files. Ignores renamed files to prevent errors on files that don't exist
 changed_files = git.added_files + git.modified_files - renamed_files
 # Changed Dangerfile
-changed_dangerfile = changed_files.select{ |file| file == "Dangerfile" }
+changed_dangerfiles = changed_files.select{ |file| file == "Dangerfile" || file.start_with?(".dangerfile/") }
 # Changed Dot Files
-changed_dot_files = changed_files.select{ |file| file.start_with?(".") }
+changed_dot_files = changed_files.select{ |file| file.start_with?(".") && !file.start_with?(".dangerfile/") }
 # Changed Config Files
 config_files = ["Gemfile", "Gemfile.lock", "Rakefile", "package.json", "package-lock.json"]
 changed_config_files = changed_files.select{ |file| config_files.include?(file) }
@@ -73,8 +74,8 @@ end
 ###############################################################################
 
 # Perform testing on Dangerfile itself if it has been modified
-changed_dangerfile.each do |file|
-  warn "**#{file}**\nDangerfile has been modified! Please ensure changes were intentional, have been tested, and do not break existing tests."
+changed_dangerfiles.each do |file|
+  warn "**#{file}**\nDangerfile or related file has been modified! Please ensure changes were intentional, have been tested, and do not break existing tests."
 end
 
 ###############################################################################
