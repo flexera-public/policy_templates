@@ -1,0 +1,258 @@
+# DangerFile README Tests
+# See ./Dangerfile for more details
+
+###############################################################################
+# Methods: README
+###############################################################################
+
+### Missing README Sections
+# Verify that README file has all required sections
+def readme_missing_sections?(file)
+  fail_message = ""
+
+  # Store contents of file for direct analysis
+  readme_text = File.read(file)
+
+  # Flags for whether sections are found
+  name_found = false
+  what_it_does_found = false
+  input_parameters_found = false
+  policy_actions_found = false
+  prerequisites_found = false
+  supported_clouds_found = false
+  cost_found = false
+
+  readme_text.each_line.with_index do |line, index|
+    name_found = true if index == 0 && line.start_with?("# ")
+    what_it_does_found = true if line.start_with?("## What It Does")
+    input_parameters_found = true if line.start_with?("## Input Parameters")
+    policy_actions_found = true if line.start_with?("## Policy Actions")
+    prerequisites_found = true if line.start_with?("## Prerequisites")
+    supported_clouds_found = true if line.start_with?("## Supported Clouds")
+    cost_found = true if line.start_with?("## Cost")
+  end
+
+  fail_message += "```# Policy Name```\n" if !name_found
+  fail_message += "```## What It Does```\n" if !what_it_does_found
+  fail_message += "```## Input Parameters```\n" if !input_parameters_found
+  fail_message += "```## Policy Actions```\n" if !policy_actions_found
+  fail_message += "```## Prerequisites```\n" if !prerequisites_found
+  fail_message += "```## Supported Clouds```\n" if !supported_clouds_found
+  fail_message += "```## Cost```\n" if !cost_found
+
+  fail_message = "**#{file}**\nREADME.md is missing required sections. Please make sure the following sections exist and are indicated with the below markdown. Spelling, spacing, and capitalization should conform to the below:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### Out of order README Sections
+# Verify that README file has the various sections in the correct order
+def readme_sections_out_of_order?(file)
+  fail_message = ""
+
+  # Store contents of file for direct analysis
+  readme_text = File.read(file)
+
+  # Flags for whether sections are found
+  name_found = false
+  what_it_does_found = false
+  how_it_works_found = false
+  policy_savings_found = false
+  input_parameters_found = false
+  policy_actions_found = false
+  prerequisites_found = false
+  supported_clouds_found = false
+  cost_found = false
+
+  what_it_does_raised = false
+  how_it_works_raised = false
+  policy_savings_raised = false
+  input_parameters_raised = false
+  policy_actions_raised = false
+  prerequisites_raised = false
+  supported_clouds_raised = false
+  cost_raised = false
+
+  readme_text.each_line.with_index do |line, index|
+    line_number = index + 1
+
+    name_found = true if index == 0 && line.start_with?("# ")
+    what_it_does_found = true if line.start_with?("## What It Does")
+    how_it_works_found = true if line.start_with?("## How It Works")
+    policy_savings_found = true if line.start_with?("### Policy Savings Details")
+    input_parameters_found = true if line.start_with?("## Input Parameters")
+    policy_actions_found = true if line.start_with?("## Policy Actions")
+    prerequisites_found = true if line.start_with?("## Prerequisites")
+    supported_clouds_found = true if line.start_with?("## Supported Clouds")
+    cost_found = true if line.start_with?("## Cost")
+
+    if !what_it_does_raised && what_it_does_found && !name_found
+      fail_message += "Line #{line_number.to_s}: What It Does out of order.\n"
+      what_it_does_raised = true
+    end
+
+    if !how_it_works_raised && how_it_works_found && (!name_found || !what_it_does_found)
+      fail_message += "Line #{line_number.to_s}: How It Works out of order.\n"
+      how_it_works_raised = true
+    end
+
+    if !policy_savings_raised && policy_savings_found && (!name_found || !what_it_does_found)
+      fail_message += "Line #{line_number.to_s}: Policy Savings Details out of order.\n"
+      policy_savings_raised = true
+    end
+
+    if !input_parameters_raised && input_parameters_found && (!name_found || !what_it_does_found)
+      fail_message += "Line #{line_number.to_s}: Input Parameters out of order.\n"
+      input_parameters_raised = true
+    end
+
+    if !policy_actions_raised && policy_actions_found && (!name_found || !what_it_does_found || !input_parameters_found)
+      fail_message += "Line #{line_number.to_s}: Policy Actions out of order.\n"
+      policy_actions_raised = true
+    end
+
+    if !prerequisites_raised && prerequisites_found && (!name_found || !what_it_does_found || !input_parameters_found || !policy_actions_found)
+      fail_message += "Line #{line_number.to_s}: Prerequisites out of order.\n"
+      prerequisites_raised = true
+    end
+
+    if !supported_clouds_raised && supported_clouds_found && (!name_found || !what_it_does_found || !input_parameters_found || !policy_actions_found || !prerequisites_found)
+      fail_message += "Line #{line_number.to_s}: Supported Clouds out of order.\n"
+      supported_clouds_raised = true
+    end
+
+    if !cost_raised && cost_found && (!name_found || !what_it_does_found || !input_parameters_found || !policy_actions_found || !prerequisites_found)
+      fail_message += "Line #{line_number.to_s}: Cost out of order.\n"
+      cost_raised = true
+    end
+  end
+
+  fail_message = "**#{file}**\nREADME.md sections are out of order. Sections should be in the following order: Policy Name, What It Does, How It Works, Policy Savings Details, Input Parameters, Policy Actions, Prerequisites, Supported Clouds, Cost\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### README Credentials formatting
+# Verify that README file has credentials in the proper formatting
+def readme_invalid_credentials?(file)
+  fail_message = ""
+
+  # Store contents of file for direct analysis
+  readme_text = File.read(file)
+
+  prereq_line_number = -100
+
+  aws_perm_tester = /^`[a-z0-9]+:[A-Z][a-zA-Z0-9]*`[*]?$/
+  aws_json_tester = /^\s{2}```json\n\s{2}\{\n\s{6}"Version": "2012-10-17",\n\s{6}"Statement": \[\n\s{10}\{\n\s{14}"Effect": "Allow",\n\s{14}"Action": \[\n[\s\S]*?\n\s{10}\}\n\s{6}\]\n\s{2}\}\n\s{2}```$/
+
+  aws_policy = false
+  azure_policy = false
+  google_policy = false
+
+  aws_permission_line = nil
+  azure_permission_line = nil
+  google_permission_line = nil
+  flexera_permission_line = nil
+
+  aws_permission_text = []
+  azure_permission_text = []
+  google_permission_text = []
+  flexera_permission_text = []
+
+  aws_permission_scanning = false
+  azure_permission_scanning = false
+  google_permission_scanning = false
+  flexera_permission_scanning = false
+
+  readme_text.each_line.with_index do |line, index|
+    line_number = index + 1
+
+    aws_policy = true if line_number == 1 and (line.include?("AWS") || line.include?("aws"))
+    azure_policy = true if line_number == 1 and (line.include?("Azure") || line.include?("azure"))
+    google_policy = true if line_number == 1 and (line.include?("Google") || line.include?("google"))
+
+    # Description check
+    prereq_line_number = line_number if line.start_with?("## Prerequisites")
+
+    if line_number == prereq_line_number + 2
+      if !line.start_with?("This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).")
+        fail_message += "Line #{line_number.to_s}: README has invalid description for credentials section or description is not correctly located two lines below `## Prerequisites`. Credentials section should contain the following description text before the credential list:\n\n"
+        fail_message += "```This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).```\n\n"
+      end
+    end
+
+    if line.start_with?("The [Provider-Specific Credentials")
+      aws_permission_scanning = false
+      azure_permission_scanning = false
+      google_permission_scanning = false
+      flexera_permission_scanning = false
+
+      aws_permission_stop_scanning = true
+      azure_permission_stop_scanning = true
+      google_permission_stop_scanning = true
+      flexera_permission_stop_scanning = true
+    end
+
+    aws_permission_scanning = false if line.start_with?("- [") && (!line.include?("AWS") && !line.include?("aws"))
+    aws_permission_scanning = false if azure_permission_scanning || google_permission_scanning || flexera_permission_scanning
+    aws_permission_scanning = true if !line.start_with?("This Policy Template uses [Credentials]") && !aws_permission_stop_scanning && !aws_permission_scanning && prereq_line_number > 0 && (line.include?("[**AWS") || line.include?("[**aws"))
+    aws_permission_line = line_number if !aws_permission_line && aws_permission_scanning
+    aws_permission_text << line if aws_permission_scanning
+
+    azure_permission_scanning = false if line.start_with?("- [") && (!line.include?("Azure") && !line.include?("azure"))
+    azure_permission_scanning = false if aws_permission_scanning || google_permission_scanning || flexera_permission_scanning
+    azure_permission_scanning = true if !line.start_with?("This Policy Template uses [Credentials]") && !azure_permission_stop_scanning && !azure_permission_scanning && prereq_line_number > 0 && (line.include?("[**Azure") || line.include?("[**azure"))
+    azure_permission_line = line_number if !azure_permission_line && azure_permission_scanning
+    azure_permission_text << line if azure_permission_scanning
+
+    google_permission_scanning = false if line.start_with?("- [") && (!line.include?("Google Cloud Credential") && !line.include?("Google Cloud Credential"))
+    google_permission_scanning = false if aws_permission_scanning || azure_permission_scanning || flexera_permission_scanning
+    google_permission_scanning = true if !line.start_with?("This Policy Template uses [Credentials]") && !google_permission_stop_scanning && !google_permission_scanning && prereq_line_number > 0 && (line.include?("[**Google") || line.include?("[**google"))
+    google_permission_line = line_number if !google_permission_line && google_permission_scanning
+    google_permission_text << line if google_permission_scanning
+
+    flexera_permission_scanning = false if line.start_with?("- [") && (!line.include?("Flexera") && !line.include?("flexera"))
+    flexera_permission_scanning = false if aws_permission_scanning || azure_permission_scanning || google_permission_scanning
+    flexera_permission_scanning = true if !line.start_with?("This Policy Template uses [Credentials]") && !flexera_permission_stop_scanning && !flexera_permission_scanning && prereq_line_number > 0 && (line.include?("[**Flexera") || line.include?("[**flexera")) && (!line.include?("AWS") && !line.include?("aws")) && (!line.include?("Azure") && !line.include?("azure")) && (!line.include?("Google") && !line.include?("google"))
+    flexera_permission_line = line_number if !flexera_permission_line && flexera_permission_scanning
+    flexera_permission_text << line if flexera_permission_scanning
+  end
+
+  if aws_policy && !aws_permission_line
+    fail_message += "AWS permissions missing or incorrectly formatted. Please make sure AWS permissions begin with a list item like the following:\n\n"
+    fail_message += "```- [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:```\n\n"
+  end
+
+  if azure_policy && !azure_permission_line
+    fail_message += "Azure permissions missing or incorrectly formatted. Please make sure Azure permissions begin with a list item like the following:\n\n"
+    fail_message += "```- [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:```\n\n"
+  end
+
+  if google_policy && !google_permission_line
+    fail_message += "Google permissions missing or incorrectly formatted. Please make sure Google permissions begin with a list item like the following:\n\n"
+    fail_message += "```- [**Google Cloud Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1121577) (*provider=gce*) which has the following:```\n\n"
+  end
+
+  if aws_permission_line
+
+  end
+
+  if azure_permission_line
+
+  end
+
+  if google_permission_line
+
+  end
+
+  if flexera_permission_line
+
+  end
+
+  fail_message = "**#{file}**\nREADME.md has problems with how credential permissions are presented:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
