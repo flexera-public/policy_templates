@@ -36,6 +36,8 @@ changed_dot_files = changed_files.select{ |file| file.start_with?(".") && !file.
 # Changed Config Files
 config_files = ["Gemfile", "Gemfile.lock", "Rakefile", "package.json", "package-lock.json"]
 changed_config_files = changed_files.select{ |file| config_files.include?(file) }
+# Changed Ruby files.
+changed_rb_files = changed_files.select{ |file| file.end_with?(".rb") || file == "Dangerfile" || file == "Rakefile" }
 # Changed Policy Template files. Ignore meta policy files.
 changed_pt_files = changed_files.select{ |file| file.end_with?(".pt") && !file.end_with?("meta_parent.pt") }
 # Changed Meta Policy Template files.
@@ -97,6 +99,16 @@ end
 # Perform testing on modified config files
 changed_config_files.each do |file|
   warn "**#{file}**\nConfig file `#{file}` has been modified! Please make sure these modifications were intentional and have been tested. Config files are necessary for configuring the Github repository and managing automation."
+end
+
+###############################################################################
+# Ruby File Testing
+###############################################################################
+
+# Perform a lint check on changed Ruby files
+changed_rb_files.each do |file|
+  test = general_ruby_errors?(file); fail test if test
+  test = general_rubocop_problems?(file); warn test if test
 end
 
 ###############################################################################
