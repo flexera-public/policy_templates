@@ -536,6 +536,7 @@ def policy_run_script_incorrect_order?(file)
     end
 
     disordered = false
+    iter_index = nil
 
     if line.strip.start_with?("run_script")
       # Store a list of all of the parameters for the run_script
@@ -550,10 +551,13 @@ def policy_run_script_incorrect_order?(file)
       constant_found = false  # Whether we've found a constant, like rs_org_id
       value_found = false     # Whether we've found a raw value, like a number or string
 
-      parameters.each do |parameter|
+      parameters.each_with_index do |parameter, index|
         if parameter.start_with?("val(") && parameter.include?("iter_item")
           iter_found = true
+          iter_index = index
           disordered = true if ds_found || param_found || constant_found || value_found
+        elsif index == iter_index + 1
+          # Do nothing, since splitting by , is going to split functions like val() into two entries
         elsif parameter.start_with?('$ds')
           ds_found = true
           disordered = true if param_found || constant_found || value_found
@@ -565,6 +569,7 @@ def policy_run_script_incorrect_order?(file)
           disordered = true if value_found
         else # Assume a raw value, like a number or string, if none of the above
           value_found = true
+          iter_index = index if parameter.start_with?("val(")
         end
       end
     end
