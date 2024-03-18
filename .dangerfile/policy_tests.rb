@@ -94,7 +94,7 @@ def policy_bad_indentation?(file)
     if !eos_block && !define_block
       indent_level -= 2 if line.strip == "end" || line.strip == ")"
 
-      if indentation != indent_level && !line.strip.empty?
+      if indentation != indent_level && !line.strip.empty? && line.strip != "EOS" && line.strip != "EOF"
         fail_message += "Line #{line_number.to_s}: Expected indentation of #{indent_level.to_s} spaces but found #{indentation} spaces.\n"
       end
 
@@ -103,11 +103,11 @@ def policy_bad_indentation?(file)
       eos_block = true if line.include?("<<-")
       define_block = true if line.start_with?("define ") && line.strip.end_with?(" do")
     end
-  end
 
-  # If we're within one of these blocks, at least make sure we're 2 spaces indented
-  if (eos_block || define_block) && indentation < 2 && !line.strip.empty?
-    fail_message += "Line #{line_number.to_s}: Expected indentation of at least two spaces within code/text block.\n"
+    # If we're within one of these blocks, at least make sure we're 2 spaces indented
+    if (eos_block || define_block) && indentation < 2 && !line.strip.empty?
+      fail_message += "Line #{line_number.to_s}: Expected indentation of at least two spaces within code/text block.\n"
+    end
   end
 
   fail_message = "**#{file}**\nPolicy Template has indentation issues. Code should be indented with 2 spaces inside each do/end block, info() block, and EOS block, with additional spacing for nested blocks as appropriate:\n\n" + fail_message if !fail_message.empty?
