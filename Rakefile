@@ -1,7 +1,7 @@
 require 'rubygems'
 require 'json'
 require 'fileutils'
-require_relative 'tools/lib/policy_parser'
+require_relative '.dangerfile/policy_parser'
 
 # the list of policies is consumed by the tools/policy_sync/policy_sync.pt
 # and the docs.rightscale.com build to generate the policies/user/policy_list.html
