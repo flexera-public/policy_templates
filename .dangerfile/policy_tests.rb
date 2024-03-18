@@ -94,7 +94,7 @@ def policy_bad_indentation?(file)
     if !eos_block && !define_block
       indent_level -= 2 if line.strip == "end" || line.strip == ")"
 
-      if indentation != indent_level
+      if indentation != indent_level && !line.strip.empty?
         fail_message += "Line #{line_number.to_s}: Expected indentation of #{indent_level.to_s} spaces but found #{indentation} spaces.\n"
       end
 
