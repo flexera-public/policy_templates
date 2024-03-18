@@ -106,7 +106,7 @@ def policy_bad_indentation?(file)
   end
 
   # If we're within one of these blocks, at least make sure we're 2 spaces indented
-  if (eos_block || define_block) && indentation < 2
+  if (eos_block || define_block) && indentation < 2 && !line.strip.empty?
     fail_message += "Line #{line_number.to_s}: Expected indentation of at least two spaces within code/text block.\n"
   end
 
