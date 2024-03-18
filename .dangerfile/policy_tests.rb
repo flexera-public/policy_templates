@@ -544,16 +544,19 @@ def policy_run_script_incorrect_order?(file)
       # Remove the first item because it's just the name of the script itself
       script_name = parameters.shift
 
-      ds_found = false       # Whether we've found a datasource parameter
-      param_found = false    # Whether we've found a parameter parameter
-      constant_found = false # Whether we've found a constant, like rs_org_id
-      value_found = false    # Whether we've found a raw value, like a number or string
+      iter_found = false      # Whether we've found a val(iter_item, "") parameter
+      ds_found = false        # Whether we've found a datasource parameter
+      param_found = false     # Whether we've found a parameter parameter
+      constant_found = false  # Whether we've found a constant, like rs_org_id
+      value_found = false     # Whether we've found a raw value, like a number or string
 
       parameters.each do |parameter|
-        if parameter.start_with?('$ds')
+        if parameter.include?("iter_item")
+          iter_found = true
+          disordered = true if ds_found || param_found || constant_found || value_found
+        elsif parameter.start_with?('$ds')
           ds_found = true
           disordered = true if param_found || constant_found || value_found
-          puts parameter
         elsif parameter.start_with?('$param')
           param_found = true
           disordered = true if constant_found || value_found
@@ -569,7 +572,7 @@ def policy_run_script_incorrect_order?(file)
     fail_message += "Line #{line_number.to_s}: #{ds_name} / run_script #{script_name}\n" if disordered
   end
 
-  fail_message = "**#{file}**\nrun_script statements found whose parameters are not in the correct order. run_script parameters should be in the following order: script, datasources, parameters, variables, raw values:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "**#{file}**\nrun_script statements found whose parameters are not in the correct order. run_script parameters should be in the following order: script, val(iter_item, *string*), datasources, parameters, variables, raw values:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
