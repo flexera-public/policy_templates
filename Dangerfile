@@ -254,6 +254,21 @@ changed_pt_files.each do |file|
   # Raise error if run_script statements with incorrect parameter ordering are found
   test = policy_run_script_incorrect_order?(file); fail test if test
 
+  # Raise error if code blocks have fields in improper order
+  test = policy_block_fields_incorrect_order?(file, "parameter"); fail test if test
+  test = policy_block_fields_incorrect_order?(file, "credentials"); fail test if test
+  test = policy_block_fields_incorrect_order?(file, "pagination"); fail test if test
+  test = policy_block_fields_incorrect_order?(file, "datasource"); fail test if test
+  test = policy_block_fields_incorrect_order?(file, "script"); fail test if test
+  test = policy_block_fields_incorrect_order?(file, "policy"); fail test if test
+  test = policy_block_fields_incorrect_order?(file, "escalation"); fail test if test
+
+  # Raise error if recommendation policy is missing required export fields
+  test = policy_missing_recommendation_fields?(file, "required"); fail test if test
+
+  # Raise warning if recommendation policy is missing recommended export fields
+  test = policy_missing_recommendation_fields?(file, "recommended"); warn test if test
+
   # Raise error if policy is not in the master permissions file.
   # Raise warning if policy is in this file, but datasources have been added.
   test = policy_missing_master_permissions?(file, permissions_yaml); fail test if test

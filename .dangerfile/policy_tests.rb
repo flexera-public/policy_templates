@@ -536,6 +536,7 @@ def policy_run_script_incorrect_order?(file)
     end
 
     disordered = false
+    iter_index = -5
 
     if line.strip.start_with?("run_script")
       # Store a list of all of the parameters for the run_script
@@ -544,16 +545,22 @@ def policy_run_script_incorrect_order?(file)
       # Remove the first item because it's just the name of the script itself
       script_name = parameters.shift
 
-      ds_found = false       # Whether we've found a datasource parameter
-      param_found = false    # Whether we've found a parameter parameter
-      constant_found = false # Whether we've found a constant, like rs_org_id
-      value_found = false    # Whether we've found a raw value, like a number or string
+      iter_found = false      # Whether we've found a val(iter_item, "") parameter
+      ds_found = false        # Whether we've found a datasource parameter
+      param_found = false     # Whether we've found a parameter parameter
+      constant_found = false  # Whether we've found a constant, like rs_org_id
+      value_found = false     # Whether we've found a raw value, like a number or string
 
-      parameters.each do |parameter|
-        if parameter.start_with?('$ds')
+      parameters.each_with_index do |parameter, index|
+        if parameter.start_with?("val(") && parameter.include?("iter_item")
+          iter_found = true
+          iter_index = index
+          disordered = true if ds_found || param_found || constant_found || value_found
+        elsif index == iter_index + 1
+          # Do nothing, since splitting by , is going to split functions like val() into two entries
+        elsif parameter.start_with?('$ds')
           ds_found = true
           disordered = true if param_found || constant_found || value_found
-          puts parameter
         elsif parameter.start_with?('$param')
           param_found = true
           disordered = true if constant_found || value_found
@@ -562,6 +569,7 @@ def policy_run_script_incorrect_order?(file)
           disordered = true if value_found
         else # Assume a raw value, like a number or string, if none of the above
           value_found = true
+          iter_index = index if parameter.start_with?("val(")
         end
       end
     end
@@ -569,11 +577,180 @@ def policy_run_script_incorrect_order?(file)
     fail_message += "Line #{line_number.to_s}: #{ds_name} / run_script #{script_name}\n" if disordered
   end
 
-  fail_message = "**#{file}**\nrun_script statements found whose parameters are not in the correct order. run_script parameters should be in the following order: script, datasources, parameters, variables, raw values:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "**#{file}**\nrun_script statements found whose parameters are not in the correct order. run_script parameters should be in the following order: script, val(iter_item, *string*), datasources, parameters, variables, raw values:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
 end
+
+### Code block field order test
+# Return message if fields for the specified code block type are not in the proper order
+def policy_block_fields_incorrect_order?(file, block_type)
+  # Store contents of file for direct analysis
+  policy_code = File.read(file)
+
+  fail_message = ""
+
+  field_list = []
+  correct_order = nil
+  testing_block = false
+  sub_block = false
+  export_block = false
+  field_block = false
+  block_line_number = 0
+  block_names = [ block_type ]
+  block_id = ""
+  policy_id = nil
+
+  case block_type
+  when "parameter"
+    correct_order = [ "type", "category", "label", "description", "allowed_values", "allowed_pattern", "min_value", "max_value", "default" ]
+  when "credentials"
+    correct_order = [ "schemes", "label", "description", "tags", "aws_account_number" ]
+  when "pagination"
+    correct_order = [ "get_page_marker", "set_page_marker" ]
+  when "datasource"
+    correct_order = [ "auth", "pagination", "verb", "scheme", "host", "path", "query", "header", "body", "body_field", "ignore_status" ]
+  when "script"
+    correct_order = [ "parameters", "result", "code" ]
+  when "policy"
+    correct_order = [ "summary_template", "detail_template", "check", "escalate", "hash_include", "hash_exclude", "export" ]
+    block_names = [ "  validate", "  validate_each" ]
+  when "escalation"
+    correct_order = [ "automatic", "label", "description", "email", "run" ]
+  end
+
+  if correct_order
+    block_names.each do |block_name|
+      policy_code.each_line.with_index do |line, index|
+        line_number = index + 1
+
+        break if line.strip.start_with?('# Meta Policy [alpha]')
+
+        policy_id = line.split('"')[1] if line.start_with?("policy ")
+
+        if testing_block && !sub_block && !export_block && !line.strip.start_with?("end") && !line.strip.start_with?("request do") && !line.strip.start_with?("result do")
+          sub_block = true if line.strip.end_with?(" do") || line.include?("<<-")
+          export_block = true if line.strip == "export do"
+          field_list << line.strip.split(" ")[0]
+        elsif !sub_block && !export_block && line.strip.start_with?("end")
+          filtered_list = field_list.select { |item| correct_order.include?(item) }
+          order_indices = filtered_list.map { |item| correct_order.index(item) }
+
+          if order_indices != order_indices.sort
+            if policy_id && block_type == "policy"
+              fail_message += "Line #{block_line_number.to_s}: policy \"#{policy_id}\" #{block_name.strip}\n"
+            else
+              fail_message += "Line #{block_line_number.to_s}: #{block_name} \"#{block_id}\"\n"
+            end
+          end
+
+          testing_block = false
+          sub_block = false
+          export_block = false
+          field_list = []
+        elsif sub_block && !export_block && (line.strip.start_with?("end") || line.include?("EOS") || line.include?("EOF"))
+          sub_block = false
+        elsif export_block
+          export_block = false if line.strip.start_with?("end") && !field_block
+          field_block = true if line.strip.start_with?("field") && line.strip.end_with?(" do")
+          field_block = false if line.strip.start_with?("end") && field_block
+        end
+
+        if line.start_with?(block_name + " ") && line.strip.end_with?(" do")
+          testing_block = true
+          sub_block = false
+          export_block = false
+          field_list = []
+
+          block_line_number = line_number
+          block_id = line.split('"')[1]
+        end
+      end
+    end
+  end
+
+  fail_message = "**#{file}**\n#{block_type} code blocks found with out of order fields.\nFields should be in the following order: " + correct_order.join(", ") + "\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### Recommendation policy export field test
+# Return message if required recommendation policy fields are missing
+def policy_missing_recommendation_fields?(file, field_type)
+  # Store contents of file for direct analysis
+  policy_code = File.read(file)
+
+  fail_message = ""
+
+  pp = PolicyParser.new
+  pp.parse(file)
+  info = pp.parsed_info
+
+  if field_type == "required"
+    required_fields = [ "accountID", "accountName", "resourceID", "recommendationDetails", "service", "savings", "savingsCurrency", "id" ]
+  end
+
+  if field_type == "recommended"
+    required_fields = [ "resourceType", "resourceName", "region", "tags" ]
+  end
+
+  if !info[:recommendation_type].nil?
+    fields_found = []
+    export_block = false
+    export_line = nil
+    field_block = false
+
+    export_info = []
+
+    policy_code.each_line.with_index do |line, index|
+      line_number = index + 1
+
+      if line.strip.start_with?("export do")
+        export_block = true
+        export_line = line_number
+      end
+
+      if export_block && !field_block && line.strip.start_with?("end")
+        export_block = false
+
+        export_info << {
+          "line": export_line,
+          "list": fields_found
+        }
+
+        export_line = nil
+        fields_found = []
+      end
+
+      if export_block && !field_block && line.strip.start_with?("field")
+        fields_found << line.strip.split('"')[1]
+        field_block = true
+      end
+
+      field_block = false if field_block && line.strip.start_with?("end")
+    end
+
+    export_info.each do |export|
+      missing_fields = []
+
+      required_fields.each do |field|
+        missing_fields << field if !export[:list].include?(field)
+      end
+
+      if missing_fields.length > 0
+        fail_message += "Line #{export[:line].to_s}: " + missing_fields.join(", ") + "\n"
+      end
+    end
+  end
+
+  fail_message = "**#{file}**\nRecommendation policy has export that is missing #{field_type} fields. These fields are scraped by the Flexera platform for dashboards:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
 
 ### Master permissions test
 # Return false if master permissions have been recorded for the policy
