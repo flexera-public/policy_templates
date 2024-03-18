@@ -551,7 +551,7 @@ def policy_run_script_incorrect_order?(file)
       value_found = false     # Whether we've found a raw value, like a number or string
 
       parameters.each do |parameter|
-        if parameter.include?("iter_item")
+        if parameter.start_with?('val(') && parameter.include?("iter_item")
           iter_found = true
           disordered = true if ds_found || param_found || constant_found || value_found
         elsif parameter.start_with?('$ds')
