@@ -599,6 +599,7 @@ def policy_block_fields_incorrect_order?(file, block_type)
   field_block = false
   block_line_number = 0
   block_names = [ block_type ]
+  block_id = ""
 
   case block_type
   when "parameter"
@@ -608,7 +609,7 @@ def policy_block_fields_incorrect_order?(file, block_type)
   when "pagination"
     correct_order = [ "get_page_marker", "set_page_marker" ]
   when "datasource"
-    correct_order = [ "auth", "pagination", "verb", "scheme", "host", "path", "header", "query", "body", "body_field", "ignore_status" ]
+    correct_order = [ "auth", "pagination", "verb", "scheme", "host", "path", "query", "header", "body", "body_field", "ignore_status" ]
   when "script"
     correct_order = [ "parameters", "result", "code" ]
   when "policy"
@@ -632,7 +633,7 @@ def policy_block_fields_incorrect_order?(file, block_type)
           order_indices = filtered_list.map { |item| correct_order.index(item) }
 
           if order_indices != order_indices.sort
-            fail_message += "Line #{block_line_number.to_s}\n"
+            fail_message += "Line #{block_line_number.to_s}: #{block_name} \"#{block_id}\"\n"
           end
 
           testing_block = false
@@ -649,6 +650,7 @@ def policy_block_fields_incorrect_order?(file, block_type)
         if line.start_with?(block_name + " ") && line.end_with?(" do")
           testing_block = true
           block_line_number = line_number
+          block_id = line.split('"')[1]
         end
       end
     end

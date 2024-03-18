@@ -19,11 +19,11 @@ info(
 ###############################################################################
 
 parameter "param_email" do
-  type "list"
-  category "Policy Settings"
   label "Email addresses"
   description "A list of email aaddresses to notify."
   default []
+  type "list"
+  category "Policy Settings"
 end
 
 parameter "param_azure_endpoint" do
@@ -193,10 +193,10 @@ credentials "auth_azure" do
 end
 
 credentials "auth_flexera" do
-  schemes "oauth2"
-  label "Flexera"
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
+  schemes "oauth2"
+  label "Flexera"
 end
 
 ###############################################################################
@@ -320,12 +320,12 @@ end
 
 datasource "ds_azure_subscriptions" do
   request do
+    query "api-version", "2020-01-01"
+    header "User-Agent", "RS Policies"
     auth $auth_azure
     pagination $pagination_azure
     host $param_azure_endpoint
     path "/subscriptions/"
-    query "api-version", "2020-01-01"
-    header "User-Agent", "RS Policies"
     # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
     # Forces `ds_is_deleted` datasource to run first during policy execution
     header "Meta-Flexera", val($ds_is_deleted, "path")
@@ -478,8 +478,8 @@ datasource "ds_azure_instances_region_filtered" do
 end
 
 script "js_azure_instances_region_filtered", type: "javascript" do
-  parameters "ds_azure_instances_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
+  parameters "ds_azure_instances_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
   code <<-EOS
   if (param_regions_list.length > 0) {
     result = _.filter(ds_azure_instances_tag_filtered, function(vm) {
@@ -1285,10 +1285,10 @@ policy "pol_utilization" do
     EOS
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    hash_exclude "underutil_message", "idle_message", "underutil_total_savings", "idle_total_savings", "tags", "savings", "savingsCurrency", "cpu_maximum", "cpu_minimum", "cpu_average", "mem_maximum", "mem_minimum", "mem_average"
     escalate $esc_email
     escalate $esc_poweroff_instances
     escalate $esc_delete_instances
-    hash_exclude "underutil_message", "idle_message", "underutil_total_savings", "idle_total_savings", "tags", "savings", "savingsCurrency", "cpu_maximum", "cpu_minimum", "cpu_average", "mem_maximum", "mem_minimum", "mem_average"
     export do
       resource_level true
       field "accountID" do
@@ -1404,9 +1404,9 @@ end
 
 escalation "esc_delete_instances" do
   automatic contains($param_automatic_action, "Delete Idle Instances")
+  run "delete_instances", data, $param_azure_endpoint
   label "Delete Idle Instances"
   description "Approval to delete all selected instances"
-  run "delete_instances", data, $param_azure_endpoint
 end
 
 ###############################################################################
