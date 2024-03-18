@@ -638,8 +638,11 @@ def policy_block_fields_incorrect_order?(file, block_type)
           order_indices = filtered_list.map { |item| correct_order.index(item) }
 
           if order_indices != order_indices.sort
-            block_id = policy_id if policy_id
-            fail_message += "Line #{block_line_number.to_s}: #{block_name} \"#{block_id}\"\n"
+            if policy_id && block_type == "policy"
+              fail_message += "Line #{block_line_number.to_s}: policy \"#{policy_id}\"\n"
+            else
+              fail_message += "Line #{block_line_number.to_s}: #{block_name} \"#{block_id}\"\n"
+            end
           end
 
           testing_block = false
