@@ -108,7 +108,9 @@ end
 # Perform a lint check on changed Ruby files
 changed_rb_files.each do |file|
   test = general_ruby_errors?(file); fail test if test
-  test = general_rubocop_problems?(file); warn test if test
+
+  # Rubocop linting currently disabled. It is *very* verbose.
+  #test = general_rubocop_problems?(file); warn test if test
 end
 
 ###############################################################################
