@@ -676,6 +676,82 @@ def policy_block_fields_incorrect_order?(file, block_type)
   return false
 end
 
+### Recommendation policy export field test
+# Return message if required recommendation policy fields are missing
+def policy_missing_recommendation_fields?(file, field_type)
+  # Store contents of file for direct analysis
+  policy_code = File.read(file)
+
+  fail_message = ""
+
+  pp = PolicyParser.new
+  pp.parse(file)
+  info = pp.parsed_info
+
+  if field_type == "required"
+    required_fields = [ "accountID", "accountName", "resourceID", "recommendationDetails", "service", "savings", "savingsCurrency", "id" ]
+  end
+
+  if field_type == "recommended"
+    required_fields = [ "resourceType", "resourceName", "region", "tags" ]
+  end
+
+  if !info[:recommendation_type].nil?
+    fields_found = []
+    export_block = false
+    export_line = nil
+    field_block = false
+
+    export_info = []
+
+    policy_code.each_line.with_index do |line, index|
+      line_number = index + 1
+
+      if line.strip.start_with?("export do")
+        export_block = true
+        export_line = line_number
+      end
+
+      if !field_block && line.strip.start_with?("end")
+        export_block = false
+
+        export_info << {
+          "line": export_line,
+          "list": fields_found
+        }
+
+        export_line = nil
+        fields_found = []
+      end
+
+      if export_block && !field_block && line.strip.start_with?("field")
+        fields_found << line.strip.split('"')[1]
+        field_block = true
+      end
+
+      field_block = false if field_block && line.strip.start_with?("end")
+    end
+
+    export_info.each do |export|
+      missing_fields = []
+
+      required_fields.each do |field|
+        missing_fields << field if !export["list"].include?(field)
+      end
+
+      if missing_fields.length > 0
+        fail_message += "Line #{export["line"].to_s}: " + missing_fields.join(", ") + "\n"
+      end
+    end
+  end
+
+  fail_message = "**#{file}**\nRecommendation policy has export that is missing #{field_type} fields:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+
 ### Master permissions test
 # Return false if master permissions have been recorded for the policy
 def policy_missing_master_permissions?(file, permissions_yaml)

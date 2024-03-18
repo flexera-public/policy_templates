@@ -263,6 +263,12 @@ changed_pt_files.each do |file|
   test = policy_block_fields_incorrect_order?(file, "policy"); fail test if test
   test = policy_block_fields_incorrect_order?(file, "escalation"); fail test if test
 
+  # Raise error if recommendation policy is missing required export fields
+  test = policy_missing_recommendation_fields?(file, "required"); fail test if test
+
+  # Raise warning if recommendation policy is missing recommended export fields
+  test = policy_missing_recommendation_fields?(file, "recommended"); warn test if test
+
   # Raise error if policy is not in the master permissions file.
   # Raise warning if policy is in this file, but datasources have been added.
   test = policy_missing_master_permissions?(file, permissions_yaml); fail test if test
