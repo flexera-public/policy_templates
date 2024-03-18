@@ -53,9 +53,9 @@ new_pt_files = git.added_files.select{ |file| file.end_with?(".pt") && !file.end
 # Github Pull Request Testing
 ###############################################################################
 
-test = github_pr_bad_title?; fail test if test
-test = github_pr_missing_summary?; fail test if test
-test = github_pr_missing_labels?; fail test if test
+test = github_pr_bad_title?(github); warn test if test
+test = github_pr_missing_summary?(github); fail test if test
+test = github_pr_missing_labels?(github); fail test if test
 
 ###############################################################################
 # All Files Testing
