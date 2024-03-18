@@ -629,7 +629,7 @@ def policy_block_fields_incorrect_order?(file, block_type)
 
         policy_id = line.split('"')[1] if line.start_with?("policy ")
 
-        if testing_block && !sub_block && !export_block && !line.strip.start_with?("end") && !line.strip.start_with?("request do")
+        if testing_block && !sub_block && !export_block && !line.strip.start_with?("end") && !line.strip.start_with?("request do") && !line.strip.start_with?("result do")
           sub_block = true if line.strip.end_with?(" do") || line.include?("<<-")
           export_block = true if line.strip == "export do"
           field_list << line.strip.split(" ")[0]
