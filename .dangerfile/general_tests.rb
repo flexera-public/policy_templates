@@ -105,3 +105,33 @@ def general_bad_urls?(file)
   return fail_message.strip if !fail_message.empty?
   return false
 end
+
+###############################################################################
+# Methods: Ruby
+###############################################################################
+
+### Ruby lint test
+# Return false if Ruby linter finds no problems
+def general_ruby_errors?(file)
+  linter = `ruby -c #{file}`
+
+  # Return the problems found if applicable
+  return "**#{file}**\nRuby linting found errors:\n\n#{linter}" if linter.strip != "Syntax OK"
+  return false
+end
+
+### Rubocop lint test
+# Return false if Rubocop linter finds no problems
+def general_rubocop_problems?(file)
+  linter = `rubocop #{file}`
+
+  fail_message = ""
+
+  linter.each_line do |line|
+    fail_message += line.strip + "\n" if line.start_with?(file)
+  end
+
+  # Return the problems found if applicable
+  return "**#{file}**\nRubocop linting found problems:\n\n#{fail_message}" if !fail_message.empty?
+  return false
+end

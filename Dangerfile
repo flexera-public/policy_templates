@@ -14,6 +14,7 @@ require 'yaml'
 ###############################################################################
 
 require_relative '.dangerfile/policy_parser'
+require_relative '.dangerfile/github_tests'
 require_relative '.dangerfile/general_tests'
 require_relative '.dangerfile/readme_tests'
 require_relative '.dangerfile/changelog_tests'
@@ -35,6 +36,8 @@ changed_dot_files = changed_files.select{ |file| file.start_with?(".") && !file.
 # Changed Config Files
 config_files = ["Gemfile", "Gemfile.lock", "Rakefile", "package.json", "package-lock.json"]
 changed_config_files = changed_files.select{ |file| config_files.include?(file) }
+# Changed Ruby files.
+changed_rb_files = changed_files.select{ |file| file.end_with?(".rb") || file == "Dangerfile" || file == "Rakefile" }
 # Changed Policy Template files. Ignore meta policy files.
 changed_pt_files = changed_files.select{ |file| file.end_with?(".pt") && !file.end_with?("meta_parent.pt") }
 # Changed Meta Policy Template files.
@@ -52,8 +55,10 @@ new_pt_files = git.added_files.select{ |file| file.end_with?(".pt") && !file.end
 # Github Pull Request Testing
 ###############################################################################
 
-fail "**Github Pull Request**\nPull Request is missing summary. Please provide a summary of your Pull Request." if github.pr_body.length < 10
-fail "**Github Pull Request**\nPull Request is missing labels. Please add labels to this Pull Request." if github.pr_labels.empty?
+test = github_pr_bad_title?(github); warn test if test
+test = github_pr_missing_summary?(github); fail test if test
+test = github_pr_missing_labels?(github); fail test if test
+test = github_pr_missing_ready_label?(github); warn test if test
 
 ###############################################################################
 # All Files Testing
@@ -94,6 +99,18 @@ end
 # Perform testing on modified config files
 changed_config_files.each do |file|
   warn "**#{file}**\nConfig file `#{file}` has been modified! Please make sure these modifications were intentional and have been tested. Config files are necessary for configuring the Github repository and managing automation."
+end
+
+###############################################################################
+# Ruby File Testing
+###############################################################################
+
+# Perform a lint check on changed Ruby files
+changed_rb_files.each do |file|
+  test = general_ruby_errors?(file); fail test if test
+
+  # Rubocop linting currently disabled. It is *very* verbose.
+  #test = general_rubocop_problems?(file); warn test if test
 end
 
 ###############################################################################
@@ -180,6 +197,9 @@ changed_pt_files.each do |file|
 
   # Run policy through fpt testing. Only raise error if there is a syntax error.
   test = policy_fpt_syntax_error?(file); fail test if test
+
+  # Raise warning if policy contains invalid indentation
+  test = policy_bad_indentation?(file); warn test if test
 
   # Raise errors or warnings if bad metadata is found
   test = policy_bad_metadata?(file, "name"); fail test if test
