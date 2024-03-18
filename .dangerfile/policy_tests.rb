@@ -712,7 +712,7 @@ def policy_missing_recommendation_fields?(file, field_type)
         export_line = line_number
       end
 
-      if !field_block && line.strip.start_with?("end")
+      if export_block && !field_block && line.strip.start_with?("end")
         export_block = false
 
         export_info << {
