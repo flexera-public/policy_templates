@@ -14,6 +14,7 @@ require 'yaml'
 ###############################################################################
 
 require_relative '.dangerfile/policy_parser'
+require_relative '.dangerfile/github_tests'
 require_relative '.dangerfile/general_tests'
 require_relative '.dangerfile/readme_tests'
 require_relative '.dangerfile/changelog_tests'
@@ -52,8 +53,8 @@ new_pt_files = git.added_files.select{ |file| file.end_with?(".pt") && !file.end
 # Github Pull Request Testing
 ###############################################################################
 
-fail "**Github Pull Request**\nPull Request is missing summary. Please provide a summary of your Pull Request." if github.pr_body.length < 10
-fail "**Github Pull Request**\nPull Request is missing labels. Please add labels to this Pull Request." if github.pr_labels.empty?
+test = github_pr_missing_summary?; fail test if test
+test =  github_pr_missing_labels?; fail test if test
 
 ###############################################################################
 # All Files Testing
