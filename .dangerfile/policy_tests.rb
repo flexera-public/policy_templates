@@ -89,7 +89,7 @@ def policy_bad_indentation?(file)
 
     # Skip blocks of EOS/EOF text and define blocks, since these contain arbitrarily spaced code/text
     eos_block = false if eos_block && line.strip == "EOS" || line.strip == "EOF"
-    define_block = false if define_block && line.strip == "end"
+    define_block = false if define_block && line.start_with?("end")
 
     if !eos_block && !define_block
       indent_level -= 2 if line.strip == "end" || line.strip == ")"
@@ -102,10 +102,9 @@ def policy_bad_indentation?(file)
 
       eos_block = true if line.include?("<<-")
       define_block = true if line.start_with?("define ") && line.strip.end_with?(" do")
-    end
 
     # If we're within one of these blocks, at least make sure we're 2 spaces indented
-    if (eos_block || define_block) && indentation < 2 && !line.strip.empty?
+    elsif (eos_block || define_block) && indentation < 2 && !line.strip.empty?
       fail_message += "Line #{line_number.to_s}: Expected indentation of at least two spaces within code/text block.\n"
     end
   end
