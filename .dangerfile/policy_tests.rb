@@ -600,6 +600,7 @@ def policy_block_fields_incorrect_order?(file, block_type)
   block_line_number = 0
   block_names = [ block_type ]
   block_id = ""
+  policy_id = nil
 
   case block_type
   when "parameter"
@@ -626,6 +627,8 @@ def policy_block_fields_incorrect_order?(file, block_type)
 
         break if line.strip.start_with?('# Meta Policy [alpha]')
 
+        policy_id = line.split('"')[1] if line.start_with?("policy ")
+
         if testing_block && !sub_block && !export_block && !line.strip.start_with?("end") && !line.strip.start_with?("request do")
           sub_block = true if line.strip.end_with?(" do") || line.include?("<<-")
           export_block = true if line.strip == "export do"
@@ -635,6 +638,7 @@ def policy_block_fields_incorrect_order?(file, block_type)
           order_indices = filtered_list.map { |item| correct_order.index(item) }
 
           if order_indices != order_indices.sort
+            block_id = policy_id if policy_id
             fail_message += "Line #{block_line_number.to_s}: #{block_name} \"#{block_id}\"\n"
           end
 
