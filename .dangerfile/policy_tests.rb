@@ -624,6 +624,8 @@ def policy_block_fields_incorrect_order?(file, block_type)
       policy_code.each_line.with_index do |line, index|
         line_number = index + 1
 
+        break if line.strip.start_with?('# Meta Policy [alpha]')
+
         if testing_block && !sub_block && !export_block && !line.strip.start_with?("end") && !line.strip.start_with?("request do")
           sub_block = true if line.strip.end_with?(" do") || line.include?("<<-")
           export_block = true if line.strip == "export do"
@@ -647,7 +649,7 @@ def policy_block_fields_incorrect_order?(file, block_type)
           field_block = false if line.strip.start_with?("end") && field_block
         end
 
-        if line.start_with?(block_name + " ") && line.end_with?(" do")
+        if line.start_with?(block_name + " ") && line.strip.end_with?(" do")
           testing_block = true
           block_line_number = line_number
           block_id = line.split('"')[1]
