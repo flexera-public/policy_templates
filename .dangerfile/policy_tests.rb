@@ -68,6 +68,54 @@ def policy_bad_filename_casing?(file)
   return false
 end
 
+### Bad Indentation test
+# Verify that everything is properly indented
+def policy_bad_indentation?(file)
+  # Store contents of file for direct analysis
+  policy_code = File.read(file)
+
+  # Message to return of test fails
+  fail_message = ""
+
+  indent_level = 0
+  eos_block = false
+  define_block = false
+
+  policy_code.each_line.with_index do |line, index|
+    break if line.strip.start_with?('# Meta Policy [alpha]')
+
+    line_number = index + 1
+    indentation = line.match(/\A\s*/).to_s.length
+
+    # Skip blocks of EOS/EOF text and define blocks, since these contain arbitrarily spaced code/text
+    eos_block = false if eos_block && line.strip == "EOS" || line.strip == "EOF"
+    define_block = false if define_block && line.strip == "end"
+
+    if !eos_block && !define_block
+      indent_level -= 2 if line.strip == "end" || line.strip == ")"
+
+      if indentation != indent_level
+        fail_message += "Line #{line_number.to_s}: Expected indentation of #{indent_level.to_s} spaces but found #{indentation} spaces.\n"
+      end
+
+      indent_level += 2 if line.strip.end_with?(" do") || line.start_with?("info(")
+
+      eos_block = true if line.include?("<<-")
+      define_block = true if line.start_with?("define ") && line.strip.end_with?(" do")
+    end
+  end
+
+  # If we're within one of these blocks, at least make sure we're 2 spaces indented
+  if (eos_block || define_block) && indentation < 2
+    fail_message += "Line #{line_number.to_s}: Expected indentation of at least two spaces within code/text block.\n"
+  end
+
+  fail_message = "**#{file}**\nPolicy Template has indentation issues. Code should be indented with 2 spaces inside each do/end block, info() block, and EOS block, with additional spacing for nested blocks as appropriate:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
 ### Metadata test
 # Return false if policy metadata has missing or problematic field
 def policy_bad_metadata?(file, field_name)
@@ -750,7 +798,6 @@ def policy_missing_recommendation_fields?(file, field_type)
   return fail_message.strip if !fail_message.empty?
   return false
 end
-
 
 ### Master permissions test
 # Return false if master permissions have been recorded for the policy
