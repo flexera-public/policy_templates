@@ -575,6 +575,83 @@ def policy_run_script_incorrect_order?(file)
   return false
 end
 
+### Code block field order test
+# Return message if fields for the specified code block type are not in the proper order
+def policy_block_fields_incorrect_order?(file, block_type)
+  # Store contents of file for direct analysis
+  policy_code = File.read(file)
+
+  fail_message = ""
+
+  field_list = []
+  correct_order = nil
+  testing_block = false
+  sub_block = false
+  export_block = false
+  field_block = false
+  block_line_number = 0
+  block_names = [ block_type ]
+
+  case block_type
+  when "parameter"
+    correct_order = [ "type", "category", "label", "description", "allowed_values", "allowed_pattern", "min_value", "max_value", "default" ]
+  when "credentials"
+    correct_order = [ "schemes", "label", "description", "tags", "aws_account_number" ]
+  when "pagination"
+    correct_order = [ "get_page_marker", "set_page_marker" ]
+  when "datasource"
+    correct_order = [ "auth", "pagination", "verb", "scheme", "host", "path", "header", "query", "body", "body_field", "ignore_status" ]
+  when "script"
+    correct_order = [ "parameters", "result", "code" ]
+  when "policy"
+    correct_order = [ "summary_template", "detail_template", "check", "escalate", "hash_include", "hash_exclude", "export" ]
+    block_names = [ "  validate", "  validate_each" ]
+  when "escalation"
+    correct_order = [ "automatic", "label", "description", "email", "run" ]
+  end
+
+  if correct_order
+    block_names.each do |block_name|
+      policy_code.each_line.with_index do |line, index|
+        line_number = index + 1
+
+        if testing_block && !sub_block && !export_block && !line.strip.start_with?("end") && !line.strip.start_with?("request do")
+          sub_block = true if line.strip.end_with?(" do") || line.include?("<<-")
+          export_block = true if line.strip == "export do"
+          field_list << line.strip.split(" ")[0]
+        elsif !sub_block && !export_block && line.strip.start_with?("end")
+          filtered_list = field_list.select { |item| correct_order.include?(item) }
+          order_indices = filtered_list.map { |item| correct_order.index(item) }
+
+          if order_indices != order_indices.sort
+            fail_message += "Line #{block_line_number.to_s}\n"
+          end
+
+          testing_block = false
+          sub_block = false
+          field_list = []
+        elsif sub_block && !export_block && (line.strip.start_with?("end") || line.include?("EOS") || line.include?("EOF"))
+          sub_block = false
+        elsif export_block
+          export_block = false if line.strip.start_with?("end") && !field_block
+          field_block = true if line.strip.start_with?("field") && line.strip.end_with?(" do")
+          field_block = false if line.strip.start_with?("end") && field_block
+        end
+
+        if line.start_with?(block_name + " ") && line.end_with?(" do")
+          testing_block = true
+          block_line_number = line_number
+        end
+      end
+    end
+  end
+
+  fail_message = "**#{file}**\n#{block_type} code blocks found with out of order fields.\nFields should be in the following order: " + correct_order.join(", ") + "\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
 ### Master permissions test
 # Return false if master permissions have been recorded for the policy
 def policy_missing_master_permissions?(file, permissions_yaml)
