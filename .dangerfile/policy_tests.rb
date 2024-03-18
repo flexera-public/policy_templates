@@ -745,7 +745,7 @@ def policy_missing_recommendation_fields?(file, field_type)
     end
   end
 
-  fail_message = "**#{file}**\nRecommendation policy has export that is missing #{field_type} fields:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "**#{file}**\nRecommendation policy has export that is missing #{field_type} fields. These fields are scraped by the Flexera platform for dashboards:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
