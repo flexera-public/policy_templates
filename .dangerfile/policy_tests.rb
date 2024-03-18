@@ -646,6 +646,9 @@ def policy_block_fields_incorrect_order?(file, block_type)
           end
 
           testing_block = false
+          sub_block = false
+          export_block = false
+          field_list = []
         elsif sub_block && !export_block && (line.strip.start_with?("end") || line.include?("EOS") || line.include?("EOF"))
           sub_block = false
         elsif export_block
