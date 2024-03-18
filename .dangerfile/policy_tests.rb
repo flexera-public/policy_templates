@@ -736,11 +736,11 @@ def policy_missing_recommendation_fields?(file, field_type)
       missing_fields = []
 
       required_fields.each do |field|
-        missing_fields << field if !export["list"].include?(field)
+        missing_fields << field if !export[:list].include?(field)
       end
 
       if missing_fields.length > 0
-        fail_message += "Line #{export["line"].to_s}: " + missing_fields.join(", ") + "\n"
+        fail_message += "Line #{export[:line].to_s}: " + missing_fields.join(", ") + "\n"
       end
     end
   end
