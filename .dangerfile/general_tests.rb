@@ -143,7 +143,13 @@ end
 ### Python lint test
 # Return false if Python linter finds no problems
 def general_python_errors?(file)
-  linter = `python3 -c "compile(open('#{file}').read(), '#{file}', 'exec')"`
+  linter = `pylint --errors-only #{file}`
+
+  fail_message = ""
+
+  linter.each_line do |line|
+    fail_message += line.strip + "\n" if line.start_with?(file)
+  end
 
   # Return the problems found if applicable
   return "**#{file}**\nPython linting found errors:\n\n#{linter}" if !linter.strip.empty?
