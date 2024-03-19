@@ -2,7 +2,7 @@
 
 ## v3.7
 
-- Issue with empty `bill_source_expressions` fixed.
+- Issue with `bill_source_expressions` fixed, in case that was empty, policy breaks on runtime since `or` condition doesn't support empty expressions, added an extra validation to get rid of that condition if `bill_source_expressions` is empty.
 
 ## v3.6
 
