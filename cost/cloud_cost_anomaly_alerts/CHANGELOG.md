@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2
+
+- Fixed bug where incident showed dimensions from column `Grouping Dimensions` in random order
+
 ## v3.1
 
 - Fixed bug where incident link would render incorrectly if spaces were present in filter value
