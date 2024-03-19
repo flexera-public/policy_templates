@@ -72,28 +72,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 
   ```json
   {
-      "Version": "2012-10-17",
-      "Statement": [
-          {
-              "Effect": "Allow",
-              "Action": [
-                  "ec2:DescribeRegions",
-                  "ec2:DescribeImages",
-                  "ec2:DescribeSnapshots",
-                  "ec2:DeregisterImage",
-                  "ec2:DeleteSnapshot",
-                  "rds:DescribeDBInstances",
-                  "rds:DescribeDBSnapshots",
-                  "rds:DescribeDBClusters",
-                  "rds:DescribeDBClusterSnapshots",
-                  "rds:DeleteDBSnapshot",
-                  "rds:DeleteDBClusterSnapshot",
-                  "sts:GetCallerIdentity",
-                  "cloudtrail:LookupEvents"
-              ],
-              "Resource": "*"
-          }
-      ]
+
   }
   ```
 
