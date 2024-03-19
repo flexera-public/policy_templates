@@ -66,7 +66,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   - `sts:GetCallerIdentity`
   - `cloudtrail:LookupEvents`
 
-  \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
+  \* Only required for taking action (deletion); the policy will still function in a read-only capacity without these permissions.
 
   Example IAM Permission Policy:
 
