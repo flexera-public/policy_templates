@@ -5,7 +5,7 @@
 #   (2) Create a new local branch of the repository.
 #   (3) Run this Python script. It should replace azure_md_pricing.json with a new updated file.
 #   (4) Add and commit the new file, push it to the repository, and then make a pull request.
-
+asdasd;;;3897^&*^*&
 import json
 import logging
 import urllib.parse
