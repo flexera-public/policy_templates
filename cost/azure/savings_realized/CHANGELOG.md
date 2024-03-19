@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.7
+
+- Issue with empty `bill_source_expressions` fixed.
+
 ## v3.6
 
 - Incident subject is now the name of the applied policy
