@@ -46,7 +46,7 @@ end
 # Verify that the pull request has ready for review label
 def github_pr_missing_ready_label?(github)
   fail_message = ""
-  fail_message = "**Github Pull Request**\nPull Request is missing `READY-FOR-REVIEW` label. Please add this label if this Pull Request is ready for review." if !github.pr_labels.include?("READY-FOR-REVIEW")
+  fail_message = "**Github Pull Request**\nPull Request is missing `READY-FOR-REVIEW` label. Please add this label if this Pull Request is ready for review.\n\nPlease note that this error may be a false positive if you've added the label after Dangerfile tests were run, since adding labels does not trigger them to run again. In these cases, simply ignore this warning." if !github.pr_labels.include?("READY-FOR-REVIEW")
 
   return fail_message.strip if !fail_message.empty?
   return false
