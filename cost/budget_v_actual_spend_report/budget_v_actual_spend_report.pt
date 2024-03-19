@@ -8,7 +8,7 @@ category "Cost"
 tenancy "single"
 default_frequency "daily"
 info(
-  version: "2.1",
+  version: "2.2",
   provider: "Flexera Optima",
   service: "",
   policy_set: ""
@@ -19,36 +19,36 @@ info(
 ###############################################################################
 
 parameter "param_budget_name_id" do
+  type "string"
+  category "Policy Settings"
   label "Budget Name or ID"
   description "Provide the name or id of a Budget"
   min_length 1
-  type "string"
   constraint_description "Budget Name or ID is a required field"
-  category "Policy Settings"
 end
 
 parameter "param_filter" do
   type "list"
+  category "Policy Settings"
   label "Filter Group By Dimension(s)"
   description "Enable budget tracking for specific dimensions and values. Only dimensions previously defined in the budget are supported"
-  category "Policy Settings"
   default []
 end
 
 parameter "param_unbudgeted" do
-  label "Unbudgeted spend"
   type "string"
-  allowed_values "Exclude unbudgeted spend","Include unbudgeted spend"
-  description "Specify whether to consider or ignore spend that was not included in the initial budget planning."
   category "Policy Settings"
-  default "Exclude unbudgeted spend"
+  label "Unbudgeted spend"
+  description "Specify whether to consider or ignore spend that was not included in the initial budget planning."
+  allowed_values "Include unbudgeted spend","Exclude unbudgeted spend"
+  default "Include unbudgeted spend"
 end
 
 parameter "param_email" do
-  label "Email Addresses"
   type "list"
-  description "A list of email addresses to notify"
   category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify"
   default []
 end
 
@@ -137,10 +137,10 @@ datasource "ds_get_dimensions" do
 end
 
 datasource "ds_dimensions" do
-  run_script $js_filter_dimensions, $ds_get_dimensions
+  run_script $js_dimensions, $ds_get_dimensions
 end
 
-script "js_filter_dimensions", type: "javascript" do
+script "js_dimensions", type: "javascript" do
   parameters "ds_get_dimensions"
   result "result"
   code <<-EOS
@@ -152,11 +152,11 @@ script "js_filter_dimensions", type: "javascript" do
 end
 
 datasource "ds_filters" do
-  run_script $js_filters, $param_filter, $ds_dimensions
+  run_script $js_filters, $ds_dimensions, $param_filter
 end
 
 script "js_filters", type: "javascript" do
-  parameters "param_filter", "ds_dimensions"
+  parameters "ds_dimensions", "param_filter"
   result "results"
   code <<-EOS
   var results = {}
@@ -194,10 +194,10 @@ datasource "ds_budgets" do
 end
 
 datasource "ds_filtered_budgets" do
-  run_script $js_filter_budgets, $ds_budgets, $param_budget_name_id
+  run_script $js_filtered_budgets, $ds_budgets, $param_budget_name_id
 end
 
-script "js_filter_budgets", type: "javascript" do
+script "js_filtered_budgets", type: "javascript" do
   parameters "budgets", "budget_name_id"
   result "results"
   code <<-EOS
@@ -220,7 +220,7 @@ end
 datasource "ds_reports" do
   iterate $ds_filtered_budgets
   request do
-    run_script $js_report_request, $ds_flexera_api_hosts, rs_org_id, $param_unbudgeted, iter_item
+    run_script $js_reports, $ds_flexera_api_hosts, $param_unbudgeted, iter_item, rs_org_id
   end
   result do
     encoding "json"
@@ -238,8 +238,8 @@ datasource "ds_reports" do
   end
 end
 
-script "js_report_request", type: "javascript" do
-  parameters "ds_flexera_api_hosts", "org", "unbudgeted", "budget"
+script "js_reports", type: "javascript" do
+  parameters "ds_flexera_api_hosts", "unbudgeted", "budget", "org"
   result "request"
   code <<-EOS
   function fmtDate(yearMonth) {
@@ -257,9 +257,9 @@ script "js_report_request", type: "javascript" do
     path: "/finops-analytics/v1/orgs/" + org + "/budgets/" + budget.id + "/report",
     query_params: {
       "dimensions": budget.dimensions || [],
-      "filter": "budgeted eq " + (unbudgeted == "Include unbudgeted spend"),
-			"startAt": fmtDate(budget.start_date),
-			"endAt": fmtDate(endAt.getTime()),
+      "filter": unbudgeted == "Include unbudgeted spend" ? "" : "budgeted eq true",
+      "startAt": fmtDate(budget.start_date),
+      "endAt": fmtDate(endAt.getTime()),
     },
     headers: {
       "User-Agent": "RS Policies",
@@ -269,12 +269,12 @@ script "js_report_request", type: "javascript" do
   EOS
 end
 
-datasource "ds_report" do
-  run_script $js_aggregated, $ds_reports, $ds_currency_code, $ds_currency_reference,  f1_app_host, $param_budget_name_id, $ds_dimensions, $ds_filters
+datasource "ds_aggregated_report" do
+  run_script $js_aggregated_report, $ds_reports, $ds_currency_code, $ds_currency_reference, $ds_dimensions, $ds_filters, $param_budget_name_id,  f1_app_host
 end
 
-script "js_aggregated", type: "javascript" do
-  parameters "reports", "currency_code", "currency_reference", "f1_app_host", "budget_name_id", "ds_dimensions", "filters"
+script "js_aggregated_report", type: "javascript" do
+  parameters "reports", "currency_code", "currency_reference", "ds_dimensions", "filters", "budget_name_id", "f1_app_host"
   result "results"
   code <<-EOS
   var invalid = [];
@@ -415,6 +415,7 @@ script "js_aggregated", type: "javascript" do
     reportData: _.sortBy(reportData, function (item) {return item.group;}),
     chartType: encodeURI('cht=lc'),
     chartScaling: encodeURI('chds=a'),
+    chartFormat: encodeURI('chxs=1N*cUSD0zsx*'),
     chartTitle: encodeURI('chtt=Spending+Overview'),
     chartAxVis: encodeURI('chxt=x,y'),
     chartSize: encodeURI('chs=700x250'),
@@ -432,7 +433,7 @@ end
 ###############################################################################
 
 policy "pol_budget_alert" do
-  validate $ds_report do
+  validate $ds_aggregated_report do
     summary_template "Budget Alerts: Invalid Budget Name or ID: {{parameters.param_budget_name_id}}"
     detail_template <<-EOS
   The following provided budget Name or ID is invalid or the budget refers to prior periods:
@@ -440,36 +441,36 @@ policy "pol_budget_alert" do
   - {{parameters.param_budget_name_id}}
   \n
 EOS
-    escalate $esc_budget_alert
     check eq(size(val(data, "invalid")),0)
+    escalate $esc_budget_alert
   end
 
-  validate $ds_report do
+  validate $ds_aggregated_report do
     summary_template "{{with index data.reportData 0}}{{ .name }}{{end}}: Monthly Budget vs Actual Spend Report"
     detail_template <<-EOS
-# {{with index data.reportData 0}}{{ .name }}{{end}}: Monthly Budget vs Actual Spend Report
+  # {{with index data.reportData 0}}{{ .name }}{{end}}: Monthly Budget vs Actual Spend Report
 
-Currency: **{{with index data.reportData 0}}{{ .currency }}{{end}}**
+  Currency: **{{with index data.reportData 0}}{{ .currency }}{{end}}**
 
-Cost Metric: **{{with index data.reportData 0}}{{ .metric }}{{end}}**
+  Cost Metric: **{{with index data.reportData 0}}{{ .metric }}{{end}}**
 
-Dimensions: **{{with index data.reportData 0}}{{ .dimm }}{{end}}**
+  Dimensions: **{{with index data.reportData 0}}{{ .dimm }}{{end}}**
 
-{{ if parameters.param_filter }}
-Target Groups: \n
-{{ range parameters.param_filter }}
-  * **{{ . }}**
-{{ end }}
-{{end}}
+  {{ if parameters.param_filter }}
+  Target Groups: \n
+  {{ range parameters.param_filter }}
+    * **{{ . }}**
+  {{ end }}
+  {{end}}
 
-![Budget vs Actual Cost Report](https://image-charts.com/chart?{{ data.chartType }}&{{ data.chartAxVis }}&{{ data.chartData }}&{{ data.chartSize }}&{{ data.chartLabels }}&{{ data.chartAxis }}&{{ data.chartScaling }}&{{ data.chartColors }} "Budget vs Actual Cost Report")
+  ![Budget vs Actual Cost Report](https://image-charts.com/chart?{{ data.chartType }}&{{ data.chartFormat }}&{{ data.chartAxVis }}&{{ data.chartData }}&{{ data.chartSize }}&{{ data.chartLabels }}&{{ data.chartAxis }}&{{ data.chartScaling }}&{{ data.chartColors }} "Budget vs Actual Cost Report")
 
-[Link to budget report in Flexera One](https://{{with index data.reportData 0}}{{ .host }}{{end}}/orgs/{{ rs_org_id }}/optima/budgets/{{with index data.reportData 0}}{{ .b_id }}{{end}})
+  [Link to budget report in Flexera One](https://{{with index data.reportData 0}}{{ .host }}{{end}}/orgs/{{ rs_org_id }}/optima/budgets/{{with index data.reportData 0}}{{ .b_id }}{{end}})
 
-*Please note: The chart in the incident reflects the selected filters. However, the budget dashboard via hyperlink displays the overall budget without filters applied.*
+  *Please note: The chart in the incident reflects the selected filters. However, the budget dashboard via hyperlink displays the overall budget without filters applied.*
 EOS
+    check eq(size(val(data, "reportData")),0)
     escalate $esc_budget_alert
-    check eq(0, 1)
     export "reportData" do
       field "monthYear" do
         label "MonthYear"
