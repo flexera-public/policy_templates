@@ -5,6 +5,7 @@
 - Fixed work with unbudgeted spend for new API
 - Added formatting of sums in labels axis
 - The "Unbudgeted spend" parameter has been changed to "Include unbudgeted spend" by default to match the chart in Flexera One panel
+- Reorganized code to match linters
 
 ## v2.1
 
