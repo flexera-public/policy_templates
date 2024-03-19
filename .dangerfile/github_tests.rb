@@ -10,12 +10,13 @@
 def github_pr_bad_title?(github)
   fail_message = ""
 
-  title_matcher = /^POL-\d{1,4} .+$/
+  pol_matcher = /^POL-\d{1,4} .+$/
+  fopts_matcher = /^FOPTS-\d{1,4} .+$/
 
-  if !github.pr_title.match?(title_matcher)
+  if !github.pr_title.match?(pol_matcher) && !github.pr_title.match?(fopts_matcher)
     fail_message = "**Github Pull Request**\nPull Request has improper title. Title should always begin with the JIRA ticket id, followed by a description, like in the following examples:\n\n"
     fail_message += "POL-123 Add New Feature\n"
-    fail_message += "POL-1000 Fixed Bug\n\n"
+    fail_message += "FOPTS-1000 Fixed Bug\n\n"
   end
 
   return fail_message.strip if !fail_message.empty?
