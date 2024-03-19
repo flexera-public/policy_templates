@@ -152,6 +152,6 @@ def general_python_errors?(file)
   end
 
   # Return the problems found if applicable
-  return "**#{file}**\nPython linting found errors:\n\n#{linter}" if !linter.strip.empty?
+  return "**#{file}**\nPython linting found errors:\n\n#{fail_message}" if !fail_message.strip.empty?
   return false
 end
