@@ -1,5 +1,9 @@
 # Policy Update Notification
 
+## Deprecated
+
+This policy is no longer being updated. The [Flexera Automation Outdated Applied Policies](https://github.com/flexera-public/policy_templates/tree/master/automation/flexera/outdated_applied_policies/) policy has superseded this one and includes significantly more functionality.
+
 ## What It Does
 
 This Policy Template scans all applied policies in a Flexera account and finds ones that are using an outdated version of a policy template from the Flexera catalog. An incident is raised, and optionally an email is sent, containing a list of these outdated applied policies.
