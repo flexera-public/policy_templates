@@ -2,7 +2,7 @@
 
 ## v3.7
 
-- Issue with `bill_source_expressions` fixed, in case that was empty, policy breaks on runtime since `or` condition doesn't support empty expressions, added an extra validation to get rid of that condition if `bill_source_expressions` is empty.
+- Added support for organizations with no Microsoft Azure Enterprise Agreement (Legacy) bill connects
 
 ## v3.6
 
