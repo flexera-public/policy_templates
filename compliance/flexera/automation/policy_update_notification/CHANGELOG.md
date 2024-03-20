@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.2
+
+- Updated policy metadata to ensure that it does not publish to the catalog
+
 ## v2.1
 
 - Deprecated: This policy is no longer being updated. Please see policy README for more information.
