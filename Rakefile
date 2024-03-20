@@ -29,11 +29,9 @@ task :generate_policy_list do
         publish = pp.parsed_info[:publish]
         # not all templates have the publish key
         # set these to true,
-        if (publish.nil? || publish == 'true' || publish == true) && provider != "Flexera Cloud Management"
-          publish = true
-        else
-          publish = false
-        end
+
+        publish = false
+        publish = true if publish.nil? || publish == 'true' || publish == true
       end
 
       # get version from long description
