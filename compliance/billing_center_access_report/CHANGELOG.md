@@ -1,5 +1,11 @@
 # Changelog
 
+## v3.0
+
+- Billing Center filter condensed to a single parameter and now supports both names and IDs
+- Incident summary is now derived from the name of the applied policy
+- Streamlined code for better readability and faster execution
+
 ## v2.0
 
 - Deprecated `auth_rs` authentication (type: `rightscale`) and replaced with `auth_flexera` (type: `oauth2`).  This is a breaking change which requires a Credential for `auth_flexera` [`provider=flexera`] before the policy can be applied.  Please see docs for setting up [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm)
