@@ -136,10 +136,6 @@ These templates can generate savings estimates for your environment.
 
   - [Flexera IAM Explicit User Roles](./compliance/flexera/iam_explicit_user_roles)
 
-#### Flexera Cloud Management
-
-- [Policy Update Notification](./compliance/policy_update_notification)
-
 #### Flexera FNMS
 
 - [ITAM Overused Licenses](./compliance/fnms/overused_licenses)
@@ -636,14 +632,14 @@ These templates can generate savings estimates for your environment.
 <!--
 ---
 :categories:
-  Compliance: 34
+  Compliance: 33
   Cost: 94
   Operational: 25
   SaaS Management: 12
   Security: 74
 :optimization_count: 45
 :policy_sets:
-  '': 77
+  '': 76
   AWS Config: 1
   Allocate VMs: 3
   Automation: 1
@@ -701,7 +697,7 @@ These templates can generate savings estimates for your environment.
   Azure: 82
   Azure China: 1
   Flexera: 8
-  Flexera Cloud Management: 3
+  Flexera Cloud Management: 2
   Flexera FNMS: 1
   Flexera ITAM: 5
   Flexera Optima: 21
@@ -716,7 +712,7 @@ These templates can generate savings estimates for your environment.
   Oracle: 1
   ServiceNow: 1
 :services:
-  '': 56
+  '': 55
   AKS: 2
   All: 1
   App Service: 1
@@ -760,7 +756,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 239
+:total_count: 238
 -->
 <!-- End Policy Template Stats -->
 
