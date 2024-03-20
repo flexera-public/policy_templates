@@ -1,7 +1,26 @@
 require 'rubygems'
 require 'json'
 require 'fileutils'
+require 'octokit'
+require 'uri'
+require 'time'
 require_relative '.dangerfile/policy_parser'
+
+# Method for determining when a file was last updated
+def find_last_updated(file)
+  repo_name = "flexera-public/policy_templates"
+  branch = "master"
+
+  # Initialize Octokit client (Assuming no authentication is required for public repositories)
+  client = Octokit::Client.new
+
+  # Fetch the commits for the file
+  commits = client.commits(repo_name, branch, path: file)
+
+  # Return datetime if there are any commits
+  return commits.first.commit.author.date if !commits.empty?
+  return nil
+end
 
 # the list of policies is consumed by the tools/policy_sync/policy_sync.pt
 # and the docs.rightscale.com build to generate the policies/user/policy_list.html
@@ -30,8 +49,7 @@ task :generate_policy_list do
         # not all templates have the publish key
         # set these to true,
 
-        publish = false
-        publish = true if publish.nil? || publish == 'true' || publish == true
+        publish = false unless publish.nil? || publish == 'true' || publish == true
       end
 
       # get version from long description
@@ -45,9 +63,16 @@ task :generate_policy_list do
         next
       end
 
+      updated_at = ""
+      last_updated = find_last_updated(file)
+
+      if last_updated != nil
+        updated_at = last_updated.iso8601
+      end
+
       puts "Adding #{pp.parsed_name}"
 
-      file_list<<{
+      file_list << {
         "name": pp.parsed_name,
         "file_name": file,
         "version": version,
@@ -59,6 +84,7 @@ task :generate_policy_list do
         "provider": provider,
         "service": service,
         "policy_set": policy_set,
+        "updated_at": updated_at
       }
     end
   end
