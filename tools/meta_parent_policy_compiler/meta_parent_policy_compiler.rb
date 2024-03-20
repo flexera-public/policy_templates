@@ -31,7 +31,7 @@ default_child_policy_template_files = [
   "../../operational/aws/tag_cardinality/aws_tag_cardinality.pt",
   "../../security/aws/ebs_unencrypted_volumes/aws_unencrypted_volumes.pt",
   "../../security/aws/rds_publicly_accessible/aws_publicly_accessible_rds_instances.pt",
-  "../../security/storage/aws/public_buckets/aws_public_buckets.pt",
+  "../../security/aws/public_buckets/aws_public_buckets.pt",
   # Azure Policy Templates
   "../../compliance/azure/azure_untagged_vms/untagged_vms.pt",
   "../../compliance/azure/azure_untagged_resources/untagged_resources.pt",
@@ -72,7 +72,7 @@ default_child_policy_template_files = [
   "../../cost/google/schedule_instance/google_schedule_instance.pt",
   "../../cost/google/cud_recommendations/google_committed_use_discount_recommendations.pt",
   "../../cost/google/old_snapshots/google_delete_old_snapshots.pt",
-  "../../security/storage/google/public_buckets/google_public_buckets.pt"
+  "../../security/google/public_buckets/google_public_buckets.pt"
 ]
 
 # Compile Meta Parent Policy Definition
