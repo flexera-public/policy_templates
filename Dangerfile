@@ -38,6 +38,8 @@ config_files = ["Gemfile", "Gemfile.lock", "Rakefile", "package.json", "package-
 changed_config_files = changed_files.select{ |file| config_files.include?(file) }
 # Changed Ruby files.
 changed_rb_files = changed_files.select{ |file| file.end_with?(".rb") || file == "Dangerfile" || file == "Rakefile" }
+# Changed Python files.
+changed_py_files = changed_files.select{ |file| file.end_with?(".py") }
 # Changed Policy Template files. Ignore meta policy files.
 changed_pt_files = changed_files.select{ |file| file.end_with?(".pt") && !file.end_with?("meta_parent.pt") }
 # Changed Meta Policy Template files.
@@ -111,6 +113,15 @@ changed_rb_files.each do |file|
 
   # Rubocop linting currently disabled. It is *very* verbose.
   #test = general_rubocop_problems?(file); warn test if test
+end
+
+###############################################################################
+# Python File Testing
+###############################################################################
+
+# Perform a lint check on changed Python files
+changed_py_files.each do |file|
+  test = general_python_errors?(file); fail test if test
 end
 
 ###############################################################################
@@ -191,6 +202,12 @@ changed_pt_files.each do |file|
 
   # Raise error if policy filename/path contains any uppercase letters
   test = policy_bad_filename_casing?(file); fail test if test
+
+  # Raise warning if policy won't be published
+  test = policy_unpublished?(file); warn test if test
+
+  # Raise warning if policy's name has changed
+  test = policy_name_changed?(file); warn test if test
 
   # Raise error if the file contains any bad urls
   test = general_bad_urls?(file); fail test if test
