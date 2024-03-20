@@ -10,9 +10,9 @@ desc "Create a list of active policies to be published to the Public Policy Cata
 task :generate_policy_list do
   FileUtils.mkdir_p 'dist'
   file_list = []
-  Dir['**/*.pt'].reject{ |f| f['msp/'] }.each do |file|
-    change_log = ::File.join(file.split('/')[0...-1].join('/'),'CHANGELOG.md')
-    readme = ::File.join(file.split('/')[0...-1].join('/'),'README.md')
+  Dir['**/*.pt'].each do |file|
+    change_log = ::File.join(file.split('/')[0...-1].join('/'), 'CHANGELOG.md')
+    readme = ::File.join(file.split('/')[0...-1].join('/'), 'README.md')
     publish = true
 
     if !file.match(/test_code/)
