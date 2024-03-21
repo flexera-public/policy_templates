@@ -67,7 +67,7 @@ These templates can generate savings estimates for your environment.
 
 #### Flexera
 
-- [Email Cost Optimization Recommendations](./cost/email_recommendations)
+- [Email Cost Optimization Recommendations](./cost/flexera/cco/email_recommendations)
 
 #### Google
 
@@ -76,9 +76,9 @@ These templates can generate savings estimates for your environment.
 - [Google Idle IP Address Recommender](./cost/google/idle_ip_address_recommendations)
 - [Google Idle Persistent Disk Recommender](./cost/google/idle_persistent_disk_recommendations)
 - [Google Rightsize VM Recommender](./cost/google/rightsize_vm_recommendations)
-- [Turbonomic Allocate Virtual Machine Recommendations Google](./cost/turbonomics/allocate_virtual_machines_recommendations/gcp)
-- [Turbonomic Delete Unattached Volumes Recommendations Google](./cost/turbonomics/delete_unattached_volumes/gcp)
-- [Turbonomic Rightsize Virtual Machines Recommendations Google](./cost/turbonomics/scale_virtual_machines_recommendations/gcp)
+- [Turbonomic Allocate Virtual Machine Recommendations Google](./cost/turbonomics/allocate_virtual_machines_recommendations/google)
+- [Turbonomic Delete Unattached Volumes Recommendations Google](./cost/turbonomics/delete_unattached_volumes/google)
+- [Turbonomic Rightsize Virtual Machines Recommendations Google](./cost/turbonomics/scale_virtual_machines_recommendations/google)
 
 #### Kubecost
 
@@ -111,7 +111,7 @@ These templates can generate savings estimates for your environment.
 #### Azure
 
 - [Azure Regulatory Compliance](./compliance/azure/compliance_score)
-- [Azure Tag Resources with Resource Group Name](./compliance/tags/azure_rg_tags)
+- [Azure Tag Resources with Resource Group Name](./compliance/azure/azure_rg_tags)
 
 - Compute
 
@@ -132,24 +132,24 @@ These templates can generate savings estimates for your environment.
 
 #### Flexera
 
+- CCO
+
+  - [Billing Center Access Report](./compliance/flexera/cco/billing_center_access_report)
+
 - IAM
 
-  - [Flexera IAM Explicit User Roles](./compliance/flexera/iam_explicit_user_roles)
+  - [Flexera IAM Explicit User Roles](./compliance/flexera/iam/iam_explicit_user_roles)
 
 #### Flexera FNMS
 
-- [ITAM Overused Licenses](./compliance/fnms/overused_licenses)
+- [ITAM Overused Licenses](./compliance/flexera/fnms/overused_licenses)
 
 #### Flexera ITAM
 
-- [ITAM Expiring Licenses](./compliance/fnms/fnms_licenses_expiring)
-- [ITAM Ignored Recent Inventory Dates](./compliance/fnms/ignored_recent_inventory_dates)
-- [ITAM Missing Active Machines](./compliance/fnms/missing_active_machines)
-- [ITAM VMs Missing Host ID](./compliance/fnms/vms_missing_hostid)
-
-#### Flexera Optima
-
-- [Billing Center Access Report](./compliance/billing_center_access_report)
+- [ITAM Expiring Licenses](./compliance/flexera/fnms/fnms_licenses_expiring)
+- [ITAM Ignored Recent Inventory Dates](./compliance/flexera/fnms/ignored_recent_inventory_dates)
+- [ITAM Missing Active Machines](./compliance/flexera/fnms/missing_active_machines)
+- [ITAM VMs Missing Host ID](./compliance/flexera/fnms/vms_missing_hostid)
 
 #### GitHub
 
@@ -171,7 +171,7 @@ These templates can generate savings estimates for your environment.
 
 ### Policy Templates for Cost
 
-- [Currency Conversion](./cost/currency_conversion)
+- [Currency Conversion](./cost/flexera/cco/currency_conversion)
 
 #### AWS
 
@@ -291,7 +291,7 @@ These templates can generate savings estimates for your environment.
 
 #### Flexera
 
-- [Email Cost Optimization Recommendations](./cost/email_recommendations)
+- [Email Cost Optimization Recommendations](./cost/flexera/cco/email_recommendations)
 
 - All
 
@@ -299,34 +299,28 @@ These templates can generate savings estimates for your environment.
 
 - Cloud Cost Optimization
 
-  - [Scheduled Report](./cost/scheduled_reports)
+  - [Scheduled Report](./cost/flexera/cco/scheduled_reports)
 
 - Optima
 
-  - [Cloud Cost Anomaly Alerts](./cost/cloud_cost_anomaly_alerts)
-
-#### Flexera Cloud Management
-
-- [Inefficient Instance Utilization using RightLink Add Tags](./cost/rightlink_rightsize)
+  - [Cloud Cost Anomaly Alerts](./cost/flexera/cco/cloud_cost_anomaly_alerts)
 
 #### Flexera Optima
 
 - [AWS Expiring Savings Plans](./cost/aws/savings_plan/expiration)
 - [AWS Reserved Instances Utilization](./cost/aws/reserved_instances/utilization)
-- [Budget Alerts](./cost/budget_report_alerts)
-- [Budget Alerts by Cloud Account](./cost/budget_alerts_by_account)
-- [Budget vs Actual Spend Report](./cost/budget_v_actual_spend_report)
-- [Cheaper Regions](./cost/cheaper_regions)
-- [Cloud Spend Forecast - Moving Average](./cost/forecasting/moving_average)
-- [Cloud Spend Forecast - Straight-Line (Linear Regression Model)](./cost/forecasting/straight_line_forecast/linear_regression)
-- [Cloud Spend Forecast - Straight-Line (Simple Model)](./cost/forecasting/straight_line_forecast/simple)
-- [Low Account Usage](./cost/low_account_usage)
-- [Low Service Usage](./cost/low_service_usage)
-- [Master Org Cost Policy](./msp/cost/master_org_cost_policy)
-- [Master Org Cost Policy with Currency Conversion](./msp/cost/master_org_cost_policy_currency)
-- [New Service Usage](./cost/new_service_usage)
+- [Budget Alerts](./cost/flexera/cco/budget_report_alerts)
+- [Budget Alerts by Cloud Account](./cost/flexera/cco/budget_alerts_by_account)
+- [Budget vs Actual Spend Report](./cost/flexera/cco/budget_v_actual_spend_report)
+- [Cheaper Regions](./cost/flexera/cco/cheaper_regions)
+- [Cloud Spend Forecast - Moving Average](./cost/flexera/cco/forecasting/moving_average)
+- [Cloud Spend Forecast - Straight-Line (Linear Regression Model)](./cost/flexera/cco/forecasting/straight_line_forecast/linear_regression)
+- [Cloud Spend Forecast - Straight-Line (Simple Model)](./cost/flexera/cco/forecasting/straight_line_forecast/simple)
+- [Low Account Usage](./cost/flexera/cco/low_account_usage)
+- [Low Service Usage](./cost/flexera/cco/low_service_usage)
+- [New Service Usage](./cost/flexera/cco/new_service_usage)
 - [Reserved Instance Report by Billing Center](./cost/aws/reserved_instances/report_by_bc)
-- [Vendor Commitment Forecast](./cost/forecasting/commitment_forecast)
+- [Vendor Commitment Forecast](./cost/flexera/cco/forecasting/commitment_forecast)
 
 #### GCE
 
@@ -352,8 +346,8 @@ These templates can generate savings estimates for your environment.
   - [Google Idle IP Address Recommender](./cost/google/idle_ip_address_recommendations)
   - [Google Rightsize VM Recommender](./cost/google/rightsize_vm_recommendations)
   - [Google Schedule Instance](./cost/google/schedule_instance)
-  - [Turbonomic Allocate Virtual Machine Recommendations Google](./cost/turbonomics/allocate_virtual_machines_recommendations/gcp)
-  - [Turbonomic Rightsize Virtual Machines Recommendations Google](./cost/turbonomics/scale_virtual_machines_recommendations/gcp)
+  - [Turbonomic Allocate Virtual Machine Recommendations Google](./cost/turbonomics/allocate_virtual_machines_recommendations/google)
+  - [Turbonomic Rightsize Virtual Machines Recommendations Google](./cost/turbonomics/scale_virtual_machines_recommendations/google)
 
 - SQL
 
@@ -364,7 +358,7 @@ These templates can generate savings estimates for your environment.
   - [Google Idle Persistent Disk Recommender](./cost/google/idle_persistent_disk_recommendations)
   - [Google Old Snapshots](./cost/google/old_snapshots)
   - [Google Recommender Policy](./cost/google/recommender)
-  - [Turbonomic Delete Unattached Volumes Recommendations Google](./cost/turbonomics/delete_unattached_volumes/gcp)
+  - [Turbonomic Delete Unattached Volumes Recommendations Google](./cost/turbonomics/delete_unattached_volumes/google)
 
 #### Kubecost
 
@@ -394,7 +388,7 @@ These templates can generate savings estimates for your environment.
 
 - RDS
 
-  - [AWS RDS Backup Settings](./operational/dbaas/aws/rds_backup)
+  - [AWS RDS Backup Settings](./operational/aws/rds_backup)
 
 - Tags
 
@@ -429,19 +423,15 @@ These templates can generate savings estimates for your environment.
 
 - CCO
 
-  - [Bill Processing Error Notification](./operational/bill_processing_errors_notification)
+  - [Bill Processing Error Notification](./operational/flexera/cco/bill_processing_errors_notification)
 
 - FNMS
 
-  - [Schedule FlexNet Manager Report](./operational/fnms/schedule_fnms_reports)
-
-#### Flexera Cloud Management
-
-- [Applied Policy Error Notification](./operational/applied_policy_error_notification)
+  - [Schedule FlexNet Manager Report](./operational/flexera/fnms/schedule_fnms_reports)
 
 #### Flexera ITAM
 
-- [Schedule ITAM Report](./operational/itam/schedule_itam_report)
+- [Schedule ITAM Report](./operational/flexera/itam/schedule_itam_report)
 
 #### Flexera Optima
 
@@ -452,8 +442,8 @@ These templates can generate savings estimates for your environment.
 
 #### Flexera RISC
 
-- [Application Migration Recommendations](./operational/compute_instance_migration)
-- [NetFlow Top Talkers](./operational/azure/network_flow)
+- [Application Migration Recommendations](./operational/flexera/risc/compute_instance_migration)
+- [NetFlow Top Talkers](./operational/flexera/risc/network_flow)
 
 ### Policy Templates for SaaS Management
 
@@ -544,8 +534,8 @@ These templates can generate savings estimates for your environment.
 
 - S3
 
-  - [AWS Open S3 Buckets](./security/storage/aws/public_buckets)
-  - [AWS S3 Buckets without Server Access Logging](./security/storage/aws/s3_buckets_without_server_access_logging)
+  - [AWS Open S3 Buckets](./security/aws/public_buckets)
+  - [AWS S3 Buckets without Server Access Logging](./security/aws/s3_buckets_without_server_access_logging)
   - [AWS S3 Ensure 'Block Public Access' Configured For All Buckets](./security/aws/s3_ensure_buckets_block_public_access)
   - [AWS S3 Ensure Bucket Policies Deny HTTP Requests](./security/aws/s3_buckets_deny_http)
   - [AWS S3 Ensure MFA Delete Enabled For All Buckets](./security/aws/s3_ensure_mfa_delete_enabled)
@@ -616,7 +606,7 @@ These templates can generate savings estimates for your environment.
 
 - Storage Accounts
 
-  - [Azure Storage Accounts Without HTTPs Enforced](./security/storage/azure/storage_account_https_enabled)
+  - [Azure Storage Accounts Without HTTPs Enforced](./security/azure/storage_account_https_enabled)
 
 - compute
 
@@ -626,20 +616,20 @@ These templates can generate savings estimates for your environment.
 
 - Storage
 
-  - [Google Open Buckets](./security/storage/google/public_buckets)
+  - [Google Open Buckets](./security/google/public_buckets)
 
 <!-- Begin Policy Template Stats -->
 <!--
 ---
 :categories:
   Compliance: 33
-  Cost: 94
-  Operational: 25
+  Cost: 91
+  Operational: 24
   SaaS Management: 12
   Security: 74
 :optimization_count: 45
 :policy_sets:
-  '': 76
+  '': 72
   AWS Config: 1
   Allocate VMs: 3
   Automation: 1
@@ -696,11 +686,10 @@ These templates can generate savings estimates for your environment.
   AWS: 74
   Azure: 82
   Azure China: 1
-  Flexera: 8
-  Flexera Cloud Management: 2
+  Flexera: 9
   Flexera FNMS: 1
   Flexera ITAM: 5
-  Flexera Optima: 21
+  Flexera Optima: 18
   Flexera RISC: 2
   Flexera SaaS Manager: 9
   GCE: 5
@@ -712,12 +701,12 @@ These templates can generate savings estimates for your environment.
   Oracle: 1
   ServiceNow: 1
 :services:
-  '': 55
+  '': 50
   AKS: 2
   All: 1
   App Service: 1
   Automation: 1
-  CCO: 1
+  CCO: 2
   Cloud Cost Optimization: 1
   CloudTrail: 7
   Common Bill Ingestion: 2
@@ -756,7 +745,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 238
+:total_count: 234
 -->
 <!-- End Policy Template Stats -->
 
