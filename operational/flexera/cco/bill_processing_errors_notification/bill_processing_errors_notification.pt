@@ -1,0 +1,202 @@
+name "Bill Processing Error Notification"
+rs_pt_ver 20180301
+type "policy"
+short_description "Collects all currently applied policies and raises an incident for any in an error state. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/bill_processing_errors_notification/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "high"
+category "Operational"
+default_frequency "daily"
+info(
+  version: "2.1",
+  provider: "Flexera",
+  service: "CCO",
+  policy_set: ""
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email Addresses"
+  description "A list of email addresses to notify if bill processing errors are found."
+  default []
+end
+
+parameter "param_processing_limit" do
+  type "number"
+  label "Processing Time (Hours)"
+  description "Amount of time (hours) to consider a bill connect in an error state if it has failed to complete processing of a bill"
+  default 24
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_bill_connects" do
+  request do
+    auth $auth_flexera
+    verb "GET"
+    host rs_optima_host
+    path join(["/api/onboarding/orgs/", rs_org_id, "/bill_connects"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_bill_connects_valid" do
+  request do
+    auth $auth_flexera
+    verb "GET"
+    host rs_optima_host
+    path join(["/api/onboarding/orgs/", rs_org_id, "/bill_connects/validate"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_bill_status_errors" do
+  request do
+    auth $auth_flexera
+    verb "GET"
+    host rs_optima_host
+    path join(["/api/status/orgs/", rs_org_id, "/bill-status-errors"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_bill_import_history" do
+  iterate $ds_bill_connects
+  request do
+    auth $auth_flexera
+    verb "GET"
+    host rs_optima_host
+    path join(["/api/status/orgs/", rs_org_id, "/bill_id/", val(iter_item, "id"), "/import-history"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "id", val(iter_item, "id")
+      field "billing_period", jmes_path(col_item, "billing_period")
+      field "downloaded_at", jmes_path(col_item, "downloaded_at")
+      field "status", jmes_path(col_item, "status")
+    end
+  end
+end
+
+datasource "ds_combine_info" do
+  run_script $js_combine_info, $ds_bill_connects_valid, $ds_bill_status_errors, $ds_bill_import_history, $ds_applied_policy, $param_processing_limit
+end
+
+script "js_combine_info", type: "javascript" do
+  parameters "ds_bill_connects_valid", "ds_bill_status_errors", "ds_bill_import_history", "ds_applied_policy", "param_processing_limit"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  _.each(ds_bill_connects_valid, function(bill_connect) {
+    errors = []
+    combined = _.extend(bill_connect, ds_bill_status_errors[bill_connect.bill_id])
+    combined.id = combined.bill_id
+
+    _.each(combined.errors, function(error) {
+      errors.push(error)
+    })
+
+    combined.errors = errors
+
+    if (!combined.valid) {
+      _.each(combined.errors, function(error) { errors.push(error) })
+      errors.push(combined.error)
+      combined['errors'] = errors
+    }
+
+    combined.bill_processing_valid = 'true'
+
+    _.each(ds_bill_import_history, function(history_item) {
+      if (history_item.id == combined.id) {
+        if (JSON.stringify(history_item.status) == JSON.stringify('in-progress')) {
+          startDate = new Date(history_item.downloaded_at) // Inventory Date
+          endDate = new Date()
+          timeDifference = endDate.getTime() - startDate.getTime()
+          hoursDifference = parseInt(timeDifference / (1000 * 3600))
+
+          if (hoursDifference > param_processing_limit) {
+            combined.bill_processing_valid = 'false'
+            combined.errors.push('Bill: ' + combined.id + '-' + history_item.billing_period + ' processing longer than ' + param_processing_limit + ' Hours')
+          }
+        }
+      }
+    })
+
+    combined.errors_str = _.uniq(combined.errors).join(' | ')
+    combined.valid = JSON.stringify(combined.valid)
+    result.push(combined)
+  })
+
+  if (result.length > 0) {
+    result[0]['policy_name'] = ds_applied_policy['name']
+  }
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_bill_processing_errors" do
+  validate_each $ds_combine_info do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Failed Bill Connects"
+    check logic_and(logic_and(eq(val(item, "valid"), 'true'), eq(to_n(val(item, "count")),0)), eq(val(item, "bill_processing_valid"), 'true'))
+    escalate $esc_email
+    export do
+      resource_level false
+      field "id" do
+        label "Bill Connect ID"
+      end
+      field "valid" do
+        label "Credentials Valid"
+      end
+      field "errors_str" do
+        label "Error Messages"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end

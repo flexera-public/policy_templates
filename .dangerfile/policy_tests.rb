@@ -68,6 +68,40 @@ def policy_bad_filename_casing?(file)
   return false
 end
 
+### README Link test
+# Verify that the readme in the short_description is valid
+def policy_bad_readme_link?(file)
+  fail_message = ""
+
+  pp = PolicyParser.new
+  pp.parse(file)
+  short_description = pp.parsed_short_description
+
+  file_path = file.split('/')
+  file_path.pop
+  file_url = "https://github.com/flexera-public/policy_templates/tree/master/" + file_path.join('/')
+
+  url_regex = /https:\/\/[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+(?:\/[^\s]*[^\s)])?/
+  url_list = short_description.scan(url_regex)
+
+  good_urls = 0
+  bad_urls = 0
+
+  url_list.each do |url|
+    if url.include?("github.com")
+      bad_urls += 1 if url != file_url && url != file_url + "/"
+      good_urls += 1 unless url != file_url && url != file_url + "/"
+    end
+  end
+
+  if bad_urls > 0 || good_urls == 0
+    fail_message = "**#{file}**\nPolicy `short_description` is missing a valid link to the policy README. Please ensure that the following link is present in the `short_description`:\n\n#{file_url}/"
+  end
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
 ### Publish test
 # Return false if policy info block is missing publish field or publish is set to a value other than "false"
 def policy_unpublished?(file)

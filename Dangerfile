@@ -203,6 +203,9 @@ changed_pt_files.each do |file|
   # Raise error if policy filename/path contains any uppercase letters
   test = policy_bad_filename_casing?(file); fail test if test
 
+  # Raise error if policy short_description is missing valid README link
+  test = policy_bad_readme_link?(file); fail test if test
+
   # Raise warning if policy won't be published
   test = policy_unpublished?(file); warn test if test
 

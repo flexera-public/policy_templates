@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3
+
+- fixed link to README in policy description
+
 ## v0.2
 
 - Changed service metadata to "Compute" to ensure proper incident scraping

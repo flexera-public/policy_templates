@@ -1,0 +1,196 @@
+name "ITAM Overused Licenses"
+rs_pt_ver 20180301
+type "policy"
+short_description "Looks up software licenses and reports in email any licenses that are overused. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/flexera/fnms/overused_licenses) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "medium"
+category "Compliance"
+default_frequency "daily"
+info(
+  version: "2.3",
+  provider: "Flexera FNMS",
+  service: "",
+  policy_set: ""
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+  description "A list of email address(es) to notify"
+end
+
+parameter "param_percentage" do
+  type "number"
+  label "Percentage of License Usage"
+  description "The percentage of available licenses in use to consider a license overused"
+  default 90
+end
+
+###############################################################################
+# Credentials
+###############################################################################
+
+credentials "auth_flexeraone" do
+  schemes "oauth2"
+  label "flexera"
+  description "Select FlexeraOne OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_license_attributes" do
+  request do
+    auth $auth_flexeraone
+    verb "GET"
+    host join(["api.", get(1, split(f1_app_host, "app."))])
+    path join(["/fnms/v1/orgs/", rs_org_id, "/license-attributes"])
+    query "offset", ""
+    query "limit", ""
+  end
+end
+
+datasource "ds_license_entitlements" do
+  request do
+    auth $auth_flexeraone
+    verb "GET"
+    host join(["api.", get(1, split(f1_app_host, "app."))])
+    path join(["/fnms/v1/orgs/", rs_org_id, "/license-entitlements"])
+    query "offset", ""
+    query "limit", ""
+  end
+end
+
+datasource "ds_licenses" do
+  run_script $js_licenses, $ds_license_attributes, $ds_license_entitlements
+end
+
+datasource "ds_overused_licenses" do
+  run_script $js_overused_licenses, $ds_licenses, $param_percentage
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_licenses", type: "javascript" do
+  parameters "ds_license_attributes", "ds_license_entitlements"
+  result "result"
+  code <<-EOS
+    license_attributes = []
+    license_entitlements = []
+
+    _.each(ds_license_attributes['values'], function(la) {
+      license_attributes.push(la)
+    })
+
+    _.each(ds_license_entitlements['values'], function(le) {
+      license_entitlements.push(le)
+    })
+
+    result = []
+
+    _.each(license_attributes, function(la) {
+      _.each(license_entitlements, function(le) {
+        if (la['licenseId'] == le['licenseId']) {
+          available = le['available']
+          extra = le['extra']
+          consumed = le['consumed']
+
+          if (available + extra != 0) {
+            consumption = (consumed / (available + extra)) * 100
+          } else {
+            if (consumed == 0) {
+              consumption = 0
+            } else {
+              consumption = "N/A"
+            }
+          }
+
+          la['consumed'] = le['consumed']
+          la['available_extra'] = parseInt(le['available']) + parseInt(le['extra'])
+          la['consumption'] = consumption
+          la['id'] = la['licenseId']
+
+          result.push(la)
+        }
+      })
+    })
+EOS
+end
+
+script "js_overused_licenses", type: "javascript" do
+  parameters "ds_licenses", "param_percentage"
+  result "result"
+  code <<-EOS
+    result = []
+
+    _.each(ds_licenses, function(license) {
+      if (license['consumption'] > param_percentage || license['consumption'] == "N/A") {
+         result.push(license)
+      }
+    })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_overused_licenses" do
+  validate $ds_overused_licenses do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Overused License(s) Found"
+    escalate $send_report
+    check eq(size(data),0)
+    export do
+      resource_level true
+      field "id" do
+        label "ID"
+      end
+      field "licenseName" do
+        label "Name"
+      end
+      field "licenseType" do
+        label "Type"
+      end
+      field "publisher" do
+        label "Publisher"
+      end
+      field "edition" do
+        label "Edition"
+      end
+      field "licenseDuration" do
+        label "Duration"
+      end
+      field "licenseStatus" do
+        label "Status"
+      end
+      field "available_extra" do
+        label "Available Licenses"
+      end
+      field "consumed" do
+        label "Used Licenses"
+      end
+      field "consumption" do
+        label "Percentage of Licenses Used"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "send_report" do
+  automatic true
+  label "Send Email"
+  description "Sends incident email"
+  email $param_email
+end

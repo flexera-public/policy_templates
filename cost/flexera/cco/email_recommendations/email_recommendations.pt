@@ -1,0 +1,490 @@
+name "Email Cost Optimization Recommendations"
+rs_pt_ver 20180301
+type "policy"
+short_description "Emails a list of cost recommendations pulled from the Flexera Optimization dashboard. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/email_recommendations/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "low"
+category "Cost"
+default_frequency "weekly"
+info(
+  version: "0.2",
+  provider: "Flexera"
+)
+
+##############################################################################
+# Parameters
+##############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "The email addresses to send recommendations to."
+  default []
+end
+
+parameter "param_vendor_list" do
+  type "list"
+  category "Filters"
+  label "Cloud Vendor List"
+  description "A list of cloud vendors to email recommendations for."
+  allowed_values ["AWS", "Azure", "Google"]
+  default ["AWS", "Azure", "Google"]
+end
+
+parameter "param_accounts_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Cloud Accounts"
+  description "Allow or Deny entered cloud account IDs/names. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_accounts_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Cloud Account List"
+  description "A list of allowed or denied cloud account IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_bc_list" do
+  type "list"
+  category "Filters"
+  label "Billing Center List"
+  description "A list of Billing Center names to email recommendations for. Leave blank to include recommendations for all Billing Centers."
+  default []
+end
+
+parameter "param_recommendation_list" do
+  type "list"
+  category "Filters"
+  label "Recommendation List"
+  description "The types of recommendations to include in the email."
+  allowed_values ["Compute", "Snapshot", "Database", "IP Address", "Disk", "Reservation", "Savings Plan"]
+  default ["Compute", "Snapshot", "Database", "IP Address", "Disk", "Reservation", "Savings Plan"]
+end
+
+parameter "param_policy_list" do
+  type "list"
+  category "Filters"
+  label "Policy List"
+  description "A list of catalog policy names to include recommendations for. Leave blank to include recommendations for all policies."
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+datasource "ds_recommendation_types" do
+  run_script $js_recommendation_types
+end
+
+script "js_recommendation_types", type:"javascript" do
+  result "result"
+  code <<-'EOS'
+  result = {
+    "AWS Idle Compute Instances": "Compute",
+    "AWS Old Snapshots": "Snapshot",
+    "AWS Rightsize EC2 Instances": "Compute",
+    "AWS Rightsize RDS Instances": "Database",
+    "AWS Unused IP Addresses": "IP Address",
+    "AWS Unused RDS Instances": "Database",
+    "AWS Unused Volumes": "Disk",
+    "AWS Superseded EC2 Instances": "Compute",
+    "AWS Reserved Instances Recommendations": "Reservation",
+    "AWS Savings Plan Recommendations": "Savings Plan",
+    "Azure Hybrid Use Benefit for Windows Server": "Compute",
+    "Azure Hybrid Use Benefit for Linux Server": "Compute",
+    "Azure Hybrid Use Benefit for SQL": "Compute",
+    "Azure Idle Compute Instances": "Compute",
+    "Azure Old Snapshots": "Snapshot",
+    "Azure Rightsize Compute Instances": "Compute",
+    "Azure Rightsize SQL Databases": "Database",
+    "Azure Superseded Compute Instances": "Compute",
+    "Azure Unused IP Addresses": "IP Address",
+    "Azure Unused SQL Databases": "Database",
+    "Azure Unused Volumes": "Disk",
+    "Azure Reserved Instances Recommendations": "Reservation",
+    "Azure Savings Plan Recommendations": "Savings Plan",
+    "Google Idle Cloud SQL Instance Recommender": "Database",
+    "Google Idle IP Address Recommender": "IP Address",
+    "Google Idle Persistent Disk Recommender": "Disk",
+    "Google Idle VM Recommender": "Compute",
+    "Google Rightsize VM Recommender": "Compute",
+    "Google Committed Use Discount Recommender": "Reservation"
+  }
+EOS
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/cost/flexera/cco/scheduled_reports/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-'EOS'
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
+end
+
+datasource "ds_recommendations" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/recommendations/orgs/", rs_org_id, "/recommendations"])
+    header "Api-Version", "1.0"
+    query "view", "extended"
+  end
+end
+
+datasource "ds_recommendations_filtered" do
+  run_script $js_recommendations_filtered, $ds_recommendations, $ds_recommendation_types, $param_vendor_list, $param_accounts_allow_or_deny, $param_accounts_list, $param_bc_list, $param_recommendation_list, $param_policy_list
+end
+
+script "js_recommendations_filtered", type: "javascript" do
+  parameters "ds_recommendations", "ds_recommendation_types", "param_vendor_list", "param_accounts_allow_or_deny", "param_accounts_list", "param_bc_list", "param_recommendation_list", "param_policy_list"
+  result "result"
+  code <<-'EOS'
+  result = _.filter(ds_recommendations, function(recommendation) {
+    include_recommendation = true
+
+    if (param_vendor_list.length > 0) {
+      if (_.contains(param_vendor_list, recommendation['vendor']) == false) {
+        include_recommendation = false
+      }
+    }
+
+    if (param_accounts_list.length > 0) {
+      include_account = _.contains(param_accounts_list, recommendation['accountID']) || _.contains(param_accounts_list, recommendation['accountName']) || _.contains(param_accounts_list, recommendation['accountName'].toLowerCase())
+      if (param_accounts_allow_or_deny == 'Deny') { include_account = !include_account }
+
+      if (include_account == false) { include_recommendation = false }
+    }
+
+    if (param_bc_list.length > 0) {
+      if (_.contains(param_bc_list, recommendation['billingCenterName']) == false && _.contains(param_bc_list, recommendation['billingCenterName'].toLowerCase()) == false) {
+        include_recommendation = false
+      }
+    }
+
+    if (param_bc_list.length > 0) {
+      if (_.contains(param_bc_list, recommendation['billingCenterName']) == false && _.contains(param_bc_list, recommendation['billingCenterName'].toLowerCase()) == false) {
+        include_recommendation = false
+      }
+    }
+
+    if (param_recommendation_list.length > 0) {
+      if (_.contains(param_recommendation_list, ds_recommendation_types[recommendation['recommendation']]) == false) {
+        include_recommendation = false
+      }
+    }
+
+    if (param_policy_list.length > 0) {
+      if (_.contains(param_policy_list, recommendation['recommendation']) == false && _.contains(param_bc_list, recommendation['recommendation'].toLowerCase()) == false) {
+        include_recommendation = false
+      }
+    }
+
+    return include_recommendation
+  })
+EOS
+end
+
+datasource "ds_recommendations_organized" do
+  run_script $js_recommendations_organized, $ds_recommendations_filtered, $ds_currency
+end
+
+script "js_recommendations_organized", type: "javascript" do
+  parameters "ds_recommendations_filtered", "ds_currency"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  _.each(ds_recommendations_filtered, function(recommendation) {
+    accountID = recommendation['accountID']
+
+    if (accountID == '' || typeof(accountID) != 'string') {
+      if (typeof(recommendation['detailsExtended']['accountID']) == 'object') {
+        accountID = recommendation['detailsExtended']['accountID']['value']
+      }
+    }
+
+    accountName = recommendation['accountName']
+
+    if (accountName == '' || typeof(accountName) != 'string') {
+      if (typeof(recommendation['detailsExtended']['accountName']) == 'object') {
+        accountName = recommendation['detailsExtended']['accountName']['value']
+      }
+    }
+
+    offeringId = ""
+
+    if (typeof(recommendation['detailsExtended']['offeringId']) == 'object') {
+      offeringId = recommendation['detailsExtended']['offeringId']['value']
+    }
+
+    recommendationDetails = ""
+
+    if (typeof(recommendation['detailsExtended']['recommendationDetails']) == 'object') {
+      recommendationDetails = recommendation['detailsExtended']['recommendationDetails']['value']
+    }
+
+    tags = []
+
+    if (typeof(recommendation['detailsExtended']['tags']) == 'object') {
+      tag_list = recommendation['detailsExtended']['tags']['value']
+
+      if (tag_list != null && tag_list != undefined) {
+        if (typeof(tag_list) == 'string') {
+          tags.push(tag_list)
+        } else {
+          if (recommendation['vendor'] == "AWS") {
+            _.each(tag_list, function(tag) {
+              key = null
+              value = null
+
+              if (typeof(tag['Key']) == 'string') { key = tag['Key'] }
+              if (typeof(tag['key']) == 'string') { key = tag['key'] }
+
+              if (typeof(tag['Value']) == 'string') { value = tag['Value'] }
+              if (typeof(tag['value']) == 'string') { value = tag['value'] }
+
+              if (key != null && value != null) {
+                tags.push([key, '=', value].join(''))
+              }
+            })
+          }
+
+          if (recommendation['vendor'] == "Azure" || recommendation['vendor'] == "Google") {
+            _.each(_.keys(tag_list), function(key) {
+              tags.push([key, '=', tag_list[key]].join(''))
+            })
+          }
+        }
+      }
+    }
+
+    tags = tags.join(', ')
+
+    resourceID = ""
+
+    if (typeof(recommendation['resourceID']) == 'string' && recommendation['resourceID'] != '') {
+      resourceID = recommendation['resourceID']
+    } else {
+      if (typeof(recommendation['detailsExtended']['resourceID']) == 'object') {
+        resourceID = recommendation['detailsExtended']['resourceID']['value']
+      }
+    }
+
+    resourceType = ""
+
+    if (typeof(recommendation['resourceType']) == 'string' && recommendation['resourceType'] != '') {
+      resourceType = recommendation['resourceType']
+    } else {
+      if (typeof(recommendation['detailsExtended']['resourceType']) == 'object') {
+        resourceType = recommendation['detailsExtended']['resourceType']['value']
+      }
+    }
+
+    region = ""
+
+    if (typeof(recommendation['region']) == 'string' && recommendation['region'] != '') {
+      region = recommendation['region']
+    } else {
+      if (typeof(recommendation['detailsExtended']['region']) == 'object') {
+        region = recommendation['detailsExtended']['region']['value']
+      }
+    }
+
+    databaseEngine = ""
+
+    if (typeof(recommendation['databaseEngine']) == 'string' && recommendation['databaseEngine'] != '') {
+      databaseEngine = recommendation['databaseEngine']
+    } else {
+      if (typeof(recommendation['detailsExtended']['databaseEngine']) == 'object') {
+        databaseEngine = recommendation['detailsExtended']['databaseEngine']['value']
+      }
+    }
+
+    quantityToPurchase = ""
+
+    if (typeof(recommendation['quantityToPurchase']) == 'number') {
+      quantityToPurchase = recommendation['quantityToPurchase']
+    } else {
+      if (typeof(recommendation['detailsExtended']['quantityToPurchase']) == 'object') {
+        quantityToPurchase = recommendation['detailsExtended']['quantityToPurchase']['value']
+      }
+    }
+
+    result.push({
+      recommendationID: recommendation['id'],
+      billingCenter: recommendation['billingCenterName'],
+      vendor: recommendation['vendor'],
+      policyName: recommendation['recommendation'],
+      savings: recommendation['savings'],
+      service: recommendation['service'],
+      type: recommendation['type'],
+      createdAt: recommendation['createdAt'],
+      savingsCurrency: ds_currency['symbol'],
+      accountID: accountID,
+      accountName: accountName,
+      region: region,
+      resourceID: resourceID,
+      resourceType: resourceType,
+      databaseEngine: databaseEngine,
+      quantityToPurchase: quantityToPurchase,
+      offeringId: offeringId,
+      recommendationDetails: recommendationDetails,
+      tags: tags,
+      message: ""
+    })
+  })
+
+  result = _.sortBy(result, function(item) { return item['savings'] * -1 })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_recommendations" do
+  validate_each $ds_recommendations_organized do
+    summary_template "Flexera Optimization Recommendations: {{ len data }} Found"
+    detail_template "Note: Empty fields indicate that the given field is not applicable to the recommendation in question."
+    check eq(val(item, "accountID"), "")
+    escalate $esc_email
+    export do
+      resource_level true
+      field "billingCenter" do
+        label "Billing Center"
+      end
+      field "vendor" do
+        label "Vendor"
+      end
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "databaseEngine" do
+        label "Database Engine"
+      end
+      field "createdAt" do
+        label "Recommendation Date"
+      end
+      field "type" do
+        label "Recommendation Type"
+      end
+      field "recommendationID" do
+        label "Recommendation ID"
+      end
+      field "policyName" do
+        label "Source Policy"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "quantityToPurchase" do
+        label "Quantity to Purchase"
+      end
+      field "offeringId" do
+        label "Offering ID"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end

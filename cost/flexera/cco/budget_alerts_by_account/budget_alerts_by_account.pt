@@ -1,0 +1,472 @@
+name "Budget Alerts by Cloud Account"
+rs_pt_ver 20180301
+type "policy"
+short_description "Create a Monthly Budget Alert for a Cloud Vendor Account. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/budget_alerts_by_account/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "medium"
+category "Cost"
+tenancy "single"
+default_frequency "daily"
+info(
+  version: "2.3",
+  provider: "Flexera Optima",
+  service: "",
+  policy_set: ""
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_monthly_budget" do
+  label "Monthly Budget"
+  type "number"
+end
+
+parameter "param_account_name" do
+  label "Cloud Vendor Account Name"
+  description "Provide the name of the Cloud Vendor Account that the budget should be enforced against"
+  type "string"
+end
+
+parameter "param_type" do
+  label "Budget Alert Type"
+  type "string"
+  allowed_values "Actual Spend", "Forecasted Spend"
+  description "Actual Spend alerts are based off incurred costs. Forecasted Spend alerts are based off monthly runrates."
+  default "Actual Spend"
+end
+
+parameter "param_cost_metric" do
+  type "string"
+  label "Cost Metric"
+  allowed_values "Unamortized Unblended", "Amortized Unblended", "Unamortized Blended", "Amortized Blended"
+  default "Unamortized Unblended"
+  description "Select the cost metric for your report.  See the README file for more details"
+end
+
+parameter "param_email" do
+  label "Email addresses of the recipients you wish to notify"
+  type "list"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources and Scripts
+###############################################################################
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/cost/flexera/cco/scheduled_reports/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+      field "ancestor_ids", jmes_path(col_item, "ancestor_ids")
+      field "allocation_table", jmes_path(col_item, "allocation_table")
+    end
+  end
+end
+
+datasource "ds_top_bcs" do
+  run_script $js_top_level_bc, $ds_billing_centers
+end
+
+script "js_top_level_bc", type: "javascript" do
+  parameters "billing_centers"
+  result "result"
+  code <<-EOS
+  result = _.reject(billing_centers, function(bc){ return bc.parent_id != null })
+EOS
+end
+
+datasource "ds_top_bc_costs" do
+  request do
+    run_script $js_costs_request, rs_org_id, rs_optima_host, $param_cost_metric, $ds_top_bcs, $param_type
+  end
+end
+
+script "js_costs_request", type: "javascript" do
+  parameters "org", "rs_optima_host", "param_cost_metric", "billing_centers", "param_type"
+  result "request"
+  code <<-EOS
+  var cost_metric = {
+    "Unamortized Unblended": "cost_nonamortized_unblended_adj",
+    "Amortized Unblended": "cost_amortized_unblended_adj",
+    "Unamortized Blended": "cost_nonamortized_blended_adj",
+    "Amortized Blended": "cost_amortized_blended_adj"
+  }
+
+  var date = new Date()
+  var year = date.getUTCFullYear()
+  var month = (date.getUTCMonth() == 11) ? 1 : 2 + date.getUTCMonth()
+
+  if (month == 1) {
+    var lmonth = 12
+    var lyear = year
+    year = year + 1
+  } else {
+    var lmonth = month - 1
+    var lyear = year
+  }
+
+  mo = month.toString().length > 1 ? month : '0' + month
+  lmo = lmonth.toString().length > 1 ? lmonth : '0' + lmonth
+
+  // wait for all the bill data to be collected, usually takes about 3 days
+  var dt = new Date()
+
+  if (dt.getDate() > 4){
+    // start collecting bill data after its retrieved by Optima, roughly 3 days
+    // the complete cost data should be retrieved
+    if (param_type == "Forecasted Spend") {
+      dt.setDate( dt.getDate() - 3 )
+    }
+  } else if (dt.getDate() == 1){
+    dt.setDate(dt.getDate() + 1)
+  }
+
+  var today_minus_three = dt.toISOString().substring(0,10)
+  var current_month = lyear + "-" + lmo + "-01"
+
+  var bc_ids = _.pluck(billing_centers, 'id')
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + org + "/costs/aggregated",
+    body_fields: {
+      "dimensions": ["vendor","vendor_account_name","billing_center_id"],
+      "granularity": "day",
+      "start_at": current_month,
+      "end_at": today_minus_three,
+      "metrics": [cost_metric[param_cost_metric]],
+      "billing_center_ids": bc_ids
+    },
+    headers: {
+      "User-Agent": "RS Policies",
+      "Api-Version": "1.0"
+    }
+  }
+EOS
+end
+
+datasource "ds_formatted_costs" do
+  run_script $js_formatted_costs, $ds_top_bc_costs, $param_cost_metric, $param_account_name
+end
+
+script "js_formatted_costs", type: "javascript" do
+  parameters "ds_top_bc_costs", "param_cost_metric", "param_account_name"
+  result "result"
+  code <<-EOS
+  var result = []
+  var costs = []
+
+  var cost_metric = {
+    'Unamortized Unblended':'cost_nonamortized_unblended_adj',
+    'Amortized Unblended':'cost_amortized_unblended_adj',
+    'Unamortized Blended': 'cost_nonamortized_blended_adj',
+    'Amortized Blended':'cost_amortized_blended_adj',
+  }
+
+  var type = cost_metric[param_cost_metric]
+
+  _.each(ds_top_bc_costs['rows'], function (row) {
+    if (row['dimensions']['vendor_account_name'] != null && row['dimensions']['vendor_account_name'] !== undefined) {
+      if (param_account_name == row['dimensions']['vendor_account_name']) {
+        costs.push({
+          account_name: row['dimensions']['vendor_account_name'],
+          vendor: row['dimensions']['vendor'],
+          total: row['metrics'][type],
+        })
+      } else {
+        return
+      }
+    }
+  })
+
+  var sum = _.reduce(_.pluck(costs, 'total'), function (memo, num) { return memo + num }, 0)
+
+  if ( costs.length > 0 ) {
+    result.push({
+      account_name: costs[0]['account_name'],
+      vendor: costs[0]['vendor'],
+      total: sum,
+    })
+  }
+EOS
+end
+
+datasource "ds_filtered_target" do
+  run_script $js_filter_target, $ds_formatted_costs, $param_account_name, $param_monthly_budget, $param_type, $ds_currency_code, $ds_currency_reference
+end
+
+script "js_filter_target", type: "javascript" do
+  parameters "ds_formatted_costs", "param_account_name", "param_monthly_budget", "param_type", "ds_currency_code", "ds_currency_reference"
+  result "report"
+  code <<-EOS
+  var target = []
+  var report= {}
+  var date = new Date()
+
+  if (date.getDate() > 4) {
+    //Only wait 3 days if doing Forecasted Spend
+    var day_adjustment = 0
+
+    if (param_type == "Forecasted Spend") {
+      var day_adjustment = 3
+    }
+
+    date.setDate(date.getDate() - day_adjustment)
+    var month = parseInt(date.toISOString().split('T')[0].split('-')[1])
+    var day = parseInt(date.toISOString().split('T')[0].split('-')[2])
+    var year = parseInt(date.toISOString().split('T')[0].split('-')[0])
+
+    var months = [ 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December' ]
+    var month_year = months[month - 1] + " " + year.toString()
+
+    if (month == 1) { var numdays = 31 }
+    if (month == 2) { var numdays = 28 }
+    if (month == 3) { var numdays = 31 }
+    if (month == 4) { var numdays = 30 }
+    if (month == 5) { var numdays = 31 }
+    if (month == 6) { var numdays = 30 }
+    if (month == 7) { var numdays = 31 }
+    if (month == 8) { var numdays = 31 }
+    if (month == 9) { var numdays = 30 }
+    if (month == 10) { var numdays = 31 }
+    if (month == 11) { var numdays = 30 }
+    if (month == 12) { var numdays = 31 }
+
+    // Account for leap years
+    if (month == 2 && year % 4 == 0) {
+      numdays = 29
+    }
+
+    var monthcomplete = day / numdays
+
+    function formatNumber(number, separator) {
+      var numString = number.toString()
+      var values = numString.split(".")
+      var formatted = ''
+
+      while (values[0].length > 3) {
+        var chunk = values[0].substr(-3)
+        values[0] = values[0].substr(0, values[0].length - 3)
+        formatted = separator + chunk + formatted
+      }
+
+      if (values[0].length > 0) {
+        formatted = values[0] + formatted
+      }
+
+      if (values[1] == undefined) {
+        return formatted
+      }
+
+      return formatted + "." + values[1]
+    }
+
+    // Format costs with currency symbol and thousands separator
+    if( ds_currency_code['value'] !== undefined ) {
+      if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
+        var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
+        if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
+          var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+        } else {
+          var separator = ""
+        }
+      } else {
+        var cur = ""
+        var separator = ""
+      }
+    } else {
+      var cur = "$"
+      var separator = ","
+    }
+
+    separator = separator.trim()
+    var target = []
+
+    _.each(ds_formatted_costs, function(obj){
+      var runrate = obj["total"] / monthcomplete
+      var forecastedSpend = Math.round(( runrate -obj["total"]) * 100) / 100
+      var forecastedSpendDisplay = cur+' '+formatNumber(forecastedSpend, separator)
+
+      if (param_type === "Forecasted Spend"){
+        var overBudgetAmount= Math.round((runrate - param_monthly_budget) * 100) / 100
+        var overBudgetAmountDisplay= cur+' '+formatNumber(overBudgetAmount, separator)
+        var overBudgetPercent=Math.round((((Math.round(runrate * 100) / 100) - (Math.round(param_monthly_budget * 100) / 100)) / param_monthly_budget) * 100)
+
+        target.push({
+          account_name: obj["account_name"],
+          vendor: obj["vendor"],
+          actualDisplay: cur + ' '+formatNumber((Math.round(obj["total"] * 100) / 100), separator),
+          actual: Math.round(obj["total"] * 100) / 100,
+          type: "Forecasted Spend",
+          runrateDisplay: cur + ' '+formatNumber((Math.round(runrate * 100) / 100),separator),
+          runrate: Math.round(runrate * 100) / 100,
+          budgetDisplay: cur + ' '+formatNumber(param_monthly_budget,separator),
+          total: runrate,
+          overBudgetAmount: overBudgetAmount,
+          overBudgetAmountDisplay: overBudgetAmountDisplay,
+          overBudgetPercentDisplay: overBudgetPercent+"%",
+          overBudgetPercent: overBudgetPercent,
+          forecastedSpend: forecastedSpend,
+          forecastedSpendDisplay: forecastedSpendDisplay
+        })
+      } else {
+        var overBudgetAmount= Math.round((runrate - param_monthly_budget) * 100) / 100
+        var overBudgetAmountDisplay= cur+' '+formatNumber(overBudgetAmount, separator)
+        var overBudgetPercent=Math.round((((Math.round(obj["total"] * 100) / 100) - (Math.round(param_monthly_budget * 100) / 100)) / param_monthly_budget) * 100)
+
+        target.push({
+          account_name: obj["account_name"],
+          vendor: obj["vendor"],
+          actualDisplay: cur + ' '+formatNumber((Math.round(obj["total"] * 100) / 100), separator),
+          actual: (Math.round(obj["total"] * 100) / 100).toString(10),
+          type: "Actual Spend",
+          runrateDisplay: cur + ' '+formatNumber((Math.round(runrate * 100) / 100),separator),
+          runrate: (Math.round(runrate * 100) / 100).toString(10),
+          budgetDisplay: cur + ' '+formatNumber(param_monthly_budget,separator),
+          total: obj["total"],
+          overBudgetAmount: overBudgetAmount,
+          overBudgetAmountDisplay: overBudgetAmountDisplay,
+          overBudgetPercentDisplay: overBudgetPercent+"%",
+          overBudgetPercent: overBudgetPercent,
+          forecastedSpend: forecastedSpend,
+          forecastedSpendDisplay: forecastedSpendDisplay
+        })
+      }
+    })
+
+    report = {
+      actual: target[0]['actual'],
+      runrate: target[0]["runrate"],
+      monthYear: month_year,
+      total: target[0]["total"],
+      chartType: encodeURI('cht=bhs'),
+      chartSize: encodeURI('chs=800x200'),
+      chartData: encodeURI("chd=t:" + target[0]["actual"] + "," + 0 + "|" + target[0]["forecastedSpend"] + "," + 0 + "|" + 0 + ","+param_monthly_budget + "|" + 0 + "," + target[0]["overBudgetAmount"]),
+      chartTitle: encodeURI('chtt='),
+      chartImage: encodeURI('chof=.png'),
+      chartColor: encodeURI('chco=65B178,CCF2D6,2F6DB7,E5A687'),
+      chartLabel: encodeURI('chdl=Actual+Spend|Forecasted+Spend|Budget|Over+Budget'),
+      chartLabelPosition: encodeURI('chdlp=b'),
+      chartYAxis: encodeURI('chxt=y'),
+      chartYAxisLabel: encodeURI('chxl=1:|2:|'),
+      chartDataAutoScale: encodeURI('chds=a'),
+      chartDataValue: 'chl=' + target[0]["actualDisplay"].replace(" ","%20") + '||' + target[0]["forecastedSpendDisplay"].replace(" ","%20") + '|||' + target[0]["budgetDisplay"].replace(" ","%20") + '||' + target[0]["overBudgetAmountDisplay"].replace(" ","%20"),
+      reportData: target
+    }
+  } else {
+    report = {
+      total: param_monthly_budget - 1,
+      runrate: -1,
+      actual: -1
+    }
+  }
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "budget_alert" do
+  validate $ds_filtered_target do
+    summary_template "{{ parameters.param_type }} Budget Exceeded"
+    # ignore changes to the monthly spend and runrate, since those will change constantly
+    hash_exclude "actual", "runrate", "total"
+    detail_template <<-EOS
+# Budget Exceeded
+### Cost Metric: {{ parameters.param_cost_metric }}
+### Budget Alert Type: {{ parameters.param_type }}
+### Cloud Account: {{ parameters.param_account_name }}
+### Monthly Spend for {{ data.monthYear }}
+![Spending Overview Chart](https://api.image-charts-auth.flexeraeng.com/ic-function?{{data.chartType}}&{{data.chartData}}&{{data.chartSize}}&{{data.chartTitle}}&{{data.chartImage}}&{{data.chartColor}}&{{data.chartLabel}}&{{data.chartYAxisLabel}}&{{data.chartYAxis}}&{{data.chartLabelPosition}}&{{data.chartDataAutoScale}}&{{data.chartDataValue}})
+EOS
+    escalate $esc_budget_alert
+    check lt(val(data,"total"),$param_monthly_budget)
+    export "reportData" do
+      field "account_name" do
+        label "Cloud Account Name"
+      end
+      field "vendor" do
+        label "Cloud Vendor"
+      end
+      field "budgetDisplay" do
+        label "Budget"
+      end
+      field "actualDisplay" do
+        label "Month to Date Spend"
+      end
+      field "forecastedSpendDisplay" do
+        label "Additional Forecasted Spend"
+      end
+      field "runrateDisplay" do
+        label "Forecasted Full Month Spend"
+      end
+      field "overBudgetAmountDisplay" do
+        label "Over Budget Amount"
+      end
+      field "overBudgetPercentDisplay" do
+        label "Over Budget Percent"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_budget_alert" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
