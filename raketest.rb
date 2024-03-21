@@ -6,12 +6,7 @@ require 'uri'
 require 'time'
 require_relative '.dangerfile/policy_parser'
 
-# The list of policies is consumed by the tools/policy_sync/policy_sync.pt
-# and the docs.rightscale.com build to generate the policies/user/policy_list.html
-# the file is uploaded to S3 during a merge to master deploy step in .travis.yml
-desc "Create a list of active policies to be published to the Public Policy Catalog"
 
-task :generate_policy_list do
   # Preparation for getting information from Github repository
   repo_name = "flexera-public/policy_templates"
   branch = "master"
@@ -23,8 +18,11 @@ task :generate_policy_list do
   Dir['**/*.pt'].each do |file|
     change_log = ::File.join(file.split('/')[0...-1].join('/'), 'CHANGELOG.md')
     readme = ::File.join(file.split('/')[0...-1].join('/'), 'README.md')
-    publish = true
     updated_at = nil
+
+    f = File.open(file, "r:bom|utf-8")
+
+    policy_code = File.read(file)
 
     pp = PolicyParser.new
     pp.parse(file)
@@ -35,10 +33,14 @@ task :generate_policy_list do
       service = pp.parsed_info[:service]
       policy_set = pp.parsed_info[:policy_set]
       recommendation_type = pp.parsed_info[:recommendation_type]
-      publish_parsed = pp.parsed_info[:publish]
+      publish = pp.parsed_info[:publish]
 
       # Set publish to false unless publish is missing or set to true in policy metadata
-      publish = false if !publish_parsed.nil? && publish_parsed != 'true' && publish_parsed != true
+      if !publish.nil? && publish != 'true' && publish != true
+        publish = false
+      else
+        publish = true
+      end
     end
 
     # Get version from long description
@@ -85,4 +87,3 @@ task :generate_policy_list do
   File.open('dist/active-policy-list.json', 'w') {
     |file| file.write(JSON.pretty_generate(policies) + "\n")
   }
-end
