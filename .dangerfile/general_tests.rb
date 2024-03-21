@@ -135,3 +135,23 @@ def general_rubocop_problems?(file)
   return "**#{file}**\nRubocop linting found problems:\n\n#{fail_message}" if !fail_message.empty?
   return false
 end
+
+###############################################################################
+# Methods: Python
+###############################################################################
+
+### Python lint test
+# Return false if Python linter finds no problems
+def general_python_errors?(file)
+  linter = `pylint --errors-only #{file}`
+
+  fail_message = ""
+
+  linter.each_line do |line|
+    fail_message += line.strip + "\n" if line.start_with?(file)
+  end
+
+  # Return the problems found if applicable
+  return "**#{file}**\nPython linting found errors:\n\n#{fail_message}" if !fail_message.strip.empty?
+  return false
+end

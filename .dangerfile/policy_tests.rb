@@ -89,6 +89,45 @@ def policy_bad_readme_link?(file)
   return false
 end
 
+### Publish test
+# Return false if policy info block is missing publish field or publish is set to a value other than "false"
+def policy_unpublished?(file)
+  pp = PolicyParser.new
+  pp.parse(file)
+
+  info = pp.parsed_info
+
+  fail_message = ""
+
+  if !info[:publish].nil?
+    if info[:publish].downcase == "false"
+      fail_message = "**#{file}**\nPolicy will not be published in the public catalog. If this is not the intended behavior, remove the `publish` field from the policy's info metadata block."
+    end
+  end
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### Name change test
+# Return false if policy's name has not changed
+def policy_name_changed?(file)
+  # Get the diff to see only the new changes
+  diff = git.diff_for_file(file)
+
+  fail_message = ""
+
+  diff.patch.each_line do |line|
+    if line.start_with?('-name "')
+      fail_message = "**#{file}**\nPolicy's name has been changed. Please ensure that this is intentional and that the README has been updated accordingly. Once this change is merged, the old version of the policy may need to be manually removed from the public catalog."
+      break
+    end
+  end
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
 ### Bad Indentation test
 # Verify that everything is properly indented
 def policy_bad_indentation?(file)

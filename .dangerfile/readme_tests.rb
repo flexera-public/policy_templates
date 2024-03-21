@@ -244,9 +244,11 @@ def readme_invalid_credentials?(file)
   if aws_permission_line
     aws_json_tester = /^\s{2}```json\n\s{2}\{\n\s{6}"Version": "2012-10-17",\n\s{6}"Statement": \[\n\s{10}\{\n\s{14}"Effect": "Allow",\n\s{14}"Action": \[\n[\s\S]*?\n\s{10}\}\n\s{6}\]\n\s{2}\}\n\s{2}```$/
 
-    if !readme_text.match?(aws_json_tester)
-      fail_message += "AWS permission JSON example missing or formatted incorrectly. Please see other AWS READMEs for correctly formatted examples.\n\n"
-    end
+    # JSON Test currently disabled pending decision on whether to include this in READMEs going forward
+
+    # if !readme_text.match?(aws_json_tester)
+    #   fail_message += "AWS permission JSON example missing or formatted incorrectly. JSON example should be formatted [like so](https://raw.githubusercontent.com/flexera-public/policy_templates/master/.dangerfile/examples/AWS_PERMISSION_JSON.md).\n\n"
+    # end
 
     if !aws_permission_text[0].start_with?("- [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:")
       fail_message += "Line #{aws_permission_line.to_s}: AWS permission statement does not use the standard text. Please make sure AWS permissions begin with the following text followed by a list:\n\n"
@@ -277,7 +279,7 @@ def readme_invalid_credentials?(file)
         end
       end
 
-      asterix_found == 2 if asterix_found == 1 && line.start_with?("  \* ")
+      asterix_found = 2 if asterix_found == 1 && line.start_with?('  \* ')
     end
 
     if permission_list_found == 0
@@ -323,7 +325,7 @@ def readme_invalid_credentials?(file)
         end
       end
 
-      asterix_found == 2 if asterix_found == 1 && line.start_with?("  \* ")
+      asterix_found = 2 if asterix_found == 1 && line.start_with?('  \* ')
     end
 
     if permission_list_found == 0
@@ -369,7 +371,7 @@ def readme_invalid_credentials?(file)
         end
       end
 
-      asterix_found == 2 if asterix_found == 1 && line.start_with?("  \* ")
+      asterix_found = 2 if asterix_found == 1 && line.start_with?('  \* ')
     end
 
     if permission_list_found == 0
@@ -414,7 +416,7 @@ def readme_invalid_credentials?(file)
         end
       end
 
-      asterix_found == 2 if asterix_found == 1 && line.start_with?("  \* ")
+      asterix_found = 2 if asterix_found == 1 && line.start_with?('  \* ')
     end
 
     if permission_list_found == 0
