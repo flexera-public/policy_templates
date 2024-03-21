@@ -23,7 +23,6 @@ task :generate_policy_list do
   Dir['**/*.pt'].each do |file|
     change_log = ::File.join(file.split('/')[0...-1].join('/'), 'CHANGELOG.md')
     readme = ::File.join(file.split('/')[0...-1].join('/'), 'README.md')
-    publish = true
     updated_at = nil
 
     f = File.open(file, "r:bom|utf-8")
@@ -37,10 +36,14 @@ task :generate_policy_list do
       service = pp.parsed_info[:service]
       policy_set = pp.parsed_info[:policy_set]
       recommendation_type = pp.parsed_info[:recommendation_type]
-      publish_parsed = pp.parsed_info[:publish]
+      publish = pp.parsed_info[:publish]
 
       # Set publish to false unless publish is missing or set to true in policy metadata
-      publish = false if !publish_parsed.nil? && publish_parsed != 'true' && publish_parsed != true
+      if !publish.nil? && publish != 'true' && publish != true
+        publish = false
+      else
+        publish = true
+      end
     end
 
     # Get version from long description
