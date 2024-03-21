@@ -88,10 +88,9 @@ def policy_bad_readme_link?(file)
   bad_urls = 0
 
   url_list.each do |url|
-    if url != file_url && url != file_url + "/" && url.include?("github.com")
-      bad_urls += 1
-    elsif (url == file_url || url == file_url + "/") && url.include?("github.com")
-      good_urls += 1
+    if url.include?("github.com")
+      bad_urls += 1 if url != file_url && url != file_url + "/"
+      good_urls += 1 unless url != file_url && url != file_url + "/"
     end
   end
 
