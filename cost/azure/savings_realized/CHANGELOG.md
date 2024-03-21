@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.7
+
+- Added support for organizations with no Microsoft Azure Enterprise Agreement (Legacy) bill connects
+
 ## v3.6
 
 - Incident subject is now the name of the applied policy
