@@ -23,39 +23,41 @@ task :generate_policy_list do
   Dir['**/*.pt'].each do |file|
     change_log = ::File.join(file.split('/')[0...-1].join('/'), 'CHANGELOG.md')
     readme = ::File.join(file.split('/')[0...-1].join('/'), 'README.md')
-    publish = true
     updated_at = nil
 
-    unless file.match(/test_code/)
-      pp = PolicyParser.new
-      pp.parse(file)
+    f = File.open(file, "r:bom|utf-8")
 
-      if pp.parsed_info
-        version = pp.parsed_info[:version]
-        provider = pp.parsed_info[:provider]
-        service = pp.parsed_info[:service]
-        policy_set = pp.parsed_info[:policy_set]
-        recommendation_type = pp.parsed_info[:recommendation_type]
-        publish = pp.parsed_info[:publish]
+    pp = PolicyParser.new
+    pp.parse(file)
 
-        # Set publish to false unless publish is missing or set to true in policy metadata
-        publish = false unless publish.nil? || publish == 'true' || publish == true
+    if pp.parsed_info
+      version = pp.parsed_info[:version]
+      provider = pp.parsed_info[:provider]
+      service = pp.parsed_info[:service]
+      policy_set = pp.parsed_info[:policy_set]
+      recommendation_type = pp.parsed_info[:recommendation_type]
+      publish = pp.parsed_info[:publish]
+
+      # Set publish to false unless publish is missing or set to true in policy metadata
+      if !publish.nil? && publish != 'true' && publish != true
+        publish = false
+      else
+        publish = true
       end
+    end
 
-      # Get version from long description
-      if version.nil? && pp.parsed_long_description =~ /Version/
-        version = pp.parsed_long_description.split(':').last.strip.chomp("\"")
-      end
+    # Get version from long description
+    if version.nil? && pp.parsed_long_description =~ /Version/
+      version = pp.parsed_long_description.split(':').last.strip.chomp("\"")
+    end
 
-      # Skip policy if the version isn't supplied or if version is '0.0'
-      if !version || version == '0.0' || !publish
-        puts "Skipping #{pp.parsed_name} because publish flag set to a value other than 'true'"
-        next
-      end
-
+    # Skip policy if the version isn't supplied or if version is '0.0'
+    if !version || version == '0.0' || !publish
+      puts "Skipping #{pp.parsed_name} because publish flag set to a value other than 'true'"
+    else
       # Get datetime for last time file was modified
       commits = github_client.commits(repo_name, branch, path: file)
-      updated_at = commits.first.commit.author.date.utc.iso8601 unless commits.empty?
+      updated_at = commits.first.commit.author.date.utc.iso8601 if !commits.empty?
 
       puts "Adding #{pp.parsed_name}"
 
