@@ -24,7 +24,7 @@ task :generate_policy_list do
     change_log = ::File.join(file.split('/')[0...-1].join('/'), 'CHANGELOG.md')
     readme = ::File.join(file.split('/')[0...-1].join('/'), 'README.md')
     publish = true
-    updated_at = ""
+    updated_at = nil
 
     unless file.match(/test_code/)
       pp = PolicyParser.new
