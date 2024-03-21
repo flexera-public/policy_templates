@@ -41,7 +41,7 @@ changed_rb_files = changed_files.select{ |file| file.end_with?(".rb") || file ==
 # Changed Python files.
 changed_py_files = changed_files.select{ |file| file.end_with?(".py") }
 # Changed Policy Template files. Ignore meta policy files.
-changed_pt_files = ["compliance/flexera/automation/policy_update_notification/policy_update_notification.pt"] + changed_files.select{ |file| file.end_with?(".pt") && !file.end_with?("meta_parent.pt") }
+changed_pt_files = changed_files.select{ |file| file.end_with?(".pt") && !file.end_with?("meta_parent.pt") }
 # Changed Meta Policy Template files.
 changed_meta_pt_files = changed_files.select{ |file| file.end_with?("meta_parent.pt") }
 # Changed README files.
