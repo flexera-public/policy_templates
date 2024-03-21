@@ -28,7 +28,7 @@ require_relative '.dangerfile/policy_tests'
 # Renamed Files.
 renamed_files = git.renamed_files.collect{ |r| r[:before] }
 # Changed Files. Ignores renamed files to prevent errors on files that don't exist
-changed_files = git.added_files + git.modified_files - renamed_files
+changed_files = git.added_files + git.modified_files #- renamed_files
 # Changed Dangerfile
 changed_dangerfiles = changed_files.select{ |file| file == "Dangerfile" || file.start_with?(".dangerfile/") }
 # Changed Dot Files
