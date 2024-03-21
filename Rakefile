@@ -26,7 +26,9 @@ task :generate_policy_list do
     publish = true
     updated_at = nil
 
-    unless file.match(/test_code/)
+    if !file.match(/test_code/)
+      f = File.open(file, "r:bom|utf-8")
+
       pp = PolicyParser.new
       pp.parse(file)
 
@@ -39,7 +41,7 @@ task :generate_policy_list do
         publish = pp.parsed_info[:publish]
 
         # Set publish to false unless publish is missing or set to true in policy metadata
-        publish = false unless publish.nil? || publish == 'true' || publish == true
+        publish = false if !publish.nil? && publish != 'true' && publish != true
       end
 
       # Get version from long description
@@ -55,7 +57,7 @@ task :generate_policy_list do
 
       # Get datetime for last time file was modified
       commits = github_client.commits(repo_name, branch, path: file)
-      updated_at = commits.first.commit.author.date.utc.iso8601 unless commits.empty?
+      updated_at = commits.first.commit.author.date.utc.iso8601 if !commits.empty?
 
       puts "Adding #{pp.parsed_name}"
 
