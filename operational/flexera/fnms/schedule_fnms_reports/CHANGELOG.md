@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1
+
+- Updated description to account for new file path in Github repository
+
 ## v3.0
 
 - Updated policy to use Flexera One ITAM SOAP APIs. Full details here: [Flexera One ITAM SOAP APIs Transitioning to Flexera One IAM](https://community.flexera.com/t5/Flexera-One-Blog/Flexera-One-ITAM-SOAP-APIs-Transitioning-to-Flexera-One-IAM/ba-p/229399)

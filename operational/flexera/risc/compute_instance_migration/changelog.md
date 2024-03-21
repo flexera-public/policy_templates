@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.6
+
+- Updated description to account for new file path in Github repository
+
 ## v1.5
 
 - Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`
