@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.7
+
+- fixed link to README in policy description
+
 ## v2.6
 
 - Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.

@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.5
+
+- fixed link to README in policy description
+
 ## v1.4
 
 - Updated description to account for new file path in Github repository

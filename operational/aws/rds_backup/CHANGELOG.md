@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.8
+
+- fixed link to README in policy description
+
 ## v2.7
 
 - Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`

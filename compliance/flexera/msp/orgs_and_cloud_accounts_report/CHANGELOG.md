@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.5
+
+- fixed link to README in policy description
+
 ## v1.4
 
 - Modified escalation label and description for consistency

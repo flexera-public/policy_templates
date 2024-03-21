@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.13
+
+- fixed link to README in policy description
+
 ## v1.12
 
 - Updated policy metadata to ensure that it does not publish to the catalog

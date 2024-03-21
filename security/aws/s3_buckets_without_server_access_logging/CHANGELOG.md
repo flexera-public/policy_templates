@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.8
+
+- fixed link to README in policy description
+
 ## v2.7
 
 - Updated description of `Account Number` parameter

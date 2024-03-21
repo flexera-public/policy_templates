@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1
+
+- fixed link to README in policy description
+
 ## v3.0
 
 - Fixed issue where some open buckets were not being reported on
