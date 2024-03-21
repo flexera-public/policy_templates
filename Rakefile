@@ -26,6 +26,8 @@ task :generate_policy_list do
     publish = true
     updated_at = nil
 
+    f = File.open(file, "r:bom|utf-8")
+
     pp = PolicyParser.new
     pp.parse(file)
 
