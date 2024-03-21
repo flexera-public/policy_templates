@@ -36,6 +36,7 @@ task :generate_policy_list do
         service = pp.parsed_info[:service]
         policy_set = pp.parsed_info[:policy_set]
         publish = pp.parsed_info[:publish]
+        recommendation_type = pp.parsed_info[:recommendation_type]
 
         # Set publish to false unless publish is missing or set to true in policy metadata
         publish = false unless publish.nil? || publish == 'true' || publish == true
@@ -70,6 +71,7 @@ task :generate_policy_list do
         "provider": provider,
         "service": service,
         "policy_set": policy_set,
+        "recommendation_type": recommendation_type,
         "updated_at": updated_at
       }
     end
