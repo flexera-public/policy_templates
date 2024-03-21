@@ -81,7 +81,21 @@ def policy_bad_readme_link?(file)
   file_path.pop
   file_url = "https://github.com/flexera-public/policy_templates/tree/master/" + file_path.join('/')
 
-  if !short_description.include?(file_url)
+  url_regex = /https:\/\/[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+(?:\/[^\s]*[^\s)])?/
+  url_list = short_description.scan(url_regex)
+
+  good_urls = 0
+  bad_urls = 0
+
+  url_list.each do |url|
+    if url != file_url && url != file_url + "/" && url.include?("github.com")
+      bad_urls += 1
+    elsif (url == file_url || url == file_url + "/") && url.include?("github.com")
+      good_urls += 1
+    end
+  end
+
+  if bad_urls > 0 || good_urls == 0
     fail_message = "**#{file}**\nPolicy `short_description` is missing a valid link to the policy README. Please ensure that the following link is present in the `short_description`:\n\n#{file_url}/"
   end
 
