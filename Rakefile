@@ -55,7 +55,7 @@ task :generate_policy_list do
 
       # Get datetime for last time file was modified
       commits = github_client.commits(repo_name, branch, path: file)
-      updated_at = commits.first.commit.author.date.iso8601 unless commits.empty?
+      updated_at = commits.first.commit.author.date.utc.iso8601 unless commits.empty?
 
       puts "Adding #{pp.parsed_name}"
 
