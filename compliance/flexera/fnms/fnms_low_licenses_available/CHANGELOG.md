@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.6
+
+- Updated description to account for new file path in Github repository
+
 ## v2.5
 
 - Add default_frequency "monthly"

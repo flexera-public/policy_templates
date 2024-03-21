@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.5
+
+- Updated description to account for new file path in Github repository
+
 ## v2.4
 
 - Added `Account ID` incident field.

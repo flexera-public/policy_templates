@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.4
+
+- Updated description to account for new file path in Github repository
+
 ## v2.3
 
 - Added Deprecated description in the short description

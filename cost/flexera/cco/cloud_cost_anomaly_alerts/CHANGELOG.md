@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.3
+
+- Updated description to account for new file path in Github repository
+
 ## v3.2
 
 - Fixed bug where incident showed dimensions from column `Grouping Dimensions` in random order

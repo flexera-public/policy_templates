@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1
+
+- Updated description to account for new file path in Github repository
+
 ## v3.0
 
 - Added ability to specify custom dimensions for the graph in the report

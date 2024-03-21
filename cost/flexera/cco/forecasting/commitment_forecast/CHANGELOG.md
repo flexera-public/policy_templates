@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.3
+
+- Updated description to account for new file path in Github repository
+
 ## v3.2
 
 - Updated indentation for chart url so it renders corrrectly in the policy incident email

@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.2
+
+- Updated description to account for new file path in Github repository
+
 ## v2.1
 
 - Added parameters to allow the user to configure currency conversion for previous months

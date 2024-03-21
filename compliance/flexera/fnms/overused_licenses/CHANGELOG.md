@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.3
+
+- Updated description to account for new file path in Github repository
+
 ## v2.2
 
 - Replaced hardcoded `host` in `ds_license_attributes` and `ds_license_entitlements` using `f1_app_host` as base

@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.2
+
+- Updated description to account for new file path in Github repository
+
 ## v2.1
 
 - added vendor type for Azure CSP's

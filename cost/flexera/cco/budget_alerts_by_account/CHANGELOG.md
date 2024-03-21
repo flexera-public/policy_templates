@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.3
+
+- Updated description to account for new file path in Github repository
+
 ## v2.2
 
 - Resolved issues with calculating forecast

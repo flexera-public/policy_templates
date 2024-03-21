@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.3
+
+- Updated description to account for new file path in Github repository
+
 ## v3.2
 
 - Deprecated: This policy is no longer being updated. See README for more information.

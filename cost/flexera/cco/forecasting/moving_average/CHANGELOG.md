@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2
+
+- Updated description to account for new file path in Github repository
+
 ## v3.1
 
 - Updated `js_generate_past_month_list` logic to fix bug where start date and end date clash when running policy at the end of January
