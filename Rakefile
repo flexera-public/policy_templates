@@ -87,7 +87,7 @@ task :generate_policy_list do
   policies = { "policies": file_list }
 
   # Write the output JSON file to disk
-  File.open('data/active_policy_list/active_policy_list.json', 'w') {
+  File.open('dist/active-policy-list.json', 'w') {
     |file| file.write(JSON.pretty_generate(policies) + "\n")
   }
 end
