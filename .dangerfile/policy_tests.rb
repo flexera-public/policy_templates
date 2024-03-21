@@ -68,6 +68,27 @@ def policy_bad_filename_casing?(file)
   return false
 end
 
+### README Link test
+# Verify that the readme in the short_description is valid
+def policy_bad_readme_link?(file)
+  fail_message = ""
+
+  pp = PolicyParser.new
+  pp.parse(file)
+  short_description = pp.parsed_short_description
+
+  file_path = file.split('/')
+  file_path.pop
+  file_url = "https://github.com/flexera-public/policy_templates/tree/master/" + file_path.join('/')
+
+  if !short_description.include?(file_url)
+    fail_message = "**#{file}**\nPolicy `short_description` is missing a valid link to the policy README. Please ensure that the following link is present in the `short_description`:\n\n#{file_url}/"
+  end
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
 ### Bad Indentation test
 # Verify that everything is properly indented
 def policy_bad_indentation?(file)
