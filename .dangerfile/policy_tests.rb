@@ -85,8 +85,6 @@ def policy_bad_readme_link?(file)
     fail_message = "**#{file}**\nPolicy `short_description` is missing a valid link to the policy README. Please ensure that the following link is present in the `short_description`:\n\n#{file_url}/"
   end
 
-  return short_description + " " + file_url if file.include?("policy_update_notification")
-
   return fail_message.strip if !fail_message.empty?
   return false
 end
