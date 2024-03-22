@@ -295,7 +295,7 @@ def policy_changelog_mismatch?(file)
   # Derive path to CHANGELOG file from file name/path
   file_parts = file.split('/')
   file_parts.pop
-  changelog_file = file.join('/') + "/CHANGELOG.md"
+  changelog_file = file_parts.join('/') + "/CHANGELOG.md"
 
   # Store contents of file for direct analysis
   changelog_text = File.read(changelog_file)
