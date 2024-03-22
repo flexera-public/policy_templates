@@ -327,8 +327,7 @@ changed_pt_files.each do |file|
   test = policy_http_connections?(file); warn test if test
 
   # Raise warning if improper spacing between comma-separated items found
-  # TEST NOT CURRENTLY IN USE. NEEDS FURTHER TESTING AND DEVELOPMENT.
-  #test = policy_bad_comma_spacing?(file); warn test if test
+  test = policy_bad_comma_spacing?(file); warn test if test
 
   # Raise error if policy is not in the master permissions file.
   # Raise warning if policy is in this file, but datasources have been added.

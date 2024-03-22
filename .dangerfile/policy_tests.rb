@@ -911,7 +911,6 @@ end
 
 ### Improper Comma Spacing Test
 # Return false if all comma separated items have a space between them like so: one, two, three
-# TEST NOT CURRENTLY IN USE. NEEDS FURTHER TESTING AND DEVELOPMENT.
 def policy_bad_comma_spacing?(file)
   # Store contents of file for direct analysis
   policy_code = File.read(file)
@@ -920,19 +919,11 @@ def policy_bad_comma_spacing?(file)
 
   policy_code.each_line.with_index do |line, index|
     line_number = index + 1
-    bad_spacing = false
 
-    if line.include?(',')
-      parts = line.split(',')
-      parts.shift(1)
-
-      parts.each do |part|
-        bad_spacing = true if part.lstrip == part || part.rstrip != part
+    if line.include?(",") && !line.include?("allowed_pattern") && !line.include?('= ","')
+      if line.strip.match(/,\s{2,}/) || line.strip.match(/\s,/) || line.strip.match(/,[^\s]/)
+        fail_message += "Line #{line_number.to_s}: Possible invalid spacing between comma-separated items found.\nComma separated items should be organized as follows, with a single space following each comma: apple, banana, pear\n\n"
       end
-    end
-
-    if bad_spacing
-      fail_message += "Line #{line_number.to_s}: Possible invalid spacing between comma-separated items found.\nComma separated items should be organized as follows, with a single space following each comma: apple, banana, pear\n\n"
     end
   end
 
