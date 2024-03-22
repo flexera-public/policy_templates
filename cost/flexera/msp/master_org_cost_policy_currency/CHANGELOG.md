@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.4
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
 ## v1.3
 
 - Updated policy metadata to ensure that it does not publish to the catalog

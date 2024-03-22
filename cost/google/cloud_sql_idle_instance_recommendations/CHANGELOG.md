@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.1
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
 ## v4.0
 
 - Added support for regex when filtering resources by label

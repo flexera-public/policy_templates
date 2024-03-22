@@ -1,5 +1,9 @@
 # Changelog
 
+## v7.2
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
 ## v7.1
 
 - Added IP allocation type (Dynamic or Static) to incident output

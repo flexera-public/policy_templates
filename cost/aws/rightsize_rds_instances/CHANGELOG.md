@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.2
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
 ## v5.1
 
 - Added Availability Zone, License Model, and vCPUs to incident output

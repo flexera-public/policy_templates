@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.5
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
 ## v1.4
 
 - Updated description to account for new file path in Github repository

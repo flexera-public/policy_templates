@@ -1,5 +1,9 @@
 # Changelog
 
+## v8.1
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
 ## v8.0
 
 - Updated AWS Pricing API parameter to be more descriptive and user-friendly

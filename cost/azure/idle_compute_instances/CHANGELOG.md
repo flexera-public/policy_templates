@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.5
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
 ## v5.4
 
 - Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.

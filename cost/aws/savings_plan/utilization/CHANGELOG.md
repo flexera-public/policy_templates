@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
 ## v3.1
 
 - Parameter `Savings Plan ARN` is now optional.  If not provided, the policy will return utilization for all Savings Plans in the account.
