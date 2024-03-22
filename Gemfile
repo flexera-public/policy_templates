@@ -4,6 +4,9 @@ git_source(:github) { |repo_name| "https://github.com/#{repo_name}" }
 
 gem "rake", "~> 13.1.0"
 gem "json", "~> 2.7"
+gem "jsonlint", "~> 0.4.0"
+gem "yaml", "~> 0.3.0"
+gem "yaml-lint", "~> 0.1.2"
 gem "danger", "~> 9.4"
 gem "danger-textlint", "~> 2.0.4"
 gem "danger-prose", "~> 2.0.7"
