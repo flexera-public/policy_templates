@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
 ## v3.1
 
 - Corrected API issue when executing policy in APAC

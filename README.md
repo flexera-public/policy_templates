@@ -764,7 +764,7 @@ Some policies require external data sets to function.  These data sets are store
 - [AWS Instance Types](./data/aws/instance_types.json)
 - [Azure Instance Types](./data/azure/instance_types.json)
 - [Google Instance Types](./data/google/instance_types.json)
-- [Currency Reference](./cost/scheduled_reports/currency_reference.json)
+- [Currency Reference](./data/currency/currency_reference.json)
 - [Azure SQL Service Tier Types](./data/azure/sql_service_tier_types.json)
 - [TZ database Timezone List](./data/tz_database/timezones_list.json)
 

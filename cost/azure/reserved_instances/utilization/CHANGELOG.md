@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
 ## v3.0
 
 - Updated policy to move away from Azure Legacy EA API endpoints and use the Azure Modern API endpoints due to EA Key deprecation in 2024

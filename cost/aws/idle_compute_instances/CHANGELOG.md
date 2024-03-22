@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.6
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
 ## v5.5
 
 - Deprecated: This policy is no longer being updated. Please see policy README for more information.

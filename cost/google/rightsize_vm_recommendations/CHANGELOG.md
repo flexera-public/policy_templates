@@ -1,5 +1,9 @@
 # Google Rightsize VM Recommender
 
+## v3.1
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
 ## v3.0
 
 - Added support for regex when filtering resources by label

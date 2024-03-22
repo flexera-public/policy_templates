@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.1
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
 ## v2.0
 
 - Added support for regex when filtering resources by tag
