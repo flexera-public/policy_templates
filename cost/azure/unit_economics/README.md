@@ -4,7 +4,7 @@
 
 This policy creates a Unit Economics report showing the average Azure instance cost per hour.
 
-## Functional Details
+## How It Works
 
 ## Input Parameters
 
