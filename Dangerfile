@@ -132,14 +132,21 @@ end
 # JSON/YAML File Testing
 ###############################################################################
 
-# Look for out of place JSON files
+
 changed_json_files.each do |file|
+  # Look for out of place JSON files
   test = general_json_bad_location?(file); fail test if test
+
+  # Lint test JSON files
+  test = general_json_errors?(file); fail test if test
 end
 
-# Look for out of place YAML files
 changed_yaml_files.each do |file|
+  # Look for out of place YAML files
   test = general_yaml_bad_location?(file); fail test if test
+
+  # Lint test YAML files
+  test = general_yaml_errors?(file); fail test if test
 end
 
 ###############################################################################

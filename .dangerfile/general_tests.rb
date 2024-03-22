@@ -181,3 +181,19 @@ def general_yaml_bad_location?(file)
   return fail_message.strip if !fail_message.empty?
   return false
 end
+
+def general_json_errors?(file)
+  linter = `jsonlint #{file}`
+
+  # Return the problems found if applicable
+  return "**#{file}**\nJSON linting found errors:\n\n#{linter}" if !linter.strip.empty?
+  return false
+end
+
+def general_yaml_errors?(file)
+  linter = `yaml-lint -q #{file}`
+
+  # Return the problems found if applicable
+  return "**#{file}**\nYAML linting found errors:\n\n#{linter}" if !linter.strip.empty?
+  return false
+end
