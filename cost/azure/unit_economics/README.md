@@ -1,12 +1,16 @@
 # Azure Cost Report - Instance Cost Per Hour
 
-## What it does
+## What It Does
 
 This policy creates a Unit Economics report showing the average Azure instance cost per hour.
 
 ## Functional Details
 
 ## Input Parameters
+
+## Policy Actions
+
+- Sends an email notification
 
 ## Prerequisites
 
