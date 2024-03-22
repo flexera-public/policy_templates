@@ -65,7 +65,7 @@ new_pt_files = git.added_files.select{ |file| file.end_with?(".pt") && !file.end
 test = github_pr_bad_title?(github); warn test if test
 test = github_pr_missing_summary?(github); fail test if test
 test = github_pr_missing_labels?(github); fail test if test
-test = github_pr_missing_ready_label?(github); warn test if test
+test = github_pr_missing_ready_label?(github); message test if test
 
 ###############################################################################
 # All Files Testing
