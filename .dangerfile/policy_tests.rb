@@ -287,6 +287,43 @@ def policy_missing_info_field?(file, field_name)
   return false
 end
 
+### Changelog Version Test
+# Return false if policy's version number matches the latest entry in the CHANGELOG
+def policy_changelog_mismatch?(file)
+  fail_message = ""
+
+  # Derive path to CHANGELOG file from file name/path
+  file_parts = file.split('/')
+  file_parts.pop
+  changelog_file = file.join('/') + "/CHANGELOG.md"
+
+  # Store contents of file for direct analysis
+  changelog_text = File.read(changelog_file)
+
+  # Get version number from policy
+  policy_version = nil
+
+  pp = PolicyParser.new
+  pp.parse(file)
+  policy_version = pp.parsed_info[:version] if pp.parsed_info
+
+  # Get version number from changelog
+  changelog_version = nil
+
+  if changelog_text && changelog_text.split("\n")[2].start_with?("## v")
+    changelog_version = changelog_text.split("\n")[2].split('v')[1].strip
+  end
+
+  # We ignore situations where one of the values is missing.
+  # Other tests will catch that.
+  if policy_version && changelog_version && policy_version != changelog_version
+    fail_message = "**#{file}**\nVersion number in policy template does not match latest version number in `CHANGELOG.md`. Please review both files to make sure they are correct and aligned with each other."
+  end
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
 ### Section order test
 # Return false if policy sections are in the correct order.
 def policy_sections_out_of_order?(file)
@@ -866,6 +903,56 @@ def policy_missing_recommendation_fields?(file, field_type)
   end
 
   fail_message = "**#{file}**\nRecommendation policy has export that is missing #{field_type} fields. These fields are scraped by the Flexera platform for dashboards:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### Github Source File Test
+# Return false if all datasources pointed to assets at raw.githubusercontent.com are valid
+def policy_bad_github_datasources?(file)
+  # Store contents of file for direct analysis
+  policy_code = File.read(file)
+
+  fail_message = ""
+
+  within_datasource = false
+  github_host = false
+  datasource_line = nil
+
+  policy_code.each_line.with_index do |line, index|
+    line_number = index + 1
+
+    if line.start_with?("datasource ")
+      within_datasource = true
+      datasource_line = line_number
+    end
+
+    if within_datasource && line.start_with?("end")
+      within_datasource = false
+      github_host = false
+    end
+
+    if within_datasource
+      github_host = true if line.strip.start_with?('host "raw.githubusercontent.com"')
+
+      if github_host && line.strip.start_with?("path ")
+        if line.include?("/policy_templates/")
+          if !line.include?("/flexera-public/policy_templates/master/")
+            fail_message += "Line #{datasource_line.to_s}: Datasource has outdated or incorrect Github path. Please update `path` field to point to `/flexera-public/policy_templates/master/`.\n\n"
+          else
+            file_path = line.split("/master/")[1].split('"')[0]
+
+            if !File.exist?(file_path)
+              fail_message += "Line #{datasource_line.to_s}: Datasource has invalid link to Github asset. The file `#{file_path}` does not appear to exist. Please make sure the `path` field points to a valid file.\n\n"
+            end
+          end
+        end
+      end
+    end
+  end
+
+  fail_message = "**#{file}**\nInvalid file paths found in datasources:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false

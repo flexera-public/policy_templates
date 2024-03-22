@@ -155,3 +155,29 @@ def general_python_errors?(file)
   return "**#{file}**\nPython linting found errors:\n\n#{fail_message}" if !fail_message.strip.empty?
   return false
 end
+
+###############################################################################
+# Methods: JSON/YAML
+###############################################################################
+
+def general_json_bad_location?(file)
+  fail_message = ""
+
+  if file.start_with?("automation/") || file.start_with?("compliance/") || file.start_with?("cost/") || file.start_with?("operational/") || file.start_with?("saas/") || file.start_with?("security/")
+    fail_message = "**#{file}**\nJSON file located inside policy directory. Please move JSON file to an appropriate subdirectory in `data/`"
+  end
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+def general_yaml_bad_location?(file)
+  fail_message = ""
+
+  if file.start_with?("automation/") || file.start_with?("compliance/") || file.start_with?("cost/") || file.start_with?("operational/") || file.start_with?("saas/") || file.start_with?("security/")
+    fail_message = "**#{file}**\nYAML file located inside policy directory. Please move YAML file to an appropriate subdirectory in `data/`"
+  end
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end

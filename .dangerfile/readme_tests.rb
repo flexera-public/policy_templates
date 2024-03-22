@@ -170,9 +170,9 @@ def readme_invalid_credentials?(file)
 
     credential_footnote = true if line.start_with?("The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.")
 
-    aws_policy = true if line_number == 1 and (line.include?("AWS") || line.include?("aws"))
-    azure_policy = true if line_number == 1 and (line.include?("Azure") || line.include?("azure"))
-    google_policy = true if line_number == 1 and (line.include?("Google") || line.include?("google"))
+    aws_policy = true if line.include?("AWS") && line.include?("Credential")
+    azure_policy = true if line.include?("Azure") && line.include?("Credential")
+    google_policy = true if line.include?("Google") && line.include?("Credential")
 
     # Description check
     prereq_line_number = line_number if line.start_with?("## Prerequisites")

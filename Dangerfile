@@ -50,6 +50,10 @@ changed_readme_files = changed_files.select{ |file| file.end_with?("/README.md")
 changed_changelog_files = changed_files.select{ |file| file.end_with?("/CHANGELOG.md") }
 # Changed MD files other than the above.
 changed_misc_md_files = changed_files.select{ |file| file.end_with?(".md") && !file.end_with?("/README.md") && !file.end_with?("/CHANGELOG.md") }
+# Changed JSON files.
+changed_json_files = changed_files.select{ |file| file.end_with?(".json") }
+# Changed YAML files.
+changed_yaml_files = changed_files.select{ |file| file.end_with?(".yaml") || file.end_with?(".yml") }
 # New Policy Template files. Ignore meta policy files.
 new_pt_files = git.added_files.select{ |file| file.end_with?(".pt") && !file.end_with?("meta_parent.pt") }
 
@@ -122,6 +126,20 @@ end
 # Perform a lint check on changed Python files
 changed_py_files.each do |file|
   test = general_python_errors?(file); fail test if test
+end
+
+###############################################################################
+# JSON/YAML File Testing
+###############################################################################
+
+# Look for out of place JSON files
+changed_json_files.each do |file|
+  test = general_json_bad_location?(file); fail test if test
+end
+
+# Look for out of place YAML files
+changed_yaml_files.each do |file|
+  test = general_yaml_bad_location?(file); fail test if test
 end
 
 ###############################################################################
@@ -238,6 +256,9 @@ changed_pt_files.each do |file|
     info_test = policy_missing_info_field?(file, "policy_set"); warn info_test if info_test
   end
 
+  # Raise error if policy and changelog do not have matching version numbers
+  test = policy_changelog_mismatch?(file); fail test if test
+
   # Raise error if policy sections are out of order
   test = policy_sections_out_of_order?(file); fail test if test
 
@@ -308,6 +329,9 @@ changed_pt_files.each do |file|
 
   # Raise warning if recommendation policy is missing recommended export fields
   test = policy_missing_recommendation_fields?(file, "recommended"); warn test if test
+
+  # Raise error if policy has invalid Github links in datasources
+  test = policy_bad_github_datasources?(file); fail test if test
 
   # Raise error if policy is not in the master permissions file.
   # Raise warning if policy is in this file, but datasources have been added.
