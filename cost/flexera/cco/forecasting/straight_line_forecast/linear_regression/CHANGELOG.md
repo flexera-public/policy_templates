@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.6
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
 ## v3.5
 
 - fixed link to README in policy description
