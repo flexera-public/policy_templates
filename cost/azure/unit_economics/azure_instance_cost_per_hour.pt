@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "monthly"
 info(
-  version: "2.0",
+  version: "0.1",
   provider: "Flexera Optima",
   service: "All",
   policy_set: "N/A"
@@ -57,10 +57,10 @@ end
 ###############################################################################
 
 #AUTHENTICATE WITH FLEXERA/OPTIMA
-credentials "auth_rs" do
+credentials "auth_flexera" do
   schemes "oauth2"
-  label "Flexera_Automation"
-  description "Select FlexeraOne OAuth2 credentials"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
 
@@ -71,7 +71,7 @@ end
 #GET BILLING CENTERS FOR ORG
 datasource "ds_billing_centers" do
   request do
-    auth $auth_rs
+    auth $auth_flexera
     host rs_optima_host
     path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
     header "Api-Version", "1.0"
@@ -93,10 +93,10 @@ end
   
 #GET TOP-LEVEL BILLING CENTERS
 datasource "ds_top_level_billing_centers" do
-  run_script $js_top_level_bc, $ds_billing_centers
+  run_script $js_top_level_billing_centers, $ds_billing_centers
 end
   
-script "js_top_level_bc", type: "javascript" do
+script "js_top_level_billing_centers", type: "javascript" do
   parameters "billing_centers"
   result "filtered_billing_centers"
   code <<-EOS
@@ -108,7 +108,7 @@ end
 #GET USAGE DATA FOR INSTANCE TYPES
 datasource "ds_instance_types" do
   request do
-    run_script $js_get_instance_types, $ds_top_level_billing_centers, $param_billing_centers, $param_start, $param_end, rs_org_id, rs_optima_host
+    run_script $js_instance_types, $ds_top_level_billing_centers, $param_billing_centers, $param_start, $param_end, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -123,7 +123,7 @@ datasource "ds_instance_types" do
   end
 end
 
-script "js_get_instance_types", type: "javascript" do
+script "js_instance_types", type: "javascript" do
   parameters "ds_billing_centers", "param_billing_centers", "param_start", "param_end", "org_id", "optima_host"
   result "request"
   code <<-EOS 
@@ -145,7 +145,7 @@ script "js_get_instance_types", type: "javascript" do
     ]
 
     var request = {
-      auth: "auth_rs",
+      auth: "auth_flexera",
       host: optima_host,
       verb: "POST",
       path: "/bill-analysis/orgs/" + org_id + "/costs/aggregated",
@@ -182,10 +182,10 @@ end
 
 #CALCULATE NORMALIZED INSTANCES COST PER HOUR
 datasource "ds_normalized_cost_instance_hour_data" do
-  run_script $js_get_normalized_cost_instance_hours, $ds_instance_types, $ds_isf_ratio_csv, $ds_top_level_billing_centers, $param_group_by
+  run_script $js_normalized_cost_instance_hour_data, $ds_instance_types, $ds_isf_ratio_csv, $ds_top_level_billing_centers, $param_group_by
 end
 
-script "js_get_normalized_cost_instance_hours", type: "javascript" do
+script "js_normalized_cost_instance_hour_data", type: "javascript" do
   parameters "cost_usage_data", "azure_instance_data", "ds_top_level_billing_centers", "param_group_by"
   result "result"
   code <<-'EOS'
@@ -300,10 +300,10 @@ end
 
 #CHART CREATION
 datasource "ds_chart_creation" do
-  run_script $js_create_chart_data, $ds_normalized_cost_instance_hour_data
+  run_script $js_chart_creation, $ds_normalized_cost_instance_hour_data
 end
 
-script "js_create_chart_data", type: "javascript" do
+script "js_chart_creation", type: "javascript" do
   parameters "cost_inst_hrs_data"
   result "report"
   code <<-EOS
@@ -369,17 +369,6 @@ script "js_create_chart_data", type: "javascript" do
 end
 
 ###############################################################################
-# Escalations
-###############################################################################
-
-escalation "esc_normalization_factor_report" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
-end
-
-###############################################################################
 # Policy
 ###############################################################################
 
@@ -392,14 +381,10 @@ policy "pol_instance_cost_hour" do
     ___
     ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
     EOS
-    escalate $esc_normalization_factor_report
+    escalate $esc_email
     check eq(0,1)
     export do
-      # no actions so resource_level can be false
       resource_level false
-      #field "instance_type" do
-      #  label "Instance Type"
-      #end
       field "date" do
         label "Month"
       end
@@ -420,4 +405,15 @@ policy "pol_instance_cost_hour" do
       end
     end
   end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
 end
