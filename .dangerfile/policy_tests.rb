@@ -911,6 +911,7 @@ end
 
 ### Improper Comma Spacing Test
 # Return false if all comma separated items have a space between them like so: one, two, three
+# TEST NOT CURRENTLY IN USE. NEEDS FURTHER TESTING AND DEVELOPMENT.
 def policy_bad_comma_spacing?(file)
   # Store contents of file for direct analysis
   policy_code = File.read(file)
