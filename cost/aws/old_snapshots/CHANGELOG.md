@@ -1,6 +1,6 @@
 # Changelog
 
-## v8.3
+## v8.1
 
 - Updated policy to use new source for currency information. Policy functionality is unchanged.
 
