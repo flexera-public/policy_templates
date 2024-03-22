@@ -133,7 +133,6 @@ end
 # JSON/YAML File Testing
 ###############################################################################
 
-
 changed_json_files.each do |file|
   # Look for out of place JSON files
   test = code_json_bad_location?(file); fail test if test
