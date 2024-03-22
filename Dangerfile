@@ -343,6 +343,9 @@ changed_pt_files.each do |file|
   # Raise warning if policy has any datasources using http instead of https
   test = policy_http_connections?(file); warn test if test
 
+  # Raise warning if improper spacing between comma-separated items found
+  test = policy_bad_comma_spacing?(file); warn test if test
+
   # Raise error if policy is not in the master permissions file.
   # Raise warning if policy is in this file, but datasources have been added.
   test = policy_missing_master_permissions?(file, permissions_yaml); fail test if test

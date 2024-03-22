@@ -908,6 +908,39 @@ def policy_missing_recommendation_fields?(file, field_type)
   return false
 end
 
+
+### Improper Comma Spacing Test
+# Return false if all comma separated items have a space between them like so: one, two, three
+def policy_bad_comma_spacing?(file)
+  # Store contents of file for direct analysis
+  policy_code = File.read(file)
+
+  fail_message = ""
+
+  policy_code.each_line.with_index do |line, index|
+    line_number = index + 1
+    bad_spacing = false
+
+    if line.include?(',')
+      parts = line.split(',')
+      parts.shift(1)
+
+      parts.each do |part|
+        bad_spacing = true if part.lstrip == part || part.rstrip != part
+      end
+    end
+
+    if bad_spacing
+      fail_message += "Line #{line_number.to_s}: Possible invalid spacing between comma-separated items found.\nComma separated items should be organized as follows, with a single space following each comma: apple, banana, pear\n\n"
+    end
+  end
+
+  fail_message = "**#{file}**\nIssues with comma-separation found:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
 ### Github Source File Test
 # Return false if all datasources pointed to assets at raw.githubusercontent.com are valid
 def policy_bad_github_datasources?(file)
