@@ -1,5 +1,17 @@
 # Changelog
 
+## v3.2
+
+- Deprecated: This policy is no longer being updated.
+
+## v3.1
+
+- Updated description of `Account Number` parameter
+
+## v3.0
+
+- Added parameter to enable Allow or Deny filtering by user entered regions
+
 ## v2.10
 
 - Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM

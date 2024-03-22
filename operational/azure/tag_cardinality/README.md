@@ -2,7 +2,7 @@
 
 ## What it does
 
-This Policy Template is used to generate a tag cardinality (how frequently each tag value occurs) report for Azure. The report includes cardinality for all tag values for Azure Subscriptions, Resource Groups, and Resources.
+This Policy Template is used to generate a tag cardinality (how many unique values each tag key has) report for Azure, along with a list of those unique values for each tag key. The report includes cardinality for all tag values for Azure Subscriptions, Resource Groups, and Resources.
 
 ## Functional Details
 
@@ -15,6 +15,8 @@ This policy performs the following action:
 This policy has the following input parameter required when launching the policy.
 
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
+- *Azure Endpoint* - Azure Endpoint to access resources
+- *Subscription Allowed List* - Allowed Subscriptions, if empty, all subscriptions will be checked
 
 ## Policy Actions
 
@@ -28,15 +30,15 @@ This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/Ma
 
 For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
 
-Provider tag value to match this policy: `azure_rm`
+- [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:
+  - `Microsoft.Resources/subscriptions/resources/read`
+  - `Microsoft.Resources/subscriptions/providers/read`
+  - `Microsoft.Resources/subscriptions/read`
+  - `Microsoft.Resources/resourceGroups/read`
+  - `Microsoft.Resources/tags/read`
 
-Required permissions in the provider:
-
-- Microsoft.Resources/subscriptions/resources/read
-- Microsoft.Resources/subscriptions/providers/read
-- Microsoft.Resources/subscriptions/read
-- Microsoft.Resources/resourceGroups/read
-- Microsoft.Resources/tags/read
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - `billing_center_viewer`
 
 ## Supported Clouds
 

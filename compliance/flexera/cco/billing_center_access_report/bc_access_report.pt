@@ -1,0 +1,302 @@
+name "Billing Center Access Report"
+rs_pt_ver 20180301
+type "policy"
+short_description "This policy generates an access report by Billing Center. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/flexera/cco/billing_center_access_report/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+category "Compliance"
+severity "low"
+default_frequency "daily"
+info(
+  version: "3.0",
+  provider: "Flexera",
+  service: "CCO",
+  policy_set: ""
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+  default []
+end
+
+parameter "param_billing_centers" do
+  type "list"
+  category "Filters"
+  label "Billing Centers"
+  description "List of Billing Center names/IDs to report on. Leave empty to report on all Billing Centers."
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+      field "ancestor_ids", jmes_path(col_item, "ancestor_ids")
+      field "allocation_table", jmes_path(col_item, "allocation_table")
+    end
+  end
+end
+
+datasource "ds_billing_centers_filtered" do
+  run_script $js_billing_centers_filtered, $ds_billing_centers, $param_billing_centers
+end
+
+script "js_billing_centers_filtered", type: "javascript" do
+  parameters "ds_billing_centers", "param_billing_centers"
+  result "result"
+  code <<-EOS
+  if (param_billing_centers.length > 0) {
+    result = _.filter(ds_billing_centers, function(bc) {
+      return _.contains(param_billing_centers, bc['id']) || _.contains(param_billing_centers, bc['name'])
+    })
+  } else {
+    result = _.filter(ds_billing_centers, function(bc) { return bc['name'] != "Unallocated" })
+  }
+EOS
+end
+
+datasource "ds_billing_center_users" do
+  iterate $ds_billing_centers_filtered
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers/", val(iter_item, "id"), "/access_rules/report"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "bc_id", val(iter_item, "id")
+      field "bc_href", val(iter_item, "href")
+      field "bc_name", val(iter_item, "name")
+      field "inherited", jmes_path(col_item, "access_rules[0].inherited")
+      field "user_href", jmes_path(col_item, "subject.href")
+      field "user_email", jmes_path(col_item, "subject.email")
+      field "user_name", jmes_path(col_item, "subject.name")
+    end
+  end
+end
+
+datasource "ds_id_groups" do
+  run_script $js_id_groups, $ds_billing_center_users
+end
+
+script "js_id_groups", type: "javascript" do
+  parameters "ds_billing_center_users"
+  result "result"
+  code <<-EOS
+  groups = _.filter(ds_billing_center_users, function(bc) { return bc['user_href'].match(/(groups)/g) })
+
+  result = _.map(groups, function(item) {
+    return {
+      bc_id: item["bc_id"],
+      bc_href: item["bc_href"],
+      bc_name: item["bc_name"],
+      inherited: item["inherited"],
+      group_name: item["user_name"],
+      group_href: item["user_href"]
+    }
+  })
+EOS
+end
+
+datasource "ds_users_in_groups" do
+  iterate $ds_id_groups
+  request do
+    auth $auth_flexera
+    host "governance.rightscale.com"
+    path val(iter_item, "group_href")
+    query "view", "extended"
+    header "X-Api-Version", "2.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"users[*]") do
+      field "user_href", jmes_path(col_item, "href")
+      field "user_email", jmes_path(col_item, "email")
+      field "first_name", jmes_path(col_item, "first_name")
+      field "last_name", jmes_path(col_item, "last_name")
+      field "bc_id", val(iter_item, "bc_id")
+      field "bc_href", val(iter_item, "bc_href")
+      field "bc_name", val(iter_item, "bc_name")
+      field "inherited", val(iter_item, "inherited")
+      field "group_name", val(iter_item, "group_name")
+      field "group_href", val(iter_item, "group_href")
+    end
+  end
+end
+
+datasource "ds_incident" do
+  run_script $js_incident, $ds_users_in_groups, $ds_billing_center_users, $ds_billing_centers_filtered, $ds_applied_policy
+end
+
+script "js_incident", type: "javascript" do
+  parameters "ds_users_in_groups", "ds_billing_center_users", "ds_billing_centers_filtered", "ds_applied_policy"
+  result "result"
+  code <<-EOS
+  result = []
+
+  // Remove Groups from Report
+  orig_users = _.reject(ds_billing_center_users, function(user) {
+    return user['user_href'].match(/(groups)/g)
+  })
+
+  // Store users in objects for fast retrieval to avoid nested looping
+  orig_users_object = {}
+
+  _.each(orig_users, function(item) {
+    if (orig_users_object[item['bc_name']] == undefined) {
+      orig_users_object[item['bc_name']] = []
+    }
+
+    orig_users_object[item['bc_name']].push(item)
+  })
+
+  users_in_groups_object = {}
+
+  _.each(ds_users_in_groups, function(item) {
+    if (users_in_groups_object[item['bc_name']] == undefined) {
+      users_in_groups_object[item['bc_name']] = []
+    }
+
+    users_in_groups_object[item['bc_name']].push(item)
+  })
+
+  // Produce final list
+  _.each(ds_billing_centers_filtered, function(bc) {
+    if (orig_users_object[bc['name']] != undefined) {
+      result = result.concat(_.map(orig_users_object[bc['name']], function(user) {
+        return {
+          bc_id: user["bc_id"],
+          bc_href: user["bc_href"],
+          bc_name: user["bc_name"],
+          inherited: user["inherited"],
+          group_name: "",
+          group_href: "",
+          user_href: user["user_href"],
+          user_email: user["user_email"],
+          user_name: user["user_name"],
+          policy_name: ds_applied_policy["name"]
+        }
+      }))
+    }
+
+    if (users_in_groups_object[bc['name']] != undefined) {
+      result = result.concat(_.map(users_in_groups_object[bc['name']], function(user) {
+        return {
+          bc_id: user["bc_id"],
+          bc_href: user["bc_href"],
+          bc_name: user["bc_name"],
+          inherited: user["inherited"],
+          group_name: user["group_name"],
+          group_href: user["group_href"],
+          user_href: user["user_href"],
+          user_email: user["user_email"],
+          user_name: user["first_name"] + " " + user["last_name"],
+          policy_name: ds_applied_policy["name"]
+        }
+      }))
+    }
+  })
+
+  result = _.sortBy(result, "bc_name")
+  result = _.sortBy(result, "user_name")
+  result = _.sortBy(result, "user_email")
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_access_report_by_bc" do
+  validate_each $ds_incident do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}"
+    check eq(val(item, "inherited"), "force_incident_flag")
+    escalate $esc_email
+    export do
+      resource_level true
+      field "bc_name" do
+        label "Billing Center Name"
+      end
+      field "user_name" do
+        label "User Name"
+      end
+      field "user_email" do
+        label "User Email"
+      end
+      field "user_href" do
+        label "User HREF"
+      end
+      field "group_name" do
+        label "Group Name"
+      end
+      field "group_href" do
+        label "Group HREF"
+      end
+      field "inherited" do
+        label "Inherited?"
+      end
+      field "id" do
+        label "Id"
+        path "bc_id"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end

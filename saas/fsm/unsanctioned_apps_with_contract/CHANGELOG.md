@@ -1,5 +1,17 @@
 # Changelog
 
+## v3.1
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
+## v3.0
+
+- Added support for APAC API endpoint
+- Policy now uses and requires a general Flexera One credential
+- Incident summary now includes applied policy name
+- `Currency` is now a separate incident field
+- General code cleanup and normalization
+
 ## v2.5
 
 - Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`

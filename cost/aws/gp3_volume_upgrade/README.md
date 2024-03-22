@@ -1,12 +1,18 @@
 # AWS GP3 Upgradeable Volumes
 
-## What it does
+## Deprecated
+
+This policy is no longer being updated. The [AWS Rightsize EBS Volumes](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ebs_volumes/) policy should be used for these recommendations instead.
+
+Note that the above policy does not report on IO1 or IO2 volumes. These volumes are high performance volumes, so changing them to GP3 will result in a performance downgrade and may cause issues for workloads that rely on this performance.
+
+## What It Does
 
 This Policy finds GP2, IO1, or IO2 volumes in the given account and recommends them for upgrade to GP3 if that would provide savings. A Policy Incident will be created with all of volumes that fall into these criteria.
 
 Optionally, the user can specify one or more tags that if found on a volume will exclude the volume from the list.
 
-### Policy savings details
+### Policy Savings Details
 
 The policy includes the estimated savings. The estimated savings is recognized if the resource is Upgraded. It uses the AWS Pricing API to calculate the estimated savings along with the AWS Enterprise Discount Program percentage that is calculated from costs in Optima. You can also set the *AWS EDP Percentage* parameter to a non-negative number to use for the discount percentage instead. The savings are displayed in the *Estimated Monthly Savings* column. The incident detail message includes the sum of each resource *Estimated Monthly Savings* as *Total Estimated Monthly Savings*.
 
@@ -51,7 +57,8 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 This policy has the following input parameters required when launching the policy.
 
-- *Allowed Regions* - A list of allowed regions for an AWS account. Please enter the allowed regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
+- *Allowed/Denied Regions* - Whether to treat regions parameter as allow or deny list.
+- *Regions* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
 - *Email addresses* - A list of email addresses to notify
 - *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [more](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
 - *Exclude Tags.* - A list of tags used to excluded volumes from the incident.

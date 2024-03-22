@@ -1,5 +1,31 @@
 # Changelog
 
+## v5.0
+
+- Added ability to filter resources by tag key, tag key==value, or using regex
+- Added ability to use all filters as an allow list or a deny list
+- Added additional context to incident description
+- Streamlined code for better readability and faster execution
+- Meta policy support added
+
+## v4.1
+
+- Updated description of `Account Number` parameter
+
+## v4.0
+
+- Added logic required for "Meta Policy" use-cases
+- Flexera credential now required to facilitate meta policy use cases.
+
+## v3.0
+
+- Added parameter to enable Allow or Deny filtering by user entered regions
+
+## v2.9
+
+- Updated `param_tags_to_check` parameter to take a list of tag keys, as opposed to a list of tag key-value pairs
+- Updated tag logic to return 'Missing Tag Keys' as well as 'Tag Keys with Missing Tag Values' in incident
+
 ## v2.8
 
 - Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM

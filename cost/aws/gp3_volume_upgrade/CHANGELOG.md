@@ -1,5 +1,29 @@
 # Changelog
 
+## v4.4
+
+- Changed internal name of escalation code to ensure "Meta Policy" works as expected
+
+## v4.3
+
+- Deprecated: This policy is no longer being updated. Please see policy README for more information.
+
+## v4.2
+
+- Updated description of `Account Number` parameter
+
+## v4.1
+
+- Added logic required for "Meta Policy" use-cases
+
+## v4.0
+
+- Added parameter to enable Allow or Deny filtering by user entered regions
+
+## v3.1
+
+- Raised API limit to handle situations where more than 10,000 line items need to be retrieved.
+
 ## v3.0
 
 - Deprecated `auth_rs` authentication (type: `rightscale`) and replaced with `auth_flexera` (type: `oauth2`).  This is a breaking change which requires a Credential for `auth_flexera` [`provider=flexera`] before the policy can be applied.  Please see docs for setting up [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm)

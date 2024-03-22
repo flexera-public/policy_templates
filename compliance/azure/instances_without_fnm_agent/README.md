@@ -2,7 +2,8 @@
 
 ## What it does
 
-This policy uses a Flexnet Manger Cloud/On-premise instance and checks all instances running in Azure to determine if the FlexNet Inventory Agent is running on the instance and reports on any that are missing the agent.
+This policy uses the SOAP version of the FlexNet Manager Cloud APIs, checks all instances running in Azure to determine if the FlexNet Inventory Agent is running on the instance, and reports on any that are missing the agent.
+
 The policy is a recommendation only policy, no action is taken during the Policy Escalation.
 
 ## Functional Details
@@ -21,8 +22,8 @@ This policy has the following input parameters required when launching the polic
 - *Azure Endpoint* - Azure Endpoint to access resources
 - *Subscription Allowed List* - Allowed Subscriptions, if empty, all subscriptions will be checked
 - *Exclusion Tag Key* - Azure-native Virtual machines tag to ignore VM's which has FNMS inventory agent running. Only supply the tag key. The policy assumes that the tag value is irrelevant.
-- *FNMS Report URL* - Full FlexNet URL (e.g. <https://demo.flexnetmanager.com/Suite> or WStunnel tunnel URL <https://wstunnel1-1.rightscale.com/_token/<token>/>)
-- *FNMS Report ID* - FlexNet manager Custom View ID.
+- *FlexNet Manager host* - Flexera One FlexNet Manager host.  *Required*. *Allowed Values: [`slo.app.flexera.com`, `slo.app.flexera.eu`, `slo.app.flexera.au`, `slo-uat.app.flexera.com`, `slo-uat.app.flexera.eu`, `slo-uat.app.flexera.au`]*
+- *FlexNet Manager Report ID* - FlexNet Manager Report ID. *Required*.
 
 ## Policy Actions
 
@@ -30,63 +31,24 @@ This policy has the following input parameters required when launching the polic
 
 ## Prerequisites
 
-For on premise If FlexNet Manager Suite is not accessible from the Internet, you will need to setup a wstunnel to provide a secure connection into the FlexNet manager system. For more details on wstunnel please refer to this: [https://github.com/rightscale/wstunnel](https://github.com/rightscale/wstunnel)
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
-This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+- [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:
+  - `Microsoft.Compute/virtualMachines/read`
 
-### Credential configuration
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - `Web Service` or equivalent role in IT Asset Accounts (for calling ITAM SOAP APIs)
 
-For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
-Provider tag value to match this policy: `azure_rm` , `flexera_fnms`
+## How to setup FlexNet Manager Custom View for this policy
 
-- Credential type for fnms:
-
-  - *API Key* - For FNMS Cloud  -  (*Location*:header, *Type*: Bearer)
-
-  or
-  - *NTLM* - For On Premise FNMS
-
-Required permissions in the provider azure_rm:
-
-- `Reader`
-
-## Installation
-
-### How to setup FlexNet Manager Custom View for this policy
-
-a. Cloud
-
-1. Create a custom view in FlexNet manager that could look like this: ![Alt text][FNMSReport]
+Create a custom view in FlexNet manager that could look like this: ![Alt text][FNMSReport]
 
 Click on Preview and filter.
 Select `Microsoft Azure` under `Inventory device` > `Hosted in` ![Alt text][FilterFNMSReport]
 
 Once saved, note the report number in the URL field : ![Alt text][ReportNumber] you need it when activating the Policy for 'FNMS Report ID'.
-
-1. Retrieve the API Token in FlexNet Manager System:
-    1. On the Account page - Select Create Account -> Service Account and fill in the form ![Alt text][CreateServeceAccount]
-    1. IMPORTANT: When you hit save you will see a API Token.. This is the only time you will see it so you need to save it at this point ![Alt text][APIToken]
-    1. Add the new account to the Role ___Webservice___ ![Alt text][WebServiceRole]
-
-__NOTE__: You can use a normal interactive user for the API credentials, but it is recommended to add a special service user for the API connection.
-
-b. On Premise
-
-1. Create a custom view in FlexNet manager that could look like this: ![Alt text][FNMSReport]
-
-Click on Preview and filter.
-Select `Microsoft Azure` under `Inventory device` > `Hosted in` ![Alt text][FilterFNMSReport]
-
-Once saved, note the report number in the URL field : ![Alt text][ReportNumber] you need it when activating the Policy for 'FNMS Report ID'.
-
-1. Set Up user for FlexNet manager on-premise:
-    1. In your user management add the new user and assign it a password.
-    1. On the Account page - Select Create Account -> Service Account ![Alt text][CreateServeceAccount]
-    1. in the Account field; select the newly created account and fill in the form.
-    1. Add the new account to the Role ___Webservice___ ![Alt text][WebServiceRole]
-
-__NOTE__: You can use a normal interactive user for the API credentials, but it is recommended to add a special service user for the API connection.
 
 ## Supported Clouds
 

@@ -1,5 +1,44 @@
 # Changelog
 
+## v5.4
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
+## v5.3
+
+- Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.
+
+## v5.2
+
+- Deprecated: This policy is no longer being updated. Please see policy README for more information.
+
+## v5.1
+
+- Corrected issue with policy not retrieving cost data on orgs using newer Azure bill connections
+
+## v5.0
+
+- Renamed Subscription List parameter for consistency and accuracy
+- Added logic required for "Meta Policy" use-cases
+
+## v4.6
+
+- Added `Lookback Period` incident field.
+- Added `Platform` incident field.
+- Updated value ouput from `Resource Type` incident field.
+
+## v4.5
+
+- Updated policy metadata to facilitate scraping of incidents for Recommendations dashboard
+
+## v4.4
+
+- Fixed the comparison made to match the instance's costs with the instance's usage; this caused some instances not to show savings, although they were added to the incident.
+
+## v4.3
+
+- Raised API limit to handle situations where more than 10,000 line items need to be retrieved.
+
 ## v4.2
 
 - Replaced the term **whitelist** with **allowed list**.

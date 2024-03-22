@@ -165,7 +165,7 @@ Required permissions in the provider:
 
 `` ```javascript
 {
-    "Version": "2012-06-01",
+    "Version": "2012-10-17",
     "Statement":[{
     "Effect":"Allow",
     "Action":[

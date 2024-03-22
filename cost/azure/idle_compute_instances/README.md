@@ -1,5 +1,9 @@
 # Azure Idle Compute Instances
 
+## Deprecated
+
+This policy is no longer being updated. The [Azure Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances/) policy now includes this functionality and is the recommended policy for getting idle compute recommendations.
+
 ## What it does
 
 This policy checks all the instances in the Azure Subscription for the average CPU usage over the last 30 days. If the usage is less than the user provided CPU percentage threshold then the virtual machines are recommended for deletion, and the user is emailed.
@@ -10,7 +14,10 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 
 - [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:
   - `Microsoft.Compute/virtualMachines/read`
-  - `Microsoft.Compute/virtualMachines/write`
+  - `Microsoft.Compute/virtualMachines/write`*
+  - `Microsoft.Insights/metrics/read`
+
+\* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`

@@ -5,57 +5,96 @@ short_description "Checks AWS for unused IP Addresses and, optionally, deletes t
 long_description ""
 severity "low"
 category "Cost"
-default_frequency "daily"
+default_frequency "weekly"
 info(
-    version: "4.1",
-    provider: "AWS",
-    service: "EC2",
-    policy_set: "Unused IP Addresses"
-  )
+  version: "8.1",
+  provider: "AWS",
+  service: "Compute",
+  policy_set: "Unused IP Addresses",
+  recommendation_type: "Usage Reduction"
+)
 
 ##############################################################################
 # Parameters
 ##############################################################################
 
-parameter "param_allowed_regions" do
-  type "list"
-  label "Allowed Regions"
-  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
-  description "A list of allowed regions. See the README for more details"
-end
-
-parameter "param_exclude_tags" do
-  type "list"
-  label "Exclusion Tags"
-  description "A list of AWS tags to ignore Elastic IPs. Format: Key=Value"
-end
-
 parameter "param_email" do
   type "list"
+  category "Policy Settings"
   label "Email addresses"
-  description "Email addresses of the recipients you wish to notify when new incidents are created"
+  description "A list of email addresses to notify."
+  default []
 end
 
 parameter "param_aws_account_number" do
   type "string"
+  category "Policy Settings"
   label "Account Number"
-  description "The account number for AWS STS Cross Account Roles."
+  description "Leave blank; this is for automated use with Meta Policies. See README for more details."
   default ""
+end
+
+parameter "param_days_unattached" do
+  type "number"
+  category "Policy Settings"
+  label "Days Unattached"
+  description "The number of days an IP address needs to be detached to be considered unused. This value cannot be set above 90 due to CloudTrail only storing 90 days of log data. If this value is set to 0, all unattached IP addresses will be considered unused."
+  default 30
+  min_value 0
+  max_value 90
+end
+
+parameter "param_pricing_api_endpoint" do
+  type "string"
+  category "Policy Settings"
+  label "AWS Regional Pricing API"
+  description "The regional AWS Pricing API to use when retrieving pricing data for unused IP addresses. Pricing may vary based on region. See README for more details."
+  allowed_values "US East", "EU Central", "AP South"
+  default "US East"
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  default "Allow"
+  allowed_values "Allow", "Deny"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
 end
 
 parameter "param_automatic_action" do
   type "list"
+  category "Actions"
   label "Automatic Actions"
-  description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Delete Unused IPs"]
-end
-
-parameter "param_log_to_cm_audit_entries" do
-  type "string"
-  label "Log to CM Audit Entries"
-  description "Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left set to No on Flexera EU"
-  default "No"
-  allowed_values "Yes", "No"
+  description "When this value is set, this policy will automatically take the selected action."
+  default []
+  allowed_values ["Release Unused IP Addresses"]
 end
 
 ###############################################################################
@@ -72,7 +111,7 @@ end
 
 credentials "auth_flexera" do
   schemes "oauth2"
-  label "flexera"
+  label "Flexera"
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
@@ -90,7 +129,7 @@ pagination "pagination_aws" do
   end
 end
 
-pagination "pagination_aws_products" do
+pagination "pagination_aws_pricing" do
   get_page_marker do
     body_path "NextToken"
   end
@@ -100,49 +139,236 @@ pagination "pagination_aws_products" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
-datasource "ds_billing_centers" do
+# Gather applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific AWS API endpoints
+datasource "ds_aws_api_hosts" do
+  run_script $js_aws_api_hosts, $param_pricing_api_endpoint
+end
+
+script "js_aws_api_hosts", type: "javascript" do
+  parameters "param_pricing_api_endpoint"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "US East": "api.pricing.us-east-1.amazonaws.com",
+    "EU Central": "api.pricing.eu-central-1.amazonaws.com",
+    "AP South": "api.pricing.ap-south-1.amazonaws.com"
+  }
+
+  result = { pricing: host_table[param_pricing_api_endpoint] }
+EOS
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get AWS account info
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account", xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_get_caller_identity
+end
+
+script "js_aws_account", type:"javascript" do
+  parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+  result = _.find(ds_cloud_vendor_accounts, function(account) {
+    return account['id'] == ds_get_caller_identity[0]['account']
+  })
+
+  // This is in case the API does not return the relevant account info
+  if (result == undefined) {
+    result = {
+      id: ds_get_caller_identity[0]['account'],
+      name: "",
+      tags: {}
+    }
+  }
+EOS
+end
+
+# Gather local currency info
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
   request do
     auth $auth_flexera
     host rs_optima_host
-    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
-    header "Api-Version", "1.0"
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
     header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
-  ignore_status [403]
+    ignore_status [403]
   end
   result do
     encoding "json"
-    collect jmes_path(response, "[*]") do
-      field "href", jmes_path(col_item, "href")
-      field "id", jmes_path(col_item, "id")
-      field "name", jmes_path(col_item, "name")
-      field "parent_id", jmes_path(col_item, "parent_id")
-    end
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
   end
 end
 
-datasource "ds_top_level_billing_centers" do
-  run_script $js_top_level_bc, $ds_billing_centers
+datasource "ds_currency_target" do
+  run_script $js_currency_target, $ds_currency_reference, $ds_currency_code
 end
 
-datasource "ds_account_name" do
+script "js_currency_target", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  // Default to USD if currency is not found
+  result = ds_currency_reference['USD']
+
+  if (ds_currency_code['value'] != undefined && ds_currency_reference[ds_currency_code['value']] != undefined) {
+    result = ds_currency_reference[ds_currency_code['value']]
+  }
+EOS
+end
+
+
+# Branching logic:
+# This datasource returns an empty array if the target currency is USD.
+# This prevents ds_currency_conversion from running if it's not needed.
+datasource "ds_conditional_currency_conversion" do
+  run_script $js_conditional_currency_conversion, $ds_currency_target
+end
+
+script "js_conditional_currency_conversion", type: "javascript" do
+  parameters "ds_currency_target"
+  result "result"
+  code <<-EOS
+  result = []
+  // Make the request only if the target currency is not USD
+  if (ds_currency_target['code'] != 'USD') {
+    result = [1]
+  }
+EOS
+end
+
+datasource "ds_currency_conversion" do
+  # Only make a request if the target currency is not USD
+  iterate $ds_conditional_currency_conversion
   request do
-    run_script $js_get_account_name, $ds_get_caller_identity, $ds_top_level_billing_centers, rs_org_id, rs_optima_host
+    host "api.xe-auth.flexeraeng.com"
+    path "/prod/{proxy+}"
+    query "from", "USD"
+    query "to", val($ds_currency_target, 'code')
+    query "amount", "1"
+    # Ignore currency conversion if API has issues
+    ignore_status [400, 404, 502]
   end
   result do
     encoding "json"
-    collect jmes_path(response, "rows[*]") do
-      field "vendorAccountName", jmes_path(col_item, "dimensions.vendor_account_name")
-    end
+    field "from", jmes_path(response, "from")
+    field "to", jmes_path(response, "to")
+    field "amount", jmes_path(response, "amount")
+    field "year", jmes_path(response, "year")
   end
 end
 
-# ds_region_list is a list of regions that are opted-in or opt-in-not-required
-datasource "ds_regions_list" do
-  # https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeRegions.html
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_target, $ds_currency_conversion
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_target", "ds_currency_conversion"
+  result "result"
+  code <<-EOS
+  result = ds_currency_target
+  result['exchange_rate'] = 1
+
+  if (ds_currency_conversion.length > 0) {
+    currency_code = ds_currency_target['code']
+    current_month = parseInt(new Date().toISOString().split('-')[1])
+
+    conversion_block = _.find(ds_currency_conversion[0]['to'][currency_code], function(item) {
+      return item['month'] == current_month
+    })
+
+    if (conversion_block != undefined) {
+      result['exchange_rate'] = conversion_block['monthlyAverage']
+    }
+  }
+EOS
+end
+
+# Gather and filter regions
+datasource "ds_describe_regions" do
   request do
     auth $auth_aws
     verb "GET"
@@ -165,17 +391,33 @@ datasource "ds_regions_list" do
   end
 end
 
-# Get only SCP enabled regions
 datasource "ds_regions" do
-  run_script $js_regions, $param_allowed_regions, $ds_regions_list
+  run_script $js_regions, $ds_describe_regions, $param_regions_list, $param_regions_allow_or_deny
 end
 
-datasource "ds_aws_elastic_ip_address" do
+script "js_regions", type:"javascript" do
+  parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
+  result "result"
+  code <<-EOS
+  allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_describe_regions, function(item) {
+      return _.contains(param_regions_list, item['region']) == allow_deny_test[param_regions_allow_or_deny]
+    })
+  } else {
+    result = ds_describe_regions
+  }
+EOS
+end
+
+# Gather IP addresses and filter them for excluded tags
+datasource "ds_ip_addresses" do
   iterate $ds_regions
   request do
     auth $auth_aws
     pagination $pagination_aws
-    host join(["ec2.",val(iter_item,"region"), ".amazonaws.com"])
+    host join(["ec2.", val(iter_item, "region"), ".amazonaws.com"])
     path "/"
     query "Action", "DescribeAddresses"
     query "Version", "2016-11-15"
@@ -183,45 +425,251 @@ datasource "ds_aws_elastic_ip_address" do
   result do
     encoding "xml"
     collect xpath(response, "//DescribeAddressesResponse/addressesSet/item") do
-      field "publicIp", xpath(col_item,"publicIp")
-      field "domain" , xpath(col_item,"domain")
+      field "region", val(iter_item, "region")
+      field "publicIp", xpath(col_item, "publicIp")
+      field "domain" , xpath(col_item, "domain")
       field "instanceID", xpath(col_item, "instanceId")
-      field "region", val(iter_item,"region")
-      field "associationID", xpath(col_item,"associationId")
-      field "allocationID", xpath(col_item,"allocationId")
+      field "associationID", xpath(col_item, "associationId")
+      field "allocationID", xpath(col_item, "allocationId")
+      field "privateIpAddress", xpath(col_item,"privateIpAddress")
       field "tags" do
         collect xpath(col_item, "tagSet/item") do
-          field "tagKey", xpath(col_item, "key")
-          field "tagValue", xpath(col_item, "value")
+          field "key", xpath(col_item, "key")
+          field "value", xpath(col_item, "value")
         end
       end
     end
   end
 end
 
-datasource "ds_get_caller_identity" do
+datasource "ds_ip_addresses_filtered" do
+  run_script $js_ip_addresses_filtered, $ds_ip_addresses, $param_exclusion_tags, $param_exclusion_tags_boolean
+end
+
+script "js_ip_addresses_filtered", type: "javascript" do
+  parameters "ds_ip_addresses", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  result "result"
+  code <<-EOS
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  if (param_exclusion_tags.length > 0) {
+    result = _.reject(ds_ip_addresses, function(resource) {
+      resource_tags = {}
+
+      if (typeof(resource['tags']) == 'object') {
+        _.each(resource['tags'], function(tag) {
+          resource_tags[tag['key']] = tag['value']
+        })
+      }
+
+      // Store a list of found tags
+      found_tags = []
+
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_tag = resource_tags[comparator['key']]
+
+        if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+        if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+        if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_tag == undefined) { found_tags.push(string) }
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+      })
+
+      all_tags_found = found_tags.length == comparators.length
+      any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+      return all_tags_found || any_tags_found
+    })
+  } else {
+    result = ds_ip_addresses
+  }
+EOS
+end
+
+datasource "ds_unattached_ips" do
+  run_script $js_unattached_ips, $ds_ip_addresses_filtered
+end
+
+script "js_unattached_ips", type: "javascript" do
+  parameters "ds_ip_addresses_filtered"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_ip_addresses_filtered, function(ip) {
+    no_instance = ip["instanceID"] == "" || ip["instanceID"] == null || ip["instanceID"] == undefined
+    no_association = ip["associationID"] == "" || ip["associationID"] == null || ip["associationID"] == undefined
+
+    return no_instance && no_association
+  })
+EOS
+end
+
+# Gather IP address logs to see when the last activity was
+datasource "ds_ip_address_logs" do
+  iterate $ds_unattached_ips
   request do
-    auth $auth_aws
-    verb "GET"
-    host "sts.amazonaws.com"
-    path "/"
-    header "User-Agent", "RS Policies"
-    query "Action", "GetCallerIdentity"
-    query "Version", "2011-06-15"
+    run_script $js_ip_address_logs, val(iter_item, "region"), val(iter_item, "publicIp")
   end
   result do
     encoding "xml"
-    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
-      field "account",xpath(col_item, "Account")
+    collect xpath(response, "//LookupEventsResult/Events/member") do
+      field "eventId", xpath(col_item, "EventId")
+      field "eventTime", xpath(col_item, "EventTime")
+      field "eventName", xpath(col_item, "EventName")
+      field "publicIp", val(iter_item, "publicIp")
     end
   end
 end
 
-datasource "ds_aws_products" do
+script "js_ip_address_logs", type: "javascript" do
+  parameters "region", "publicIp"
+  result "request"
+  code <<-EOS
+  // Slow down rate of requests to prevent throttling
+  api_wait = 5
+  now = new Date().getTime()
+  while (new Date().getTime() < now + (api_wait * 1000)) { /* Do nothing */ }
+
+  end_date = new Date()
+  end_date = end_date.toISOString()
+
+  // Look back 90 days, which is the furthest back Cloudtrail stores this data
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 90)
+  start_date = start_date.toISOString()
+
+  var request = {
+    auth: "auth_aws",
+    pagination: "pagination_aws",
+    host: "cloudtrail." + region + ".amazonaws.com",
+    verb: "GET",
+    path: "/",
+    headers: {
+      "User-Agent": "RS Policies"
+    },
+    "query_params": {
+      "Action": "LookupEvents",
+      "Version": "2013-11-01",
+      "LookupAttributes.member.1.AttributeKey": "ResourceName",
+      "LookupAttributes.member.1.AttributeValue": publicIp,
+      "StartTime": start_date,
+      "EndTime": end_date
+    }
+  }
+EOS
+end
+
+datasource "ds_ip_address_logs_sorted" do
+  run_script $js_ip_address_logs_sorted, $ds_ip_address_logs
+end
+
+script "js_ip_address_logs_sorted", type: "javascript" do
+  parameters "ds_ip_address_logs"
+  result "result"
+  code <<-EOS
+  // Store log entries in an object whose keys are the IP addresses themselves
+  result = {}
+
+  _.each(ds_ip_address_logs, function(entry) {
+    eventName = entry['eventName']
+    publicIp = entry['publicIp']
+
+    if (eventName == 'AllocateAddress' || eventName == 'DisassociateAddress') {
+      if (result[publicIp] == undefined) {
+        result[publicIp] = []
+      }
+
+      result[publicIp].push(entry)
+    }
+  })
+EOS
+end
+
+# Filter IPs to produce a list of unused IPs
+datasource "ds_unused_ips" do
+  run_script $js_unused_ips, $ds_unattached_ips, $ds_ip_address_logs_sorted, $param_days_unattached
+end
+
+script "js_unused_ips", type: "javascript" do
+  parameters "ds_unattached_ips", "ds_ip_address_logs_sorted", "param_days_unattached"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  // Check if unattached IP has been idle for the specified number of days or not
+  _.each(ds_unattached_ips, function(ip) {
+    most_recent_event = null
+    publicIp = ip['publicIp']
+
+    if (ds_ip_address_logs_sorted[publicIp] != undefined) {
+      _.each(ds_ip_address_logs_sorted[publicIp], function(event) {
+        event_time = new Date(event['eventTime'])
+
+        if (event_time > most_recent_event) {
+          most_recent_event = event_time
+        }
+      })
+    }
+
+    days_idle = ''
+    ip['age'] = ''
+
+    if (most_recent_event != null) {
+      now = new Date()
+      days_idle = (now - most_recent_event) / 1000 / 60 / 60 / 24
+      ip['age'] = parseInt(days_idle)
+    }
+
+    if (param_days_unattached == 0 || days_idle == '' || days_idle > param_days_unattached) {
+      result.push(ip)
+    }
+  })
+EOS
+end
+
+# Gather list prices for unassigned IPs for each region
+datasource "ds_ip_address_prices" do
   request do
     auth $auth_aws
-    pagination $pagination_aws_products
-    host "api.pricing.us-east-1.amazonaws.com"
+    pagination $pagination_aws_pricing
+    host val($ds_aws_api_hosts, 'pricing')
     verb "POST"
     path "/"
     header "Content-Type", "application/x-amz-json-1.1"
@@ -231,200 +679,256 @@ datasource "ds_aws_products" do
   end
   result do
     collect jq(response, '.PriceList[] | fromjson | select(.product.attributes.usagetype | test("ElasticIP:IdleAddress"))') do
-      field 'price_per_unit', jq(col_item, '.terms.OnDemand[].priceDimensions[] | select(.description | test("Elastic IP address not attached to a running instance per hour")).pricePerUnit.USD')
+      field 'price', jq(col_item, '.terms.OnDemand[].priceDimensions[] | select(.description | test("Elastic IP address not attached to a running instance per hour")).pricePerUnit.USD')
       field 'region', jq(col_item, '.product.attributes.regionCode')
     end
   end
 end
 
-datasource "ds_filter_ip" do
-  run_script $js_filter_ip_response, $ds_aws_elastic_ip_address, $param_exclude_tags, $ds_get_caller_identity, $ds_account_name
+datasource "ds_ip_address_prices_grouped" do
+  run_script $js_ip_address_prices_grouped, $ds_ip_address_prices
 end
 
-datasource "ds_ip_cost_mapping" do
-  run_script $js_ip_cost_mapping, $ds_filter_ip, $ds_get_caller_identity, $ds_aws_products
-end
-
-###############################################################################
-# Scripts
-###############################################################################
-
-script "js_get_account_name", type: "javascript" do
-  parameters "account_id", "billing_centers", "org", "optima_host"
-  result "request"
-  code <<-EOS
-    // returns date formatted as string: YYYY-mm-dd
-    function getFormattedDailyDate(date) {
-      var year = date.getFullYear();
-      var month = (1 + date.getMonth()).toString();
-      month = month.length > 1 ? month : '0' + month;
-      var day = date.getDate().toString();
-      day = day.length > 1 ? day : '0' + day;
-      return year + '-' + month + '-' + day;
-    }
-    var start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 3)));
-    var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)));
-    var request = {
-      auth: "auth_flexera",
-      host: optima_host,
-      verb: "POST",
-      path: "/bill-analysis/orgs/" + org + "/costs/select",
-      body_fields: {
-        "dimensions": ["vendor_account_name"],
-        "granularity": "day",
-        "start_at": start_date,
-        "end_at": end_date,
-        "metrics": ["cost_nonamortized_unblended_adj"],
-        "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id})),
-        "limit": 1,
-        "filter": {
-          "dimension": "vendor_account",
-          "type": "equal",
-          "value": account_id[0]["account"]
-        }
-      },
-      headers: {
-        "User-Agent": "RS Policies",
-        "Api-Version": "1.0"
-      },
-      ignore_status: [400]
-    }
-  EOS
-end
-
-script "js_top_level_bc", type: "javascript" do
-  parameters "billing_centers"
-  result "filtered_billing_centers"
-  code <<-EOS
-    var filtered_billing_centers =_.reject(billing_centers, function(bc){ return bc.parent_id != null });
-  EOS
-end
-
-script "js_regions", type:"javascript" do
-  parameters "user_entered_regions", "all_regions"
-  result "regions"
-  code <<-EOS
-    if(_.isEmpty(user_entered_regions)){
-      regions = all_regions;
-    }else{
-      //Filter unique regions
-      var uniqueRegions = _.uniq(user_entered_regions);
-      var all_regions_list = [];
-      all_regions.forEach(function(all_region){
-        all_regions_list.push(all_region.region)
-      })
-
-      //Filter valid regions
-      var valid_regions = [];
-      _.map(uniqueRegions, function(uniqueRegion){
-        if(all_regions_list.indexOf(uniqueRegion) > -1){
-          valid_regions.push({"region": uniqueRegion})
-        }
-      })
-
-      //Throw an error if no valid regions found
-      if (_.isEmpty(valid_regions)) {
-        regions = all_regions;
-      }else{
-        regions = valid_regions
-      }
-    }
-  EOS
-end
-
-script "js_filter_ip_response", type: "javascript" do
-  parameters "ds_aws_elastic_ip_address", "exclusion_tag", "ds_get_caller_identity", "ds_account_name"
+script "js_ip_address_prices_grouped", type: "javascript" do
+  parameters "ip_address_prices"
   result "result"
   code <<-EOS
-    var result=[];
-    accountName = ""
-    if (ds_account_name[0] != null) {
-      accountName = ds_account_name[0]['vendorAccountName']
-    }
-    for(var i=0;i<ds_aws_elastic_ip_address.length;i++){
-      instance = ds_aws_elastic_ip_address[i];
-      var isTagMatched = false;
-      var instance_tags = {}
-      var tags = []
-      _.each(instance['tags'], function(inst){
-        tags.push(inst.tagKey+'='+inst.tagValue)
-      })
-      _.each(exclusion_tag, function(exclude){
-        if ( _.contains(tags, exclude)){
-          isTagMatched = true
-        }
-      })
+  // Group price data by region for later use
+  result = {}
 
-      //If the instance id is empty and IP tag does not match with entered param_exclude_tags
-      if(instance['instanceID']=="" && instance['associationID'] == ""){
-        if(!(isTagMatched)){
-          result.push({
-            accountID: ds_get_caller_identity[0]['account'],
-            accountName: accountName,
-            tags: tags,
-            domain: instance['domain'],
-            publicIp: instance['publicIp'],
-            region: instance["region"],
-            allocationID: instance["allocationID"]
-          })
-        }
-      }
-    }
-  EOS
+  _.each(ip_address_prices, function(item) {
+    result[item['region'].toLowerCase()] = item['price']
+  })
+EOS
+end
+
+# Combine IP information with cost data and prepare final datasource for incident
+datasource "ds_ip_cost_mapping" do
+  run_script $js_ip_cost_mapping, $ds_unused_ips, $ds_ip_addresses_filtered, $ds_ip_address_prices_grouped, $ds_aws_account, $ds_currency, $ds_currency_conversion, $ds_applied_policy, $param_days_unattached
 end
 
 script "js_ip_cost_mapping", type:"javascript" do
-  parameters "ip_list", "ds_get_caller_identity", "aws_products"
+  parameters "ds_unused_ips", "ds_ip_addresses_filtered", "ds_ip_address_prices_grouped", "ds_aws_account", "ds_currency", "ds_currency_conversion", "ds_applied_policy", "param_days_unattached"
   result "result"
-  code <<-EOS
-    // map the prices by region for easy lookup
-    var regions = {}, prices_by_region = {};
-    _.each(ip_list, function (ip) {
-      regions[ip.region] = true;
-    });
-    _.each(aws_products, function (product) {
-      if (regions[product.region]) {
-        prices_by_region[product.region] = parseFloat(product.price_per_unit);
-      }
-    });
-    var total_savings = 0;
-    function formatNumber(number, separator){
-      var numString =number.toString();
-      var values=numString.split(".");
-      var result = ''
-      while (values[0].length > 3){
-        var chunk = values[0].substr(-3)
-        values[0] = values[0].substr(0, values[0].length - 3)
-        result = separator + chunk + result
-      }
-      if (values[0].length > 0){
-        result = values[0] + result
-      }
-      if(values[1]==undefined){
-        return result;
-      }
-      return result+"."+values[1];
+  code <<-'EOS'
+  // Function for formatting currency numbers later
+  function formatNumber(number, separator) {
+    var numString = number.toString()
+    var values = numString.split(".")
+    var formatted_number = ''
+
+    while (values[0].length > 3) {
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      formatted_number = separator + chunk + formatted_number
     }
-    // The savings is calculated and displayed in USD
-    var cur = "$"
-    var separator = ","
-    var unused_ip_list = _.map(ip_list, function(ip){
-      ip = _.clone(ip);
-      var costs = prices_by_region[ip.region] * 24 * 30;
-      ip.service = 'EC2';
-      ip.savings = Math.round(costs * 1000) / 1000;
-      ip.savingsCurrency = cur;
-      total_savings += costs;
-      return ip;
+
+    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
+
+    if (values[1] == undefined) { return formatted_number }
+
+    return formatted_number + "." + values[1]
+  }
+
+  result = []
+  total_savings = 0.0
+
+  _.each(ds_unused_ips, function(ip) {
+    ip_cost = ds_ip_address_prices_grouped[ip['region'].toLowerCase()] * 24 * 365.25 / 12 * ds_currency['exchange_rate']
+
+    if (typeof(ip_cost) != 'number') {
+      ip_cost = 0.0
+    }
+
+    total_savings += ip_cost
+
+    recommendationDetails = [
+      "Release IP address ", ip["publicIp"], " ",
+      "in AWS Account ", ds_aws_account['name'], " (", ds_aws_account['id'], ")"
+    ].join('')
+
+    tags = []
+    resourceName = ""
+
+    _.each(ip['tags'], function(tag) {
+      tags.push([tag['key'], tag['value']].join('='))
+
+      if (tag['key'].toLowerCase() == 'name') {
+        resourceName = tag['value']
+      }
     })
-    var total_savings_string = cur + ' ' + formatNumber(Math.round(total_savings * 100) / 100, separator);
-    var message = "The total estimated monthly savings are " + total_savings_string;
-    var result = {
-      "ip_list": _.sortBy(unused_ip_list, "region"),
-      "message": message,
-      "accountID": ds_get_caller_identity[0]['account'],
-    };
-  EOS
+
+    result.push({
+      resourceID: ip['publicIp'],
+      domain: ip['domain'],
+      region: ip['region'],
+      associationID: ip['associationID'],
+      allocationID: ip['allocationID'],
+      accountID: ds_aws_account['id'],
+      accountName: ds_aws_account['name'],
+      recommendationDetails: recommendationDetails,
+      resourceName: resourceName,
+      age: ip['age'],
+      savings: parseFloat(ip_cost.toFixed(3)),
+      savingsCurrency: ds_currency['symbol'],
+      ipAddress: ip['privateIpAddress'],
+      service: "EC2",
+      resourceType: "IP Address",
+      lookbackPeriod: param_days_unattached,
+      tags: tags.join(', '),
+      // These are to avoid errors when we hash_exclude these fields
+      total_savings: "",
+      message: "",
+      policy_name: ""
+    })
+  })
+
+  // Message for incident output
+  savings_disclaimer = "Savings are estimated based on list price and may not reflect credits or discounts. "
+
+  if (ds_currency['code'] != "USD") {
+    savings_disclaimer += "List prices were converted from USD using current exchange rates. "
+  }
+
+  age_disclaimer = "The Days Unattached field will be empty for any IP addresses that have been unattached for over 90 days due to CloudTrail only retaining 90 days of log data.\n\n"
+
+  total_ips = ds_ip_addresses_filtered.length.toString()
+  total_unused_ips = ds_unused_ips.length.toString()
+  unused_ips_percentage = (total_unused_ips / total_ips * 100).toFixed(2)
+
+  if (typeof(unused_ips_percentage) != 'number') {
+    unused_ips_percentage = ""
+  } else {
+    unused_ips_percentage = " (" + unused_ips_percentage.toFixed(2).toString() + "%)"
+  }
+
+  ip_message = "IP address"
+  if (total_ips.length > 1) { ip_message += "es" }
+
+  findings = [
+    "Out of ", total_ips, " ", ip_message, " analyzed, ",
+    total_unused_ips, unused_ips_percentage,
+    " are unused and recommended for release. "
+  ].join('')
+
+  if (param_days_unattached != 0) {
+    day_message = "day"
+    if (param_days_unattached != 1) { day_message += "s" }
+
+    idle_message = [
+      "An unattached IP address is considered unused if it has not been attached to an instance ",
+      "for at least ", param_days_unattached, " ", day_message, ".\n\n"
+    ].join('')
+  } else {
+    idle_message = "An IP address is considered unused if it is not attached to an instance regardless of how long it's been unattached for.\n\n"
+  }
+
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
+
+  savings_message = [
+    ds_currency['symbol'], ' ',
+    formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['t_separator'])
+  ].join('')
+
+  api_disclaimer = ""
+
+  if (ds_currency_conversion['to'] == undefined && ds_currency['code'] != 'USD') {
+    api_disclaimer = "Savings values are in USD due to a malfunction with Flexera's internal currency conversion API. Please contact Flexera support to report this issue."
+  }
+
+  // Sort by descending order of savings value
+  result = _.sortBy(result, function(item) { return item['savings'] * -1 })
+
+  // Dummy entry to ensure the check statement in validation always runs at least once
+  result.push({
+    publicIp: "",
+    age: "",
+    tags: "",
+    savings: "",
+    savingsCurrency: "",
+    total_savings: "",
+    message: ""
+  })
+
+  result[0]['total_savings'] = savings_message
+  result[0]['message'] = findings + idle_message + disclaimer + savings_disclaimer + age_disclaimer + api_disclaimer
+  result[0]['policy_name'] = ds_applied_policy['name']
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_unused_ips" do
+  validate_each $ds_ip_cost_mapping do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Unused IP Addresses Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
+    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "publicIp"), ""))
+    escalate $esc_email
+    escalate $esc_release_ip_address
+    hash_exclude "age", "tags", "savings", "savingsCurrency", "total_savings", "message"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "IP Address"
+      end
+      field "ipAddress" do
+        label "Private Address"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "age" do
+        label "Days Unattached"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "allocationID" do
+        label "Allocation ID"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "domain" do
+        label "Domain"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+    end
+  end
 end
 
 ###############################################################################
@@ -438,160 +942,87 @@ escalation "esc_email" do
   email $param_email
 end
 
-escalation "esc_delete_ip_address" do
-  automatic contains($param_automatic_action, "Delete Unused IPs")
-  label "Delete IP"
-  description "Delete Selected Unused IP"
-  run "delete_unused_instances", data, $param_log_to_cm_audit_entries, rs_optima_host
+escalation "esc_release_ip_address" do
+  automatic contains($param_automatic_action, "Release Unused IP Addresses")
+  label "Release Unused IP Addresses"
+  description "Approval to release all selected IP addresses"
+  run "release_unused_ip_addresses", data
 end
 
-###############################################################################
-# Policy
-##############################################################################
-
-policy "policy_unused_ip_addresses" do
-  validate $ds_ip_cost_mapping do
-    summary_template "AWS Account ID: {{ data.accountID }} - {{ len data.ip_list }} Unused IP Addresses Found"
-    detail_template <<-EOS
-{{data.message}}
-EOS
-    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
-    check logic_or($ds_parent_policy_terminated,    eq(size(val(data, "ip_list")),0)    )
-    # TODO: For internal docs; In the case of a policy with multiple checks, each check must have this logic as each check is evaluated seperately"
-    escalate $esc_email
-    escalate $esc_delete_ip_address
-    export "ip_list" do
-      resource_level true
-      field "accountID" do
-        label "Account Id"
-      end
-      field "accountName" do
-        label "Account Name"
-      end
-      field "resourceID" do
-        label "Resource ID"
-        path "publicIp"
-      end
-      field "resourceType" do
-        label "Resource Type"
-        path "domain"
-      end
-      field "domain" do
-        label "Domain"
-      end
-      field "region" do
-        label "Region"
-      end
-      field "tags" do
-        label "Tags"
-      end
-      field "allocationID" do
-        label "Allocation Id"
-      end
-      field "savings" do
-        label "Estimated Monthly Savings"
-      end
-      field "savingsCurrency" do
-        label "Savings Currency"
-      end
-      field "id" do
-        label "ID"
-        path "publicIp"
-      end
-      field "service" do
-        label "Service"
-      end
-    end
-  end
-end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define delete_unused_instances($data, $param_log_to_cm_audit_entries, $$rs_optima_host) do
-  $$debug = $param_log_to_cm_audit_entries == "Yes"
-  $$errors = []
-  $all_responses = []
-  foreach $item in $data do
-    sub on_error: skip_error_and_append($item["id"]) do
-      if $item["domain"]=="standard"
-        $response = http_request(
-          verb: "get",
-          host: join(["ec2.", $item["region"], ".amazonaws.com"]),
-          auth: $$auth_aws,
-          href: "/",
-          query_strings:{
-            "Action": "ReleaseAddress",
-            "PublicIp": $item["id"],
-            "Version": "2016-11-15"
-          },
-          https: true
-        )
-      elsif $item["domain"]=="vpc"
-        $response = http_request(
-          verb: "get",
-          host: join(["ec2.", $item["region"], ".amazonaws.com"]),
-          auth: $$auth_aws,
-          href: "/",
-          query_strings:{
-            "Action": "ReleaseAddress",
-            "AllocationId": $item["allocationID"],
-            "Version": "2016-11-15"
-          },
-          https: true
-        )
-      end
-      call check_response_and_append_if_error($response, "Release Address " + $item["id"], $$errors) retrieve $$errors
-      $all_responses << $response
+define release_unused_ip_addresses($data) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call release_unused_ip_address($instance) retrieve $release_response
+      $$all_responses << $release_response
     end
   end
-  call sys_log("Responses", to_s($all_responses))
-  if size($$errors) > 0
-    $error = join($$errors, "\n")
-    call sys_log("Errors", $error)
-    raise $error
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
   end
 end
 
-define sys_log($subject, $detail) do
-  # Create empty errors array if doesn't already exist
+define release_unused_ip_address($instance) return $response do
+  if $instance["domain"] == "standard"
+    $id = strip($instance["resourceID"])
+    $id_param = "PublicIp=" + $id
+    $query_strings = {
+      "Action": "ReleaseAddress",
+      "Version": "2016-11-15",
+      "PublicIp": $id
+    }
+  end
+
+  if $instance["domain"] == "vpc"
+    $id = strip($instance["allocationID"])
+    $id_param = "AllocationId=" + $id
+    $query_strings = {
+      "Action": "ReleaseAddress",
+      "Version": "2016-11-15",
+      "AllocationId": $id
+    }
+  end
+
+  $host = "ec2." + $instance["region"] + ".amazonaws.com"
+  $href = "/"
+  $params = "?Action=ReleaseAddress&Version=2016-11-15&" + $id_param
+  $url = $host + $href + $params
+  task_label("GET " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "get",
+    href: $href,
+    host: $host,
+    query_strings: $query_strings
+  )
+
+  task_label("Get AWS IP Address response: " + $id + " " + to_json($response))
+  $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
+
+  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
+    raise "Unexpected response getting AWS IP Address: "+ $id + " " + to_json($response)
+  else
+    task_label("Get AWS IP Address successful: " + $id)
+  end
+end
+
+define handle_error() do
   if !$$errors
     $$errors = []
   end
-  # Check if debug is enabled
-  if $$debug
-    # Append to global $$errors
-    # This is the suggested way to capture errors
-    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
-    # If Flexera NAM Zone, create audit_entries [to be deprecated]
-    # This is the legacy method for capturing errors and only supported on Flexera NAM
-    if $$rs_optima_host == "api.optima.flexeraeng.com"
-      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
-      $task_label = "Creating audit entry for " + $subject
-      sub task_label: $task, on_error: skip_error_and_append($task) do
-        rs_cm.audit_entries.create(
-          notify: "None",
-          audit_entry: {
-            auditee_href: @@account,
-            summary: $subject,
-            detail: $detail
-          }
-        )
-      end # End sub on_error
-    end # End if rs_optima_host
-  end # End if debug is enabled
-end
-
-define skip_error_and_append($subject) do
-  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
   $_error_behavior = "skip"
-end
-
-define check_response_and_append_if_error($response, $request_description, $errors) return $errors do
-  if $response["code"] > 299 || $response["code"] < 200
-    $errors << "Unexpected status code from " + $request_description + " request\n  " + to_s($response)
-  end
 end
 
 ###############################################################################
@@ -614,7 +1045,6 @@ datasource "ds_get_policy" do
     field "id", jmes_path(response, "id")
   end
 end
-
 
 datasource "ds_parent_policy_terminated" do
   run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
@@ -681,6 +1111,6 @@ script "js_check_deleted", type: "javascript" do
   parameters "response"
   result "result"
   code <<-EOS
-  result = {"path":"/"}
-  EOS
+  result = { "path": "/" }
+EOS
 end

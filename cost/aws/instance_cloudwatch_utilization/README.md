@@ -1,5 +1,9 @@
 # AWS Inefficient Instance Utilization using CloudWatch
 
+## Deprecated
+
+This policy is no longer being updated. The [AWS Rightsize EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/) policy now includes this functionality and is the recommended policy for obtaining these recommendations.
+
 ## What it does
 
 This Policy Template gathers AWS instances with inefficient utilization using CloudWatch CPU and Memory Metrics over a 30 day average and downsized after approval.
@@ -62,7 +66,8 @@ Required permissions in the provider:
 
 This policy has the following input parameters required when launching the policy.
 
-- *Allowed Regions* - A list of allowed regions for an AWS account. Please enter the allowed regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
+- *Allowed/Denied Regions* - Whether to treat regions parameter as allow or deny list.
+- *Regions* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
 - *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [more](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
 - *Average used memory percentage* - Set to -1 to ignore memory utilization

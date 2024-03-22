@@ -1,0 +1,205 @@
+name "Azure Reserved Instances Utilization MCA"
+rs_pt_ver 20180301
+type "policy"
+short_description "A policy that sends email notifications when utilization falls below a threshold. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/reserved_instances/utilization_mca) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "medium"
+category "Cost"
+default_frequency "weekly"
+info(
+  version: "1.0",
+  provider: "Azure",
+  service: "Compute",
+  policy_set: ""
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_azure_endpoint" do
+  type "string"
+  label "Azure Endpoint"
+  description "Azure Endpoint to access resources"
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_lookback_period" do
+  category "Savings Plan"
+  label "Look Back Period"
+  default "Last 7 days"
+  description "The number of days of past Azure Reservation Utilization data to analyze"
+  allowed_values "Last 7 days", "Last 30 days"
+  type "string"
+end
+
+parameter "param_utilization" do
+  category "RI"
+  label "Show Reservations with utilization below this value (%)"
+  type "number"
+  min_value 1
+  max_value 100
+  default 100
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_azure" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_azure" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+datasource "ds_revervation_all" do
+  request do
+    auth $auth_azure
+    verb "GET"
+    host $param_azure_endpoint
+    path "/providers/Microsoft.Capacity/reservations"
+    query "api-version", "2022-11-01"
+  end
+  result do
+    collect jq(response, '.value[]?') do
+      field "id", jq(col_item, ".id")
+      field "reservationId", jq(col_item, ".name")
+      field "region", jq(col_item, ".location")
+      field "sku", jq(col_item, ".sku.name")
+      field "reservedResourceType", jq(col_item, ".properties.reservedResourceType")
+      field "term", jq(col_item, ".properties.term")
+      field "instanceFlexibility", jq(col_item, ".properties.instanceFlexibility")
+      field "displayName", jq(col_item, ".properties.displayName")
+      field "billingScopeId", jq(col_item, ".properties.billingScopeId")
+      field "billingPlan", jq(col_item, ".properties.billingPlan")
+      field "utilizationAggregates", jq(col_item, ".properties.utilization.aggregates")
+      field "quantity", jq(col_item, ".properties.quantity")
+      field "expiryDate", jq(col_item, ".properties.expiryDateTime")
+      field "appliedScopeType", jq(col_item, ".properties.appliedScopeType")
+    end
+  end
+end
+
+datasource "ds_reservations_below_utilization" do
+  run_script $js_get_reservations_below_utilization, $ds_revervation_all, $param_lookback_period, $param_utilization
+end
+
+script "js_get_reservations_below_utilization", type: "javascript" do
+  parameters "ds_reservation_all", "param_lookback_period", "param_utilization"
+  result "result"
+  code <<-EOS
+    var result = [];
+
+    var grain = 30;
+    
+    if (param_lookback_period == "Last 7 days") {
+        grain = 7;
+    }
+    
+    _.each(ds_reservation_all, function (reservation) {
+        var utilizationValue = _.findWhere(reservation.utilizationAggregates, { grain: grain }).value;
+    
+        if (utilizationValue < param_utilization) {
+            reservation.reservationOrderId = reservation.id.replace("/providers/microsoft.capacity/reservationOrders/", "").replace("/reservations/" + reservation.reservationId, "");
+            reservation.lookbackPeriod = grain + " days";
+            reservation.utilizationPercentage = utilizationValue;
+    
+            result.push(reservation);
+        }
+    });
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_azure_active_reserved_instances" do
+  validate $ds_reservations_below_utilization do
+    summary_template "{{ len data }} Azure Reserved Instances below {{ parameters.param_utilization }}% of utilization - {{ parameters.param_lookback_period }}"
+    escalate $esc_email
+    check eq(size(data), 0)
+    export do
+      field "displayName" do
+        label "Display name"
+      end
+      field "appliedScopeType" do
+        label "Applied scope type"
+      end
+      field "expiryDate" do
+        label "Expiry date"
+      end
+      field "quantity" do
+        label "Quantity"
+      end
+      field "reservedResourceType" do
+        label "Reserved resource type"
+      end
+      field "reservationId" do
+        label "Reservation ID"
+      end
+      field "reservationOrderId" do
+        label "Reservation order ID"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "sku" do
+        label "Instance type"
+      end
+      field "term" do
+        label "Term"
+      end
+      field "instanceFlexibility" do
+        label "Instance flexibility"
+      end
+      field "billingScopeId" do
+        label "Purchasing subscription"
+      end
+      field "billingPlan" do
+        label "Reservation billing plan"
+      end
+      field "lookbackPeriod" do
+        label "Lookback Period"
+      end
+      field "utilizationPercentage" do
+        label "Utilization percentage"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Sends incident email"
+  email $param_email
+end

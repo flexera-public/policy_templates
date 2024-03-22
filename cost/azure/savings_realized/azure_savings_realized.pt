@@ -3,14 +3,14 @@ rs_pt_ver 20180301
 type "policy"
 short_description "This policy calculates savings realized by Reserved Instance purchases for Azure. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/savings_realized/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
-default_frequency "monthly"
-severity "low"
 category "Cost"
+severity "low"
+default_frequency "monthly"
 info(
-  version: "3.1",
-  provider: "Flexera",
-  service: "All",
-  policy_set: "N/A"
+  version: "3.7",
+  provider: "Azure",
+  service: "Compute",
+  policy_set: "Savings Realized"
 )
 
 ###############################################################################
@@ -19,17 +19,23 @@ info(
 
 parameter "param_email" do
   type "list"
+  category "Policy Settings"
   label "Email addresses"
+  description "A list of email addresses to notify."
+  default []
 end
 
 parameter "param_billing_centers" do
-  label "Billing Center Name"
-  description "List of Billing Center Names to check Savings Realized for. Leave blank for whole Organization view."
   type "list"
+  category "Policy Settings"
+  label "Billing Center Name"
+  description "List of Billing Center Names/IDs to check Savings Realized for. Leave blank for whole Organization view."
+  default []
 end
 
 parameter "param_period_start" do
   type "string"
+  category "Policy Settings"
   label "Period Start Date"
   description 'The starting month of the historical data to analyze (in YYYY-MM format e.g., "2021-10")'
   allowed_pattern /20[2-9][0-9]-[0-1][0-9]/
@@ -37,6 +43,7 @@ end
 
 parameter "param_period_end" do
   type "string"
+  category "Policy Settings"
   label "Period End Date"
   description "The ending month of the historical data to analyze (in YYYY-MM format)"
   allowed_pattern /20[2-9][0-9]-[0-1][0-9]/
@@ -44,6 +51,7 @@ end
 
 parameter "param_chart_type" do
   type "string"
+  category "Policy Settings"
   label "Chart Type"
   description "The type of bar chart to view savings realized data by"
   allowed_values "Grouped Bar Chart", "Stacked Bar Chart"
@@ -54,98 +62,157 @@ end
 # Authentication
 ###############################################################################
 
-#AUTHENTICATE WITH FLEXERA/OPTIMA
 credentials "auth_flexera" do
   schemes "oauth2"
-  label "flexera"
+  label "Flexera"
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
 
 ###############################################################################
-# Datasources and Scripts
+# Datasources & Scripts
 ###############################################################################
 
-#GET BILLING CENTERS FOR ORG
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Table to convert region names from old EA connections to the new ones
+datasource "ds_region_table" do
+  run_script $js_region_table
+end
+
+script "js_region_table", type: "javascript" do
+  result "result"
+  code <<-EOS
+  result = {
+    "AE Central": "UAE Central",
+    "AE North": "UAE North",
+    "AP East": "East Asia",
+    "AP Southeast": "Southeast Asia",
+    "AU Central": "Australia Central",
+    "AU Central 2": "Australia Central 2",
+    "AU East": "Australia East",
+    "AU Southeast": "Australia Southeast",
+    "BR South": "Brazil South",
+    "BR Southeast": "Brazil Southeast",
+    "CA Central": "Canada Central",
+    "CA East": "Canada East",
+    "CH North": "China North",
+    "CH West": "China West",
+    "DE North": "Germany North",
+    "DE West Central": "Germany West Central",
+    "EU North": "North Europe",
+    "EU West": "West Europe",
+    "FR Central": "France Central",
+    "FR South": "France South",
+    "IN Central": "Central India",
+    "IN Central Jio": "Jio India Central",
+    "IN South": "South India",
+    "IN West": "West India",
+    "IN West Jio": "Jio India West",
+    "IT North": "Italy North",
+    "JA East": "Japan East",
+    "JA West": "Japan West",
+    "KR Central": "Korea Central",
+    "KR South": "Korea South",
+    "NO East": "Norway East",
+    "NO West": "Norway West",
+    "PL Central": "Poland Central",
+    "QA Central": "Qatar Central",
+    "SE Central": "Sweden Central",
+    "SE South": "Sweden South",
+    "UK South": "UK South",
+    "UK West": "UK West",
+    "US Central": "Central US",
+    "US East": "East US",
+    "US East 2": "East US 2",
+    "US North Central": "North Central US",
+    "US South Central": "South Central US",
+    "US West": "West US",
+    "US West 2": "West US 2",
+    "US West 3": "West US 3",
+    "US West Central": "West Central US",
+    "ZA North": "South Africa North",
+    "ZA West": "South Africa West",
+    "All Regions": "All Regions",
+    "Unassigned": "Unassigned"
+  }
+EOS
+end
+
 datasource "ds_billing_centers" do
   request do
     auth $auth_flexera
     host rs_optima_host
-    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
+    ignore_status [403]
   end
   result do
     encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "href", jmes_path(col_item,"href")
-      field "id", jmes_path(col_item,"id")
-      field "name", jmes_path(col_item,"name")
-      field "parent_id", jmes_path(col_item,"parent_id")
-      field "ancestor_ids", jmes_path(col_item,"ancestor_ids")
-      field "allocation_table", jmes_path(col_item,"allocation_table")
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
     end
   end
 end
 
-#GET RESERVED INSTANCE COSTS
-datasource "ds_ri_aggregated_costs" do
+datasource "ds_filtered_bcs" do
+  run_script $js_filtered_bcs, $ds_billing_centers, $param_billing_centers
+end
+
+script "js_filtered_bcs", type: "javascript" do
+  parameters "ds_billing_centers", "param_billing_centers"
+  result "result"
+  code <<-EOS
+  if (param_billing_centers.length == 0) {
+    filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+      return bc['parent_id'] == null || bc['parent_id'] == undefined
+    })
+  } else {
+    filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+      return _.contains(param_billing_centers, bc['id']) || _.contains(param_billing_centers, bc['name']) || _.contains(param_billing_centers, bc['name'].toLowerCase()) || _.contains(param_billing_centers, bc['name'].toUpperCase())
+    })
+  }
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+
+# Gather list of bill connections from Optima data
+datasource "ds_bill_connections" do
   request do
-    run_script $js_get_ri_aggregated_costs, $ds_billing_centers, $param_period_start, $param_period_end, $param_billing_centers, rs_org_id, rs_optima_host
+    run_script $js_bill_connections, $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
     collect jmes_path(response, "rows") do
-      field "instance_type", jmes_path(col_item, "dimensions.instance_type")
-      field "region", jmes_path(col_item, "dimensions.region")
-      field "usage_unit", jmes_path(col_item, "dimensions.usage_unit")
-      field "usage_amount", jmes_path(col_item, "metrics.usage_amount")
-      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
-      field "month", jmes_path(col_item, "timestamp")
+      field "bill_source", jmes_path(col_item, "dimensions.bill_source")
     end
   end
 end
 
-script "js_get_ri_aggregated_costs", type: "javascript" do
-  parameters "ds_billing_centers", "start_date", "end_date", "param_billing_centers", "org_id", "optima_host"
+script "js_bill_connections", type: "javascript" do
+  parameters "ds_filtered_bcs", "start_date","end_date", "org_id", "optima_host"
   result "request"
   code <<-EOS
-
-  //Get billing centers. If user specifies no billing centers, retrieve all top level billing centers. Else get array of billing centers that match the names stated in BC param
-  var billing_center_ids = []
-  if (param_billing_centers.length === 0){
-    var top_billing_centers = _.reject(ds_billing_centers, function(bc){ return bc.parent_id != null });
-    billing_center_ids = _.map(top_billing_centers, function(value, key){ return value.id });
-  } else {
-    billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
-    billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
-  }
-
-  var payload = {
-    "billing_center_ids": billing_center_ids,
-    "filter": {
-      "type": "and",
-      "expressions": [
-        { "dimension": "vendor", "type": "equal", "value": "Azure" },
-        { "dimension": "service", "type": "equal", "value": "Microsoft.Compute" },
-        { "dimension": "resource_type", "type": "equal", "value": "Virtual Machines-Reservation-Base VM" },
-        {
-          "type": "not",
-          "expression": { "dimension": "instance_type", "type": "equal", "value": "None" }
-        }
-      ]
-    },
-    "dimensions": [
-      "instance_type",
-      "region",
-      "usage_unit"
-    ],
+  payload = {
+    "billing_center_ids": ds_filtered_bcs,
+    "dimensions": [ "bill_source" ],
     "granularity": "month",
-    "metrics": [
-      "cost_amortized_unblended_adj",
-      "usage_amount"
-    ]
+    "metrics": [ "cost_amortized_unblended_adj" ],
     "end_at": end_date,
     "start_at": start_date
   }
@@ -160,13 +227,33 @@ script "js_get_ri_aggregated_costs", type: "javascript" do
       "User-Agent": "RS Policies"
     }
   }
-  EOS
+EOS
 end
 
-#GET BASE COSTS
-datasource "ds_base_aggregated_costs" do
+# Filter out old Azure EA connections and new Azure EA connections
+datasource "ds_bill_connections_old" do
+  run_script $js_bill_connections_filter, $ds_bill_connections, 0
+end
+
+datasource "ds_bill_connections_new" do
+  run_script $js_bill_connections_filter, $ds_bill_connections, 7
+end
+
+script "js_bill_connections_filter", type:"javascript" do
+  parameters "bill_connections", "index"
+  result "result"
+  code <<-EOS
+  bill_sources = _.filter(bill_connections, function(connection) {
+    return connection['bill_source'].indexOf('azure-ea') == index
+  })
+
+  result = _.uniq(_.compact(_.pluck(bill_sources, 'bill_source')))
+EOS
+end
+
+datasource "ds_aggregated_costs_old_base" do
   request do
-    run_script $js_get_base_aggregated_costs, $ds_billing_centers, $param_period_start, $param_period_end, $param_billing_centers, rs_org_id, rs_optima_host
+    run_script $js_get_aggregated_costs, $ds_bill_connections_old, $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host, "old_base"
   end
   result do
     encoding "json"
@@ -181,48 +268,221 @@ datasource "ds_base_aggregated_costs" do
   end
 end
 
-script "js_get_base_aggregated_costs", type: "javascript" do
-  parameters "ds_billing_centers", "start_date", "end_date", "param_billing_centers", "org_id", "optima_host"
+datasource "ds_aggregated_costs_old_ri" do
+  request do
+    run_script $js_get_aggregated_costs, $ds_bill_connections_old, $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host, "old_ri"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows") do
+      field "instance_type", jmes_path(col_item, "dimensions.instance_type")
+      field "region", jmes_path(col_item, "dimensions.region")
+      field "usage_unit", jmes_path(col_item, "dimensions.usage_unit")
+      field "usage_amount", jmes_path(col_item, "metrics.usage_amount")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+      field "month", jmes_path(col_item, "timestamp")
+    end
+  end
+end
+
+datasource "ds_aggregated_costs_new_base" do
+  request do
+    run_script $js_get_aggregated_costs, $ds_bill_connections_new, $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host, "new_base"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows") do
+      field "instance_type", jmes_path(col_item, "dimensions.instance_type")
+      field "region", jmes_path(col_item, "dimensions.region")
+      field "usage_unit", jmes_path(col_item, "dimensions.usage_unit")
+      field "usage_amount", jmes_path(col_item, "metrics.usage_amount")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+      field "month", jmes_path(col_item, "timestamp")
+    end
+  end
+end
+
+datasource "ds_aggregated_costs_new_ri" do
+  request do
+    run_script $js_get_aggregated_costs, $ds_bill_connections_new, $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host, "new_ri"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows") do
+      field "instance_type", jmes_path(col_item, "dimensions.instance_type")
+      field "region", jmes_path(col_item, "dimensions.region")
+      field "usage_unit", jmes_path(col_item, "dimensions.usage_unit")
+      field "usage_amount", jmes_path(col_item, "metrics.usage_amount")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+      field "month", jmes_path(col_item, "timestamp")
+    end
+  end
+end
+
+script "js_get_aggregated_costs", type: "javascript" do
+  parameters "bill_sources", "ds_filtered_bcs", "start_date", "end_date", "org_id", "optima_host", "connection_type"
   result "request"
   code <<-EOS
-
-  //Get billing centers. If user specifies no billing centers, retrieve all top level billing centers. Else get array of billing centers that match the names stated in BC param
-  var billing_center_ids = []
-  if (param_billing_centers.length === 0){
-    var top_billing_centers = _.reject(ds_billing_centers, function(bc){ return bc.parent_id != null });
-    billing_center_ids = _.map(top_billing_centers, function(value, key){ return value.id });
-  } else {
-    billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
-    billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
-  }
-
-  var payload = {
-    "billing_center_ids": billing_center_ids,
-    "filter": {
+  // Set filters based on the type of request
+  if (connection_type == 'old_base') {
+    filter = {
       "type": "and",
       "expressions": [
-        { "dimension": "vendor", "type": "equal", "value": "Azure" },
-        { "dimension": "service", "type": "equal", "value": "Microsoft.Compute" },
         {
-          "type": "not",
-          "expression": { "dimension": "instance_type", "type": "equal", "value": "None" }
+          "type": "or",
+          "expressions": [
+            { "dimension": "service", "type": "equal", "value": "Microsoft.Compute" },
+            { "dimension": "service", "type": "equal", "value": "microsoft.compute" }
+          ]
         },
         {
           "type": "not",
-          "expression": { "dimension": "resource_type", "type": "equal", "value": "Virtual Machines-Reservation-Base VM" }
+          "expression": {
+            "type": "or",
+            "expressions": [
+              {
+                "dimension": "resource_type",
+                "type": "equal",
+                "value": "Virtual Machines-Reservation-Base VM"
+              },
+              {
+                "dimension": "resource_type",
+                "type": "equal",
+                "value": "virtual machines-reservation-base vm"
+              }
+            ]
+          }
+        },
+        {
+          "type": "not",
+          "expression": { "dimension": "instance_type", "type": "equal", "value": "None" }
         }
       ]
-    },
-    "dimensions": [
-      "instance_type",
-      "region",
-      "usage_unit"
-    ],
+    }
+  }
+
+  if (connection_type == 'old_ri') {
+    filter = {
+      "type": "and",
+      "expressions": [
+        {
+          "type": "or",
+          "expressions": [
+            { "dimension": "service", "type": "equal", "value": "Microsoft.Compute" },
+            { "dimension": "service", "type": "equal", "value": "microsoft.compute" }
+          ]
+        },
+        {
+          "type": "or",
+          "expressions": [
+            {
+              "dimension": "resource_type",
+              "type": "equal",
+              "value": "Virtual Machines-Reservation-Base VM"
+            },
+            {
+              "dimension": "resource_type",
+              "type": "equal",
+              "value": "virtual machines-reservation-base vm"
+            }
+          ]
+        },
+        {
+          "type": "not",
+          "expression": { "dimension": "instance_type", "type": "equal", "value": "None" }
+        }
+      ]
+    }
+  }
+
+  if (connection_type == 'new_base') {
+    filter = {
+      "type": "and",
+      "expressions": [
+        {
+          "type": "not",
+          "expression": {
+            "type": "or",
+            "expressions": [
+              { "dimension": "purchase_option", "type": "equal", "value": "Reserved" },
+              { "dimension": "purchase_option", "type": "equal", "value": "reserved" },
+              { "dimension": "purchase_option", "type": "equal", "value": "Savings Plan" },
+              { "dimension": "purchase_option", "type": "equal", "value": "savings plan" },
+              { "dimension": "purchase_option", "type": "equal", "value": "Spot" },
+              { "dimension": "purchase_option", "type": "equal", "value": "spot" }
+            ]
+          }
+        },
+        {
+          "type": "or",
+          "expressions": [
+            { "dimension": "vendor", "type": "equal", "value": "Azure"  },
+            { "dimension": "vendor", "type": "equal", "value": "azure"  }
+          ]
+        },
+        {
+          "type": "or",
+          "expressions": [
+            { "dimension": "service", "type": "equal", "value": "Microsoft.Compute" },
+            { "dimension": "service", "type": "equal", "value": "microsoft.compute" }
+          ]
+        },
+        {
+          "type": "not",
+          "expression": { "dimension": "instance_type", "type": "equal", "value": "None" }
+        }
+      ]
+    }
+  }
+
+  if (connection_type == 'new_ri') {
+    filter = {
+      "type": "and",
+      "expressions": [
+        {
+          "type": "or",
+          "expressions": [
+            { "dimension": "purchase_option", "type": "equal", "value": "Reserved" },
+            { "dimension": "purchase_option", "type": "equal", "value": "reserved" }
+          ]
+        },
+        {
+          "type": "or",
+          "expressions": [
+            { "dimension": "vendor", "type": "equal", "value": "Azure"  },
+            { "dimension": "vendor", "type": "equal", "value": "azure"  }
+          ]
+        },
+        {
+          "type": "or",
+          "expressions": [
+            { "dimension": "service", "type": "equal", "value": "Microsoft.Compute" },
+            { "dimension": "service", "type": "equal", "value": "microsoft.compute" }
+          ]
+        },
+        {
+          "type": "not",
+          "expression": { "dimension": "instance_type", "type": "equal", "value": "None" }
+        }
+      ]
+    }
+  }
+
+  // Ensure we're filtering our request to just the specific bill connection
+  bill_source_expressions = _.map(bill_sources, function(bill_source) {
+    return { "dimension": "bill_source", "type": "equal", "value": bill_source }
+  })
+
+  if (bill_source_expressions.length > 0) {
+    filter["expressions"].push({ "type": "or", "expressions": bill_source_expressions })
+  }
+
+  payload = {
+    "billing_center_ids": ds_filtered_bcs,
+    "filter": filter,
+    "dimensions": [ "instance_type", "region", "usage_unit" ],
     "granularity": "month",
-    "metrics": [
-      "cost_amortized_unblended_adj",
-      "usage_amount"
-    ]
+    "metrics": [ "cost_amortized_unblended_adj", "usage_amount" ],
     "end_at": end_date,
     "start_at": start_date
   }
@@ -237,229 +497,249 @@ script "js_get_base_aggregated_costs", type: "javascript" do
       "User-Agent": "RS Policies"
     }
   }
-  EOS
+EOS
 end
 
-#CALCULATE SAVINGS REALIZED (BASE COST - RI COST) FOR EACH INSTANCE TYPE, FOR EACH REGION
 datasource "ds_savings_realized" do
-  run_script $js_get_savings_realized, $ds_ri_aggregated_costs, $ds_base_aggregated_costs
+  run_script $js_savings_realized, $ds_aggregated_costs_old_base, $ds_aggregated_costs_old_ri, $ds_aggregated_costs_new_base, $ds_aggregated_costs_new_ri, $ds_region_table
 end
 
-script "js_get_savings_realized", type: "javascript" do
-  parameters "ri_costs", "base_costs"
-  result "savings_realized_data"
+script "js_savings_realized", type: "javascript" do
+  parameters "ds_aggregated_costs_old_base", "ds_aggregated_costs_old_ri", "ds_aggregated_costs_new_base", "ds_aggregated_costs_new_ri", "ds_region_table"
+  result "result"
   code <<-'EOS'
-  var temp_result = []
-  var savings_realized_data = []
+  result = []
 
-  //Get list of Instance Types, Regions, Months
-  inst_type = _.pluck( _.uniq(ri_costs, function(ri){ return ri.instance_type }), "instance_type" )
-  region = _.pluck( _.uniq(ri_costs, function(ri){ return ri.region }), "region" )
-  months = _.union(
-    _.pluck( _.uniq(ri_costs, function(ri){ return ri.month }), "month" ),
-    _.pluck( _.uniq(base_costs, function(base){ return base.month }), "month" )
-  )
+  // Convert region value for old Azure endpoint data to match new Azure endpoint for consistency
+  old_base_mapped = _.map(ds_aggregated_costs_old_base, function(cost) {
+    region = cost['region']
+    if (ds_region_table[region] != undefined) { region = ds_region_table[region] }
 
-  //calculate total cost for each month
-  _.each(months, function(mo){
-    total_month_cost = 0
-    _.each(ri_costs, function(ri){
-      if(ri.month == mo){ total_month_cost += ri.cost }
-    })
-    _.each(base_costs, function(base){
-      if(base.month == mo){ total_month_cost += base.cost }
-    })
-    savings_realized_data.push({ "month": mo, "cost": total_month_cost, "dimension": "Total Actual Spend On Discountable Compute" })
+    return {
+      instance_type: cost['instance_type'],
+      usage_unit: cost['usage_unit'],
+      usage_amount: cost['usage_amount'],
+      cost: cost['cost'],
+      month: cost['month'],
+      region: region
+    }
   })
 
-  //calculate base cost of instance per hour across all months for each instance type/region/operating system combination
-  unique_cost_inst_hrs = []
-  _.each(inst_type, function(inst){
-    _.each(region, function(rg){
-      base_cost_inst_hr_tot = 0, count = 0
-      _.each(base_costs, function(base){
-        if(base.instance_type == inst && base.region == rg){
-          base_cost_inst_hr_tot += (base.cost / base.usage_amount)
-          count ++
-        }
-      })
-      avg_base_cost_inst_hr = 0
-      if(count > 0){ avg_base_cost_inst_hr = base_cost_inst_hr_tot / count }
+  old_ri_mapped = _.map(ds_aggregated_costs_old_ri, function(cost) {
+    region = cost['region']
+    if (ds_region_table[region] != undefined) { region = ds_region_table[region] }
 
-      unique_cost_inst_hrs.push({
-        "instance_type": inst,
-        "region": rg,
-        "avg_base_cost_inst_hr": avg_base_cost_inst_hr
-      })
+    return {
+      instance_type: cost['instance_type'],
+      usage_unit: cost['usage_unit'],
+      usage_amount: cost['usage_amount'],
+      cost: cost['cost'],
+      month: cost['month'],
+      region: region
+    }
+  })
+
+  base_costs = old_base_mapped.concat(ds_aggregated_costs_new_base)
+  ri_costs = old_ri_mapped.concat(ds_aggregated_costs_new_ri)
+  all_costs = base_costs.concat(ri_costs)
+
+  // Get list of Instance Types, Regions, Months
+  instance_types = _.uniq(_.pluck(all_costs, 'instance_type'))
+  regions = _.uniq(_.pluck(all_costs, 'region'))
+  months = _.uniq(_.pluck(all_costs, 'month'))
+
+  // Calculate total cost for each month
+  _.each(months, function(month) {
+    month_costs = _.filter(all_costs, function(cost) { return cost['month'] == month })
+    total_month_cost = _.reduce(_.pluck(month_costs, 'cost'), function(memo, num) { return memo + num }, 0)
+
+    result.push({
+      month: month,
+      cost: total_month_cost,
+      dimension: "Total Actual Spend On Discountable Compute"
     })
   })
 
-  //apply cost_inst_hr to calculate savings realized
-  _.each(ri_costs, function(ri){
-    _.each(unique_cost_inst_hrs, function(inst_hr){
-      if (ri.instance_type == inst_hr.instance_type && ri.region == inst_hr.region && ri.operating_system == inst_hr.operating_system){
-        savings_realized_per_inst_hr = inst_hr.avg_base_cost_inst_hr - (ri.cost / ri.usage_amount)
-        savings_realized = 0
-        if(ri.cost > 0 ){
-          savings_realized = savings_realized_per_inst_hr * ri.usage_amount
-        }
-        //console.log("On-Demand Rate: " + inst_hr.avg_base_cost_inst_hr, "Reserved Rate: " + (ri.cost/ri.usage_amount), ri.region, ri.instance_type)
+  // Calculate base cost of instance per hour across all months
+  // for each instance type/region/operating system combination
+  base_aggregated_costs = {}
 
-        temp_result.push(
-          {
-            "month": ri.month,
-            "region": ri.region,
-            "instance_type": ri.instance_type,
-            "savings_realized": savings_realized
-          }
-        )
+  _.each(base_costs, function(cost) {
+    index = [cost['instance_type'], cost['region']].join('_').toLowerCase().trim()
+
+    if (base_aggregated_costs[index] == undefined) { base_aggregated_costs[index] = [] }
+
+    base_aggregated_costs[index].push(cost)
+  })
+
+  unique_cost_instance_hours = {}
+
+  _.each(instance_types, function(type) {
+    _.each(regions, function(region) {
+      base_cost_instance_hour_total = 0
+      count = 0
+
+      index = [type, region].join('_').toLowerCase().trim()
+
+      if (base_aggregated_costs[index] != undefined) {
+        _.each(base_aggregated_costs[index], function(cost) {
+          base_cost_instance_hour_total += cost['cost'] / cost['usage_amount']
+          count += 1
+        })
       }
+
+      avg_base_cost_instance_hour = 0
+      if (count > 0) { avg_base_cost_instance_hour = base_cost_instance_hour_total / count }
+
+      unique_cost_instance_hours[index] = avg_base_cost_instance_hour
     })
   })
 
-  //reduce list - aggregate SAVINGS REALIZED costs for same month
-  _.each(months, function(mo){
-    savings_realized = 0
-    _.each(temp_result, function(res){
-      if(mo == res.month){
-        savings_realized += res.savings_realized
-      }
-    })
-    savings_realized_data.push({ "month": mo, "cost": savings_realized, "dimension": "Savings Realized On Compute Reservations" })
+  // Apply cost_instance_hour to calculate savings realized
+  savings_realized_object = {}
+
+  _.each(ri_costs, function(cost) {
+    index = [cost['instance_type'], cost['region']].join('_').toLowerCase().trim()
+    avg_base_cost_instance_hour = unique_cost_instance_hours[index]
+
+    if (avg_base_cost_instance_hour != undefined) {
+      savings_realized_per_instance_hour = avg_base_cost_instance_hour - (cost['cost'] / cost['usage_amount'])
+      savings_realized = savings_realized_per_instance_hour * cost['usage_amount']
+
+      if (savings_realized_object[cost['month']] == undefined) { savings_realized_object[cost['month']] = 0 }
+      savings_realized_object[cost['month']] += savings_realized
+    }
   })
 
-  //sort by month
-  savings_realized_data = _.sortBy(savings_realized_data, "month")
-  EOS
+  _.each(months, function(month) {
+    savings = 0
+    if (savings_realized_object[month] != undefined) {
+      savings = savings_realized_object[month]
+    }
+
+    result.push({
+      month: month,
+      cost: savings,
+      dimension: "Savings Realized On Compute Reservations"
+    })
+  })
+
+  // Sort by month
+  result = _.sortBy(result, "month")
+EOS
 end
 
-#CHART CREATION
 datasource "ds_chart_data" do
-  run_script $js_create_chart_data, $ds_savings_realized, $param_chart_type
+  run_script $js_chart_data, $ds_savings_realized, $ds_applied_policy, $param_chart_type
 end
 
-script "js_create_chart_data", type: "javascript" do
-  parameters "savings_realized_data", "param_chart_type"
-  result "report"
-  code <<-EOS
+script "js_chart_data", type: "javascript" do
+  parameters "ds_savings_realized", "ds_applied_policy", "param_chart_type"
+  result "result"
+  code <<-'EOS'
+  // Create report data
+  result = []
+  savings_by_month = _.groupBy(ds_savings_realized, 'month')
 
-  //Get months
-  var months = _.pluck( _.uniq(savings_realized_data, function(data){ return data.month }), "month" )
-
-  //Create report data (Concatenate savings realized and total costs into one object/row of data)
-  var report = []
-  _.each(months, function(mo){
-    savings_realized = 0
-    total_spend = 0
-    _.each(savings_realized_data, function(data){
-      if(mo == data.month && data.dimension == "Savings Realized On Compute Reservations"){
-        savings_realized = data.cost
-      }
-      if(mo == data.month && data.dimension == "Total Actual Spend On Discountable Compute"){
-        total_spend = data.cost
-      }
+  _.each(_.keys(savings_by_month), function(month) {
+    total_spend_entry = _.find(savings_by_month[month], function(item) {
+      return item['dimension'] == "Total Actual Spend On Discountable Compute"
     })
-    report.push({
-      "month": mo,
-      "total_spend": parseFloat(total_spend).toFixed(2),
-      "savings_realized": parseFloat(savings_realized).toFixed(2),
-      "percentage": parseFloat((savings_realized/(total_spend + savings_realized))*100).toFixed(0).toString() + "%"
+
+    savings_realized_ri_entry  = _.find(savings_by_month[month], function(item) {
+      return item['dimension'] == "Savings Realized On Compute Reservations"
+    })
+
+    total_spend_cost = 0
+    savings_realized_ri = 0
+    percentage_ri = 0
+
+    if (total_spend_entry != undefined) {
+      total_spend_cost = total_spend_entry['cost']
+    }
+
+    if (savings_realized_ri_entry != undefined) {
+      savings_realized_ri = savings_realized_ri_entry['cost']
+      percentage_ri = (savings_realized_ri / (total_spend_cost + savings_realized_ri)) * 100
+    }
+
+    result.push({
+      "month": month.substring(0, 7),
+      "total_spend": parseFloat(total_spend_cost.toFixed(2)),
+      "savings_realized_ri": parseFloat(savings_realized_ri.toFixed(2)),
+      "percentage_ri": parseFloat(percentage_ri.toFixed(2))
     })
   })
 
-  //Group data by Cost Dimension
-  group_by_dimension =
-  _.groupBy(savings_realized_data, function(data){ return data.dimension })
-
-  //Determine chart type
-  chart_type = "cht="
-  if (param_chart_type == "Grouped Bar Chart") { chart_type += "bvg" }
-  else if (param_chart_type == "Stacked Bar Chart" ) { chart_type += "bvs" }
-
-  //Create chart axis labels
-  chart_axis_labels =
-  ("chxl=1:," +
-    _.uniq(savings_realized_data, function(sr) { return sr.month })
-    .map(function(sr){ return sr.month.substring(0,7) })
-  ).split(",").join("|")
-
-  //Create legend
-  chart_legend = "chdl="
-  var i = 0
-  for (var key in group_by_dimension) {
-    chart_legend += key
-    i++
-    if (i < _.size(group_by_dimension)) { chart_legend += "|" }
+  // Determine chart type
+  chart_table = {
+    "Grouped Bar Chart": "cht=bvg",
+    "Stacked Bar Chart": "cht=bvs"
   }
 
-  //calculate scale
-  //chart_range = ("chxr=0," +
-  max = (Math.max.apply(Math, savings_realized_data.map(function(sr){ return sr.savings_realized }))*1.1).toFixed(2)
-  min = (Math.min.apply(Math, savings_realized_data.map(function(sr){ return sr.savings_realized }))*0.9).toFixed(2)
+  chart_type = chart_table[param_chart_type]
+
+  // Create chart axis labels
+  chart_axis_labels = ("chxl=1:," + _.pluck(result, 'month')).split(',').join('|')
+
+  // Create legend
+  chart_legend = "chdl=" + _.uniq(_.pluck(ds_savings_realized, 'dimension')).join('|')
+
+  // Calculate scale
+  costs = _.pluck(ds_savings_realized, 'cost')
+  max = (Math.max.apply(Math, costs) * 1.1).toFixed(2)
+  min = (Math.min.apply(Math, costs) * 0.9).toFixed(2)
   chart_range = "chxr=0," + min + "," + max
 
   //Create chart dataset
-  chart_data = "chd=t:"
-  var count_1 = 0
-  _.each(group_by_dimension, function(o){
-    var count_2 = 0
-    _.each(o, function(p){
-      chart_data = chart_data + p.cost
-      count_2++
-      if (count_2 < _.size(o)){ chart_data = chart_data + "," }
-    })
-    count_1++
-    if (count_1 < _.size(group_by_dimension)){ chart_data = chart_data + "|" }
+  savings_by_dimension = _.groupBy(ds_savings_realized, 'dimension')
+
+  chart_data_list = []
+
+  _.each(_.keys(savings_by_dimension), function(key) {
+    chart_data_list.push(_.pluck(savings_by_dimension[key], 'cost').join(','))
   })
 
-  //Whole Chart object
-  chart = {
-    chart_type: encodeURI(chart_type),
-    chart_size: encodeURI("chs=999x450"),
-    chart_data: encodeURI(chart_data),
-    chart_title: encodeURI("chtt=Savings Realized On Compute Reservations For Organization"),
-    chart_image: encodeURI("chof=.png"),
-    chart_y_axis: encodeURI("chxt=y,x"),
-    chart_axis_label: encodeURI(chart_axis_labels),
-    chart_axis_format: encodeURI("chxs=0N*cUSD0sz*|1,min40"),
-    chart_line_style: encodeURI("chls=3|3|3|3|3|3|3|3|3|3|3"),
-    chart_line_color: encodeURI("chco=1f5ab8,55b81f,198038,b28600,1192e8,009d9a,005d5d,007d79"),
-    chart_data_scale: encodeURI("chds=a"),
-    chart_legend: encodeURI(chart_legend),
-    chart_legend_size: encodeURI("chdls=000000,10"),
-    chart_legend_position: encodeURI("chdlp=b")
+  chart_data = "chd=t:" + chart_data_list.join('|')
+
+  // Whole Chart object
+  if (result.length > 0) {
+    result[0]["policy_name"] = ds_applied_policy['name']
+
+    result[0]["chart_dimensions"] = {
+      chart_type: encodeURI(chart_type),
+      chart_size: encodeURI("chs=999x450"),
+      chart_data: encodeURI(chart_data),
+      chart_title: encodeURI("chtt=Savings Realized On Compute Reservations For Organization"),
+      chart_image: encodeURI("chof=.png"),
+      chart_y_axis: encodeURI("chxt=y,x"),
+      chart_axis_label: encodeURI(chart_axis_labels),
+      chart_axis_format: encodeURI("chxs=0N*cUSD0sz*|1,min40"),
+      chart_line_style: encodeURI("chls=3|3|3|3|3|3|3|3|3|3|3"),
+      chart_line_color: encodeURI("chco=1f5ab8,55b81f,198038,b28600,1192e8,009d9a,005d5d,007d79"),
+      chart_data_scale: encodeURI("chds=a"),
+      chart_legend: encodeURI(chart_legend),
+      chart_legend_size: encodeURI("chdls=000000,10"),
+      chart_legend_position: encodeURI("chdlp=b")
+    }
   }
-
-  report[0]["chart_dimensions"] = chart
-  EOS
-end
-
-###############################################################################
-# Escalations
-###############################################################################
-
-escalation "esc_savings_realized_report" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
+EOS
 end
 
 ###############################################################################
 # Policy
 ###############################################################################
 
-policy "policy_purchase_option_by_inst_type_and_region" do
+policy "pol_purchase_option_by_inst_type_and_region" do
   validate_each $ds_chart_data do
-    summary_template "Azure Savings Realized from Reservations"
-    detail_template <<-EOS
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}"
+    detail_template <<-'EOS'
     # Savings Realized On Compute Reservations Report
     ![Savings Realized On Compute Reservations Chart](https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id={{ rs_org_id }}&rs_project_id={{ rs_project_id }}&{{ with index data 0 }}{{ .chart_dimensions.chart_data }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_type }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_image }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_title }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_y_axis }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_label }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_style }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_color }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_data_scale }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_format }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend_position }}{{ end }})
     EOS
-    escalate $esc_savings_realized_report
-    check eq(0,1)
+    check eq(0, 1)
+    escalate $esc_email
     export do
-      # no actions so resource_level can be false
       resource_level false
       field "month" do
         label "Month"
@@ -467,12 +747,23 @@ policy "policy_purchase_option_by_inst_type_and_region" do
       field "total_spend" do
         label "Total Actual Spend On Discountable Compute"
       end
-      field "savings_realized" do
+      field "savings_realized_ri" do
         label "Savings Realized On Compute Reservations"
       end
-      field "percentage" do
-        label "Savings Rate"
+      field "percentage_ri" do
+        label "Savings Rate (%) from Reservation Usage"
       end
     end
   end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
 end

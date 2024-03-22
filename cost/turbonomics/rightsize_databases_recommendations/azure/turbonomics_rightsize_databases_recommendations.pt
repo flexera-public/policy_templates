@@ -1,0 +1,633 @@
+name "Turbonomic Rightsize Databases Recommendations Azure"
+rs_pt_ver 20180301
+type "policy"
+short_description "Turbonomic policy that gives recommendations to rightsize Databases/DatabaseServers [README](https://github.com/flexera-public/policy_templates/tree/master/cost/turbonomics/rightsize_databases_recommendations/azure) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+severity "low"
+category "Cost"
+default_frequency "daily"
+info(
+  version: "0.5",
+  source: "Turbonomic",
+  service: "Usage Discount",
+  provider: "Azure",
+  policy_set: "Rightsize Database Instances",
+  recommendation_type: "Usage Reduction"
+)
+
+##################
+# Parameters   #
+##################
+
+parameter "param_turbonomic_endpoint" do
+  type "string"
+  label "Turbonomic endpoint"
+end
+
+parameter "param_provider" do
+  type "string"
+  label "Provider"
+  description "Specifies provider where you want to get recommendations"
+  # Once we can add multiple providers, allow: "All", "AWS", "Azure Subscription", "GCP Project"
+  allowed_values "Azure Subscription"
+  # Once we can add multiple providers change this default value
+  default "Azure Subscription"
+end
+
+parameter "param_auth_cookie" do
+  type "string"
+  label "Authorization Cookie"
+  no_echo true
+  description "Valid authorization cookie."
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "turbonomic_databases_pagination_header" do
+  get_page_marker do
+    header "x-next-cursor"
+  end
+  set_page_marker do
+    query "cursor"
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+datasource "ds_get_turbonomic_recommendations" do
+  request do
+    run_script $js_get_turbonomic_recommendations, $param_turbonomic_endpoint, $param_auth_cookie
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "businessUUID", jmes_path(col_item, "target.aspects.cloudAspect.businessAccount.uuid")
+      field "resourceID", jmes_path(col_item, "target.vendorIds")
+      field "resourceName", jmes_path(col_item, "target.displayName")
+      field "region", jmes_path(col_item, "currentLocation.displayName")
+      field "currentResourceType", jmes_path(col_item, "currentEntity.displayName")
+      field "newResourceType", jmes_path(col_item, "newEntity.displayName")
+      field "provider", jmes_path(col_item, "target.discoveredBy.type")
+      field "details", jmes_path(col_item, "details")
+      field "tags", jmes_path(col_item, "target.tags")
+      field "createdTime", jmes_path(col_item, "createTime")
+      field "savings", jmes_path(col_item, "stats[0].value")
+      field "savingsCurrency", jmes_path(col_item, "stats[0].units")
+      field "pricingModel", jmes_path(col_item, "risk.reasonCommodities")
+      field "uuid", jmes_path(col_item, "target.uuid")
+      field "actionID", jmes_path(col_item, "actionID")
+      field "className", jmes_path(col_item, "target.className")
+    end
+  end
+end
+
+script "js_get_turbonomic_recommendations", type: "javascript" do
+  result "request"
+  parameters "turbonomic_endpoint", "auth_cookie"
+  code <<-EOS
+    request = {
+      verb: "POST",
+      host: turbonomic_endpoint,
+      pagination: "turbonomic_databases_pagination_header",
+      path: "/api/v3/markets/Market/actions"
+      body_fields: {
+        "actionStateList": ["READY", "ACCEPTED", "QUEUED", "IN_PROGRESS"],
+        "actionTypeList":["SCALE"],
+        "relatedEntityTypes":["DatabaseServer", "Database"],
+        "environmentType":"CLOUD",
+        "detailLevel":"EXECUTION",
+        "costType":"SAVING"
+      },
+      query_params: {
+        "limit": '100'
+      },
+      headers: {
+        "Content-Type": "application/json"
+        "Cookie": auth_cookie
+      }
+    }
+  EOS
+end
+
+datasource "ds_get_business_units" do
+  request do
+    run_script $js_get_business_units, $param_turbonomic_endpoint, $param_auth_cookie, $param_provider
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "uuid", jmes_path(col_item, "uuid")
+      field "accountID", jmes_path(col_item, "accountId")
+      field "displayName", jmes_path(col_item, "displayName")
+    end
+  end
+end
+
+script "js_get_business_units", type: "javascript" do
+  result "request"
+  parameters "turbonomic_endpoint", "auth_cookie", "provider"
+  code <<-EOS
+    query_params = {"type": "DISCOVERED"}
+
+    // Since /api/v3/businessunits only support "AWS", "Azure Subscription" and "GCP Project", in case
+    // user selects "All", we shouldn't add "cloud_type" param in order to get all records.
+    if (provider !== "All") {
+      providers = {
+        "AWS":"AWS",
+        "Azure Subscription":"AZURE",
+        "GCP Project": "GCP",
+      }
+
+      query_params["cloud_type"] = providers[provider]
+    }
+
+    request = {
+      verb: "GET",
+      host: turbonomic_endpoint,
+      path: "/api/v3/businessunits",
+      query_params: query_params,
+      headers: {
+        "Content-Type": "application/json"
+        "Cookie": auth_cookie
+      }
+    }
+  EOS
+end
+
+datasource "ds_filtered_turbonomic_recommendations" do
+  run_script $js_filtered_turbonomic_recommendations, $ds_get_turbonomic_recommendations, $ds_get_business_units, $param_provider, $param_turbonomic_endpoint
+end
+
+script "js_filtered_turbonomic_recommendations", type: "javascript" do
+  result "result"
+  parameters "ds_get_turbonomic_recommendations", "ds_get_business_units", "param_provider", "turbonomic_endpoint"
+  code <<-EOS
+    instances = []
+    monthlySavings = 0.0
+
+    function formatNumber(number, separator) {
+        numString = number.toString()
+        values = numString.split(".")
+        result = ''
+        while (values[0].length > 3) {
+            chunk = values[0].substr(-3)
+            values[0] = values[0].substr(0, values[0].length - 3)
+            result = separator + chunk + result
+        }
+        if (values[0].length > 0) {
+            result = values[0] + result
+        }
+        if (values[1] == undefined) {
+            return result
+        }
+        return result + "." + values[1]
+    }
+
+    _.each(ds_get_business_units, function (businessUnit) {
+        _.each(ds_get_turbonomic_recommendations, function (db, index) {
+            if (db.businessUUID === businessUnit.uuid) {
+                ds_get_turbonomic_recommendations[index].accountID = businessUnit.accountID
+                ds_get_turbonomic_recommendations[index].accountName = businessUnit.displayName
+            }
+        })
+    })
+
+    provider_service = {
+        "AWS": "RDS",
+        "Azure Subscription": "Azure SQL Database",
+        "GCP Project": "Cloud SQL"
+    }
+
+    _.each(ds_get_turbonomic_recommendations, function (db) {
+        if (db.provider === param_provider || param_provider === "All") {
+            if (typeof db.savingsCurrency != "undefined" && db.savingsCurrency != null) {
+                if (db.savingsCurrency.indexOf("$") != -1) {
+                    db.savingsCurrency = "$"
+                }
+            } else {
+                db.savingsCurrency = "$"
+            }
+
+            tags = []
+            if (typeof db.tags === "undefined" || db.tags === null) {
+                db.tags = tags
+            } else {
+                Object.keys(db['tags']).forEach(function (key) {
+                    tags.push(key + '=' + db['tags'][key][0])
+                });
+            }
+            db.tags = tags
+            Object.keys(db.resourceID).forEach(function (key) {
+                db.resourceID = db.resourceID[key]
+                return
+            });
+            db.service = provider_service[db.provider]
+            savingsString = ""
+            if (typeof db.savings === "undefined" || db.savings === null || db.savings === "" || isNaN(db.savings)) {
+                db.savings = 0.0
+            }
+
+            db.savings = (Math.round(db.savings * 730 * 1000) / 1000)
+            monthlySavings = monthlySavings + db.savings
+            db.url = "System name: " + db.resourceName  + " || https://" + turbonomic_endpoint + "/app/index.html#/view/main/action/" + db.actionID
+            instances.push(db)
+        }
+    })
+
+    message = ""
+
+    if (instances.length != 0) {
+        pretty_savings = instances[0].savingsCurrency + ' ' + formatNumber(monthlySavings.toFixed(2), ",")
+        message = "The total estimated monthly savings are " + pretty_savings + '.'
+    }
+    result = {
+        'instances': instances,
+        'message': message
+    }
+  EOS
+end
+
+datasource "ds_filtered_recommendations" do
+  run_script $js_only_recommendations, $ds_filtered_turbonomic_recommendations
+end
+
+script "js_only_recommendations", type: "javascript" do
+  parameters "arg"
+  result "results"
+  code <<-EOS
+    results = arg.instances
+  EOS
+end
+
+datasource "ds_only_uuids" do
+  run_script $js_only_uuids, $ds_filtered_recommendations
+end
+
+script "js_only_uuids", type: "javascript" do
+  parameters "arg"
+  result "results"
+  code <<-EOS
+    results  = []
+    _.each(arg, function (db) {
+      if (db.className == "Database") {
+        results.push(db.uuid)
+      }
+    })
+  EOS
+end
+
+datasource "ds_get_pricing_model" do
+  request do
+    run_script $js_get_pricing_model, $param_turbonomic_endpoint, $param_auth_cookie, $ds_only_uuids
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "uuid", jmes_path(col_item, "uuid")
+      field "pricingModel", jmes_path(col_item, "aspects.dbAspect.pricingModel")
+    end
+  end
+end
+
+script "js_get_pricing_model", type: "javascript" do
+  result "request"
+  parameters "turbonomic_endpoint", "auth_cookie", "ds_only_uuids"
+  code <<-EOS
+    body_fields = {"criteriaList":[], "logicalOperator":"AND", "className":"Database", "environmentType":"CLOUD", "scope":ds_only_uuids}
+
+    request = {
+      verb: "POST",
+      host: turbonomic_endpoint,
+      path: "/api/v3/search/",
+      body_fields: body_fields,
+      headers: {
+        "Content-Type": "application/json",
+        "Cookie": auth_cookie
+      },
+      "query_params": {
+        "aspect_names": "dbAspect"
+      }
+    }
+  EOS
+end
+
+datasource "ds_get_projected_statistics" do
+  iterate $ds_filtered_recommendations
+  request do
+    run_script $js_get_projected_statistics, iter_item, $param_turbonomic_endpoint, $param_auth_cookie, $ds_get_pricing_model
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[-1]") do
+      field "uuid", val(iter_item, "uuid")
+      field "size", jmes_path(col_item, "statistics[?name == 'StorageAmount'].[ capacity.total, value][0]")
+      field "iops", jmes_path(col_item, "statistics[?name == 'StorageAccess'].[histUtilizations[?type == 'percentile'].[capacity,usage][]][][]")
+      field "vmem", jmes_path(col_item, "statistics[?name == 'VMem'].[histUtilizations[?type == 'percentile'].[capacity,usage][]][][]")
+      field "vcpu", jmes_path(col_item, "statistics[?name == 'VCPU'].[histUtilizations[?type == 'percentile'].[capacity,usage][]][][]")
+      field "iOThroughput", jmes_path(col_item, "statistics[?name == 'IOThroughput'].[histUtilizations[?type == 'percentile'].[capacity,usage][]][][]")
+      field "connection", jmes_path(col_item, "statistics[?name == 'Connection'].[ capacity.total][0]")
+      field "dtu", jmes_path(col_item, "statistics[?name == 'DTU'].[histUtilizations[?type == 'percentile'].[capacity,usage][]][][]")
+    end
+  end
+end
+
+datasource "ds_get_current_statistics" do
+  iterate $ds_filtered_recommendations
+  request do
+    run_script $js_get_projected_statistics, iter_item, $param_turbonomic_endpoint, $param_auth_cookie, $ds_get_pricing_model
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[-2]") do
+      field "uuid", val(iter_item, "uuid")
+      field "size", jmes_path(col_item, "statistics[?name == 'StorageAmount'].[ capacity.total, value][-1]")
+      field "iops", jmes_path(col_item, "statistics[?name == 'StorageAccess'].[histUtilizations[?type == 'percentile'].[capacity,usage][]][][]")
+      field "vmem", jmes_path(col_item, "statistics[?name == 'VMem'].[histUtilizations[?type == 'percentile'].[capacity,usage][]][][]")
+      field "vcpu", jmes_path(col_item, "statistics[?name == 'VCPU'].[histUtilizations[?type == 'percentile'].[capacity,usage][]][][]")
+      field "iOThroughput", jmes_path(col_item, "statistics[?name == 'IOThroughput'].[histUtilizations[?type == 'percentile'].[capacity,usage][]][][]")
+      field "connection", jmes_path(col_item, "statistics[?name == 'Connection'].[ capacity.total][0]")
+      field "dtu", jmes_path(col_item, "statistics[?name == 'DTU'].[histUtilizations[?type == 'percentile'].[capacity,usage][]][][]")
+    end
+  end
+end
+
+script "js_get_projected_statistics", type: "javascript" do
+  parameters "instance", "turbonomic_endpoint", "auth_cookie", "ds_get_pricing_model"
+  result "request"
+  code <<-EOS
+    nineHours = 1000 * 60 * 60 * 9
+    nowDay = new Date(Date.now())
+    pastDay = new Date(Date.now() + nineHours)
+    body_fields = {}
+
+    _.each(ds_get_pricing_model, function (db, index) {
+      if (db.uuid === instance.uuid) {
+        if (db.pricingModel === "DTU"){
+          body_fields = {"statistics":[{"name":"DTU","groupBy":["key","percentile"]},{"name":"StorageAmount","groupBy":["key"]}],"startDate":nowDay.getTime(),"endDate":pastDay.getTime()}
+        }
+
+        if (db.pricingModel === "vCore"){
+          body_fields = {"statistics":[{"name":"VCPU","groupBy":["key","percentile"]},{"name":"VMem","groupBy":["key","percentile"]},{"name":"StorageAccess","groupBy":["key","percentile"]},{"name":"IOThroughput","groupBy":["key","percentile"]},{"name":"StorageAmount","groupBy":["key"]}],"startDate":nowDay.getTime(),"endDate":pastDay.getTime()}
+        }
+      }
+    })
+
+    if (instance.className == "DatabaseServer"){
+      body_fields = {"statistics":[{"name":"VCPU","groupBy":["key","percentile"]},{"name":"VMem","groupBy":["key","percentile"]},{"name":"IOThroughput","groupBy":["key","percentile"]},{"name":"DBCacheHitRate","groupBy":["key","percentile"]},{"name":"VStorage","groupBy":["key"]},{"name":"StorageAccess","groupBy":["key","percentile"]},{"name":"StorageAmount","groupBy":["key"]},{"name":"Connection","groupBy":["key"]}],"startDate":nowDay.getTime(),"endDate":pastDay.getTime()}
+    }
+
+    request = {
+      verb: "POST",
+      host: turbonomic_endpoint,
+      path: "/api/v3/stats/" + instance.uuid,
+      body_fields: body_fields
+      headers: {
+        "Content-Type": "application/json"
+        "Cookie": auth_cookie
+      }
+    }
+  EOS
+end
+
+datasource "ds_combined_data" do
+  run_script $js_combined_data, $ds_filtered_turbonomic_recommendations, $ds_get_projected_statistics, $ds_get_current_statistics, $ds_get_pricing_model
+end
+
+script "js_combined_data", type: "javascript" do
+  result "result"
+  parameters "ds_get_turbonomic_recommendations", "ds_get_projected_statistics", "ds_get_current_statistics", "ds_get_pricing_model"
+  code <<-EOS
+    _.each(ds_get_projected_statistics, function (projectedStatistic, ii) {
+      _.each(ds_get_turbonomic_recommendations.instances, function (db, index) {
+          if (db.uuid === projectedStatistic.uuid) {
+            db.newSize = (projectedStatistic.size[0]/1024)
+            db.newSizeUtil = ((projectedStatistic.size[1]*100)/projectedStatistic.size[0]).toFixed(2)
+            db.size = (ds_get_current_statistics[index].size[0]/1024)
+            db.sizeUtil = ((ds_get_current_statistics[index].size[1]*100)/ds_get_current_statistics[index].size[0]).toFixed(2)
+
+            _.each(ds_get_pricing_model, function (dbs) {
+              if (dbs.uuid === db.uuid) {
+                if (dbs.pricingModel === "DTU" && db.className === "Database"){
+                  db.newDtu = projectedStatistic.dtu[0]
+                  db.newDtuUtil = ((projectedStatistic.dtu[1]*100)/projectedStatistic.dtu[0]).toFixed(2)
+                  db.dtu = ds_get_current_statistics[index].dtu[0]
+                  db.dtuUtil = ((ds_get_current_statistics[index].dtu[1]*100)/ds_get_current_statistics[index].dtu[0]).toFixed(2)
+                }
+
+                if (dbs.pricingModel === "vCore" && db.className === "Database"){
+                  db.newIops = projectedStatistic.iops[0]
+                  db.newIopsP95 = ((projectedStatistic.iops[1]*100)/projectedStatistic.iops[0]).toFixed(2)
+                  db.newMem = (projectedStatistic.vmem[0]/1048576).toFixed(2)
+                  db.newMemP95 = ((projectedStatistic.vmem[1]*100)/projectedStatistic.vmem[0]).toFixed(2)
+                  db.newCpu = (projectedStatistic.vcpu[0]/1000).toFixed(2)
+                  db.newCpuP95 = ((projectedStatistic.vcpu[1]*100)/projectedStatistic.vcpu[0]).toFixed(2)
+                  db.newThroughput = (projectedStatistic.iOThroughput[0]*0.000125).toFixed(2)
+                  db.newThroughputP95 = ((projectedStatistic.iOThroughput[1]*100)/projectedStatistic.iOThroughput[0]).toFixed(2)
+                  db.iops = ds_get_current_statistics[index].iops[0]
+                  db.iopsP95 = ((ds_get_current_statistics[index].iops[1]*100)/ds_get_current_statistics[index].iops[0]).toFixed(2)
+                  db.mem = (ds_get_current_statistics[index].vmem[0]/1048576).toFixed(2)
+                  db.memP95 = ((ds_get_current_statistics[index].vmem[1]*100)/ds_get_current_statistics[index].vmem[0]).toFixed(2)
+                  db.cpu = (ds_get_current_statistics[index].vcpu[0]/1000).toFixed(2)
+                  db.cpuP95 = ((ds_get_current_statistics[index].vcpu[1]*100)/ds_get_current_statistics[index].vcpu[0]).toFixed(2)
+                  db.throughput = (ds_get_current_statistics[index].iOThroughput[0]*0.000125).toFixed(2)
+                  db.throughputP95 = ((ds_get_current_statistics[index].iOThroughput[1]*100)/ds_get_current_statistics[index].iOThroughput[0]).toFixed(2)
+                }
+              }
+            })
+
+            if (db.className == "DatabaseServer") {
+              if (projectedStatistic.connection == null) {
+                db.connections = ""
+                db.newConnections = ""
+              }else{
+                db.connections = projectedStatistic.connection[0]
+                db.newConnections = ds_get_current_statistics[index].connection[0]
+              }
+              db.newIops = projectedStatistic.iops[0]
+              db.newIopsP95 = ((projectedStatistic.iops[1]*100)/projectedStatistic.iops[0]).toFixed(2)
+              db.newMem = (projectedStatistic.vmem[0]/1048576).toFixed(2)
+              db.newMemP95 = ((projectedStatistic.vmem[1]*100)/projectedStatistic.vmem[0]).toFixed(2)
+              db.newCpu = (projectedStatistic.vcpu[0]/1000).toFixed(2)
+              db.newCpuP95 = ((projectedStatistic.vcpu[1]*100)/projectedStatistic.vcpu[0]).toFixed(2)
+              db.iops = ds_get_current_statistics[index].iops[0]
+              db.iopsP95 = ((ds_get_current_statistics[index].iops[1]*100)/ds_get_current_statistics[index].iops[0]).toFixed(2)
+              db.mem = (ds_get_current_statistics[index].vmem[0]/1048576).toFixed(2)
+              db.memP95 = ((ds_get_current_statistics[index].vmem[1]*100)/ds_get_current_statistics[index].vmem[0]).toFixed(2)
+              db.cpu = (ds_get_current_statistics[index].vcpu[0]/1000).toFixed(2)
+              db.cpuP95 = ((ds_get_current_statistics[index].vcpu[1]*100)/ds_get_current_statistics[index].vcpu[0]).toFixed(2)
+            }
+          }
+      })
+    })
+    result = {
+      'instances': ds_get_turbonomic_recommendations.instances,
+      'message': ds_get_turbonomic_recommendations.message
+    }
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_turbonomic_rightsize_databases" do
+  validate $ds_combined_data do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} Turbonomic Azure Databases & Database Servers to Rightsize found"
+    detail_template <<-EOS
+      ## Turbonomic Rightsize Databases & Database Servers Azure Recommendations
+      {{data.message}}
+    EOS
+    check eq(size(val(data, "instances")), 0)
+    export "instances" do
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "savings" do
+        label "Savings Amount"
+      end
+      field "details" do
+        label "Recommendation Details"
+      end
+      field "resourceType" do
+        label "Current Instance Type"
+        path "currentResourceType"
+      end
+      field "newResourceType" do
+        label "Recommended Instance Type"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "tags" do
+        label "Tags"
+      end
+      field "provider" do
+        label "Cloud Provider"
+      end
+      field "createdTime" do
+        label "Recommendation Created Time"
+      end
+      field "url" do
+        label "System Details URL"
+        format "link-external"
+      end
+      field "size" do
+        label "Storage (GB)"
+      end
+      field "capacityUtil" do
+        label "Storage Utilization (%)"
+        path "sizeUtil"
+      end
+      field "newSize" do
+        label "New Storage (GB)"
+      end
+      field "newCapacityUtil" do
+        label "New Storage Utilization (%)"
+        path "newSizeUtil"
+      end
+      field "dtu" do
+        label "DTU Capacity"
+      end
+      field "dtuUtil" do
+        label "DTU Utilization (%)"
+      end
+      field "newDtu" do
+        label "New DTU Capacity"
+      end
+      field "newDtuUtil" do
+        label "New DTU Utilization (%)"
+      end
+      field "iops" do
+        label "IOPs Capacity"
+      end
+      field "iopsP95" do
+        label "IOPs Utilization (%)"
+      end
+      field "newIops" do
+        label "New IOPs Capacity"
+      end
+      field "newIopsP95" do
+        label "New IOPs Utilization (%)"
+      end
+      field "mem" do
+        label "Memory (GB)"
+      end
+      field "memP95" do
+        label "Memory Utilization (%)"
+      end
+      field "newMem" do
+        label "New Memory (GB)"
+      end
+      field "newMemP95" do
+        label "New Memory Utilization (%)"
+      end
+      field "cpu" do
+        label "CPU (GHz)"
+      end
+      field "cpuP95" do
+        label "CPU Utilization (%)"
+      end
+      field "newCpu" do
+        label "New CPU (GHz)"
+      end
+      field "newCpuP95" do
+        label "new CPU Utilization (%)"
+      end
+      field "throughput" do
+        label "Throughput (MB/s)"
+      end
+      field "throughputP95" do
+        label "Throughput Utilization (%)"
+      end
+      field "newThroughput" do
+        label "New Throughput (MB/s)"
+      end
+      field "newThroughputP95" do
+        label "New Throughput Utilization (%)"
+      end
+      field "connections" do
+        label "Connections"
+      end
+      field "newConnections" do
+        label "New Connections"
+      end
+    end
+    escalate $esc_email
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+

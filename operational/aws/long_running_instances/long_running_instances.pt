@@ -1,14 +1,15 @@
 name "AWS Long Running Instances"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks for running instances that have been running longer than the `Days Old` parameter. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/long_running_instances/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Checks for instances that have been running longer than the `Minimum Age (Days)` parameter. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/long_running_instances/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
-severity "low"
 category "Operational"
+severity "low"
+default_frequency "weekly"
 info(
-  version: "2.10",
+  version: "5.1",
   provider: "AWS",
-  service: "EC2",
+  service: "Compute",
   policy_set: "Long Running Instances"
 )
 
@@ -16,67 +17,108 @@ info(
 # Parameters
 ###############################################################################
 
-parameter "param_allowed_regions" do
-  type "list"
-  label "Allowed Regions"
-  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
-  description "A list of allowed regions. See the README for more details"
-end
-
 parameter "param_email" do
   type "list"
-  label "Email notify list"
+  category "Policy Settings"
+  label "Email addresses to notify"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
+  default []
 end
 
 parameter "param_aws_account_number" do
   type "string"
+  category "Policy Settings"
   label "Account Number"
-  description "The account number for AWS STS Cross Account Roles."
+  description "Leave blank; this is for automated use with Meta Policies. See README for more details."
   default ""
 end
 
-parameter "param_days_old" do
-  type "number"
-  label "Days Old"
-  description "Number of days to be running before included in list"
-  default 180
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details"
+  allowed_values "Allow", "Deny"
+  default "Allow"
 end
 
-parameter "param_exclude_tags" do
-  category "User Inputs"
-  label "Exclusion Tag Key:Value"
-  description "Cloud native tag key to ignore instances. Format: Key:Value"
+parameter "param_regions_list" do
   type "list"
-  allowed_pattern /(^$)|([\w]?)+\:([\w]?)+/
+  category "Filters"
+  label "Allow/Deny Regions List"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  description "A list of allowed or denied regions. See the README for more details"
+  default []
+end
+
+parameter "param_minimum_age" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Age (Days)"
+  description "The minimum age, in days, to consider an instance to be long running"
+  default 180
+  min_value 0
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
 end
 
 parameter "param_automatic_action" do
   type "string"
+  category "Actions"
   label "Automatic Actions"
-  description "When this value is set, this policy will automatically take the selected action(s)"
-  default "Select Action"
-  allowed_values "Select Action","Stop Instances", "Terminate Instances"
+  description "The policy will automatically take the selected action"
+  default "No Automatic Actions"
+  allowed_values "No Automatic Actions", "Stop Instances", "Terminate Instances"
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-#authenticate with AWS
 credentials "auth_aws" do
-  schemes "aws","aws_sts"
+  schemes "aws", "aws_sts"
   label "AWS"
   description "Select the AWS Credential from the list"
   tags "provider=aws"
   aws_account_number $param_aws_account_number
 end
 
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
 ###############################################################################
 # Pagination
 ###############################################################################
 
-pagination "aws_pagination_xml" do
+pagination "pagination_aws" do
+  get_page_marker do
+    body_path jmes_path(response, "NextToken")
+  end
+  set_page_marker do
+    body_field "NextToken"
+  end
+end
+
+pagination "pagination_aws_xml" do
   get_page_marker do
     body_path "//DescribeInstancesResponse/nextToken"
   end
@@ -86,14 +128,202 @@ pagination "aws_pagination_xml" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
-# ds_region_list is a list of regions that are opted-in or opt-in-not-required
-datasource "ds_regions_list" do
-  # https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeRegions.html
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get AWS account info
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+
+datasource "ds_get_caller_identity" do
   request do
     auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account", xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_get_caller_identity
+end
+
+script "js_aws_account", type:"javascript" do
+  parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+  result = _.find(ds_cloud_vendor_accounts, function(account) {
+    return account['id'] == ds_get_caller_identity[0]['account']
+  })
+
+  // This is in case the API does not return the relevant account info
+  if (result == undefined) {
+    result = {
+      id: ds_get_caller_identity[0]['account'],
+      name: "",
+      tags: {}
+    }
+  }
+EOS
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
+end
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-EOS
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
+end
+
+datasource "ds_describe_regions" do
+  request do
+    auth $auth_aws
+    pagination $pagination_aws_xml
     verb "GET"
     host "ec2.amazonaws.com"
     path "/"
@@ -102,6 +332,9 @@ datasource "ds_regions_list" do
     query "Filter.1.Name", "opt-in-status"
     query "Filter.1.Value.1", "opt-in-not-required"
     query "Filter.1.Value.2", "opted-in"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
   end
   result do
     encoding "xml"
@@ -111,29 +344,39 @@ datasource "ds_regions_list" do
   end
 end
 
-# Get only SCP enabled regions
 datasource "ds_regions" do
-  run_script $js_regions, $param_allowed_regions, $ds_regions_list
+  run_script $js_regions, $ds_describe_regions, $param_regions_list, $param_regions_allow_or_deny
 end
 
-datasource "ds_instances" do
-  run_script $js_instances, $ds_instances_set, $param_exclude_tags
+script "js_regions", type:"javascript" do
+  parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
+  result "result"
+  code <<-EOS
+  allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_describe_regions, function(item) {
+      return _.contains(param_regions_list, item['region']) == allow_deny_test[param_regions_allow_or_deny]
+    })
+  } else {
+    result = ds_describe_regions
+  }
+EOS
 end
 
-datasource "ds_instances_set" do
+datasource "ds_instance_sets" do
   iterate $ds_regions
   request do
-    verb "GET"
     auth $auth_aws
-    pagination $aws_pagination_xml
-    host join(["ec2.", val(iter_item, "region"), ".amazonaws.com"])
-    path "/"
+    pagination $pagination_aws_xml
+    host join(['ec2.', val(iter_item, 'region'), '.amazonaws.com'])
+    path '/'
+    header 'User-Agent', 'RS Policies'
+    header 'Content-Type', 'text/xml'
     query "Action", "DescribeInstances"
     query "Version", "2016-11-15"
-    query "Filter.1.Name", "instance-state-name"
-    query "Filter.1.Value.1", "running"
-    header "User-Agent", "RS Policies"
-    header "Content-Type", "text/xml"
+    query 'Filter.1.Name', 'instance-state-name'
+    query 'Filter.1.Value.1', 'running'
   end
   result do
     encoding "xml"
@@ -141,16 +384,18 @@ datasource "ds_instances_set" do
       field "instances_set" do
         collect xpath(col_item,"instancesSet/item","array") do
           field "region",val(iter_item, "region")
-          field "instanceId", xpath(col_item,"instanceId")
-          field "imageId", xpath(col_item,"imageId")
-          field "instanceType", xpath(col_item, "instanceType")
-          field "platform", xpath(col_item, "platform")
+          field "instanceId", xpath(col_item, "instanceId")
+          field "ipAddress", xpath(col_item, "ipAddress")
+          field "ipv6Address", xpath(col_item, "ipv6Address")
+          field "imageId", xpath(col_item, "imageId")
+          field "resourceType", xpath(col_item, "instanceType")
+          field "platform", xpath(col_item, "platformDetails")
           field "privateDnsName", xpath(col_item, "privateDnsName")
           field "launchTime", xpath(col_item, "launchTime")
           field "tags" do
-            collect xpath(col_item,"tagSet/item","array") do
-              field "tagKey", xpath(col_item, "key")
-              field "tagValue", xpath(col_item, "value")
+            collect xpath(col_item,"tagSet/item", "array") do
+              field "key", xpath(col_item, "key")
+              field "value", xpath(col_item, "value")
             end
           end
         end
@@ -159,102 +404,343 @@ datasource "ds_instances_set" do
   end
 end
 
-###############################################################################
-# Scripts
-###############################################################################
-
-script "js_regions", type:"javascript" do
-  parameters "user_entered_regions", "all_regions"
-  result "regions"
-  code <<-EOS
-    if(_.isEmpty(user_entered_regions)){
-      regions = all_regions;
-    }else{
-      //Filter unique regions
-      var uniqueRegions = _.uniq(user_entered_regions);
-      var all_regions_list = [];
-      all_regions.forEach(function(all_region){
-        all_regions_list.push(all_region.region)
-      })
-
-      //Filter valid regions
-      var valid_regions = [];
-      _.map(uniqueRegions, function(uniqueRegion){
-        if(all_regions_list.indexOf(uniqueRegion) > -1){
-          valid_regions.push({"region": uniqueRegion})
-        }
-      })
-
-      //Throw an error if no valid regions found
-      if (_.isEmpty(valid_regions)) {
-        regions = all_regions;
-      }else{
-        regions = valid_regions
-      }
-    }
-  EOS
+datasource "ds_instances" do
+  run_script $js_instances, $ds_instance_sets, $param_exclusion_tags, $param_exclusion_tags_boolean
 end
 
 script "js_instances", type: "javascript" do
-  result "results"
-  parameters "ds_instance_set", "param_exclude_tags"
+  parameters "ds_instance_sets", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  result "result"
   code <<-EOS
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
 
-  var param_exclude_tags_lower=[];
-  for(var j=0;j<param_exclude_tags.length;j++){
-    param_exclude_tags_lower[j] = param_exclude_tags[j].toString().toLowerCase();
-  }
-  var results = []
-  for ( n=0; n < ds_instance_set.length; n++) {
-    var instance_set = ds_instance_set[n].instances_set
-    for ( i=0; i < instance_set.length; i++) {
-      var instance = instance_set[i]
-      // Check, if the tag present in entered param_exclude_tags, ignore the volume if the tag matches/present.
-      var tags = instance['tags'];
-      var isTagMatched = false;
-      var tagKeyValue = "";
-      for(var k=0; k < tags.length; k++){
-        tag = tags[k];
-        if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+':'+tag['tagValue']).toLowerCase()) !== -1)){
-          isTagMatched = true;
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  result = []
+
+  _.each(ds_instance_sets, function(item) {
+    if (param_exclusion_tags.length > 0) {
+      filtered_instances = _.reject(item['instances_set'], function(resource) {
+        resource_tags = {}
+
+        if (typeof(resource['tags']) == 'object') {
+          _.each(resource['tags'], function(tag) {
+            resource_tags[tag['key']] = tag['value']
+          })
         }
-        // Constructing tags with comma separated to display in detail_template
-        if((tag['tagValue']).length > 0){
-          tagKeyValue = tagKeyValue+" , "+tag['tagKey']+'='+tag['tagValue'];
-        }else{
-          tagKeyValue = tagKeyValue+" , "+tag['tagKey'];
-        }
-      }
-      var instance_tags = "";
-      _.each(tags, function(tag){
-        instance_tags = instance_tags + tag.tagKey+" : "+tag.tagValue+", ";
+
+        // Store a list of found tags
+        found_tags = []
+
+        _.each(comparators, function(comparator) {
+          comparison = comparator['comparison']
+          value = comparator['value']
+          string = comparator['string']
+          resource_tag = resource_tags[comparator['key']]
+
+          if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+          if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+          if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+          if (comparison == '=~') {
+            if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+          }
+
+          if (comparison == '!~') {
+            if (resource_tag == undefined) { found_tags.push(string) }
+            if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+          }
+        })
+
+        all_tags_found = found_tags.length == comparators.length
+        any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+        return all_tags_found || any_tags_found
       })
 
-      if(instance_tags.length > 0){
-        instance_tags = instance_tags.substring(0, instance_tags.length - 2);
-      }
-
-      if(!(isTagMatched)){
-        var now = new Date()
-        var one_day=1000*60*60*24
-        var launchTime = new Date(instance.launchTime)
-        var difference = now.getTime() - launchTime.getTime()
-        var days_old=(difference/one_day).toFixed(2)
-        instance["hostname"] = instance.privateDnsName.split('.')[0]
-        instance["instance_tags"] = instance_tags
-        instance["days_old"] = days_old
-        results.push(instance)
-      }
+      result = result.concat(filtered_instances)
+    } else {
+      result = result.concat(item['instances_set'])
     }
-  }
+  })
+EOS
+end
 
-  results = _(results)
-    .chain()
-    .sortBy(function(result){
-      return result.region;
-    }).sortBy(function(result){
-      return result.instanceType;
-    }).value();
+datasource "ds_long_running_instances" do
+  run_script $js_long_running_instances, $ds_instances, $ds_aws_account, $param_minimum_age
+end
+
+script "js_long_running_instances", type: "javascript" do
+  parameters "ds_instances", "ds_aws_account", "param_minimum_age"
+  result "result"
+  code <<-EOS
+  result = []
+
+  _.each(ds_instances, function(instance) {
+    now = new Date()
+    launchTime = new Date(instance['launchTime'])
+    difference = now.getTime() - launchTime.getTime()
+    age = difference / (1000 * 60 * 60 * 24)
+
+    if (age >= param_minimum_age) {
+      resourceName = ""
+      instance_tags = []
+
+      if (instance['tags'] != null && instance['tags'] != undefined) {
+        _.each(instance['tags'], function(tag) {
+          instance_tags.push([tag['key'], tag['value']].join('='))
+
+          if (tag['key'].toLowerCase() == 'name') {
+            resourceName = tag['value']
+          }
+        })
+      }
+
+      result.push({
+        id: instance['instanceId'],
+        region: instance['region'],
+        imageId: instance['imageId'],
+        ipAddress: instance['ipAddress'],
+        ipv6Address: instance['ipv6Address'],
+        resourceType: instance['resourceType'],
+        platform: instance['platform'],
+        privateDnsName: instance['privateDnsName'],
+        hostname: instance['privateDnsName'].split('.')[0],
+        launchTime: instance['launchTime'],
+        resourceName: resourceName,
+        age: parseInt(age),
+        tags: instance_tags.join(', '),
+        accountId: ds_aws_account['id'],
+        accountName: ds_aws_account['name']
+      })
+    }
+  })
+EOS
+end
+
+datasource "ds_instance_costs" do
+  request do
+    run_script $js_instance_costs, $ds_aws_account, $ds_top_level_bcs, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"rows[*]") do
+      field "resourceId", jmes_path(col_item, "dimensions.resource_id")
+      field "billing_center_id", jmes_path(col_item, "dimensions.billing_center_id")
+      field "operating_system", jmes_path(col_item, "dimensions.operating_system")
+      field "purchase_option", jmes_path(col_item, "dimensions.purchase_option")
+      field "service", jmes_path(col_item, "dimensions.service")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+    end
+  end
+end
+
+script "js_instance_costs", type: "javascript" do
+  parameters "ds_aws_account", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
+    body_fields: {
+      dimensions: ["resource_id", "billing_center_id", "operating_system", "purchase_option", "service"],
+      granularity: "day",
+      start_at: start_date,
+      end_at: end_date,
+      metrics: ["cost_amortized_unblended_adj"],
+      billing_center_ids: ds_top_level_bcs,
+      limit: 100000,
+      filter: {
+        type: "and",
+        expressions: [
+          {
+            dimension: "service",
+            type: "equal",
+            value: "AmazonEC2"
+          },
+          {
+            dimension: "resource_type",
+            type: "equal",
+            value: "Compute Instance"
+          },
+          {
+            dimension: "vendor_account",
+            type: "equal",
+            value: ds_aws_account['id']
+          },
+          {
+            type: "not",
+            expression: {
+              dimension: "adjustment_name",
+              type: "substring",
+              substring: "Shared"
+            }
+          }
+        ]
+      }
+    },
+    headers: {
+      'User-Agent': "RS Policies",
+      'Api-Version': "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
+datasource "ds_instance_costs_grouped" do
+  run_script $js_instance_costs_grouped, $ds_instance_costs, $ds_billing_centers
+end
+
+script "js_instance_costs_grouped", type: "javascript" do
+  parameters "ds_instance_costs", "ds_billing_centers"
+  result "result"
+  code <<-EOS
+  bc_object = {}
+
+  _.each(ds_billing_centers, function(bc) {
+    bc_object[bc['id']] = bc['name']
+  })
+
+  // Multiple a single day's cost by the average number of days in a month.
+  // The 0.25 is to account for leap years for extra precision.
+  cost_multiplier = 365.25 / 12
+
+  // Group cost data by resourceId for later use
+  result = {}
+
+  _.each(ds_instance_costs, function(item) {
+    id = item['resourceId'].toLowerCase()
+
+    if (result[id] == undefined) { result[id] = { cost: 0 } }
+
+    result[id]['cost'] += item['cost'] * cost_multiplier
+    result[id]['operating_system'] = item['operating_system']
+    result[id]['billing_center'] = bc_object[item['billing_center_id']]
+    result[id]['purchase_option'] = item['purchase_option']
+    result[id]['service'] = item['service']
+  })
+EOS
+end
+
+datasource "ds_long_running_instances_incident" do
+  run_script $js_long_running_instances_incident, $ds_instances, $ds_long_running_instances, $ds_instance_costs_grouped, $ds_applied_policy, $ds_currency, $param_minimum_age
+end
+
+script "js_long_running_instances_incident", type: "javascript" do
+  parameters "ds_instances", "ds_long_running_instances", "ds_instance_costs_grouped", "ds_applied_policy", "ds_currency", "param_minimum_age"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  _.each(ds_long_running_instances, function(item) {
+    instance = {
+      resourceID: item['id'],
+      resourceName: item['resourceName'],
+      region: item['region'],
+      imageId: item['imageId'],
+      ipAddress: item['ipAddress'],
+      ipv6Address: item['ipv6Address'],
+      resourceType: item['resourceType'],
+      platform: item['platform'],
+      privateDnsName: item['privateDnsName'],
+      hostname: item['hostname'],
+      launchTime: item['launchTime'],
+      age: item['age'],
+      tags: item['tags'],
+      accountID: item['accountId'],
+      accountName: item['accountName'],
+      policy_name: ds_applied_policy['name'],
+      costCurrency: ds_currency['symbol'],
+      lookbackPeriod: param_minimum_age,
+      cost: "",
+      operating_system: "",
+      billing_center: "",
+      purchase_option: "",
+      service: "",
+      message: ""
+    }
+
+    id = item['id'].toLowerCase()
+
+    if (ds_instance_costs_grouped[id] != undefined) {
+      instance['cost'] = Number(ds_instance_costs_grouped[id]['cost'].toFixed(3))
+      instance['operating_system'] = ds_instance_costs_grouped[id]['operating_system']
+      instance['billing_center'] = ds_instance_costs_grouped[id]['billing_center']
+      instance['purchase_option'] = ds_instance_costs_grouped[id]['purchase_option']
+      instance['service'] = ds_instance_costs_grouped[id]['service']
+    }
+
+    result.push(instance)
+  })
+
+  day_noun = "day"
+  if (param_minimum_age > 1) { day_noun = "days" }
+
+  instances_total = ds_instances.length.toString()
+  long_instances_total = result.length.toString()
+  long_instances_percentage = (long_instances_total / instances_total * 100).toFixed(2).toString() + '%'
+
+  findings = [
+    "Out of ", instances_total, " instances analyzed, ",
+    long_instances_total, " (", long_instances_percentage,
+    ") have been running for longer than ", param_minimum_age,
+    " ", day_noun, ".\n\n"
+  ].join('')
+
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+
+  result = _.sortBy(result, function(item) { return item['cost'] * -1 })
+
+  // Add a dummy entry to ensure that the policy's check statement executes at least once
+  result.push({
+    resourceID: "",      resourceName: "",     region: "",
+    imageId: "",         ipAddress: "",        ipv6Address: "",
+    resourceType: "",    platform: "",         privateDnsName: "",
+    hostname: "",        launchTime: "",       age: "",
+    tags: "",            accountID: "",        accountName: "",
+    policy_name: "",     costCurrency: "",     lookbackPeriod: "",
+    cost: "",            operating_system: "", billing_center: "",
+    purchase_option: "", service: ""
+  })
+
+  result[0]['message'] = findings + disclaimer
 EOS
 end
 
@@ -263,35 +749,81 @@ end
 ###############################################################################
 
 policy "pol_utilization" do
-  validate_each $ds_instances do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} AWS instances running longer than {{ parameters.param_days_old}} days"
-    escalate $email
+  validate_each $ds_long_running_instances_incident do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Long Running Instances Found"
+    detail_template <<-'EOS'
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
+    escalate $esc_email
     escalate $esc_stop_instances
     escalate $esc_terminate_instances
-    check lt(to_n(val(item, "days_old")),$param_days_old)
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    hash_exclude "tags", "cost", "costCurrency", "resourceName", "age", "billing_center", "hostname", "ipAddress", "ipv6Address", "lookbackPeriod", "policy_name", "message"
     export do
       resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "resourceType" do
+        label "Instance Size"
+      end
+      field "age" do
+        label "Resource Age (Days)"
+      end
       field "region" do
         label "Region"
       end
-      field "instanceType" do
-        label "Instance Type"
+      field "platform" do
+        label "Platform"
       end
-      field "id" do
-        label "Instance Id"
-        path "instanceId"
-      end
-      field "days_old" do
-        label "Days Old"
+      field "operating_system" do
+        label "Operating System"
       end
       field "hostname" do
         label "Hostname"
       end
-      field "privateDnsName" do
-        label "Private DNS Name"
+      field "ipAddress" do
+        label "IP Address"
       end
-      field "instance_tags" do
-        label "Tags"
+      field "ipv6Address" do
+        label "IPv6 Address"
+      end
+      field "cost" do
+        label "Estimated Monthly Cost"
+      end
+      field "costCurrency" do
+        label "Cost Currency"
+      end
+      field "launchTime" do
+        label "Launch Time"
+      end
+      field "purchase_option" do
+        label "Purchase Option"
+      end
+      field "billing_center" do
+        label "Billing Center"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
       end
     end
   end
@@ -301,7 +833,7 @@ end
 # Escalations
 ###############################################################################
 
-escalation "email" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
@@ -311,155 +843,249 @@ end
 escalation "esc_stop_instances" do
   automatic eq($param_automatic_action, "Stop Instances")
   label "Stop Instances"
-  description "Stop selected instances"
-  run "stop_instances_cwf", data, rs_optima_host
+  description "Approval to stop all selected instances"
+  run "stop_instances", data
 end
 
 escalation "esc_terminate_instances" do
   automatic eq($param_automatic_action, "Terminate Instances")
   label "Terminate Instances"
-  description "Terminate selected instances"
-  run "terminate_instances_cwf", data, rs_optima_host
+  description "Approval to terminate all selected instances"
+  run "terminate_instances", data
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define stop_instances_cwf($data, $$rs_optima_host) return $all_responses do
-  $status_code=''
-  $all_responses = []
-  foreach $item in $data do
-    sub on_error: skip do
-      call stop_instances($item) retrieve $status_code
-      $all_responses << $status_code
-    end
-  end
-end
+# Core CWF function to stop instances
+define stop_instances($data) do
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call get_instance_state($instance) retrieve $initial_state
 
-define terminate_instances_cwf($data, $$rs_optima_host) return $all_responses do
-  $status_code=''
-  $all_responses = []
-  foreach $item in $data do
-    sub on_error: skip do
-      call terminate_instances($item) retrieve $status_code
-      $all_responses << $status_code
-    end
-  end
-end
-
-define stop_instances($item) return $status_code do
-  $status_code={}
-  $response={}
-  sub on_error: retry, timeout: 20m, on_timeout: skip do
-    $response = http_request(
-      verb: "post",
-      host: join(["ec2.",$item["region"],".amazonaws.com"]),
-      auth: $$auth_aws,
-      href: join(["/", "?Action=StopInstances", "&InstanceId.1=", $item["id"], "&Version=2016-11-15"]),
-      https: true,
-      headers:{
-        "cache-control": "no-cache",
-        "content-type": "application/json"
-      }
-    )
-    call sys_log("StopInstanceResponseCode", to_s($response["code"]))
-  end
-  $status_code=$response["code"]
-  if($response["code"]==200)
-    $wake_condition = "stopped"
-    $state = ''
-    while $state !~ $wake_condition do
-      sub on_error: skip do
-        call get_instance($item) retrieve $status_response
-        $status_responses=$status_response["body"]["DescribeInstancesResponse"]["reservationSet"]["item"]["instancesSet"]["item"]
-        $state = to_s($status_responses["instanceState"]["name"])
-        $status_code = to_s($status_response["code"])
+      if $initial_state != "terminated" && $initial_state != "pending"
+        if $initial_state != "stopped"
+          call stop_instance($instance)
+        end
       end
     end
   end
+
+  # If we encountered any errors, use `raise` to mark the CWF process as errored
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
 end
 
-define terminate_instances($item) return $status_code do
-  $status_code={}
-  $response={}
-  sub on_error: retry, timeout: 20m, on_timeout: skip do
-    $response = http_request(
-      verb: "post",
-      host: join(["ec2.",$item["region"],".amazonaws.com"]),
-      auth: $$auth_aws,
-      href: join(["/", "?Action=TerminateInstances", "&InstanceId.1=", $item["id"], "&Version=2016-11-15"]),
-      https: true,
-      headers:{
-        "cache-control": "no-cache",
-        "content-type": "application/json"
-      }
-    )
-    call sys_log("TerminateInstancesResponseCode", to_s($response["code"]))
-  end
-  $status_code=$response["code"]
-  if($response["code"]==200)
-    $wake_condition = "terminated"
-    $state = ''
-    while $state !~ $wake_condition do
-      sub on_error: skip do
-        call get_instance($item) retrieve $status_response
-        $status_responses=$status_response["body"]["DescribeInstancesResponse"]["reservationSet"]["item"]["instancesSet"]["item"]
-        $state = to_s($status_responses["instanceState"]["name"])
-        $status_code = to_s($status_response["code"])
+# Core CWF function to terminate instances
+define terminate_instances($data) do
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call get_instance_state($instance) retrieve $initial_state
+
+      if $initial_state != "terminated" && $initial_state != "pending"
+        call terminate_instance($instance)
       end
     end
   end
-end
 
-define get_instance($item) return $status_response do
-  $status_response = {}
-  sub on_error: retry, timeout: 20m, on_timeout: skip do
-    $response = http_request(
-      verb: "get",
-      host: join(["ec2.",$item["region"],".amazonaws.com"]),
-      auth: $$auth_aws,
-      href: join(["/", "?Action=DescribeInstances", "&InstanceId.1=", $item["id"], "&Version=2016-11-15"]),
-      https: true,
-      headers: {
-        "cache-control": "no-cache",
-        "Accept": "application/json"
-      }
-    )
-    $status_response=$response
+  # If we encountered any errors, use `raise` to mark the CWF process as errored
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
   end
 end
 
-define sys_log($subject, $detail) do
-  # Create empty errors array if doesn't already exist
+# CWF function to stop an instance
+define stop_instance($instance) return $response do
+  task_label("Stopping Instance: " + $instance["id"])
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    href: "/",
+    host: "ec2." + $instance['region'] + ".amazonaws.com",
+    query_strings: {
+      "Action": "StopInstances",
+      "Version": "2016-11-15",
+      "InstanceId.1": $instance["id"]
+    }
+  )
+  call handle_response($response)
+
+  task_label("Checking for expected response code for Stop Instance: " + $instance["id"])
+  if $response["code"] != 202 && $response["code"] != 200
+    raise 'Unexpected response Stop Instance: '+to_json($response)
+  else
+    task_label("Successful Stop Instance: " + $instance["id"])
+    call get_instance_state($instance) retrieve $instance_state
+    while $instance_state != "stopped" do
+      call get_instance_state($instance) retrieve $instance_state
+      task_label("Waiting for Stop.. Instance State: " + $instance["id"] +" "+ $instance_state)
+      sleep(10)
+    end
+    task_label("Completed Stop Instance: " + $instance["id"])
+  end
+end
+
+# CWF function to terminate an instance
+define terminate_instance($instance) return $response do
+  task_label("Terminating Instance: " + $instance["id"])
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    href: "/",
+    host: "ec2." + $instance["region"] + ".amazonaws.com",
+    query_strings: {
+      "Action": "TerminateInstances",
+      "Version": "2016-11-15",
+      "InstanceId.1": $instance["id"]
+    }
+  )
+  call handle_response($response)
+
+  task_label("Checking for expected response code for Terminate Instance: " + $instance["id"])
+  if $response["code"] != 202 && $response["code"] != 200
+    raise 'Unexpected response Terminate Instance: '+to_json($response)
+  else
+    task_label("Successful Terminate Instance: " + $instance["id"])
+    call get_instance_state($instance) retrieve $instance_state
+    while $instance_state != "terminated" do
+      call get_instance_state($instance) retrieve $instance_state
+      task_label("Waiting for Terminate Instance: " + $instance["id"] +" "+ $instance_state)
+      sleep(10)
+    end
+    task_label("Completed Modify Instance: " + $instance["id"])
+  end
+end
+
+# CWF function to get the current state of an instance
+define get_instance_state($instance) return $instance_state do
+  task_label("Getting Instance State: " + $instance["id"])
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    href: "/",
+    host: "ec2." + $instance["region"] + ".amazonaws.com",
+    query_strings: {
+      "Action": "DescribeInstanceStatus",
+      "Version": "2016-11-15",
+      "IncludeAllInstances": "true",
+      "InstanceId.1": $instance["id"]
+    }
+  )
+  call handle_response($response)
+  $instance_state = $response["body"]["DescribeInstanceStatusResponse"]["instanceStatusSet"]["item"]["instanceState"]["name"]
+end
+
+# CWF function to handle errors
+define handle_error() do
   if !$$errors
     $$errors = []
   end
-  # Check if debug is enabled
-  if $$debug
-    # Append to global $$errors
-    # This is the suggested way to capture errors
-    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
-    # If Flexera NAM Zone, create audit_entries [to be deprecated]
-    # This is the legacy method for capturing errors and only supported on Flexera NAM
-    if $$rs_optima_host == "api.optima.flexeraeng.com"
-      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
-      $task_label = "Creating audit entry for " + $subject
-      sub task_label: $task, on_error: skip_error_and_append($task) do
-        rs_cm.audit_entries.create(
-          notify: "None",
-          audit_entry: {
-            auditee_href: @@account,
-            summary: $subject,
-            detail: $detail
-          }
-        )
-      end # End sub on_error
-    end # End if rs_optima_host
-  end # End if debug is enabled
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
 end
 
-define skip_error_and_append($subject) do
-  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
-  $_error_behavior = "skip"
+# CWF function to handle responses
+define handle_response($response) do
+  if !$$all_responses
+    $$all_responses = []
+  end
+  # Convert response object to JSON string.  Easier to interpret
+  $$all_responses << to_json($response)
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
 end

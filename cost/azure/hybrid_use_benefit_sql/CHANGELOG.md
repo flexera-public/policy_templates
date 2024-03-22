@@ -1,5 +1,19 @@
 # Changelog
 
+## v3.1
+
+- Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.
+
+## v3.0
+
+- Renamed Subscription List parameter for consistency and accuracy
+- Added logic required for "Meta Policy" use-cases
+- Policy now requires a valid Flexera credential to facilitate "Meta Policy" use-cases
+
+## v2.8
+
+- Added a filter to exclude SQL Server 2017 Developer and Express versions instances that Microsoft provides as free
+
 ## v2.7
 
 - Replaced the term **whitelist** with **allowed list**.

@@ -1,5 +1,22 @@
 # Changelog
 
+## v4.2
+
+- Changed internal name of escalation code to ensure "Meta Policy" works as expected
+
+## v4.1
+
+- Updated description of `Account Number` parameter
+
+## v4.0
+
+- Added logic required for "Meta Policy" use-cases
+- To facilitate "Meta Policy" use-cases, policy now requires a Flexera credential
+
+## v3.0
+
+- Added parameter to enable Allow or Deny filtering by user entered regions
+
 ## v2.10
 
 - Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`

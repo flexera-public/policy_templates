@@ -1,5 +1,14 @@
 # Changelog
 
+## v3.1
+
+- Updated description of `Account Number` parameter
+
+## v3.0
+
+- Added functionality to support region inclusion/exclusion.
+- Added parameter to enable Allow or Deny filtering by user entered regions.
+
 ## v2.4
 
 - Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`

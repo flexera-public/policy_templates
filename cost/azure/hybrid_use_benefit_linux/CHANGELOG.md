@@ -1,5 +1,39 @@
 # Changelog
 
+## v5.0
+
+- Added support for regex when filtering resources by tag
+
+## v4.3
+
+- Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.
+
+## v4.2
+
+- Fixed issue where policy fails if an instance lacks Image Publisher metadata
+
+## v4.1
+
+- Fixed README link in policy metadata
+
+## v4.0
+
+- Several parameters altered to be more descriptive and human-readable
+- Added ability to use Subscription list parameter as either an "allow" list or a "deny" list
+- Added ability to filter resources by region
+- Added ability to filter resources by multiple tag key:value pairs
+- Added additional context to incident description
+- Normalized incident export to be consistent with other policies
+- Added human-readable recommendation to incident export
+- Added additional fields to incident export
+- Streamlined code for better readability and faster execution
+
+## v3.0
+
+- Renamed Subscription List parameter for consistency and accuracy
+- Added logic required for "Meta Policy" use-cases
+- Policy now requires a valid Flexera credential to facilitate "Meta Policy" use-cases
+
 ## v2.10
 
 - Replaced the term **whitelist** with **allowed list**.

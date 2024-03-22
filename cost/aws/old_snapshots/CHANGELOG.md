@@ -1,5 +1,73 @@
 # Changelog
 
+## v8.1
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
+## v8.0
+
+- Added support for regex when filtering resources by tag
+
+## v7.5
+
+- Policy action error logging modernized and now works as expected in EU/APAC
+
+## v7.4
+
+- Corrected API issue when executing policy in APAC
+
+## v7.3
+
+- Updated description of `Account Number` parameter
+
+## v7.2
+
+- Fixed issue related to tag key/values not being populated
+
+## v7.1
+
+- Added ability to filter resources by tag key alone without regard for tag value
+
+## v7.0
+
+- Several parameters altered to be more descriptive and human-readable
+- Modified and renamed "Deregister Image" parameter to make it more clear and intuitive
+- Removed deprecated "Log to CM Audit Entries" parameter
+- Added ability to only report recommendations that meet a minimum savings threshold
+- Added ability to filter resources by multiple tag key:value pairs
+- Added ability to filter resources by description or service type
+- Added additional context to incident description
+- Normalized incident export to be consistent with other policies
+- Added human-readable recommendation to incident export
+- Added additional fields to incident export to facilitate scraping for dashboards
+- Policy no longer raises new escalations if snapshot age or savings data changed but nothing else has
+- Streamlined code for better readability and faster execution
+
+## v6.2
+
+- Renamed `volumeSize` incident field to `size`.
+- Renamed `daysOld` incident field to `age`.
+- Added `resourceName` incident field.
+- Removed repeated code on script `js_snapshots_cost_mapping`.
+
+## v6.1
+
+- Updated policy metadata to facilitate scraping of incidents for Recommendations dashboard
+- Added "Resource Type" to incident output
+
+## v6.0
+
+- Added parameter to enable Allow or Deny filtering by user entered regions
+
+## v5.0
+
+- Added support for RDS Snapshots
+- Changed Policy Template info field `Service` from `EBS` to `Storage`
+
+## v4.2
+
+- Raised API limit to handle situations where more than 10,000 line items need to be retrieved.
+
 ## v4.1
 
 - Added logic required for "Meta Policy" use-cases

@@ -1,0 +1,56 @@
+name: Generate Policy Release Notifications
+
+on:
+  # Trigger this workflow on pushes to master
+  push:
+    branches:
+      - master
+
+  # Workflow dispatch trigger allows manually running workflow
+  workflow_dispatch:
+    branches:
+      - master
+jobs:
+  policy-release-notifications:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0 # Speed up checkout by not fetching history
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+
+      - name: Run Generate Policy Release Notification Content Script
+        id: changelog_content
+        run: |
+          ruby tools/policy_template_release_generation/generate_policy_release_notification_contents.rb
+      # - name: Capture Outputs
+      #   run: |
+      #     echo "Section Content: ${{ steps.changelog_content.outputs.notification_content }}"
+      #     echo "Commit URL: ${{ steps.changelog_content.outputs.commit_url }}"
+
+      - name: Send Teams Notification
+        if: steps.changelog_content.outputs.notification_content != '[]'
+        env:
+          TEAMS_WEBHOOK_URL: ${{ secrets.POLICY_CATALOG_UPDATE_TEAMS_WEBHOOK_URL_PROD }}
+        run: |
+          notification_content="${{ steps.changelog_content.outputs.notification_content }}"
+          commit_url="${{ steps.changelog_content.outputs.commit_url }}"
+          payload="{
+            \"@type\": \"MessageCard\",
+            \"@content\": \"http://schema.org/extensions\",
+            \"themeColor\": \"0076D7\",
+            \"summary\": \"New Policy Updates\",
+            \"sections\": ${notification_content},
+            \"potentialAction\": [{
+              \"@type\": \"OpenUri\",
+              \"name\": \"See Change Details in GitHub\",
+              \"targets\": [{
+                \"os\": \"default\",
+                \"uri\": \"${commit_url}\"
+              }]
+            }]
+          }"
+          curl -X POST -H "Content-Type: application/json" -d "$payload" "$TEAMS_WEBHOOK_URL"

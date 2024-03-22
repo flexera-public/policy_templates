@@ -1,5 +1,9 @@
 # Azure Unused SQL Databases
 
+## Deprecated
+
+This policy is no longer being updated. The [Azure Rightsize SQL Databases](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_sql_instances/) policy now includes this functionality and is the recommended policy for getting unused SQL recommendations.
+
 ## What it does
 
 This Policy template checks for Azure SQL Databases that are unused by reviewing the DB connections and delete them after user approval.
@@ -10,8 +14,11 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 
 - [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:
   - `Microsoft.Sql/servers/databases/read`
-  - `Microsoft.Sql/servers/databases/delete`
   - `Microsoft.Sql/servers/databases/metrics/read`
+  - `Microsoft.Insights/metrics/read`
+  - `Microsoft.Sql/servers/databases/delete`*
+
+\* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`

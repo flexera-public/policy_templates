@@ -1,6 +1,6 @@
 # SaaS Manager - Unsanctioned Applications with Existing Contract
 
-## What it does
+## What It Does
 
 This policy will create an incident when Flexera SaaS Manager identifies unsanctioned SaaS purchases for managed applications under an existing license contract.
 
@@ -15,22 +15,15 @@ This policy integrates with the Flexera SaaS Manager API to retrieve managed Saa
 
 This policy has the following input parameters required when launching the policy.
 
-- *Email addresses to notify* - Email addresses of the recipients you wish to notify
-
-## Prerequisites
-
-This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
-
-### Credential configuration
-
-For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
-
-Provider tag value to match this policy: `flexera_fsm`
-
-Required permissions in the provider:
-
-- Administrator, Application Administrator, Viewer, or Security Administrator in FSM
+- *Email Addresses* - Email addresses of the recipients you wish to notify
 
 ## Policy Actions
 
-- Sends an email notification
+- Send an email report
+
+## Prerequisites
+
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following permissions:
+  - Administrator, Application Administrator, Viewer, or Security Administrator in FSM

@@ -1,0 +1,232 @@
+name "Kubecost Cluster Rightsizing Recommendations"
+rs_pt_ver 20180301
+type "policy"
+short_description "The policy retrieves Kubecost recommendations for rightsizing of Kubernetes clusters and raises an incident. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/kubecost/cluster) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "low"
+category "Cost"
+default_frequency "daily"
+tenancy "single"
+info(
+  version: "0.2",
+  provider: "Kubecost",
+  service: "Kubernetes",
+  policy_set: "Rightsize Clusters",
+  recommendation_type: "Usage Reduction"
+)
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_email" do
+  label "Email addresses"
+  description "Email addresses of the recipients you wish to notify"
+  type "list"
+end
+
+parameter "param_kubecost_host" do
+  type "string"
+  label "Kubecost Host"
+  description "Kubecost Host or IP Address of Kubecost LB"
+end
+
+parameter "param_min_nodes" do
+  type "number"
+  label "Minimum node count"
+  description "Minimum allowed node count in the cluster"
+  default 2
+end
+
+parameter "param_historical_days" do
+  type "number"
+  label "Number of days to analyze"
+  description "Historical range to analyze"
+  min_value 2
+  max_value 60
+  default 7
+end
+
+parameter "param_target_util" do
+  type "number"
+  label "Target Utilization (%)"
+  description "Desirable target utilization in percent"
+  default 80
+end
+
+parameter "param_recommendation_strategy" do
+  type "string"
+  label "Recommendation Strategy"
+  description "Recommendation strategy to apply"
+  allowed_values ["Single", "Multi", "Optimal"]
+end
+
+###############################################################################
+# Datasource
+###############################################################################
+
+datasource "ds_get_currency" do
+  request do
+    verb "GET"
+    scheme "http"
+    host $param_kubecost_host
+    path "/model/getConfigs"
+  end
+  result do
+    encoding "json"
+    field "currencyCode", jmes_path(response, "data.currencyCode")
+  end
+end
+
+datasource "ds_cluster_sizing" do
+  request do
+    run_script $js_cluster_sizing, $param_kubecost_host, $param_min_nodes, $param_historical_days, $param_target_util
+  end
+  result do
+    encoding "json"
+    field "accountId", jmes_path(response, "data.parameters.clusterId")
+    field "accountName", jmes_path(response, "data.parameters.clusterName")
+    field "totalNodeCount", jmes_path(response, "data.currentClusterInfo.totalCounts.totalNodeCount")
+    field "totalRAMGB", jmes_path(response, "data.currentClusterInfo.totalCounts.totalRAMGB")
+    field "totalVCPUs", jmes_path(response, "data.currentClusterInfo.totalCounts.totalVCPUs")
+    field "monthlyRate", jmes_path(response, "data.currentClusterInfo.monthlyRate")
+    field "recommendations", jmes_path(response, "data.recommendations")
+  end
+end
+
+script "js_cluster_sizing", type: "javascript" do
+  parameters "kubecost_host", "min_nodes", "historical_days", "target_util"
+  result "request"
+  code <<-EOS
+    var request = {
+      "verb": "GET",
+      "scheme": "http",
+      "host": kubecost_host,
+      "path": "/model/savings/clusterSizing",
+      "query_params": {
+        "minNodeCount": min_nodes.toString(),
+        "window": historical_days + "d",
+        "targetUtilization": (target_util/100).toString()
+      }
+    }
+  EOS
+end
+
+datasource "ds_cluster_array" do
+  run_script $js_cluster_array, $ds_cluster_sizing, $ds_get_currency, $param_recommendation_strategy
+end
+
+script "js_cluster_array", type: "javascript" do
+  parameters "ds_cluster_sizing", "ds_get_currency", "recommendation_strategy"
+  result "results"
+  code <<-EOF
+    var accountId = ds_cluster_sizing.accountId
+    var accountName = ds_cluster_sizing.accountName
+    var totalNodeCount = ds_cluster_sizing.totalNodeCount
+    var totalRAMGB = ds_cluster_sizing.totalRAMGB
+    var totalVCPUs = ds_cluster_sizing.totalVCPUs
+    var monthlyRate = ds_cluster_sizing.monthlyRate
+    var results = []
+    var optimalValue = 0
+    var tempResult
+    _.forEach(ds_cluster_sizing.recommendations, function(e, k) {
+      e.rec_strategy = k;
+      e.accountId = accountId;
+      e.accountName = accountName;  
+      if (e.accountName == "" || e.accountName.lenght === 0) {
+        e.accountName = accountId;
+      }
+      e.currencyCode = ds_get_currency.currencyCode
+      if (e.currencyCode == "" || e.currencyCode.lenght === 0) {
+        e.currencyCode = "USD";
+      }
+      e.totalNodeCount = totalNodeCount
+      e.totalRAMGB = totalRAMGB
+      e.totalVCPUs = totalVCPUs
+      e.monthlyRate = monthlyRate
+      e.strPools = JSON.stringify(e.pools);
+      if (recommendation_strategy.toLowerCase() == "optimal") {
+        if (e.monthlySavings > optimalValue) {
+          optimalValue = e.monthlySavings
+          e.monthlySavings = Math.round(e.monthlySavings * 100) / 100
+          e.monthlyRate = Math.round(e.monthlyRate * 100) / 100
+          e.totalMonthlyCost = Math.round(e.totalMonthlyCost * 100) / 100
+          tempResult = e
+        }
+      } else {
+        if (k == recommendation_strategy.toLowerCase()) {
+          e.monthlySavings = Math.round(e.monthlySavings * 100) / 100
+          e.monthlyRate = Math.round(e.monthlyRate * 100) / 100
+          e.totalMonthlyCost = Math.round(e.totalMonthlyCost * 100) / 100
+          results.push(e)
+        }
+      }
+    })
+    if (recommendation_strategy.toLowerCase() == "optimal") {
+      results.push(tempResult)
+    }
+  EOF
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_kubecost_cluster" do
+  validate_each $ds_cluster_array do
+    summary_template "Kubecost Cluster Sizing Report"
+    escalate $esc_report_volumes
+    check eq(0,1)
+    export do
+      field "accountID" do
+        label "Cluster ID"
+        path "accountId"
+      end
+      field "accountName" do
+        label "Cluster Name"
+      end
+      field "rec_strategy" do
+        label "Recommendation Strategy"
+      end
+      field "totalNodeCount" do
+        label "Current Node Count"
+      end
+      field "totalRAMGB" do
+        label "Current Total RAM (GB)"
+      end
+      field "totalVCPUs" do
+        label "Current Total vCPUs"
+      end
+      field "currencyCode" do
+        label "Currency"
+      end
+      field "monthlyRate" do
+        label "Current Monthly Cost"
+      end
+      field "totalMonthlyCost" do
+        label "Recommended Monthly Cost"
+      end
+      field "savings" do
+        label "Savings"
+        path "monthlySavings"
+      end
+      field "nodeCount" do
+        label "Recommended Node Count"
+      end
+      field "strPools" do
+        label "Recommended Pools"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_report_volumes" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end

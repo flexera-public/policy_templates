@@ -1,71 +1,82 @@
 # Azure Schedule Instance
 
-## What it does
+## What It Does
 
-This Policy Template allows you to schedule start and stop times for your azure virtual machines, along with the option to terminate virtual machines, update and delete schedule.
+This policy schedules Azure virtual machines to start and stop at specific times based on a configuration stored in the virtual machine's tags. The user can also perform a variety of ad hoc actions on the virtual machine from the incident page.
 
-## How to Use
+## How To Use
 
-This policy relies on a tag with format 'schedule' to stop and start virtual machines based on a schedule. The tag value defines the schedule with a start time (start hour and start minute), stop time (stop hour and stop minute) and days of the week and timezone. The start and stop time are in 24-hour format, and the days of the week are two character abbreviation for example: MO, TU, WE. See full example below. Use a Timezone TZ value to indicate a timezone to stop/start the virtual machines.
+This policy uses the schedule tag value (default key: schedule) for scheduling the instance. The appropriate value should be added to as a tag to every instance you want to manage via this policy.
 
-## Schedule Tag Example
+This value is a string consisting of 3 semicolon-separated substrings:
 
-Start and Stop hours are 24-hour format: for example 8:15-17:30 is start at 8:15am, and stop at 5:30pm.
+- *Hours* - Start and stop hours are 24 hour format. For example, a value of `8:15-17:30` will start instances at 8:15 and stop them at 17:30 (5:30 pm). If the minute field is left blank, the minute value of `00` will be assumed.
+- *Days of the Week* - Comma-separated list of days indicated by their two-letter abbreviation value from the following list: SU,MO,TU,WE,TH,FR,SA. For example, a value of `MO,TU,WE,TH,FR` will start and stop the instances on weekdays but not on weekends.
+- *Timezone* - Timezone in [tz database format](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones). For example, a value of `America/New_York` would specify US Eastern Time. Defaults to UTC if no Timezone field is provided.
 
-Days of the week: SU, MO, TU, WE, TH, FR, SA
+**Example Value:** 8:15-17:30;MO,TU,WE,TH,FR;America/New_York
 
-Timezone: Use the TZ database name from the timezone list. For example, use America/New_York for Eastern time.
+- Starts instances at 8:15am
+- Stops instance at 5:30pm
+- Monday - Friday, US Eastern Time.
 
-Example: schedule=8:15-17:30;MO,TU,WE,TH,FR;America/New_York. Starts virtual machines at 8:15am, stops virtual machines at 5:30pm, Monday - Friday, Eastern Time.
-
-Virtual machines are off during the weekend and start back up on Monday morning at 8:15am and are off at 5:30pm every weekday. Times are UTC unless the Timezone field is provided.
-
-Note: On leaving the minute field blank, policy will consider the minute as `00`
-and same will be added to the schedule label value.
+In the above example, instances are off during the weekend and start back up on Monday morning at 8:15am and are off at 5:30pm every weekday. Times are UTC unless the Timezone field is provided.
 
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
-- *Email addresses* - A list of email addresses to notify
-- *Azure Endpoint* - Azure Endpoint to access resources
-- *Subscription Allowed List* - Allowed Subscriptions, if empty, all subscriptions will be checked
-- *Exclusion Tags* - List of tags that a virtual machine can have to exclude it from the list. Format: Key=Value.
-- *Automatic Actions(s)* - (Optional)When this value is set, this policy will automatically take the selected action(s).
+- *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
+- *Azure Endpoint* - The endpoint to send Azure API requests to. Recommended to leave this at default unless using this policy with Azure China.
+- *Schedule Tag Key* - Tag key that schedule information is stored in. Default is recommended for most use cases.
+- *Next Start Tag Key* - Tag key to use for scheduling instance to start. Default is recommended for most use cases.
+- *Next Stop Tag Key* - Tag key to use for scheduling instance to stop. Default is recommended for most use cases.
+- *Allow/Deny Subscriptions* - Determines whether the Allow/Deny Subscriptions List parameter functions as an allow list (only providing results for the listed subscriptions) or a deny list (providing results for all subscriptions except for the listed subscriptions).
+- *Allow/Deny Subscriptions List* - A list of allowed or denied Subscription IDs/names. If empty, no filtering will occur and recommendations will be produced for all subscriptions.
+- *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
+- *Allow/Deny Regions List* - Filter results by region, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all the regions.
+- *Exclusion Tags* - The policy will filter resources containing the specified tags from the results. The following formats are supported:
+  - `Key` - Filter all resources with the specified tag key.
+  - `Key==Value` - Filter all resources with the specified tag key:value pair.
+  - `Key!=Value` - Filter all resources missing the specified tag key:value pair. This will also filter all resources missing the specified tag key.
+  - `Key=~/Regex/` - Filter all resources where the value for the specified key matches the specified regex string.
+  - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified tag key.
+- *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
+- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
+- *Power Off Type* - Whether to perform a graceful shutdown or a forced shutdown when powering off idle instances. Only applicable when taking action against instances.
+
+Please note that the "*Automatic Actions*" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example if a user selects the "Schedule Instances" action while applying the policy, the identified resources will be stopped or started as per the schedule.
 
 ## Policy Actions
 
 The following policy actions are taken on any resources found to be out of compliance.
 
-- Send an email report
-- stop - stop a selected virtual machine
-- start - start a selected virtual machine
-- terminate - terminates or deletes the selected virtual machines.
-- update schedule - change existing schedule tag.  input to provide a new stop/start schedule
-- delete schedule - removes the schedule tag
+- Send an email report.
+- *Execute Schedules* - Power the resources on or off as needed based on their schedules
+- *Update Schedules* - Update the schedule tag on the resources with a new schedule
+- *Delete Schedules* - Delete all schedule tags from the resource so that it is no longer powered on or off by this policy
+- *Power On Instances* - Power on the resources if they are not currently running.
+- *Power Off Instances* - Power off the resources if they are currently running.
+- *Delete Instances* - Delete the resources.
 
 ## Prerequisites
 
-### Schedule Label Format
-
-This policy uses `schedule` tag value for scheduling the virtual machine. The format should be like `8:15-17:30;MO,TU,WE,TH,FR;America/New_York`. Please refer to `Schedule Tag Example` section for more details.
-On leaving the minute field blank, policy will consider the minute as `00` and same will be added to the schedule tag value.
-
-This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy, you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin, and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
-
 ### Credential configuration
 
-For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
-Provider tag value to match this policy: `azure`
+- [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:
+  - `Microsoft.Compute/virtualMachines/read`
+  - `Microsoft.Compute/virtualMachines/write`
+  - `Microsoft.Compute/virtualMachines/delete`
+  - `Microsoft.Compute/virtualMachines/start/action`
+  - `Microsoft.Compute/virtualMachines/deallocate/action`
 
-Required permissions in the provider:
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - `billing_center_viewer`
 
-- Microsoft.Compute/virtualMachines/read
-- Microsoft.Compute/virtualMachines/write
-- Microsoft.Compute/virtualMachines/delete
-- Microsoft.Compute/virtualMachines/start/action
-- Microsoft.Compute/virtualMachines/deallocate/action
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ## Supported Clouds
 

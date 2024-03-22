@@ -1,5 +1,26 @@
 # Changelog
 
+## v4.3
+
+- Updated description of `Account Number` parameter
+
+## v4.2
+
+- Changed service metadata to "Compute" to ensure proper incident scraping
+
+## v4.1
+
+- Added logic required for "Meta Policy" use-cases
+
+## v4.0
+
+- Added parameter to enable Allow or Deny filtering by user entered regions
+
+## v3.0
+
+- Updated policy to use Flexera One ITAM SOAP APIs. Full details here: [Flexera One ITAM SOAP APIs Transitioning to Flexera One IAM](https://community.flexera.com/t5/Flexera-One-Blog/Flexera-One-ITAM-SOAP-APIs-Transitioning-to-Flexera-One-IAM/ba-p/229399)
+- Removed support for on-premise deployments (with or without wstunnel)
+
 ## v2.10
 
 - Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`

@@ -1,4 +1,18 @@
-# ChangeLog
+# Changelog
+
+## v3.2
+
+- Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.
+
+## v3.1
+
+- Changed internal name of escalation code to ensure "Meta Policy" works as expected
+
+## v3.0
+
+- Renamed Subscription List parameter for consistency and accuracy
+- Added logic required for "Meta Policy" use-cases
+- Policy now requires a valid Flexera credential to facilitate "Meta Policy" use-cases
 
 ## v2.5
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.11
+
+- Updated description of `Account Number` parameter
+
+## v2.10
+
+- Changed service metadata to "Compute" to ensure proper incident scraping
+
 ## v2.9
 
 - Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`

@@ -1,0 +1,1988 @@
+name "AWS Rightsize RDS Instances"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks for RDS instances that have inefficient utilization for a user-specified number of days and downsizes or deletes them after approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_rds_instances) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "low"
+category "Cost"
+default_frequency "weekly"
+info(
+  version: "5.2",
+  provider: "AWS",
+  service: "RDS",
+  policy_set: "Rightsize Database Instances",
+  recommendation_type: "Usage Reduction"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_aws_account_number" do
+  type "string"
+  category "Policy Settings"
+  label "Account Number"
+  description "Leave blank; this is for automated use with Meta Policies. See README for more details."
+  default ""
+end
+
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation."
+  min_value 0
+  default 0
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
+parameter "param_unused_or_underutilized" do
+  type "string"
+  category "Filters"
+  label "Report Unused or Underutilized"
+  description "Whether to report on unused instances, underutilized instances, or both."
+  allowed_values "Unused & Underutilized", "Unused", "Underutilized"
+  default "Unused & Underutilized"
+end
+
+parameter "param_stats_underutil_threshold_cpu_value" do
+  type "number"
+  category "Statistics"
+  label "Underutilized Instance CPU Threshold (%)"
+  description "The CPU threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing."
+  min_value 0
+  max_value 100
+  default 40
+end
+
+parameter "param_stats_lookback" do
+  type "number"
+  category "Statistics"
+  label "Statistic Lookback Period"
+  description "How many days back to look at statistical data for instances to determine if they are underutilized or unused. This value cannot be set higher than 90 because AWS does not retain metrics for longer than 90 days."
+  default 30
+  min_value 1
+  max_value 90
+end
+
+parameter "param_stats_threshold" do
+  type "string"
+  category "Statistics"
+  label "Threshold Statistic"
+  description "CPU statistic to use when determining if an instance is underutilized."
+  allowed_values "Average", "Maximum", "p99", "p95", "p90"
+  default "Average"
+end
+
+parameter "param_downsize_timeframe" do
+  type "string"
+  category "Actions"
+  label "Downsize Timeframe"
+  description "Whether to downsize underutilized RDS instances immediately or wait until the next maintenance window."
+  allowed_values "Downsize Immediately", "Wait for Maintenance Window"
+  default "Wait for Maintenance Window"
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)."
+  allowed_values ["Downsize Underutilized RDS Instances", "Terminate Unused RDS Instances"]
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws", "aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+  aws_account_number $param_aws_account_number
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_aws_getmetricdata" do
+  get_page_marker do
+    body_path "NextToken"
+  end
+  set_page_marker do
+    body_field "NextToken"
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-au.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-au.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get AWS RDS instance sizes
+datasource "ds_aws_instance_size_map" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/flexera/policy_templates/master/data/aws/instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+# Get AWS account info
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account", xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_get_caller_identity
+end
+
+script "js_aws_account", type:"javascript" do
+  parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+  result = _.find(ds_cloud_vendor_accounts, function(account) {
+    return account['id'] == ds_get_caller_identity[0]['account']
+  })
+
+  // This is in case the API does not return the relevant account info
+  if (result == undefined) {
+    result = {
+      id: ds_get_caller_identity[0]['account'],
+      name: "",
+      tags: {}
+    }
+  }
+EOS
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
+end
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-EOS
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
+end
+
+datasource "ds_instance_costs" do
+  request do
+    run_script $js_instance_costs, $ds_aws_account, $ds_top_level_bcs, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"rows[*]") do
+      field "id", jmes_path(col_item, "dimensions.resource_id")
+      field "cost", jmes_path(col_item,"metrics.cost_amortized_blended_adj")
+    end
+  end
+end
+
+script "js_instance_costs", type:"javascript" do
+  parameters "ds_aws_account", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split('T')[0]
+
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
+    body_fields: {
+      "dimensions": ["resource_id"],
+      "granularity": "day",
+      "start_at": start_date,
+      "end_at": end_date,
+      "metrics": ["cost_amortized_blended_adj"],
+      "billing_center_ids": ds_top_level_bcs,
+      "limit": 100000,
+      "filter": {
+        "type": "and",
+        "expressions": [
+          {
+            "dimension": "service",
+            "type": "equal",
+            "value": "AmazonRDS"
+          },
+          {
+            "dimension": "vendor_account",
+            "type": "equal",
+            "value": ds_aws_account['id']
+          }
+        ]
+      }
+    },
+    headers: {
+      "User-Agent": "RS Policies",
+      "Api-Version": "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
+datasource "ds_instance_costs_grouped" do
+  run_script $js_instance_costs_grouped, $ds_instance_costs
+end
+
+script "js_instance_costs_grouped", type: "javascript" do
+  parameters "ds_instance_costs"
+  result "result"
+  code <<-EOS
+  // Multiple a single day's cost by the average number of days in a month.
+  // The 0.25 is to account for leap years for extra precision.
+  cost_multiplier = 365.25 / 12
+
+  // Group cost data by resourceId for later use
+  result = {}
+
+  _.each(ds_instance_costs, function(item) {
+    id = item['id'].toLowerCase()
+
+    if (result[id] == undefined) { result[id] = 0.0 }
+    result[id] += item['cost'] * cost_multiplier
+  })
+EOS
+end
+
+datasource "ds_describe_regions" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "ec2.amazonaws.com"
+    path "/"
+    query "Action", "DescribeRegions"
+    query "Version", "2016-11-15"
+    query "Filter.1.Name", "opt-in-status"
+    query "Filter.1.Value.1", "opt-in-not-required"
+    query "Filter.1.Value.2", "opted-in"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
+      field "region", xpath(col_item, "regionName")
+    end
+  end
+end
+
+datasource "ds_regions" do
+  run_script $js_regions, $ds_describe_regions, $param_regions_list, $param_regions_allow_or_deny
+end
+
+script "js_regions", type:"javascript" do
+  parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
+  result "result"
+  code <<-EOS
+  allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_describe_regions, function(item) {
+      return _.contains(param_regions_list, item['region']) == allow_deny_test[param_regions_allow_or_deny]
+    })
+  } else {
+    result = ds_describe_regions
+  }
+EOS
+end
+
+datasource "ds_rds_instances_set" do
+  iterate $ds_regions
+  request do
+    run_script $js_rds_instances_set, val(iter_item,"region")
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeDBInstancesResponse/DescribeDBInstancesResult/DBInstances/DBInstance[*]", "array") do
+      field "instanceId", xpath(col_item, "DbiResourceId")
+      field "instanceArn", xpath(col_item, "DBInstanceArn")
+      field "resourceType", xpath(col_item, "DBInstanceClass")
+      field "name", xpath(col_item, "DBInstanceIdentifier")
+      field "status", xpath(col_item, "DBInstanceStatus")
+      field "privateDnsName", xpath(col_item, "Endpoint/Address")
+      field "databaseEngine", xpath(col_item, "Engine")
+      field "engineVersion", xpath(col_item, "EngineVersion")
+      field "availabilityZone", xpath(col_item, "AvailabilityZone")
+      field "licenseModel", xpath(col_item, "LicenseModel")
+      field "processorFeatures" do
+        collect xpath(col_item, "ProcessorFeatures/ProcessorFeature") do
+          field "name", xpath(col_item, "Name")
+          field "value", xpath(col_item, "Value")
+        end
+      end
+      field "region", val(iter_item, "region")
+    end
+  end
+end
+
+script "js_rds_instances_set", type: "javascript" do
+  parameters "region"
+  result "request"
+  code <<-EOS
+  end_date = new Date()
+  end_date = end_date.toISOString()
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 30)
+  start_date = start_date.toISOString()
+
+  var request = {
+    auth: "auth_aws",
+    host: "rds." + region + ".amazonaws.com",
+    verb: "GET",
+    path: "/",
+    headers: {
+      "User-Agent": "RS Policies",
+      "Content-Type": "text/xml"
+    }
+    query_params: {
+      "Action": "DescribeDBInstances",
+      "Version": "2014-10-31"
+    }
+  }
+EOS
+end
+
+datasource "ds_resource_tags" do
+  iterate $ds_rds_instances_set
+  request do
+    run_script $js_resource_tags, val(iter_item, "instanceArn"), val(iter_item, "region")
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//ListTagsForResourceResponse/ListTagsForResourceResult/TagList/Tag[*]", "array") do
+      field "instanceId", val(iter_item, "instanceId")
+      field "key", xpath(col_item, "Key")
+      field "value", xpath(col_item, "Value")
+    end
+  end
+end
+
+script "js_resource_tags", type: "javascript" do
+  parameters "instanceArn", "region"
+  result "request"
+  code <<-EOS
+  end_date = new Date()
+  end_date = end_date.toISOString()
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 30)
+  start_date = start_date.toISOString()
+
+  var request = {
+    auth: "auth_aws",
+    host: "rds." + region + ".amazonaws.com",
+    verb: "GET",
+    path: "/",
+    headers: {
+      "User-Agent": "RS Policies",
+      "Content-Type": "text/xml"
+    }
+    query_params: {
+      "Action": "ListTagsForResource",
+      "ResourceName": instanceArn,
+      "Version": "2014-10-31"
+    }
+  }
+EOS
+end
+
+datasource "ds_rds_instances" do
+  run_script $js_rds_instances, $ds_rds_instances_set, $ds_resource_tags, $ds_aws_instance_size_map, $param_exclusion_tags, $param_exclusion_tags_boolean
+end
+
+script "js_rds_instances", type: "javascript" do
+  parameters "ds_rds_instances_set", "ds_resource_tags", "ds_aws_instance_size_map", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  result "result"
+  code <<-EOS
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  tag_object = {}
+
+  _.each(ds_resource_tags, function(item) {
+    id = item['instanceId'].toLowerCase()
+    key = item['key']
+    value = item['value']
+
+    if (tag_object[id] == undefined) {
+      tag_object[id] = {}
+    }
+
+    tag_object[id][key] = value
+  })
+
+  result = []
+
+  _.each(ds_rds_instances_set, function(instance) {
+    id = instance['instanceId'].toLowerCase()
+
+    resource_tags = {}
+    if (tag_object[id] != undefined) { resource_tags = tag_object[id] }
+
+    // Store a list of found tags
+    found_tags = []
+
+    _.each(comparators, function(comparator) {
+      comparison = comparator['comparison']
+      value = comparator['value']
+      string = comparator['string']
+      resource_tag = resource_tags[comparator['key']]
+
+      if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+      if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+      if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+      if (comparison == '=~') {
+        if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+      }
+
+      if (comparison == '!~') {
+        if (resource_tag == undefined) { found_tags.push(string) }
+        if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+      }
+    })
+
+    all_tags_found = found_tags.length == comparators.length
+    any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+    if ((!any_tags_found && !all_tags_found) || param_exclusion_tags.length == 0) {
+      tag_string = []
+
+      _.each(Object.keys(resource_tags), function(key) {
+        tag_string.push(key + '=' + resource_tags[key])
+      })
+
+      tag_string = tag_string.join(', ')
+
+      vcpus = null
+
+      if (instance["processorFeatures"] != null && instance["processorFeatures"] != undefined) {
+        cores = _.findWhere(instance["processorFeatures"], { "name": "coreCount" })
+        threads = _.findWhere(instance["processorFeatures"], { "name": "threadsPerCore" })
+
+        if (cores != undefined && threads != undefined) {
+          vcpus = cores["value"] * threads["value"]
+        }
+      }
+
+      if (vcpus == null && ds_aws_instance_size_map[instance["resourceType"]] != undefined) {
+        vcpus = ds_aws_instance_size_map[instance["resourceType"]]["vcpu"]
+      }
+
+      result.push({
+        instanceId: instance['instanceId'],
+        instanceArn: instance['instanceArn'],
+        resourceType: instance['resourceType'],
+        name: instance['name'],
+        status: instance['status'],
+        databaseEngine: instance['databaseEngine'],
+        engineVersion: instance['engineVersion'],
+        privateDnsName: instance['privateDnsName'],
+        region: instance['region'],
+        availabilityZone: instance['availabilityZone'],
+        licenseModel: instance['licenseModel'],
+        processorFeatures: instance['processorFeatures'],
+        vcpus: vcpus,
+        tags: tag_string
+      })
+    }
+  })
+EOS
+end
+
+# Avoid running CloudWatch queries to check for idle instances if user opted out of doing so
+datasource "ds_rds_instances_to_check" do
+  run_script $js_rds_instances_to_check, $ds_rds_instances, $param_unused_or_underutilized
+end
+
+script "js_rds_instances_to_check", type: "javascript" do
+  parameters "ds_rds_instances", "param_unused_or_underutilized"
+  result "result"
+  code <<-EOS
+  result = []
+  if (param_unused_or_underutilized != "Underutilized") { result = ds_rds_instances }
+EOS
+end
+
+datasource "ds_cloudwatch_idle_queries" do
+  run_script $js_cloudwatch_idle_queries, $ds_rds_instances_to_check, $param_stats_lookback
+end
+
+script "js_cloudwatch_idle_queries", type: "javascript" do
+  parameters "ds_rds_instances_to_check", "param_stats_lookback"
+  result "result"
+  code <<-EOS
+  queries = {}
+  metric = "DatabaseConnections"
+  statistic = "Average"
+  lookback = param_stats_lookback * 86400
+
+  _.each(ds_rds_instances_to_check, function(resource) {
+    query = {
+      // Replace `-` with `_` in the Id to avoid CloudWatch API error
+      "Id": resource['name'].split('-').join('_') + "_" + metric + "_" + statistic,
+      "Label": resource['name'] + " " + metric + " " + statistic,
+      "MetricStat": {
+        "Metric": {
+          "Namespace": "AWS/RDS",
+          "MetricName": metric,
+          "Dimensions": [
+            { "Name": "DBInstanceIdentifier", "Value": resource['name'] }
+          ]
+        },
+        "Period": lookback,
+        "Stat": statistic
+      },
+      "ReturnData": true
+    }
+
+    if (queries[resource['region']] == undefined || queries[resource['region']] == null) {
+      queries[resource['region']] = []
+    }
+
+    queries[resource['region']].push(query)
+  })
+
+  result = []
+
+  end_date = new Date()
+  end_date = parseInt(end_date.getTime() / 1000)
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - param_stats_lookback)
+  start_date = parseInt(start_date.getTime() / 1000)
+
+  chunk_size = 500
+
+  _.each(Object.keys(queries), function(region) {
+    for (i = 0; i < queries[region].length; i += chunk_size) {
+      chunk = queries[region].slice(i, i + chunk_size)
+
+      result.push({
+        'MetricDataQueries': chunk,
+        'region': region
+      })
+    }
+  })
+EOS
+end
+
+datasource "ds_cloudwatch_idle_data" do
+  iterate $ds_cloudwatch_idle_queries
+  request do
+    run_script $js_cloudwatch_idle_data, val(iter_item, "region"), val(iter_item, "MetricDataQueries")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "MetricDataResults[*]") do
+      field "region", val(iter_item, "region")
+      field "id", jmes_path(col_item, "Id")
+      field "label", jmes_path(col_item, "Label")
+      field "values", jmes_path(col_item, "Values")
+    end
+  end
+end
+
+script "js_cloudwatch_idle_data", type: "javascript" do
+  parameters "region", "MetricDataQueries"
+  result "request"
+  code <<-EOS
+  // Slow down rate of requests to prevent throttling
+  api_wait = 5
+  var now = new Date().getTime()
+  while(new Date().getTime() < now + (api_wait * 1000)) { /* Do nothing */ }
+
+  end_date = parseInt(new Date().getTime() / 1000)
+  start_date = parseInt(new Date(new Date().setDate(new Date().getDate() - 30)).getTime() / 1000)
+
+  var request = {
+    auth: "auth_aws",
+    host: "monitoring." + region + ".amazonaws.com",
+    verb: "POST",
+    path: "/",
+    pagination: "pagination_aws_getmetricdata",
+    headers: {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json",
+      "x-amz-target": "GraniteServiceVersion20100801.GetMetricData",
+      "Accept": "application/json",
+      "Content-Encoding": "amz-1.0"
+    }
+    query_params: {
+      "Action": "GetMetricData",
+      "Version": "2010-08-01"
+    },
+    body: JSON.stringify({
+      "StartTime": start_date,
+      "EndTime": end_date,
+      "MetricDataQueries": MetricDataQueries
+    })
+  }
+EOS
+end
+
+datasource "ds_rds_idle_instances" do
+  run_script $js_rds_idle_instances, $ds_rds_instances_to_check, $ds_cloudwatch_idle_data, $ds_instance_costs_grouped
+end
+
+script "js_rds_idle_instances", type: "javascript" do
+  parameters "ds_rds_instances_to_check", "ds_cloudwatch_idle_data", "ds_instance_costs_grouped"
+  result "result"
+  code <<-EOS
+  result = []
+  cloudwatch_activity = {}
+
+  _.each(ds_cloudwatch_idle_data, function(item) {
+    instance_name = item['label'].split(' ')[0].toLowerCase()
+
+    if (cloudwatch_activity[instance_name] == undefined) {
+      cloudwatch_activity[instance_name] = 0
+    }
+
+    if (typeof(item['values']) == 'object') {
+      _.each(item['values'], function(value) {
+        cloudwatch_activity[instance_name] += value
+      })
+    }
+  })
+
+  _.each(ds_rds_instances_to_check, function(instance) {
+    cloudwatch_name = instance['name'].toLowerCase()
+    instance_activity = cloudwatch_activity[cloudwatch_name]
+    savings_name = "db:" + instance['name'].toLowerCase()
+    savings = 0.0
+
+    if (typeof(ds_instance_costs_grouped[savings_name]) == 'number') {
+      savings = ds_instance_costs_grouped[savings_name]
+    }
+
+    if (instance_activity == undefined || instance_activity == 0) {
+      result.push({
+        instanceId: instance['instanceId'],
+        instanceArn: instance['instanceArn'],
+        resourceType: instance['resourceType'],
+        name: instance['name'],
+        status: instance['status'],
+        databaseEngine: instance['databaseEngine'],
+        engineVersion: instance['engineVersion'],
+        privateDnsName: instance['privateDnsName'],
+        region: instance['region'],
+        tags: instance['tags'],
+        availabilityZone: instance['availabilityZone'],
+        licenseModel: instance['licenseModel'],
+        processorFeatures: instance['processorFeatures'],
+        vcpus: instance['vcpus'],
+        savings: savings,
+        instance_activity: instance_activity
+      })
+    }
+  })
+EOS
+end
+
+# Filter for instances already determined to be idle to avoid unnecessary CloudWatch queries
+datasource "ds_rds_nonidle_instances" do
+  run_script $js_rds_nonidle_instances, $ds_rds_instances, $ds_rds_idle_instances, $param_unused_or_underutilized
+end
+
+script "js_rds_nonidle_instances", type: "javascript" do
+  parameters "ds_rds_instances", "ds_rds_idle_instances", "param_unused_or_underutilized"
+  result "result"
+  code <<-EOS
+  result = []
+
+  if (param_unused_or_underutilized != "Unused") {
+    idle_resources = _.pluck(ds_rds_idle_instances, 'instanceId')
+
+    result = _.reject(ds_rds_instances, function(instance) {
+      return _.contains(idle_resources, instance['instanceId'])
+    })
+  }
+EOS
+end
+
+datasource "ds_cloudwatch_underutil_queries" do
+  run_script $js_cloudwatch_underutil_queries, $ds_rds_nonidle_instances, $param_stats_lookback
+end
+
+script "js_cloudwatch_underutil_queries", type: "javascript" do
+  parameters "ds_rds_nonidle_instances", "param_stats_lookback"
+  result "result"
+  code <<-EOS
+  queries = {}
+  metric = "CPUUtilization"
+  statistics = ["Average", "Minimum", "Maximum", "p99", "p95", "p90"]
+  lookback = param_stats_lookback * 86400
+
+  _.each(ds_rds_nonidle_instances, function(resource) {
+    _.each(statistics, function(statistic) {
+      query = {
+        // Replace `-` with `_` in the Id to avoid CloudWatch API error
+        "Id": resource['name'].split('-').join('_') + "_" + metric + "_" + statistic,
+        "Label": resource['name'] + " " + metric + " " + statistic,
+        "MetricStat": {
+          "Metric": {
+            "Namespace": "AWS/RDS",
+            "MetricName": metric,
+            "Dimensions": [
+              { "Name": "DBInstanceIdentifier", "Value": resource['name'] }
+            ]
+          },
+          "Period": lookback,
+          "Stat": statistic
+        },
+        "ReturnData": true
+      }
+
+      if (queries[resource['region']] == undefined || queries[resource['region']] == null) {
+        queries[resource['region']] = []
+      }
+
+      queries[resource['region']].push(query)
+    })
+  })
+
+  result = []
+
+  end_date = new Date()
+  end_date = parseInt(end_date.getTime() / 1000)
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - param_stats_lookback)
+  start_date = parseInt(start_date.getTime() / 1000)
+
+  chunk_size = 500
+
+  _.each(Object.keys(queries), function(region) {
+    for (i = 0; i < queries[region].length; i += chunk_size) {
+      chunk = queries[region].slice(i, i + chunk_size)
+
+      result.push({
+        'MetricDataQueries': chunk,
+        'region': region
+      })
+    }
+  })
+EOS
+end
+
+datasource "ds_cloudwatch_underutil_data" do
+  iterate $ds_cloudwatch_underutil_queries
+  request do
+    run_script $js_cloudwatch_underutil_data, val(iter_item, "region"), val(iter_item, "MetricDataQueries")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "MetricDataResults[*]") do
+      field "region", val(iter_item, "region")
+      field "id", jmes_path(col_item, "Id")
+      field "label", jmes_path(col_item, "Label")
+      field "values", jmes_path(col_item, "Values")
+    end
+  end
+end
+
+script "js_cloudwatch_underutil_data", type: "javascript" do
+  parameters "region", "MetricDataQueries"
+  result "request"
+  code <<-EOS
+  // Slow down rate of requests to prevent throttling
+  api_wait = 5
+  var now = new Date().getTime()
+  while(new Date().getTime() < now + (api_wait * 1000)) { /* Do nothing */ }
+
+  end_date = parseInt(new Date().getTime() / 1000)
+  start_date = parseInt(new Date(new Date().setDate(new Date().getDate() - 30)).getTime() / 1000)
+
+  var request = {
+    auth: "auth_aws",
+    host: "monitoring." + region + ".amazonaws.com",
+    verb: "POST",
+    path: "/",
+    pagination: "pagination_aws_getmetricdata",
+    headers: {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json",
+      "x-amz-target": "GraniteServiceVersion20100801.GetMetricData",
+      "Accept": "application/json",
+      "Content-Encoding": "amz-1.0"
+    }
+    query_params: {
+      "Action": "GetMetricData",
+      "Version": "2010-08-01"
+    },
+    body: JSON.stringify({
+      "StartTime": start_date,
+      "EndTime": end_date,
+      "MetricDataQueries": MetricDataQueries
+    })
+  }
+EOS
+end
+
+datasource "ds_cloudwatch_underutil_sorted" do
+  run_script $js_cloudwatch_underutil_sorted, $ds_cloudwatch_underutil_data
+end
+
+script "js_cloudwatch_underutil_sorted", type: "javascript" do
+  parameters "ds_cloudwatch_underutil_data"
+  result "result"
+  code <<-EOS
+  // Sort the CloudWatch data into an object with keys for regions and instance names.
+  // This eliminates the need to "double loop" later on to match it with our instances list.
+  result = {}
+
+  _.each(ds_cloudwatch_underutil_data, function(item) {
+    region = item['region']
+
+    // Metric name is always the last item in the id
+    metric = item['id'].split('_').pop()
+
+    // Obtain the instance name from the label
+    instance_name = item['label'].split(' ')[0].toLowerCase()
+
+    // Grabbing index 0 SHOULD be safe because we should only get one result.
+    // Just in case AWS slices the data weirdly and returns 2 results, we make
+    // sure we grab the last item every time, which contains the actual data we need.
+    value = item['values'][item['values'].length - 1]
+
+    if (result[region] == undefined) { result[region] = {} }
+    if (result[region][instance_name] == undefined) { result[region][instance_name] = {} }
+
+    result[region][instance_name][metric] = value
+  })
+EOS
+end
+
+datasource "ds_rds_nonidle_instances_with_metrics" do
+  run_script $js_rds_nonidle_instances_with_metrics, $ds_rds_nonidle_instances, $ds_cloudwatch_underutil_sorted, $ds_instance_costs_grouped, $ds_aws_instance_size_map
+end
+
+script "js_rds_nonidle_instances_with_metrics", type: "javascript" do
+  parameters "ds_rds_nonidle_instances", "ds_cloudwatch_underutil_sorted", "ds_instance_costs_grouped", "ds_aws_instance_size_map"
+  result "result"
+  code <<-EOS
+  // Merge original instance list with cloudwatch data into a single list
+  result = []
+
+  _.each(ds_rds_nonidle_instances, function(instance) {
+    region = instance['region']
+    id = instance['instanceId']
+    cloudwatch_name = instance['name'].toLowerCase()
+    resourceType = instance['resourceType']
+    newResourceType = null
+
+    if (typeof(ds_aws_instance_size_map[resourceType]) == 'object') {
+      newResourceType = ds_aws_instance_size_map[resourceType]["down"]
+    }
+
+    // Only proceed if the CloudWatch data actually has the region and instance id.
+    // Otherwise, we have no usage data on the instance and thus dont include it in the results.
+    if (ds_cloudwatch_underutil_sorted[region] != undefined) {
+      if (ds_cloudwatch_underutil_sorted[region][cloudwatch_name] != undefined) {
+        instance_metrics = ds_cloudwatch_underutil_sorted[region][cloudwatch_name]
+
+        savings = 0.0
+
+        if (typeof(newResourceType) == 'string') {
+          cost_name = "db:" + instance['name'].toLowerCase()
+          cost = 0.0
+
+          if (typeof(ds_instance_costs_grouped[cost_name]) == 'number') {
+            cost = ds_instance_costs_grouped[cost_name]
+          }
+
+          cost_per_nfu = cost / ds_aws_instance_size_map[resourceType]['nfu']
+
+          new_cost = cost_per_nfu * ds_aws_instance_size_map[newResourceType]['nfu']
+          savings = cost - new_cost
+        }
+
+        // Create object we're going to return
+        merged_instance = {
+          instanceId: instance['instanceId'],
+          instanceArn: instance['instanceArn'],
+          resourceType: instance['resourceType'],
+          name: instance['name'],
+          status: instance['status'],
+          databaseEngine: instance['databaseEngine'],
+          engineVersion: instance['engineVersion'],
+          privateDnsName: instance['privateDnsName'],
+          region: instance['region'],
+          tags: instance['tags'],
+          availabilityZone: instance['availabilityZone'],
+          licenseModel: instance['licenseModel'],
+          processorFeatures: instance['processorFeatures'],
+          vcpus: instance['vcpus'],
+          savings: savings,
+          newResourceType: newResourceType
+        }
+
+        // Grab usage data for the instance if it is present.
+        // Note: We don't simply name them the same as Cloudwatch does because
+        // prior versions of this policy also didn't, and we want to ensure
+        // that exported incident data looks the same as it used to.
+        stats_list = ["Average", "Minimum", "Maximum", "p99", "p95", "p90"]
+
+        _.each(stats_list, function(stat) {
+          incident_statname = "cpu" + "_" + stat.toLowerCase()
+
+          merged_instance[incident_statname] = null
+
+          if (typeof(instance_metrics[stat]) == 'number') {
+            merged_instance[incident_statname] = Number(instance_metrics[stat].toFixed(2))
+          }
+        })
+
+        // Send the instance information with the CloudWatch data into the final result.
+        // Also adds in the account ID and currency symbol since itll be needed for the incident.
+        result.push(merged_instance)
+      }
+    }
+  })
+EOS
+end
+
+datasource "ds_rds_underutil_instances" do
+  run_script $js_rds_underutil_instances, $ds_rds_nonidle_instances_with_metrics, $param_stats_threshold, $param_stats_underutil_threshold_cpu_value
+end
+
+script "js_rds_underutil_instances", type: "javascript" do
+  parameters "ds_rds_nonidle_instances_with_metrics", "param_stats_threshold", "param_stats_underutil_threshold_cpu_value"
+  result "result"
+  code <<-'EOS'
+  // Filter above list to just underutilized instances
+  result = _.filter(ds_rds_nonidle_instances_with_metrics, function(instance) {
+    cpu_value = instance['cpu_' + param_stats_threshold.toLowerCase()]
+    cpu_undertilized = cpu_value < param_stats_underutil_threshold_cpu_value || cpu_value == null
+    return cpu_undertilized && typeof(instance['newResourceType']) == 'string'
+  })
+EOS
+end
+
+# Find the available resource types for each engine/region so we can filter out invalid recommendations
+datasource "ds_rds_underutil_instance_types" do
+  run_script $js_rds_underutil_instances_types, $ds_rds_underutil_instances
+end
+
+script "js_rds_underutil_instances_types", type: "javascript" do
+  parameters "ds_rds_underutil_instances"
+  result "result"
+  code <<-'EOS'
+  result = []
+  databaseEngines = _.compact(_.uniq(_.pluck(ds_rds_underutil_instances, 'databaseEngine')))
+  regions = _.compact(_.uniq(_.pluck(ds_rds_underutil_instances, 'region')))
+
+  _.each(databaseEngines, function(databaseEngine) {
+    _.each(regions, function(region) {
+      result.push({
+        databaseEngine: databaseEngine,
+        region: region
+      })
+    })
+  })
+EOS
+end
+
+datasource "ds_rds_underutil_instance_options" do
+  iterate $ds_rds_underutil_instance_types
+  request do
+    run_script $js_rds_underutil_instance_options, val(iter_item, "databaseEngine"), val(iter_item, "region")
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeOrderableDBInstanceOptionsResponse/DescribeOrderableDBInstanceOptionsResult/OrderableDBInstanceOptions/OrderableDBInstanceOption[*]", "array") do
+      field "resourceType", xpath(col_item, "DBInstanceClass")
+      field "databaseEngine", val(iter_item, "databaseEngine")
+      field "region", val(iter_item, "region")
+    end
+  end
+end
+
+script "js_rds_underutil_instance_options", type: "javascript" do
+  parameters "databaseEngine", "region"
+  result "request"
+  code <<-EOS
+  var request = {
+    auth: "auth_aws",
+    host: "rds." + region + ".amazonaws.com",
+    verb: "GET",
+    path: "/",
+    headers: {
+      "User-Agent": "RS Policies",
+      "Content-Type": "text/xml"
+    }
+    query_params: {
+      "Action": "DescribeOrderableDBInstanceOptions",
+      "Engine": databaseEngine,
+      "Version": "2014-10-31"
+    }
+  }
+EOS
+end
+
+datasource "ds_rds_underutil_instances_cleaned" do
+  run_script $js_rds_underutil_instances_cleaned, $ds_rds_underutil_instances, $ds_rds_underutil_instance_options
+end
+
+script "js_rds_underutil_instances_cleaned", type: "javascript" do
+  parameters "ds_rds_underutil_instances", "ds_rds_underutil_instance_options"
+  result "result"
+  code <<-'EOS'
+  resourceTypeTable = {}
+
+  _.each(ds_rds_underutil_instance_options, function(option) {
+    databaseEngine = option['databaseEngine']
+    region = option['region']
+    resourceType = option['resourceType']
+
+    if (resourceTypeTable[region] == undefined) {
+      resourceTypeTable[region] = {}
+    }
+
+    if (resourceTypeTable[region][databaseEngine] == undefined) {
+      resourceTypeTable[region][databaseEngine] = []
+    }
+
+    resourceTypeTable[region][databaseEngine].push(resourceType)
+  })
+
+  result = _.filter(ds_rds_underutil_instances, function(instance) {
+    region = instance['region']
+    databaseEngine = instance['databaseEngine']
+    newResourceType = instance['newResourceType']
+
+    valid_recommendation = false
+
+    if (typeof(region) == 'string' && typeof(databaseEngine) == 'string' && typeof(newResourceType) == 'string') {
+      if (typeof(resourceTypeTable[region]) == 'object') {
+        if (typeof(resourceTypeTable[region][databaseEngine]) == 'object') {
+          valid_recommendation = _.contains(resourceTypeTable[region][databaseEngine], newResourceType)
+        }
+      }
+    }
+
+    return valid_recommendation
+  })
+EOS
+end
+
+datasource "ds_rds_idle_incident" do
+  run_script $js_rds_idle_incident, $ds_rds_instances, $ds_rds_idle_instances, $ds_currency, $ds_aws_account, $ds_applied_policy, $param_stats_lookback, $param_min_savings
+end
+
+script "js_rds_idle_incident", type: "javascript" do
+  parameters "ds_rds_instances", "ds_rds_idle_instances", "ds_currency", "ds_aws_account", "ds_applied_policy", "param_stats_lookback", "param_min_savings"
+  result "result"
+  code <<-'EOS'
+  // Used for formatting numbers to look pretty
+  function formatNumber(number, separator){
+    numString = number.toString()
+    values = numString.split(".")
+    formatted_number = ''
+
+    while (values[0].length > 3) {
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      formatted_number = separator + chunk + formatted_number
+    }
+
+    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
+    if (values[1] == undefined) { return formatted_number }
+
+    return formatted_number + "." + values[1]
+  }
+
+  result = []
+  total_savings = 0.0
+
+  _.each(ds_rds_idle_instances, function(instance) {
+    savings = 0.0
+    if (instance['savings'] != undefined) { savings = instance['savings'] }
+
+    if (savings >= param_min_savings) {
+      total_savings += savings
+
+      recommendationDetails = [
+        "Terminate RDS instance ", instance['name'], " ",
+        "in AWS Account ", ds_aws_account['name'], " (", ds_aws_account['id'], ")"
+      ].join('')
+
+      result.push({
+        accountID: ds_aws_account['id'],
+        accountName: ds_aws_account['name'],
+        resourceID: instance['instanceId'],
+        resourceName: instance['name'],
+        recommendationDetails: recommendationDetails,
+        tags: instance['tags'],
+        resourceType: instance['resourceType'],
+        region: instance['region'],
+        arn: instance['instanceArn'],
+        privateDnsName: instance['privateDnsName'],
+        state: instance['status'],
+        databaseEngine: instance['databaseEngine'],
+        platform: instance['databaseEngine'],
+        engineVersion: instance['engineVersion'],
+        availabilityZone: instance['availabilityZone'],
+        licenseModel: instance['licenseModel'],
+        processorFeatures: instance['processorFeatures'],
+        vcpus: instance['vcpus'],
+        savings: parseFloat(savings.toFixed(3)),
+        savingsCurrency: ds_currency['symbol'],
+        lookbackPeriod: param_stats_lookback,
+        service: "AmazonRDS",
+        policy_name: ds_applied_policy['name'],
+        // Dummy values to ensure hash_exclude works properly
+        total_savings: "",
+        message: ""
+      })
+    }
+  })
+
+  total_instances = ds_rds_instances.length.toString()
+  total_unused_instances = result.length.toString()
+  unused_percentage = (total_unused_instances / total_instances * 100).toFixed(2).toString() + '%'
+
+  instance_noun = "instance"
+  if (total_instances != 1) { instance_noun += "s" }
+
+  instance_verb = "is"
+  if (total_unused_instances != 1) { instance_verb = "are" }
+
+  findings = [
+    "Out of ", total_instances, " AWS RDS ", instance_noun,
+    " analyzed, ", total_unused_instances, " (", unused_percentage,
+    ") ", instance_verb, " unused and recommended for termination. "
+  ].join('')
+
+  day_noun = "day"
+  if (param_stats_lookback != 1) { day_noun += "s" }
+
+  idle_message = [
+    "An RDS instance is considered unused if it has not had any connections ",
+    "for at least ", param_stats_lookback, " ", day_noun, ".\n\n"
+  ].join('')
+
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+
+  savings_message = [
+    ds_currency['symbol'], ' ',
+    formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['separator'])
+  ].join('')
+
+  // Sort by descending order of savings value
+  result = _.sortBy(result, function(item) { return item['savings'] * -1 })
+
+  // Dummy entry to ensure the check statement in validation always runs at least once
+  result.push({
+    resourceID: "",
+    tags: "",
+    total_savings: "",
+    message: "",
+    savings: "",
+    savingsCurrency: ""
+  })
+
+  result[0]['total_savings'] = savings_message
+  result[0]['message'] = findings + idle_message + disclaimer
+EOS
+end
+
+datasource "ds_rds_underutil_incident" do
+  run_script $js_rds_underutil_incident, $ds_rds_instances, $ds_rds_underutil_instances_cleaned, $ds_currency, $ds_aws_account, $ds_applied_policy, $param_stats_lookback, $param_min_savings, $param_stats_threshold, $param_stats_underutil_threshold_cpu_value
+end
+
+script "js_rds_underutil_incident", type: "javascript" do
+  parameters "ds_rds_instances", "ds_rds_underutil_instances_cleaned", "ds_currency", "ds_aws_account", "ds_applied_policy", "param_stats_lookback", "param_min_savings", "param_stats_threshold", "param_stats_underutil_threshold_cpu_value"
+  result "result"
+  code <<-'EOS'
+  // Used for formatting numbers to look pretty
+  function formatNumber(number, separator){
+    numString = number.toString()
+    values = numString.split(".")
+    formatted_number = ''
+
+    while (values[0].length > 3) {
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      formatted_number = separator + chunk + formatted_number
+    }
+
+    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
+    if (values[1] == undefined) { return formatted_number }
+
+    return formatted_number + "." + values[1]
+  }
+
+  result = []
+  total_savings = 0.0
+
+  _.each(ds_rds_underutil_instances_cleaned, function(instance) {
+    savings = 0.0
+    if (instance['savings'] != undefined) { savings = instance['savings'] }
+
+    if (savings >= param_min_savings) {
+      total_savings += savings
+
+      recommendationDetails = [
+        "Downsize AWS RDS instance ", instance['name'], " ",
+        "in AWS Account ", ds_aws_account['name'], " ",
+        "(", ds_aws_account['id'], ") ",
+        "from ", instance['resourceType'], " ",
+        "to ", instance['newResourceType']
+      ].join('')
+
+      result.push({
+        accountID: ds_aws_account['id'],
+        accountName: ds_aws_account['name'],
+        resourceID: instance['instanceId'],
+        resourceName: instance['name'],
+        recommendationDetails: recommendationDetails,
+        tags: instance['tags'],
+        resourceType: instance['resourceType'],
+        newResourceType: instance['newResourceType'],
+        region: instance['region'],
+        arn: instance['instanceArn'],
+        privateDnsName: instance['privateDnsName'],
+        state: instance['status'],
+        databaseEngine: instance['databaseEngine'],
+        platform: instance['databaseEngine'],
+        engineVersion: instance['engineVersion'],
+        cpuMaximum: instance['cpu_maximum'],
+        cpuMinimum: instance['cpu_minimum'],
+        cpuAverage: instance['cpu_average'],
+        cpuP99: instance['cpu_p99'],
+        cpuP95: instance['cpu_p95'],
+        cpuP90: instance['cpu_p90'],
+        availabilityZone: instance['availabilityZone'],
+        licenseModel: instance['licenseModel'],
+        processorFeatures: instance['processorFeatures'],
+        vcpus: instance['vcpus'],
+        savings: parseFloat(savings.toFixed(3)),
+        savingsCurrency: ds_currency['symbol'],
+        lookbackPeriod: param_stats_lookback,
+        service: "AmazonRDS",
+        policy_name: ds_applied_policy['name'],
+        // Dummy values to ensure hash_exclude works properly
+        total_savings: "",
+        message: ""
+      })
+    }
+  })
+
+  total_instances = ds_rds_instances.length.toString()
+  total_unused_instances = result.length.toString()
+  unused_percentage = (total_unused_instances / total_instances * 100).toFixed(2).toString() + '%'
+
+  instance_noun = "instance"
+  if (total_instances != 1) { instance_noun += "s" }
+
+  instance_verb = "is"
+  if (total_unused_instances != 1) { instance_verb = "are" }
+
+  findings = [
+    "Out of ", total_instances, " AWS RDS ", instance_noun,
+    " analyzed, ", total_unused_instances, " (", unused_percentage,
+    ") ", instance_verb, " underutilized and recommended for downsizing. "
+  ].join('')
+
+  day_noun = "day"
+  if (param_stats_lookback != 1) { day_noun += "s" }
+
+  underutil_message = [
+    "An RDS instance is considered underutilized if its CPU usage (",
+    param_stats_threshold, ") is below ",
+    param_stats_underutil_threshold_cpu_value, "%. "
+  ].join('')
+
+  lookback_message = [
+    "CPU usage was analyzed over the last ",
+    param_stats_lookback.toString() + " days.\n\n"
+  ].join('')
+
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+
+  savings_message = [
+    ds_currency['symbol'], ' ',
+    formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['separator'])
+  ].join('')
+
+  // Sort by descending order of savings value
+  result = _.sortBy(result, function(item) { return item['savings'] * -1 })
+
+  // Dummy entry to ensure the check statement in validation always runs at least once
+  result.push({
+    resourceID: "",
+    tags: "",
+    total_savings: "",
+    message: "",
+    savings: "",
+    savingsCurrency: ""
+  })
+
+  result[0]['total_savings'] = savings_message
+  result[0]['message'] = findings + underutil_message + lookback_message + disclaimer
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_rightsize_rds" do
+  validate_each $ds_rds_underutil_incident do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Underutilized RDS Instances Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
+    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    escalate $esc_downsize_rds_instances
+    hash_exclude "tags", "total_savings", "message", "savings", "savingsCurrency"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "availabilityZone" do
+        label "Availability Zone"
+      end
+      field "state" do
+        label "State"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "privateDnsName" do
+        label "Private DNS Name"
+      end
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "newResourceType" do
+        label "Recommended Resource Type"
+      end
+      field "cpuMaximum" do
+        label "CPU Maximum %"
+      end
+      field "cpuMinimum" do
+        label "CPU Minimum %"
+      end
+      field "cpuAverage" do
+        label "CPU Average %"
+      end
+      field "cpuP99" do
+        label "CPU p99"
+      end
+      field "cpuP95" do
+        label "CPU p95"
+      end
+      field "cpuP90" do
+        label "CPU p90"
+      end
+      field "databaseEngine" do
+        label "Database Engine"
+      end
+      field "engineVersion" do
+        label "Engine Version"
+      end
+      field "vcpus" do
+        label "vCPUs"
+      end
+      field "licenseModel" do
+        label "License Model"
+      end
+      field "arn" do
+        label "ARN"
+      end
+      field "platform" do
+        label "Platform"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+      field "id" do
+        label "id"
+        path "resourceID"
+      end
+    end
+  end
+  validate_each $ds_rds_idle_incident do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Unused RDS Instances Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
+    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    escalate $esc_terminate_rds_instances
+    hash_exclude "tags", "total_savings", "message", "savings", "savingsCurrency"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "availabilityZone" do
+        label "Availability Zone"
+      end
+      field "state" do
+        label "State"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "privateDnsName" do
+        label "Private DNS Name"
+      end
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "databaseEngine" do
+        label "Database Engine"
+      end
+      field "engineVersion" do
+        label "Engine Version"
+      end
+      field "vcpus" do
+        label "vCPUs"
+      end
+      field "licenseModel" do
+        label "License Model"
+      end
+      field "arn" do
+        label "ARN"
+      end
+      field "platform" do
+        label "Platform"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+      field "id" do
+        label "id"
+        path "resourceID"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_downsize_rds_instances" do
+  automatic contains($param_automatic_action, "Downsize Underutilized RDS Instances")
+  label "Downsize Underutilized RDS Instances"
+  description "Approval to downsize all selected underutilized RDS instances"
+  run "downsize_rds_instances", data, $param_downsize_timeframe
+end
+
+escalation "esc_terminate_rds_instances" do
+  automatic contains($param_automatic_action, "Terminate Unused RDS Instances")
+  label "Terminate Unused RDS Instances"
+  description "Approval to terminate all selected unused RDS instances"
+  run "terminate_rds_instances", data
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define downsize_rds_instances($data, $param_downsize_timeframe) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call downsize_instance($instance, $param_downsize_timeframe) retrieve $downsize_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+define terminate_rds_instances($data) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call terminate_instance($instance) retrieve $terminate_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+define downsize_instance($instance, $param_downsize_timeframe) return $response do
+  $host = "rds." + $instance["region"] + ".amazonaws.com"
+  $href = "/"
+  $params = "?Action=ModifyDBInstance&Version=2014-10-31&DBInstanceIdentifier=" + $instance["resourceName"] + "&DBInstanceClass=" + $instance["newResourceType"]
+
+  $query_strings = {
+    "Action": "ModifyDBInstance",
+    "Version": "2014-10-31",
+    "DBInstanceIdentifier": $instance["resourceName"],
+    "DBInstanceClass": $instance["newResourceType"]
+  }
+
+  if $param_downsize_timeframe == "Downsize Immediately"
+    $query_strings["ApplyImmediately"] = "true"
+    $params = $params + "&ApplyImmediately=true"
+  end
+
+  $url = $host + $href + $params
+  task_label("GET " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "get",
+    host: $host,
+    href: $href,
+    query_strings: $query_strings
+  )
+
+  task_label("GET AWS RDS instance response: " + $instance["resourceName"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response from GET AWS RDS instance: "+ $instance["resourceName"] + " " + to_json($response)
+  else
+    task_label("GET AWS RDS instance successful: " + $instance["resourceName"])
+  end
+end
+
+define terminate_instance($instance) return $response do
+  $host = "rds." + $instance["region"] + ".amazonaws.com"
+  $href = "/"
+  $params = "?Action=DeleteDBInstance&Version=2014-10-31&DBInstanceIdentifier=" + $instance["resourceName"] + "&SkipFinalSnapshot=true"
+  $url = $host + $href + $params
+  task_label("GET " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "get",
+    host: $host,
+    href: $href,
+    query_strings: {
+      "Action": "DeleteDBInstance",
+      "Version": "2014-10-31",
+      "DBInstanceIdentifier": $instance["resourceName"],
+      "SkipFinalSnapshot": "true"
+    }
+  )
+
+  task_label("GET AWS RDS instance response: " + $instance["resourceName"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response from GET AWS RDS instance: "+ $instance["resourceName"] + " " + to_json($response)
+  else
+    task_label("GET AWS RDS instance successful: " + $instance["resourceName"])
+  end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
+end

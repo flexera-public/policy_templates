@@ -1,16 +1,17 @@
 name "Azure Idle Compute Instances"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks for instances that are idle for the last 30 days and terminates them after approval. \n See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/idle_compute_instances/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "**Deprecated: This policy is no longer being updated. Please see [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/idle_compute_instances/) for more details.**  Checks for instances that are idle for the last 30 days and terminates them after approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/idle_compute_instances/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "4.3",
+  version: "5.5",
   provider: "Azure",
   service: "Compute",
-  policy_set: "Idle Compute Instances"
+  policy_set: "Idle Compute Instances",
+  recommendation_type: "Usage Reduction"
 )
 
 ###############################################################################
@@ -24,6 +25,15 @@ parameter "param_email" do
   description "Email addresses of the recipients you wish to notify when new incidents are created"
 end
 
+parameter "param_azure_endpoint" do
+  type "string"
+  category "Policy Settings"
+  label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
 #pass in the CPU in percentage
 parameter "param_cpu_average_percentage" do
   type "string"
@@ -33,7 +43,7 @@ parameter "param_cpu_average_percentage" do
   allowed_pattern /^[0-9]$|^[1-9][0-9]$|^(100)$/
 end
 
-parameter "param_subscription_allowed_list" do
+parameter "param_subscriptions_list" do
   label "Subscription Allowed List"
   type "list"
   description "Allowed Subscriptions, if empty, all subscriptions will be checked"
@@ -51,6 +61,7 @@ parameter "param_automatic_action" do
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
   allowed_values ["Terminate Instances"]
+  default []
 end
 
 parameter "param_log_to_cm_audit_entries" do
@@ -66,7 +77,7 @@ end
 ###############################################################################
 
 #authenticate with Azure
-credentials "azure_auth" do
+credentials "auth_azure" do
   schemes "oauth2"
   label "Azure"
   description "Select the Azure Resource Manager Credential from the list."
@@ -100,12 +111,17 @@ end
 #get all subscription details.
 datasource "ds_subscriptions" do
   request do
-    auth $azure_auth
+    auth $auth_azure
     pagination $azure_pagination
-    host "management.azure.com"
+    host $param_azure_endpoint
     path "/subscriptions/"
-    query "api-version","2020-01-01"
+    query "api-version", "2020-01-01"
     header "User-Agent", "RS Policies"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
@@ -118,31 +134,33 @@ datasource "ds_subscriptions" do
 end
 
 datasource "ds_filtered_subscriptions" do
-  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_allowed_list
+  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscriptions_list
 end
 
 #get all virtual machines
 datasource "ds_azure_virtualmachines" do
   iterate $ds_filtered_subscriptions
   request do
-    auth $azure_auth
+    auth $auth_azure
     pagination $azure_pagination
-    host "management.azure.com"
+    host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item,"subscriptionID"), "/providers/Microsoft.Compute/virtualMachines"])
-    query "api-version","2019-03-01"
+    query "api-version", "2019-03-01"
     header "User-Agent", "RS Policies"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-    ignore_status [400,403,404]
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
       field "resourceID", jmes_path(col_item,"id")
       field "resourceGroup", get(4,split(jmes_path(col_item,"id"),'/'))
-      field "resourceType", jmes_path(col_item,"type")
+      field "resourceKind", jmes_path(col_item,"type")
       field "name", jmes_path(col_item,"name")
       field "region", jmes_path(col_item, "location")
       field "tags", jmes_path(col_item,"tags")
+      field "platform", jmes_path(col_item,"properties.storageProfile.osDisk.osType")
+      field "resourceType", jmes_path(col_item, "properties.hardwareProfile.vmSize")
       field "subscriptionID",val(iter_item,"subscriptionID")
       field "subscriptionName",val(iter_item,"displayName")
     end
@@ -157,26 +175,28 @@ end
 datasource "ds_azure_instance_performance" do
   iterate $ds_filter_instances
   request do
-    auth $azure_auth
+    auth $auth_azure
     pagination $azure_pagination
-    host "management.azure.com"
+    host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item,"subscriptionID"), "/resourceGroups/", val(iter_item,"resourceGroup"), "/providers/Microsoft.Compute/virtualMachines/",val(iter_item,"name"),"/providers/microsoft.insights/metrics"])
-    query "api-version","2018-01-01"
+    query "api-version", "2018-01-01"
     query "timespan","P30D"
     query "interval", "P1D"
     header "User-Agent", "RS Policies"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-    ignore_status [400,403,404]
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
     field "resourceName", val(iter_item,"name")
     field "resourceGroup", val(iter_item, "resourceGroup")
     field "resourceID", val(iter_item, "resourceID")
-    field "resourceType", val(iter_item, "resourceType")
+    field "resourceKind", val(iter_item, "resourceKind")
     field "region", val(iter_item, "region")
     field "tags", val(iter_item, "tags")
     field "service", val(iter_item, "service")
+    field "platform", val(iter_item, "platform")
+    field "resourceType", val(iter_item, "resourceType")
     field "subscriptionID",val(iter_item,"subscriptionID")
     field "subscriptionName",val(iter_item,"subscriptionName")
     field "averages" do
@@ -190,7 +210,7 @@ end
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
     header "User-Agent", "RS Policies"
   end
 end
@@ -251,12 +271,20 @@ datasource "ds_top_level_billing_centers" do
   run_script $js_top_level_bc, $ds_billing_centers
 end
 
+datasource "ds_azure_instances_performance_parsed" do
+  run_script $js_parse_instance_tags, $ds_azure_instance_performance
+end
+
 datasource "ds_combineddata" do
-  run_script $js_combineddata, $param_cpu_average_percentage, $ds_azure_instance_performance
+  run_script $js_combineddata, $param_cpu_average_percentage, $ds_azure_instances_performance_parsed
 end
 
 datasource "ds_instance_cost_mapping" do
-  run_script $js_instance_cost_mapping, $ds_combineddata, $ds_instance_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers
+  run_script $js_instance_cost_mapping, $ds_combineddata, $ds_instance_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $param_cpu_average_percentage
+end
+
+datasource "ds_only_instances" do
+  run_script $js_only_instances, $ds_instance_cost_mapping
 end
 
 ###############################################################################
@@ -264,13 +292,13 @@ end
 ###############################################################################
 
 script "js_filtered_subscriptions", type: "javascript" do
-  parameters "ds_subscriptions", "param_subscription_allowed_list"
+  parameters "ds_subscriptions", "param_subscriptions_list"
   result "results"
   code <<-EOS
   var results = []
-  if ( param_subscription_allowed_list.length != 0){
+  if ( param_subscriptions_list.length != 0){
     results = []
-    _.each(param_subscription_allowed_list, function(sub){
+    _.each(param_subscriptions_list, function(sub){
       var found = _.find(ds_subscriptions, function(item){
         return item.subscriptionID == sub || item.displayName.toLowerCase() == sub.toLowerCase();
       })
@@ -319,21 +347,31 @@ script "js_get_costs", type:"javascript" do
         "end_at": end_date,
         "metrics": ["cost_nonamortized_unblended_adj"],
         "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id})),
-        "limit": 10000,
+        "limit": 100000,
         "filter": {
+          "type": "and",
           "expressions": [
             {
-              "dimension": "service",
-              "type": "equal",
-              "value": "Microsoft.Compute"
+              "type": "or",
+              "expressions": [
+                {
+                  "dimension": "service",
+                  "type": "equal",
+                  "value": "Microsoft.Compute"
+                },
+                {
+                  "dimension": "service",
+                  "type": "equal",
+                  "value": "microsoft.compute"
+                }
+              ]
             },
             {
               "dimension": "vendor_account",
               "type": "equal",
               "value": account_id
             }
-          ],
-          "type": "and"
+          ]
         }
       },
       headers: {
@@ -369,6 +407,24 @@ script "js_filter_instances", type: "javascript" do
 EOF
 end
 
+#This is to create an array of tag names per instance based on its tags
+script "js_parse_instance_tags", type: "javascript" do
+  parameters "ds_azure_instance_performance"
+  result "results"
+  code <<-EOS
+    var results = []
+    _.each(ds_azure_instance_performance, function(result){
+      var tagsArray = []
+      for (var tag in result.tags) {
+        tagsArray.push(tag + "=" + result.tags[tag])
+      }
+      result['tags'] = tagsArray;
+      results.push(result)
+    })
+  EOS
+  end
+
+
 #This is to get the average cpu over time for the machine and return the dataset of machines with issues
 script "js_combineddata", type: "javascript" do
 parameters "param_cpu_average_percentage","ds_azure_instance_performance"
@@ -386,7 +442,7 @@ code <<-EOS
       },
     0)
 
-    var final_average = parseFloat(sum/averages.length)
+    var final_average = parseFloat((sum / averages.length).toFixed(2))
 
     if (final_average < param_cpu_average_percentage && final_average != 0) {
       result["averageCPU"] = final_average
@@ -398,7 +454,7 @@ EOS
 end
 
 script "js_instance_cost_mapping", type:"javascript" do
-  parameters  "instance_list","instance_costs","ds_currency_code","ds_currency_reference", "ds_billing_centers"
+  parameters  "instance_list","instance_costs","ds_currency_code","ds_currency_reference", "ds_billing_centers", "param_cpu_average_percentage"
   result "result"
   code <<-EOS
     var result = {};
@@ -454,6 +510,8 @@ script "js_instance_cost_mapping", type:"javascript" do
       var total_savings=0;
       _.each(instance_list, function(instance){
         var cost_objects = costs_by_resource_id[instance.resourceID];
+        instance['lookbackPeriod'] = "30 days"
+        instance['threshold'] = param_cpu_average_percentage
         if (_.size(cost_objects) > 0){
           count++;
           var sum = _.reduce(_.compact(_.map(cost_objects, function(value){return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
@@ -487,20 +545,32 @@ script "js_instance_cost_mapping", type:"javascript" do
   EOS
 end
 
+script "js_only_instances", type: "javascript" do
+  parameters "arg"
+  result "results"
+  code <<-EOS
+    results = arg.instance_list
+    if (results && results.length) {
+      results[0].message = arg.message
+    }
+  EOS
+end
+
 ###############################################################################
 # Policy
 ###############################################################################
 
-policy "azure_resource_policy" do
-  validate $ds_instance_cost_mapping do
+policy "pol_azure_resource_policy" do
+  validate $ds_only_instances do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Azure idle compute instances found"
+    hash_exclude "averageCPU", "averages", "savings"
     detail_template <<-EOS
-{{data.message}}
+{{with index data 0}}{{ .message }}{{end}}
 EOS
-    check eq(size(val(data, "instance_list")), 0)
-    escalate $email
-    escalate $delete_resources
-    export "instance_list" do
+    check logic_or($ds_parent_policy_terminated, eq(size(data), 0))
+    escalate $esc_email
+    escalate $esc_delete_resources
+    export do
       resource_level true
       field "accountName" do
         label "Subscription Name"
@@ -516,8 +586,8 @@ EOS
       field "resourceName" do
         label "Resource Name"
       end
-      field "resourceType" do
-        label "Resource Type"
+      field "resourceKind" do
+        label "Resource Kind"
       end
       field "region" do
         label "Region"
@@ -528,8 +598,9 @@ EOS
       field "savingsCurrency" do
         label "Savings Currency"
       end
-      field "averageCPU" do
+      field "cpuAverage" do
         label "CPU Average"
+        path "averageCPU"
       end
       field "resourceGroup" do
         label "Resource Group"
@@ -544,6 +615,18 @@ EOS
         label "ID"
         path "resourceID"
       end
+      field "lookbackPeriod" do
+        label "Lookback Period"
+      end
+      field "threshold" do
+        label "Threshold"
+      end
+      field "platform" do
+        label "Platform"
+      end
+      field "resourceType" do
+        label "Resource Type"
+      end
     end
   end
 end
@@ -552,25 +635,25 @@ end
 # Escalations
 ###############################################################################
 
-escalation "email" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
   email $param_email
 end
 
-escalation "delete_resources" do
+escalation "esc_delete_resources" do
   automatic contains($param_automatic_action, "Terminate Instances")
   label "Terminate Instances"
   description "Approval to terminate all selected instances"
-  run "delete_resources", data, $param_log_to_cm_audit_entries, rs_optima_host
+  run "delete_resources", data, $param_log_to_cm_audit_entries, $param_azure_endpoint, rs_optima_host
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define delete_resources($data,$param_log_to_cm_audit_entries, $$rs_optima_host) return $all_responses do
+define delete_resources($data, $param_log_to_cm_audit_entries, $param_azure_endpoint, $$rs_optima_host) return $all_responses do
   $$debug = $param_log_to_cm_audit_entries == "Yes"
   $$log = []
   $all_responses = []
@@ -581,9 +664,9 @@ define delete_resources($data,$param_log_to_cm_audit_entries, $$rs_optima_host) 
     sub on_error: skip do
       $response = http_request(
         verb: "delete",
-        host: "management.azure.com",
-        auth: $$azure_auth,
-        href: join(["/subscriptions/", $item['subscriptionID'], "/resourceGroups/", $item["resourceGroup"], "/providers/Microsoft.Compute/virtualMachines/",$item["resourceName"]]),
+        host: $param_azure_endpoint,
+        auth: $$auth_azure,
+        href: join(["/subscriptions/", $item['accountID'], "/resourceGroups/", $item["resourceGroup"], "/providers/Microsoft.Compute/virtualMachines/",$item["resourceName"]]),
         https: true,
         query_strings: {
           "api-version": "2018-06-01"
@@ -631,4 +714,94 @@ end
 define skip_error_and_append($subject) do
   $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
   $_error_behavior = "skip"
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
 end

@@ -1,12 +1,88 @@
 # Changelog
 
+## v8.1
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
+## v8.0
+
+- Updated AWS Pricing API parameter to be more descriptive and user-friendly
+
+## v7.0
+
+- Added support for regex when filtering resources by tag
+
+## v6.9
+
+- Fixed issue where currency conversion would sometimes not work as expected.
+
+## v6.8
+
+- Policy action error logging modernized and now works as expected in EU/APAC
+- Updated description of AWS Pricing API Endpoint parameter
+
+## v6.7
+
+- Added parameter to override the AWS Pricing API Endpoint
+
+## v6.6
+
+- Corrected API issue when executing policy in APAC
+
+## v6.5
+
+- Updated description of `Account Number` parameter
+
+## v6.4
+
+- Changed service metadata to "Compute" to ensure proper incident scraping
+
+## v6.3
+
+- Added conditional logic to only use currency conversion API when needed
+
+## v6.2
+
+- Corrected issue where attached IP addresses were being included in the incident
+- Added logic to ensure policy still completes even if the Flexera currency conversion API is unresponsive
+
+## v6.1
+
+- Added ability to filter resources by tag key alone without regard for tag value
+
+## v6.0
+
+- Policy now converts savings from USD to local currency when appropriate
+- Several parameters altered to be more descriptive and human-readable
+- Removed deprecated "Log to CM Audit Entries" parameter
+- Added ability to specify how long an IP address should be unattached to consider it unused
+- Added ability to filter resources by multiple tag key:value pairs
+- Added additional context to incident description
+- Normalized incident export to be consistent with other policies
+- Added human-readable recommendation to incident export
+- Added additional fields to incident export to facilitate scraping for dashboards
+- Policy no longer raises new escalations if savings data changed but nothing else has
+- Streamlined code for better readability and faster execution
+
+## 5.2
+
+- Added `Resource Name` incident field
+
+## v5.1
+
+- Updated policy metadata to facilitate scraping of incidents for Recommendations dashboard
+
+## v5.0
+
+- Added parameter to enable Allow or Deny filtering by user entered regions
+
 ## v4.1
 
 - Added logic required for "Meta Policy" use-cases
 
 ## v4.0
 
-- Deprecated `auth_rs` authentication (type: `rightscale`) and replaced with `auth_flexera` (type: `oauth2`).  This is a breaking change which requires a Credential for `auth_flexera` [`provider=flexera`] before the policy can be applied.  Please see docs for setting up [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm)
+- Deprecated `auth_rs` authentication (type: `rightscale`) and replaced with `auth_flexera` (type: `oauth2`). This is a breaking change which requires a Credential for `auth_flexera` [`provider=flexera`] before the policy can be applied. Please see docs for setting up [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm)
 - Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM
 - Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`
 

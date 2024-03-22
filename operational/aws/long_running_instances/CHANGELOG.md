@@ -1,5 +1,42 @@
 # Changelog
 
+## v5.1
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
+## v5.0
+
+- Added support for regex when filtering resources by tag
+
+## v4.3
+
+- Policy action error logging modernized and now works as expected in EU/APAC
+
+## v4.2
+
+- Corrected API issue when executing policy in APAC
+
+## v4.1
+
+- Updated description of `Account Number` parameter
+
+## v4.0
+
+- Several parameters altered to be more descriptive and human-readable
+- Removed deprecated "Log to CM Audit Entries" parameter
+- Added ability to filter resources by multiple tag key:value pairs
+- Added several fields to incident export to provide additional context
+- Added additional context to incident description
+- Normalized incident export to be consistent with other policies
+- Policy no longer raises new escalations for the same resource if incidental metadata has changed
+- Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera credential
+- Added logic required for "Meta Policy" use-cases
+
+## v3.0
+
+- Added parameter to enable Allow or Deny filtering by user entered regions
+
 ## v2.10
 
 - Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM

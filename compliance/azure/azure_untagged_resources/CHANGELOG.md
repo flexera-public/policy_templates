@@ -1,5 +1,24 @@
 # Changelog
 
+## v3.1
+
+- Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.
+
+## v3.0
+
+- Added ability to filter resources by tag key, tag key==value, or using regex
+- Added ability to filter resources by region
+- Added ability to filter resources by Azure resource type
+- Added ability to use all filters as an allow list or a deny list
+- Added additional context to incident description
+- Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera One credential
+
+## v2.13
+
+- Updated `param_tags_to_check` parameter to take a list of tag keys, as opposed to a list of tag key-value pairs
+- Updated tag logic to return 'Missing Tag Keys' as well as 'Tag Keys with Missing Tag Values' in incident
+
 ## v2.12
 
 - Replaced the term **whitelist** with **allowed list**.

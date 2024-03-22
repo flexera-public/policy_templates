@@ -1,0 +1,926 @@
+name "Azure Blob Storage Optimization"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks Azure Blob Storage for old blobs and moves said blobs to the Cool or Archive tier after user approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/blob_storage_optimization) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "low"
+category "Cost"
+default_frequency "weekly"
+info(
+  version: "4.0",
+  provider: "Azure",
+  service: "Storage",
+  policy_set: "Object Store Optimization"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  category "Policy Settings"
+  label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_storage_account_list" do
+  type "list"
+  category "Filters"
+  label "Storage Account List"
+  description "A list of Azure Storage Accounts to assess blobs in. Leave blank to assess blobs in all accounts."
+  default []
+end
+
+parameter "param_subscriptions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Subscriptions"
+  description "Allow or Deny entered Subscriptions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_subscriptions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Subscriptions List"
+  description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
+parameter "param_new_storage_tier" do
+  type "string"
+  category "Actions"
+  label "New Storage Tier"
+  description "Whether to move blobs to Cool or Archive if they meet the specified age thresholds. Select 'Both' to consider moving blobs to either one based on the specified age thresholds"
+  default "Both"
+  allowed_values "Both", "Cool", "Archive"
+end
+
+parameter "param_cool_tier_days" do
+  type "number"
+  category "Actions"
+  label "Cool Tier Age Threshold (Days)"
+  description "Time in days since blob was last modified to change storage tier to Cool. Not applicable if 'Archive' is selected for New Storage Tier"
+  default 30
+  min_value 1
+end
+
+parameter "param_archive_tier_days" do
+  type "number"
+  category "Actions"
+  label "Archive Tier Age Threshold (Days)"
+  description "Time in days since blob was last modified to change storage tier to Archive. Not applicable if 'Cool' is selected for New Storage Tier"
+  default 90
+  min_value 1
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Update Blobs Storage Tier", "Delete Blobs"]
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_azure" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+credentials "auth_azure_storage" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Storage Credential from the list."
+  tags "provider=azure_storage"
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_azure" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+pagination "pagination_azure_xml" do
+  get_page_marker do
+    body_path "//EnumerationResults/NextMarker"
+  end
+  set_page_marker do
+    query "marker"
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_azure_subscriptions" do
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path "/subscriptions/"
+    query "api-version", "2020-01-01"
+    header "User-Agent", "RS Policies"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "subscriptionId")
+      field "name", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
+    end
+  end
+end
+
+datasource "ds_azure_subscriptions_filtered" do
+  run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
+end
+
+script "js_azure_subscriptions_filtered", type: "javascript" do
+  parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
+  result "result"
+  code <<-EOS
+  if (param_subscriptions_list.length > 0) {
+    result = _.filter(ds_azure_subscriptions, function(subscription) {
+      include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
+
+      if (param_subscriptions_allow_or_deny == "Deny") {
+        include_subscription = !include_subscription
+      }
+
+      return include_subscription
+    })
+  } else {
+    result = ds_azure_subscriptions
+  }
+EOS
+end
+
+datasource "ds_azure_storage_accounts" do
+  iterate $ds_azure_subscriptions_filtered
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, 'id'), "/providers/Microsoft.Storage/storageAccounts"])
+    header "User-Agent", "RS Policies"
+    query "api-version", "2023-01-01"
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "kind", jmes_path(col_item, "kind")
+      field "region", jmes_path(col_item, "location")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+      field "blob_endpoint", jmes_path(col_item, "properties.primaryEndpoints.blob")
+      field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
+      field "subscriptionID", val(iter_item, "id")
+      field "subscriptionName", val(iter_item, "name")
+    end
+  end
+end
+
+datasource "ds_azure_storage_accounts_tag_filtered" do
+  run_script $js_azure_storage_accounts_tag_filtered, $ds_azure_storage_accounts, $param_exclusion_tags, $param_exclusion_tags_boolean
+end
+
+script "js_azure_storage_accounts_tag_filtered", type: "javascript" do
+  parameters "ds_azure_storage_accounts", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  result "result"
+  code <<-EOS
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  if (param_exclusion_tags.length > 0) {
+    result = _.reject(ds_azure_storage_accounts, function(resource) {
+      resource_tags = {}
+      if (typeof(resource['tags']) == 'object') { resource_tags = resource['tags'] }
+
+      // Store a list of found tags
+      found_tags = []
+
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_tag = resource_tags[comparator['key']]
+
+        if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+        if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+        if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_tag == undefined) { found_tags.push(string) }
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+      })
+
+      all_tags_found = found_tags.length == comparators.length
+      any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+      return all_tags_found || any_tags_found
+    })
+  } else {
+    result = ds_azure_storage_accounts
+  }
+EOS
+end
+
+datasource "ds_azure_storage_accounts_region_filtered" do
+  run_script $js_azure_storage_accounts_region_filtered, $ds_azure_storage_accounts_tag_filtered, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_azure_storage_accounts_region_filtered", type: "javascript" do
+  parameters "ds_azure_storage_accounts_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_azure_storage_accounts_tag_filtered, function(account) {
+      include_account = _.contains(param_regions_list, account['region'])
+
+      if (param_regions_allow_or_deny == "Deny") {
+        include_account = !include_account
+      }
+
+      return include_account && typeof(account['blob_endpoint']) == 'string' && account['blob_endpoint'] != ''
+    })
+  } else {
+    result = _.filter(ds_azure_storage_accounts_tag_filtered, function(account) {
+      return typeof(account['blob_endpoint']) == 'string' && account['blob_endpoint'] != ''
+    })
+  }
+EOS
+end
+
+datasource "ds_azure_storage_accounts_name_filtered" do
+  run_script $js_azure_storage_accounts_name_filtered, $ds_azure_storage_accounts_region_filtered, $param_storage_account_list
+end
+
+script "js_azure_storage_accounts_name_filtered", type: "javascript" do
+  parameters "ds_azure_storage_accounts_region_filtered", "param_storage_account_list"
+  result "result"
+  code <<-EOS
+  if (param_storage_account_list.length > 0) {
+    result = _.filter(ds_azure_storage_accounts_region_filtered, function(account) {
+      return _.contains(param_storage_account_list, account['name'])
+    })
+  } else {
+    result = ds_azure_storage_accounts_region_filtered
+  }
+EOS
+end
+
+datasource "ds_azure_containers" do
+  iterate $ds_azure_storage_accounts_name_filtered
+  request do
+    auth $auth_azure_storage
+    pagination $pagination_azure_xml
+    host join([val(iter_item, 'name'), ".blob.core.windows.net"])
+    path "/"
+    query "comp", "list"
+    header "User-Agent", "RS Policies"
+    header "x-ms-version", "2018-11-09"
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//EnumerationResults/Containers/Container", "array") do
+      field "container", xpath(col_item, "Name")
+      field "region", val(iter_item, "region")
+      field "resourceGroup", val(iter_item, "resourceGroup")
+      field "subscriptionID", val(iter_item, "subscriptionID")
+      field "subscriptionName", val(iter_item, "subscriptionName")
+      field "sa_id", val(iter_item, "id")
+      field "sa_kind", val(iter_item, "kind")
+      field "sa_name", val(iter_item, "name")
+      field "sa_tags", val(iter_item, "tags")
+    end
+  end
+end
+
+datasource "ds_azure_blobs" do
+  iterate $ds_azure_containers
+  request do
+    auth $auth_azure_storage
+    pagination $pagination_azure_xml
+    host join([val(iter_item, 'sa_name'), ".blob.core.windows.net"])
+    path join(["/", val(iter_item, "container")])
+    query "restype", "container"
+    query "comp", "list"
+    header "User-Agent", "RS Policies"
+    header "x-ms-version", "2018-03-28"
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//EnumerationResults/Blobs/Blob", "array") do
+      field "name", xpath(col_item, "Name")
+      field "last_modified", xpath(col_item, "Properties/Last-Modified")
+      field "creation_time", xpath(col_item, "Properties/Creation-Time")
+      field "content_type", xpath(col_item, "Properties/Content-Type")
+      field "lease_state", xpath(col_item, "Properties/LeaseState")
+      field "access_tier", xpath(col_item, "Properties/AccessTier")
+      field "blob_type", xpath(col_item, "Properties/BlobType")
+      field "container", val(iter_item, "container")
+      field "region", val(iter_item, "region")
+      field "resourceGroup", val(iter_item, "resourceGroup")
+      field "subscriptionID", val(iter_item, "subscriptionID")
+      field "subscriptionName", val(iter_item, "subscriptionName")
+      field "sa_id", val(iter_item, "sa_id")
+      field "sa_kind", val(iter_item, "sa_kind")
+      field "sa_name", val(iter_item, "sa_name")
+      field "sa_tags", val(iter_item, "sa_tags")
+    end
+  end
+end
+
+datasource "ds_azure_blobs_filtered" do
+  run_script $js_azure_blobs_filtered, $ds_azure_blobs
+end
+
+script "js_azure_blobs_filtered", type: "javascript" do
+  parameters "ds_azure_blobs"
+  result "result"
+  code <<-EOS
+  result = _.reject(ds_azure_blobs, function(blob) {
+    return blob['blob_type'].toLowerCase() == 'pageblob' || blob['blob_type'].toLowerCase() == 'appendblob'
+  })
+EOS
+end
+
+datasource "ds_azure_blobs_with_tier" do
+  run_script $js_azure_blobs_with_tier, $ds_azure_blobs_filtered, $param_cool_tier_days, $param_archive_tier_days, $param_new_storage_tier
+end
+
+script "js_azure_blobs_with_tier", type: "javascript" do
+  parameters "ds_azure_blobs_filtered", "param_cool_tier_days", "param_archive_tier_days", "param_new_storage_tier"
+  result "result"
+  code <<-EOS
+  result = _.map(ds_azure_blobs_filtered, function(blob) {
+    sa_tags = []
+
+    if (typeof(blob['sa_tags']) == 'blob') {
+      _.each(Object.keys(blob['sa_tags']), function(key) {
+        sa_tags.push([key, "=", blob['sa_tags'][key]].join(''))
+      })
+    }
+
+    last_modified_date = new Date(blob['last_modified'])
+    creation_time_date = new Date(blob['creation_time'])
+    cool_date = new Date(new Date() - (1000 * 60 * 60 * 24 * param_cool_tier_days))
+    archive_date = new Date(new Date() - (1000 * 60 * 60 * 24 * param_archive_tier_days))
+    new_storage_tier = null
+
+    if (blob['access_tier'] != "Cool" && blob['access_tier'] != "Archive") {
+      if (last_modified_date <= cool_date && param_new_storage_tier != 'Archive') {
+        new_storage_tier = "Cool"
+      }
+
+      if (last_modified_date <= archive_date && param_new_storage_tier != 'Cool') {
+        new_storage_tier = "Archive"
+      }
+    }
+
+    return {
+      name: blob['name'],
+      content_type: blob['content_type'],
+      lease_state: blob['lease_state'],
+      access_tier: blob['access_tier'],
+      blob_type: blob['blob_type'],
+      container: blob['container'],
+      region: blob['region'],
+      resourceGroup: blob['resourceGroup'],
+      subscriptionID: blob['subscriptionID'],
+      subscriptionName: blob['subscriptionName'],
+      sa_id: blob['sa_id'],
+      sa_kind: blob['sa_kind'],
+      sa_name: blob['sa_name'],
+      sa_tags: sa_tags.join(', '),
+      creation_time: creation_time_date.toISOString(),
+      last_modified: last_modified_date.toISOString(),
+      new_storage_tier: new_storage_tier
+    }
+  })
+EOS
+end
+
+datasource "ds_azure_blobs_incident" do
+  run_script $js_azure_blobs_incident, $ds_azure_blobs_with_tier, $ds_applied_policy, $param_cool_tier_days, $param_archive_tier_days, $param_new_storage_tier
+end
+
+script "js_azure_blobs_incident", type: "javascript" do
+  parameters "ds_azure_blobs_with_tier", "ds_applied_policy", "param_cool_tier_days", "param_archive_tier_days", "param_new_storage_tier"
+  result "result"
+  code <<-'EOS'
+  blobs_to_change = _.reject(ds_azure_blobs_with_tier, function(blob) {
+    return blob['new_storage_tier'] == null
+  })
+
+  result = _.map(blobs_to_change, function(blob) {
+    recommendationDetails = [
+      "Change storage class of Azure Blob ", blob['name'],
+      " in Container ", blob['container'],
+      " in Storage Account ", blob['sa_name'],
+      " in Azure Subscription ", blob['subscriptionName'], " (", blob['subscriptionID'], ")",
+      " from ", blob['access_tier'], " to ", blob['new_storage_tier']
+    ].join('')
+
+    return {
+      accountID: blob['subscriptionID'],
+      accountName: blob['subscriptionName'],
+      resourceGroup: blob['resourceGroup'],
+      resourceID: blob['name'],
+      resourceType: blob['access_tier'],
+      newResourceType: blob['new_storage_tier'],
+      content_type: blob['content_type'],
+      lease_state: blob['lease_state'],
+      blob_type: blob['blob_type'],
+      container: blob['container'],
+      region: blob['region'],
+      sa_id: blob['sa_id'],
+      sa_kind: blob['sa_kind'],
+      sa_name: blob['sa_name'],
+      tags: blob['sa_tags'],
+      creation_time: blob['creation_time'],
+      last_modified: blob['last_modified'],
+      policy_name: ds_applied_policy['name'],
+      recommendationDetails: recommendationDetails,
+      service: "Microsoft.Storage",
+      message: ''
+    }
+  })
+
+  blobs_total = ds_azure_blobs_with_tier.length.toString()
+  blobs_to_change_total = result.length.toString()
+  blobs_to_change_percentage = (blobs_to_change_total / blobs_total * 100).toFixed(2).toString() + '%'
+
+  blob_noun = "blobs"
+  if (blobs_total == 1) { blob_noun = "blob" }
+
+  blob_verb = "are"
+  if (blobs_to_change_total == 1) { blob_verb = "is" }
+
+  findings = [
+    "Out of ", blobs_total, " Azure ", blob_noun, " analyzed, ",
+    blobs_to_change_total, " (", blobs_to_change_percentage,
+    ") ", blob_verb, " recommended for a change in storage tier. "
+  ].join('')
+
+  analysis = ''
+
+  if (param_new_storage_tier != 'Archive') {
+    cool_day_noun = "days ago"
+    if (param_cool_tier_days == 1) { cool_day_noun = "day ago" }
+
+    analysis += [
+      "An Azure Blob is recommended for a change to the Cool storage class ",
+      "if it was last modified at least ", param_cool_tier_days, " ", cool_day_noun, ". "
+    ].join('')
+  }
+
+  if (param_new_storage_tier != 'Cool') {
+    archive_day_noun = "days ago"
+    if (param_archive_tier_days == 1) { archive_day_noun = "day ago" }
+
+    analysis += [
+      "An Azure Blob is recommended for a change to the Archive storage class ",
+      "if it was last modified at least ", param_archive_tier_days, " ", archive_day_noun, "."
+    ].join('')
+  }
+
+  analysis += "\n\n"
+
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+
+  // Dummy entry to ensure validation runs at least once
+  result.push({ resourceID: "", policy_name: "", message: "", tags: "" })
+
+  result[0]['message'] = findings + analysis + disclaimer
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_azure_blobs_list" do
+  validate_each $ds_azure_blobs_incident do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Blobs Recommended For Storage Tier Change"
+    detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
+    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    escalate $esc_update
+    escalate $esc_delete
+    hash_exclude "message", "tags"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Subscription ID"
+      end
+      field "accountName" do
+        label "Subscription Name"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "sa_name" do
+        label "Storage Account"
+      end
+      field "container" do
+        label "Container"
+      end
+      field "resourceID" do
+        label "Blob Name"
+      end
+      field "blob_type" do
+        label "Blob Type"
+      end
+      field "content_type" do
+        label "Content Type"
+      end
+      field "last_modified" do
+        label "Last Modified Date"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "resourceType" do
+        label "Current Storage Class"
+      end
+      field "newResourceType" do
+        label "Recommended Storage Class"
+      end
+      field "tags" do
+        label "Storage Account Tags"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalation
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_update" do
+  automatic contains($param_automatic_action, "Update Blobs Storage Tier")
+  label "Update Blobs Storage Tier"
+  description "Approval to update the storage tier of all selected Blobs"
+  run "update_blobs", data
+end
+
+escalation "esc_delete" do
+  automatic contains($param_automatic_action, "Delete Blobs")
+  label "Delete Blobs"
+  description "Approval to delete all selected Blobs"
+  run "delete_blobs", data
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define update_blobs($data) return $all_responses do
+  $$all_responses = []
+
+  foreach $blob in $data do
+    sub on_error: handle_error() do
+      call update_blob($blob) retrieve $update_response
+      $$all_responses << $update_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+define update_blob($blob) return $response do
+  call url_encode($blob['container']) retrieve $container
+  call url_encode($blob['resourceID']) retrieve $blob_name
+
+  $host = $blob['sa_name'] + '.blob.core.windows.net'
+  $href = '/' + $container + '/' + $blob_name
+  $params = "?comp=tier"
+  $url = $host + $href + $params
+  task_label("PUT " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure_storage,
+    https: true,
+    verb: "put",
+    href: $href,
+    host: $host,
+    query_strings: { "comp": "tier" },
+    headers: {
+      "x-ms-version": "2019-02-02",
+      "content-type": "application/json",
+      "x-ms-access-tier": $blob['newResourceType']
+    }
+  )
+
+  task_label("Put Azure Blob response: " + $url + " " + to_json($response))
+  $$all_responses << to_json({"req": "PUT " + $url, "resp": $response})
+
+  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
+    raise "Unexpected response putting Azure Blob: " + $url + " " + to_json($response)
+  else
+    task_label("Put Azure Blob successful: " + $url)
+  end
+end
+
+define delete_blobs($data) return $all_responses do
+  $$all_responses = []
+
+  foreach $blob in $data do
+    sub on_error: handle_error() do
+      call delete_blob($blob) retrieve $delete_response
+      $$all_responses << $delete_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+define delete_blob($blob) return $response do
+  call url_encode($blob['container']) retrieve $container
+  call url_encode($blob['resourceID']) retrieve $blob_name
+
+  $host = $blob['sa_name'] + '.blob.core.windows.net'
+  $href = '/' + $container + '/' + $blob_name
+  $url = $host + $href
+  task_label("DELETE " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure_storage,
+    https: true,
+    verb: "delete",
+    href: $href,
+    host: $host,
+    headers: {
+      "x-ms-version": "2019-02-02",
+      "content-type": "application/json"
+    }
+  )
+
+  task_label("Delete Azure Blob response: " + $url + " " + to_json($response))
+  $$all_responses << to_json({"req": "PUT " + $url, "resp": $response})
+
+  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
+    raise "Unexpected response deleting Azure Blob: " + $url + " " + to_json($response)
+  else
+    task_label("Delete Azure Blob successful: " + $url)
+  end
+end
+
+define url_encode($string) return $encoded_string do
+  $encoded_string = $string
+  $encoded_string = gsub($encoded_string, " ", "%20")
+  $encoded_string = gsub($encoded_string, "!", "%21")
+  $encoded_string = gsub($encoded_string, "#", "%23")
+  $encoded_string = gsub($encoded_string, "$", "%24")
+  $encoded_string = gsub($encoded_string, "&", "%26")
+  $encoded_string = gsub($encoded_string, "'", "%27")
+  $encoded_string = gsub($encoded_string, "(", "%28")
+  $encoded_string = gsub($encoded_string, ")", "%29")
+  $encoded_string = gsub($encoded_string, "*", "%2A")
+  $encoded_string = gsub($encoded_string, "+", "%2B")
+  $encoded_string = gsub($encoded_string, ",", "%2C")
+  $encoded_string = gsub($encoded_string, "/", "%2F")
+  $encoded_string = gsub($encoded_string, ":", "%3A")
+  $encoded_string = gsub($encoded_string, ";", "%3B")
+  $encoded_string = gsub($encoded_string, "=", "%3D")
+  $encoded_string = gsub($encoded_string, "?", "%3F")
+  $encoded_string = gsub($encoded_string, "@", "%40")
+  $encoded_string = gsub($encoded_string, "[", "%5B")
+  $encoded_string = gsub($encoded_string, "]", "%5D")
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
+end

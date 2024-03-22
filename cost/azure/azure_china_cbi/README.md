@@ -14,7 +14,9 @@ This Policy Template is used to automatically take billing data for Azure China 
 
 This policy has the following input parameters required when launching the policy.
 
-- *Enrollment ID* - Your Azure EA Enrollment ID from Azure China Billing Portal
+- *Month To Ingest* - Whether to process bills for the current month, previous month, or a specific month.
+- *Billing Period* - The year and month to process bills for in YYYY-MM format. Only relevant if Specific Month is selected for the Month To Ingest parameter. Example: 2022-09
+- *Azure Enrollment ID* - Your Azure EA Enrollment ID from Azure China Billing Portal
 - *Bill Connect ID* - Bill Connect ID created in CBI API. Example: cbi-oi-azure-china-*
 - *Email addresses* - A list of email addresses to notify
 

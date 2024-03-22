@@ -1,5 +1,27 @@
 # Changelog
 
+## v4.2
+
+- Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.
+
+## v4.1
+
+- Changed internal name of escalation code to ensure "Meta Policy" works as expected
+
+## v4.0
+
+- Renamed Subscription List parameter for consistency and accuracy
+- Added logic required for "Meta Policy" use-cases
+
+## v3.0
+
+- Updated policy to use Flexera One ITAM SOAP APIs. Full details here: [Flexera One ITAM SOAP APIs Transitioning to Flexera One IAM](https://community.flexera.com/t5/Flexera-One-Blog/Flexera-One-ITAM-SOAP-APIs-Transitioning-to-Flexera-One-IAM/ba-p/229399)
+- Removed support for on-premise deployments (with or without wstunnel)
+
+## v2.10
+
+- Case-insensitive matching of computerName from report with Azure VM name
+
 ## v2.9
 
 - Replaced the term **whitelist** with **allowed list**.
@@ -14,7 +36,7 @@
 
 ## v2.6
 
-- updated README.md rightscale documentation links with docs.flexera documentation links
+- Updated README.md rightscale documentation links with docs.flexera documentation links
 
 ## v2.5
 
@@ -34,7 +56,7 @@
 
 ## v2.1
 
-- remove unnecessary permissions block
+- Remove unnecessary permissions block
 
 ## v2.0
 
@@ -43,4 +65,4 @@
 
 ## v1.0
 
-- initial release
+- Initial release

@@ -1,5 +1,32 @@
 # Changelog
 
+## v3.7
+
+- Added support for organizations with no Microsoft Azure Enterprise Agreement (Legacy) bill connects
+
+## v3.6
+
+- Incident subject is now the name of the applied policy
+- Policy metadata updated to better categorize the policy
+- Additional corrections around retrieving cost data on orgs using new EA bill connection
+- Streamlined code for better readability and faster execution
+
+## v3.5
+
+- Policy incident no longer includes extraneous information about date and time in `Month` field
+
+## v3.4
+
+- Added a condition to prevent null report chart array
+
+## v3.3
+
+- Corrected issue with policy not retrieving cost data on orgs using newer Azure bill connections
+
+## v3.2
+
+- Updated indentation for chart url so it renders corrrectly in the policy incident email
+
 ## v3.1
 
 - Updated description for parameters `param_period_start` and `param_period_end`

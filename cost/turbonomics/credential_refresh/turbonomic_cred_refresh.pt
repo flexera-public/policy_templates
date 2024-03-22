@@ -1,0 +1,270 @@
+name "Turbonomic Credential Refresh"
+rs_pt_ver 20180301
+type "policy"
+short_description "A policy that refreshes the cookie used to authenticate with Turbonomic APIs. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/turbonomics/credential_refresh) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+severity "low"
+category "Operational"
+default_frequency "hourly"
+info(
+  version: "0.4",
+  provider: "",
+  service: "",
+  policy_set: "",
+  publish: "false"
+)
+
+parameter "param_turbonomic_username" do
+  type "string"
+  label "Turbonomic Username"
+  description "The username used to authenticate with Turbonomic APIs"
+end
+
+parameter "param_turbonomic_password" do
+  type "string"
+  no_echo true
+  label "Turbonomic Password"
+  description "The password used to authenticate with Turbonomic APIs"
+end
+
+parameter "param_turbonomic_host" do
+  type "string"
+  label "Turbonomic Host"
+  description "Your Turbonomic host or IP."
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Retrieves all applied policies in the project where this policy is applied
+datasource "ds_applied_policies" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies"], "")
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jq(response, ".items[]") do
+      field "id", val(col_item, "id")
+      field "policy_aggregate_id", val(col_item, "policy_aggregate_id")
+      field "org_id", jq(col_item, ".project.org_id")
+      field "name", val(col_item, "name")
+      field "info_source", jq(col_item, ".info.source")
+    end
+  end
+end
+
+# Filters the applied policy where the info.source is set to either "Turbonomic" or "Turbonomics"
+datasource "ds_turbo_applied_policies" do
+  run_script $js_turbo_applied_policies, $ds_applied_policies
+end
+
+script "js_turbo_applied_policies", type: "javascript" do
+  parameters "applied_policies"
+  result "filtered_policies"
+  code <<-EOS
+  var filtered_policies = _.map(_.filter(applied_policies, function(applied_policy) {
+    return applied_policy.info_source == "Turbonomics" || applied_policy.info_source == "Turbonomic"
+  }), function(policy){policy.time = Date.now(); return policy});
+  EOS
+end
+
+# collect additional data for the applied policies
+datasource "ds_turbo_policies_with_next_start" do
+  iterate $ds_turbo_applied_policies
+  request do
+    run_script $js_turbo_policies_with_next_start, val(iter_item, "id"), rs_project_id, rs_governance_host
+  end
+  result do
+    encoding "json"
+    collect jq(response, ".") do
+      field "id", val(iter_item, "id")
+      field "policy_aggregate_id", val(iter_item, "policy_aggregate_id")
+      field "org_id", val(iter_item, "org_id")
+      field "info_source", val(iter_item, "info_source")
+      field "name", val(iter_item, "name")
+      field "time", val(iter_item, "time")
+      field "next_evaluation_start", jq(col_item, ".next_evaluation_start")
+    end
+  end
+end
+
+script "js_turbo_policies_with_next_start", type: "javascript" do
+  result "result"
+  parameters "policy_id", "rs_project_id", "rs_governance_host"
+  code <<-EOS
+  result = {
+    auth: "auth_flexera",
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id + "/status",
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+  EOS
+end
+
+# Get Current Policy Details
+datasource "ds_self_policy_info" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+    header "Content-Type", "application/json"
+    ignore_status [403,404]
+  end
+  result do
+    encoding "json"
+    field "frequency", jmes_path(response, "frequency")
+  end
+end
+
+# Filters the applied policy by next_evaluation_start
+datasource "ds_filtered_turbo_policies" do
+  run_script $js_filter_turbo_policies, $ds_turbo_policies_with_next_start, $ds_self_policy_info
+end
+
+script "js_filter_turbo_policies", type: "javascript" do
+  parameters "policies_with_next_start", "ds_self_policy_info"
+  result "results"
+  code <<-EOS
+  var nextStart = function (interval) {
+    var currentDate = new Date();
+    var newDate = new Date(currentDate);
+    switch (interval) {
+      case '15 minutes':
+        newDate.setMinutes(currentDate.getMinutes() + 15);
+        break;
+      case 'hourly':
+        newDate.setHours(currentDate.getHours() + 1);
+        break;
+      case 'daily':
+        newDate.setDate(currentDate.getDate() + 1);
+        break;
+      case 'weekly':
+        newDate.setDate(currentDate.getDate() + 7);
+        break;
+      case 'monthly':
+        newDate.setMonth(currentDate.getMonth() + 1);
+        break;
+    }
+    return newDate.getTime();
+  }
+
+  var results = _.filter(policies_with_next_start, function(policy) {
+    return new Date(policy.next_evaluation_start).getTime() <= nextStart(ds_self_policy_info.frequency)
+  });
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_filtered_turbo_policies" do
+  validate $ds_filtered_turbo_policies do
+    summary_template "Turbo policies found"
+    detail_template <<-EOS
+    The following applied policies are running for Turbonomics and require the auth_token parameter to be
+    updated before the next run. It will be updated with refreshed cookie.
+
+    | ID | Name | Source |
+    | -- | ---- | ------ |
+{{ range data -}}
+  | {{.id}} | {{.name}} | {{.info_source}} |
+{{ end -}}
+EOS
+    check eq(size(data), 0)
+    escalate $esc_update_cookie
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_update_cookie" do
+  run "update_cookie", data, $param_turbonomic_username, $param_turbonomic_password, $param_turbonomic_host, rs_governance_host, rs_project_id
+end
+
+define update_cookie($turbo_policies, $param_turbonomic_username, $param_turbonomic_password, $param_turbonomic_host, $gov_host, $proj_id) do
+  # Authenticate with Turbonomic API and get a fresh cookie
+  $response = http_request(
+    verb: "post",
+    https: true,
+    host: $param_turbonomic_host,
+    href: "/api/v3/login",
+    body: "username=" + $param_turbonomic_username + "&password=" + $param_turbonomic_password,
+    headers: {
+      "content-type": "application/x-www-form-urlencoded"
+    }
+  )
+  if $response["code"] != 200
+    raise "Unexpected response code from Turbo login endpoint: " + $response["code"] + " body: " + to_s($response["body"])
+  end
+  $cookie = split($response["headers"]["Set-Cookie"], ";")[0]
+  # Go through all Turbonomic policies
+  foreach $policy in $turbo_policies do
+    # Retrieve the policy details so we can patch it with updated auth_cookie
+    $response = http_get(
+      url: "https://" + $gov_host + "/api/governance/projects/" + $proj_id + "/applied_policies/" + $policy["id"],
+      headers: {
+        "Api-Version": "1.0"
+      },
+      auth: $$auth_flexera
+    )
+    if $response["code"] != 200
+      raise "Unexpected response code from policy template show: " + $response["code"] + " body: " + to_s($response["body"])
+    end
+    $options = $response["body"]["options"]
+    $modified = []
+    $found = false
+    if $options != null
+      foreach $option in $options do
+        if $option["name"] == "auth_cookie" || $option["name"] == "param_auth_cookie"
+          $option["value"] = $cookie
+          $found = true
+        end
+        $modified << $option
+      end
+      if $found
+        # If the applied policy has the auth_cookie or param_auth_cookie parameter, we'll update with a fresh value
+        if $policy["policy_aggregate_id"] != null
+          $url = "https://" + $gov_host + "/api/governance/orgs/" + $policy["org_id"] + "/policy_aggregates/" + $policy["policy_aggregate_id"]
+        else
+          $url = "https://" + $gov_host + "/api/governance/projects/" + $proj_id + "/applied_policies/" + $policy["id"]
+        end
+        $response = http_patch(
+          url: $url,
+          headers: {
+            "Api-Version": "1.0"
+          },
+          auth: $$auth_flexera,
+          body: {
+            options: $modified
+          }
+        )
+        # Policy Aggregate Service returns 202 on successful update and
+        # Applied Policy Service returns 204 on successful update
+        if $response["code"] != 204 && $response["code"] != 202
+          raise "Unexpected response code from policy template update: " + $response["code"] + " body: " + to_s($response["body"])
+        end
+      end
+    end
+  end
+end

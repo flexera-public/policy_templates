@@ -1,13 +1,13 @@
 name "Azure Instances not running FlexNet Inventory Agent"
 rs_pt_ver 20180301
 type "policy"
-short_description "Check instances that are not running the FlexNet Inventory Agent. \n See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/instances_without_fnm_agent) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Check instances that are not running the FlexNet Inventory Agent. This template uses the SOAP version of the FlexNet Manager APIs. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/instances_without_fnm_agent) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "medium"
 category "Compliance"
-default_frequency "daily"
+default_frequency "weekly"
 info(
-  version: "2.9",
+  version: "4.2",
   provider: "Azure",
   service: "Compute",
   policy_set: "Instances not running FlexNet Inventory Agent"
@@ -21,6 +21,7 @@ parameter "param_email" do
   type "list"
   label "Email addresses to notify"
   description "Email addresses of the recipients you wish to notify when new incidents are created."
+  default []
 end
 
 parameter "param_azure_endpoint" do
@@ -30,10 +31,11 @@ parameter "param_azure_endpoint" do
   default "management.azure.com"
 end
 
-parameter "param_subscription_allowed_list" do
+parameter "param_subscriptions_list" do
   label "Subscription Allowed List"
   type "list"
   description "Allowed Subscriptions, if empty, all subscriptions will be checked"
+  default []
 end
 
 parameter "param_exclusion_tag_key" do
@@ -41,13 +43,15 @@ parameter "param_exclusion_tag_key" do
   category "User Inputs"
   label "Exclusion Tag Key"
   description "Azure-native Virtual machines tag to ignore VM's which has FNMS inventory agent running. Only supply the tag key. The policy assumes that the tag value is irrelevant."
+  default ""
 end
 
-parameter "param_fnms_url" do
+parameter "param_fnms_host" do
   type "string"
-  label "FNMS Report URL"
-  description "Full FlexNet URL (e.g. https://demo.flexnetmanager.com/Suite or WStunnel tunnel URL https://wstunnel1-1.rightscale.com/_token/<token>/)"
-  allowed_pattern /^(http:\/\/|https:\/\/)+[a-z0-9]+([\-\.]{1}[a-z0-9]+)*\.[a-z0-9]{2,5}(:[0-9]{1,5})?(\/.*)?$/
+  label "FlexNet Manager host"
+  description "Flexera One FlexNet Manager host"
+  allowed_values "slo.app.flexera.com", "slo.app.flexera.eu", "slo.app.flexera.au", "slo-uat.app.flexera.com", "slo-uat.app.flexera.eu", "slo-uat.app.flexera.au"
+  # No default value because parameter is required
 end
 
 parameter "param_report_id" do
@@ -56,12 +60,11 @@ parameter "param_report_id" do
   description "FlexNet manager Custom View ID."
 end
 
-
 ###############################################################################
 # Pagination
 ###############################################################################
 
-pagination "azure_pagination" do
+pagination "pagination_azure" do
   get_page_marker do
     body_path "nextLink"
   end
@@ -75,18 +78,18 @@ end
 ###############################################################################
 
 #authenticate with Azure
-credentials "azure_auth" do
+credentials "auth_azure" do
   schemes "oauth2"
   label "Azure"
   description "Select the Azure Resource Manager Credential from the list."
   tags "provider=azure_rm"
 end
 
-credentials "fnms_api_key_auth" do
-  schemes "api_key","ntlm"
-  label "FNMS"
-  description "Select the FNMS Token Credential from the list."
-  tags "provider=flexera_fnms"
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "flexera"
+  description "Select Flexera One OAuth2 credentials."
+  tags "provider=flexera"
 end
 
 ###############################################################################
@@ -95,12 +98,17 @@ end
 
 datasource "ds_subscriptions" do
   request do
-    auth $azure_auth
-    pagination $azure_pagination
+    auth $auth_azure
+    pagination $pagination_azure
     host $param_azure_endpoint
     path "/subscriptions/"
-    query "api-version","2019-06-01"
+    query "api-version", "2019-06-01"
     header "User-Agent", "RS Policies"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
@@ -113,20 +121,39 @@ datasource "ds_subscriptions" do
 end
 
 datasource "ds_filtered_subscriptions" do
-  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_allowed_list
+  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscriptions_list
+end
+
+script "js_filtered_subscriptions", type: "javascript" do
+  parameters "ds_subscriptions", "param_subscriptions_list"
+  result "results"
+  code <<-EOS
+  var results = []
+  if ( param_subscriptions_list.length != 0){
+    results = []
+    _.each(param_subscriptions_list, function(sub){
+      var found = _.find(ds_subscriptions, function(item){
+        return item.subscriptionId == sub || item.displayName.toLowerCase() == sub.toLowerCase();
+      })
+      results.push(found)
+    })
+  } else {
+    results = ds_subscriptions
+  }
+EOS
 end
 
 datasource "ds_list_virtual_machines" do
   iterate $ds_filtered_subscriptions
   request do
-    auth $azure_auth
-    pagination $azure_pagination
+    auth $auth_azure
+    pagination $pagination_azure
     host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/virtualMachines"])
-    query "api-version","2018-06-01"
+    query "api-version", "2018-06-01"
     header "User-Agent", "RS Policies"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-    ignore_status [400,403,404]
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
@@ -144,9 +171,25 @@ datasource "ds_list_virtual_machines" do
   end
 end
 
-datasource 'ds_fnms_report' do
+# Make API call and get the report data
+datasource "ds_fnms_report" do
   request do
-    run_script $js_fnms_report, $param_fnms_url, $param_report_id
+    auth $auth_flexera
+    host $param_fnms_host
+    verb "POST"
+    scheme "https"
+    path "/ManageSoftServices/ComplianceAPIService/ComplianceAPIService.asmx"
+    query "orgid", to_s(rs_org_id) # Must convert rs_org_id to string otherwise query param does not get set
+    header "Content-Type", "text/xml;charset=utf-8"
+    body join(['<?xml version="1.0" encoding="utf-8"?>',
+                '<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:tem="http://tempuri.org/">',
+                '  <soap:Body>',
+                '    <tem:GetCustomView>',
+                '      <tem:customViewID>', $param_report_id, '</tem:customViewID>',
+                '      <tem:rowLimit>100000</tem:rowLimit>',
+                '   </tem:GetCustomView>',
+                '  </soap:Body>',
+                '</soap:Envelope>'])
   end
   result do
     encoding "xml"
@@ -160,30 +203,6 @@ datasource "ds_formatted_instances", type: "javascript" do
   run_script $js_format_instances, $ds_list_virtual_machines, $ds_fnms_report, $param_exclusion_tag_key
 end
 
-###############################################################################
-# Scripts
-###############################################################################
-
-script "js_filtered_subscriptions", type: "javascript" do
-  parameters "ds_subscriptions", "param_subscription_allowed_list"
-  result "results"
-  code <<-EOS
-  var results = []
-  if ( param_subscription_allowed_list.length != 0){
-    results = []
-    _.each(param_subscription_allowed_list, function(sub){
-      var found = _.find(ds_subscriptions, function(item){
-        return item.subscriptionId == sub || item.displayName.toLowerCase() == sub.toLowerCase();
-      })
-      results.push(found)
-    })
-  } else {
-    results = ds_subscriptions
-  }
-EOS
-end
-
-#Formatter script for the Instance data
 script "js_format_instances", type: "javascript" do
   parameters "azure_VMs","ds_fnms_report", "param_exclusion_tag_key"
   result "result"
@@ -191,11 +210,11 @@ script "js_format_instances", type: "javascript" do
     var result = [];
   fnms_instance_name=[];
     _.each(ds_fnms_report, function(instance){
-      fnms_instance_name.push(instance["computerName"])
+      fnms_instance_name.push(instance["computerName"].toLowerCase())
     })
 
     _.each(azure_VMs, function(vm){
-      if((!_.has(vm.tags, param_exclusion_tag_key)) && fnms_instance_name.indexOf(vm["name"]) === -1){
+      if((!_.has(vm.tags, param_exclusion_tag_key)) && fnms_instance_name.indexOf(vm["name"].toLowerCase()) === -1){
         result.push(vm)
       }
     })
@@ -204,54 +223,11 @@ script "js_format_instances", type: "javascript" do
   EOS
 end
 
-# Build the API request object dynamically to find the right authentiocation model.
-script "js_fnms_report", type: "javascript" do
-  parameters "fnms_host", "report_id"
-  result "request"
-  code <<-EOS
-    var sHost = fnms_host.substr(fnms_host.indexOf('://')+3)
-    if (sHost.indexOf('/') > -1 && sHost.indexOf('_token') > -1){
-      var path=sHost.substr(sHost.indexOf('/'))+'ManageSoftServices/ComplianceAPIService/ComplianceAPIService.asmx';
-    } else{
-      var path='/ManageSoftServices/ComplianceAPIService/ComplianceAPIService.asmx';
-    }
-    if (sHost.indexOf('/') > -1)  sHost = sHost.substr(0,sHost.indexOf('/'))
-
-    // Find the right schema
-    var sScheme = fnms_host.substr(0,fnms_host.indexOf('://'));
-
-    //Should we use User/password or Token to authenticate
-    var sAuth = "fnms_api_key_auth";
-
-    var sBody = '<?xml version="1.0" encoding="utf-8"?>'
-    sBody    += '<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:tem="http://tempuri.org/">'
-    sBody    += '  <soap:Body>'
-    sBody    += '    <tem:GetCustomView>'
-    sBody    += '      <tem:customViewID>' +report_id+ '</tem:customViewID>'
-    sBody    += '     <tem:rowLimit>100000</tem:rowLimit>'
-    sBody    += '   </tem:GetCustomView>'
-    sBody    += '  </soap:Body>'
-    sBody    += '</soap:Envelope>'
-
-    var request = {
-      auth: sAuth,
-      scheme: sScheme,
-      host: sHost,
-      path: path,
-      verb: "POST",
-      headers: {
-        "Content-Type": "text/xml;charset=utf-8"
-      },
-      body: sBody
-    }
-  EOS
-end
-
 ###############################################################################
 # Escalations
 ###############################################################################
 
-escalation "report_instances" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
@@ -265,8 +241,9 @@ end
 policy "policy_long_running_instances" do
   validate $ds_formatted_instances do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{len data }} is missing in FlexNet Manager."
-    escalate $report_instances
-    check eq(size(data),0)
+    escalate $esc_email
+    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
+    check logic_or($ds_parent_policy_terminated, eq(size(data), 0))
     export do
       resource_level true
       field "subscriptionName" do
@@ -293,4 +270,95 @@ policy "policy_long_running_instances" do
       end
     end
   end
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
 end

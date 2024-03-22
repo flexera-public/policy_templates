@@ -7,144 +7,179 @@ severity "low"
 category "SaaS Management"
 default_frequency "weekly"
 info(
-  version: "2.6",
+  version: "3.0",
   provider: "Flexera SaaS Manager",
   service: "",
   policy_set: ""
 )
 
 ###############################################################################
-# User inputs
+# Parameters
 ###############################################################################
-
-parameter "param_too_many_apps" do
-  type "number"
-  label "Excessive Number of Apps in a Single Category"
-  description "Enter an excessive number of apps per category. If a single category has N number of apps or greater then an incident will be raised."
-end
 
 parameter "param_email" do
   type "list"
-  label "Email addresses to notify"
-  description "Email addresses of the recipients you wish to notify"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify when new incidents are created."
+  default []
+end
+
+parameter "param_too_many_apps" do
+  type "number"
+  category "Policy Settings"
+  label "Category Application Limit"
+  description "The number of SaaS applications within a single category required to report on the category."
+  min_value 2
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-#authenticate with FSM
-credentials "fsm_auth" do
+credentials "auth_flexera" do
   schemes "oauth2"
-  label "FSM"
-  description "Select the FSM Resource Manager Credential from the list."
-  tags "provider=flexera_fsm"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
 end
-
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
-datasource "ds_get_host" do
-  run_script $js_get_host, rs_governance_host
-end
-
-
-datasource "ds_filtered_apps" do
-  run_script $js_filtered_apps, $ds_managed_products, $param_too_many_apps
-end
-
-datasource "ds_managed_products" do
-  iterate $ds_get_host
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
   request do
-    auth $fsm_auth
-    host val(iter_item,"host")
-    verb "GET"
-    scheme "https"
-    path join(["/svc/orgs/", rs_org_id, "/managed-products"])
-    header "content-type", "application/json"
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+datasource "ds_managed_apps" do
+  request do
+    run_script $js_managed_apps, $ds_flexera_api_hosts, rs_org_id
   end
   result do
     encoding "json"
-    collect jmes_path(response, "items[*]") do
-      field "id", val(col_item, "id")
-      field "name", val(col_item, "name")
-      field "category", jmes_path(col_item, "product.category.categoryName")
+    collect jmes_path(response, "values[*]") do
+      field "appId", jmes_path(col_item, "appId")
+      field "appName", jmes_path(col_item, "appName")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "description", jmes_path(col_item, "description")
+      field "vendorName", jmes_path(col_item, "vendorName")
+      field "categoryGroupName", jmes_path(col_item, "categoryGroupName")
+      field "categoryGroupTechnopediaId", jmes_path(col_item, "categoryGroupTechnopediaId")
+      field "categoryName", jmes_path(col_item, "categoryName")
+      field "categoryTechnopediaId", jmes_path(col_item, "categoryTechnopediaId")
+      field "isActive", jmes_path(col_item, "isActive")
     end
   end
 end
 
-###############################################################################
-# Scripts
-###############################################################################
-
-script "js_filtered_apps", type: "javascript" do
-  parameters "apps", "param_too_many_apps"
-  result "result"
+script "js_managed_apps", type: "javascript" do
+  parameters "ds_flexera_api_hosts", "rs_org_id"
+  result "request"
   code <<-EOS
-  var result = [];
-  var appCatArray = [];
-
-  _.each(apps, function(app){
-      currentCategory = app["category"];
-      if (appCatArray.indexOf(currentCategory) == -1){
-        appCatArray.push(currentCategory);
-      }
-  })
-
-  for (i = 0; i < appCatArray.length; i++) {
-    var uniqueAppCategory = appCatArray[i];
-    var categoryApps = "";
-    var count = 0;
-    _.each(apps, function(app){
-        currentApp = app["name"];
-        currentCat = app["category"];
-        if (uniqueAppCategory == currentCat && uniqueAppCategory != null) {
-          count++
-          if (categoryApps == "") {
-            categoryApps = currentApp;
-          }
-          else {
-            categoryApps = categoryApps + ", " + currentApp;
-          }
-        }
-    })
-
-    if (count >= param_too_many_apps) {
-      result.push({
-        appCategory: uniqueAppCategory,
-        appDetails: categoryApps
-      })
-    }
+  var request = {
+    auth: "auth_flexera",
+    host: ds_flexera_api_hosts["flexera"],
+    path: "/saas/v1/orgs/" + rs_org_id + "/managed-apps",
+    headers: { "content-type": "application/json" },
+    query_params: { "view": "extended" }
   }
-
-  result = _.sortBy(result, 'appCategory');
 EOS
 end
 
-script "js_get_host", type: "javascript" do
-  parameters "rs_governance_host"
-  result "result"
-  code <<-EOS
-    var result = [];
-    if(rs_governance_host.indexOf(".eu") !== -1 || rs_governance_host.indexOf("-eu") !== -1){
-        result.push({host: "api.fsm-eu.flexeraeng.com"});
-    }else{
-        result.push({host: "api.fsm.flexeraeng.com"});
-    }
-  EOS
+# Filter out inactive and invalid apps to avoid needlessly checking them
+datasource "ds_managed_apps_active" do
+  run_script $js_managed_apps_active, $ds_managed_apps
 end
 
-###############################################################################
-# Escalations
-###############################################################################
+script "js_managed_apps_active", type: "javascript" do
+  parameters "ds_managed_apps"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_managed_apps, function(app) {
+    return app['isActive'] == true && app['appName'] != null && app['vendorName'] != null
+  })
+EOS
+end
 
-escalation "report_summary" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
+datasource "ds_filtered_apps" do
+  run_script $js_filtered_apps, $ds_managed_apps_active, $ds_applied_policy, $param_too_many_apps
+end
+
+script "js_filtered_apps", type: "javascript" do
+  parameters "ds_managed_apps_active", "ds_applied_policy", "param_too_many_apps"
+  result "result"
+  code <<-EOS
+  result = []
+
+  category_table = {}
+
+  _.each(ds_managed_apps_active, function(app) {
+    categoryName = app['categoryName']
+    categoryTechnopediaId = app['categoryTechnopediaId']
+
+    if (typeof(categoryName) == 'string' && categoryName != '') {
+      if (typeof(categoryTechnopediaId) == 'string' && categoryTechnopediaId != '') {
+        category_table[categoryTechnopediaId] = categoryName
+      }
+    }
+  })
+
+  _.each(_.keys(category_table), function(category) {
+    category_apps = _.filter(ds_managed_apps_active, function(app) {
+      return app["categoryTechnopediaId"] == category
+    })
+
+    if (category_apps.length >= param_too_many_apps) {
+      result.push({
+        appCategory: category_table[category],
+        appCategoryId: category,
+        appCount: category_apps.length,
+        appDetails: _.pluck(category_apps, 'name').join(', ')
+      })
+    }
+  })
+
+  result = _.sortBy(result, 'appCategory')
+
+  if (result.length > 0) {
+    result[0]['policy_name'] = ds_applied_policy['name']
+  }
+EOS
 end
 
 ###############################################################################
@@ -152,17 +187,34 @@ end
 ###############################################################################
 
 policy "policy_fsm_excessive_apps" do
-  validate $ds_filtered_apps do
-    summary_template "{{ len data }} SaaS App Categories with more than {{ parameters.param_too_many_apps }} Apps"
-    escalate $report_summary
-    check eq(size(data), 0)
+  validate_each $ds_filtered_apps do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} SaaS App Categories with more than {{ parameters.param_too_many_apps }} Apps"
+    check eq(val(item, "appCategory"), "")
+    escalate $esc_email
     export do
       field "appCategory" do
         label "Application Category"
+      end
+      field "appCategoryId" do
+        label "Category Technopedia ID"
+      end
+      field "appCount" do
+        label "SaaS Application Count"
       end
       field "appDetails" do
         label "SaaS Applications"
       end
     end
   end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
 end

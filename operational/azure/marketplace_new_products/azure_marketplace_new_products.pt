@@ -1,0 +1,554 @@
+name "Azure New Marketplace Products"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks for newly purchased Azure Marketplace products and reports on them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/marketplace_new_products) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "low"
+category "Cost"
+default_frequency "weekly"
+info(
+  version: "0.4",
+  provider: "Azure",
+  service: "Marketplace",
+  policy_set: "New Marketplace Products"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify when new incidents are created."
+  default []
+end
+
+parameter "param_lookback" do
+  type "number"
+  category "Policy Settings"
+  label "Look Back Period (Days)"
+  description "How far back, in days, to look at Marketplace product purchases to see if new items have been added."
+  default 10
+  min_value 4
+end
+
+parameter "param_min_cost" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Cost Threshold"
+  description "Minimum monthly cost to report on new Marketplace products."
+  min_value 0
+  default 0
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
+end
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-EOS
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
+end
+
+datasource "ds_bill_connections" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-onboarding/v1/orgs/", rs_org_id, "/bill-connects"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "kind", jmes_path(col_item, "kind")
+    end
+  end
+end
+
+datasource "ds_bill_connections_old" do
+  run_script $js_bill_connections_filter, $ds_bill_connections, "finops:bill-connect-azure-ea"
+end
+
+datasource "ds_bill_connections_new" do
+  run_script $js_bill_connections_filter, $ds_bill_connections, "finops:bill-connect-cbi-oi-azure-ea"
+end
+
+script "js_bill_connections_filter", type:"javascript" do
+  parameters "ds_bill_connections", "filter_value"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_bill_connections, function(connection) {
+    return connection['kind'] == filter_value
+  })
+EOS
+end
+
+datasource "ds_current_products_oldconnection" do
+  iterate $ds_bill_connections_old
+  request do
+    run_script $js_get_products_oldconnection, val(iter_item, 'id'), $ds_top_level_bcs, rs_org_id, rs_optima_host, 3
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"rows[*]") do
+      field "product", jmes_path(col_item, "dimensions.usage_type")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+    end
+  end
+end
+
+datasource "ds_previous_products_oldconnection" do
+  iterate $ds_bill_connections_old
+  request do
+    run_script $js_get_products_oldconnection, val(iter_item, 'id'), $ds_top_level_bcs, rs_org_id, rs_optima_host, $param_lookback
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "product", jmes_path(col_item, "dimensions.usage_type")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+    end
+  end
+end
+
+script "js_get_products_oldconnection", type: "javascript" do
+  parameters "bill_source", "ds_top_level_bcs", "rs_org_id", "rs_optima_host", "lookback"
+  result "request"
+  code <<-EOS
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - (lookback - 1))
+  end_date = end_date.toISOString().split('T')[0]
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - lookback)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
+    body_fields: {
+      dimensions: ["usage_type"],
+      granularity: "day",
+      start_at: start_date,
+      end_at: end_date,
+      metrics: ["cost_amortized_unblended_adj"],
+      billing_center_ids: ds_top_level_bcs,
+      limit: 100000,
+      filter: {
+        "type": "and",
+        "expressions": [
+          {
+            "type": "or",
+            "expressions": [
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "Microsoft.Marketplace"
+              },
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "microsoft.marketplace"
+              }
+            ]
+          },
+          {
+            "dimension": "bill_source",
+            "type": "equal",
+            "value": bill_source
+          },
+          {
+            "type": "not",
+            "expression": {
+              "dimension": "usage_type",
+              "type": "substring",
+              "substring": "Shared"
+            }
+          }
+        ]
+      }
+    },
+    headers: {
+      'User-Agent': "RS Policies",
+      'Api-Version': "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
+datasource "ds_current_products_newconnection" do
+  iterate $ds_bill_connections_new
+  request do
+    run_script $js_get_products_newconnection, val(iter_item, 'id'), $ds_top_level_bcs, rs_org_id, rs_optima_host, 3
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"rows[*]") do
+      field "product", jmes_path(col_item, "dimensions.resource_type")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+    end
+  end
+end
+
+datasource "ds_previous_products_newconnection" do
+  iterate $ds_bill_connections_new
+  request do
+    run_script $js_get_products_newconnection, val(iter_item, 'id'), $ds_top_level_bcs, rs_org_id, rs_optima_host, $param_lookback
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "product", jmes_path(col_item, "dimensions.resource_type")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+    end
+  end
+end
+
+script "js_get_products_newconnection", type: "javascript" do
+  parameters "bill_source", "ds_top_level_bcs", "rs_org_id", "rs_optima_host", "lookback"
+  result "request"
+  code <<-EOS
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - (lookback - 1))
+  end_date = end_date.toISOString().split('T')[0]
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - lookback)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
+    body_fields: {
+      dimensions: ["resource_type"],
+      granularity: "day",
+      start_at: start_date,
+      end_at: end_date,
+      metrics: ["cost_amortized_unblended_adj"],
+      billing_center_ids: ds_top_level_bcs,
+      limit: 100000,
+      filter: {
+        "type": "and",
+        "expressions": [
+          {
+            "dimension": "bill_source",
+            "type": "equal",
+            "value": bill_source
+          },
+          {
+            "type": "not",
+            "expression": {
+              "dimension": "manufacturer_name",
+              "type": "substring",
+              "substring": "Microsoft"
+            }
+          },
+          {
+            "type": "not",
+            "expression": {
+              "dimension": "usage_type",
+              "type": "substring",
+              "substring": "Shared"
+            }
+          }
+        ]
+      }
+    },
+    headers: {
+      'User-Agent': "RS Policies",
+      'Api-Version': "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
+datasource "ds_current_products" do
+  run_script $js_products_combiner, $ds_current_products_oldconnection, $ds_current_products_newconnection
+end
+
+datasource "ds_previous_products" do
+  run_script $js_products_combiner, $ds_previous_products_oldconnection, $ds_previous_products_newconnection
+end
+
+script "js_products_combiner", type:"javascript" do
+  parameters "oldconnection", "newconnection"
+  result "result"
+  code <<-EOS
+  result = oldconnection.concat(newconnection)
+EOS
+end
+
+datasource "ds_new_products" do
+  run_script $js_new_products, $ds_current_products, $ds_previous_products, $ds_currency, $ds_applied_policy, $param_min_cost, $param_lookback
+end
+
+script "js_new_products", type: "javascript" do
+  parameters "ds_current_products", "ds_previous_products", "ds_currency", "ds_applied_policy", "param_min_cost", "param_lookback"
+  result "result"
+  code <<-'EOS'
+  // Function for formatting currency numbers later
+  function formatNumber(number, separator) {
+    var numString = number.toString()
+    var values = numString.split(".")
+    var formatted_number = ''
+
+    while (values[0].length > 3) {
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      formatted_number = separator + chunk + formatted_number
+    }
+
+    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
+
+    if (values[1] == undefined) { return formatted_number }
+
+    return formatted_number + "." + values[1]
+  }
+
+  result = []
+  total_cost = 0.0
+
+  old_product_list = _.compact(_.uniq(_.pluck(ds_previous_products, "product")))
+
+  valid_products = _.filter(ds_current_products, function(item) {
+    return typeof(item['product']) == 'string' && item['product'] != ''
+  })
+
+  _.each(valid_products, function(item) {
+    if (_.contains(old_product_list, item['product']) == false) {
+      cost = item['cost'] * 365.25 / 12
+
+      if (cost >= param_min_cost) {
+        total_cost += cost
+
+        result.push({
+          product: item['product'],
+          cost: Number(cost.toFixed(2)),
+          currency: ds_currency['symbol'],
+          policy_name: ds_applied_policy['name'],
+          total_cost: "",
+          message: ""
+        })
+      }
+    }
+  })
+
+  if (result.length > 0) {
+    result = _.sortBy(result, function(item) { return item['cost'] * -1 })
+
+    cost_message = [
+      ds_currency['symbol'], ' ',
+      formatNumber(parseFloat(total_cost).toFixed(2), ds_currency['separator'])
+    ].join('')
+
+    start_date = new Date()
+    start_date.setDate(start_date.getDate() - param_lookback)
+    start_date = start_date.toISOString().split('T')[0]
+
+    product_noun = "product has"
+    product_adj = "This product was"
+
+    if (result.length > 1) {
+      product_noun = "products have"
+      product_adj = "These products were"
+    }
+
+    message = [
+      result.length, " new Azure Marketplace ", product_noun, " been found. ",
+      product_adj, " not present on ", start_date, " (", param_lookback.toString(), " days ago).\n\n"
+    ].join('')
+
+    disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+
+    result[0]['total_cost'] = cost_message
+    result[0]['message'] = message + disclaimer
+  }
+EOS
+end
+
+##############################################################################
+# Policy
+###############################################################################
+
+policy "pol_new_products" do
+  validate_each $ds_new_products do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure New Marketplace Products Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Cost:** {{ with index data 0 }}{{ .total_cost }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
+    check eq(val(item, "product"), "")
+    escalate $esc_email
+    hash_exclude "message", "total_cost", "cost", "currency"
+    export do
+      resource_level false
+      field "product" do
+        label "New Product"
+      end
+      field "cost" do
+        label "Estimated Monthly Cost"
+      end
+      field "currency" do
+        label "Currency"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end

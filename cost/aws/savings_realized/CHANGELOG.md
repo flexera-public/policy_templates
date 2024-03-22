@@ -1,5 +1,17 @@
 # Changelog
 
+## v3.4
+
+- Updated `Savings Realized On Compute Savings Plans` incident field to align value with AWS Realized Savings Dashboard.
+
+## v3.3
+
+- Added the following dimensions to get costs and calculate cost per hour average: `operating_system`, `database_engine`, `database_edition`, `license_model`, `deployment_option`
+
+## v3.2
+
+- Updated indentation for chart url so it renders corrrectly in the policy incident email
+
 ## v3.1
 
 - Updated description for parameters `param_period_start` and `param_period_end`

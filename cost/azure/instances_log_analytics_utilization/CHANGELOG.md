@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.20
+
+- Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.
+
+## v2.19
+
+- Deprecated: This policy is no longer being updated. Please see policy README for more information.
+
 ## v2.18
 
 - Replaced the term **whitelist** with **allowed list**.

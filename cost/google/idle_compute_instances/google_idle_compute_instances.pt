@@ -7,11 +7,11 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-      version: "2.10",
-      provider: "GCE",
-      service: "Compute",
-      policy_set: "Idle Compute Instances"
-    )
+  version: "2.11",
+  provider: "GCE",
+  service: "Compute",
+  policy_set: "Idle Compute Instances"
+)
 
 ###############################################################################
 # Parameters
@@ -54,6 +54,7 @@ parameter "param_automatic_action" do
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
   allowed_values ["Terminate Instances"]
+  default []
 end
 
 parameter "param_log_to_cm_audit_entries" do
@@ -77,8 +78,9 @@ credentials "auth_google" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
+
 pagination "google_pagination" do
   get_page_marker do
     body_path "nextPageToken"
@@ -88,11 +90,22 @@ pagination "google_pagination" do
   end
 end
 
+# GET START DATE AND END DATE TO RETRIEVE THE DATA
 datasource "ds_time" do
   run_script $js_time
 end
 
-#get all google project
+script "js_time", type: "javascript" do
+  result "time"
+  code <<-EOF
+    var time = [{
+      "end_date":  new Date().toISOString(),
+      "start_date": new Date(new Date().setDate(new Date().getDate() - 30)).toISOString()
+    }]
+EOF
+end
+
+# GET ALL ACTIVE GOOGLE PROJECT
 datasource "ds_google_project" do
   iterate $ds_time
   request do
@@ -113,173 +126,197 @@ datasource "ds_google_project" do
   end
 end
 
+# RETRIEVE THE CPU UTILIZATION OF GCP INSTANCES
 datasource "ds_compute_utilization" do
   iterate $ds_google_project
   request do
     auth $auth_google
     host "monitoring.googleapis.com"
-    path join(["/v3/projects/",val(iter_item,"projectId"),"/timeSeries/"])
-    query "filter", 'metric.type="compute.googleapis.com/instance/cpu/utilization"'
-    query "interval.endTime", val(iter_item,"end_date")
-    query "interval.startTime", val(iter_item,"start_date")
-    ignore_status [403,404]
+    verb "POST"
+    path join(["/v3/projects/", val(iter_item,"projectId"), "/timeSeries:query"])
+    body_field "query", "fetch gce_instance | metric compute.googleapis.com/instance/cpu/utilization | within 30d | { group_by sliding(30d), .mean ; group_by sliding(30d), .max  ; group_by sliding(30d), . min } | join"
+    ignore_status [403, 404]
   end
   result do
     encoding "json"
-    collect jmes_path(response, "timeSeries[*]") do
-      field "label_instance_name", jmes_path(col_item, "metric.labels.instance_name")
-      field "instance_id", jmes_path(col_item, "resource.labels.instance_id")
-      field "zone", jmes_path(col_item, "resource.labels.zone")
+    collect jmes_path(response, "timeSeriesData[*]") do
+      field "label_instance_name", jmes_path(col_item, "labelValues[3].stringValue")
+      field "instance_id", jmes_path(col_item, "labelValues[2].stringValue")
+      field "zone", jmes_path(col_item, "labelValues[1].stringValue")
       field "projectId", val(iter_item,"projectId")
-      field "cpu_points", jmes_path(col_item, "points[*].value.doubleValue")
+      field "cpu_average", prod(jmes_path(col_item, "pointData[0].values[0].doubleValue"), 100)
+      field "cpu_maximum", prod(jmes_path(col_item, "pointData[0].values[1].doubleValue"), 100)
+      field "cpu_minimum", prod(jmes_path(col_item, "pointData[0].values[2].doubleValue"), 100)
     end
   end
 end
 
-datasource "ds_calculated_utilization" do
-  run_script $js_calculated_utilization, $ds_compute_utilization, $ds_memory_utilization
-end
-
+# RETRIEVE THE MEMORY UTILIZATION OF GCP INSTANCES
 datasource "ds_memory_utilization" do
   iterate $ds_google_project
   request do
     auth $auth_google
     host "monitoring.googleapis.com"
-    path join(["/v3/projects/",val(iter_item,"projectId"),"/timeSeries/"])
-    query "filter", 'metric.type="agent.googleapis.com/memory/percent_used" AND metric.label.state=used'
-    query "interval.endTime", val(iter_item,"end_date")
-    query "interval.startTime", val(iter_item,"start_date")
-    ignore_status [403,404]
+    verb "POST"
+    path join(["/v3/projects/", val(iter_item,"projectId"), "/timeSeries:query"])
+    body_field "query", "fetch gce_instance | metric agent.googleapis.com/memory/percent_used | filter state == 'used' | within 30d | { group_by sliding(30d), .mean ; group_by sliding(30d), .max  ; group_by sliding(30d), . min } | join"
+    ignore_status [403, 404]
   end
   result do
     encoding "json"
-    collect jmes_path(response, "timeSeries[*]") do
-      field "label_instance_name", jmes_path(col_item, "metric.labels.instance_name")
-      field "instance_id", jmes_path(col_item, "resource.labels.instance_id")
-      field "zone", jmes_path(col_item, "resource.labels.zone")
-      field "mem_points", jmes_path(col_item, "points[*].value.doubleValue")
+    collect jmes_path(response, "timeSeriesData[*]") do
+      field "label_instance_name", jmes_path(col_item, "labelValues[3].stringValue")
+      field "instance_id", jmes_path(col_item, "labelValues[2].stringValue")
+      field "zone", jmes_path(col_item, "labelValues[1].stringValue")
+      field "mem_average", jmes_path(col_item, "pointData[0].values[0].doubleValue")
+      field "mem_maximum", jmes_path(col_item, "pointData[0].values[1].doubleValue")
+      field "mem_minimum", jmes_path(col_item, "pointData[0].values[2].doubleValue")
     end
   end
 end
 
-datasource "ds_add_instance_data" do
-  iterate $ds_calculated_utilization
-  request do
-    run_script $js_add_instance_data,  val(iter_item,"projectId"), val(iter_item,"zone"), val(iter_item,"instance_id")
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"items[*]") do
-      field "id", val(iter_item, "instance_id")
-      field "hostname", jmes_path(col_item,"name || instance_id")
-      field "selfLink", jmes_path(col_item, "selfLink")
-      field "label_instance_name",val(iter_item, "label_instance_name")
-      field "status", jmes_path(col_item, "status")
-      field "zone", val(iter_item, "zone")
-      field "labels", jmes_path(col_item,"labels")
-      field "cpu_average", val(iter_item, "cpu_average")
-      field "cpu_maximum", val(iter_item, "cpu_maximum")
-      field "cpu_minimum", val(iter_item, "cpu_minimum")
-      field "mem_average", val(iter_item, "mem_average")
-      field "mem_maximum", val(iter_item, "mem_maximum")
-      field "mem_minimum", val(iter_item, "mem_minimum")
-      field "projectId", val(iter_item,"projectId")
-    end
-  end
-end
-
-datasource "ds_clean_instance_data" do
-  run_script $js_clean_instance_data, $ds_add_instance_data, $param_exclusion_tag_key
-end
-
-###############################################################################
-# Scripts
-###############################################################################
-script "js_time", type: "javascript" do
-  result "time"
-  code <<-EOF
-    var time = [{
-      "end_date":  new Date().toISOString(),
-      "start_date": new Date(new Date().setDate(new Date().getDate() - 30)).toISOString()
-    }]
-EOF
+# PREPARE THE CPU AND MEMORY UTILIZATION TO BE SHOWN IN THE INCIDENT REPORT
+datasource "ds_calculated_utilization" do
+  run_script $js_calculated_utilization, $ds_compute_utilization, $ds_memory_utilization
 end
 
 script "js_calculated_utilization", type: "javascript" do
   result "results"
   parameters "ds_compute_utilization", "ds_memory_utilization"
   code <<-EOS
-  results = []
-  for ( i =0; i < ds_compute_utilization.length; i++ ){
-    var instance_id = ds_compute_utilization[i].instance_id
-    if ( instance_id === null || instance_id === undefined ) {
-      // No instance id, continue
-    } else {
-      var points = ds_compute_utilization[i].cpu_points
-      if ( points === null || points === undefined ) {
-        var cpu_maximum = "101"
-        var cpu_average = "101"
-        var cpu_minimum = "101"
-      } else {
-        var cpu_maximum = parseFloat( points.reduce( function (x, y) { return Math.max(x, y) } )).toFixed(2)
-        var cpu_sum = _.reduce(points, function(memo, num){ return memo + num; }, 0);
-        var cpu_average = parseFloat(cpu_sum / points.length).toFixed(2)
-        var cpu_minimum = parseFloat( points.reduce( function (x, y) { return Math.min(x, y) } )).toFixed(2)
-      }
+  var results = []
+  _.each(ds_compute_utilization, function(cu) {
+    var instance_id = cu.instance_id
+    if (instance_id !== null && instance_id !== undefined) {
       var memory_record = _.find(ds_memory_utilization, function(record) { return record.instance_id == instance_id; })
-      var memory_maximum = "101"
-        var memory_average = "101"
-        var memory_minimum = "101"
-      if ( memory_record === null || memory_record === undefined ) {
-        // No memory records, continue
-      } else {
-        if ( memory_record.mem_points === null || memory_record.mem_points === undefined ) {
-          // No memory records, continue
-        } else {
-          var memory_maximum = parseFloat( memory_record.mem_points.reduce( function (x, y) { return Math.max(x, y) } )).toFixed(2)
-          var memory_sum = _.reduce(memory_record.mem_points, function(memo, num){ return memo + num; }, 0);
-          var memory_average = parseFloat(memory_sum/memory_record.mem_points.length).toFixed(2)
-          var memory_minimum = parseFloat( memory_record.mem_points.reduce( function (x, y) { return Math.min(x, y) } )).toFixed(2)
-        }
+      var mem_average = "101"
+      var mem_maximum = "101"
+      var mem_minimum = "101"
+      if (memory_record !== null && memory_record !== undefined) {
+        mem_average = memory_record.mem_average
+        mem_maximum = memory_record.mem_maximum
+        mem_minimum = memory_record.mem_minimum
       }
-
-      results.push(
-        {
-          zone: ds_compute_utilization[i].zone,
-          projectId: ds_compute_utilization[i].projectId,
-          instance_id: instance_id,
-          cpu_average: cpu_average,
-          cpu_maximum: cpu_maximum,
-          cpu_minimum: cpu_minimum,
-          mem_average: memory_average,
-          mem_maximum: memory_maximum,
-          mem_minimum: memory_minimum
-        }
-      )
+      results.push({
+        zone: cu.zone,
+        projectId: cu.projectId,
+        instance_id: instance_id,
+        cpu_average: cu.cpu_average,
+        cpu_maximum: cu.cpu_maximum,
+        cpu_minimum: cu.cpu_minimum,
+        mem_average: mem_average,
+        mem_maximum: mem_maximum,
+        mem_minimum: mem_minimum
+      })
     }
-  }
+  })
 EOS
 end
 
-script "js_add_instance_data", type: "javascript" do
-  result "request"
-  parameters "project","zone", "instance_id"
+# GET A LIST OF UNIQUE PROJECT IDS TO REDUCE THE NUMBER OF CALLS WE NEED TO DO TO API TO GET VM DATA
+datasource "ds_grouped_project_ids" do
+  run_script $js_grouped_project_ids, $ds_calculated_utilization
+end
+
+script "js_grouped_project_ids", type: "javascript" do
+  result "grouped_project_ids"
+  parameters "ds_calculated_utilization"
   code <<-EOS
-  request = {
-    "auth": "auth_google",
-    "host": "www.googleapis.com",
-    "verb": "GET",
-    "path": "/compute/v1/projects/"+project+"/zones/"+zone+"/instances",
-    "headers": {
-      "User-Agent": "RS Policies",
-      "Content-Type": "application/json"
-    },
-    "query_params": {
-      "filter": "(id="+instance_id+") AND (status=RUNNING)"
+  var grouped_project_ids = _.keys(_.groupBy(ds_calculated_utilization, "projectId"))
+  EOS
+end
+
+# GET A LIST OF THE INSTANCES OF EVERY ACCOUNT ID IN EVERY ZONE
+datasource "ds_instances" do
+  iterate $ds_grouped_project_ids
+  request do
+    auth $auth_google
+    host "compute.googleapis.com"
+    verb "GET"
+    path join(["/compute/v1/projects/", iter_item, "/aggregated/instances"])
+    ignore_status [403, 404]
+    header "User-Agent", "RS Policies"
+    header "Content-Type", "application/json"
+  end
+  result do
+    encoding "json"
+    field "instances", jq(response, "[ .items | to_entries | map_values(.value) | map(select(has(\"instances\"))) | .[].instances | .[] | {id,name,hostname,selfLink,status,labels,zone,kind}]")
+  end
+end
+
+# FLATTEN THE ARRAY OF GCP INSTANCES
+datasource "ds_collected_instances" do
+  run_script $js_collected_instances, $ds_instances
+end
+
+script "js_collected_instances", type: "javascript" do
+  result "collected_instances"
+  parameters "ds_instances"
+  code <<-EOS
+  var collected_instances = []
+  _.each(ds_instances, function(instance_list) {
+    _.each(instance_list.instances, function(instance) {
+      collected_instances.push(instance)
+    })
+  })
+  EOS
+end
+
+# COMBINE INSTANCE DATA AND CPU/MEMORY UTILIZATION DATA
+datasource "ds_add_instance_data" do
+  run_script $js_add_instance_data, $ds_collected_instances, $ds_calculated_utilization
+end
+
+script "js_add_instance_data", type: "javascript" do
+  parameters "ds_collected_instances", "ds_calculated_utilization"
+  result "instances_with_data"
+  code <<-EOS
+  var instances_with_data = []
+  _.each(ds_calculated_utilization, function(cu) {
+    var instance_id = cu.instance_id
+    var data_record = _.find(ds_collected_instances, function(record) { return record.id === instance_id })
+    if (data_record === null || data_record === undefined) {
+      instances_with_data.push({
+        id: instance_id,
+        hostname: "",
+        selfLink: "",
+        label_instance_name: cu.label_instance_name,
+        status: "",
+        zone: cu.zone,
+        labels: {},
+        cpu_average: parseFloat(cu.cpu_average).toFixed(2),
+        cpu_maximum: parseFloat(cu.cpu_maximum).toFixed(2),
+        cpu_minimum: parseFloat(cu.cpu_minimum).toFixed(2),
+        mem_average: parseFloat(cu.mem_average).toFixed(2),
+        mem_maximum: parseFloat(cu.mem_maximum).toFixed(2),
+        mem_minimum: parseFloat(cu.mem_minimum).toFixed(2),
+        projectId: cu.projectId
+      })
+    } else {
+      instances_with_data.push({
+        id: instance_id,
+        hostname: data_record.name || data_record.id,
+        selfLink: data_record.selfLink,
+        label_instance_name: cu.label_instance_name,
+        status: data_record.status,
+        zone: cu.zone,
+        labels: data_record.labels,
+        cpu_average: parseFloat(cu.cpu_average).toFixed(2),
+        cpu_maximum: parseFloat(cu.cpu_maximum).toFixed(2),
+        cpu_minimum: parseFloat(cu.cpu_minimum).toFixed(2),
+        mem_average: parseFloat(cu.mem_average).toFixed(2),
+        mem_maximum: parseFloat(cu.mem_maximum).toFixed(2),
+        mem_minimum: parseFloat(cu.mem_minimum).toFixed(2),
+        projectId: cu.projectId
+      })
     }
-    "ignore_status": [403,404]
-  }
-EOS
+  })
+  EOS
+end
+
+# FILTER INSTANCES BY THE PARAMETERS PROVIDED
+datasource "ds_clean_instance_data" do
+  run_script $js_clean_instance_data, $ds_add_instance_data, $param_exclusion_tag_key
 end
 
 script "js_clean_instance_data", type: "javascript" do
@@ -344,6 +381,7 @@ script "js_clean_instance_data", type: "javascript" do
   results = _.sortBy(results, 'projectId');
 EOS
 end
+
 ###############################################################################
 # Policy
 ###############################################################################

@@ -1,0 +1,252 @@
+name "Security Group Rules with ports open to the world"
+rs_pt_ver 20180301
+type "policy"
+short_description "**Deprecated: This policy is no longer being updated.**  A policy that sends email notifications when a security group has ports open to the world. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/flexera/cmp/world_open_ports) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "high"
+category "Security"
+info(
+  version: "1.7",
+  provider: "Flexera Cloud Management",
+  service: "",
+  policy_set: "",
+  publish: "false"
+)
+
+permission "general_permissions" do
+  resources "rs_cm.clouds", "rs_cm.security_groups", "rs_cm.security_group_rules","rs_cm.networks"
+  actions   "rs_cm.index","rs_cm.show"
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_whitelist" do
+  type "list"
+  label "List of security groups allowed to have open ports to the world."
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Delete Security Groups"]
+  default []
+end
+
+auth "auth_rs", type: "rightscale"
+
+# Filter to clouds that support security groups
+resources "clouds", type: "rs_cm.clouds"
+
+resources "security_groups", type: "rs_cm.security_groups" do
+  iterate @clouds
+  cloud_href href(iter_item)
+end
+
+resources "security_group_rules", type: "rs_cm.security_group_rules" do
+  iterate @security_groups
+  security_group_href href(iter_item)
+end
+
+resources "networks", type: "rs_cm.networks"
+
+datasource "ds_security_groups" do
+  iterate @security_groups
+  field "resource_uid", val(iter_item,  "resource_uid")
+  field "name", val(iter_item, "name")
+  field "href", href(iter_item)
+  field "network_href", jmes_path(iter_item, "links[?rel=='network'].href | [0]")
+end
+
+datasource "ds_networks" do
+  iterate @networks
+  field "name", val(iter_item, "name")
+  field "href", href(iter_item)
+end
+
+datasource "ds_security_group_rules" do
+  iterate @security_group_rules
+  field "href", href(iter_item)
+  field "protocol", from(iter_item)
+  field "source_type", from(iter_item)
+  field "description", from(iter_item)
+  field "security_group_href", jmes_path(iter_item, "links[?rel=='security_group'].href | [0]")
+  field "cidr_ips", from(iter_item)
+  field "start_port",from(iter_item)
+  field "end_port", from(iter_item)
+  field "direction", from(iter_item)
+end
+
+datasource "ds_munged_security_groups" do
+  run_script $js_munge_sec_group, $ds_security_groups, $ds_security_group_rules, $ds_networks, rs_project_id, rs_cm_host, $param_whitelist
+end
+
+script "js_munge_sec_group", type: "javascript" do
+  parameters "ds_security_groups", "ds_security_group_rules", "ds_networks", "rs_project_id", "rs_cm_host","param_whitelist"
+  result "groups_and_rules"
+code <<-EOS
+var security_groups = {};
+
+for (var index = 0; index < ds_security_groups.length; index++) {
+  var security_group = ds_security_groups[index];
+  security_groups[security_group.href] = security_group;
+}
+
+var networks = {};
+
+for (var index = 0; index < ds_networks.length; index++) {
+  var network = ds_networks[index];
+  networks[network.href] = network;
+}
+
+var groups_and_rules=[];
+var base_url="https://" + rs_cm_host + "/acct/"
+
+for (var index = 0; index < ds_security_group_rules.length; index++) {
+  var security_group_rule = ds_security_group_rules[index];
+  var security_group = security_groups[security_group_rule.security_group_href];
+  var network = networks[security_group.network_href];
+  if (network) {
+    var security_group_access_link_root = base_url.concat(rs_project_id, '/network_manager#networks/', network.href.split('/')[3], '/security_groups/', security_group.href.split('/')[5]);
+  } else {
+    network = {};
+  }
+
+  // create ports string for report
+  var ports ='all'
+  if (security_group_rule.start_port && security_group_rule.end_port){
+    ports = security_group_rule.start_port + ":" + security_group_rule.end_port
+  }
+
+  // add security group to incident if
+  // its not part of the param_whitelist
+  // the source_type is cidr_ips
+  // the cidr_ips is 0.0.0.0/0
+  // direction is ingress
+  if (param_whitelist.indexOf(security_group.name) === -1 &&
+      security_group_rule.source_type === 'cidr' &&
+      security_group_rule.cidr_ips === '0.0.0.0/0' &&
+      security_group_rule.direction === 'ingress'){
+
+    groups_and_rules.push({
+      security_group_name: security_group.name,
+      security_group_href: security_group.href,
+      href: security_group_rule.href,
+      protocol: security_group_rule.protocol,
+      source_type: security_group_rule.source_type,
+      description: security_group_rule.description,
+      cidr_ips: security_group_rule.cidr_ips,
+      network_href: network.href,
+      network_name: network.name,
+      security_group_access_link_root: security_group_access_link_root,
+      ports: ports
+    });
+
+  }
+}
+EOS
+end
+
+escalation "email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "report_security_groups_with_world_open_ports_description" do
+  automatic contains($param_automatic_action, "Delete Security Groups")
+  label "Delete Resources"
+  description "Delete selected security group rules found to be violate the policy"
+  run "delete_rules", data, rs_optima_host
+end
+
+resolution "report_security_groups_with_world_open_ports_resolution" do
+  email $param_email
+end
+
+policy "ports_open_to_the_world" do
+  validate $ds_munged_security_groups do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Security Group Rules with Ports Open to the World"
+    escalate $email
+    escalate $report_security_groups_with_world_open_ports_description
+    check eq(size(data), 0)
+    resolve $report_security_groups_with_world_open_ports_resolution
+    export do
+      resource_level true
+      field "security_group_name" do
+        label "Security Group Name"
+      end
+      field "security_group_href" do
+        label "Security Group Href"
+      end
+      field "id" do
+        label "Href"
+        path "href"
+      end
+      field "protocol" do
+        label "Protocol"
+      end
+      field "ports" do
+        label "Ports"
+      end
+      field "source_type" do
+        label "Source Type"
+      end
+      field "network_href" do
+        label "Network Href"
+      end
+      field "network_name" do
+        label "Network Name"
+      end
+      field "security_group_access_link_root" do
+        label "Security Group Link"
+      end
+    end
+  end
+end
+
+define delete_rules($data, $$rs_optima_host) do
+  foreach $item in $data do
+    @security_group_rule = rs_cm.get(href: $item['id'])
+    @security_group_rule.destroy()
+    call sys_log('destroy' ,to_s($item))
+  end
+end
+
+define sys_log($subject, $detail) do
+  # Create empty errors array if doesn't already exist
+  if !$$errors
+    $$errors = []
+  end
+  # Check if debug is enabled
+  if $$debug
+    # Append to global $$errors
+    # This is the suggested way to capture errors
+    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
+    # If Flexera NAM Zone, create audit_entries [to be deprecated]
+    # This is the legacy method for capturing errors and only supported on Flexera NAM
+    if $$rs_optima_host == "api.optima.flexeraeng.com"
+      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
+      $task_label = "Creating audit entry for " + $subject
+      sub task_label: $task, on_error: skip_error_and_append($task) do
+        rs_cm.audit_entries.create(
+          notify: "None",
+          audit_entry: {
+            auditee_href: @@account,
+            summary: $subject,
+            detail: $detail
+          }
+        )
+      end # End sub on_error
+    end # End if rs_optima_host
+  end # End if debug is enabled
+end
+
+define skip_error_and_append($subject) do
+  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $_error_behavior = "skip"
+end

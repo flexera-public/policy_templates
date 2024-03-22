@@ -1,5 +1,45 @@
 # Changelog
 
+## v5.1
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
+## v5.0
+
+- Added support for regex when filtering resources by tag
+
+## v4.3
+
+- Fixed issue where currency conversion would sometimes not work as expected.
+
+## v4.2
+
+- Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.
+
+## v4.1
+
+- Added the currency separator for savings message
+
+## v4.0
+
+- Several parameters altered to be more descriptive and human-readable
+- Added ability to only report recommendations that meet a minimum savings threshold
+- Added ability to use Subscription list parameter as either an "allow" list or a "deny" list
+- Added ability to filter resources by region
+- Added ability to filter resources by multiple tag key:value pairs
+- Added additional context to incident description
+- Normalized incident export to be consistent with other policies
+- Added human-readable recommendation to incident export
+- Added estimated savings to incident export
+- Added additional fields to incident export to facilitate scraping for dashboards
+- Streamlined code for better readability and faster execution
+
+## v3.0
+
+- Renamed Subscription List parameter for consistency and accuracy
+- Added logic required for "Meta Policy" use-cases
+- Policy now requires a valid Flexera credential to facilitate "Meta Policy" use-cases
+
 ## v2.12
 
 - Replaced the term **whitelist** with **allowed list**.

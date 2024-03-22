@@ -7,10 +7,10 @@ severity "medium"
 category "Cost"
 default_frequency "monthly"
 info(
-  version: "3.0",
+  version: "3.2",
   provider: "AWS",
-  service: "",
-  policy_set: ""
+  service: "Cost Explorer",
+  policy_set: "Savings Plan Utilization"
 )
 
 ###############################################################################
@@ -21,13 +21,14 @@ parameter "param_savings_threshold" do
   category "Savings Plan"
   label "Savings Plan Utilization Threshold"
   description "Specify the minimum Savings Plan Utilization threshold as a percentage that should result in an alert"
-  default 70
+  default 100
   type "number"
 end
 
 parameter "param_email" do
   type "list"
   label "Email addresses to notify"
+  default []
   description "Email addresses of the recipients you wish to notify"
 end
 
@@ -43,8 +44,9 @@ end
 parameter "param_sp_arn" do
   category "Savings Plan"
   label "Savings Plan ARN"
-  description "The unique Amazon Resource Name (ARN) for a particular Savings Plan."
-  allowed_pattern /arn:aws:savingsplans::[a-zA-Z0-9]*/
+  description "Optional; The unique Amazon Resource Name (ARN) for a particular Savings Plan.  If no ARN is specified, all Savings Plans will have utilization reported."
+  default "" # Default value of empty string indicates that all Savings Plans will be checked
+  allowed_pattern /(arn:aws:savingsplans::[a-zA-Z0-9]*|^$)/ # Regex to validate ARN format, or allow empty string
   type "string"
 end
 
@@ -69,6 +71,19 @@ credentials "auth_aws" do
 end
 
 ###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_aws_savingsplans" do
+  get_page_marker do
+    body_path jmes_path(response, "nextToken")
+  end
+  set_page_marker do
+    body_field "nextToken"
+  end
+end
+
+###############################################################################
 # Datasources and Scripts
 ###############################################################################
 
@@ -76,7 +91,7 @@ end
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
     header "User-Agent", "RS Policies"
   end
 end
@@ -97,14 +112,55 @@ datasource "ds_currency_code" do
   end
 end
 
+# GET SAVINGS PLANS LIST FROM AWS API
+datasource "ds_savings_plans" do
+  request do
+    auth $auth_aws
+    pagination $pagination_aws_savingsplans
+    host "savingsplans.us-east-1.amazonaws.com"
+    verb "POST"
+    path "/DescribeSavingsPlans"
+    header "User-Agent", "RS Policies"
+    header "Content-Type", "application/json"
+  end
+  result do
+    encoding "json"
+    # Use jq to select from response only where savingsPlan.state not equal "retired"
+    collect jq(response, '.savingsPlans[] | select( .state != "retired" )') do
+      field "savingsPlanArn", jmes_path(col_item, "savingsPlanArn")
+    end
+  end
+end
+
+datasource "ds_savings_plan_selected" do
+  run_script $js_savings_plan_selected, $ds_savings_plans, $param_sp_arn
+end
+
+script "js_savings_plan_selected", type: "javascript" do
+  parameters "ds_savings_plans", "param_sp_arn"
+  result "results"
+  code <<-EOS
+  var results = [];
+  if (param_sp_arn === ""){
+    results = ds_savings_plans;
+  } else {
+    results = _.filter(ds_savings_plans, function(sp){
+      return sp.savingsPlanArn === param_sp_arn;
+    });
+  }
+  EOS
+end
+
 #GET SAVINGS PLANS UTILIZATIONS DATA FROM AWS API
 datasource "ds_aws_utilization" do
+  iterate $ds_savings_plan_selected
   request do
-    run_script $js_get_aws_utilization, $param_time_period, $param_sp_arn
+    run_script $js_get_aws_utilization, $param_time_period, val(iter_item, "savingsPlanArn")
   end
   result do
     encoding "json"
     collect jmes_path(response, "SavingsPlansUtilizationsByTime[*].Utilization") do
+      field "savingsPlanArn", jmes_path(iter_item,"savingsPlanArn")
       field "total_commitment", jmes_path(col_item,"TotalCommitment")
       field "unused_commitment", jmes_path(col_item,"UnusedCommitment")
       field "used_commitment", jmes_path(col_item,"UsedCommitment")
@@ -114,7 +170,7 @@ datasource "ds_aws_utilization" do
 end
 
 script "js_get_aws_utilization", type: "javascript" do
-  parameters "time_period", "sp_arn"
+  parameters "time_period", "savingsPlanArn"
   result "request"
   code <<-EOS
 
@@ -131,7 +187,7 @@ script "js_get_aws_utilization", type: "javascript" do
     "Filter": {
       "Dimensions": {
         "Key": "SAVINGS_PLAN_ARN",
-        "Values": [ sp_arn ]
+        "Values": [ savingsPlanArn ]
       }
     },
     "SortBy": {
@@ -162,12 +218,12 @@ end
 
 #PROCESS RESPONSE AND DEFINE CHART DATA
 datasource "ds_chart_data" do
-  run_script $js_define_chart_data, $ds_aws_utilization, $ds_currency_reference, $ds_currency_code, $param_savings_threshold, $param_sp_arn
+  run_script $js_define_chart_data, $ds_aws_utilization, $ds_currency_reference, $ds_currency_code, $param_savings_threshold
 end
 
 script "js_define_chart_data", type: "javascript" do
-  parameters "aws_utilization_data", "curr_ref", "curr_code", "savings_threshold", "sp_arn"
-  result "report"
+  parameters "aws_utilization_data", "curr_ref", "curr_code", "savings_threshold"
+  result "outputs"
   code <<-EOS
 
   var curr = "$", separator = ","
@@ -194,24 +250,28 @@ script "js_define_chart_data", type: "javascript" do
     return result + "." + values[1]
   }
 
-  var report = {}
+  var outputs = []
   _.each(aws_utilization_data, function(util){
     utilization_percentage = Number(util.used_commitment)/Number(util.total_commitment)
     if ( utilization_percentage < savings_threshold){
       report = {
+        payer_account_id: util.savingsPlanArn.split(":")[4],
+        arn: util.savingsPlanArn,
         unused_commitment: parseFloat(util.unused_commitment).toFixed(3),
         used_commitment: parseFloat(util.used_commitment).toFixed(3),
         total_commitment: parseFloat(util.total_commitment).toFixed(3),
-        utilization_percentage: util.utilization_percentage,
-        chart_title: encodeURI("chtt=Utilization for Savings Plan ARN: '" + sp_arn + "'"),
+        utilization_percentage: parseFloat(util.utilization_percentage).toFixed(3),
+        chart_title: encodeURI("chtt=Utilization for Savings Plan ARN: '" + util.savingsPlanArn + "'"),
         chart_type: encodeURI("cht=pd"),
         chart_size: encodeURI("chs=800x200"),
         chart_data: encodeURI("chd=t:" + util.unused_commitment + "," + util.used_commitment), //remove currency/separator from this line
         chart_image: encodeURI("chof=.png"),
+        chart_scale: encodeURI('chds=a'),
         chart_label: encodeURI("chdl=Unused+Commitment|Used+Commitment"),
         chart_inside_label: encodeURI("chli=" + curr + formatNumber(util.total_commitment, separator)),
         chart_data_label: encodeURI("chl=" + curr+ formatNumber(util.unused_commitment, separator) + "|" + curr + formatNumber(util.used_commitment, separator)) //add currency/separator to this line
       }
+      outputs.push(report)
     }
   })
   EOS
@@ -233,14 +293,16 @@ end
 ###############################################################################
 
 policy "policy_aws_sp_utilization" do
-  validate $ds_chart_data do
-    summary_template "AWS Savings Plan Utilization Details"
+  validate_each $ds_chart_data do
+    summary_template "AWS Savings Plan Utilization Details for Account {{with(index data 0)}}{{.payer_account_id}}{{end}}"
     detail_template <<-EOS
 # Savings Plan Utilization
-### ARN: {{ parameters.param_sp_arn }}
+{{ range data }}
+### ARN: {{ .arn }}
 ### Utilization for {{ parameters.param_time_period }}
-![Spending Overview Chart](https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id={{ rs_org_id }}&rs_project_id={{ rs_project_id }}&{{data.chart_type}}&{{data.chart_size}}&{{data.chart_data}}&{{data.chart_image}}&{{data.chart_label}}&{{data.chart_inside_label}}&{{data.chart_data_label}})
+![Spending Overview Chart](https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id={{ rs_org_id }}&rs_project_id={{ rs_project_id }}&{{.chart_type}}&{{.chart_size}}&{{.chart_data}}&{{.chart_image}}&{{.chart_scale}}&{{.chart_label}}&{{.chart_inside_label}}&{{.chart_data_label}})
 ___
+{{ end }}
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 EOS
     escalate $esc_savings_plans_utilizations
@@ -248,6 +310,9 @@ EOS
     export do
       # no actions so resource_level can be false
       resource_level false
+      field "arn" do
+        label "Savings Plan ARN"
+      end
       field "total_commitment" do
         label "Total Commitment"
       end

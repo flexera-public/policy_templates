@@ -1,0 +1,197 @@
+name "Azure Ensure PostgreSQL Servers Connection Throttling Enabled"
+rs_pt_ver 20180301
+type "policy"
+short_description "Report if any PostgreSQL server instances do not have connection throttling enabled. \n See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/azure/pg_conn_throttling) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+category "Security"
+severity "high"
+default_frequency "daily"
+info(
+  version: "2.2",
+  provider: "Azure",
+  service: "PostgreSQL",
+  policy_set: "CIS",
+  cce_id: "",
+  benchmark_control: "4.3.5",
+  benchmark_version: "1.4.0",
+  cis_controls: "[\"8.2v8\", \"6.2v7\"]",
+  nist: "AU-3"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  label "Azure Endpoint"
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "azure_auth" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "azure_pagination" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_subscriptions" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host $param_azure_endpoint
+    path "/subscriptions/"
+    query "api-version", "2019-06-01"
+    header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscriptionId", jmes_path(col_item,"subscriptionId")
+      field "subscriptionName", jmes_path(col_item,"displayName")
+    end
+  end
+end
+
+datasource "ds_pg_servers" do
+  iterate $ds_subscriptions
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "subscriptionId"), "/providers/Microsoft.DBForPostgreSql/servers"])
+    query "api-version", "2017-12-01"
+    header "User-Agent", "RS Policies"
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "sku", jmes_path(col_item, "sku")
+      field "location", jmes_path(col_item, "location")
+      field "properties", jmes_path(col_item, "properties")
+      field "tags", jmes_path(col_item, "tags")
+      field "subscriptionId", val(iter_item, "subscriptionId")
+      field "subscriptionName", val(iter_item, "subscriptionName")
+    end
+  end
+end
+
+datasource "ds_pg_servers_throttling" do
+  iterate $ds_pg_servers
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host $param_azure_endpoint
+    path join([val(iter_item, "id"), "/configurations/connection_throttling"])
+    query "api-version", "2017-12-01"
+    header "User-Agent", "RS Policies"
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    field "id", val(iter_item, "id")
+    field "name", val(iter_item, "name")
+    field "sku", val(iter_item, "sku")
+    field "location", val(iter_item, "location")
+    field "properties", val(iter_item, "properties")
+    field "tags", val(iter_item, "tags")
+    field "subscriptionId", val(iter_item, "subscriptionId")
+    field "subscriptionName", val(iter_item, "subscriptionName")
+    field "configName", jmes_path(response, "name")
+    field "configProperties", jmes_path(response, "properties")
+  end
+end
+
+datasource "ds_bad_pg_servers" do
+  run_script $js_bad_pg_servers, $ds_pg_servers_throttling
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_bad_pg_servers", type: "javascript" do
+  parameters "ds_pg_servers"
+  result "result"
+  code <<-EOS
+  result = []
+
+  _.each(ds_pg_servers, function(server) {
+    if (server['configProperties']['value'] != 'on') {
+      result.push(server)
+    }
+  })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_pg_servers_throttling" do
+  validate $ds_bad_pg_servers do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure PostgreSQL Server(s) Found Without Connection Throttling Enabled"
+    escalate $esc_email
+    check eq(size(data),0)
+    export do
+      field "name" do
+        label "Name"
+      end
+      field "location" do
+        label "Location"
+      end
+      field "subscriptionId" do
+        label "Subscription ID"
+      end
+      field "subscriptionName" do
+        label "Subscription Name"
+      end
+      field "id" do
+        label "Resource ID"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end

@@ -6,9 +6,9 @@ long_description ""
 category "Operational"
 severity "medium"
 info(
-  version: "2.9",
+  version: "3.2",
   provider: "AWS",
-  service: "EC2",
+  service: "Compute",
   policy_set: ""
 )
 
@@ -16,11 +16,19 @@ info(
 # Parameters
 ###############################################################################
 
+parameter "param_allowed_regions_allow_or_deny" do
+  type "string"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details"
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
 parameter "param_allowed_regions" do
   type "list"
-  label "Allowed Regions"
+  label "Regions"
   allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
-  description "A list of allowed regions. See the README for more details"
+  description "A list of allowed or denied regions. See the README for more details"
 end
 
 parameter "param_email" do
@@ -31,8 +39,9 @@ end
 
 parameter "param_aws_account_number" do
   type "string"
+  category "Policy Settings"
   label "Account Number"
-  description "The account number for AWS STS Cross Account Roles."
+  description "Leave blank; this is for automated use with Meta Policies. See README for more details."
   default ""
 end
 
@@ -96,7 +105,7 @@ end
 
 # Get only SCP enabled regions
 datasource "ds_regions" do
-  run_script $js_regions, $param_allowed_regions, $ds_regions_list
+  run_script $js_regions, $param_allowed_regions, $ds_regions_list, $param_allowed_regions_allow_or_deny
 end
 
 #To get list of All Scheduled EC2 Instances.
@@ -154,7 +163,7 @@ end
 ###############################################################################
 
 script "js_regions", type:"javascript" do
-  parameters "user_entered_regions", "all_regions"
+  parameters "user_entered_regions", "all_regions", "regions_allow_or_deny"
   result "regions"
   code <<-EOS
     if(_.isEmpty(user_entered_regions)){
@@ -163,6 +172,12 @@ script "js_regions", type:"javascript" do
       //Filter unique regions
       var uniqueRegions = _.uniq(user_entered_regions);
       var all_regions_list = [];
+      //Filter and remove denied regions from all_regions
+      if (regions_allow_or_deny == "Deny"){
+        var all_regions = all_regions.filter(function(obj){
+          return user_entered_regions.indexOf(obj.region) === -1;
+        });
+      }
       all_regions.forEach(function(all_region){
         all_regions_list.push(all_region.region)
       })

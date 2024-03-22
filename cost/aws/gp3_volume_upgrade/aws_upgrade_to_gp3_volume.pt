@@ -1,12 +1,12 @@
 name "AWS GP3 Upgradeable Volumes"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks for upgradeable volumes and report them for modification. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/gp3_volume_upgrade) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "**Deprecated: This policy is no longer being updated. Please see [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/gp3_volume_upgrade/) for more details.**  Checks for upgradeable volumes and report them for modification. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/gp3_volume_upgrade) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "3.0",
+  version: "4.4",
   provider: "AWS",
   service: "EBS",
   policy_set: "GP3 Volumes"
@@ -16,11 +16,19 @@ info(
 # User inputs
 ###############################################################################
 
+parameter "param_allowed_regions_allow_or_deny" do
+  type "string"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details"
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
 parameter "param_allowed_regions" do
   type "list"
-  label "Allowed Regions"
+  label "Regions"
   allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
-  description "A list of allowed regions. See the README for more details"
+  description "A list of allowed or denied regions. See the README for more details"
 end
 
 parameter "param_email" do
@@ -31,8 +39,9 @@ end
 
 parameter "param_aws_account_number" do
   type "string"
+  category "Policy Settings"
   label "Account Number"
-  description "The account number for AWS STS Cross Account Roles."
+  description "Leave blank; this is for automated use with Meta Policies. See README for more details."
   default ""
 end
 
@@ -127,6 +136,9 @@ datasource "ds_regions_list" do
     query "Filter.1.Name", "opt-in-status"
     query "Filter.1.Value.1", "opt-in-not-required"
     query "Filter.1.Value.2", "opted-in"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
   end
   result do
     encoding "xml"
@@ -138,7 +150,7 @@ end
 
 # Get only SCP enabled regions
 datasource "ds_regions" do
-  run_script $js_regions, $param_allowed_regions, $ds_regions_list
+  run_script $js_regions, $param_allowed_regions, $ds_regions_list, $param_allowed_regions_allow_or_deny
 end
 
 # Get list of gp2, io1, and io2 Volumes.
@@ -283,7 +295,7 @@ end
 ###############################################################################
 
 script "js_regions", type: "javascript" do
-  parameters "user_entered_regions", "all_regions"
+  parameters "user_entered_regions", "all_regions", "regions_allow_or_deny"
   result "regions"
   code <<-EOS
     if(_.isEmpty(user_entered_regions)){
@@ -292,6 +304,12 @@ script "js_regions", type: "javascript" do
       //Filter unique regions
       var uniqueRegions = _.uniq(user_entered_regions);
       var all_regions_list = [];
+      //Filter and remove denied regions from all_regions
+      if (regions_allow_or_deny == "Deny"){
+        var all_regions = all_regions.filter(function(obj){
+          return user_entered_regions.indexOf(obj.region) === -1;
+        });
+      }
       all_regions.forEach(function(all_region){
         all_regions_list.push(all_region.region)
       })
@@ -413,7 +431,7 @@ script "js_get_costs", type: "javascript" do
         "end_at": end_date,
         "metrics": ["cost_nonamortized_unblended_adj"],
         "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id})),
-        "limit": 10000,
+        "limit": 100000,
         "filter": {
           "expressions": [
             {
@@ -623,8 +641,8 @@ policy "policy_superseded_volumes" do
     detail_template <<-EOS
 {{data.message}}
 EOS
-    escalate $report_volumes
-    check eq(size(val(data, "upgradeable_volumes")), 0)
+    escalate $esc_email
+    check logic_or($ds_parent_policy_terminated, eq(size(val(data, "upgradeable_volumes")), 0))
     export "upgradeable_volumes" do
       resource_level true
       field "savings" do
@@ -672,7 +690,7 @@ end
 # Escalations
 ###############################################################################
 
-escalation "report_volumes" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
@@ -680,5 +698,92 @@ escalation "report_volumes" do
 end
 
 ###############################################################################
-# Cloud Workflow
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
 ###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
+end

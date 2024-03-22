@@ -1,5 +1,21 @@
 # Changelog
 
+## v3.3
+
+- Deprecated: This policy is no longer being updated. Please see policy README for more information.
+
+## v3.2
+
+- Updated description of `Account Number` parameter
+
+## v3.1
+
+- Changed service metadata to "Compute" to ensure proper incident scraping
+
+## v3.0
+
+- Added parameter to enable Allow or Deny filtering by user entered regions
+
 ## v2.16
 
 - Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM

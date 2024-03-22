@@ -5,194 +5,315 @@ short_description "This policy will create an incident when Flexera SaaS Manager
 long_description ""
 severity "medium"
 category "SaaS Management"
-default_frequency "daily"
+default_frequency "weekly"
 info(
-  version: "2.6",
+  version: "3.1",
   provider: "Flexera SaaS Manager",
   service: "",
   policy_set: ""
 )
 
 ###############################################################################
-# User inputs
+# Parameters
 ###############################################################################
-
-parameter "param_days" do
-  type "number"
-  label "Upcoming Number of Days"
-  default 60
-  description "If an application renewal is due in the upcoming time period, raise an incident"
-end
 
 parameter "param_email" do
   type "list"
-  label "Email addresses to notify"
-  description "Email addresses of the recipients you wish to notify"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+  default []
+end
+
+parameter "param_applications" do
+  type "list"
+  category "Policy Settings"
+  label "Applications"
+  description "A list of application names and/or IDs to check. Leave blank to check all applications."
+  default []
+end
+
+parameter "param_days" do
+  type "number"
+  category "Policy Settings"
+  label "Days Until Expiration"
+  description "The number of days before the license expires. All licenses set to expire in fewer days than the specified value will be included in the report."
+  min_value 0
+  default 60
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-#authenticate with FSM
-credentials "fsm_auth" do
+credentials "auth_flexera" do
   schemes "oauth2"
-  label "FSM"
-  description "Select the FSM Resource Manager Credential from the list."
-  tags "provider=flexera_fsm"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
-datasource "ds_get_host" do
-  run_script $js_get_host, rs_governance_host
-end
-
-datasource "ds_num_products" do
-  iterate $ds_get_host
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
   request do
-    auth $fsm_auth
-    host val(iter_item,"host")
-    verb "GET"
-    scheme "https"
-    path join(["/svc/orgs/", rs_org_id, "/managed-products"])
-    header "content-type", "application/json"
-  end
-  result do
-    encoding "json"
-    field "totalItems", jmes_path(response, "totalItems")
-    field "saas_host", val(iter_item,"host")
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
   end
 end
 
-datasource "ds_products" do
-  request do
-    run_script $js_products, $ds_num_products, rs_org_id
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "items[*]") do
-      field "application", jmes_path(col_item, "name")
-      field "pointOfContactEmail", jmes_path(col_item, "pointOfContactEmail")
-      field "vendor", jmes_path(col_item, "product.vendor.name")
-      field "annualCost", jmes_path(col_item, "annualCost")
-      field "licenses" do
-        collect jmes_path(col_item, "licenses") do
-          field "lic_id", jmes_path(col_item, "id")
-        end
-      end
-    end
-  end
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
 end
 
-datasource "ds_licenses_summary" do
-  iterate $ds_get_host
-  request do
-    auth $fsm_auth
-    host val(iter_item,"host")
-    verb "GET"
-    scheme "https"
-    path join(["/svc/orgs/", rs_org_id, "/licenses/summaries"])
-    header "content-type", "application/json"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "[*]") do
-      field "lic_id", jmes_path(col_item, "id")
-      field "end_date", jmes_path(col_item, "endDate")
-    end
-  end
-end
-
-datasource "ds_products_with_enddate" do
-  run_script $js_products_with_enddate, $ds_products, $ds_licenses_summary, $param_days
-end
-
-###############################################################################
-# Scripts
-###############################################################################
-
-script "js_get_host", type: "javascript" do
-  parameters "rs_governance_host"
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
   result "result"
   code <<-EOS
-    var result = [];
-    if(rs_governance_host.indexOf(".eu") !== -1 || rs_governance_host.indexOf("-eu") !== -1){
-      result.push({host: "api.fsm-eu.flexeraeng.com"});
-    }else{
-      result.push({host: "api.fsm.flexeraeng.com"});
-    }
-  EOS
-end
-
-script "js_products_with_enddate", type: "javascript" do
-  parameters "ds_products", "ds_licenses_summary", "param_days"
-  result "result"
-  code <<-EOS
-    var result = [];
-    var lic_enddate = {};
-    _.each(ds_licenses_summary, function(license){
-      if(license.end_date != null){
-        lic_enddate[license.lic_id]= license.end_date;
-      }
-    })
-    var end_date="";
-    _.each(ds_products, function(product){
-      _.each(product.licenses, function(license){
-        end_date=lic_enddate[license.lic_id];
-      })
-      var date = new Date();
-      date = date.setHours(24 * param_days);
-      date = new Date(date);
-      if(end_date != null){
-        var expiration_date = new Date(end_date);
-        if(expiration_date < date){
-          result.push({
-            "application":product.application
-            "pointOfContactEmail":product.pointOfContactEmail
-            "vendor":product.vendor
-            "annualCost": product.annualCost
-            "endDate":end_date
-          })
-        }
-      }
-    })
-    result = _.sortBy(result, 'endDate');
-  EOS
-end
-
-script "js_products", type: "javascript" do
-  parameters "ds_num_products", "rs_org_id"
-  result "request"
-  code <<-EOS
-  request = {
-    auth: "fsm_auth",
-    host: ds_num_products[0]["saas_host"].toString(),
-    verb: "GET",
-    scheme: "https",
-    path: "/svc/orgs/"+rs_org_id+"/managed-products",
-    headers: {
-      "content-type": "application/json"
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
     },
-    query_params: {
-      "pageSize": ds_num_products[0]["totalItems"].toString(),
-      "includeInactive": "false"
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
     }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
   }
 EOS
 end
 
-###############################################################################
-# Escalations
-###############################################################################
+datasource "ds_managed_apps" do
+  request do
+    run_script $js_managed_apps, $ds_flexera_api_hosts, rs_org_id
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "appId", jmes_path(col_item, "appId")
+      field "appName", jmes_path(col_item, "appName")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "pointOfContact", jmes_path(col_item, "pointOfContact")
+      field "description", jmes_path(col_item, "description")
+      field "vendorName", jmes_path(col_item, "vendorName")
+      field "isActive", jmes_path(col_item, "isActive")
+    end
+  end
+end
 
-escalation "report_summary" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
+script "js_managed_apps", type: "javascript" do
+  parameters "ds_flexera_api_hosts", "rs_org_id"
+  result "request"
+  code <<-EOS
+  var request = {
+    auth: "auth_flexera",
+    host: ds_flexera_api_hosts["flexera"],
+    path: "/saas/v1/orgs/" + rs_org_id + "/managed-apps",
+    headers: { "content-type": "application/json" },
+    query_params: { "view": "extended" }
+  }
+EOS
+end
+
+# Filter out inactive and invalid apps to avoid needlessly checking them
+datasource "ds_managed_apps_active" do
+  run_script $js_managed_apps_active, $ds_managed_apps, $param_applications
+end
+
+script "js_managed_apps_active", type: "javascript" do
+  parameters "ds_managed_apps", "param_applications"
+  result "result"
+  code <<-EOS
+  if (param_applications.length > 0) {
+    result = _.filter(ds_managed_apps, function(app) {
+      include_app = _.contains(param_applications, app['appName']) || _.contains(param_applications, app['appId'])
+      return include_app && app['isActive'] == true && app['appName'] != null && app['vendorName'] != null
+    })
+  } else {
+    result = _.filter(ds_managed_apps, function(app) {
+      return app['isActive'] == true && app['appName'] != null && app['vendorName'] != null
+    })
+  }
+EOS
+end
+
+datasource "ds_managed_apps_licenses" do
+  request do
+    run_script $js_managed_apps_licenses, $ds_flexera_api_hosts, rs_org_id
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "licenses", jmes_path(col_item, "licenses")
+    end
+  end
+end
+
+script "js_managed_apps_licenses", type: "javascript" do
+  parameters "ds_flexera_api_hosts", "rs_org_id"
+  result "request"
+  code <<-EOS
+  var request = {
+    auth: "auth_flexera",
+    host: ds_flexera_api_hosts["flexera"],
+    path: "/saas/v1/orgs/" + rs_org_id + "/managed-apps",
+    headers: { "content-type": "application/json" },
+    query_params: { "view": "licenseUsage" }
+  }
+EOS
+end
+
+datasource "ds_licenses_sorted" do
+  run_script $js_licenses_sorted, $ds_managed_apps_active, $ds_managed_apps_licenses, $ds_currency, $ds_applied_policy
+end
+
+script "js_licenses_sorted", type: "javascript" do
+  parameters "ds_managed_apps_active", "ds_managed_apps_licenses", "ds_currency", "ds_applied_policy"
+  result "result"
+  code <<-EOS
+  result = []
+  today = new Date()
+
+  license_table = {}
+
+  _.each(ds_managed_apps_licenses, function(license) {
+    id = license['id']
+    id_exists = typeof(id) == 'string' && id != ''
+    licenses_exist = typeof(license['licenses']) == 'object'
+
+    if (id_exists && licenses_exist) {
+      if (license_table[id] == undefined) { license_table[id] = [] }
+      license_table[id] = license_table[id].concat(license['licenses'])
+    }
+  })
+
+  _.each(ds_managed_apps_active, function(app) {
+    if (typeof(license_table[app['id']]) == 'object') {
+      _.each(license_table[app['id']], function(license) {
+        if (typeof(license['terms']) == 'object') {
+          _.each(license['terms'], function(term) {
+            endsAt = new Date(term['endsAt'])
+            daysUntil = Math.round((endsAt - today) / 1000 / 60 / 60 / 24)
+
+            if (daysUntil < 0) { daysUntil = 0 }
+
+            annualCost = null
+            currency = null
+
+            if (typeof(term['annualCost']) == 'number') {
+              annualCost = Number(term['annualCost'].toFixed(2))
+              currency = ds_currency['symbol']
+            }
+
+            result.push({
+              appId: app['appId'],
+              appName: app['appName'],
+              appDescription: app['description'],
+              appVendor: app['vendorName'],
+              pointOfContact: app['pointOfContact'],
+              licenseName: license['name'],
+              licenseId: license['id'],
+              termId: term['id'],
+              termType: term['termType'],
+              termTotalActive: term['totalActive'],
+              termAnnualCost: annualCost,
+              currency: currency,
+              termExpiration: endsAt.toISOString(),
+              daysUntil: daysUntil,
+              policy_name: ds_applied_policy['name']
+            })
+          })
+        }
+      })
+    }
+  })
+EOS
+end
+
+datasource "ds_expiring_licenses" do
+  run_script $js_expiring_licenses, $ds_licenses_sorted, $param_days
+end
+
+script "js_expiring_licenses", type: "javascript" do
+  parameters "ds_licenses_sorted", "param_days"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_licenses_sorted, function(license) {
+    return license['daysUntil'] <= param_days
+  })
+
+  result = _.sortBy(result, 'licenseId')
+  result = _.sortBy(result, 'appId')
+  result = _.sortBy(result, 'appVendor')
+  result = _.sortBy(result, 'daysUntil')
+EOS
 end
 
 ###############################################################################
@@ -200,28 +321,61 @@ end
 ###############################################################################
 
 policy "policy_fsm_renewal_reminder" do
-  validate $ds_products_with_enddate do
-      summary_template "{{ len data }} Expiring Applications Found"
-
-      escalate $report_summary
-      check eq(size(data), 0)
-      export do
-        field "endDate" do
-          label "Expiration Date (YYYY-MM-DD)"
-        end
-        field "vendor" do
-          label "Vendor"
-        end
-        field "id" do
-          label "Application"
-          path "application"
-        end
-        field "pointOfContactEmail" do
-          label "Point of Contact"
-        end
-        field "annualCost" do
-          label "Annual Cost"
-        end
+  validate_each $ds_expiring_licenses do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Expiring Application Licenses Found"
+    check eq(val(item, "licenseId"), "")
+    escalate $esc_email
+    export do
+      field "appId" do
+        label "Application ID"
+      end
+      field "appName" do
+        label "Application Name"
+      end
+      field "appVendor" do
+        label "Application Vendor"
+      end
+      field "pointOfContact" do
+        label "Application Contact"
+      end
+      field "licenseId" do
+        label "License ID"
+      end
+      field "licenseName" do
+        label "License Name"
+      end
+      field "termId" do
+        label "Term ID"
+      end
+      field "termType" do
+        label "Term Type"
+      end
+      field "termTotalActive" do
+        label "Active Licenses"
+      end
+      field "termAnnualCost" do
+        label "Annual Cost"
+      end
+      field "currency" do
+        label "Currency"
+      end
+      field "termExpiration" do
+        label "Expiration Date"
+      end
+      field "daysUntil" do
+        label "Days Until Expiration"
+      end
     end
   end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
 end

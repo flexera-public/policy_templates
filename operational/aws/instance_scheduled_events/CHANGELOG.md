@@ -1,5 +1,17 @@
 # Changelog
 
+## v3.2
+
+- Updated description of `Account Number` parameter
+
+## v3.1
+
+- Changed service metadata to "Compute" to ensure proper incident scraping
+
+## v3.0
+
+- Added parameter to enable Allow or Deny filtering by user entered regions
+
 ## v2.9
 
 - Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`

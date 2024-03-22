@@ -1,0 +1,1139 @@
+name "Azure Superseded Compute Instances"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks for Azure instance types that have been superseded and, optionally, updates the instance type. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/superseded_instances) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "low"
+category "Cost"
+default_frequency "weekly"
+info(
+  version: "2.1",
+  provider: "Azure",
+  service: "Compute",
+  policy_set: "Superseded Compute Instances",
+  recommendation_type: "Usage Reduction"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  category "Policy Settings"
+  label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation"
+  min_value 0
+  default 0
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
+parameter "param_subscriptions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Subscriptions"
+  description "Allow or Deny entered Subscriptions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_subscriptions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Subscriptions List"
+  description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Change Instance Type"]
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_azure" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_azure" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Various data tables needed for later in the policy
+datasource "ds_azure_instance_size_map" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/data/azure/instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_azure_instance_cost_map" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/data/azure/azure_vm_pricing.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_region_table" do
+  run_script $js_region_table
+end
+
+script "js_region_table", type:"javascript" do
+  result "result"
+  code <<-EOS
+  result = {
+    "ukwest": "UK West",
+    "usgovvirginia": "US Gov Virginia",
+    "eastus2": "US East 2",
+    "uaenorth": "AE North",
+    "southafricawest": "ZA West",
+    "francesouth": "FR South",
+    "westcentralus": "US West Central",
+    "koreacentral": "KR Central",
+    "westeurope": "EU West",
+    "southafricanorth": "ZA North",
+    "southeastasia": "AP Southeast",
+    "centralindia": "IN Central",
+    "switzerlandwest": "CH West",
+    "norwayeast": "NO East",
+    "germanywestcentral": "DE West Central",
+    "westus2": "US West 2",
+    "australiacentral": "AU Central",
+    "italynorth": "IT North",
+    "centralus": "US Central",
+    "germanynorth": "DE North",
+    "brazilsoutheast": "BR Southeast",
+    "southindia": "IN South",
+    "swedencentral": "SE Central",
+    "francecentral": "FR Central",
+    "australiasoutheast": "AU Southeast",
+    "northeurope": "EU North",
+    "koreasouth": "KR South",
+    "usgovtexas": "US Gov TX",
+    "polandcentral": "PL Central",
+    "japaneast": "JA East",
+    "westindia": "IN West",
+    "japanwest": "JA West",
+    "westus": "US West",
+    "jioindiawest": "IN West Jio",
+    "northcentralus": "US North Central",
+    "southcentralus": "US South Central",
+    "eastasia": "AP East",
+    "jioindiacentral": "IN Central Jio",
+    "australiacentral2": "AU Central 2",
+    "canadaeast": "CA East",
+    "eastus": "US East",
+    "uaecentral": "AE Central",
+    "norwaywest": "NO West",
+    "canadacentral": "CA Central",
+    "uksouth": "UK South",
+    "qatarcentral": "QA Central",
+    "swedensouth": "SE South",
+    "brazilsouth": "BR South",
+    "australiaeast": "AU East",
+    "switzerlandnorth": "CH North",
+    "usgovarizona": "US Gov AZ",
+    "westus3": "US West 3"
+  }
+EOS
+end
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
+end
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-EOS
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+# Gather local currency info
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency_target" do
+  run_script $js_currency_target, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency_target", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  // Default to USD if currency is not found
+  result = ds_currency_reference['USD']
+
+  if (ds_currency_code['value'] != undefined && ds_currency_reference[ds_currency_code['value']] != undefined) {
+    result = ds_currency_reference[ds_currency_code['value']]
+  }
+EOS
+end
+
+# Branching logic:
+# This datasource returns an empty array if the target currency is USD.
+# This prevents ds_currency_conversion from running if it's not needed.
+datasource "ds_conditional_currency_conversion" do
+  run_script $js_conditional_currency_conversion, $ds_currency_target
+end
+
+script "js_conditional_currency_conversion", type: "javascript" do
+  parameters "ds_currency_target"
+  result "result"
+  code <<-EOS
+  result = []
+  // Make the request only if the target currency is not USD
+  if (ds_currency_target['code'] != 'USD') {
+    result = [1]
+  }
+EOS
+end
+
+datasource "ds_currency_conversion" do
+  # Only make a request if the target currency is not USD
+  iterate $ds_conditional_currency_conversion
+  request do
+    host "api.xe-auth.flexeraeng.com"
+    path "/prod/{proxy+}"
+    query "from", "USD"
+    query "to", val($ds_currency_target, 'code')
+    query "amount", "1"
+    # Ignore currency conversion if API has issues
+    ignore_status [400, 404, 502]
+  end
+  result do
+    encoding "json"
+    field "from", jmes_path(response, "from")
+    field "to", jmes_path(response, "to")
+    field "amount", jmes_path(response, "amount")
+    field "year", jmes_path(response, "year")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_target, $ds_currency_conversion
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_target", "ds_currency_conversion"
+  result "result"
+  code <<-EOS
+  result = ds_currency_target
+  result['exchange_rate'] = 1
+
+  if (ds_currency_conversion.length > 0) {
+    currency_code = ds_currency_target['code']
+    current_month = parseInt(new Date().toISOString().split('-')[1])
+
+    conversion_block = _.find(ds_currency_conversion[0]['to'][currency_code], function(item) {
+      return item['month'] == current_month
+    })
+
+    if (conversion_block != undefined) {
+      result['exchange_rate'] = conversion_block['monthlyAverage']
+    }
+  }
+EOS
+end
+
+datasource "ds_azure_subscriptions" do
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path "/subscriptions/"
+    query "api-version", "2020-01-01"
+    header "User-Agent", "RS Policies"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "subscriptionId")
+      field "name", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
+    end
+  end
+end
+
+datasource "ds_azure_subscriptions_filtered" do
+  run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
+end
+
+script "js_azure_subscriptions_filtered", type: "javascript" do
+  parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
+  result "result"
+  code <<-EOS
+  if (param_subscriptions_list.length > 0) {
+    result = _.filter(ds_azure_subscriptions, function(subscription) {
+      include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
+
+      if (param_subscriptions_allow_or_deny == "Deny") {
+        include_subscription = !include_subscription
+      }
+
+      return include_subscription
+    })
+  } else {
+    result = ds_azure_subscriptions
+  }
+EOS
+end
+
+datasource "ds_azure_instances" do
+  iterate $ds_azure_subscriptions_filtered
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Compute/virtualMachines"])
+    query "api-version", "2019-03-01"
+    header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "resourceId", jmes_path(col_item, "id")
+      field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
+      field "resourceKind", jmes_path(col_item, "type")
+      field "name", jmes_path(col_item, "name")
+      field "region", jmes_path(col_item, "location")
+      field "osType", jmes_path(col_item, "properties.storageProfile.osDisk.osType")
+      field "resourceType", jmes_path(col_item, "properties.hardwareProfile.vmSize")
+      field "tags", jmes_path(col_item, "tags")
+      field "subscriptionId",val(iter_item, "id")
+      field "subscriptionName",val(iter_item, "name")
+    end
+  end
+end
+
+datasource "ds_azure_instances_tag_filtered" do
+  run_script $js_azure_instances_tag_filtered, $ds_azure_instances, $param_exclusion_tags, $param_exclusion_tags_boolean
+end
+
+script "js_azure_instances_tag_filtered", type: "javascript" do
+  parameters "ds_azure_instances", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  result "result"
+  code <<-EOS
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  if (param_exclusion_tags.length > 0) {
+    result = _.reject(ds_azure_instances, function(resource) {
+      resource_tags = {}
+      if (typeof(resource['tags']) == 'object') { resource_tags = resource['tags'] }
+
+      // Store a list of found tags
+      found_tags = []
+
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_tag = resource_tags[comparator['key']]
+
+        if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+        if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+        if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_tag == undefined) { found_tags.push(string) }
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+      })
+
+      all_tags_found = found_tags.length == comparators.length
+      any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+      return all_tags_found || any_tags_found
+    })
+  } else {
+    result = ds_azure_instances
+  }
+EOS
+end
+
+datasource "ds_azure_instances_region_filtered" do
+  run_script $js_azure_instances_region_filtered, $ds_azure_instances_tag_filtered, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_azure_instances_region_filtered", type: "javascript" do
+  parameters "ds_azure_instances_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_azure_instances_tag_filtered, function(vm) {
+      include_vm = _.contains(param_regions_list, vm['region'])
+
+      if (param_regions_allow_or_deny == "Deny") {
+        include_vm = !include_vm
+      }
+
+      return include_vm
+    })
+  } else {
+    result = ds_azure_instances_tag_filtered
+  }
+EOS
+end
+
+datasource "ds_azure_instances_subscriptions" do
+  run_script $js_azure_instances_subscriptions, $ds_azure_instances_region_filtered
+end
+
+script "js_azure_instances_subscriptions", type: "javascript" do
+  parameters "ds_azure_instances_region_filtered"
+  result "result"
+  code <<-EOS
+  result = _.compact(_.uniq(_.pluck(ds_azure_instances_region_filtered, 'subscriptionId')))
+EOS
+end
+
+datasource "ds_instance_costs" do
+  iterate $ds_azure_instances_subscriptions
+  request do
+    run_script $js_instance_costs, iter_item, $ds_top_level_bcs, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "resourceId", jmes_path(col_item, "dimensions.resource_id")
+      field "billing_center_id", jmes_path(col_item, "dimensions.billing_center_id")
+      field "operating_system", jmes_path(col_item, "dimensions.operating_system")
+      field "purchase_option", jmes_path(col_item, "dimensions.purchase_option")
+      field "service", jmes_path(col_item, "dimensions.service")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+    end
+  end
+end
+
+script "js_instance_costs", type: "javascript" do
+  parameters "subscription_id", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
+    body_fields: {
+      dimensions: ["resource_id", "billing_center_id", "operating_system", "purchase_option", "service"],
+      granularity: "day",
+      start_at: start_date,
+      end_at: end_date,
+      metrics: ["cost_amortized_unblended_adj"],
+      billing_center_ids: ds_top_level_bcs,
+      limit: 100000,
+      filter: {
+        "type": "and",
+        "expressions": [
+          {
+            "type": "or",
+            "expressions": [
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "Microsoft.Compute"
+              },
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "microsoft.compute"
+              }
+            ]
+          },
+          {
+            "dimension": "vendor_account",
+            "type": "equal",
+            "value": subscription_id
+          },
+          {
+            "type": "not",
+            "expression": {
+              "dimension": "adjustment_name",
+              "type": "substring",
+              "substring": "Shared"
+            }
+          }
+        ]
+      }
+    },
+    headers: {
+      'User-Agent': "RS Policies",
+      'Api-Version': "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
+datasource "ds_instance_costs_grouped" do
+  run_script $js_instance_costs_grouped, $ds_instance_costs, $ds_billing_centers
+end
+
+script "js_instance_costs_grouped", type: "javascript" do
+  parameters "ds_instance_costs", "ds_billing_centers"
+  result "result"
+  code <<-EOS
+  bc_object = {}
+
+  _.each(ds_billing_centers, function(bc) {
+    bc_object[bc['id']] = bc['name']
+  })
+
+  // Multiple a single day's cost by the average number of days in a month.
+  // The 0.25 is to account for leap years for extra precision.
+  cost_multiplier = 365.25 / 12
+
+  // Group cost data by resourceId for later use
+  result = {}
+
+  _.each(ds_instance_costs, function(item) {
+    id = item['resourceId'].toLowerCase()
+
+    if (result[id] == undefined) { result[id] = { cost: 0 } }
+
+    result[id]['cost'] += item['cost'] * cost_multiplier
+    result[id]['billing_center'] = bc_object[item['billing_center_id']]
+    result[id]['purchase_option'] = item['purchase_option']
+  })
+EOS
+end
+
+datasource "ds_superseded_instances" do
+  run_script $js_superseded_instances, $ds_azure_instances_region_filtered, $ds_instance_costs_grouped, $ds_azure_instance_size_map, $ds_azure_instance_cost_map, $ds_region_table, $ds_currency_conversion, $ds_currency, $ds_applied_policy, $param_min_savings
+end
+
+script "js_superseded_instances", type: "javascript" do
+  parameters "ds_azure_instances_region_filtered", "ds_instance_costs_grouped", "ds_azure_instance_size_map", "ds_azure_instance_cost_map", "ds_region_table", "ds_currency_conversion", "ds_currency", "ds_applied_policy", "param_min_savings"
+  result "result"
+  code <<-'EOS'
+  // Used for formatting numbers to look pretty
+  function formatNumber(number, separator){
+    numString = number.toString()
+    values = numString.split(".")
+    formatted_number = ''
+
+    while (values[0].length > 3) {
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      formatted_number = separator + chunk + formatted_number
+    }
+
+    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
+    if (values[1] == undefined) { return formatted_number }
+
+    return formatted_number + "." + values[1]
+  }
+
+  result = []
+  total_savings = 0.0
+
+  _.each(ds_azure_instances_region_filtered, function(instance) {
+    id = instance['resourceId'].toLowerCase()
+    instance_type = instance['resourceType']
+    operating_system = instance['osType']
+    region = ds_region_table[instance['region']]
+    superseded_parameter = "regular"
+    superseded_type = null
+    instance_type_price = null
+    superseded_type_price = null
+    savings = 0.0
+    hourly_cost_multiplier = 365.25 / 12 * 24
+
+    cost = null
+    billing_center = null
+    purchase_option = null
+
+    if (ds_instance_costs_grouped[id] != undefined) {
+      cost = ds_instance_costs_grouped[id]['cost']
+      billing_center = ds_instance_costs_grouped[id]['billing_center']
+      purchase_option = ds_instance_costs_grouped[id]['purchase_option']
+    }
+
+    if (ds_azure_instance_size_map[instance_type] != undefined) {
+      superseded_table = ds_azure_instance_size_map[instance_type]['superseded']
+
+      if (typeof(superseded_table) == 'object') {
+        superseded_type = superseded_table[superseded_parameter]
+      }
+    }
+
+    if (typeof(superseded_type) == 'string' && typeof(operating_system) == 'string') {
+      if (ds_azure_instance_cost_map[region] != undefined) {
+        instance_type_cost_map = ds_azure_instance_cost_map[region][instance_type]
+
+        if (instance_type_cost_map != undefined) {
+          instance_type_price_map = instance_type_cost_map[operating_system]
+        }
+
+        if (instance_type_price_map != undefined) {
+          instance_type_price = instance_type_price_map['pricePerUnit']
+        }
+
+        superseded_type_cost_map = ds_azure_instance_cost_map[region][superseded_type]
+
+        if (superseded_type_cost_map != undefined) {
+          superseded_type_price_map = superseded_type_cost_map[operating_system]
+        }
+
+        if (superseded_type_price_map != undefined) {
+          superseded_type_price = superseded_type_price_map['pricePerUnit']
+        }
+      }
+    }
+
+    if (typeof(instance_type_price) == 'number' && typeof(superseded_type_price) == 'number') {
+      instance_type_price *= ds_currency['exchange_rate'] * hourly_cost_multiplier
+      superseded_type_price *= ds_currency['exchange_rate'] * hourly_cost_multiplier
+      savings = instance_type_price - superseded_type_price
+    }
+
+    if (typeof(superseded_type) == 'string' && savings >= param_min_savings) {
+      total_savings += savings
+
+      tags = []
+
+      if (typeof(instance['tags']) == 'object') {
+        _.each(Object.keys(instance['tags']), function(key) {
+          tags.push([key, "=", instance['tags'][key]].join(''))
+        })
+      }
+
+      savings = parseFloat(savings.toFixed(3))
+
+      if (typeof(cost) == 'number') {
+        cost = parseFloat(cost.toFixed(3))
+      }
+
+      if (typeof(instance_type_price) == 'number') {
+        instance_type_price = parseFloat(instance_type_price.toFixed(3))
+      }
+
+      if (typeof(superseded_type_price) == 'number') {
+        superseded_type_price = parseFloat(superseded_type_price.toFixed(3))
+      }
+
+      recommendationDetails = [
+        "Change instance type of Azure virtual machine ", instance["name"], " ",
+        "in Azure Subscription ", instance["subscriptionName"], " ",
+        "(", instance["subscriptionId"], ") ",
+        "from ", instance["resourceType"], " ",
+        "to ", superseded_type
+      ].join('')
+
+      result.push({
+        accountID: instance['subscriptionId'],
+        accountName: instance['subscriptionName'],
+        resourceGroup: instance['resourceGroup'],
+        resourceID: instance['resourceId'],
+        resourceName: instance['name'],
+        resourceType: instance['resourceType'],
+        resourceKind: instance['resourceKind'],
+        region: instance['region'],
+        osType: instance['osType'],
+        service: "Microsoft.Compute",
+        cost: cost,
+        billing_center: billing_center,
+        purchase_option: purchase_option,
+        recommendationDetails: recommendationDetails,
+        newResourceType: superseded_type,
+        tags: tags.join(', '),
+        instance_type_price: instance_type_price,
+        superseded_type_price: superseded_type_price,
+        savings: savings,
+        savingsCurrency: ds_currency['symbol'],
+        policy_name: ds_applied_policy['name'],
+        total_savings: "",
+        message: ""
+      })
+    }
+  })
+
+  // Sort by descending order of savings value
+  result = _.sortBy(result, function(item) { return item['savings'] * -1 })
+
+  // Message for incident detailed template
+  savings_message = [
+    ds_currency['symbol'], ' ',
+    formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['t_separator'])
+  ].join('')
+
+  total_instances = ds_azure_instances_region_filtered.length.toString()
+  total_superseded = result.length.toString()
+  superseded_percentage = (total_superseded / total_instances * 100).toFixed(2).toString() + '%'
+
+  instance_noun = "machine"
+  if (Number(total_instances) > 1) { instance_noun = "machines" }
+
+  superseded_verb = "is"
+  if (Number(total_superseded) > 1) { superseded_verb = "are" }
+
+  findings = [
+    "Out of ", total_instances, " Azure virtual ", instance_noun, " analyzed, ",
+    total_superseded, " (", superseded_percentage,
+    ") ", superseded_verb, " superseded and recommended for an instance type change.\n\n"
+  ].join('')
+
+  api_disclaimer = ""
+
+  if (ds_currency_conversion['to'] == undefined && ds_currency['code'] != 'USD') {
+    api_disclaimer = "\n\nSavings values are in USD due to a malfunction with Flexera's internal currency conversion API. Please contact Flexera support to report this issue."
+  }
+
+  savings_disclaimer = "Savings are estimated based on list price and may not reflect credits or discounts. "
+
+  if (ds_currency['code'] != "USD" && api_disclaimer == "") {
+    savings_disclaimer += "List prices were converted from USD using current exchange rates."
+  }
+
+  // Dummy entry to ensure the check statement in validation always runs at least once
+  result.push({
+    accountID: "",          accountName: "",              resourceGroup: "",
+    resourceID: "",         resourceName: "",             resourceType: "",
+    resourceKind: "",       region: "",                   osType: "",
+    service: "",            cost: "",                     billing_center: "",
+    purchase_option: "",    recommendationDetails: "",    newResourceType: "",
+    tags: "",               instance_type_price: "",      superseded_type_price: "",
+    savings: "",            savingsCurrency: "",          policy_name: "",
+    total_savings: "",      message: ""
+  })
+
+  result[0]['total_savings'] = savings_message
+  result[0]['message'] = findings + savings_disclaimer + api_disclaimer
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_superseded_instances" do
+  validate_each $ds_superseded_instances do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Potentially Superseded Virtual Machines Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    escalate $esc_change_type
+    hash_exclude "message", "total_savings", "tags", "cost", "instance_type_price", "superseded_type_price", "savings", "savingsCurrency"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Subscription ID"
+      end
+      field "accountName" do
+        label "Subscription Name"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "resourceType" do
+        label "Instance Size"
+      end
+      field "newResourceType" do
+        label "Recommended Instance Size"
+      end
+      field "resourceKind" do
+        label "Resource Kind"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "osType" do
+        label "Operating System"
+      end
+      field "cost" do
+        label "Estimated Monthly Cost"
+      end
+      field "instance_type_price" do
+        label "Current Monthly List Price"
+      end
+      field "superseded_type_price" do
+        label "New Monthly List Price"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_change_type" do
+  automatic contains($param_automatic_action, "Change Instance Type")
+  label "Change Instance Type"
+  description "Approval to change instance type for all superseded EC2 instances"
+  run "change_instances", data, $param_azure_endpoint
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define change_instances($data, $param_azure_endpoint) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      $change_url = "https://" + $param_azure_endpoint + $instance["resourceID"] + "?api-version=2019-03-01"
+      task_label("PATCH " + $change_url)
+
+      $response = http_request(
+        auth: $$auth_azure,
+        verb: "patch",
+        host: $param_azure_endpoint,
+        https: true,
+        href: $instance["resourceID"],
+        query_strings: {
+          "api-version": "2019-03-01"
+        },
+        headers:{
+          "content-type": "application/json"
+        },
+        body: {
+          "properties":{
+            "hardwareProfile": {
+              "vmSize": $instance["newResourceType"]
+            }
+          }
+        }
+      )
+
+      task_label("Patch Azure VM response: " + $instance["resourceID"] + " " + to_json($response))
+      $$all_responses << to_json({"req": "PATCH " + $change_url, "resp": $response})
+
+      if $response["code"] != 202 && $response["code"] != 200
+        raise "Unexpected response patching Azure VM: "+ $instance["resourceID"] + " " + to_json($response)
+      else
+        task_label("Patch Azure VM successful: " + $instance["resourceID"])
+      end
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
+end

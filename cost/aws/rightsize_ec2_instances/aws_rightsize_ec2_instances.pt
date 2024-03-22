@@ -1,0 +1,1901 @@
+name "AWS Rightsize EC2 Instances"
+rs_pt_ver 20180301
+type "policy"
+short_description "Check for EC2 instances that have inefficient utilization for a specified number of days and downsizes or terminates them after approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "low"
+category "Cost"
+default_frequency "weekly"
+info(
+  version: "5.1",
+  provider: "AWS",
+  service: "Compute",
+  policy_set: "Rightsize Compute Instances",
+  recommendation_type: "Usage Reduction"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+  default []
+end
+
+parameter "param_aws_account_number" do
+  type "string"
+  category "Policy Settings"
+  label "Account Number"
+  description "Leave blank; this is for automated use with Meta Policies. See README for more details."
+  default ""
+end
+
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation"
+  min_value 0
+  default 0
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details"
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  description "A list of allowed or denied regions. See the README for more details"
+  default []
+end
+
+parameter "param_stats_idle_threshold_cpu_value" do
+  type "number"
+  category "Statistics"
+  label "Idle Instance CPU Threshold (%)"
+  description "The CPU threshold at which to consider an instance to be 'idle' and therefore be flagged for termination. Set to -1 to ignore CPU utilization"
+  min_value -1
+  max_value 100
+  default 5
+end
+
+parameter "param_stats_idle_threshold_mem_value" do
+  type "number"
+  category "Statistics"
+  label "Idle Instance Memory Threshold (%)"
+  description "The Memory threshold at which to consider an instance to be 'idle' and therefore be flagged for termination. Set to -1 to ignore memory utilization"
+  min_value -1
+  max_value 100
+  default 5
+end
+
+parameter "param_stats_underutil_threshold_cpu_value" do
+  type "number"
+  category "Statistics"
+  label "Underutilized Instance CPU Threshold (%)"
+  description "The CPU threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing. Set to -1 to ignore CPU utilization"
+  min_value -1
+  max_value 100
+  default 40
+end
+
+parameter "param_stats_underutil_threshold_mem_value" do
+  type "number"
+  category "Statistics"
+  label "Underutilized Instance Memory Threshold (%)"
+  description "The Memory threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing. Set to -1 to ignore memory utilization"
+  min_value -1
+  max_value 100
+  default 40
+end
+
+parameter "param_stats_check_both" do
+  type "string"
+  category "Statistics"
+  label "Idle/Utilized for both CPU/Memory or either"
+  description "Set whether an instance should be considered idle and/or underutilized only if both CPU and memory are under the thresholds or if either CPU or memory are under. Note: this parameter is only valid when at least one Memory Utilization threshold and one CPU Utilization threshold is NOT set to -1"
+  allowed_values "Both CPU and Memory", "Either CPU or Memory"
+  default "Either CPU or Memory"
+end
+
+parameter "param_stats_threshold" do
+  type "string"
+  category "Statistics"
+  label "Threshold Statistic"
+  description "Statistic to use when determining if an instance is idle/underutilized"
+  allowed_values "Average", "Maximum", "p99", "p95", "p90"
+  default "Average"
+end
+
+parameter "param_stats_lookback" do
+  type "number"
+  category "Statistics"
+  label "Statistic Lookback Period"
+  description "How many days back to look at CPU and/or memory data for instances. This value cannot be set higher than 90 because AWS does not retain metrics for longer than 90 days."
+  default 30
+  min_value 1
+  max_value 90
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Downsize Instances", "Stop Instances", "Terminate Instances"]
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws", "aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+  aws_account_number $param_aws_account_number
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_aws" do
+  get_page_marker do
+    body_path jmes_path(response, "NextToken")
+  end
+  set_page_marker do
+    body_field "NextToken"
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get AWS account info
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account", xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_get_caller_identity
+end
+
+script "js_aws_account", type:"javascript" do
+  parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+  result = _.find(ds_cloud_vendor_accounts, function(account) {
+    return account['id'] == ds_get_caller_identity[0]['account']
+  })
+
+  // This is in case the API does not return the relevant account info
+  if (result == undefined) {
+    result = {
+      id: ds_get_caller_identity[0]['account'],
+      name: "",
+      tags: {}
+    }
+  }
+EOS
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
+end
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-EOS
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
+end
+
+datasource "ds_describe_regions" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "ec2.amazonaws.com"
+    path "/"
+    query "Action", "DescribeRegions"
+    query "Version", "2016-11-15"
+    query "Filter.1.Name", "opt-in-status"
+    query "Filter.1.Value.1", "opt-in-not-required"
+    query "Filter.1.Value.2", "opted-in"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
+      field "region", xpath(col_item, "regionName")
+    end
+  end
+end
+
+datasource "ds_regions" do
+  run_script $js_regions, $ds_describe_regions, $param_regions_list, $param_regions_allow_or_deny
+end
+
+script "js_regions", type:"javascript" do
+  parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
+  result "result"
+  code <<-EOS
+  allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_describe_regions, function(item) {
+      return _.contains(param_regions_list, item['region']) == allow_deny_test[param_regions_allow_or_deny]
+    })
+  } else {
+    result = ds_describe_regions
+  }
+EOS
+end
+
+datasource "ds_instance_sets" do
+  iterate $ds_regions
+  request do
+    auth $auth_aws
+    host join(['ec2.', val(iter_item, 'region'), '.amazonaws.com'])
+    path '/'
+    header 'User-Agent', 'RS Policies'
+    header 'Content-Type', 'text/xml'
+    query 'Action', 'DescribeInstances'
+    query 'Version', '2016-11-15'
+    query 'Filter.1.Name', 'instance-state-name'
+    query 'Filter.1.Value.1', 'running'
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeInstancesResponse/reservationSet/item", "array") do
+      field "instances_set" do
+        collect xpath(col_item,"instancesSet/item","array") do
+          field "region",val(iter_item, "region")
+          field "instanceId", xpath(col_item, "instanceId")
+          field "imageId", xpath(col_item, "imageId")
+          field "resourceType", xpath(col_item, "instanceType")
+          field "platform", xpath(col_item, "platformDetails")
+          field "privateDnsName", xpath(col_item, "privateDnsName")
+          field "launchTime", xpath(col_item, "launchTime")
+          field "tags" do
+            collect xpath(col_item,"tagSet/item", "array") do
+              field "key", xpath(col_item, "key")
+              field "value", xpath(col_item, "value")
+            end
+          end
+        end
+      end
+    end
+  end
+end
+
+datasource "ds_instances" do
+  run_script $js_instances, $ds_instance_sets, $param_exclusion_tags, $param_exclusion_tags_boolean
+end
+
+script "js_instances", type: "javascript" do
+  parameters "ds_instance_sets", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  result "result"
+  code <<-EOS
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  result = []
+
+  _.each(ds_instance_sets, function(item) {
+    if (param_exclusion_tags.length > 0) {
+      filtered_instances = _.reject(item['instances_set'], function(resource) {
+        resource_tags = {}
+
+        if (typeof(resource['tags']) == 'object') {
+          _.each(resource['tags'], function(tag) {
+            resource_tags[tag['key']] = tag['value']
+          })
+        }
+
+        // Store a list of found tags
+        found_tags = []
+
+        _.each(comparators, function(comparator) {
+          comparison = comparator['comparison']
+          value = comparator['value']
+          string = comparator['string']
+          resource_tag = resource_tags[comparator['key']]
+
+          if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+          if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+          if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+          if (comparison == '=~') {
+            if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+          }
+
+          if (comparison == '!~') {
+            if (resource_tag == undefined) { found_tags.push(string) }
+            if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+          }
+        })
+
+        all_tags_found = found_tags.length == comparators.length
+        any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+        return all_tags_found || any_tags_found
+      })
+
+      result = result.concat(filtered_instances)
+    } else {
+      result = result.concat(item['instances_set'])
+    }
+  })
+EOS
+end
+
+datasource "ds_cloudwatch_queries" do
+  run_script $js_cloudwatch_queries, $ds_instances, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_lookback
+end
+
+script "js_cloudwatch_queries", type: "javascript" do
+  parameters "ds_instances", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_lookback"
+  result "result"
+  code <<-EOS
+  // Set CPU threshold for CloudWatch call
+  // If Underutilized threshold is ignored, then check for Idle threshold
+  var param_avg_cpu = -1
+
+  if (param_stats_underutil_threshold_cpu_value != -1) {
+    param_avg_cpu = param_stats_underutil_threshold_cpu_value
+  } else {
+    if (param_stats_idle_threshold_cpu_value != -1) {
+      param_avg_cpu = param_stats_idle_threshold_cpu_value
+    }
+  }
+
+  // Set Memory threshold for CloudWatch call
+  // If Underutilized threshold is ignored, then check for Idle threshold
+  var param_avg_mem = -1
+
+  if (param_stats_underutil_threshold_mem_value != -1) {
+    param_avg_mem = param_stats_underutil_threshold_mem_value
+  } else {
+    if (param_stats_idle_threshold_mem_value != -1) {
+      param_avg_mem = param_stats_idle_threshold_mem_value
+    }
+  }
+
+  // Create the various queries we're going to send to CloudWatch for each instance
+  result = {}
+
+  _.each(ds_instances, function(instance) {
+    // Make sure the queries object has an array for the region to push items to
+    if (result[instance['region']] == undefined || result[instance['region']] == null) {
+      result[instance['region']] = []
+    }
+
+    //We want to collect each of these list of statistics we care about
+    stats = ["Average", "Minimum", "Maximum", "p99", "p95", "p90"]
+    lookback = param_stats_lookback * 86400
+
+    // Only query for CPU usage if we're actually checking it
+    if (param_avg_cpu != -1) {
+      _.each(stats, function(stat) {
+        query = {
+          "Id": instance['instanceId'].replace('-', '_') + "_cpu" + stat,
+          "MetricStat": {
+            "Metric": {
+              "Namespace": "AWS/EC2",
+              "MetricName": "CPUUtilization",
+              "Dimensions": [
+                { "Name": "InstanceId", "Value": instance['instanceId'] }
+              ]
+            },
+            "Period": lookback,
+            "Stat": stat
+          },
+          "ReturnData": true
+        }
+
+        result[instance['region']].push(query)
+      })
+    }
+
+    // Only query for MEM usage if we're actually checking it
+    if (param_avg_mem != -1) {
+      if (instance['platform'] == "Windows") {
+        // If platform is Windows, we need to use the Windows custom metric
+        mem_metricname = "Memory % Committed Bytes In Use"
+
+        dimensions = [
+          { "Name": "ImageId", "Value": instance['imageId'] },
+          { "Name": "InstanceId", "Value": instance['instanceId'] },
+          { "Name": "InstanceType", "Value": instance['resourceType'] },
+          { "Name": "objectname", "Value": "Memory" }
+        ]
+      } else {
+        // Else assume Platform is Linux, and use the Linux custom metric
+        mem_metricname = "mem_used_percent"
+
+        dimensions = [
+          { "Name": "ImageId", "Value": instance['imageId'] },
+          { "Name": "InstanceId", "Value": instance['instanceId'] },
+          { "Name": "InstanceType", "Value": instance['resourceType'] }
+        ]
+      }
+
+      _.each(stats, function(stat) {
+        query = {
+          "Id": instance['instanceId'].replace('-', '_') + "_mem" + stat,
+          "MetricStat": {
+            "Metric": {
+              "Namespace": "CWAgent",
+              "MetricName": mem_metricname,
+              "Dimensions": dimensions
+            },
+            "Period": lookback,
+            "Stat": stat
+          },
+          "ReturnData": true
+        }
+
+        result[instance['region']].push(query)
+      })
+    }
+  })
+EOS
+end
+
+# Combine queries into 500 item blocks so we can make bulk requests to Cloudwatch
+datasource "ds_instances_requests" do
+  run_script $js_instances_requests, $ds_cloudwatch_queries, $param_stats_lookback
+end
+
+script "js_instances_requests", type: "javascript" do
+  parameters "queries", "param_stats_lookback"
+  result "result"
+  code <<-EOS
+  // Organize the queries into discrete requests to send in.
+  // Queries are first sorted by region and then split into 500 item blocks.
+  result = []
+  query_block_size = 500
+
+  // Round down to beginning of the hour to avoid getting multiple values
+  // from CloudWatch due to how the data is sliced
+  end_date = new Date()
+  end_date.setMinutes(0, 0, 0)
+  end_date = parseInt(end_date.getTime() / 1000)
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - param_stats_lookback)
+  start_date.setMinutes(0, 0, 0)
+  start_date = parseInt(start_date.getTime() / 1000)
+
+  _.each(Object.keys(queries), function(region) {
+    for (i = 0; i < queries[region].length; i += query_block_size) {
+      chunk = queries[region].slice(i, i + query_block_size)
+
+      result.push({
+        body: {
+          "StartTime": start_date,
+          "EndTime": end_date,
+          "MetricDataQueries": chunk
+        },
+        region: region
+      })
+    }
+  })
+EOS
+end
+
+datasource "ds_cloudwatch_data" do
+  iterate $ds_instances_requests
+  request do
+    run_script $js_cloudwatch_data, val(iter_item, "region"), val(iter_item, "body")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "MetricDataResults[*]") do
+      field "region", val(iter_item, "region")
+      field "id", jmes_path(col_item, "Id")
+      field "label", jmes_path(col_item, "Label")
+      field "values", jmes_path(col_item, "Values")
+    end
+  end
+end
+
+script "js_cloudwatch_data", type: "javascript" do
+  parameters "region", "body"
+  result "request"
+  code <<-EOS
+  // Slow down rate of requests to prevent
+  api_wait = 5
+  var now = new Date().getTime()
+  while(new Date().getTime() < now + (api_wait * 1000)) { /* Do nothing */ }
+
+  var request = {
+    auth: "auth_aws",
+    host: 'monitoring.' + region + '.amazonaws.com',
+    verb: "POST",
+    path: "/",
+    headers: {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json",
+      "x-amz-target": "GraniteServiceVersion20100801.GetMetricData",
+      "Accept": "application/json",
+      "Content-Encoding": "amz-1.0"
+    }
+    query_params: {
+      'Action': 'GetMetricData',
+      'Version': '2010-08-01'
+    },
+    body: JSON.stringify(body)
+  }
+EOS
+end
+
+#PARSE CLOUDWATCH DATA INTO JAVASCRIPT OBJECT
+datasource "ds_cloudwatch_data_sorted" do
+  run_script $js_cloudwatch_data_sorted, $ds_cloudwatch_data
+end
+
+script "js_cloudwatch_data_sorted", type: "javascript" do
+  parameters "ds_cloudwatch_data"
+  result "result"
+  code <<-EOS
+  // Sort the CloudWatch data into an object with keys for regions and instance names.
+  // This eliminates the need to "double loop" later on to match it with our instances list.
+  result = {}
+
+  _.each(ds_cloudwatch_data, function(item) {
+    region = item['region']
+    instance_name = item['id'].split('_')[0] + '-' + item['id'].split('_')[1]
+    metric = item['id'].split('_')[2]
+
+    // Grabbing index 0 SHOULD be safe because we should only get one result.
+    // Just in case AWS slices the data weirdly and returns 2 results, we make
+    // sure we grab the last item every time, which contains the actual data we need.
+    value = item['values'][item['values'].length - 1]
+
+    if (result[region] == undefined) { result[region] = {} }
+    if (result[region][instance_name] == undefined) { result[region][instance_name] = {} }
+
+    result[region][instance_name][metric] = value
+  })
+EOS
+end
+
+datasource "ds_instance_costs" do
+  request do
+    run_script $js_instance_costs, $ds_aws_account, $ds_top_level_bcs, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"rows[*]") do
+      field "resourceId", jmes_path(col_item, "dimensions.resource_id")
+      field "resourceType", jmes_path(col_item, "dimensions.resource_type")
+      field "vendorAccountName", jmes_path(col_item, "dimensions.vendor_account_name")
+      field "adjustmentName", jmes_path(col_item, "dimensions.adjustment_name")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+    end
+  end
+end
+
+script "js_instance_costs", type: "javascript" do
+  parameters "ds_aws_account", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
+    body_fields: {
+      dimensions: ["resource_id", "vendor_account_name", "resource_type", "adjustment_name"],
+      granularity: "day",
+      start_at: start_date,
+      end_at: end_date,
+      metrics: ["cost_amortized_unblended_adj"],
+      billing_center_ids: ds_top_level_bcs,
+      limit: 100000,
+      filter: {
+        type: "and",
+        expressions: [
+          {
+            dimension: "service",
+            type: "equal",
+            value: "AmazonEC2"
+          },
+          {
+            dimension: "resource_type",
+            type: "equal",
+            value: "Compute Instance"
+          },
+          {
+            dimension: "vendor_account",
+            type: "equal",
+            value: ds_aws_account['id']
+          },
+          {
+            type: "not",
+            expression: {
+              dimension: "adjustment_name",
+              type: "substring",
+              substring: "Shared"
+            }
+          }
+        ]
+      }
+    },
+    headers: {
+      'User-Agent': "RS Policies",
+      'Api-Version': "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
+datasource "ds_instance_costs_grouped" do
+  run_script $js_instance_costs_grouped, $ds_instance_costs
+end
+
+script "js_instance_costs_grouped", type: "javascript" do
+  parameters "ds_instance_costs"
+  result "result"
+  code <<-EOS
+  // Multiple a single day's cost by the average number of days in a month.
+  // The 0.25 is to account for leap years for extra precision.
+  cost_multiplier = 365.25 / 12
+
+  // Group cost data by resourceId for later use
+  result = {}
+
+  _.each(ds_instance_costs, function(item) {
+    id = item['resourceId'].toLowerCase()
+
+    if (result[id] == undefined) { result[id] = 0.0 }
+    result[id] += item['cost'] * cost_multiplier
+  })
+EOS
+end
+
+datasource "ds_aws_instance_size_map" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/aws/instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_merged_metrics" do
+  run_script $js_merged_metrics, $ds_cloudwatch_data_sorted, $ds_instances, $ds_aws_account, $ds_currency, $param_stats_threshold, $param_stats_lookback
+end
+
+script "js_merged_metrics", type: "javascript" do
+  result "result"
+  parameters "ds_cloudwatch_data_sorted", "ds_instances", "ds_aws_account", "ds_currency", "param_stats_threshold", "param_stats_lookback"
+  code <<-EOS
+  result = []
+
+  _.each(ds_instances, function(instance) {
+    region = instance['region']
+    id = instance['instanceId']
+
+    // Only proceed if the CloudWatch data actually has the region and instance id.
+    // Otherwise, we have no usage data on the instance and thus dont include it in the results.
+    if (ds_cloudwatch_data_sorted[region] != undefined) {
+      if (ds_cloudwatch_data_sorted[region][id] != undefined) {
+        // Tidy up tags so they display nicely in the incident
+        tags = []
+        resourceName = ""
+
+        if (instance['tags'] != undefined && instance['tags'] != null) {
+          _.each(instance['tags'], function(tag) {
+            tags.push([tag['key'], tag['value']].join('='))
+
+            if (tag['key'].toLowerCase() == 'name') {
+              resourceName = tag['value']
+            }
+          })
+        }
+
+        // Create object we're going to return
+        merged_instance = {
+          "region": region,
+          "id": id,
+          "resourceID": id,
+          "platform": instance['platform'],
+          "service": "EC2",
+          "privateDnsName": instance['privateDnsName'],
+          "launchTime": instance['launchTime'],
+          "hostname": instance['privateDnsName'].split('.')[0],
+          "tags": tags.join(', '),
+          "resourceType": instance['resourceType'],
+          "savings": null,
+          "accountID": ds_aws_account['id'],
+          "accountName": ds_aws_account['name'],
+          "savingsCurrency": ds_currency['symbol'],
+          "thresholdType": param_stats_threshold,
+          "lookbackPeriod": param_stats_lookback,
+          "resourceName": resourceName,
+          // These are to avoid errors when we hash_exclude these fields
+          "underutil_message": "",
+          "idle_message": "",
+          "underutil_total_savings": "",
+          "idle_total_savings": "",
+          "policy_name": ""
+        }
+
+        // Grab usage data for the instance if it is present.
+        // Note: We don't simply name them the same as Cloudwatch does because
+        // prior versions of this policy also didn't, and we want to ensure
+        // that exported incident data looks the same as it used to.
+
+        stats_list = ["Average", "Minimum", "Maximum", "p99", "p95", "p90"]
+        metrics_list = ["cpu", "mem"]
+
+        _.each(stats_list, function(stat) {
+          _.each(metrics_list, function(metric) {
+            data_statname = metric + stat
+            incident_statname = metric + "_" + stat.toLowerCase()
+
+            merged_instance[incident_statname] = null
+
+            if (ds_cloudwatch_data_sorted[region][id][data_statname] != undefined && ds_cloudwatch_data_sorted[region][id][data_statname] != null) {
+              merged_instance[incident_statname] = parseFloat(parseFloat(ds_cloudwatch_data_sorted[region][id][data_statname]).toFixed(2))
+            }
+          })
+        })
+
+        // Send the instance information with the CloudWatch data into the final result.
+        // Also adds in the account ID and currency symbol since itll be needed for the incident.
+        result.push(merged_instance)
+      }
+    }
+  })
+EOS
+end
+
+datasource "ds_idle_and_underutil_instances" do
+  run_script $js_idle_and_underutil_instances, $ds_instances, $ds_merged_metrics, $ds_instance_costs_grouped, $ds_aws_instance_size_map, $ds_currency, $ds_applied_policy, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_min_savings, $param_stats_lookback
+end
+
+script "js_idle_and_underutil_instances", type:"javascript" do
+  parameters "ds_instances", "ds_merged_metrics", "ds_instance_costs_grouped", "ds_aws_instance_size_map", "ds_currency", "ds_applied_policy", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_min_savings", "param_stats_lookback"
+  result "result"
+  code <<-'EOS'
+  // Used for formatting numbers to look pretty
+  function formatNumber(number, separator){
+    numString = number.toString()
+    values = numString.split(".")
+    formatted_number = ''
+
+    while (values[0].length > 3) {
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      formatted_number = separator + chunk + formatted_number
+    }
+
+    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
+    if (values[1] == undefined) { return formatted_number }
+
+    return formatted_number + "." + values[1]
+  }
+
+  // The key name is lowercase, param value needs to be lowercase.
+  threshold_statistic = param_stats_threshold.toLowerCase()
+
+  // Determine whether we're checking for CPU, memory, or both
+  checking_cpu = param_stats_underutil_threshold_cpu_value != -1 || param_stats_idle_threshold_cpu_value != -1
+  checking_mem = param_stats_underutil_threshold_mem_value != -1 || param_stats_idle_threshold_mem_value != -1
+
+  underutil_total_savings = 0.0
+  idle_total_savings = 0.0
+
+  underutil_list = []
+  idle_list = []
+
+  // Only bother doing anything if we're checking at least one metric
+  if (checking_cpu || checking_mem) {
+    // Loop through metrics data, appending cost data
+    _.each(ds_merged_metrics, function(instance) {
+      id = instance['id'].toLowerCase()
+
+      // Assume cost is 0 unless we have cost data for the instance
+      total_cost = 0.0
+      if (ds_instance_costs_grouped[id] != undefined) { total_cost = ds_instance_costs_grouped[id] }
+
+      // Store relevant CPU and memory stats into these variables for later use
+      cpu_value = instance['cpu_' + threshold_statistic]
+      mem_value = instance['mem_' + threshold_statistic]
+
+      // Test for whether to consider the instance idle or underutilized.
+      // Assume instance is not idle or underutilized by default.
+      is_idle = false
+      is_underutil = false
+
+      // Determine if the instance is idle or underutilized for each category.
+      // Store boolean result for later use.
+      is_idle_cpu = cpu_value < param_stats_idle_threshold_cpu_value
+      is_underutil_cpu = cpu_value < param_stats_underutil_threshold_cpu_value
+      is_idle_mem = mem_value < param_stats_idle_threshold_mem_value
+      is_underutil_mem = mem_value < param_stats_underutil_threshold_mem_value
+
+      // If we're only checking CPU, simply set is_idle/is_underutil to their CPU equivalents
+      if (!checking_mem) { is_idle = is_idle_cpu }
+      if (!checking_mem) { is_underutil = is_underutil_cpu }
+
+      // If we're only checking memory, simply set is_idle/is_underutil to their memory equivalents
+      if (!checking_cpu) { is_idle = is_idle_mem }
+      if (!checking_cpu) { is_underutil = is_underutil_mem }
+
+      // If we're checking both, do an 'and' or an 'or' depending on the value of param_stats_check_both
+      if (checking_cpu && checking_mem) {
+        if (param_stats_check_both == "Both CPU and Memory") {
+          is_idle = is_idle_cpu && is_idle_mem
+          is_underutil = is_underutil_cpu && is_underutil_mem
+        } else {
+          is_idle = is_idle_cpu || is_idle_mem
+          is_underutil = is_underutil_cpu || is_underutil_mem
+        }
+      }
+
+      instance["newResourceType"] = null
+
+      // Set appropriate values based on whether instance is idle or underutilized
+      // and then add it to the appropriate list
+      if (is_idle) {
+        instance["savings"] = parseFloat(parseFloat(total_cost).toFixed(3))
+        instance["recommendationType"] = "Terminate"
+        instance["threshold"] = param_stats_idle_threshold_cpu_value
+        instance["memoryThreshold"] = param_stats_idle_threshold_mem_value
+
+        recommendationDetails = [
+          "Terminate EC2 instance ", instance["resourceID"], " ",
+          "in AWS Account ", instance["accountName"], " ",
+          "(", instance["accountID"], ")"
+        ]
+
+        instance["recommendationDetails"] = recommendationDetails.join('')
+
+        if (instance['savings'] >= param_min_savings) {
+          idle_total_savings += total_cost
+          idle_list.push(instance)
+        }
+      } else if (is_underutil) {
+        instance["savings"] = parseFloat(parseFloat(total_cost / 2).toFixed(3))
+        instance["recommendationType"] = "Downsize"
+        instance["threshold"] = param_stats_underutil_threshold_cpu_value
+        instance["memoryThreshold"] = param_stats_underutil_threshold_mem_value
+
+        if (ds_aws_instance_size_map[instance['resourceType']]) {
+          instance["newResourceType"] = ds_aws_instance_size_map[instance['resourceType']]['down']
+        }
+
+        recommendationDetails = [
+          "Change instance type of EC2 instance ", instance["resourceID"], " ",
+          "in AWS Account ", instance["accountName"], " ",
+          "(", instance["accountID"], ") ",
+          "from ", instance["resourceType"], " ",
+          "to ", instance["newResourceType"]
+        ]
+
+        instance["recommendationDetails"] = recommendationDetails.join('')
+
+        if (instance["newResourceType"] != null && instance["newResourceType"] != undefined) {
+          if (instance['savings'] >= param_min_savings) {
+            underutil_total_savings += total_cost / 2
+            underutil_list.push(instance)
+          }
+        }
+      }
+    })
+  }
+
+  // Build out the detail_template for the incidents
+  if (checking_cpu || checking_mem) {
+    instances_total = ds_instances.length.toString()
+    underutil_instances_total = underutil_list.length.toString()
+    underutil_instances_percentage = (underutil_instances_total / instances_total * 100).toFixed(2).toString() + '%'
+    idle_instances_total = idle_list.length.toString()
+    idle_instances_percentage = (idle_instances_total / instances_total * 100).toFixed(2).toString() + '%'
+
+    underutil_total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(underutil_total_savings).toFixed(2), ds_currency['separator'])
+    idle_total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(idle_total_savings).toFixed(2), ds_currency['separator'])
+
+    underutil_findings = [
+      "Out of ", instances_total, " EC2 instances analyzed, ",
+      underutil_instances_total, " (", underutil_instances_percentage,
+      ") are underutilized and recommended for downsizing. "
+    ].join('')
+
+    idle_findings = [
+      "Out of ", instances_total, " EC2 instances analyzed, ",
+      idle_instances_total, " (", idle_instances_percentage,
+      ") are idle and recommended for termination. "
+    ].join('')
+
+    if (checking_cpu && checking_mem) {
+      message_boolean = "or"
+
+      if (param_stats_check_both == "Both CPU and Memory") {
+        message_boolean = "and"
+      }
+
+      underutil_analysis_message = [
+        "An EC2 instance is considered underutilized if its CPU usage (",
+        param_stats_threshold.toLowerCase(), ") is below ",
+        param_stats_underutil_threshold_cpu_value, "% ", message_boolean,
+        " its memory usage (", param_stats_threshold.toLowerCase(),
+        ") is below ", param_stats_underutil_threshold_mem_value,
+        "% but its CPU usage is still above or equal to ",
+        param_stats_idle_threshold_cpu_value, "% ", message_boolean,
+        " its memory usage is still above or equal to ",
+        param_stats_idle_threshold_mem_value, "%. "
+      ].join('')
+
+      idle_analysis_message = [
+        "An EC2 instance is considered idle if its CPU usage (",
+        param_stats_threshold.toLowerCase(), ") is below ",
+        param_stats_idle_threshold_cpu_value, "% ", message_boolean,
+        " its memory usage (", param_stats_threshold.toLowerCase(),
+        ") is below ", param_stats_idle_threshold_mem_value, "%. "
+      ].join('')
+
+      lookback_message = [
+        "CPU and memory usage was analyzed over the last ",
+        param_stats_lookback.toString(), " days.\n\n"
+      ].join('')
+    }
+
+    if (checking_cpu && !checking_mem) {
+      underutil_analysis_message = [
+        "An EC2 instance is considered underutilized if its CPU usage (",
+        param_stats_threshold.toLowerCase(), ") is below ",
+        param_stats_underutil_threshold_cpu_value,
+        "% but its CPU usage is still above or equal to ",
+        param_stats_idle_threshold_cpu_value, "%. "
+      ].join('')
+
+      idle_analysis_message = [
+        "An EC2 instance is considered idle if its CPU usage (",
+        param_stats_threshold.toLowerCase(), ") is below ",
+        param_stats_idle_threshold_cpu_value, "%. "
+      ].join('')
+
+      lookback_message = [
+        "CPU usage was analyzed over the last ",
+        param_stats_lookback.toString() + " days.\n\n"
+      ].join('')
+    }
+
+    if (!checking_cpu && checking_mem) {
+      underutil_analysis_message = [
+        "An EC2 instance is considered underutilized if its memory usage (",
+        param_stats_threshold.toLowerCase(), ") is below ",
+        param_stats_underutil_threshold_mem_value,
+        "% but its memory usage is still above or equal to ",
+        param_stats_idle_threshold_mem_value, "%. "
+      ].join('')
+
+      idle_analysis_message = [
+        "An EC2 instance is considered idle if its memory usage (",
+        param_stats_threshold.toLowerCase(), ") is below ",
+        param_stats_idle_threshold_mem_value, "%. "
+      ].join('')
+
+      lookback_message = [
+        "Memory usage was analyzed over the last ",
+        param_stats_lookback.toString() + " days.\n\n"
+      ].join('')
+    }
+
+    disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+
+    underutil_message = underutil_findings + underutil_analysis_message + lookback_message + disclaimer
+    idle_message = idle_findings + idle_analysis_message + lookback_message + disclaimer
+  } else {
+    underutil_message = "No results were found because all CPU and memory parameters were set to -1 when this policy was applied. Please terminate and reapply this policy with one of these settings enabled."
+    idle_message = underutil_message
+  }
+
+  // Sort by descending order of savings value
+  idle_list = _.sortBy(idle_list, function(item) { return item['savings'] * -1 })
+  underutil_list = _.sortBy(underutil_list, function(item) { return item['savings'] * -1 })
+
+  // Add a dummy entry to ensure that the policy's check statement executes at least once
+  dummy_entry = {
+    "recommendationType": "",
+    "underutil_message": "",
+    "idle_message": "",
+    "underutil_total_savings": "",
+    "idle_total_savings": "",
+    "tags": "",
+    "savings": "",
+    "savingsCurrency": "",
+    "cpu_maximum": "",
+    "cpu_minimum": "",
+    "cpu_average": "",
+    "cpu_p99": "",
+    "cpu_p95": "",
+    "cpu_p90": "",
+    "mem_maximum": "",
+    "mem_minimum": "",
+    "mem_average": "",
+    "mem_p99": "",
+    "mem_p95": "",
+    "mem_p90": ""
+  }
+
+  idle_list.push(dummy_entry)
+  underutil_list.push(dummy_entry)
+
+  // Add these to both lists to ensure the first item that fails validation for each
+  // contains the necessary data for the summary and detail templates
+  idle_list[0]['idle_message'] = idle_message
+  idle_list[0]['idle_total_savings'] = idle_total_savings
+  idle_list[0]['policy_name'] = ds_applied_policy['name']
+
+  underutil_list[0]['underutil_message'] = underutil_message
+  underutil_list[0]['underutil_total_savings'] = underutil_total_savings
+  underutil_list[0]['policy_name'] = ds_applied_policy['name']
+
+  result =  {
+    idle_list: idle_list,
+    underutil_list: underutil_list
+  }
+EOS
+end
+
+datasource "ds_underutil_instances" do
+  run_script $js_split_incidents, $ds_idle_and_underutil_instances, "underutil_list"
+end
+
+datasource "ds_idle_instances" do
+  run_script $js_split_incidents, $ds_idle_and_underutil_instances, "idle_list"
+end
+
+script "js_split_incidents", type:"javascript" do
+  parameters "ds_idle_and_underutil_instances", "incident"
+  result "result"
+  code "result = ds_idle_and_underutil_instances[incident]"
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_utilization" do
+  validate_each $ds_underutil_instances do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Underutilized EC2 Instances Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .underutil_total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .underutil_message }}{{ end }}
+    EOS
+    check logic_or($ds_parent_policy_terminated, ne(val(item, "recommendationType"), "Downsize"))
+    escalate $esc_email
+    escalate $esc_downsize_instances
+    hash_exclude "underutil_message", "idle_message", "underutil_total_savings", "idle_total_savings", "tags", "savings", "savingsCurrency", "cpu_maximum", "cpu_minimum", "cpu_average", "cpu_p99", "cpu_p95", "cpu_p90", "mem_maximum", "mem_minimum", "mem_average", "mem_p99", "mem_p95", "mem_p90"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "resourceType" do
+        label "Instance Size"
+      end
+      field "newResourceType" do
+        label "Recommended Instance Size"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "platform" do
+        label "Platform"
+      end
+      field "hostname" do
+        label "Hostname"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "launchTime" do
+        label "Launch Time"
+      end
+      field "cpuMaximum" do
+        label "CPU Maximum %"
+        path "cpu_maximum"
+      end
+      field "cpuMinimum" do
+        label "CPU Minimum %"
+        path "cpu_minimum"
+      end
+      field "cpuAverage" do
+        label "CPU Average %"
+        path "cpu_average"
+      end
+      field "cpuP99" do
+        label "CPU p99"
+        path "cpu_p99"
+      end
+      field "cpuP95" do
+        label "CPU p95"
+        path "cpu_p95"
+      end
+      field "cpuP90" do
+        label "CPU p90"
+        path "cpu_p90"
+      end
+      field "memMaximum" do
+        label "Memory Maximum %"
+        path "mem_maximum"
+      end
+      field "memMinimum" do
+        label "Memory Minimum %"
+        path "mem_minimum"
+      end
+      field "memAverage" do
+        label "Memory Average %"
+        path "mem_average"
+      end
+      field "memP99" do
+        label "Memory p99"
+        path "mem_p99"
+      end
+      field "memP95" do
+        label "Memory p95"
+        path "mem_p95"
+      end
+      field "memP90" do
+        label "Memory p90"
+        path "mem_p90"
+      end
+      field "thresholdType" do
+        label "Threshold Statistic"
+      end
+      field "threshold" do
+        label "CPU Threshold"
+      end
+      field "memoryThreshold" do
+        label "Memory Threshold"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+    end
+  end
+  validate_each $ds_idle_instances do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Idle EC2 Instances Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .idle_total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .idle_message }}{{ end }}
+    EOS
+    check logic_or($ds_parent_policy_terminated, ne(val(item, "recommendationType"), "Terminate"))
+    escalate $esc_email
+    escalate $esc_stop_instances
+    escalate $esc_terminate_instances
+    hash_exclude "underutil_message", "idle_message", "underutil_total_savings", "idle_total_savings", "tags", "savings", "savingsCurrency", "cpu_maximum", "cpu_minimum", "cpu_average", "cpu_p99", "cpu_p95", "cpu_p90", "mem_maximum", "mem_minimum", "mem_average", "mem_p99", "mem_p95", "mem_p90"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "resourceType" do
+        label "Instance Size"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "platform" do
+        label "Platform"
+      end
+      field "hostname" do
+        label "Hostname"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "launchTime" do
+        label "Launch Time"
+      end
+      field "cpuMaximum" do
+        label "CPU Maximum %"
+        path "cpu_maximum"
+      end
+      field "cpuMinimum" do
+        label "CPU Minimum %"
+        path "cpu_minimum"
+      end
+      field "cpuAverage" do
+        label "CPU Average %"
+        path "cpu_average"
+      end
+      field "cpuP99" do
+        label "CPU p99"
+        path "cpu_p99"
+      end
+      field "cpuP95" do
+        label "CPU p95"
+        path "cpu_p95"
+      end
+      field "cpuP90" do
+        label "CPU p90"
+        path "cpu_p90"
+      end
+      field "memMaximum" do
+        label "Memory Maximum %"
+        path "mem_maximum"
+      end
+      field "memMinimum" do
+        label "Memory Minimum %"
+        path "mem_minimum"
+      end
+      field "memAverage" do
+        label "Memory Average %"
+        path "mem_average"
+      end
+      field "memP99" do
+        label "Memory p99"
+        path "mem_p99"
+      end
+      field "memP95" do
+        label "Memory p95"
+        path "mem_p95"
+      end
+      field "memP90" do
+        label "Memory p90"
+        path "mem_p90"
+      end
+      field "thresholdType" do
+        label "Threshold Statistic"
+      end
+      field "threshold" do
+        label "CPU Threshold"
+      end
+      field "memoryThreshold" do
+        label "Memory Threshold"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_downsize_instances" do
+  automatic contains($param_automatic_action, "Downsize Instances")
+  label "Downsize Instances"
+  description "Approval to downsize all selected instances"
+  run "downsize_instances", data
+end
+
+escalation "esc_stop_instances" do
+  automatic contains($param_automatic_action, "Stop Instances")
+  label "Stop Instances"
+  description "Approval to stop all selected instances"
+  run "stop_instances", data
+end
+
+escalation "esc_terminate_instances" do
+  automatic contains($param_automatic_action, "Terminate Instances")
+  label "Terminate Instances"
+  description "Approval to terminate all selected instances"
+  run "terminate_instances", data
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+# Core CWF function to stop instances
+define stop_instances($data) do
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call get_instance_state($instance) retrieve $initial_state
+
+      if $initial_state != "terminated" && $initial_state != "pending"
+        if $initial_state != "stopped"
+          call stop_instance($instance)
+        end
+      end
+    end
+  end
+
+  # If we encountered any errors, use `raise` to mark the CWF process as errored
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+# Core CWF function to downsize instances
+define downsize_instances($data) do
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      # Get the initial state of the instance before we take any action
+      call get_instance_state($instance) retrieve $initial_state
+      # Check to see if the instance is in a state that we can actual change instance type
+      if $initial_state != "terminated" && $initial_state != "pending"
+        # Stop the instance if it's not already stopped
+        if $initial_state != "stopped"
+          call stop_instance($instance)
+        end
+        # Resize the instance
+        call resize_instance($instance)
+        # Start the instance if it was running before we stopped it
+        if $initial_state == "running"
+          call start_instance($instance)
+        end
+      end
+    end
+  end
+
+  # If we encountered any errors, use `raise` to mark the CWF process as errored
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+# Core CWF function to terminate instances
+define terminate_instances($data) do
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call get_instance_state($instance) retrieve $initial_state
+
+      if $initial_state != "terminated" && $initial_state != "pending"
+        call terminate_instance($instance)
+      end
+    end
+  end
+
+  # If we encountered any errors, use `raise` to mark the CWF process as errored
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+# CWF function to start an instance
+define start_instance($instance) return $response do
+  task_label("Starting Instance: " + $instance["id"])
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    href: "/",
+    host: "ec2." + $instance['region'] + ".amazonaws.com",
+    query_strings: {
+      "Action": "StartInstances",
+      "Version": "2016-11-15",
+      "InstanceId.1": $instance["id"]
+    }
+  )
+  call handle_response($response)
+  task_label("Checking for expected response code for Starting Instance: " + $instance["id"])
+  if $response["code"] != 202 && $response["code"] != 200
+    raise 'Unexpected response Starting Instance: '+to_json($response)
+  else
+    task_label("Successful Starting Instance: " + $instance["id"])
+    call get_instance_state($instance) retrieve $instance_state
+    while $instance_state != "running" do
+      call get_instance_state($instance) retrieve $instance_state
+      task_label("Waiting for Start.. Instance State: " + $instance["id"] +" "+ $instance_state)
+      sleep(10)
+    end
+    task_label("Completed Starting Instance: " + $instance["id"])
+  end
+end
+
+# CWF function to stop an instance
+define stop_instance($instance) return $response do
+  task_label("Stopping Instance: " + $instance["id"])
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    href: "/",
+    host: "ec2." + $instance['region'] + ".amazonaws.com",
+    query_strings: {
+      "Action": "StopInstances",
+      "Version": "2016-11-15",
+      "InstanceId.1": $instance["id"]
+    }
+  )
+  call handle_response($response)
+
+  task_label("Checking for expected response code for Stop Instance: " + $instance["id"])
+  if $response["code"] != 202 && $response["code"] != 200
+    raise 'Unexpected response Stop Instance: '+to_json($response)
+  else
+    task_label("Successful Stop Instance: " + $instance["id"])
+    call get_instance_state($instance) retrieve $instance_state
+    while $instance_state != "stopped" do
+      call get_instance_state($instance) retrieve $instance_state
+      task_label("Waiting for Stop.. Instance State: " + $instance["id"] +" "+ $instance_state)
+      sleep(10)
+    end
+    task_label("Completed Stop Instance: " + $instance["id"])
+  end
+end
+
+# CWF function to resize an instance
+define resize_instance($instance) return $response do
+  task_label("Modifying Instance Type: " + $instance["id"])
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    href: "/",
+    host: "ec2." + $instance["region"] + ".amazonaws.com",
+    query_strings: {
+      "Action": "ModifyInstanceAttribute",
+      "Version": "2016-11-15",
+      "InstanceId": $instance["id"],
+      "InstanceType.Value": $instance["newResourceType"]
+    }
+  )
+  call handle_response($response)
+
+  task_label("Checking for expected response code for Modify Instance: " + $instance["id"])
+  if $response["code"] != 202 && $response["code"] != 200
+    raise 'Unexpected response Modify Instance: '+to_json($response)
+  else
+    task_label("Successful Modify Instance: " + $instance["id"])
+    call get_instance_state($instance) retrieve $instance_state
+    while $instance_state != "stopped" do
+      call get_instance_state($instance) retrieve $instance_state
+      task_label("Waiting for \"stopped\".. Instance State: " + $instance["id"] +" "+ $instance_state)
+      sleep(10)
+    end
+    task_label("Completed Modify Instance: " + $instance["id"])
+  end
+end
+
+# CWF function to terminate an instance
+define terminate_instance($instance) return $response do
+  task_label("Terminating Instance: " + $instance["id"])
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    href: "/",
+    host: "ec2." + $instance["region"] + ".amazonaws.com",
+    query_strings: {
+      "Action": "TerminateInstances",
+      "Version": "2016-11-15",
+      "InstanceId.1": $instance["id"]
+    }
+  )
+  call handle_response($response)
+
+  task_label("Checking for expected response code for Terminate Instance: " + $instance["id"])
+  if $response["code"] != 202 && $response["code"] != 200
+    raise 'Unexpected response Terminate Instance: '+to_json($response)
+  else
+    task_label("Successful Terminate Instance: " + $instance["id"])
+    call get_instance_state($instance) retrieve $instance_state
+    while $instance_state != "terminated" do
+      call get_instance_state($instance) retrieve $instance_state
+      task_label("Waiting for Terminate Instance: " + $instance["id"] +" "+ $instance_state)
+      sleep(10)
+    end
+    task_label("Completed Modify Instance: " + $instance["id"])
+  end
+end
+
+# CWF function to get the current state of an instance
+define get_instance_state($instance) return $instance_state do
+  task_label("Getting Instance State: " + $instance["id"])
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    href: "/",
+    host: "ec2." + $instance["region"] + ".amazonaws.com",
+    query_strings: {
+      "Action": "DescribeInstanceStatus",
+      "Version": "2016-11-15",
+      "IncludeAllInstances": "true",
+      "InstanceId.1": $instance["id"]
+    }
+  )
+  call handle_response($response)
+  $instance_state = $response["body"]["DescribeInstanceStatusResponse"]["instanceStatusSet"]["item"]["instanceState"]["name"]
+end
+
+# CWF function to handle errors
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
+end
+
+# CWF function to handle responses
+define handle_response($response) do
+  if !$$all_responses
+    $$all_responses = []
+  end
+  # Convert response object to JSON string.  Easier to interpret
+  $$all_responses << to_json($response)
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
+end

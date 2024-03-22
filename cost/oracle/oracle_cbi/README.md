@@ -8,18 +8,20 @@ This Policy Template is used to automatically take Cost Reports from Oracle Clou
 
 - The policy uses the Oracle Cloud Object Storage API to connect to the bucket containing the Cost & Usage Reports and obtain the relevant reports for the specified month (or current month if none is specified.)
 - The policy then sends those reports, unmodified, into a Flexera CBI endpoint so that they can be ingested and then visible on the platform.
-- The policy does this over the course of multiple runs to avoid hitting memory and other constraints; it is recommended that the default frequency of 15 minutes be used.
+- The policy does this over the course of multiple runs to avoid hitting memory and other constraints. **It is recommended that the default frequency of 15 minutes be used; the policy may not function correctly or as expected if a longer frequency is selected.**
 - The policy requires that a valid Oracle CBI endpoint exists, a valid Oracle Cloud credential exists in Flexera One, and that Cost & Usage Reporting is enabled in Oracle Cloud.
+- It is recommended that this policy be applied twice, with Month To Ingest set to Current Month for one instance and with it set to Previous Month for the other. This is to ensure that any changes made to Oracle billing data after the month ends are brought into the Flexera platform.
 
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
-- *Billing Period* - The year and month to process bills for in YYYY-MM format. Leave this parameter blank to always do the current month. Example: 2022-09
+- *Month To Ingest* - Whether to process bills for the current month, previous month, or a specific month.
+- *Billing Period* - The year and month to process bills for in YYYY-MM format. Only relevant if Specific Month is selected for the Month To Ingest parameter. Example: 2022-09
 - *Flexera CBI Endpoint* - The name of the Flexera CBI endpoint to use. Example: cbi-oi-oracle-oraclecloud
 - *Oracle Cloud Region* - The region of the Oracle Cloud Object Storage bucket containing the cost and usage reports. Example: us-phoenix-1
 - *Oracle Cloud Cost & Usage Bucket* - OCID of the Oracle Cloud Object Storage bucket containing the Cost and Usage reports.
-- *Block Size* - The number of files to upload with each execution of the policy. Changing from the default value of 20 is not recommended.
+- *Block Size* - The number of files to upload with each execution of the policy. The default value of 20 is recommended.
 - *Commit Delay (Hours)* - The number of hours to wait between committing bill uploads. This is to avoid overloading the CBI system and to ensure bill ingestion occurs at a predictable cadence. The default value of 12 is recommended.
 
 ## Prerequisites

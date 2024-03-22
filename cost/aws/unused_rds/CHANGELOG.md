@@ -1,12 +1,65 @@
 # Changelog
 
+## v6.5
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
+## v6.4
+
+- Deprecated: This policy is no longer being updated. Please see policy README for more information.
+
+## v6.3
+
+- Corrected API issue when executing policy in APAC
+
+## v6.2
+
+- Updated description of `Account Number` parameter
+
+## v6.1
+
+- Added ability to filter resources by tag key alone without regard for tag value
+
+## v6.0
+
+- Added parameter to specify how far back to check instances for activity
+- Several parameters altered to be more descriptive and human-readable
+- Removed unnecessary "CloudWatch API Wait Time" parameter
+- Added ability to only report recommendations that meet a minimum savings threshold
+- Added ability to filter resources by multiple tag key:value pairs
+- Added additional context to incident description
+- Normalized incident export to be consistent with other policies
+- Added human-readable recommendation to incident export
+- Policy no longer raises new escalations if savings data changed but nothing else has
+- Streamlined code for better readability and faster execution
+
+## 5.2
+
+- Added `Database Engine` incident field
+- Added `Engine Version` incident field
+- Added `Platform` incident field
+- Added `Lookback Period` incident fields
+- Changed the internal names of several incident fields to ensure proper scraping for recommendations dashboard
+
+## v5.1
+
+- Updated policy metadata to facilitate scraping of incidents for Recommendations dashboard
+
+## v5.0
+
+- Added parameter to enable Allow or Deny filtering by user entered regions
+
+## v4.2
+
+- Raised API limit to handle situations where more than 10,000 line items need to be retrieved.
+
 ## v4.1
 
 - Added logic required for "Meta Policy" use-cases
 
 ## v4.0
 
-- Deprecated `auth_rs` authentication (type: `rightscale`) and replaced with `auth_flexera` (type: `oauth2`).  This is a breaking change which requires a Credential for `auth_flexera` [`provider=flexera`] before the policy can be applied.  Please see docs for setting up [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm)
+- Deprecated `auth_rs` authentication (type: `rightscale`) and replaced with `auth_flexera` (type: `oauth2`). This is a breaking change which requires a Credential for `auth_flexera` [`provider=flexera`] before the policy can be applied. Please see docs for setting up [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm)
 - Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM
 - Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`
 
@@ -21,7 +74,7 @@
 ## v3.5
 
 - Improved accuracy of metric collection by using a different Statistic to identify idle resources
-- Fixed bug with Tag Exclusion Key parameter in `v3.x`.  Resources once again get excluded from results if containing provided `key:value` tag
+- Fixed bug with Tag Exclusion Key parameter in `v3.x`. Resources once again get excluded from results if containing provided `key:value` tag
 - Refactored datasources from `cloudwatch:GetMetricStatistics` to `cloudwatch:GetMetricData` to improve efficiency of metric data collection
 - Added `param_api_wait` - The amount of time in seconds to wait between requests to the CloudWatch API to avoid being throttled by AWS
 

@@ -4,8 +4,9 @@ type "policy"
 short_description "Find all Google Cloud resources(disks, images, instances, snapshots, buckets, vpnGateways), missing any of the user provided labels with the option to update the resources with the missing labels. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/google/unlabeled_resources) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 category "Compliance"
 severity "low"
+default_frequency "weekly"
 info(
-  version: "2.4",
+  version: "2.5",
   provider: "Google",
   service: "",
   policy_set: "Unlabeled Resources"
@@ -146,9 +147,9 @@ script "js_filter_resources", type: "javascript" do
     var obj = gr["all_res"];
     if (obj !== undefined && obj.items !== undefined) {
       for (var key in obj.items) {
-        var isResMissedTag = false;
-        var all_include_label = '';
+        var labelOrValueMissing = false;
         var all_missed_label = '';
+        var all_missed_values = '';
         if (JSON.stringify(obj.items[key]["labels"]) == undefined) {
           var labels = "none";
         } else {
@@ -156,21 +157,37 @@ script "js_filter_resources", type: "javascript" do
           var labels_str = JSON.stringify(labels);
         }
         for (var j = 0; j < param_label_key_lower.length; j++) {
-          if (_.isEmpty(labels_str) || (labels_str.toLowerCase().indexOf(param_label_key_lower[j])) == -1) {
-            isResMissedTag = true;
-            all_missed_label = all_missed_label + " " + param_label_key_lower[j];
-          } else {
-            all_include_label = all_include_label + " " + param_label_key_lower[j];
+          var labelMissing = true
+          for (var labelKey in labels) {
+            if (labelKey.toLowerCase() == param_label_key_lower[j]){
+              labelMissing = false
+              if (labels[labelKey] == "" || labels[labelKey] == null) {
+                labelOrValueMissing = true;
+                if (all_missed_values == "") {
+                  all_missed_values = param_label_key_lower[j];
+                } else {
+                  all_missed_values = all_missed_values + ", " + param_label_key_lower[j];
+                }
+              }
+            }
+          }
+          if (labelMissing) {
+            labelOrValueMissing = true;
+            if (all_missed_label == "") {
+              all_missed_label = param_label_key_lower[j];
+            } else {
+              all_missed_label = all_missed_label + ", " + param_label_key_lower[j];
+            }
           }
         }
-        if (isResMissedTag) {
+        if (labelOrValueMissing) {
           result.push({
             id: obj.items[key]["id"],
             labels: labels,
             labelFingerprint: "labelFingerprint",
             selfLink: obj.items[key]["selfLink"],
             all_missed_label: all_missed_label,
-            all_include_label: all_include_label,
+            all_missed_values: all_missed_values,
             labels_str: labels_str,
             type: "buckets",
             name: obj.items[key]["name"]
@@ -189,9 +206,9 @@ script "js_filter_resources", type: "javascript" do
         if (gr["uri"].indexOf("aggregated") !== -1) {
           if (obj.items[key]["warning"] == undefined) {
             for (var k in obj.items[key][type]) {
-              var isResMissedTag = false;
-              var all_include_label = '';
+              var labelOrValueMissing = false;
               var all_missed_label = '';
+              var all_missed_values = '';
               if (JSON.stringify(obj.items[key][type][k]["labels"]) == undefined) {
                 var labels = "none";
               } else {
@@ -199,21 +216,37 @@ script "js_filter_resources", type: "javascript" do
                 var labels_str = JSON.stringify(labels);
               }
               for (var j = 0; j < param_label_key_lower.length; j++) {
-                if (_.isEmpty(labels_str) || (labels_str.toLowerCase().indexOf(param_label_key_lower[j])) == -1) {
-                  isResMissedTag = true;
-                  all_missed_label = all_missed_label + " " + param_label_key_lower[j];
-                } else {
-                  all_include_label = all_include_label + " " + param_label_key_lower[j];
+                var labelMissing = true
+                for (var labelKey in labels) {
+                  if (labelKey.toLowerCase() == param_label_key_lower[j]){
+                    labelMissing = false
+                    if (labels[labelKey] == "" || labels[labelKey] == null) {
+                      labelOrValueMissing = true;
+                      if (all_missed_values == "") {
+                        all_missed_values = param_label_key_lower[j]
+                      } else {
+                        all_missed_values = all_missed_values + ", " + param_label_key_lower[j]
+                      }
+                    }
+                  }
+                }
+                if (labelMissing) {
+                  labelOrValueMissing = true;
+                  if (all_missed_label == "") {
+                    all_missed_label = param_label_key_lower[j];
+                  } else {
+                    all_missed_label = all_missed_label + ", " + param_label_key_lower[j];
+                  }
                 }
               }
-              if (isResMissedTag) {
+              if (labelOrValueMissing) {
                 result.push({
                   id: obj.items[key][type][k]["id"],
                   labels: labels,
                   labelFingerprint: obj.items[key][type][k]["labelFingerprint"],
                   selfLink: obj.items[key][type][k]["selfLink"],
                   all_missed_label: all_missed_label,
-                  all_include_label: all_include_label,
+                  all_missed_values: all_missed_values,
                   labels_str: labels_str,
                   type: type,
                   name: obj.items[key][type][k]["name"]
@@ -222,9 +255,9 @@ script "js_filter_resources", type: "javascript" do
             }
           }
         } else if (gr["uri"].indexOf("global") !== -1) {
-          var isResMissedTag = false;
-          var all_include_label = '';
+          var labelOrValueMissing = false;
           var all_missed_label = '';
+          var all_missed_values = '';
           if (JSON.stringify(obj.items[key]["labels"]) == undefined) {
             var labels = "none";
           } else {
@@ -232,21 +265,37 @@ script "js_filter_resources", type: "javascript" do
             var labels_str = JSON.stringify(labels);
           }
           for (var j = 0; j < param_label_key_lower.length; j++) {
-            if (_.isEmpty(labels_str) || (labels_str.toLowerCase().indexOf(param_label_key_lower[j])) == -1) {
-              isResMissedTag = true;
-              all_missed_label = all_missed_label + " " + param_label_key_lower[j];
-            } else {
-              all_include_label = all_include_label + " " + param_label_key_lower[j];
+            var labelMissing = true
+            for (var labelKey in labels) {
+              if (labelKey.toLowerCase() == param_label_key_lower[j]){
+                labelMissing = false
+                if (labels[labelKey] == "" || labels[labelKey] == null) {
+                  labelOrValueMissing = true;
+                  if (all_missed_values == "") {
+                    all_missed_values = param_label_key_lower[j]
+                  } else {
+                    all_missed_values = all_missed_values + ", " + param_label_key_lower[j]
+                  }
+                }
+              }
+            }
+            if (labelMissing) {
+              labelOrValueMissing = true;
+              if (all_missed_label == "") {
+                all_missed_label = param_label_key_lower[j];
+              } else {
+                all_missed_label = all_missed_label + ", " + param_label_key_lower[j];
+              }
             }
           }
-          if (isResMissedTag) {
+          if (labelOrValueMissing) {
             result.push({
               id: obj.items[key]["id"],
               labels: labels,
               labelFingerprint: obj.items[key]["labelFingerprint"],
               selfLink: obj.items[key]["selfLink"],
               all_missed_label: all_missed_label,
-              all_include_label: all_include_label,
+              all_missed_values: all_missed_values,
               labels_str: labels_str,
               type: type,
               name: obj.items[key]["name"]
@@ -285,7 +334,7 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_azure_resource" do
+policy "policy_google_resource" do
   validate $ds_filtered_resources do
     summary_template "{{ len data }} Google Resources out of compliance."
     escalate $esc_email
@@ -303,7 +352,10 @@ policy "policy_azure_resource" do
         label "Existing Labels"
       end
       field "all_missed_label" do
-        label "Missing Labels"
+        label "Missing Label Keys"
+      end
+      field "all_missed_values" do
+        label "Label Keys with Missing Label values"
       end
       field "id" do
         label "Resources Id"
@@ -352,19 +404,22 @@ define label_resources($data, $param_labels_to_add, $$rs_optima_host) return $al
   $$log = []
   $all_responses = []
 
+  $list_of_labels_to_add_foreach_data = []
+
   foreach $item in $data do
-    $new_labels = {}
-    if $item["labels"] == "none"
-      $new_labels = {}
-    else
-      $new_labels = $item["labels"]
-    end
+
+    $filtered_labels_to_add_obj = {}
     foreach $label in $param_labels_to_add do
-      if $new_labels != null
-        $new_labels[first(split($label,"="))]=last(split($label,"="))
+      $label_key_to_add = first(split( $tag, "=" ))
+      $label_value_to_add = ""
+      if $label_key_to_add != last(split( $tag, "="))
+        $label_value_to_add = last(split( $tag, "="))
       end
-      $$log << "after split: "+$new_labels[first(split($label,"="))]
+      $filtered_labels_to_add_obj[$label_key_to_add] = $label_value_to_add
     end
+
+    $list_of_labels_to_add_foreach_data << $filtered_labels_to_add_obj
+
     sub on_error: handle_error($postResponse) do
       $$log << "after split: "+join([$item["selfLink"],"/setLabels"])
       if $item["type"] != "buckets"
@@ -376,7 +431,7 @@ define label_resources($data, $param_labels_to_add, $$rs_optima_host) return $al
             "content-type": "application/json"
           },
           body: {
-            "labels": $new_labels,
+            "labels": $filtered_labels_to_add_obj,
             "labelFingerprint": $item["labelFingerprint"]
           }
         )
@@ -389,7 +444,7 @@ define label_resources($data, $param_labels_to_add, $$rs_optima_host) return $al
             "content-type": "application/json"
           },
           body: {
-            "labels": $new_labels
+            "labels": $filtered_labels_to_add_obj
           }
         )
       end

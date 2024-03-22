@@ -1,5 +1,9 @@
 # Azure Inefficient Instance Utilization using Log Analytics
 
+## Deprecated
+
+This policy is no longer being updated. CPU and memory usage data can now be obtained from Azure resources without the need for Log Analytics. The [Azure Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances/) policy now includes this functionality and is the recommended policy for getting recommendations for inefficient instance utilization.
+
 ## What it does
 
 This Policy Template uses performance metrics from Log Analytics from the last 30 days to identify underutilized instances and provides rightsizing recommendations. Once recommendations are generated, instances can be rightsized in an automated manner or after approval. This is meant to be run as a weekly policy.

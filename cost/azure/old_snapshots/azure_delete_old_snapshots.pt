@@ -4,72 +4,119 @@ type "policy"
 short_description "Checks for snapshots older than specified number of days and, optionally, deletes them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/old_snapshots) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 severity "low"
 category "Cost"
-default_frequency "daily"
+default_frequency "weekly"
 info(
-  version: "4.2",
+  version: "7.1",
   provider: "Azure",
   service: "Storage",
-  policy_set: "Old Snapshots"
+  policy_set: "Old Snapshots",
+  recommendation_type: "Usage Reduction"
 )
 
-##################
-# User inputs    #
-##################
+##############################################################################
+# Parameters
+##############################################################################
 
 parameter "param_email" do
   type "list"
-  label "Email Address"
-  description "Email addresses of the recipients you wish to notify"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
 end
 
 parameter "param_azure_endpoint" do
   type "string"
+  category "Policy Settings"
   label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
   allowed_values "management.azure.com", "management.chinacloudapi.cn"
   default "management.azure.com"
 end
 
-parameter "param_subscription_allowed_list" do
-  label "Subscription Allowed List"
-  type "list"
-  description "Allowed Subscriptions, if empty, all subscriptions will be checked"
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation."
+  min_value 0
+  default 0
 end
 
 parameter "param_snapshot_age" do
   type "number"
-  label "Snapshot Age"
-  description "The number of days since the snapshot was created"
+  category "Policy Settings"
+  label "Snapshot Age Threshold"
+  description "The number of days since the snapshot was created to consider a snapshot old."
+  min_value 1
   default 30
 end
 
-parameter "param_exclusion_tag_key" do
-  category "User Inputs"
-  label "Exclusion Tag Key"
-  description "Cloud native tag key to ignore instances. Example: exclude_utilization"
+parameter "param_subscriptions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Subscriptions"
+  description "Allow or Deny entered Subscriptions."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_subscriptions_list" do
   type "list"
+  category "Filters"
+  label "Allow/Deny Subscriptions List"
+  description "A list of allowed or denied Subscription IDs/names. Leave blank to check all Subscriptions."
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. Leave blank to check all regions."
+  default []
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
 end
 
 parameter "param_automatic_action" do
   type "list"
+  category "Actions"
   label "Automatic Actions"
-  description "When this value is set, this policy will automatically take the selected action(s)"
+  description "When this value is set, this policy will automatically take the selected action."
   allowed_values ["Delete Snapshots"]
-end
-
-parameter "param_log_to_cm_audit_entries" do
-  type "string"
-  label "Log to CM Audit Entries"
-  description "Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left set to No on Flexera EU"
-  default "No"
-  allowed_values "Yes", "No"
+  default []
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-#authenticate with Azure
-credentials "azure_auth" do
+credentials "auth_azure" do
   schemes "oauth2"
   label "Azure"
   description "Select the Azure Resource Manager Credential from the list."
@@ -78,7 +125,7 @@ end
 
 credentials "auth_flexera" do
   schemes "oauth2"
-  label "flexera"
+  label "Flexera"
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
@@ -87,8 +134,7 @@ end
 # Pagination
 ###############################################################################
 
-#pagination support
-pagination "azure_pagination" do
+pagination "pagination_azure" do
   get_page_marker do
     body_path "nextLink"
   end
@@ -98,65 +144,61 @@ pagination "azure_pagination" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
-#get all subscription details.
-datasource "ds_subscriptions" do
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
   request do
-    auth $azure_auth
-    pagination $azure_pagination
-    host $param_azure_endpoint
-    path "/subscriptions/"
-    query "api-version","2020-01-01"
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+    ignore_status [403]
   end
   result do
     encoding "json"
-    collect jmes_path(response, "value[*]") do
-      field "subscriptionID", jmes_path(col_item,"subscriptionId")
-      field "subscriptionName", jmes_path(col_item,"displayName")
-      field "state", jmes_path(col_item,"state")
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
     end
   end
 end
 
-datasource "ds_filtered_subscriptions" do
-  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_allowed_list
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
 end
 
-#get all snapshots
-datasource "ds_azure_get_snapshots" do
-  iterate $ds_filtered_subscriptions
-  request do
-    auth $azure_auth
-    pagination $azure_pagination
-    host $param_azure_endpoint
-    path join(["/subscriptions/", val(iter_item,"subscriptionID"), "/providers/Microsoft.Compute/snapshots"])
-    query "api-version","2019-07-01"
-    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-    ignore_status [400,403,404]
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "value[*]") do
-      field "id", jmes_path(col_item,"id")
-      field "resourceName", jmes_path(col_item,"name")
-      field "resourceGroup", get(4,split(jmes_path(col_item,"id"),'/'))
-      field "resourceType", jmes_path(col_item,"type")
-      field "region", jmes_path(col_item, "location")
-      field "tags", jmes_path(col_item,"tags")
-      field "timeCreated", jmes_path(col_item,"properties.timeCreated")
-      field "subscriptionID",val(iter_item,"subscriptionID")
-      field "subscriptionName",val(iter_item,"subscriptionName")
-    end
-  end
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-EOS
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
 end
 
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
     header "User-Agent", "RS Policies"
   end
 end
@@ -165,344 +207,541 @@ datasource "ds_currency_code" do
   request do
     auth $auth_flexera
     host rs_optima_host
-    path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
     header "Api-Version", "0.1"
     header "User-Agent", "RS Policies"
     ignore_status [403]
   end
   result do
     encoding "json"
-    field "id", jmes_path(response,"id")
-    field "value", jmes_path(response,"value")
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
   end
 end
 
-datasource "ds_billing_centers" do
-  request do
-    auth $auth_flexera
-    host rs_optima_host
-    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
-    header "Api-Version", "1.0"
-    header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
-    ignore_status [403]
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "href", jmes_path(col_item,"href")
-      field "id", jmes_path(col_item,"id")
-      field "name", jmes_path(col_item,"name")
-      field "parent_id", jmes_path(col_item,"parent_id")
-    end
-  end
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
 end
 
-datasource "ds_top_level_billing_centers" do
-  run_script $js_top_level_bc, $ds_billing_centers
-end
-
-datasource "ds_snapshot_costs" do
-  iterate $ds_filtered_subscriptions
-  request do
-    run_script $js_get_costs, val(iter_item,"subscriptionID"), $ds_top_level_billing_centers, rs_org_id, rs_optima_host
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"rows[*]") do
-      field "resource_id", jmes_path(col_item,"dimensions.resource_id")
-      field "cost_nonamortized_unblended_adj", jmes_path(col_item,"metrics.cost_nonamortized_unblended_adj")
-    end
-  end
-end
-
-datasource "ds_filter_snapshots" do
-  run_script $js_filter_snapshots, $param_exclusion_tag_key, $param_snapshot_age, $ds_azure_get_snapshots
-end
-
-
-datasource "ds_snapshot_cost_mapping" do
-  run_script $js_snapshot_cost_mapping, $ds_filter_snapshots, $ds_snapshot_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers
-end
-
-###############################################################################
-# Scripts
-###############################################################################
-
-script "js_filtered_subscriptions", type: "javascript" do
-  parameters "ds_subscriptions", "param_subscription_allowed_list"
-  result "results"
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
   code <<-EOS
-  var results = []
-  if ( param_subscription_allowed_list.length != 0){
-    results = []
-    _.each(param_subscription_allowed_list, function(sub){
-      var found = _.find(ds_subscriptions, function(item){
-        return item.subscriptionID == sub || item.subscriptionName.toLowerCase() == sub.toLowerCase();
-      })
-      results.push(found)
-    })
-  } else {
-    results = ds_subscriptions
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
   }
 EOS
 end
 
-script "js_top_level_bc", type: "javascript" do
-  parameters "billing_centers"
-  result "filtered_billing_centers"
-  code <<-EOS
-    var filtered_billing_centers =
-    _.reject(billing_centers, function(bc){ return bc.parent_id != null });
-  EOS
+datasource "ds_azure_subscriptions" do
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path "/subscriptions/"
+    query "api-version", "2020-01-01"
+    header "User-Agent", "RS Policies"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "subscriptionId")
+      field "name", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
+    end
+  end
 end
 
-script "js_get_costs", type:"javascript" do
-  parameters  "account_id","billing_centers","org","optima_host"
-  result "request"
-  code <<-EOS
-    // returns date formatted as string: YYYY-mm-dd
-    function getFormattedDailyDate(date) {
-      var year = date.getFullYear();
-      var month = (1 + date.getMonth()).toString();
-      month = month.length > 1 ? month : '0' + month;
-      var day = date.getDate().toString();
-      day = day.length > 1 ? day : '0' + day;
-      return year + '-' + month + '-' + day;
-    }
-    var start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 3)));
-    var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)));
-    var request = {
-      auth: "auth_flexera",
-      host: optima_host,
-      verb: "POST",
-      path: "/bill-analysis/orgs/" + org + "/costs/select",
-      body_fields: {
-        "dimensions": ["resource_id"],
-        "granularity": "day",
-        "start_at": start_date,
-        "end_at": end_date,
-        "metrics": ["cost_nonamortized_unblended_adj"],
-        "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id})),
-        "limit": 10000,
-        "filter": {
-          "expressions": [
-            {
-              "dimension": "service",
-              "type": "equal",
-              "value": "Microsoft.Compute"
-            },
-            {
-              "dimension": "vendor_account",
-              "type": "equal",
-              "value": account_id
-            }
-          ],
-          "type": "and"
-        }
-      },
-      headers: {
-        "User-Agent": "RS Policies",
-        "Api-Version": "1.0"
-      },
-      ignore_status: [400]
-    }
-  EOS
+datasource "ds_azure_subscriptions_filtered" do
+  run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
 end
 
-script "js_filter_snapshots", type: "javascript" do
-  parameters "param_exclusion_tag_key", "param_snapshot_age", "ds_azure_get_snapshots"
-  result "res"
-  code <<-EOS
-    var res = [];
-    _.each(ds_azure_get_snapshots, function(snapshot){
-      var tags = []
-      var expectedDate=new Date();
-      var is_tag_matched=false;
-      var date1 = new Date(snapshot['timeCreated']);
-      var date2 = new Date();
-      var Difference_In_Time = date2.getTime() - date1.getTime();
-      var diffDays = Difference_In_Time / (1000 * 3600 * 24);
-      var age=Math.round(diffDays);
-      if(age<diffDays){
-        age++;
-      }
-      var createdTime=new Date(snapshot['timeCreated']);
-      expectedDate.setDate(expectedDate.getDate()- parseInt(param_snapshot_age));
-
-      if (typeof snapshot.tags === "undefined" || snapshot.tags === null) {
-        snapshot.tags = tags
-      }
-
-      for(var k=0;k<param_exclusion_tag_key.length;k++){
-        if(_.has(snapshot.tags, param_exclusion_tag_key[k])){
-          is_tag_matched=true
-        }
-      }
-
-
-      Object.keys(snapshot['tags']).forEach(function(key) {
-        tags.push(key+'='+snapshot['tags'][key])
-      });
-
-      resourceTypeSplit = snapshot['resourceType'].split("/")
-      service = resourceTypeSplit[0]
-
-      if (!is_tag_matched) {
-        if(createdTime.getTime()<expectedDate.getTime()){
-          res.push({
-            resourceID:snapshot['id'],
-            resourceType:snapshot['resourceType'],
-            resourceName:snapshot['resourceName'],
-            region:snapshot['region'],
-            tags:tags,
-            service:service,
-            resourceGroup:snapshot['resourceGroup'],
-            timeCreated:snapshot['timeCreated'],
-            subscriptionID:snapshot['subscriptionID'],
-            subscriptionName:snapshot['subscriptionName'],
-            age:age,
-            savings:0.0
-          })
-        }
-      }
-    })
-  EOS
-end
-
-script "js_snapshot_cost_mapping", type:"javascript" do
-  parameters  "snapshots","snapshots_costs","ds_currency_code","ds_currency_reference", "ds_billing_centers"
+script "js_azure_subscriptions_filtered", type: "javascript" do
+  parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
   result "result"
   code <<-EOS
-    var instances = [];
-    var result={};
-    var message=''
-    var count=0;
-    function formatNumber(number, separator){
-      var numString =number.toString();
-      var values=numString.split(".");
-      var result = ''
-      while (values[0].length > 3){
-        var chunk = values[0].substr(-3)
-        values[0] = values[0].substr(0, values[0].length - 3)
-        result = separator + chunk + result
+  if (param_subscriptions_list.length > 0) {
+    result = _.filter(ds_azure_subscriptions, function(subscription) {
+      include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
+
+      if (param_subscriptions_allow_or_deny == "Deny") {
+        include_subscription = !include_subscription
       }
-      if (values[0].length > 0){
-        result = values[0] + result
-      }
-      if(values[1]==undefined){
-        return result;
-      }
-      return result+"."+values[1];
+
+      return include_subscription
+    })
+  } else {
+    result = ds_azure_subscriptions
+  }
+EOS
+end
+
+datasource "ds_azure_snapshots" do
+  iterate $ds_azure_subscriptions_filtered
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Compute/snapshots"])
+    query "api-version", "2019-07-01"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "resourceID", jmes_path(col_item, "id")
+      field "resourceName", jmes_path(col_item, "name")
+      field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
+      field "resourceType", jmes_path(col_item, "type")
+      field "region", jmes_path(col_item, "location")
+      field "tags", jmes_path(col_item, "tags")
+      field "timeCreated", jmes_path(col_item, "properties.timeCreated")
+      field "size", jmes_path(col_item, "properties.diskSizeGB")
+      field "subscriptionID", val(iter_item, "id")
+      field "subscriptionName", val(iter_item, "name")
+    end
+  end
+end
+
+datasource "ds_azure_snapshots_tag_filtered" do
+  run_script $js_azure_snapshots_tag_filtered, $ds_azure_snapshots, $param_exclusion_tags, $param_exclusion_tags_boolean
+end
+
+script "js_azure_snapshots_tag_filtered", type: "javascript" do
+  parameters "ds_azure_snapshots", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  result "result"
+  code <<-EOS
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
     }
-    // Format costs with currency symbol and thousands separator
-    if(ds_billing_centers.length!=0){
-      // Put costs into a map by resource ID and only include them for resource IDs we actually need
-      var costs_by_resource_id = {};
-      _.each(snapshots, function(snapshot) {
-        costs_by_resource_id[snapshot.resourceID] = [];
-      });
-      _.each(snapshots_costs, function(cost) {
-        var costs = costs_by_resource_id[cost.resource_id];
-        if (costs != null) {
-          costs.push(cost);
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  if (param_exclusion_tags.length > 0) {
+    result = _.reject(ds_azure_snapshots, function(resource) {
+      resource_tags = {}
+      if (typeof(resource['tags']) == 'object') { resource_tags = resource['tags'] }
+
+      // Store a list of found tags
+      found_tags = []
+
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_tag = resource_tags[comparator['key']]
+
+        if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+        if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+        if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
         }
-      });
-      if( ds_currency_code['value'] !== undefined ) {
-        if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
-          var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
-          if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
-            var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
-          } else {
-            var separator = ""
-          }
-        } else {
-          var cur = ""
-          var separator = ""
-        }
-      } else {
-        var cur = "$"
-        var separator = ","
-      }
-      var total=0;
-      _.each(snapshots, function(snapshot){
-        var cost_objects = costs_by_resource_id[snapshot.resourceID];
-        if (_.size(cost_objects) > 0){
-          count++;
-          var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
-          var monthly_savings = sum*30;
-          total=total+monthly_savings;
-          snapshot['savings']= (Math.round(monthly_savings * 1000) / 1000);
-          snapshot['savingsCurrency']= cur;
-          instances.push(snapshot)
-        } else {
-          snapshot['savingsCurrency']= cur;
-          snapshot['savings']= 0.0;
-          instances.push(snapshot)
+
+        if (comparison == '!~') {
+          if (resource_tag == undefined) { found_tags.push(string) }
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
         }
       })
-      if(count){
-        total=cur + ' '+formatNumber((Math.round(total * 100) / 100), separator);
-        message="The total estimated monthly savings are " +total;
-      } else {
-        message="The Flexera Optima system does not have any data to calculate savings for these resources";
+
+      all_tags_found = found_tags.length == comparators.length
+      any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+      return all_tags_found || any_tags_found
+    })
+  } else {
+    result = ds_azure_snapshots
+  }
+EOS
+end
+
+datasource "ds_azure_snapshots_region_filtered" do
+  run_script $js_azure_snapshots_region_filtered, $ds_azure_snapshots_tag_filtered, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_azure_snapshots_region_filtered", type: "javascript" do
+  parameters "ds_azure_snapshots_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_azure_snapshots_tag_filtered, function(snapshot) {
+      include_snapshot = _.contains(param_regions_list, snapshot['region'])
+
+      if (param_regions_allow_or_deny == "Deny") {
+        include_snapshot = !include_snapshot
       }
-    }else{
-      message="You do not have the minimum required role of billing_center_viewer to view the savings";
-      instances=snapshots;
+
+      return include_snapshot
+    })
+  } else {
+    result = ds_azure_snapshots_tag_filtered
+  }
+EOS
+end
+
+datasource "ds_azure_old_snapshots" do
+  run_script $js_azure_old_snapshots, $ds_azure_snapshots_region_filtered, $param_snapshot_age
+end
+
+script "js_azure_old_snapshots", type: "javascript" do
+  parameters "ds_azure_snapshots_region_filtered", "param_snapshot_age"
+  result "result"
+  code <<-EOS
+  result = []
+
+  _.each(ds_azure_snapshots_region_filtered, function(snapshot) {
+    tags = []
+
+    if (typeof(snapshot['tags']) == 'object') {
+      _.each(Object.keys(snapshot['tags']), function(key) {
+        tags.push([key, "=", snapshot['tags'][key]].join(''))
+      })
     }
-    result={
-      "instances": instances,
-      "message": message
-    };
-    result.instances = _.sortBy(result.instances,"region");
-    result.instances = _.sortBy(result.instances,"subscriptionName");
-  EOS
+
+    snapshotTime = Date.parse(snapshot['timeCreated'])
+    age = Math.round((new Date().getTime() - new Date(snapshotTime).getTime()) / (1000 * 3600 * 24))
+
+    service = snapshot['resourceType'].split("/")[0]
+
+    if (age > param_snapshot_age) {
+      result.push({
+        resourceID: snapshot['resourceID'],
+        resourceType: snapshot['resourceType'],
+        resourceName: snapshot['resourceName'],
+        region: snapshot['region'],
+        resourceGroup: snapshot['resourceGroup'],
+        timeCreated: snapshot['timeCreated'],
+        size: snapshot['size'],
+        subscriptionID: snapshot['subscriptionID'],
+        subscriptionName: snapshot['subscriptionName'],
+        tags: tags.join(', '),
+        service: service,
+        age: age,
+        savings: 0.0
+      })
+    }
+  })
+EOS
+end
+
+datasource "ds_azure_old_snapshots_subscriptions" do
+  run_script $js_azure_old_snapshots_subscriptions, $ds_azure_old_snapshots
+end
+
+script "js_azure_old_snapshots_subscriptions", type: "javascript" do
+  parameters "ds_azure_old_snapshots"
+  result "result"
+  code <<-EOS
+  result = _.compact(_.uniq(_.pluck(ds_azure_old_snapshots, 'subscriptionID')))
+EOS
+end
+
+datasource "ds_azure_snapshot_costs" do
+  iterate $ds_azure_old_snapshots_subscriptions
+  request do
+    run_script $js_azure_snapshot_costs, iter_item, $ds_top_level_bcs, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "resourceID", jmes_path(col_item, "dimensions.resource_id")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+    end
+  end
+end
+
+script "js_azure_snapshot_costs", type:"javascript" do
+  parameters "subscription_id", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  //Get Start and End dates
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split("T")[0]
+
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split("T")[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
+    body_fields: {
+      "dimensions": ["resource_id"],
+      "granularity": "day",
+      "start_at": start_date,
+      "end_at": end_date,
+      "metrics": ["cost_amortized_unblended_adj"],
+      "billing_center_ids": ds_top_level_bcs,
+      "limit": 100000,
+      "filter": {
+        "type": "and",
+        "expressions": [
+          {
+            "type": "or",
+            "expressions": [
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "Microsoft.Compute"
+              },
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "microsoft.compute"
+              }
+            ]
+          },
+          {
+            "dimension": "vendor_account",
+            "type": "equal",
+            "value": subscription_id
+          }
+        ]
+      }
+    },
+    headers: {
+      "User-Agent": "RS Policies",
+      "Api-Version": "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
+datasource "ds_azure_snapshot_costs_grouped" do
+  run_script $js_azure_snapshot_costs_grouped, $ds_azure_snapshot_costs
+end
+
+script "js_azure_snapshot_costs_grouped", type: "javascript" do
+  parameters "ds_azure_snapshot_costs"
+  result "result"
+  code <<-EOS
+  // Multiple a single day's cost by the average number of days in a month.
+  // The 0.25 is to account for leap years for extra precision.
+  cost_multiplier = 365.25 / 12
+
+  // Group cost data by resourceId for later use
+  result = {}
+
+  _.each(ds_azure_snapshot_costs, function(item) {
+    id = item['resourceID'].toLowerCase()
+
+    if (result[id] == undefined) { result[id] = 0.0 }
+    result[id] += item['cost'] * cost_multiplier
+  })
+EOS
+end
+
+datasource "ds_azure_snapshots_incident" do
+  run_script $js_azure_snapshots_incident, $ds_azure_old_snapshots, $ds_azure_snapshots_region_filtered, $ds_azure_snapshot_costs_grouped, $ds_applied_policy, $ds_currency, $param_min_savings, $param_snapshot_age
+end
+
+script "js_azure_snapshots_incident", type:"javascript" do
+  parameters "ds_azure_old_snapshots", "ds_azure_snapshots_region_filtered", "ds_azure_snapshot_costs_grouped", "ds_applied_policy", "ds_currency", "param_min_savings", "param_snapshot_age"
+  result "result"
+  code <<-'EOS'
+  // Function for formatting currency numbers later
+  function formatNumber(number, separator) {
+    var numString = number.toString()
+    var values = numString.split(".")
+    var formatted_number = ''
+
+    while (values[0].length > 3) {
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      formatted_number = separator + chunk + formatted_number
+    }
+
+    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
+
+    if (values[1] == undefined) { return formatted_number }
+
+    return formatted_number + "." + values[1]
+  }
+
+  result = []
+
+  total_savings = 0.0
+
+  _.each(ds_azure_old_snapshots, function(snapshot) {
+    savings = ds_azure_snapshot_costs_grouped[snapshot['resourceID'].toLowerCase()]
+
+    if (savings == null || savings == undefined) {
+      savings = 0.0
+    }
+
+    if (savings >= param_min_savings) {
+      total_savings += savings
+
+      recommendationDetails = [
+        "Delete Azure snapshot ", snapshot["resourceName"], " ",
+        "in Azure Subscription ", snapshot["subscriptionName"],
+        " (", snapshot["subscriptionID"], ")"
+      ].join('')
+
+      result.push({
+        accountID: snapshot["subscriptionID"],
+        accountName: snapshot["subscriptionName"],
+        resourceID: snapshot['resourceID'],
+        resourceName: snapshot['resourceName'],
+        resourceGroup: snapshot['resourceGroup'],
+        resourceType: snapshot['resourceType'],
+        region: snapshot['region'],
+        age: snapshot['age'],
+        tags: snapshot['tags'],
+        service: snapshot['service'],
+        size: snapshot['size'],
+        savings: parseFloat(savings.toFixed(3)),
+        savingsCurrency: ds_currency['symbol'],
+        recommendationDetails: recommendationDetails,
+        lookbackPeriod: param_snapshot_age,
+        // These are to avoid errors when we hash_exclude these fields
+        total_savings: '',
+        message: '',
+        policy_name: ''
+      })
+    }
+  })
+
+  // Message for incident output
+  total_snapshots = ds_azure_snapshots_region_filtered.length.toString()
+  total_old_snapshots = result.length.toString()
+  old_snapshots_percentage = (total_old_snapshots / total_snapshots * 100).toFixed(2).toString() + '%'
+
+  days_noun = "days"
+  if (param_snapshot_age == 1) { days_noun = "day" }
+
+  findings = [
+    "Out of ", total_snapshots, " snapshots analyzed, ",
+    total_old_snapshots, " (", old_snapshots_percentage,
+    ") are older than ", param_snapshot_age, " ", days_noun, " ",
+    "and are recommended for deletion.\n\n"
+  ].join('')
+
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
+
+  savings_message = [
+    ds_currency['symbol'], ' ',
+    formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['separator'])
+  ].join('')
+
+  // Sort by descending order of savings value
+  result = _.sortBy(result, function(item) { return item['savings'] * -1 })
+
+  // Dummy item to ensure that the check statement in the policy executes at least once
+  result.push({
+    resourceID: "",
+    total_savings: "",
+    message: "",
+    tags: "",
+    age: "",
+    savings: "",
+    savingsCurrency: ""
+  })
+
+  result[0]['total_savings'] = savings_message
+  result[0]['message'] = findings + disclaimer
+  result[0]['policy_name'] = ds_applied_policy['name']
+EOS
 end
 
 ###############################################################################
 # Policy
 ###############################################################################
 
-policy "pol_azure_delete_old_snapshots" do
-  validate $ds_snapshot_cost_mapping do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} Old Snapshots Found"
-    detail_template <<-EOS
-{{data.message}}.
-EOS
-    export "instances" do
+policy "pol_azure_old_snapshots" do
+  validate_each $ds_azure_snapshots_incident do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Old Snapshots Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    escalate $esc_delete_snapshot
+    hash_exclude "total_savings", "message", "tags", "age", "savings", "savingsCurrency"
+    export do
       resource_level true
       field "accountID" do
         label "Subscription ID"
-        path "subscriptionID"
       end
       field "accountName" do
         label "Subscription Name"
-        path "subscriptionName"
-      end
-      field "resourceID" do
-        label "Resource Id"
-      end
-      field "resourceName" do
-        label "Resource Name"
       end
       field "resourceGroup" do
         label "Resource Group"
       end
-      field "resourceType" do
-        label "Resource Type"
+      field "resourceName" do
+        label "Resource Name"
       end
-      field "region" do
-        label "Region"
+      field "tags" do
+        label "Resource Tags"
       end
       field "age" do
         label "Age In Days"
       end
-      field "tags" do
-        label "Tags"
+      field "size" do
+        label "Size (GB)"
       end
       field "service" do
         label "Service"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
       end
       field "savings" do
         label "Estimated Monthly Savings"
@@ -510,17 +749,20 @@ EOS
       field "savingsCurrency" do
         label "Savings Currency"
       end
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "lookbackPeriod" do
+        label "Snapshot Age Threshold (Days)"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
       field "id" do
         label "ID"
         path "resourceID"
       end
     end
-    hash_include "instances"
-    # Send email report
-    escalate $send_email_report
-    # Delete snapshot if user approves
-    escalate $process_snapshots
-    check eq(size(val(data, "instances")), 0)
   end
 end
 
@@ -528,84 +770,161 @@ end
 # Escalations
 ###############################################################################
 
-escalation "send_email_report" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
   email $param_email
 end
 
-escalation "process_snapshots" do
+escalation "esc_delete_snapshot" do
   automatic contains($param_automatic_action, "Delete Snapshots")
   label "Delete Snapshots"
-  description "Delete all selected snapshots"
-  run "delete_old_snapshots", data, $param_log_to_cm_audit_entries, rs_optima_host
+  description "Approval to delete all selected snapshots"
+  run "delete_snapshots", data, $param_azure_endpoint
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define delete_old_snapshots($data, $param_log_to_cm_audit_entries, $$rs_optima_host) return $all_responses do
-  $$debug = $param_log_to_cm_audit_entries == "Yes"
-  $$errors = []
-  $status_code=''
-  $all_responses = []
-  foreach $item in $data do
-    sub on_error: skip do
-      call azure_delete_old_snapshots($item['id'])
+define delete_snapshots($data, $param_azure_endpoint) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call delete_snapshot($instance, $param_azure_endpoint) retrieve $delete_response
     end
   end
-end
 
-define azure_delete_old_snapshots($resourceID) do
-  $response={}
-  $syslog_subject = "Azure delete old snapshots API response: "
-  $response = http_request(
-          auth: $$azure_auth,
-          verb: "delete",
-          host: "management.azure.com",
-          https: true,
-          href: $resourceID,
-          query_strings: {
-            "api-version": "2019-07-01"
-          }
-        )
-  if $delete_status != 202
-    call sys_log($syslog_subject,to_s($response))
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
   end
 end
 
-define sys_log($subject, $detail) do
-  # Create empty errors array if doesn't already exist
+define delete_snapshot($instance, $param_azure_endpoint) return $response do
+  $host = $param_azure_endpoint
+  $href = $instance["id"]
+  $params = "?api-version=2019-07-01"
+  $url = $host + $href + $params
+  task_label("DELETE " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "delete",
+    host: $host,
+    href: $href,
+    query_strings: { "api-version": "2019-07-01" }
+  )
+
+  task_label("Delete Azure snapshot response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response deleting Azure snapshot: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Delete Azure snapshot successful: " + $instance["id"])
+  end
+end
+
+define handle_error() do
   if !$$errors
     $$errors = []
   end
-  # Check if debug is enabled
-  if $$debug
-    # Append to global $$errors
-    # This is the suggested way to capture errors
-    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
-    # If Flexera NAM Zone, create audit_entries [to be deprecated]
-    # This is the legacy method for capturing errors and only supported on Flexera NAM
-    if $$rs_optima_host == "api.optima.flexeraeng.com"
-      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
-      $task_label = "Creating audit entry for " + $subject
-      sub task_label: $task, on_error: skip_error_and_append($task) do
-        rs_cm.audit_entries.create(
-          notify: "None",
-          audit_entry: {
-            auditee_href: @@account,
-            summary: $subject,
-            detail: $detail
-          }
-        )
-      end # End sub on_error
-    end # End if rs_optima_host
-  end # End if debug is enabled
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
 end
 
-define skip_error_and_append($subject) do
-  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
-  $_error_behavior = "skip"
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
 end

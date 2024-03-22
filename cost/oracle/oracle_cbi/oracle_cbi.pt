@@ -6,7 +6,7 @@ severity "low"
 category "Cost"
 default_frequency "15 minutes"
 info(
-  version: "2.0",
+  version: "3.2",
   provider: "Oracle",
   service: "Common Bill Ingestion",
   policy_set: "Common Bill Ingestion"
@@ -16,33 +16,49 @@ info(
 # Parameters
 ###############################################################################
 
-parameter "param_period" do
+parameter "param_billing_period" do
   type "string"
+  category "Policy Settings"
+  label "Month To Ingest"
+  description "Month to process bills for."
+  default "Current Month"
+  allowed_values "Current Month", "Previous Month", "Specific Month"
+end
+
+parameter "param_specific_period" do
+  type "string"
+  category "Policy Settings"
   label "Billing Period"
-  description "Month to process bills for in YYYY-MM format. Leave blank to do current month."
-  default ""
+  description "Billing period to process bills for in YYYY-MM format. Only relevant if Specific Month is selected for Month To Ingest."
+  default "2020-01"
+  allowed_pattern /^(19|20)\d\d-(0[1-9]|1[0-2])$/
 end
 
 parameter "param_cbi_endpoint" do
   type "string"
+  category "Policy Settings"
   label "Flexera CBI Endpoint"
   description "Name of the Flexera CBI endpoint to use. Ex: cbi-oi-oracle-oraclecloud"
 end
 
 parameter "param_region" do
   type "string"
+  category "Oracle"
   label "Oracle Cloud Region"
   description "Region of the Oracle Cloud Object Storage bucket containing the cost and usage reports. Ex: us-phoenix-1"
+  allowed_pattern /^[a-z]{2}-[a-z]+(-[a-z]+)?-[1-9][0-9]*$/
 end
 
 parameter "param_bucket" do
   type "string"
+  category "Oracle"
   label "Oracle Cloud Cost & Usage Bucket"
   description "OCID of the Oracle Cloud Object Storage bucket containing the Cost and Usage reports."
 end
 
 parameter "param_block_size" do
   type "number"
+  category "Policy Settings"
   label "Block Size"
   description "The number of files in a single block."
   default 20
@@ -52,6 +68,7 @@ end
 
 parameter "param_commit_delay" do
   type "number"
+  category "Policy Settings"
   label "Commit Delay (Hours)"
   description "Number of hours to wait between committing bill uploads."
   default 12
@@ -72,7 +89,7 @@ end
 
 credentials "auth_flexera" do
   schemes "oauth2"
-  label "flexera"
+  label "Flexera"
   description "Select FlexeraOne OAuth2 credentials"
   tags "provider=flexera"
 end
@@ -91,11 +108,33 @@ pagination "pagination_oracle" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
 datasource "ds_dates" do
-  run_script $js_dates, $param_period
+  run_script $js_dates, $param_billing_period, $param_specific_period
+end
+
+script "js_dates", type: "javascript" do
+  parameters "param_billing_period", "param_specific_period"
+  result "result"
+  code <<-EOS
+  result = { period: param_specific_period }
+
+  if (param_billing_period != 'Specific Month') {
+    date = new Date()
+    date.setDate(date.getDate() - 1)
+
+    if (param_billing_period == 'Previous Month') {
+      date.setMonth(date.getMonth() - 1)
+    }
+
+    year = date.toISOString().split('-')[0]
+    month = date.toISOString().split('-')[1]
+
+    result = { period: year + '-' + month }
+  }
+EOS
 end
 
 datasource "ds_existing_bill_uploads" do
@@ -111,10 +150,93 @@ datasource "ds_existing_bill_uploads" do
   end
 end
 
-datasource "ds_bill_upload_check" do
-  run_script $js_bill_upload_check, $ds_existing_bill_uploads
+# This datasource looks for any in-progress bill uploads that are broken
+# due to an in-progress file upload so that they can be aborted.
+datasource "ds_broken_bill_uploads" do
+  run_script $js_broken_bill_uploads, $ds_existing_bill_uploads
 end
 
+script "js_broken_bill_uploads", type: "javascript" do
+  parameters "ds_existing_bill_uploads"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_existing_bill_uploads, function(bill_upload) {
+    broken_files = false
+
+    if (typeof(bill_upload['files']) == 'object') {
+      _.each(bill_upload['files'], function(file) {
+        if (file['status'] != 'uploaded') {
+          broken_files = true
+        }
+      })
+    }
+
+    // Make sure we ignore any bill uploads that aren't actually in-progress
+    return broken_files && bill_upload['status'] == 'in-progress'
+  })
+EOS
+end
+
+datasource "ds_abort_broken_uploads" do
+  iterate $ds_broken_bill_uploads
+  request do
+    run_script $js_abort_broken_uploads, rs_org_id, rs_optima_host, val(iter_item, 'id')
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+script "js_abort_broken_uploads", type: "javascript" do
+  parameters "rs_org_id", "rs_optima_host", "bill_upload_id"
+  result "request"
+  code <<-EOS
+  // Slow down rate of requests to prevent throttling
+  api_wait = 5
+  var now = new Date().getTime()
+  while(new Date().getTime() < now + (api_wait * 1000)) { /* Do nothing */ }
+
+  var request = {
+    auth: "auth_flexera",
+    verb: "POST",
+    host: rs_optima_host,
+    path: ['/optima/orgs/', rs_org_id, '/billUploads/', bill_upload_id, '/operations'].join(''),
+    headers: {
+      "User-Agent": "RS Policies",
+    },
+    body_fields: { "operation": "abort" }
+  }
+EOS
+end
+
+# Branching logic:
+# This datasource contains an empty array if a bill upload is already in-progress.
+# Broken bill uploads aborted above are not considered in-progress.
+# Otherwise, it contains a single item for the next datasource to iterate over.
+datasource "ds_bill_upload_check" do
+  run_script $js_bill_upload_check, $ds_existing_bill_uploads, $ds_abort_broken_uploads
+end
+
+script "js_bill_upload_check", type: "javascript" do
+  parameters "ds_existing_bill_uploads", "ds_abort_broken_uploads"
+  result "result"
+  code <<-EOS
+  result = [1]
+  broken_upload_ids = _.pluck(ds_abort_broken_uploads, 'id')
+
+  in_progress_uploads = _.filter(ds_existing_bill_uploads, function(bill_upload) {
+    return bill_upload['status'] == 'in-progress' && _.contains(broken_upload_ids, bill_upload['id']) == false
+  })
+
+  if (in_progress_uploads.length > 0) { result = [] }
+EOS
+end
+
+# Branching logic:
+# If the above datasource did not find an existing bill upload, then we iterate
+# across its single item to create a new bill upload and store information about it.
+# Otherwise, it iterates over an empty list and produces an empty list as a result.
 datasource "ds_create_bill_upload" do
   iterate $ds_bill_upload_check
   request do
@@ -139,8 +261,27 @@ datasource "ds_create_bill_upload" do
   end
 end
 
+# Branching logic:
+# This datasource looks at both the list of existing bill uploads and the above
+# datasource for creating a new bill upload and contains either the data for the
+# new bill upload, or if one was not created, the data for the existing
+# in progress bill upload.
 datasource "ds_bill_upload" do
   run_script $js_bill_upload, $ds_existing_bill_uploads, $ds_create_bill_upload
+end
+
+script "js_bill_upload", type: "javascript" do
+  parameters "ds_existing_bill_uploads", "ds_create_bill_upload"
+  result "result"
+  code <<-EOS
+  if (ds_create_bill_upload.length != 0) {
+    result = ds_create_bill_upload[0]
+  } else {
+    result = _.find(ds_existing_bill_uploads, function(upload) {
+      return upload['status'] == 'in-progress'
+    })
+  }
+EOS
 end
 
 datasource "ds_cost_object_list" do
@@ -169,8 +310,39 @@ datasource "ds_cost_object_list_current_month" do
   run_script $js_cost_object_list_current_month, $ds_cost_object_list, $ds_dates
 end
 
+script "js_cost_object_list_current_month", type: "javascript" do
+  parameters "ds_cost_object_list", "ds_dates"
+  result "result"
+  code <<-EOS
+  period = new Date(ds_dates['period'])
+
+  result = _.filter(ds_cost_object_list, function(object) {
+    object_date = new Date(object['timeCreated'])
+    return period.getMonth() == object_date.getMonth() && period.getYear() == object_date.getYear()
+  })
+EOS
+end
+
 datasource "ds_cost_object_list_filtered" do
   run_script $js_cost_object_list_filtered, $ds_cost_object_list_current_month, $ds_bill_upload, $param_block_size
+end
+
+script "js_cost_object_list_filtered", type: "javascript" do
+  parameters "ds_cost_object_list_current_month", "ds_bill_upload", "param_block_size"
+  result "result"
+  code <<-EOS
+  result = []
+  bill_upload_length = 0
+
+  if (ds_bill_upload['files'] != null && ds_bill_upload['files'] != undefined) {
+    bill_upload_length = ds_bill_upload['files'].length
+  }
+
+  if (bill_upload_length < ds_cost_object_list_current_month.length) {
+    end_block = bill_upload_length + param_block_size
+    result = _.sortBy(ds_cost_object_list_current_month, "timeCreated").slice(bill_upload_length, end_block)
+  }
+EOS
 end
 
 datasource "ds_cost_objects" do
@@ -190,7 +362,7 @@ end
 datasource "ds_upload_file" do
   iterate $ds_cost_objects
   request do
-    run_script $js_cbi_upload_file, iter_item, rs_org_id, rs_optima_host, $ds_bill_upload, $ds_dates
+    run_script $js_upload_file, iter_item, rs_org_id, rs_optima_host, $ds_bill_upload, $ds_dates
   end
   result do
     encoding "json"
@@ -204,136 +376,8 @@ datasource "ds_upload_file" do
   end
 end
 
-datasource "ds_commit_assess" do
-  run_script $js_commit_assess, $ds_upload_file, $ds_cost_object_list_current_month, $ds_dates, $ds_bill_upload, $param_commit_delay
-end
-
-datasource "ds_commit_bill_upload" do
-  iterate $ds_commit_assess
-  request do
-    run_script $js_cbi_commit, rs_org_id, rs_optima_host, val(iter_item, 'id')
-  end
-  result do
-    encoding "json"
-    field "id", jmes_path(response, "id")
-    field "billConnectId", jmes_path(response, "billConnectId")
-    field "billingPeriod", jmes_path(response, "billingPeriod")
-    field "createdAt", jmes_path(response, "createdAt")
-    field "files", jmes_path(response, "files")
-    field "status", jmes_path(response, "status")
-    field "updatedAt", jmes_path(response, "updatedAt")
-  end
-end
-
-datasource "ds_status" do
-  run_script $js_status, $ds_create_bill_upload, $ds_commit_bill_upload, $ds_bill_upload, $ds_cost_object_list_current_month, $ds_cost_object_list_filtered, $ds_dates, $param_commit_delay
-end
-
-###############################################################################
-# Scripts
-###############################################################################
-
-script "js_dates", type: "javascript" do
-  parameters "param_period"
-  result "result"
-  code <<-EOS
-  result = {
-    period: param_period
-  }
-
-  if (param_period == '') {
-    day = new Date()
-    day.setDate(day.getDate() - 1)
-    day = day.toISOString().split('T')[0]
-    month = day.split('-')[0] + '-' + day.split('-')[1]
-
-    result = {
-      period: month
-    }
-  }
-EOS
-end
-
-script "js_bill_upload_check", type: "javascript" do
-  parameters "ds_existing_bill_uploads"
-  result "result"
-  code <<-EOS
-  incomplete_upload_found = false
-
-  _.each(ds_existing_bill_uploads, function(upload) {
-    if (upload['status'] == 'in-progress') {
-      incomplete_upload_found = true
-    }
-  })
-
-  if (incomplete_upload_found) {
-    result = []
-  } else {
-    result = [1]
-  }
-EOS
-end
-
-script "js_bill_upload", type: "javascript" do
-  parameters "ds_existing_bill_uploads", "ds_create_bill_upload"
-  result "result"
-  code <<-EOS
-  result = null
-
-  if (ds_create_bill_upload.length != 0) {
-    result = ds_create_bill_upload[0]
-  } else {
-    _.each(ds_existing_bill_uploads, function(upload) {
-      if (upload['status'] != 'complete') {
-        result = upload
-      }
-    })
-  }
-EOS
-end
-
-script "js_cost_object_list_current_month", type: "javascript" do
-  parameters "ds_cost_object_list", "ds_dates"
-  result "result"
-  code <<-EOS
-  result = []
-
-  _.each(ds_cost_object_list, function(object) {
-    object_month = object['timeModified'].split('T')[0]
-    object_month = object_month.split('-')[0] + '-' + object_month.split('-')[1]
-
-    if (object_month == ds_dates['period']) {
-      result.push(object)
-    }
-  })
-EOS
-end
-
-script "js_cost_object_list_filtered", type: "javascript" do
-  parameters "ds_cost_object_list_current_month", "ds_bill_upload", "param_block_size"
-  result "result"
-  code <<-EOS
-  result = []
-
-  if (ds_bill_upload['files'] != null && ds_bill_upload['files'] != undefined) {
-    bill_upload_length = ds_bill_upload['files'].length
-  } else {
-    bill_upload_length = 0
-  }
-
-  if (bill_upload_length < ds_cost_object_list_current_month.length) {
-    start_block = bill_upload_length
-    end_block = bill_upload_length + param_block_size
-
-    result = _.sortBy(ds_cost_object_list_current_month, "timeModified").slice(start_block, end_block)
-  } else {
-    result = []
-  }
-EOS
-end
-
-script "js_cbi_upload_file", type: "javascript" do
-  parameters "oracle_cost_file", "org_id", "optima_host", "ds_bill_upload", "ds_dates"
+script "js_upload_file", type: "javascript" do
+  parameters "oracle_cost_file", "rs_org_id", "rs_optima_host", "ds_bill_upload", "ds_dates"
   result "request"
   code <<-EOS
   // Slow down rate of requests to prevent throttling
@@ -344,20 +388,27 @@ script "js_cbi_upload_file", type: "javascript" do
   var request = {
     auth: "auth_flexera",
     verb: "POST",
-    host: optima_host,
-    path: ["/optima/orgs/", org_id, "/billUploads/", ds_bill_upload['id'], '/files/', now, '_', Math.random().toString().split('.')[1], '_', ds_dates['period'], '.csv.gz'].join(''),
-    headers: {
-      "User-Agent": "RS Policies",
-    },
+    host: rs_optima_host,
+    path: ["/optima/orgs/", rs_org_id, "/billUploads/", ds_bill_upload['id'], '/files/', now, '_', Math.random().toString().split('.')[1], '_', ds_dates['period'], '.csv.gz'].join(''),
+    headers: { "User-Agent": "RS Policies" },
     body: oracle_cost_file
   }
 EOS
+end
+
+# Branching logic:
+# This datasource contains an empty list if we still have files to upload.
+# Otherwise, it contains the details of the bill upload so we can commit it.
+datasource "ds_commit_assess" do
+  run_script $js_commit_assess, $ds_upload_file, $ds_cost_object_list_current_month, $ds_dates, $ds_bill_upload, $param_commit_delay
 end
 
 script "js_commit_assess", type: "javascript" do
   parameters "ds_upload_file", "ds_cost_object_list_current_month", "ds_dates", "ds_bill_upload", "param_commit_delay"
   result "result"
   code <<-EOS
+  result = []
+
   if (ds_bill_upload['files'] != null && ds_bill_upload['files'] != undefined) {
     bill_upload_length = ds_bill_upload['files'].length
   } else {
@@ -372,16 +423,34 @@ script "js_commit_assess", type: "javascript" do
 
   time_difference = (now - bill_upload_created) / 1000 / 60 / 60
 
-  if (bill_upload_length == ds_cost_object_list_current_month.length && time_difference >= param_commit_delay) {
+  if (bill_upload_length >= ds_cost_object_list_current_month.length && time_difference >= param_commit_delay) {
     result = [ds_bill_upload]
-  } else {
-    result = []
   }
 EOS
 end
 
-script "js_cbi_commit", type: "javascript" do
-  parameters "org_id", "optima_host", "bill_upload_id"
+# Branching logic:
+# If the above datasource returned an empty list, it means we still have files to upload
+# and this datasource won't do anything. Otherwise, we'll commit the bill upload.
+datasource "ds_commit_bill_upload" do
+  iterate $ds_commit_assess
+  request do
+    run_script $js_commit_bill_upload, rs_org_id, rs_optima_host, val(iter_item, 'id')
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "billConnectId", jmes_path(response, "billConnectId")
+    field "billingPeriod", jmes_path(response, "billingPeriod")
+    field "createdAt", jmes_path(response, "createdAt")
+    field "files", jmes_path(response, "files")
+    field "status", jmes_path(response, "status")
+    field "updatedAt", jmes_path(response, "updatedAt")
+  end
+end
+
+script "js_commit_bill_upload", type: "javascript" do
+  parameters "rs_org_id", "rs_optima_host", "bill_upload_id"
   result "request"
   code <<-EOS
   // Slow down rate of requests to prevent throttling
@@ -392,14 +461,18 @@ script "js_cbi_commit", type: "javascript" do
   var request = {
     auth: "auth_flexera",
     verb: "POST",
-    host: optima_host,
-    path: ['/optima/orgs/', org_id, '/billUploads/', bill_upload_id, '/operations'].join(''),
+    host: rs_optima_host,
+    path: ['/optima/orgs/', rs_org_id, '/billUploads/', bill_upload_id, '/operations'].join(''),
     headers: {
       "User-Agent": "RS Policies",
     },
-    body_fields: {"operation":"commit"}
+    body_fields: { "operation": "commit" }
   }
 EOS
+end
+
+datasource "ds_status" do
+  run_script $js_status, $ds_create_bill_upload, $ds_commit_bill_upload, $ds_bill_upload, $ds_cost_object_list_current_month, $ds_cost_object_list_filtered, $ds_dates, $param_commit_delay
 end
 
 script "js_status", type: "javascript" do

@@ -1,5 +1,39 @@
 # Changelog
 
+## v5.6
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
+## v5.5
+
+- Deprecated: This policy is no longer being updated. Please see policy README for more information.
+
+## v5.4
+
+- Updated description of `Account Number` parameter
+
+## v5.3
+
+- Changed service metadata to "Compute" to ensure proper incident scraping
+
+## v5.2
+
+- Fixed output of `Tags` incident field
+- Added `Resource Name` incident field
+- Added `CPU Threshold` incident field
+- Added `Memory Threshold` incident field
+- Added `Threshold Type` incident fields
+- Added `Lookback Period` incident fields
+- Changed the internal names of several incident fields to ensure proper scraping for recommendations dashboard
+
+## v5.1
+
+- Updated policy metadata to facilitate scraping of incidents for Recommendations dashboard
+
+## v5.0
+
+- Added parameter to enable Allow or Deny filtering by user entered regions
+
 ## v4.3
 
 - Added logic required for "Meta Policy" use-cases
@@ -14,7 +48,7 @@
 
 ## v4.0
 
-- Deprecated `auth_rs` authentication (type: `rightscale`) and replaced with `auth_flexera` (type: `oauth2`).  This is a breaking change which requires a Credential for `auth_flexera` [`provider=flexera`] before the policy can be applied.  Please see docs for setting up [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm)
+- Deprecated `auth_rs` authentication (type: `rightscale`) and replaced with `auth_flexera` (type: `oauth2`). This is a breaking change which requires a Credential for `auth_flexera` [`provider=flexera`] before the policy can be applied. Please see docs for setting up [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm)
 - Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM
 - Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`
 

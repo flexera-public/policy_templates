@@ -4,6 +4,10 @@
 
 Template to create a CloudFormation Stack with IAM Role and Permission Policy resources required by [Flexera Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm).
 
+## Amazon S3 Template URL
+
+**`https://flexera-cloudformation-public.s3.us-east-2.amazonaws.com/FlexeraAutomationPolicies_latest.template`**
+
 ## Usage
 
 The CloudFormation Template can be deployed to multiple accounts (as a CloudFormation StackSet) or to a single account (as a CloudFormation Stack).
@@ -39,7 +43,7 @@ As you follow the official docs, you can use the recommended configurations belo
 
    > It's recommended to use an official release for Production use-cases (i.e. *vX.Y.Z*).  All official releases can be found under [releases/](./releases/) folder and are published to  `https://flexera-cloudformation-public.s3.us-east-2.amazonaws.com/FlexeraAutomationPolicies_vX.Y.Z.template`. An example of an release template S3 URL:
    >
-   > **https://flexera-cloudformation-public.s3.us-east-2.amazonaws.com/FlexeraAutomationPolicies_v0.2.0.template**
+   > **https://flexera-cloudformation-public.s3.us-east-2.amazonaws.com/FlexeraAutomationPolicies_vX.Y.Z.template**
 
  - On the **Specify StackSet details** page, provide a name for the stack set, specify *Flexera Organization ID* and any other parameters, and then choose **Next**.
 
@@ -123,9 +127,7 @@ If you do not have an AWS Organization setup, or you prefer to deploy to a singl
 
 #### **Recommended:** Create <i>CloudFormation Stack</i> with AWS Console using "Quick-create" link
 
-  - [Quick-create with Default Permissions (Read Only)](https://us-east-2.console.aws.amazon.com/cloudformation/home?region=us-east-2#/stacks/quickcreate?templateUrl=https://flexera-cloudformation-public.s3.us-east-2.amazonaws.com/FlexeraAutomationPolicies_latest.template&stackName=FlexeraAutomationAccessRole)
-
-  - [Quick-create with Read and Take Action Permissions](https://us-east-2.console.aws.amazon.com/cloudformation/home?region=us-east-2#/stacks/quickcreate?templateUrl=https://flexera-cloudformation-public.s3.us-east-2.amazonaws.com/FlexeraAutomationPolicies_latest.template&stackName=FlexeraAutomationAccessRole&param_paramFlexeraOrgId=&param_paramFlexeraZone=app.flexera.com&param_paramPermsAWSOldSnapshots=Read%20and%20Take%20Action&param_paramPermsAWSUnusedIPAddresses=Read%20and%20Take%20Action&param_paramPermsAWSUnusedVolumes=Read%20and%20Take%20Action)
+  - [Quick-create with Default Permissions (Read Only)](https://console.aws.amazon.com/cloudformation/home#/stacks/quickcreate?templateUrl=https://flexera-cloudformation-public.s3.us-east-2.amazonaws.com/FlexeraAutomationPolicies_latest.template&stackName=FlexeraAutomationAccessRole)
 
 #### <i>Alternatives to create CloudFormation Stack</i>:
 
@@ -134,7 +136,7 @@ If you do not have an AWS Organization setup, or you prefer to deploy to a singl
 
 ```sh
 # Create Stack using CloudFormation Templates Parameter Default Values
-aws --region us-east-2 cloudformation create-stack \
+aws cloudformation create-stack \
   --template-url https://flexera-cloudformation-public.s3.us-east-2.amazonaws.com/FlexeraAutomationPolicies_latest.template \
   --stack-name FlexeraAutomationAccessRole \
   --capabilities CAPABILITY_NAMED_IAM \

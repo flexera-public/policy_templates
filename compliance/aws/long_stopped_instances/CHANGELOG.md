@@ -1,5 +1,36 @@
 # Changelog
 
+## v6.0
+
+- Added support for regex when filtering resources by tag
+
+## v5.0
+
+- Several parameters altered to be more descriptive and human-readable
+- Added ability to filter resources by multiple tag key:value pairs
+- Added additional context to incident description
+- Normalized incident export to be consistent with other policies
+- Added human-readable recommendation to incident export
+- Added additional fields to incident export for additional context
+- Streamlined code for better readability and faster execution
+
+## v4.2
+
+- Updated description of `Account Number` parameter
+
+## v4.1
+
+- Changed service metadata to "Compute" to ensure proper incident scraping
+
+## v4.0
+
+- Added logic required for "Meta Policy" use-cases
+- Updated template and readme to reflect addition of `auth_flexera`
+
+## v3.0
+
+- Added parameter to enable Allow or Deny filtering by user entered regions
+
 ## v2.9
 
 - Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM

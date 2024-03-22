@@ -1,5 +1,56 @@
 # Changelog
 
+## v7.1
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
+## v7.0
+
+- Added support for regex when filtering resources by tag
+
+## v6.2
+
+- Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.
+
+## v6.1
+
+- Policy action error logging modernized and now works as expected in EU/APAC
+
+## v6.0
+
+- Several parameters altered to be more descriptive and human-readable
+- Removed deprecated "Log to CM Audit Entries" parameter
+- Added ability to only report recommendations that meet a minimum savings threshold
+- Added ability to use Subscription list parameter as either an "allow" list or a "deny" list
+- Added ability to filter resources by multiple tag key:value pairs
+- Added additional context to incident description
+- Normalized incident export to be consistent with other policies
+- Added human-readable recommendation to incident export
+- Added additional fields to incident export to facilitate scraping for dashboards
+- Policy no longer raises new escalations if snapshot age or savings data changed but nothing else has
+- Streamlined code for better readability and faster execution
+
+## v5.1
+
+- Corrected issue with policy not retrieving cost data on orgs using newer Azure bill connections
+
+## v5.0
+
+- Renamed Subscription List parameter for consistency and accuracy
+- Added logic required for "Meta Policy" use-cases
+
+## v4.5
+
+- Added `Size` incident field.
+
+## v4.4
+
+- Updated policy metadata to facilitate scraping of incidents for Recommendations dashboard
+
+## v4.3
+
+- Raised API limit to handle situations where more than 10,000 line items need to be retrieved.
+
 ## v4.2
 
 - Replaced the term **whitelist** with **allowed list**.

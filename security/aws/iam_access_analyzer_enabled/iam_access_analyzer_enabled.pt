@@ -7,7 +7,7 @@ category "Security"
 severity "high"
 default_frequency "daily"
 info(
-  version: "2.4",
+  version: "3.1",
   provider: "AWS",
   service: "IAM",
   policy_set: "CIS",
@@ -31,17 +31,25 @@ end
 
 parameter "param_aws_account_number" do
   type "string"
+  category "Policy Settings"
   label "Account Number"
-  description "The account number for AWS STS Cross Account Roles."
+  description "Leave blank; this is for automated use with Meta Policies. See README for more details."
   default ""
 end
 
-parameter "param_regions" do
+parameter "param_allowed_regions_allow_or_deny" do
+  type "string"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details"
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_allowed_regions" do
   type "list"
   label "Regions"
-  description "Active regions you wish to run this policy against"
-  default ["us-east-1"]
   allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  description "A list of allowed or denied regions. See the README for more details"
 end
 
 ###############################################################################
@@ -59,6 +67,27 @@ end
 ###############################################################################
 # Datasources
 ###############################################################################
+# ds_region_list is a list of regions that are opted-in or opt-in-not-required
+datasource "ds_regions_list" do
+  # https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeRegions.html
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "ec2.amazonaws.com"
+    path "/"
+    query "Action", "DescribeRegions"
+    query "Version", "2016-11-15"
+    query "Filter.1.Name", "opt-in-status"
+    query "Filter.1.Value.1", "opt-in-not-required"
+    query "Filter.1.Value.2", "opted-in"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
+      field "region", xpath(col_item, "regionName")
+    end
+  end
+end
 
 # Retrieve the id number of the account being tested
 datasource "ds_get_caller_identity" do
@@ -79,9 +108,9 @@ datasource "ds_get_caller_identity" do
   end
 end
 
-# Places param_regions into a datasource for iteration
+# Places param_allowed_regions into a datasource for iteration
 datasource "ds_regions" do
-  run_script $js_regions, $param_regions
+  run_script $js_regions, $param_allowed_regions, $ds_regions_list, $param_allowed_regions_allow_or_deny
 end
 
 datasource "ds_list_analyzers" do
@@ -89,7 +118,7 @@ datasource "ds_list_analyzers" do
   request do
     auth $auth_aws
     verb "GET"
-    host join(["access-analyzer.", iter_item ,".amazonaws.com"])
+    host join(["access-analyzer.",val(iter_item, "region") ,".amazonaws.com"])
     path "/analyzer"
     header "User-Agent", "RS Policies"
     header "Accept", "application/json"
@@ -112,9 +141,40 @@ end
 ###############################################################################
 
 script "js_regions", type:"javascript" do
-  parameters "param_regions"
-  result "param_regions"
-  code ""
+  parameters "user_entered_regions", "all_regions", "regions_allow_or_deny"
+  result "regions"
+  code <<-EOS
+    if(_.isEmpty(user_entered_regions)){
+      regions = all_regions;
+    }else{
+      //Filter unique regions
+      var uniqueRegions = _.uniq(user_entered_regions);
+      var all_regions_list = [];
+      //Filter and remove denied regions from all_regions
+      if (regions_allow_or_deny == "Deny"){
+        var all_regions = all_regions.filter(function(obj){
+          return user_entered_regions.indexOf(obj.region) === -1;
+        });
+      }
+      all_regions.forEach(function(all_region){
+        all_regions_list.push(all_region.region)
+      })
+      //Filter valid regions
+      var valid_regions = [];
+      _.map(uniqueRegions, function(uniqueRegion){
+        if(all_regions_list.indexOf(uniqueRegion) > -1){
+          valid_regions.push({"region": uniqueRegion})
+        }
+      })
+
+      //Throw an error if no valid regions found
+      if (_.isEmpty(valid_regions)) {
+        regions = all_regions;
+      }else{
+        regions = valid_regions
+      }
+    }
+  EOS
 end
 
 # Script to combine ds_get_caller_identity and ds_iam_accesskeys into a single datasource

@@ -51,7 +51,7 @@ Required permissions in the provider:
 }
 
 {
-  "Version": "2006-03-01",
+  "Version": "2012-10-17",
   "Statement": [
     {
       "Effect": "Allow",

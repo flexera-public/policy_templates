@@ -1,72 +1,122 @@
 name "Azure AHUB Utilization with Manual Entry"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report when AHUB usage in Azure falls outside or inside the number of licenses specified by the user. \n See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/ahub_manual) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Report when AHUB usage in Azure falls outside or inside the number of licenses specified by the user. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/ahub_manual) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
-category "Compliance"
 severity "medium"
-default_frequency "daily"
+category "Compliance"
+default_frequency "weekly"
 info(
-  version: "2.9",
+  version: "4.0",
   provider: "Azure",
   service: "Compute",
-  policy_set: ""
+  policy_set: "Hybrid Use Benefit"
 )
 
 ###############################################################################
 # Parameters
 ###############################################################################
 
-parameter "param_exclusion_tag_key" do
-  category "User Inputs"
-  label "Exclusion Tag Key"
-  description "Azure-native instance tag to ignore instances that are not using AHUB. Only supply the tag key. The policy assumes that the tag value is irrelevant."
-  type "string"
-  default "exclude_ahub"
-end
-
-parameter "param_license_count" do
-  type "string"
-  label "License Allowed Count"
-  description "Specify the number of licenses allowed"
-  type "number"
-end
-
 parameter "param_email" do
   type "list"
-  label "Email addresses to notify"
-  description "Email addresses of the recipients you wish to notify when new incidents are created"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
 end
 
 parameter "param_azure_endpoint" do
   type "string"
+  category "Policy Settings"
   label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
   allowed_values "management.azure.com", "management.chinacloudapi.cn"
   default "management.azure.com"
 end
 
-parameter "param_subscription_allowed_list" do
-  label "Subscription Allowed List"
+parameter "param_licenses" do
+  type "number"
+  category "Policy Settings"
+  label "Licenses Allowed"
+  description "The number of licenses allowed"
+  min_value 0
+  default 250
+end
+
+parameter "param_exclusion_tags" do
   type "list"
-  description "Allowed Subscriptions, if empty, all subscriptions will be checked"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
+parameter "param_subscriptions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Subscriptions"
+  description "Allow or Deny entered Subscriptions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_subscriptions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Subscriptions List"
+  description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-credentials "azure_auth" do
+credentials "auth_azure" do
   schemes "oauth2"
   label "Azure"
   description "Select the Azure Resource Manager Credential from the list."
   tags "provider=azure_rm"
 end
 
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
 ###############################################################################
 # Pagination
 ###############################################################################
 
-pagination "azure_pagination" do
+pagination "pagination_azure" do
   get_page_marker do
     body_path "nextLink"
   end
@@ -76,270 +126,447 @@ pagination "azure_pagination" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
-datasource "ds_subscriptions" do
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
   request do
-    auth $azure_auth
-    pagination $azure_pagination
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_azure_subscriptions" do
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
     host $param_azure_endpoint
     path "/subscriptions/"
-    query "api-version","2018-06-01"
+    query "api-version", "2020-01-01"
     header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "value[*]") do
-      field "subscriptionId", jmes_path(col_item,"subscriptionId")
-      field "subscriptionName", jmes_path(col_item,"displayName")
-    end
-  end
-end
-
-datasource "ds_filtered_subscriptions" do
-  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_allowed_list
-end
-
-#https://docs.microsoft.com/en-us/rest/api/compute/virtualmachines/listall
-datasource "ds_azure_instances" do
-  iterate $ds_filtered_subscriptions
-    request do
-      auth $azure_auth
-      pagination $azure_pagination
-      host $param_azure_endpoint
-      path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/virtualMachines"])
-      query "api-version","2018-06-01"
-      header "User-Agent", "RS Policies"
-      # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-      ignore_status [400,403,404]
-    end
-    result do
-      encoding "json"
-      collect jmes_path(response, "value") do
-        field "subscriptionId", val(iter_item,"subscriptionId")
-        field "subscriptionName", val(iter_item,"subscriptionName")
-        field "id", jmes_path(col_item,"id")
-        field "name", jmes_path(col_item,"name")
-        field "location", jmes_path(col_item,"location")
-        field "licenseType", jmes_path(col_item,"properties.licenseType")
-        field "vmSize", jmes_path(col_item,"properties.hardwareProfile.vmSize")
-        field "osType", jmes_path(col_item,"properties.storageProfile.osDisk.osType")
-        field "imagePublisher", jmes_path(col_item,"properties.storageProfile.imageReference.publisher")
-        field "imageOffer", jmes_path(col_item,"properties.storageProfile.imageReference.offer")
-        field "imageSku", jmes_path(col_item,"properties.storageProfile.imageReference.sku")
-        field "imageVersion", jmes_path(col_item,"properties.storageProfile.imageReference.version")
-        field "tags", jmes_path(col_item,"tags")
-      end
-    end
-end
-
-datasource "ds_filtered_locations" do
-  run_script $js_location_list, $ds_azure_instances
-end
-
-#https://docs.microsoft.com/en-us/rest/api/compute/virtualmachinesizes/list
-datasource "ds_azure_vmsize" do
-iterate $ds_filtered_locations
-  request do
-    auth $azure_auth
-    host $param_azure_endpoint
-    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/locations/",val(iter_item, "location"),"/vmSizes"])
-    query "api-version","2018-06-01"
-    header "User-Agent", "RS Policies"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-    ignore_status [400,403,404]
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "virtualmachineSize", jmes_path(col_item,"name")
-      field "numberOfCores", jmes_path(col_item,"numberOfCores")
+      field "id", jmes_path(col_item, "subscriptionId")
+      field "name", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
     end
   end
 end
 
-datasource "ds_vminstance_with_cores" do
-  run_script $js_vminstances_with_cores, $ds_azure_vmsize, $ds_azure_instances, $param_exclusion_tag_key, $param_license_count
+datasource "ds_azure_subscriptions_filtered" do
+  run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
 end
 
-
-###############################################################################
-# Scripts
-###############################################################################
-
-script "js_filtered_subscriptions", type: "javascript" do
-  parameters "ds_subscriptions", "param_subscription_allowed_list"
-  result "results"
+script "js_azure_subscriptions_filtered", type: "javascript" do
+  parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
+  result "result"
   code <<-EOS
-  var results = []
-  if ( param_subscription_allowed_list.length != 0){
-    results = []
-    _.each(param_subscription_allowed_list, function(sub){
-      var found = _.find(ds_subscriptions, function(item){
-        return item.subscriptionId == sub || item.subscriptionName.toLowerCase() == sub.toLowerCase();
-      })
-      results.push(found)
+  if (param_subscriptions_list.length > 0) {
+    result = _.filter(ds_azure_subscriptions, function(subscription) {
+      include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
+
+      if (param_subscriptions_allow_or_deny == "Deny") {
+        include_subscription = !include_subscription
+      }
+
+      return include_subscription
     })
   } else {
-    results = ds_subscriptions
+    result = ds_azure_subscriptions
   }
 EOS
 end
 
-script "js_location_list", type: "javascript" do
-  parameters "ds_azure_instances"
+datasource "ds_azure_instances" do
+  iterate $ds_azure_subscriptions_filtered
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Compute/virtualMachines"])
+    query "api-version", "2018-06-01"
+    header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "region", jmes_path(col_item, "location")
+      field "resourceKind", jmes_path(col_item, "type")
+      field "licenseType", jmes_path(col_item, "properties.licenseType")
+      field "resourceType", jmes_path(col_item, "properties.hardwareProfile.vmSize")
+      field "osType", jmes_path(col_item, "properties.storageProfile.osDisk.osType")
+      field "imagePublisher", jmes_path(col_item, "properties.storageProfile.imageReference.publisher")
+      field "imageOffer", jmes_path(col_item, "properties.storageProfile.imageReference.offer")
+      field "imageSku", jmes_path(col_item, "properties.storageProfile.imageReference.sku")
+      field "imageVersion", jmes_path(col_item, "properties.storageProfile.imageReference.version")
+      field "tags", jmes_path(col_item, "tags")
+      field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
+      field "subscriptionId", val(iter_item, "id")
+      field "subscriptionName", val(iter_item, "name")
+    end
+  end
+end
+
+datasource "ds_azure_instances_tag_filtered" do
+  run_script $js_azure_instances_tag_filtered, $ds_azure_instances, $param_exclusion_tags, $param_exclusion_tags_boolean
+end
+
+script "js_azure_instances_tag_filtered", type: "javascript" do
+  parameters "ds_azure_instances", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-EOS
-    var result = [];
-    _.each(ds_azure_instances, function(instance){
-      var flag=false;
-      _.each(result, function(single_location){
-        var loc = single_location.location;
-        if (instance.location === loc){
-          flag=true;
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  if (param_exclusion_tags.length > 0) {
+    result = _.reject(ds_azure_instances, function(resource) {
+      resource_tags = {}
+      if (typeof(resource['tags']) == 'object') { resource_tags = resource['tags'] }
+
+      // Store a list of found tags
+      found_tags = []
+
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_tag = resource_tags[comparator['key']]
+
+        if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+        if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+        if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_tag == undefined) { found_tags.push(string) }
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
         }
       })
-    if(!flag){
-      result.push({"location": instance.location, "subscriptionId": instance.subscriptionId});
+
+      all_tags_found = found_tags.length == comparators.length
+      any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+      return all_tags_found || any_tags_found
+    })
+  } else {
+    result = ds_azure_instances
+  }
+EOS
+end
+
+datasource "ds_azure_instances_region_filtered" do
+  run_script $js_azure_instances_region_filtered, $ds_azure_instances_tag_filtered, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_azure_instances_region_filtered", type: "javascript" do
+  parameters "ds_azure_instances_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_azure_instances_tag_filtered, function(vm) {
+      include_vm = _.contains(param_regions_list, vm['region'])
+
+      if (param_regions_allow_or_deny == "Deny") {
+        include_vm = !include_vm
+      }
+
+      return include_vm
+    })
+  } else {
+    result = ds_azure_instances_tag_filtered
+  }
+EOS
+end
+
+datasource "ds_vmsize_requests" do
+  run_script $js_vmsize_requests, $ds_azure_instances_region_filtered
+end
+
+script "js_vmsize_requests", type: "javascript" do
+  parameters "ds_azure_instances_region_filtered"
+  result "result"
+  code <<-EOS
+  result = []
+  region_list = []
+
+  _.each(ds_azure_instances_region_filtered, function(vm) {
+    if (_.contains(region_list, vm['region']) == false) {
+      region_list.push(vm['region'])
+
+      result.push({
+        region: vm['region'],
+        subscriptionId: vm['subscriptionId']
+      })
     }
   })
 EOS
 end
 
-script "js_vminstances_with_cores", type: "javascript" do
-  parameters "ds_azure_vmsize", "ds_azure_instances", "exclusion_tag", "param_license_count"
-  result "final_result"
-  code <<-EOS
-    var final_result;
-    var result =[];
-    var vmsize_map = {};
-
-    for (var i=0;i<ds_azure_vmsize.length;i++){
-      vmsize_map[ds_azure_vmsize[i].virtualmachineSize] = ds_azure_vmsize[i].numberOfCores;
-    }
-
-    var license_cores = param_license_count*16;
-    var license_ahub = param_license_count*2;
-    var total_cores_with_ahub=0;
-    var total_vms_with_ahub=0;
-    var total_vms_without_ahub = 0;
-    var with_ahub = [];
-    var without_ahub = [];
-    var note;
-    var summary_template;
-
-    _.each(ds_azure_instances, function(instance){
-      if(!(_.has(instance.tags, exclusion_tag))){
-        if(instance.osType === "Windows"){
-          var resourceGroup = instance.id.split('/')[4]
-          var tags = JSON.stringify(instance["tags"]);
-          if(instance.licenseType === "Windows_Server"){
-            var instance_core=vmsize_map[instance.vmSize];
-            total_cores_with_ahub = total_cores_with_ahub+parseInt(vmsize_map[instance.vmSize]);
-            total_vms_with_ahub = total_vms_with_ahub+1;
-            with_ahub.push({
-              subscriptionName: instance["subscriptionName"],
-              id: instance["id"],
-              name: instance["name"],
-              resourceGroup: resourceGroup,
-              location: instance["location"],
-              vmSize: instance["vmSize"],
-              imagePublisher: instance["imagePublisher"],
-              imageOffer: instance["imageOffer"],
-              imageSku: instance["imageSku"],
-              imageVersion: instance["imageVersion"],
-              tags: tags,
-              numberofcores: vmsize_map[instance.vmSize]
-            })
-          }else{
-            total_vms_without_ahub = total_vms_without_ahub+1;
-            without_ahub.push({
-              subscriptionName: instance["subscriptionName"],
-              id: instance["id"],
-              name: instance["name"],
-              resourceGroup: resourceGroup,
-              location: instance["location"],
-              vmSize: instance["vmSize"],
-              imagePublisher: instance["imagePublisher"],
-              imageOffer: instance["imageOffer"],
-              imageSku: instance["imageSku"],
-              imageVersion: instance["imageVersion"],
-              tags: tags,
-              numberofcores: vmsize_map[instance.vmSize]
-            })
-          }
-        }
-      }
-    })
-    with_ahub = _.sortBy(with_ahub, 'location');
-    with_ahub = _.sortBy(with_ahub, 'subscriptionName');
-    without_ahub = _.sortBy(without_ahub, 'location');
-    without_ahub = _.sortBy(without_ahub, 'subscriptionName');
-
-    var vm = "VMs";
-    if(total_vms_with_ahub > license_ahub || total_cores_with_ahub > license_cores){
-      result=with_ahub;
-      if(total_vms_with_ahub == 1){
-        vm = "VM";
-      }
-      if(total_cores_with_ahub > license_cores && total_vms_with_ahub > license_ahub){
-        final_result={note:"It is observed that a greater number of licenses have been consumed than allocated licenses, Please disable AHUB for any of the "+(total_vms_with_ahub - license_ahub)+" "+vm+" listed above whose sum of cores should be minimum "+(total_cores_with_ahub - license_cores)+" cores.",
-          result:result,
-          summary_template: total_vms_with_ahub+" "+vm+" with AHUB enabled with a total core count of "+total_cores_with_ahub
-        };
-      }else if(total_cores_with_ahub < license_cores && total_vms_with_ahub > license_ahub){
-        final_result={note:"It is observed that a greater number of licenses have been consumed than allocated licenses, Please disable AHUB for any of the "+(total_vms_with_ahub - license_ahub)+" "+vm+" listed above.",
-          result:result,
-          summary_template: total_vms_with_ahub+" "+vm+" with AHUB enabled with a total core count of "+total_cores_with_ahub
-        };
-      }else if(total_cores_with_ahub > license_cores && total_vms_with_ahub < license_ahub){
-        final_result={note:"It is observed that a greater number of licenses have been consumed than allocated licenses, Please disable AHUB for VMs listed above whose sum of cores should be minimum "+(total_cores_with_ahub - license_cores)+" cores.",
-          result:result,
-          summary_template: total_vms_with_ahub+" "+vm+" with AHUB enabled with a total core count of "+total_cores_with_ahub
-        };
-      }
-    }else if(total_cores_with_ahub < license_cores && total_vms_with_ahub < license_ahub){
-      result=without_ahub;
-      if(total_vms_without_ahub == 1){
-        vm = "VM";
-      }
-      final_result={note:"It is observed that a lesser number of licenses have been consumed than allocated licenses, You can enable AHUB upto "+(license_ahub - total_vms_with_ahub)+" "+vm+" whose sum of cores should be lesser or equal to "+(license_cores - total_cores_with_ahub)+" cores.",
-        result:result,
-        summary_template: total_vms_without_ahub+" "+vm+" with AHUB disabled"
-      };
-    }else{
-      final_result={result:result};
-    }
-  EOS
+datasource "ds_azure_vmsizes" do
+  iterate $ds_vmsize_requests
+  request do
+    auth $auth_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "subscriptionId"), "/providers/Microsoft.Compute/locations/", val(iter_item, "region"), "/vmSizes"])
+    query "api-version", "2018-06-01"
+    header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "size", jmes_path(col_item, "name")
+      field "cores", jmes_path(col_item, "numberOfCores")
+    end
+  end
 end
 
+datasource "ds_azure_vmsize_map" do
+  run_script $js_azure_vmsize_map, $ds_azure_vmsizes
+end
+
+script "js_azure_vmsize_map", type: "javascript" do
+  parameters "ds_azure_vmsizes"
+  result "result"
+  code <<-EOS
+  result = {}
+
+  _.each(ds_azure_vmsizes, function(item) {
+    result[item['size'].toLowerCase().trim()] = item['cores']
+  })
+EOS
+end
+
+datasource "ds_ahub_incident" do
+  run_script $js_ahub_incident, $ds_azure_vmsize_map, $ds_azure_instances_region_filtered, $ds_applied_policy, $param_licenses
+end
+
+script "js_ahub_incident", type: "javascript" do
+  parameters "ds_azure_vmsize_map", "ds_azure_instances_region_filtered", "ds_applied_policy", "param_licenses"
+  result "result"
+  code <<-'EOS'
+  vms_with_ahub = []
+  vms_without_ahub = []
+  total_cores_with_ahub = 0
+
+  _.each(ds_azure_instances_region_filtered, function(vm) {
+    if (vm['osType'] == 'Windows') {
+      tags = []
+
+      if (typeof(vm['tags']) == 'object') {
+        _.each(Object.keys(vm['tags']), function(key) {
+          tags.push([key, "=", vm['tags'][key]].join(''))
+        })
+      }
+
+      vmsize = vm['resourceType'].toLowerCase().trim()
+      cores = parseInt(ds_azure_vmsize_map[vmsize])
+
+      instance = {
+        resourceID: vm["id"],
+        resourceName: vm["name"],
+        resourceKind: vm["resourceKind"],
+        resourceType: vm["resourceType"],
+        region: vm["region"],
+        osType: vm["osType"],
+        licenseType: vm["licenseType"],
+        imagePublisher: vm["imagePublisher"],
+        imageOffer: vm["imageOffer"],
+        imageSku: vm["imageSku"],
+        imageVersion: vm["imageVersion"],
+        resourceGroup: vm["resourceGroup"],
+        accountID: vm["subscriptionId"],
+        accountName: vm["subscriptionName"],
+        tags: tags.join(', '),
+        cores: cores,
+        policy_name: ds_applied_policy['name'],
+        summary: '',
+        message: ''
+      }
+
+      if (typeof(cores) == 'number' && isNaN(cores) == false) {
+        if (vm['licenseType'] == 'Windows_Server') {
+          total_cores_with_ahub += cores
+          vms_with_ahub.push(instance)
+        } else {
+          vms_without_ahub.push(instance)
+        }
+      }
+    }
+  })
+
+  vms_with_ahub = _.sortBy(_.sortBy(vms_with_ahub, 'region'), 'accountID')
+  vms_without_ahub = _.sortBy(_.sortBy(vms_without_ahub, 'region'), 'accountID')
+
+  license_cores = param_licenses * 16
+  license_ahub = param_licenses * 2
+  result = []
+  summary = ''
+  message = ''
+
+  if (vms_with_ahub.length > 0 && (vms_with_ahub.length > license_ahub || total_cores_with_ahub > license_cores)) {
+    result = result.concat(vms_with_ahub)
+
+    vm_noun = "Virtual Machine"
+    if (result.length > 1) { vm_noun += "s" }
+
+    summary = [
+      result.length, " AHUB-Enabled Azure ", vm_noun, " Found. ",
+      "Total Core Count: ", total_cores_with_ahub
+    ].join('')
+
+    disable_count = result.length - license_ahub
+    disable_cores = total_cores_with_ahub - license_cores
+
+    if (total_cores_with_ahub > license_cores && vms_with_ahub.length > license_ahub) {
+      message = [
+        "More licenses have been consumed than allocated.\n\n",
+        "Recommendation: Disable AHUB for ", disable_count, " of the listed ",
+        "virtual machines whose combined core count should be at minimum ",
+        disable_cores, " cores."
+      ].join('')
+    }
+
+    if (total_cores_with_ahub < license_cores && vms_with_ahub.length > license_ahub) {
+      message = [
+        "More licenses have been consumed than allocated.\n\n",
+        "Recommendation: Disable AHUB for ", disable_count, " of the listed ",
+        "virtual machines."
+      ].join('')
+    }
+
+    if (total_cores_with_ahub > license_cores && vms_with_ahub.length < license_ahub) {
+      message = [
+        "More licenses have been consumed than allocated.\n\n",
+        "Recommendation: Disable AHUB for any of the listed ",
+        "virtual machines whose combined core count should be at minimum ",
+        disable_cores, " cores."
+      ].join('')
+    }
+  } else if (vms_without_ahub.length > 0 && total_cores_with_ahub < license_cores && vms_with_ahub.length < license_ahub) {
+    result = result.concat(vms_without_ahub)
+
+    vm_noun = "Virtual Machine"
+    if (result.length > 1) { vm_noun += "s" }
+
+    summary = [
+      result.length, " AHUB-Disabled Azure ", vm_noun, " Found"
+    ].join('')
+
+    enable_count = license_ahub - vms_with_ahub.length
+    if (enable_count > result.length) { enable_count = result.length }
+
+    message = [
+      "More licenses have been allocated than consumed.\n\n",
+      "Recommendation: Enable AHUB for up to ", enable_count, " ",
+      "virtual machines whose combined core count should be no more than ",
+      (license_cores - total_cores_with_ahub), " cores."
+    ].join('')
+  }
+
+  // Dummy item to ensure that the check statement in the policy executes at least once
+  result.push({
+    resourceID: "",      resourceName: "",      resourceKind: "",
+    resourceType: "",    region: "",            osType: "",
+    licenseType: "",     imagePublisher: "",    imageOffer: "",
+    imageSku: "",        imageVersion: "",      resourceGroup: "",
+    accountID: "",       accountName: "",       tags: "",
+    cores: "",           policy_name: "",       summary: "",
+    message: ""
+  })
+
+  result[0]['summary'] = summary
+  result[0]['message'] = message
+EOS
+end
 
 ###############################################################################
 # Policy
 ###############################################################################
 
-policy 'azure_ahub_policy' do
-  validate $ds_vminstance_with_cores do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{data.summary_template}}"
-    escalate $email
-    check eq(size(val(data, "result")), 0)
-    export "result" do
+policy "pol_azure_ahub" do
+  validate_each $ds_ahub_incident do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ with index data 0 }}{{ .summary }}{{ end }}"
+    detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    hash_exclude "summary", "message", "tags"
+    export do
       resource_level true
-      field "subscriptionName" do
-        label "Subscription Name"
+      field "accountID" do
+        label "Subscription ID"
       end
-      field "location" do
-        label "Location"
+      field "accountName" do
+        label "Subscription Name"
       end
       field "resourceGroup" do
         label "Resource Group"
       end
-      field "name" do
-        label "Instance Name"
+      field "resourceName" do
+        label "Resource Name"
       end
-      field "vmSize" do
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "resourceType" do
         label "Instance Size"
+      end
+      field "resourceKind" do
+        label "Resource Kind"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "osType" do
+        label "Operating System"
       end
       field "imagePublisher" do
         label "Image Publisher"
@@ -348,19 +575,17 @@ policy 'azure_ahub_policy' do
         label "Image Offer"
       end
       field "imageSku" do
-        label "Image Sku"
+        label "Image SKU"
       end
       field "imageVersion" do
         label "Image Version"
       end
-      field "tags" do
-        label "Tags"
-      end
-      field "numberofcores" do
-        label "Number Cores"
+      field "cores" do
+        label "Core Count"
       end
       field "id" do
-        label "Instance Id"
+        label "ID"
+        path "resourceID"
       end
     end
   end
@@ -370,9 +595,99 @@ end
 # Escalations
 ###############################################################################
 
-escalation "email" do
+escalation "esc_email" do
   automatic true
-  label "Send Mail"
-  description "Sends incidents email"
+  label "Send Email"
+  description "Send incident email"
   email $param_email
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
 end

@@ -1,5 +1,22 @@
 # Changelog
 
+## v4.2
+
+- Changed internal name of escalation code to ensure "Meta Policy" works as expected
+
+## v4.1
+
+- Updated description of `Account Number` parameter
+
+## v4.0
+
+- Added logic required for "Meta Policy" use-cases
+- Flexera credential now required to facilitate meta policy use cases.
+
+## v3.0
+
+- Added parameter to enable Allow or Deny filtering by user entered regions
+
 ## v2.10
 
 - Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM

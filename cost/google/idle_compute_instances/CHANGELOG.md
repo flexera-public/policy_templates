@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.11
+
+- CPU and memory utilization data is now retrieved using GCP Monitoring Query Language
+- Instance data is now retrieved in bulk requests per zone
+
 ## v2.10
 
 - Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM
