@@ -88,19 +88,19 @@ end
 modified_file_warnings = ""
 
 changed_dangerfiles.each do |file|
-  modified_file_warnings += "#{file}: Dangerfile or related file has been modified! Please ensure changes were intentional, have been tested, and do not break existing tests.\n\n"
+  modified_file_warnings += "#{file}\n"
 end
 
 changed_dot_files.each do |file|
-  modified_file_warnings += "#{file}: Dot file has been modified! Please make sure these modifications were intentional and have been tested. Dot files are necessary for configuring the Github repository and managing automation.\n\n"
+  modified_file_warnings += "#{file}\n"
 end
 
 changed_config_files.each do |file|
-  modified_file_warnings += "#{file}: Config file has been modified! Please make sure these modifications were intentional and have been tested. Config files are necessary for configuring the Github repository and managing automation.\n\n"
+  modified_file_warnings += "#{file}\n"
 end
 
 # Consolidate changed files into a single warning to save space
-warn "**Important Files Modified**\n\n" + modified_file_warnings.strip if !modified_file_warnings.empty?
+warn "**Important Files Modified**\nPlease make sure these modifications were intentional and have been tested. These files are necessary for configuring the Github repository and managing automation.\n\n" + modified_file_warnings.strip if !modified_file_warnings.empty?
 
 ###############################################################################
 # Ruby File Testing
