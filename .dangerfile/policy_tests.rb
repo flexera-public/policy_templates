@@ -958,6 +958,54 @@ def policy_bad_github_datasources?(file)
   return false
 end
 
+### Insecure HTTP Test
+# Return false if all datasources use HTTPS instead of HTTP
+def policy_http_connections?(file)
+  # Store contents of file for direct analysis
+  policy_code = File.read(file)
+
+  fail_message = ""
+
+  within_datasource = false
+  within_script = false
+  within_cwf = false
+
+  policy_code.each_line.with_index do |line, index|
+    line_number = index + 1
+
+    within_datasource = true if line.start_with?("datasource ")
+    within_script = true if line.start_with?("script ")
+    within_cwf = true if line.start_with?("define ")
+
+    within_datasource = false if within_datasource && line.strip == "end"
+    within_script = false if within_script && (line.strip == "EOS" || line.strip == "EOF")
+    within_cwf = false if within_cwf && line.strip == "end"
+
+    if within_datasource
+      if line.strip.start_with?("scheme ") && line.strip.split('"')[1] == "http"
+        fail_message += "Line #{line_number.to_s}: Datasource `scheme` field is configured to use insecure `http` connection instead of `https`. Please consider using `https` instead.\n\n"
+      end
+    end
+
+    if within_script
+      if line.include?("scheme") && line.include?(":") && line.include?("http") && !line.include?("https")
+        fail_message += "Line #{line_number.to_s}: Script found where `scheme` field may be configured to use insecure `http` connection instead of `https`. Please consider using `https` instead.\n\n"
+      end
+    end
+
+    if within_cwf
+      if line.include?("https") && line.include?(":") && line.include?("false") && !line.include?("true")
+        fail_message += "Line #{line_number.to_s}: Cloud Workflow found where `https` field may be set to `false`. Please consider using `https` instead.\n\n"
+      end
+    end
+  end
+
+  fail_message = "**#{file}**\nInsecure `http` connections found:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
 ### Master permissions test
 # Return false if master permissions have been recorded for the policy
 def policy_missing_master_permissions?(file, permissions_yaml)
