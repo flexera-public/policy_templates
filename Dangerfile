@@ -16,6 +16,7 @@ require 'yaml'
 require_relative '.dangerfile/policy_parser'
 require_relative '.dangerfile/github_tests'
 require_relative '.dangerfile/general_tests'
+require_relative '.dangerfile/code_tests'
 require_relative '.dangerfile/readme_tests'
 require_relative '.dangerfile/changelog_tests'
 require_relative '.dangerfile/policy_tests'
@@ -113,10 +114,10 @@ end
 
 # Perform a lint check on changed Ruby files
 changed_rb_files.each do |file|
-  test = general_ruby_errors?(file); fail test if test
+  test = code_ruby_errors?(file); fail test if test
 
   # Rubocop linting currently disabled. It is *very* verbose.
-  #test = general_rubocop_problems?(file); warn test if test
+  #test = code_rubocop_problems?(file); warn test if test
 end
 
 ###############################################################################
@@ -125,7 +126,7 @@ end
 
 # Perform a lint check on changed Python files
 changed_py_files.each do |file|
-  test = general_python_errors?(file); fail test if test
+  test = code_python_errors?(file); fail test if test
 end
 
 ###############################################################################
@@ -135,18 +136,18 @@ end
 
 changed_json_files.each do |file|
   # Look for out of place JSON files
-  test = general_json_bad_location?(file); fail test if test
+  test = code_json_bad_location?(file); fail test if test
 
   # Lint test JSON files
-  test = general_json_errors?(file); fail test if test
+  test = code_json_errors?(file); fail test if test
 end
 
 changed_yaml_files.each do |file|
   # Look for out of place YAML files
-  test = general_yaml_bad_location?(file); fail test if test
+  test = code_yaml_bad_location?(file); fail test if test
 
   # Lint test YAML files
-  test = general_yaml_errors?(file); fail test if test
+  test = code_yaml_errors?(file); fail test if test
 end
 
 ###############################################################################
