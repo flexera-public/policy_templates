@@ -7,10 +7,11 @@ severity "low"
 category "Operational"
 default_frequency "15 minutes"
 info(
-  version: "1.18.0",
+  version: "2.0.0",
   publish: "false",
   provider: "Flexera",
   service: "Policy Engine",
+  publish: "false",
   policy_set: "N/A"
 )
 
@@ -55,7 +56,7 @@ parameter "param_publish" do
   allowed_values 0,1
 end
 
-parameter "force_upgrade" do
+parameter "param_force_upgrade" do
   type "number"
   label "Force Upgrade"
   category "Policy Settings"
@@ -116,11 +117,11 @@ datasource "ds_current_policy_template_list" do
 end
 
 datasource "ds_combined_policy_list" do
-  run_script $js_combine_policy_lists, $ds_active_policy_list, $ds_current_policy_template_list, $force_upgrade, $param_branch, $param_template_git_org_repo_name
+  run_script $js_combine_policy_lists, $ds_active_policy_list, $ds_current_policy_template_list, $param_force_upgrade, $param_branch, $param_template_git_org_repo_name
 end
 
 script "js_combine_policy_lists", type: "javascript" do
-  parameters "active_policy_list", "current_policy_list", "force_upgrade", "param_branch", "param_template_git_org_repo_name"
+  parameters "active_policy_list", "current_policy_list", "param_force_upgrade", "param_branch", "param_template_git_org_repo_name"
   result "policy_list"
   code <<-EOS
   var policy_list = [];
@@ -182,7 +183,7 @@ script "js_combine_policy_lists", type: "javascript" do
     else if (curr_major_version < new_major_version) {
       var version_upgradeable = true
     }
-    if (force_upgrade == 1 ) {
+    if (param_force_upgrade == 1 ) {
       var version_upgradeable = true
     }
     policy_list.push({
@@ -203,7 +204,7 @@ end
 # Policy
 ###############################################################################
 
-policy "upload_policy_templates" do
+policy "pol_upload_policy_templates" do
   validate_each $ds_combined_policy_list do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Policy Templates Updated"
     detail_template <<-EOS
@@ -217,8 +218,8 @@ policy "upload_policy_templates" do
 {{ end -}}
 EOS
 
-    escalate $report_policy_templates_update
-    escalate $upload_new_policy_templates
+    escalate $esc_report_policy_templates_update
+    escalate $esc_upload_new_policy_templates
     check logic_not(val(item, "version_upgradeable"))
   end
 end
@@ -227,11 +228,11 @@ end
 # Escalations
 ###############################################################################
 
-escalation "upload_new_policy_templates" do
+escalation "esc_upload_new_policy_templates" do
   run "upload_template", data, rs_project_id, rs_governance_host, $param_publish, rs_org_id, $param_branch, $param_template_git_org_repo_name
 end
 
-escalation "report_policy_templates_update" do
+escalation "esc_report_policy_templates_update" do
   email $param_email
 end
 

@@ -1,8 +1,9 @@
 # Changelog
 
-## v1.18.0
+## v2.0.0
 
 - Added parameters for the Policy Template Github Repo to enable this to be used for other repos without modifying Policy Template
+- Renamed parameters to align with on Policy Developement testing and best practices
 
 ## v1.17
 
