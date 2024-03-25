@@ -21,38 +21,41 @@ info(
 
 parameter "param_email" do
   type "list"
-  label "Email addresses of the recipients you wish to notify"
   category "Policy Settings"
+  label "Email addresses of the recipients you wish to notify"
+  description "Email addresses of the recipients you wish to notify"
   default []
-  min_length 1
 end
 
 parameter "param_template_git_org_repo_name" do
   type "string"
-  label "Organization and Repo Name (org/repo_name_) to find the policy template files"
   category "Policy Settings"
+  label "Organization and Repo Name (org/repo_name_) to find the policy template files"
+  description "Organization and Repo Name (org/repo_name_) to find the policy template files"
   default "flexera-public/policy_templates"
 end
 
 parameter "param_github_active_list_path" do
   type "string"
-  label "Path to the active policy list json file"
   category "Policy Settings"
+  label "Path to the active policy list json file"
+  description "Path to the active policy list json file"
   default "data/active_policy_list/active_policy_list.json"
 end
 
 parameter "param_branch" do
   type "string"
-  label "Branch Name"
   category "Policy Settings"
+  label "Branch Name"
+  description "Branch Name"
   default "master"
 end
 
 parameter "param_publish" do
   type "number"
-  label "Publish Template"
   category "Policy Settings"
-  description "Publish Template, 0:False, 1:True"
+  label "Publish Template"
+  description "Publish Template"
   default 0
   allowed_values 0, 1
 end
@@ -60,6 +63,7 @@ end
 parameter "param_force_upgrade" do
   type "number"
   label "Force Upgrade"
+  description "Force Upgrade"
   category "Policy Settings"
   description "Force Upgrade, 0:False, 1:True"
   default 0
@@ -125,79 +129,79 @@ script "js_combined_policy_list", type: "javascript" do
   parameters "active_policy_list", "current_policy_list", "param_force_upgrade", "param_branch", "param_template_git_org_repo_name"
   result "policy_list"
   code <<-EOS
-  var policy_list = [];
-  var old_policy_list = {};
-  var github_raw_url = 'https://raw.githubusercontent.com/'+param_template_git_org_repo_name+'/' + param_branch + '/';
+var policy_list = [];
+var old_policy_list = {};
+var github_raw_url = 'https://raw.githubusercontent.com/'+param_template_git_org_repo_name+'/' + param_branch + '/';
 
-  // create a map of published templates
-  for (var index = 0; index < current_policy_list.length; index++) {
-    var current_policy = current_policy_list[index];
-    old_policy_list[current_policy.name] = current_policy;
+// create a map of published templates
+for (var index = 0; index < current_policy_list.length; index++) {
+  var current_policy = current_policy_list[index];
+  old_policy_list[current_policy.name] = current_policy;
+}
+
+// loop through active policies from s3 json file
+for ( var i = 0; i < active_policy_list.length; i++) {
+  var active_policy = active_policy_list[i]
+  // map catalog policy with json list
+  var account_policy_template = old_policy_list[active_policy.name]
+
+  if (account_policy_template){
+    // By default assume version is 0.0
+    var account_version = "0.0"
+    var policy_id = account_policy_template.id
+    // Attempt to get account template version from policy template metadata
+    if ( account_policy_template.info && _.isString(account_policy_template.info.version) ) {
+      account_version = account_policy_template.info.version
+    }
+    // Next attempt to use long_description
+    if ( account_version == "0.0" ) {
+      // Only attempt if it's set
+      if (_.isString(account_policy_template.long_description) ) {
+        var account_version = account_policy_template.long_description
+      }
+      // Look for string "Version" and extract the version from that
+      if ( account_version.search(/Version/i) != -1 ) {
+        var version_str = account_version.split(' ')
+        var account_version = version_str[version_str.length -1]
+      }
+    }
+  } else {
+    // Else, assume it's a new template id and version 0.0
+    var policy_id = 0
+    var account_version = "0.0"
   }
 
-  // loop through active policies from s3 json file
-  for ( var i = 0; i < active_policy_list.length; i++) {
-    var active_policy = active_policy_list[i]
-    // map catalog policy with json list
-    var account_policy_template = old_policy_list[active_policy.name]
+  var a_version = account_version.toString().split('.')
+  var r_version = active_policy.version.toString().split('.')
 
-    if (account_policy_template){
-      // By default assume version is 0.0
-      var account_version = "0.0"
-      var policy_id = account_policy_template.id
-      // Attempt to get account template version from policy template metadata
-      if ( account_policy_template.info && _.isString(account_policy_template.info.version) ) {
-        account_version = account_policy_template.info.version
-      }
-      // Next attempt to use long_description
-      if ( account_version == "0.0" ) {
-        // Only attempt if it's set
-        if (_.isString(account_policy_template.long_description) ) {
-          var account_version = account_policy_template.long_description
-        }
-        // Look for string "Version" and extract the version from that
-        if ( account_version.search(/Version/i) != -1 ) {
-          var version_str = account_version.split(' ')
-          var account_version = version_str[version_str.length -1]
-        }
-      }
-    } else {
-      // Else, assume it's a new template id and version 0.0
-      var policy_id = 0
-      var account_version = "0.0"
-    }
+  var version_upgradeable = false
+  curr_major_version = parseInt(a_version[0])
+  curr_minor_version = parseInt(a_version[1])
+  new_major_version = parseInt(r_version[0])
+  new_minor_version = parseInt(r_version[1])
 
-    var a_version = account_version.toString().split('.')
-    var r_version = active_policy.version.toString().split('.')
-
-    var version_upgradeable = false
-    curr_major_version = parseInt(a_version[0])
-    curr_minor_version = parseInt(a_version[1])
-    new_major_version = parseInt(r_version[0])
-    new_minor_version = parseInt(r_version[1])
-
-    if (curr_major_version == new_major_version ) {
-      if (curr_minor_version < new_minor_version) {
-          var version_upgradeable = true
-      }
+  if (curr_major_version == new_major_version ) {
+    if (curr_minor_version < new_minor_version) {
+        var version_upgradeable = true
     }
-    else if (curr_major_version < new_major_version) {
-      var version_upgradeable = true
-    }
-    if (param_force_upgrade == 1 ) {
-      var version_upgradeable = true
-    }
-    policy_list.push({
-      name: active_policy.name,
-      file_name: active_policy.file_name,
-      repo_version: active_policy.version,
-      account_version: account_version,
-      account_policy_template: account_policy_template,
-      version_upgradeable: version_upgradeable,
-      policy_id: policy_id,
-      change_log: github_raw_url.concat(active_policy.change_log)
-    })
   }
+  else if (curr_major_version < new_major_version) {
+    var version_upgradeable = true
+  }
+  if (param_force_upgrade == 1 ) {
+    var version_upgradeable = true
+  }
+  policy_list.push({
+    name: active_policy.name,
+    file_name: active_policy.file_name,
+    repo_version: active_policy.version,
+    account_version: account_version,
+    account_policy_template: account_policy_template,
+    version_upgradeable: version_upgradeable,
+    policy_id: policy_id,
+    change_log: github_raw_url.concat(active_policy.change_log)
+  })
+}
 EOS
 end
 
@@ -217,9 +221,8 @@ policy "pol_upload_policy_templates" do
 | {{ .name }} | {{.file_name}} | {{.repo_version}} | {{.account_version}} | {{.version_upgradeable}} | {{.policy_id}} | {{ .change_log }} |
 {{ end -}}
 EOS
-
-    escalate $esc_report_policy_templates_update
-    escalate $esc_upload_new_policy_templates
+    escalate $escalation_send_email
+    escalate $escalation_upload_new_policy_templates
     check logic_not(val(item, "version_upgradeable"))
   end
 end
@@ -228,11 +231,17 @@ end
 # Escalations
 ###############################################################################
 
-escalation "esc_upload_new_policy_templates" do
+escalation "escalation_upload_new_policy_templates" do
   run "upload_template", data, rs_project_id, rs_governance_host, $param_publish, rs_org_id, $param_branch, $param_template_git_org_repo_name
+  automatic false
+  label "Upload/Publish Policy Templates"
+  description "Upload (and optionally Publish) New Policy Templates"
 end
 
-escalation "esc_report_policy_templates_update" do
+escalation "escalation_send_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
   email $param_email
 end
 
