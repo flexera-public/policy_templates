@@ -1,32 +1,23 @@
-FROM mcr.microsoft.com/devcontainers/base:ubuntu
-# Ensure we use bash as our shell. Necessary for future commands.
-SHELL ["/bin/bash", "-c"]
+FROM ruby:3.2.3-bookworm
 # Do general apt update/upgrade
 RUN apt-get update && apt-get upgrade -y
 # Install misc. packages
-RUN apt install wget jq git apt-transport-https curl autoconf bison build-essential libssl-dev libyaml-dev libreadline6-dev zlib1g-dev libncurses5-dev libffi-dev libgdbm6 libgdbm-dev libdb-dev -y
-# Install Ruby
-RUN curl -fsSL https://github.com/rbenv/rbenv-installer/raw/HEAD/bin/rbenv-installer | bash
-RUN touch ~/.bashrc
-RUN echo 'export PATH="$HOME/.rbenv/bin:$PATH"' >> ~/.bashrc
-RUN echo 'eval "$(rbenv init -)"' >> ~/.bashrc
-RUN source ~/.bashrc
-RUN rbenv install 3.2.3
-RUN rbenv global 3.2.3
-RUN gem install bundler
+RUN apt-get install wget jq git unzip apt-transport-https curl autoconf bison build-essential libssl-dev libyaml-dev libreadline6-dev zlib1g-dev libncurses5-dev libffi-dev libgdbm6 libgdbm-dev libdb-dev -y
+# Install Ruby gems
 RUN wget https://raw.githubusercontent.com/flexera-public/policy_templates/master/Gemfile
 RUN wget https://raw.githubusercontent.com/flexera-public/policy_templates/master/Gemfile.lock
-RUN bundle install --without documentation --path bundle
+RUN bundle install
 # Install Python
-RUN apt install python3 pip -y
+RUN apt-get install python3 pip -y
 RUN wget https://raw.githubusercontent.com/flexera-public/policy_templates/master/.pip_requirements
 RUN pip install -r .pip_requirements
 # Install Node
 RUN wget https://raw.githubusercontent.com/flexera-public/policy_templates/master/package.json
 RUN wget https://raw.githubusercontent.com/flexera-public/policy_templates/master/package-lock.json
-RUN apt install nodejs npm -y
+RUN apt-get install nodejs npm -y
+RUN npm install
 # Install Go
-RUN apt install golang -y
+RUN apt-get install golang -y
 # Install Cloud CLIs
 RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
 RUN unzip awscliv2.zip
