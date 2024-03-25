@@ -8,9 +8,9 @@ RUN wget https://raw.githubusercontent.com/flexera-public/policy_templates/maste
 RUN wget https://raw.githubusercontent.com/flexera-public/policy_templates/master/Gemfile.lock
 RUN bundle install
 # Install Python
-RUN apt-get install python3 pip -y
+RUN apt-get install python3 python3-pip -y
 RUN wget https://raw.githubusercontent.com/flexera-public/policy_templates/master/.pip_requirements
-RUN pip install -r .pip_requirements
+RUN pip3 install -r .pip_requirements
 # Install Node
 RUN wget https://raw.githubusercontent.com/flexera-public/policy_templates/master/package.json
 RUN wget https://raw.githubusercontent.com/flexera-public/policy_templates/master/package-lock.json
