@@ -25,14 +25,6 @@ parameter "param_email" do
   default []
 end
 
-parameter "param_email_orphaned" do
-  type "list"
-  category "Policy Settings"
-  label "Email Addresses"
-  description "A list of email addresses to notify."
-  default []
-end
-
 parameter "param_azure_endpoint" do
   type "string"
   category "Policy Settings"
@@ -131,13 +123,6 @@ credentials "auth_azure" do
   tags "provider=azure_rm"
 end
 
-credentials "auth_azure_orphaned" do
-  schemes "oauth2"
-  label "Azure"
-  description "Select the Azure Resource Manager Credential from the list."
-  tags "provider=azure_rm"
-end
-
 credentials "auth_flexera" do
   schemes "oauth2"
   label "Flexera"
@@ -158,30 +143,12 @@ pagination "pagination_azure" do
   end
 end
 
-pagination "pagination_azure_orphaned" do
-  get_page_marker do
-    body_path "nextLink"
-  end
-  set_page_marker do
-    uri true
-  end
-end
-
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
 
 # Get applied policy metadata for use later
 datasource "ds_applied_policy" do
-  request do
-    auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
-    header "Api-Version", "1.0"
-  end
-end
-
-datasource "ds_applied_policy_orphaned" do
   request do
     auth $auth_flexera
     host rs_governance_host
@@ -217,18 +184,6 @@ datasource "ds_top_level_bcs" do
 end
 
 script "js_top_level_bcs", type: "javascript" do
-  parameters "ds_billing_centers"
-  result "result"
-  code <<-EOS
-  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
-    return bc['parent_id'] == null || bc['parent_id'] == undefined
-  })
-
-  result = _.compact(_.pluck(filtered_bcs, 'id'))
-EOS
-end
-
-script "js_top_level_bcs_orphaned", type: "javascript" do
   parameters "ds_billing_centers"
   result "result"
   code <<-EOS
@@ -822,13 +777,6 @@ escalation "esc_email" do
   email $param_email
 end
 
-escalation "esc_email_orphaned" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
-end
-
 escalation "esc_delete_snapshot" do
   automatic contains($param_automatic_action, "Delete Snapshots")
   label "Delete Snapshots"
@@ -841,20 +789,6 @@ end
 ###############################################################################
 
 define delete_snapshots($data, $param_azure_endpoint) return $all_responses do
-  $$all_responses = []
-
-  foreach $instance in $data do
-    sub on_error: handle_error() do
-      call delete_snapshot($instance, $param_azure_endpoint) retrieve $delete_response
-    end
-  end
-
-  if inspect($$errors) != "null"
-    raise join($$errors,"\n")
-  end
-end
-
-define delete_snapshots_orphaned($data, $param_azure_endpoint) return $all_responses do
   $$all_responses = []
 
   foreach $instance in $data do
