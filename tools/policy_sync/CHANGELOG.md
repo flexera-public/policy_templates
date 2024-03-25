@@ -1,4 +1,4 @@
-# CHANGELOG
+# Changelog
 
 ## v1.18.0
 
@@ -28,11 +28,11 @@
 
 - updated README.md rightscale documentation links with docs.flexera documentation links
 
-## 1.11
+## v1.11
 
 - Adding `param_branch` to support automatic publishing to the EU Shard.
 
-## 1.10
+## v1.10
 
 - fix an issue with publishing
 
