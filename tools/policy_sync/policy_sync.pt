@@ -23,6 +23,7 @@ parameter "param_email" do
   type "list"
   label "Email addresses of the recipients you wish to notify"
   category "Policy Settings"
+  default []
   min_length 1
 end
 
@@ -53,7 +54,7 @@ parameter "param_publish" do
   category "Policy Settings"
   description "Publish Template, 0:False, 1:True"
   default 0
-  allowed_values 0,1
+  allowed_values 0, 1
 end
 
 parameter "param_force_upgrade" do
@@ -62,7 +63,7 @@ parameter "param_force_upgrade" do
   category "Policy Settings"
   description "Force Upgrade, 0:False, 1:True"
   default 0
-  allowed_values 0,1
+  allowed_values 0, 1
 end
 
 ###############################################################################
@@ -84,7 +85,7 @@ datasource "ds_active_policy_list" do
   request do
     verb "GET"
     host "raw.githubusercontent.com"
-    path join([$param_template_git_org_repo_name,"/",$param_branch,"/",$param_github_active_list_path])
+    path join([$param_template_git_org_repo_name, "/", $param_branch, "/", $param_github_active_list_path])
     header "User-Agent", "RS Policies"
   end
   result do
@@ -92,7 +93,7 @@ datasource "ds_active_policy_list" do
       field "name", jmes_path(col_item, "name")
       field "file_name", jmes_path(col_item, "file_name")
       field "version", jmes_path(col_item, "version")
-      field "change_log", jmes_path(col_item,"change_log")
+      field "change_log", jmes_path(col_item, "change_log")
     end
   end
 end
@@ -102,12 +103,12 @@ datasource "ds_current_policy_template_list" do
     auth $auth_flexera
     verb "GET"
     host rs_governance_host
-    path join(["/api/governance/projects/",rs_project_id,"/policy_templates"])
+    path join(["/api/governance/projects/", rs_project_id, "/policy_templates"])
     header "Api-Version", "1.0"
     query "view", "extended"
   end
   result do
-    collect jmes_path(response,"items") do
+    collect jmes_path(response, "items") do
       field "id", jmes_path(col_item, "id")
       field "name", jmes_path(col_item, "name")
       field "long_description", jmes_path(col_item, "long_description")
@@ -117,10 +118,10 @@ datasource "ds_current_policy_template_list" do
 end
 
 datasource "ds_combined_policy_list" do
-  run_script $js_combine_policy_lists, $ds_active_policy_list, $ds_current_policy_template_list, $param_force_upgrade, $param_branch, $param_template_git_org_repo_name
+  run_script $js_combined_policy_list, $ds_active_policy_list, $ds_current_policy_template_list, $param_force_upgrade, $param_branch, $param_template_git_org_repo_name
 end
 
-script "js_combine_policy_lists", type: "javascript" do
+script "js_combined_policy_list", type: "javascript" do
   parameters "active_policy_list", "current_policy_list", "param_force_upgrade", "param_branch", "param_template_git_org_repo_name"
   result "policy_list"
   code <<-EOS
@@ -208,7 +209,6 @@ policy "pol_upload_policy_templates" do
   validate_each $ds_combined_policy_list do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Policy Templates Updated"
     detail_template <<-EOS
-
 # Policy Templates Updated
 
 | Name | File Name | Repo Version | Published Version | Version Upgradeable | Policy ID | ChangeLog |
@@ -245,7 +245,7 @@ define upload_template($data, $project_id, $param_governance_host, $param_publis
   $response_array = []
   foreach $item in $data do
     sub on_error: skip do
-      $url = join(["https://raw.githubusercontent.com/",$param_template_git_org_repo_name,"/", $param_branch, "/",  to_s($item["file_name"])])
+      $url = join(["https://raw.githubusercontent.com/", $param_template_git_org_repo_name, "/", $param_branch, "/", to_s($item["file_name"])])
       $url_array << $url
 
       $policy_request = http_get(
@@ -253,14 +253,14 @@ define upload_template($data, $project_id, $param_governance_host, $param_publis
         url: $url
       )
       $policy_source = $policy_request["body"]
-      $file_name = last(split($item["file_name"],'/'))
+      $file_name = last(split($item["file_name"], '/'))
 
       $create_response = http_request(
         auth: $$auth_flexera,
         verb: "post",
         https: true,
         host: $param_governance_host,
-        href: join(["/api/governance/projects/",$project_id,"/policy_templates"]),
+        href: join(["/api/governance/projects/", $project_id, "/policy_templates"]),
         headers: { "Api-Version": "1.0" },
         body: { "source": $policy_source, filename: $file_name }
       )
@@ -291,7 +291,7 @@ define upload_template($data, $project_id, $param_governance_host, $param_publis
           verb: "post",
           https: true,
           host: $param_governance_host,
-          href: join(["/api/governance/orgs/",$rs_org_id,"/published_templates"]),
+          href: join(["/api/governance/orgs/", $rs_org_id, "/published_templates"]),
           headers: { "Api-Version": "1.0" },
           body: { "template_href": $policy_template_href }
         )
