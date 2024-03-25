@@ -249,6 +249,9 @@ changed_pt_files.each do |file|
   # Raise error if policy and changelog do not have matching version numbers
   test = policy_changelog_mismatch?(file); fail test if test
 
+  # Raise error if there is a mismatch between the policy's credentials and the README
+  test = policy_readme_missing_credentials?(file); fail test if test
+
   # Raise error if policy sections are out of order
   test = policy_sections_out_of_order?(file); fail test if test
 

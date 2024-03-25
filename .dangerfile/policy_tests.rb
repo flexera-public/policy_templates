@@ -324,6 +324,113 @@ def policy_changelog_mismatch?(file)
   return false
 end
 
+### README Credential Test
+# Return false if policy's README has documentation for all of the credentials in the policy itself
+def policy_readme_missing_credentials?(file)
+  fail_message = ""
+
+  # Derive path to CHANGELOG file from file name/path
+  file_parts = file.split('/')
+  file_parts.pop
+  readme_file = file_parts.join('/') + "/README.md"
+
+  # Store contents of files for direct analysis
+  policy_code = File.read(file)
+  readme_text = File.read(readme_file)
+
+  # Find out which providers have credentials in the policy
+  pol_flexera_credential = false
+  pol_aws_credential = false
+  pol_azure_credential = false
+  pol_google_credential = false
+  pol_oracle_credential = false
+
+  policy_code.each_line.with_index do |line, index|
+    line_number = index + 1
+
+    if line.start_with?("credentials ")
+      pol_flexera_credential = true if line.include?("flexera")
+      pol_aws_credential = true if line.include?("aws")
+      pol_aws_credential = true if line.include?("amazon")
+      pol_azure_credential = true if line.include?("azure")
+      pol_google_credential = true if line.include?("google")
+      pol_google_credential = true if line.include?("gcp")
+      pol_google_credential = true if line.include?("gce")
+      pol_oracle_credential = true if line.include?("oracle")
+      pol_oracle_credential = true if line.include?("oci")
+    end
+  end
+
+  # Find out which providers have credentials in the README
+  readme_flexera_credential = false
+  readme_aws_credential = false
+  readme_azure_credential = false
+  readme_google_credential = false
+  readme_oracle_credential = false
+
+  flexera_regex = /(?i)(?=.*flexera)(?=.*credential)(?=.*provider=flexera).*/
+  aws_regex = /(?i)(?=.*aws)(?=.*credential)(?=.*provider=aws).*/
+  azure_regex = /(?i)(?=.*azure)(?=.*credential)(?=.*provider=azure_rm).*/
+  google_regex = /(?i)(?=.*google)(?=.*credential)(?=.*provider=gce).*/
+  oracle_regex = /(?i)(?=.*oracle)(?=.*credential)(?=.*provider=oracle).*/
+
+  readme_text.each_line.with_index do |line, index|
+    line_number = index + 1
+
+    readme_flexera_credential = true if line.strip.match?(flexera_regex)
+    readme_aws_credential = true if line.strip.match?(aws_regex)
+    readme_azure_credential = true if line.strip.match?(azure_regex)
+    readme_google_credential = true if line.strip.match?(google_regex)
+    readme_oracle_credential = true if line.strip.match?(oracle_regex)
+  end
+
+  # Check for mismatches between policy and README.md
+  if pol_flexera_credential && !readme_flexera_credential
+    fail_message += "Policy contains Flexera credential but this credential either missing from or incorrectly formatted in the associated `README.md` file.\n\n"
+  end
+
+  if pol_aws_credential && !readme_aws_credential
+    fail_message += "Policy contains AWS credential but this credential either missing from or incorrectly formatted in the associated `README.md` file.\n\n"
+  end
+
+  if pol_azure_credential && !readme_azure_credential
+    fail_message += "Policy contains Azure credential but this credential either missing from or incorrectly formatted in the associated `README.md` file.\n\n"
+  end
+
+  if pol_google_credential && !readme_google_credential
+    fail_message += "Policy contains Google credential but this credential either missing from or incorrectly formatted in the associated `README.md` file.\n\n"
+  end
+
+  if pol_oracle_credential && !readme_oracle_credential
+    fail_message += "Policy contains Oracle credential but this credential either missing from or incorrectly formatted in the associated `README.md` file.\n\n"
+  end
+
+  if !pol_flexera_credential && readme_flexera_credential
+    fail_message += "Policy's `README.md` file contains documentation for a Flexera credential that does not exist or is incorrectly named in the policy.\n\n"
+  end
+
+  if !pol_aws_credential && readme_aws_credential
+    fail_message += "Policy's `README.md` file contains documentation for an AWS credential that does not exist or is incorrectly named in the policy.\n\n"
+  end
+
+  if !pol_azure_credential && readme_azure_credential
+    fail_message += "Policy's `README.md` file contains documentation for an Azure credential that does not exist or is incorrectly named in the policy.\n\n"
+  end
+
+  if !pol_google_credential && readme_google_credential
+    fail_message += "Policy's `README.md` file contains documentation for a Google credential that does not exist or is incorrectly named in the policy.\n\n"
+  end
+
+  if !pol_oracle_credential && readme_oracle_credential
+    fail_message += "Policy's `README.md` file contains documentation for an Oracle credential that does not exist or is incorrectly named in the policy.\n\n"
+  end
+
+  fail_message = "**#{file}**\nPolicy Template's credentials and `README.md` documentation do not match:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
 ### Section order test
 # Return false if policy sections are in the correct order.
 def policy_sections_out_of_order?(file)
