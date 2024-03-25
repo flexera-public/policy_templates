@@ -16,6 +16,7 @@ require 'yaml'
 require_relative '.dangerfile/policy_parser'
 require_relative '.dangerfile/github_tests'
 require_relative '.dangerfile/general_tests'
+require_relative '.dangerfile/code_tests'
 require_relative '.dangerfile/readme_tests'
 require_relative '.dangerfile/changelog_tests'
 require_relative '.dangerfile/policy_tests'
@@ -50,6 +51,10 @@ changed_readme_files = changed_files.select{ |file| file.end_with?("/README.md")
 changed_changelog_files = changed_files.select{ |file| file.end_with?("/CHANGELOG.md") }
 # Changed MD files other than the above.
 changed_misc_md_files = changed_files.select{ |file| file.end_with?(".md") && !file.end_with?("/README.md") && !file.end_with?("/CHANGELOG.md") }
+# Changed JSON files.
+changed_json_files = changed_files.select{ |file| file.end_with?(".json") }
+# Changed YAML files.
+changed_yaml_files = changed_files.select{ |file| file.end_with?(".yaml") || file.end_with?(".yml") }
 # New Policy Template files. Ignore meta policy files.
 new_pt_files = git.added_files.select{ |file| file.end_with?(".pt") && !file.end_with?("meta_parent.pt") }
 
@@ -60,7 +65,7 @@ new_pt_files = git.added_files.select{ |file| file.end_with?(".pt") && !file.end
 test = github_pr_bad_title?(github); warn test if test
 test = github_pr_missing_summary?(github); fail test if test
 test = github_pr_missing_labels?(github); fail test if test
-test = github_pr_missing_ready_label?(github); warn test if test
+test = github_pr_missing_ready_label?(github); message test if test
 
 ###############################################################################
 # All Files Testing
@@ -77,31 +82,14 @@ changed_files.each do |file|
 end
 
 ###############################################################################
-# Dangerfile Testing
+# Modified Important Files Testing
 ###############################################################################
 
-# Perform testing on Dangerfile and .dangerfile files if they have been modified
-changed_dangerfiles.each do |file|
-  warn "**#{file}**\nDangerfile or related file has been modified! Please ensure changes were intentional, have been tested, and do not break existing tests."
-end
+modified_important_files = changed_dangerfiles + changed_dot_files + changed_config_files
+modified_important_files = modified_important_files.join("\n")
 
-###############################################################################
-# Dot File Testing
-###############################################################################
-
-# Perform testing on modified dot files
-changed_dot_files.each do |file|
-  warn "**#{file}**\nDot file `#{file}` has been modified! Please make sure these modifications were intentional and have been tested. Dot files are necessary for configuring the Github repository and managing automation."
-end
-
-###############################################################################
-# Config File Testing
-###############################################################################
-
-# Perform testing on modified config files
-changed_config_files.each do |file|
-  warn "**#{file}**\nConfig file `#{file}` has been modified! Please make sure these modifications were intentional and have been tested. Config files are necessary for configuring the Github repository and managing automation."
-end
+# Consolidate changed files into a single warning to save space
+warn "**Important Files Modified**\nPlease make sure these modifications were intentional and have been tested. These files are necessary for configuring the Github repository and managing automation.\n\n" + modified_important_files.strip if !modified_important_files.empty?
 
 ###############################################################################
 # Ruby File Testing
@@ -109,10 +97,10 @@ end
 
 # Perform a lint check on changed Ruby files
 changed_rb_files.each do |file|
-  test = general_ruby_errors?(file); fail test if test
+  test = code_ruby_errors?(file); fail test if test
 
   # Rubocop linting currently disabled. It is *very* verbose.
-  #test = general_rubocop_problems?(file); warn test if test
+  #test = code_rubocop_problems?(file); warn test if test
 end
 
 ###############################################################################
@@ -121,7 +109,27 @@ end
 
 # Perform a lint check on changed Python files
 changed_py_files.each do |file|
-  test = general_python_errors?(file); fail test if test
+  test = code_python_errors?(file); fail test if test
+end
+
+###############################################################################
+# JSON/YAML File Testing
+###############################################################################
+
+changed_json_files.each do |file|
+  # Look for out of place JSON files
+  test = code_json_bad_location?(file); fail test if test
+
+  # Lint test JSON files
+  test = code_json_errors?(file); fail test if test
+end
+
+changed_yaml_files.each do |file|
+  # Look for out of place YAML files
+  test = code_yaml_bad_location?(file); fail test if test
+
+  # Lint test YAML files
+  test = code_yaml_errors?(file); fail test if test
 end
 
 ###############################################################################
@@ -238,8 +246,23 @@ changed_pt_files.each do |file|
     info_test = policy_missing_info_field?(file, "policy_set"); warn info_test if info_test
   end
 
+  # Raise error if policy and changelog do not have matching version numbers
+  test = policy_changelog_mismatch?(file); fail test if test
+
+  # Raise error if there is a mismatch between the policy's credentials and the README
+  test = policy_readme_missing_credentials?(file); fail test if test
+
   # Raise error if policy sections are out of order
   test = policy_sections_out_of_order?(file); fail test if test
+
+  # Raise error of code blocks exist in policy that aren't used anywhere
+  test = policy_orphaned_blocks?(file, "parameter"); fail test if test
+  test = policy_orphaned_blocks?(file, "credentials"); fail test if test
+  test = policy_orphaned_blocks?(file, "pagination"); fail test if test
+  test = policy_orphaned_blocks?(file, "datasource"); fail test if test
+  test = policy_orphaned_blocks?(file, "script"); fail test if test
+  test = policy_orphaned_blocks?(file, "escalation"); fail test if test
+  test = policy_orphaned_blocks?(file, "define"); fail test if test
 
   # Raise error if policy blocks are not grouped together by type
   test = policy_blocks_ungrouped?(file); fail test if test
@@ -308,6 +331,15 @@ changed_pt_files.each do |file|
 
   # Raise warning if recommendation policy is missing recommended export fields
   test = policy_missing_recommendation_fields?(file, "recommended"); warn test if test
+
+  # Raise error if policy has invalid Github links in datasources
+  test = policy_bad_github_datasources?(file); fail test if test
+
+  # Raise warning if policy has any datasources using http instead of https
+  test = policy_http_connections?(file); warn test if test
+
+  # Raise warning if improper spacing between comma-separated items found
+  test = policy_bad_comma_spacing?(file); warn test if test
 
   # Raise error if policy is not in the master permissions file.
   # Raise warning if policy is in this file, but datasources have been added.

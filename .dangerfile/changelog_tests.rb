@@ -32,8 +32,8 @@ def changelog_bad_formatting?(file)
           fail_message += "Line #{line_number.to_s}: Invalid version number. Version numbers should always consist of two or three integers separated by periods. Valid examples: `1.0` `2.3.76` `11.5`\n"
         end
       elsif line.strip.start_with?("-")
-        if !line.start_with?("- ")
-          fail_message += "Line #{line_number.to_s}: Invalid list formatting. List items under a version number should always begin with `- ` followed by some text explaining the change.\n"
+        if !line.start_with?("- ") && !line.start_with?("  - ")
+          fail_message += "Line #{line_number.to_s}: Invalid list formatting. List items under a version number should always begin with `- ` followed by some text explaining the change. Secondary items on a sublist should begin with `  - `.\n"
         end
       elsif !line.strip.empty?
         fail_message += "Line #{line_number.to_s}: Invalid content. After the first line, CHANGELOG files should only have version numbers preceded by `##`, changes preceded by `-`, and empty lines.\n"

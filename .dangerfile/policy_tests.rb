@@ -287,6 +287,150 @@ def policy_missing_info_field?(file, field_name)
   return false
 end
 
+### Changelog Version Test
+# Return false if policy's version number matches the latest entry in the CHANGELOG
+def policy_changelog_mismatch?(file)
+  fail_message = ""
+
+  # Derive path to CHANGELOG file from file name/path
+  file_parts = file.split('/')
+  file_parts.pop
+  changelog_file = file_parts.join('/') + "/CHANGELOG.md"
+
+  # Store contents of file for direct analysis
+  changelog_text = File.read(changelog_file)
+
+  # Get version number from policy
+  policy_version = nil
+
+  pp = PolicyParser.new
+  pp.parse(file)
+  policy_version = pp.parsed_info[:version] if pp.parsed_info
+
+  # Get version number from changelog
+  changelog_version = nil
+
+  if changelog_text && changelog_text.split("\n")[2].start_with?("## v")
+    changelog_version = changelog_text.split("\n")[2].split('v')[1].strip
+  end
+
+  # We ignore situations where one of the values is missing.
+  # Other tests will catch that.
+  if policy_version && changelog_version && policy_version != changelog_version
+    fail_message = "**#{file}**\nVersion number in policy template does not match latest version number in `CHANGELOG.md`. Please review both files to make sure they are correct and aligned with each other."
+  end
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### README Credential Test
+# Return false if policy's README has documentation for all of the credentials in the policy itself
+def policy_readme_missing_credentials?(file)
+  fail_message = ""
+
+  # Derive path to CHANGELOG file from file name/path
+  file_parts = file.split('/')
+  file_parts.pop
+  readme_file = file_parts.join('/') + "/README.md"
+
+  # Store contents of files for direct analysis
+  policy_code = File.read(file)
+  readme_text = File.read(readme_file)
+
+  # Find out which providers have credentials in the policy
+  pol_flexera_credential = false
+  pol_aws_credential = false
+  pol_azure_credential = false
+  pol_google_credential = false
+  pol_oracle_credential = false
+
+  policy_code.each_line.with_index do |line, index|
+    line_number = index + 1
+
+    if line.start_with?("credentials ")
+      pol_flexera_credential = true if line.include?("flexera")
+      pol_aws_credential = true if line.include?("aws")
+      pol_aws_credential = true if line.include?("amazon")
+      pol_azure_credential = true if line.include?("azure")
+      pol_google_credential = true if line.include?("google")
+      pol_google_credential = true if line.include?("gcp")
+      pol_google_credential = true if line.include?("gce")
+      pol_oracle_credential = true if line.include?("oracle")
+      pol_oracle_credential = true if line.include?("oci")
+    end
+  end
+
+  # Find out which providers have credentials in the README
+  readme_flexera_credential = false
+  readme_aws_credential = false
+  readme_azure_credential = false
+  readme_google_credential = false
+  readme_oracle_credential = false
+
+  flexera_regex = /(?i)(?=.*flexera)(?=.*credential)(?=.*provider=flexera).*/
+  aws_regex = /(?i)(?=.*aws)(?=.*credential)(?=.*provider=aws).*/
+  azure_regex = /(?i)(?=.*azure)(?=.*credential)(?=.*provider=azure_rm).*/
+  google_regex = /(?i)(?=.*google)(?=.*credential)(?=.*provider=gce).*/
+  oracle_regex = /(?i)(?=.*oracle)(?=.*credential)(?=.*provider=oracle).*/
+
+  readme_text.each_line.with_index do |line, index|
+    line_number = index + 1
+
+    readme_flexera_credential = true if line.strip.match?(flexera_regex)
+    readme_aws_credential = true if line.strip.match?(aws_regex)
+    readme_azure_credential = true if line.strip.match?(azure_regex)
+    readme_google_credential = true if line.strip.match?(google_regex)
+    readme_oracle_credential = true if line.strip.match?(oracle_regex)
+  end
+
+  # Check for mismatches between policy and README.md
+  if pol_flexera_credential && !readme_flexera_credential
+    fail_message += "Policy contains Flexera credential but this credential either missing from or incorrectly formatted in the associated `README.md` file.\n\n"
+  end
+
+  if pol_aws_credential && !readme_aws_credential
+    fail_message += "Policy contains AWS credential but this credential either missing from or incorrectly formatted in the associated `README.md` file.\n\n"
+  end
+
+  if pol_azure_credential && !readme_azure_credential
+    fail_message += "Policy contains Azure credential but this credential either missing from or incorrectly formatted in the associated `README.md` file.\n\n"
+  end
+
+  if pol_google_credential && !readme_google_credential
+    fail_message += "Policy contains Google credential but this credential either missing from or incorrectly formatted in the associated `README.md` file.\n\n"
+  end
+
+  if pol_oracle_credential && !readme_oracle_credential
+    fail_message += "Policy contains Oracle credential but this credential either missing from or incorrectly formatted in the associated `README.md` file.\n\n"
+  end
+
+  if !pol_flexera_credential && readme_flexera_credential
+    fail_message += "Policy's `README.md` file contains documentation for a Flexera credential that does not exist or is incorrectly named in the policy.\n\n"
+  end
+
+  if !pol_aws_credential && readme_aws_credential
+    fail_message += "Policy's `README.md` file contains documentation for an AWS credential that does not exist or is incorrectly named in the policy.\n\n"
+  end
+
+  if !pol_azure_credential && readme_azure_credential
+    fail_message += "Policy's `README.md` file contains documentation for an Azure credential that does not exist or is incorrectly named in the policy.\n\n"
+  end
+
+  if !pol_google_credential && readme_google_credential
+    fail_message += "Policy's `README.md` file contains documentation for a Google credential that does not exist or is incorrectly named in the policy.\n\n"
+  end
+
+  if !pol_oracle_credential && readme_oracle_credential
+    fail_message += "Policy's `README.md` file contains documentation for an Oracle credential that does not exist or is incorrectly named in the policy.\n\n"
+  end
+
+  fail_message = "**#{file}**\nPolicy Template's credentials and `README.md` documentation do not match:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
 ### Section order test
 # Return false if policy sections are in the correct order.
 def policy_sections_out_of_order?(file)
@@ -365,6 +509,44 @@ def policy_sections_out_of_order?(file)
   end
 
   fail_message = "**#{file}**\nPolicy Template does not have code blocks in the correct order.\nCode blocks should be in the following order: Metadata, Parameters, Credentials, Pagination, Datasources & Scripts, Policy, Escalations, Cloud Workflow, Meta Policy\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### Orphaned block test
+# Return false if code blocks of the specified block_name are all referenced elsewhere in the policy
+def policy_orphaned_blocks?(file, block_name)
+  # Store failure message
+  fail_message = ""
+
+  # Store contents of file for direct analysis
+  policy_code = File.read(file)
+
+  # Get a full list of names for all of the blocks of the specified type
+  block_list = []
+
+  policy_code.each_line.with_index do |line, index|
+    if line.start_with?(block_name + " ")
+      block_list << line.split('"')[1] if block_name != "define"
+      block_list << line.split("(")[0].split(" ")[1] if block_name == "define"
+    end
+  end
+
+  block_list.each do |block|
+    reference_found = false
+
+    policy_code.each_line.with_index do |line, index|
+      if !line.start_with?(block_name + " ") && line.include?(block)
+        reference_found = true
+        break
+      end
+    end
+
+    fail_message += "#{block}\n" if !reference_found
+  end
+
+  fail_message = "**#{file}**\nOrphaned `#{block_name}` code blocks found. Blocks that are not used anywhere in the policy should be removed:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
@@ -866,6 +1048,129 @@ def policy_missing_recommendation_fields?(file, field_type)
   end
 
   fail_message = "**#{file}**\nRecommendation policy has export that is missing #{field_type} fields. These fields are scraped by the Flexera platform for dashboards:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+
+### Improper Comma Spacing Test
+# Return false if all comma separated items have a space between them like so: one, two, three
+def policy_bad_comma_spacing?(file)
+  # Store contents of file for direct analysis
+  policy_code = File.read(file)
+
+  fail_message = ""
+
+  policy_code.each_line.with_index do |line, index|
+    line_number = index + 1
+
+    if line.include?(",") && !line.include?("allowed_pattern") && !line.include?('= ","')
+      if line.strip.match(/,\s{2,}/) || line.strip.match(/\s,/) || line.strip.match(/,[^\s]/)
+        fail_message += "Line #{line_number.to_s}: Possible invalid spacing between comma-separated items found.\nComma separated items should be organized as follows, with a single space following each comma: apple, banana, pear\n\n"
+      end
+    end
+  end
+
+  fail_message = "**#{file}**\nIssues with comma-separation found:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### Github Source File Test
+# Return false if all datasources pointed to assets at raw.githubusercontent.com are valid
+def policy_bad_github_datasources?(file)
+  # Store contents of file for direct analysis
+  policy_code = File.read(file)
+
+  fail_message = ""
+
+  within_datasource = false
+  github_host = false
+  datasource_line = nil
+
+  policy_code.each_line.with_index do |line, index|
+    line_number = index + 1
+
+    if line.start_with?("datasource ")
+      within_datasource = true
+      datasource_line = line_number
+    end
+
+    if within_datasource && line.start_with?("end")
+      within_datasource = false
+      github_host = false
+    end
+
+    if within_datasource
+      github_host = true if line.strip.start_with?('host "raw.githubusercontent.com"')
+
+      if github_host && line.strip.start_with?("path ")
+        if line.include?("/policy_templates/")
+          if !line.include?("/flexera-public/policy_templates/master/")
+            fail_message += "Line #{datasource_line.to_s}: Datasource has outdated or incorrect Github path. Please update `path` field to point to `/flexera-public/policy_templates/master/`.\n\n"
+          else
+            file_path = line.split("/master/")[1].split('"')[0]
+
+            if !File.exist?(file_path)
+              fail_message += "Line #{datasource_line.to_s}: Datasource has invalid link to Github asset. The file `#{file_path}` does not appear to exist. Please make sure the `path` field points to a valid file.\n\n"
+            end
+          end
+        end
+      end
+    end
+  end
+
+  fail_message = "**#{file}**\nInvalid file paths found in datasources:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### Insecure HTTP Test
+# Return false if all datasources use HTTPS instead of HTTP
+def policy_http_connections?(file)
+  # Store contents of file for direct analysis
+  policy_code = File.read(file)
+
+  fail_message = ""
+
+  within_datasource = false
+  within_script = false
+  within_cwf = false
+
+  policy_code.each_line.with_index do |line, index|
+    line_number = index + 1
+
+    within_datasource = true if line.start_with?("datasource ")
+    within_script = true if line.start_with?("script ")
+    within_cwf = true if line.start_with?("define ")
+
+    within_datasource = false if within_datasource && line.strip == "end"
+    within_script = false if within_script && (line.strip == "EOS" || line.strip == "EOF")
+    within_cwf = false if within_cwf && line.strip == "end"
+
+    if within_datasource
+      if line.strip.start_with?("scheme ") && line.strip.split('"')[1] == "http"
+        fail_message += "Line #{line_number.to_s}: Datasource `scheme` field is configured to use insecure `http` connection instead of `https`. Please consider using `https` instead.\n\n"
+      end
+    end
+
+    if within_script
+      if line.include?("scheme") && line.include?(":") && line.include?("http") && !line.include?("https")
+        fail_message += "Line #{line_number.to_s}: Script found where `scheme` field may be configured to use insecure `http` connection instead of `https`. Please consider using `https` instead.\n\n"
+      end
+    end
+
+    if within_cwf
+      if line.include?("https") && line.include?(":") && line.include?("false") && !line.include?("true")
+        fail_message += "Line #{line_number.to_s}: Cloud Workflow found where `https` field may be set to `false`. Please consider using `https` instead.\n\n"
+      end
+    end
+  end
+
+  fail_message = "**#{file}**\nInsecure `http` connections found:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false

@@ -15,7 +15,7 @@ task :generate_policy_list do
   # Preparation for getting information from Github repository
   repo_name = "flexera-public/policy_templates"
   branch = "master"
-  github_api_token = `echo $GITHUB_API_TOKEN`.strip
+  github_api_token = ENV["GITHUB_API_TOKEN"]
   github_client = Octokit::Client.new(access_token: github_api_token)
 
   FileUtils.mkdir_p 'dist'
