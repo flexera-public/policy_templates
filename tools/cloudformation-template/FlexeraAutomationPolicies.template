@@ -25,6 +25,7 @@ Metadata:
           #### For each policy template append:
           # - paramPerms<PolicyTemplateNameNoSpaces>
           - paramPermsAWSUnusedVolumes
+          - paramPermsAWSRightsizeEBSVolumes
           - paramPermsAWSRightsizeRDSInstances
           - paramPermsAWSUnusedIPAddresses
           - paramPermsAWSUnusedCLBs
@@ -57,6 +58,8 @@ Metadata:
       #   default: "Permissions for Policy Template: <Policy Template Name>"
       paramPermsAWSUnusedVolumes:
         default: "Permissions for Policy Template: AWS Unused Volumes"
+      paramPermsAWSRightsizeEBSVolumes:
+        default: "Permissions for Policy Template: AWS Rightsize EBS Volumes"
       paramPermsAWSRightsizeRDSInstances:
         default: "Permissions for Policy Template: AWS Rightsize RDS Instances"
       paramPermsAWSUnusedIPAddresses:
@@ -131,6 +134,14 @@ Parameters:
   #     - Read and Take Action
   paramPermsAWSUnusedVolumes:
     Description: 'What permissions should policies using "AWS Unused Volumes" Policy Template be granted on the IAM Role that will be created?'
+    Type: String
+    Default: Read Only
+    AllowedValues:
+      - No Access
+      - Read Only
+      - Read and Take Action
+  paramPermsAWSRightsizeEBSVolumes:
+    Description: 'What permissions should policies using "AWS Rightsize EBS Volumes" Policy Template be granted on the IAM Role that will be created?'
     Type: String
     Default: Read Only
     AllowedValues:
@@ -266,6 +277,13 @@ Conditions:
   CreatePolicyAWSUnusedVolumesAction: !Equals
     - !Ref paramPermsAWSUnusedVolumes
     - Read and Take Action
+  CreatePolicyAWSRightsizeEBSVolumesRead: !Not
+    - !Equals
+      - !Ref paramPermsAWSRightsizeEBSVolumes
+      - No Access
+  CreatePolicyAWSRightsizeEBSVolumesAction: !Equals
+    - !Ref paramPermsAWSRightsizeEBSVolumes
+    - Read and Take Action
   CreatePolicyAWSRightsizeRDSInstancesRead: !Not
     - !Equals
       - !Ref paramPermsAWSRightsizeRDSInstances
@@ -388,7 +406,7 @@ Mappings:
     #   action:
     #     - "<IAM Permission>"
     AWSUnusedVolumes:
-        read:
+      read:
         - "ec2:DescribeRegions"
         - "ec2:DescribeVolumes"
         - "ec2:DescribeSnapshots"
@@ -399,6 +417,13 @@ Mappings:
         - "ec2:CreateSnapshot"
         - "ec2:DetachVolume"
         - "ec2:DeleteVolume"
+    AWSRightsizeEBSVolumes:
+      read:
+        - "ec2:DescribeRegions"
+        - "ec2:DescribeVolumes"
+        - "pricing:GetProducts"
+      action:
+        - "ec2:ModifyVolume"
     AWSRightsizeRDSInstances:
       read:
         - "sts:GetCallerIdentity"
@@ -422,13 +447,13 @@ Mappings:
         - "ec2:ReleaseAddress"
     AWSUnusedCLBs:
       read:
-        - `sts:GetCallerIdentity`
-        - `ec2:DescribeRegions`
-        - `elasticloadbalancing:DescribeLoadBalancers`
-        - `elasticloadbalancing:DescribeInstanceHealth`
-        - `elasticloadbalancing:DescribeTags`
+        - "sts:GetCallerIdentity"
+        - "ec2:DescribeRegions"
+        - "elasticloadbalancing:DescribeLoadBalancers"
+        - "elasticloadbalancing:DescribeInstanceHealth"
+        - "elasticloadbalancing:DescribeTags"
       action:
-        - `elasticloadbalancing:DeleteLoadBalancer`
+        - "elasticloadbalancing:DeleteLoadBalancer"
     AWSOldSnapshots:
       read:
         - "ec2:DescribeRegions"
@@ -629,6 +654,45 @@ Resources:
             Action: !FindInMap
               - PermissionMap
               - AWSUnusedVolumes
+              - action
+            Resource: "*"
+  ## AWS Rightsize EBS Volumes Permission Policies
+  iamPolicyAWSRightsizeEBSVolumesRead:
+    Type: "AWS::IAM::Policy"
+    Condition: CreatePolicyAWSRightsizeEBSVolumesRead
+    Properties:
+      PolicyName: !Join
+        - "_"
+        - - !Ref paramRoleName
+          - AWSRightsizeEBSVolumesReadPermissionPolicy
+      Roles:
+        - !Ref iamRole
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: !FindInMap
+              - PermissionMap
+              - AWSRightsizeEBSVolumes
+              - read
+            Resource: "*"
+  iamPolicyAWSRightsizeEBSVolumesAction:
+    Type: "AWS::IAM::Policy"
+    Condition: CreatePolicyAWSRightsizeEBSVolumesAction
+    Properties:
+      PolicyName: !Join
+        - "_"
+        - - !Ref paramRoleName
+          - AWSRightsizeEBSVolumesActionPermissionPolicy
+      Roles:
+        - !Ref iamRole
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: !FindInMap
+              - PermissionMap
+              - AWSRightsizeEBSVolumes
               - action
             Resource: "*"
   ## AWS Rightsize RDS Instances Permission Policies
