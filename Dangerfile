@@ -255,6 +255,15 @@ changed_pt_files.each do |file|
   # Raise error if policy sections are out of order
   test = policy_sections_out_of_order?(file); fail test if test
 
+  # Raise error of code blocks exist in policy that aren't used anywhere
+  test = policy_orphaned_blocks?(file, "parameter"); fail test if test
+  test = policy_orphaned_blocks?(file, "credentials"); fail test if test
+  test = policy_orphaned_blocks?(file, "pagination"); fail test if test
+  test = policy_orphaned_blocks?(file, "datasource"); fail test if test
+  test = policy_orphaned_blocks?(file, "script"); fail test if test
+  test = policy_orphaned_blocks?(file, "escalation"); fail test if test
+  test = policy_orphaned_blocks?(file, "define"); fail test if test
+
   # Raise error if policy blocks are not grouped together by type
   test = policy_blocks_ungrouped?(file); fail test if test
 

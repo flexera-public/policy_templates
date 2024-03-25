@@ -514,6 +514,44 @@ def policy_sections_out_of_order?(file)
   return false
 end
 
+### Orphaned block test
+# Return false if code blocks of the specified block_name are all referenced elsewhere in the policy
+def policy_orphaned_blocks?(file, block_name)
+  # Store failure message
+  fail_message = ""
+
+  # Store contents of file for direct analysis
+  policy_code = File.read(file)
+
+  # Get a full list of names for all of the blocks of the specified type
+  normalized_block_name = block_name if block_name != "define"
+  normalized_block_name = "run" if block_name == "define"
+
+  block_list = []
+
+  policy_code.each_line.with_index do |line, index|
+    block_list << line.strip.split('"')[1] if line.strip.start_with?(normalized_block_name + " ")
+  end
+
+  block_list.each do |block|
+    reference_found = false
+
+    policy_code.each_line.with_index do |line, index|
+      if !line.strip.start_with?(normalized_block_name + " ") && line.include?(block)
+        reference_found = true
+        break
+      end
+    end
+
+    fail_message += "#{block}\n" if !reference_found
+  end
+
+  fail_message = "**#{file}**\nOrphaned #{block_name} code blocks found. Blocks that are not used anywhere in the policy should be removed:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
 ### Block grouping test
 # Return false if code blocks are all grouped together by type.
 def policy_blocks_ungrouped?(file)
