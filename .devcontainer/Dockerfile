@@ -1,4 +1,6 @@
 FROM mcr.microsoft.com/devcontainers/base:ubuntu
+# Ensure we use bash as our shell. Necessary for future commands.
+SHELL ["/bin/bash", "-c"]
 # Do general apt update/upgrade
 RUN apt-get update && apt-get upgrade -y
 # Install misc. packages
