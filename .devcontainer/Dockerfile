@@ -27,4 +27,3 @@ RUN mv fpt/fpt /usr/local/bin/fpt
 RUN rm fpt-linux-amd64.tgz
 RUN rmdir fpt
 RUN /usr/local/bin/fpt update apply
-
