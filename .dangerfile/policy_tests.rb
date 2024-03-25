@@ -546,7 +546,7 @@ def policy_orphaned_blocks?(file, block_name)
     fail_message += "#{block}\n" if !reference_found
   end
 
-  fail_message = "**#{file}**\nOrphaned #{block_name} code blocks found. Blocks that are not used anywhere in the policy should be removed:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "**#{file}**\nOrphaned `#{block_name}` code blocks found. Blocks that are not used anywhere in the policy should be removed:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
