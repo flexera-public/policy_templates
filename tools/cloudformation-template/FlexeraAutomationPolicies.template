@@ -27,6 +27,7 @@ Metadata:
           - paramPermsAWSUnusedVolumes
           - paramPermsAWSRightsizeRDSInstances
           - paramPermsAWSUnusedIPAddresses
+          - paramPermsAWSUnusedCLBs
           - paramPermsAWSOldSnapshots
           - paramPermsAWSRightsizeEC2Instances
           - paramPermsAWSSupersededEC2Instances
@@ -60,6 +61,8 @@ Metadata:
         default: "Permissions for Policy Template: AWS Rightsize RDS Instances"
       paramPermsAWSUnusedIPAddresses:
         default: "Permissions for Policy Template: AWS Unused IP Addresses"
+      paramPermsAWSUnusedCLBs:
+        default: "Permissions for Policy Template: AWS Unused Classic Load Balancers"
       paramPermsAWSOldSnapshots:
         default: "Permissions for Policy Template: AWS Old Snapshots"
       paramPermsAWSRightsizeEC2Instances:
@@ -144,6 +147,14 @@ Parameters:
       - Read and Take Action
   paramPermsAWSUnusedIPAddresses:
     Description: 'What permissions should policies using "AWS Unused IP Addresses" Policy Template be granted on the IAM Role that will be created?'
+    Type: String
+    Default: Read Only
+    AllowedValues:
+      - No Access
+      - Read Only
+      - Read and Take Action
+  paramPermsAWSUnusedCLBs:
+    Description: 'What permissions should policies using "AWS Unused Classic Load Balancers" Policy Template be granted on the IAM Role that will be created?'
     Type: String
     Default: Read Only
     AllowedValues:
@@ -268,6 +279,13 @@ Conditions:
       - No Access
   CreatePolicyAWSUnusedIPAddressesAction: !Equals
     - !Ref paramPermsAWSUnusedIPAddresses
+    - Read and Take Action
+  CreatePolicyAWSUnusedCLBsRead: !Not
+  - !Equals
+    - !Ref paramPermsAWSUnusedCLBs
+    - No Access
+  CreatePolicyAWSUnusedCLBsAction: !Equals
+    - !Ref paramPermsAWSUnusedCLBs
     - Read and Take Action
   CreatePolicyAWSOldSnapshotsRead: !Not
     - !Equals
@@ -402,6 +420,15 @@ Mappings:
         - "cloudtrail:LookupEvents"
       action:
         - "ec2:ReleaseAddress"
+    AWSUnusedCLBs:
+      read:
+        - `sts:GetCallerIdentity`
+        - `ec2:DescribeRegions`
+        - `elasticloadbalancing:DescribeLoadBalancers`
+        - `elasticloadbalancing:DescribeInstanceHealth`
+        - `elasticloadbalancing:DescribeTags`
+      action:
+        - `elasticloadbalancing:DeleteLoadBalancer`
     AWSOldSnapshots:
       read:
         - "ec2:DescribeRegions"
@@ -643,7 +670,8 @@ Resources:
               - AWSRightsizeRDSInstances
               - action
             Resource: "*"
-  iamPolicyAWSUnusedIPAddresses:
+  ## AWS Unused IP Addresses Permission Policies
+  iamPolicyAWSUnusedIPAddressesRead:
     Type: "AWS::IAM::Policy"
     Condition: CreatePolicyAWSUnusedIPAddressesRead
     Properties:
@@ -662,7 +690,6 @@ Resources:
               - AWSUnusedIPAddresses
               - read
             Resource: "*"
-  ## AWS Unused IP Addresses Permission Policies
   iamPolicyAWSUnusedIPAddressesAction:
     Type: "AWS::IAM::Policy"
     Condition: CreatePolicyAWSUnusedIPAddressesAction
@@ -680,6 +707,45 @@ Resources:
             Action: !FindInMap
               - PermissionMap
               - AWSUnusedIPAddresses
+              - action
+            Resource: "*"
+  ## AWS Unused Classic Load Balancers Policies
+  iamPolicyAWSUnusedCLBsRead:
+    Type: "AWS::IAM::Policy"
+    Condition: CreatePolicyAWSUnusedCLBsRead
+    Properties:
+      PolicyName: !Join
+        - "_"
+        - - !Ref paramRoleName
+          - AWSUnusedCLBsReadPermissionPolicy
+      Roles:
+        - !Ref iamRole
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: !FindInMap
+              - PermissionMap
+              - AWSUnusedCLBs
+              - read
+            Resource: "*"
+  iamPolicyAWSUnusedCLBsAction:
+    Type: "AWS::IAM::Policy"
+    Condition: CreatePolicyAWSUnusedCLBsAction
+    Properties:
+      PolicyName: !Join
+        - "_"
+        - - !Ref paramRoleName
+          - AWSUnusedCLBsActionPermissionPolicy
+      Roles:
+        - !Ref iamRole
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: !FindInMap
+              - PermissionMap
+              - AWSUnusedCLBs
               - action
             Resource: "*"
   ## AWS Old Snapshots Permission Policies
