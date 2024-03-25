@@ -524,13 +524,10 @@ def policy_orphaned_blocks?(file, block_name)
   policy_code = File.read(file)
 
   # Get a full list of names for all of the blocks of the specified type
-  normalized_block_name = block_name
-  normalized_block_name = "  run" if block_name == "define"
-
   block_list = []
 
   policy_code.each_line.with_index do |line, index|
-    if line.start_with?(normalized_block_name + " ")
+    if line.start_with?(block_name + " ")
       block_list << line.split('"')[1] if line.split('"')[1] && !line.split('"')[1].empty?
     end
   end
@@ -539,7 +536,7 @@ def policy_orphaned_blocks?(file, block_name)
     reference_found = false
 
     policy_code.each_line.with_index do |line, index|
-      if !line.start_with?(normalized_block_name + " ") && line.include?(block)
+      if !line.start_with?(block_name + " ") && line.include?(block)
         reference_found = true
         break
       end
