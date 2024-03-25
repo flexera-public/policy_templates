@@ -528,7 +528,8 @@ def policy_orphaned_blocks?(file, block_name)
 
   policy_code.each_line.with_index do |line, index|
     if line.start_with?(block_name + " ")
-      block_list << line.split('"')[1] if line.split('"')[1] && !line.split('"')[1].empty?
+      block_list << line.split('"')[1] if block_name != "define"
+      block_list << line.split("(")[0].split(" ")[1] if block_name == "define"
     end
   end
 
