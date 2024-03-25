@@ -30,7 +30,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 - [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
   - `tag:GetResources`
   - `ec2:DescribeRegions`
-  - `eorganizations:ListAccounts`
+  - `organizations:ListAccounts`
   - `organizations:ListTagsForResource`
 
   Example IAM Permission Policy:
