@@ -6,7 +6,7 @@ severity "low"
 category "Operational"
 default_frequency "15 minutes"
 info(
-  version: "1.17",
+  version: "1.18.0",
   publish: "false",
   provider: "Flexera",
   service: "Policy Engine",
@@ -19,11 +19,22 @@ parameter "param_email" do
   min_length 1
 end
 
+parameter "param_template_git_org_repo_name" do
+  type "string"
+  label "Organization and Repo Name (org/repo_name_) to find the policy template files"
+  default "flexera-public/policy_templates"
+end
+
+parameter "param_github_active_list_path" do
+  type "string"
+  label "Path to the active policy list json file"
+  default "data/active_policy_list/active_policy_list.json"
+end
+
 parameter "param_branch" do
   type "string"
   label "Branch Name"
   default "master"
-  allowed_values "master", "EU_Policies"
 end
 
 parameter "param_publish" do
@@ -53,7 +64,7 @@ datasource "ds_active_policy_list" do
   request do
     verb "GET"
     host "raw.githubusercontent.com"
-    path "/flexera-public/policy_templates/master/data/active_policy_list/active_policy_list.json"
+    path join([$param_template_git_org_repo_name,"/",$param_branch,"/",$param_github_active_list_path])
     header "User-Agent", "RS Policies"
   end
   result do
@@ -86,16 +97,16 @@ datasource "ds_current_policy_template_list" do
 end
 
 datasource "ds_combined_policy_list" do
-  run_script $js_combine_policy_lists, $ds_active_policy_list, $ds_current_policy_template_list, $force_upgrade, $param_branch
+  run_script $js_combine_policy_lists, $ds_active_policy_list, $ds_current_policy_template_list, $force_upgrade, $param_branch, $param_template_git_org_repo_name
 end
 
 script "js_combine_policy_lists", type: "javascript" do
-  parameters "active_policy_list", "current_policy_list", "force_upgrade", "param_branch"
+  parameters "active_policy_list", "current_policy_list", "force_upgrade", "param_branch", "param_template_git_org_repo_name"
   result "policy_list"
   code <<-EOS
   var policy_list = [];
   var old_policy_list = {};
-  var github_raw_url = 'https://raw.githubusercontent.com/flexera-public/policy_templates/' + param_branch + '/';
+  var github_raw_url = 'https://raw.githubusercontent.com/'+param_template_git_org_repo_name+'/' + param_branch + '/';
 
   // create a map of published templates
   for (var index = 0; index < current_policy_list.length; index++) {
@@ -170,19 +181,19 @@ EOS
 end
 
 escalation "upload_new_policy_templates" do
-  run "upload_template", data, rs_project_id, rs_governance_host, $param_publish, rs_org_id, $param_branch
+  run "upload_template", data, rs_project_id, rs_governance_host, $param_publish, rs_org_id, $param_branch, $param_template_git_org_repo_name
 end
 
 escalation "report_policy_templates_update" do
   email $param_email
 end
 
-define upload_template($data, $project_id, $param_governance_host, $param_publish, $rs_org_id, $param_branch) return $url_array, $response_array do
+define upload_template($data, $project_id, $param_governance_host, $param_publish, $rs_org_id, $param_branch, $param_template_git_org_repo_name) return $url_array, $response_array do
   $url_array = []
   $response_array = []
   foreach $item in $data do
     sub on_error: skip do
-      $url = join(["https://raw.githubusercontent.com/flexera-public/policy_templates/", $param_branch, "/",  to_s($item["file_name"])])
+      $url = join(["https://raw.githubusercontent.com/",$param_template_git_org_repo_name,"/", $param_branch, "/",  to_s($item["file_name"])])
       $url_array << $url
 
       $policy_request = http_get(

@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## v1.18.0
+
+- Added parameters for the Policy Template Github Repo to enable this to be used for other repos without modifying Policy Template
+
 ## v1.17
 
 - Changed the source of active policy list from S3 to GitHub
