@@ -24,6 +24,7 @@ RUN curl -sL https://aka.ms/InstallAzureCLIDeb | bash
 RUN wget https://binaries.rightscale.com/rsbin/fpt/v1.5.0/fpt-linux-amd64.tgz
 RUN tar xvzf fpt-linux-amd64.tgz
 RUN mv fpt/fpt /usr/local/bin/fpt
+RUN rm fpt-linux-amd64.tgz
 RUN rmdir fpt
 RUN /usr/local/bin/fpt update apply
 
