@@ -1,6 +1,6 @@
 # Changelog
 
-## v5.2
+## v5.3
 
 - Fixed issue with invalid API endpoint that caused policy to not work in Flexera APAC.
 
