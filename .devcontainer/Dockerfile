@@ -8,9 +8,7 @@ RUN wget https://raw.githubusercontent.com/flexera-public/policy_templates/maste
 RUN wget https://raw.githubusercontent.com/flexera-public/policy_templates/master/Gemfile.lock
 RUN bundle install
 # Install Python
-RUN apt-get install python3 python3-pip -y
-RUN wget https://raw.githubusercontent.com/flexera-public/policy_templates/master/.pip_requirements
-RUN pip3 install -r .pip_requirements
+RUN apt-get install python3 python3-pip pylint -y
 # Install Node
 RUN wget https://raw.githubusercontent.com/flexera-public/policy_templates/master/package.json
 RUN wget https://raw.githubusercontent.com/flexera-public/policy_templates/master/package-lock.json
@@ -26,4 +24,10 @@ RUN curl -sL https://aka.ms/InstallAzureCLIDeb | bash
 RUN curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg
 RUN echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | sudo tee -a /etc/apt/sources.list.d/google-cloud-sdk.list
 RUN sudo apt-get update && sudo apt-get install google-cloud-cli
+# Install and update fpt
+RUN wget https://binaries.rightscale.com/rsbin/fpt/v1.5.0/fpt-linux-amd64.tgz
+RUN tar xvzf fpt-linux-amd64.tgz
+RUN mv fpt/fpt /usr/local/bin/fpt
+RUN rmdir fpt
+RUN /usr/local/bin/fpt update apply
 
