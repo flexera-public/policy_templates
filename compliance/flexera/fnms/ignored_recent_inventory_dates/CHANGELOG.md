@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.4
+
+- Fixed spelling errors in short description and `Days since last inventory` parameter.
+
 ## v2.3
 
 - Updated description to account for new file path in Github repository
