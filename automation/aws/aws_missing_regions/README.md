@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy checks the list of AWS regions returned by an AWS `DescribeRegions` API request and tests each region to see if the Flexera AWS credential can actually run API requests against that region. An incident is raised and email sent with any regions that are inaccessible.
+This policy checks the list of AWS regions returned by an AWS `DescribeRegions` API request and tests each region with an EC2 `DescribeInstances` request to see if the Flexera AWS credential can actually run API requests against that region. An incident is raised and email sent with any regions that are inaccessible.
 
 __NOTE: Meta Parent policy will only work if both the parent and the child are uploaded to the Flexera org and the "Uploaded Template" option is selected for the `Child Policy Template Source` parameter. This is because the child policy is *not* published in the catalog.__
 
