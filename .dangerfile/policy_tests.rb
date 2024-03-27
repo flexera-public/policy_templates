@@ -173,6 +173,7 @@ def policy_bad_indentation?(file)
 
       indent_level += 2 if line.strip.end_with?(" do") || line.start_with?("info(")
 
+      # We only check EOS blocks if they are for the code field
       eos_block = true if line.include?("<<-") && line.include?("code")
       define_block = true if line.start_with?("define ") && line.strip.end_with?(" do")
 
