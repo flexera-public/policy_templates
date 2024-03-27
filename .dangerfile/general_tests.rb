@@ -105,3 +105,30 @@ def general_bad_urls?(file)
   return fail_message.strip if !fail_message.empty?
   return false
 end
+
+### Outdated Terminology test
+# Return false if no outdated terminology, such as RightScale, is found in the file
+def general_outdated_terminology?(file)
+  fail_message = ""
+
+  # Store contents of file for direct analysis
+  file_text = File.read(file)
+
+  file_text.each_line.with_index do |line, index|
+    line_number = index + 1
+    test_line = line.strip.downcase
+
+    if test_line.include?(" rs ") || test_line.include?("rightscale")
+      fail_message += "Line #{line_number.to_s}: Reference to `RightScale` found. Recommended replacements: `Flexera`, `Flexera CCO`, `Flexera Automation`\n\n"
+    end
+
+    if test_line.include?("optima")
+      fail_message += "Line #{line_number.to_s}: Reference to `Optima` found. Recommended replacements: `Flexera`, `Flexera CCO`, `Cloud Cost Optimization`\n\n"
+    end
+  end
+
+  fail_message = "**#{file}**\nOutdated terminology found. Please remove references to defunct internal names for products or services:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end

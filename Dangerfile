@@ -97,6 +97,10 @@ warn "**Important Files Modified**\nPlease make sure these modifications were in
 
 # Perform a lint check on changed Ruby files
 changed_rb_files.each do |file|
+  # Raise warning if outdated terminology found
+  test = general_outdated_terminology?(file); warn test if test
+
+  # Raise error if code errors found
   test = code_ruby_errors?(file); fail test if test
 
   # Rubocop linting currently disabled. It is *very* verbose.
@@ -109,6 +113,10 @@ end
 
 # Perform a lint check on changed Python files
 changed_py_files.each do |file|
+  # Raise warning if outdated terminology found
+  test = general_outdated_terminology?(file); warn test if test
+
+  # Raise error if code errors found
   test = code_python_errors?(file); fail test if test
 end
 
@@ -117,6 +125,9 @@ end
 ###############################################################################
 
 changed_json_files.each do |file|
+  # Raise warning if outdated terminology found
+  test = general_outdated_terminology?(file); warn test if test
+
   # Look for out of place JSON files
   test = code_json_bad_location?(file); fail test if test
 
@@ -125,6 +136,9 @@ changed_json_files.each do |file|
 end
 
 changed_yaml_files.each do |file|
+  # Raise warning if outdated terminology found
+  test = general_outdated_terminology?(file); warn test if test
+
   # Look for out of place YAML files
   test = code_yaml_bad_location?(file); fail test if test
 
@@ -140,6 +154,9 @@ end
 changed_readme_files.each do |file|
   # Run Danger spell check on file
   general_spellcheck?(file)
+
+  # Raise warning if outdated terminology found
+  test = general_outdated_terminology?(file); warn test if test
 
   # Raise error if the file contains any bad urls
   test = general_bad_urls?(file); fail test if test
@@ -163,6 +180,9 @@ end
 
 # Check CHANGELOG.md for issues for each file
 changed_changelog_files.each do |file|
+  # Raise warning if outdated terminology found
+  test = general_outdated_terminology?(file); warn test if test
+
   # Raise error if the file contains any bad urls
   test = general_bad_urls?(file); fail test if test
 
@@ -181,6 +201,9 @@ end
 changed_misc_md_files.each do |file|
   # Run Danger spell check on file
   general_spellcheck?(file)
+
+  # Raise warning if outdated terminology found
+  test = general_outdated_terminology?(file); warn test if test
 
   # Raise error if the file contains any bad urls
   test = general_bad_urls?(file); fail test if test
@@ -219,6 +242,9 @@ changed_pt_files.each do |file|
 
   # Raise warning if policy's name has changed
   test = policy_name_changed?(file); warn test if test
+
+  # Raise warning if outdated terminology found
+  test = general_outdated_terminology?(file); warn test if test
 
   # Raise error if the file contains any bad urls
   test = general_bad_urls?(file); fail test if test
