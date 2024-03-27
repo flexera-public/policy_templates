@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "8.1",
+  version: "8.2",
   provider: "AWS",
   service: "Storage",
   policy_set: "Old Snapshots",
@@ -15,7 +15,7 @@ info(
 )
 
 ###############################################################################
-# User inputs
+# Parameters
 ###############################################################################
 
 parameter "param_email" do
@@ -491,7 +491,7 @@ script "js_describe_snapshots", type: "javascript" do
 EOS
 end
 
-datasource "ds_describe_db_snapshots" do
+datasource "ds_describe_db_snapshots_unfiltered" do
   iterate $ds_regions
   request do
     auth $auth_aws
@@ -526,6 +526,31 @@ datasource "ds_describe_db_snapshots" do
       field "parentType", "DB Instance"
     end
   end
+end
+
+datasource "ds_describe_db_snapshots" do
+  run_script $js_describe_db_snapshots, $ds_describe_db_snapshots_unfiltered
+end
+
+script "js_describe_db_snapshots", type:"javascript" do
+  parameters "ds_describe_db_snapshots_unfiltered"
+  result "result"
+  code <<-EOS
+  result = []
+  sorted_by_parent = {}
+
+  _.each(ds_describe_db_snapshots_unfiltered, function(snapshot) {
+    parent = snapshot["parentId"]
+
+    if (sorted_by_parent[parent] == undefined) { sorted_by_parent[parent] = [] }
+    sorted_by_parent[parent].push(snapshot)
+  })
+
+  _.each(_.keys(sorted_by_parent), function(parent) {
+    sorted_parents = _.sortBy(sorted_by_parent[parent], "startTime").reverse()
+    result.push(sorted_parents[0])
+  })
+EOS
 end
 
 datasource "ds_describe_db_cluster_snapshots" do
