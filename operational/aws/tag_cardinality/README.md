@@ -1,12 +1,12 @@
 # AWS Tag Cardinality Report
 
-## What it does
+## What It Does
 
 This Policy Template is used to generate a tag cardinality (how many unique values each tag key has) report for AWS, along with a list of those unique values for each tag key. The report includes cardinality for all tag values for both AWS Accounts and Resources.
 
-> *NOTE: This Policy Template must be appled to the **AWS Organization Master Payer** account.*
+> *NOTE: This Policy Template must be applied to the **AWS Organization Master Payer** account.*
 
-## Functional Details
+## How It Works
 
 This policy performs the following action:
 
@@ -30,7 +30,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 - [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
   - `tag:GetResources`
   - `ec2:DescribeRegions`
-  - `eorganizations:ListAccounts`
+  - `organizations:ListAccounts`
   - `organizations:ListTagsForResource`
 
   Example IAM Permission Policy:
