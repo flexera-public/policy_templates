@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.3
+
+- Fixed issue with invalid API endpoint that caused policy to not work in Flexera APAC.
+
 ## v5.2
 
 - Updated policy to use new source for currency information. Policy functionality is unchanged.
