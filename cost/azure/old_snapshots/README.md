@@ -6,7 +6,7 @@ This Policy finds Azure snapshots older than the specified number of days and ra
 
 ## Functional Details
 
-The policy makes use of the Azure Resource Manager API to obtain a list of snapshots and their ages in order to produce a list of recommendations. Rightscale.
+The policy makes use of the Azure Resource Manager API to obtain a list of snapshots and their ages in order to produce a list of recommendations.
 
 ### Policy Savings Details
 
@@ -20,7 +20,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy. Optima.
+This policy has the following input parameters required when launching the policy.
 
 - *Email addresses* - A list of email addresses to notify
 - *Azure Endpoint* - Azure Endpoint to access resources

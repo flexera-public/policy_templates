@@ -114,16 +114,19 @@ def general_outdated_terminology?(file)
   # Store contents of file for direct analysis
   file_text = File.read(file)
 
-  file_text.each_line.with_index do |line, index|
-    line_number = index + 1
-    test_line = line.strip.downcase
+  # Exclude Dangerfile to avoid false errors due to this test and other similar tests
+  if !file.include?("Dangerfile") && !file.include?(".dangerfile")
+    file_text.each_line.with_index do |line, index|
+      line_number = index + 1
+      test_line = line.strip.downcase
 
-    if test_line.include?(" rs ") || test_line.include?("rightscale")
-      fail_message += "Line #{line_number.to_s}: Reference to `RightScale` found. Recommended replacements: `Flexera`, `Flexera CCO`, `Flexera Automation`\n\n"
-    end
+      if test_line.include?(" rs ") || test_line.include?("rightscale")
+        fail_message += "Line #{line_number.to_s}: Reference to `RightScale` found. Recommended replacements: `Flexera`, `Flexera CCO`, `Flexera Automation`\n\n"
+      end
 
-    if test_line.include?("optima")
-      fail_message += "Line #{line_number.to_s}: Reference to `Optima` found. Recommended replacements: `Flexera`, `Flexera CCO`, `Cloud Cost Optimization`\n\n"
+      if test_line.include?("optima")
+        fail_message += "Line #{line_number.to_s}: Reference to `Optima` found. Recommended replacements: `Flexera`, `Flexera CCO`, `Cloud Cost Optimization`\n\n"
+      end
     end
   end
 
