@@ -1,4 +1,4 @@
-# AWS Usage Report - Number of Instance Hours Used
+# Azure Usage Report - Number of Instance Hours Used
 
 ## What It does
 
