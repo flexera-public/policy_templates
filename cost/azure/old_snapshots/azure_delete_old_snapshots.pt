@@ -590,108 +590,108 @@ script "js_azure_snapshots_incident", type:"javascript" do
   parameters "ds_azure_old_snapshots", "ds_azure_snapshots_region_filtered", "ds_azure_snapshot_costs_grouped", "ds_applied_policy", "ds_currency", "param_min_savings", "param_snapshot_age"
   result "result"
   code <<-'EOS'
-// Function for formatting currency numbers later
-function formatNumber(number, separator) {
-  var numString = number.toString()
-  var values = numString.split(".")
-  var formatted_number = ''
+  // Function for formatting currency numbers later
+  function formatNumber(number, separator) {
+    var numString = number.toString()
+    var values = numString.split(".")
+    var formatted_number = ''
 
-  while (values[0].length > 3) {
-    var chunk = values[0].substr(-3)
-    values[0] = values[0].substr(0, values[0].length - 3)
-    formatted_number = separator + chunk + formatted_number
+    while (values[0].length > 3) {
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      formatted_number = separator + chunk + formatted_number
+    }
+
+    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
+
+    if (values[1] == undefined) { return formatted_number }
+
+    return formatted_number + "." + values[1]
   }
 
-  if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
+  result = []
 
-  if (values[1] == undefined) { return formatted_number }
+  total_savings = 0.0
 
-  return formatted_number + "." + values[1]
-}
+  _.each(ds_azure_old_snapshots, function(snapshot) {
+    savings = ds_azure_snapshot_costs_grouped[snapshot['resourceID'].toLowerCase()]
 
-result = []
+    if (savings == null || savings == undefined) {
+      savings = 0.0
+    }
 
-total_savings = 0.0
+    if (savings >= param_min_savings) {
+      total_savings += savings
 
-_.each(ds_azure_old_snapshots, function(snapshot) {
-  savings = ds_azure_snapshot_costs_grouped[snapshot['resourceID'].toLowerCase()]
+      recommendationDetails = [
+        "Delete Azure snapshot ", snapshot["resourceName"], " ",
+        "in Azure Subscription ", snapshot["subscriptionName"],
+        " (", snapshot["subscriptionID"], ")"
+      ].join('')
 
-  if (savings == null || savings == undefined) {
-    savings = 0.0
-  }
+      result.push({
+        accountID: snapshot["subscriptionID"],
+        accountName: snapshot["subscriptionName"],
+        resourceID: snapshot['resourceID'],
+        resourceName: snapshot['resourceName'],
+        resourceGroup: snapshot['resourceGroup'],
+        resourceType: snapshot['resourceType'],
+        region: snapshot['region'],
+        age: snapshot['age'],
+        tags: snapshot['tags'],
+        service: snapshot['service'],
+        size: snapshot['size'],
+        savings: parseFloat(savings.toFixed(3)),
+        savingsCurrency: ds_currency['symbol'],
+        recommendationDetails: recommendationDetails,
+        lookbackPeriod: param_snapshot_age,
+        // These are to avoid errors when we hash_exclude these fields
+        total_savings: '',
+        message: '',
+        policy_name: ''
+      })
+    }
+  })
 
-  if (savings >= param_min_savings) {
-    total_savings += savings
+  // Message for incident output
+  total_snapshots = ds_azure_snapshots_region_filtered.length.toString()
+  total_old_snapshots = result.length.toString()
+  old_snapshots_percentage = (total_old_snapshots / total_snapshots * 100).toFixed(2).toString() + '%'
 
-    recommendationDetails = [
-      "Delete Azure snapshot ", snapshot["resourceName"], " ",
-      "in Azure Subscription ", snapshot["subscriptionName"],
-      " (", snapshot["subscriptionID"], ")"
-    ].join('')
+  days_noun = "days"
+  if (param_snapshot_age == 1) { days_noun = "day" }
 
-    result.push({
-      accountID: snapshot["subscriptionID"],
-      accountName: snapshot["subscriptionName"],
-      resourceID: snapshot['resourceID'],
-      resourceName: snapshot['resourceName'],
-      resourceGroup: snapshot['resourceGroup'],
-      resourceType: snapshot['resourceType'],
-      region: snapshot['region'],
-      age: snapshot['age'],
-      tags: snapshot['tags'],
-      service: snapshot['service'],
-      size: snapshot['size'],
-      savings: parseFloat(savings.toFixed(3)),
-      savingsCurrency: ds_currency['symbol'],
-      recommendationDetails: recommendationDetails,
-      lookbackPeriod: param_snapshot_age,
-      // These are to avoid errors when we hash_exclude these fields
-      total_savings: '',
-      message: '',
-      policy_name: ''
-    })
-  }
-})
+  findings = [
+    "Out of ", total_snapshots, " snapshots analyzed, ",
+    total_old_snapshots, " (", old_snapshots_percentage,
+    ") are older than ", param_snapshot_age, " ", days_noun, " ",
+    "and are recommended for deletion.\n\n"
+  ].join('')
 
-// Message for incident output
-total_snapshots = ds_azure_snapshots_region_filtered.length.toString()
-total_old_snapshots = result.length.toString()
-old_snapshots_percentage = (total_old_snapshots / total_snapshots * 100).toFixed(2).toString() + '%'
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
 
-days_noun = "days"
-if (param_snapshot_age == 1) { days_noun = "day" }
+  savings_message = [
+    ds_currency['symbol'], ' ',
+    formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['separator'])
+  ].join('')
 
-findings = [
-  "Out of ", total_snapshots, " snapshots analyzed, ",
-  total_old_snapshots, " (", old_snapshots_percentage,
-  ") are older than ", param_snapshot_age, " ", days_noun, " ",
-  "and are recommended for deletion.\n\n"
-].join('')
+  // Sort by descending order of savings value
+  result = _.sortBy(result, function(item) { return item['savings'] * -1 })
 
-disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
+  // Dummy item to ensure that the check statement in the policy executes at least once
+  result.push({
+    resourceID: "",
+    total_savings: "",
+    message: "",
+    tags: "",
+    age: "",
+    savings: "",
+    savingsCurrency: ""
+  })
 
-savings_message = [
-  ds_currency['symbol'], ' ',
-  formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['separator'])
-].join('')
-
-// Sort by descending order of savings value
-result = _.sortBy(result, function(item) { return item['savings'] * -1 })
-
-// Dummy item to ensure that the check statement in the policy executes at least once
-result.push({
-  resourceID: "",
-  total_savings: "",
-  message: "",
-  tags: "",
-  age: "",
-  savings: "",
-  savingsCurrency: ""
-})
-
-result[0]['total_savings'] = savings_message
-result[0]['message'] = findings + disclaimer
-result[0]['policy_name'] = ds_applied_policy['name']
+  result[0]['total_savings'] = savings_message
+  result[0]['message'] = findings + disclaimer
+  result[0]['policy_name'] = ds_applied_policy['name']
 EOS
 end
 
