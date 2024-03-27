@@ -1,6 +1,6 @@
 # Azure Usage Report - Number of Instance Hours Used
 
-## What It does
+## What It Does
 
 This Policy Template leverages Optima to produce a stacked bar chart showing Total Instance Hours for Azure Virtual Machine Families used per month for the last 12 months.
 This policy allows the user to specify a *Region* to filter results by, and will email the user specified in *Email addresses to notify*.
