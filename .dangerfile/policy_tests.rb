@@ -173,7 +173,7 @@ def policy_bad_indentation?(file)
 
       indent_level += 2 if line.strip.end_with?(" do") || line.start_with?("info(")
 
-      eos_block = true if line.include?("<<-")
+      eos_block = true if line.include?("<<-") && line.include?("code")
       define_block = true if line.start_with?("define ") && line.strip.end_with?(" do")
 
     # If we're within one of these blocks, at least make sure we're 2 spaces indented
