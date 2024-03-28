@@ -80,7 +80,7 @@ File.open('HISTORY.md', 'w') do |file|
       next if line.include?("### Description")
       next if description.empty? && line.strip.empty?
 
-      formatted_line = "> #{line.strip}".strip
+      formatted_line = "> #{line}".strip
       description += "#{formatted_line}\n"
     end
 
