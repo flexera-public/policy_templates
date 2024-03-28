@@ -35,28 +35,31 @@ end
 # Construct final object
 merged_prs = { "merged_prs": pr_list }
 
-# Write the output JSON file to disk
+# Write the output JSON file
 File.open('data/change_history/change_history.json', 'w') {
   |file| file.write(JSON.pretty_generate(merged_prs) + "\n")
 }
 
-# Generate the README.md from the same information
+# Generate the HISTORY.md from the same data
 File.open('HISTORY.md', 'w') do |file|
   file.puts "# #{repo_name} Change History\n"
   file.puts "## Description\n"
-  file.puts "This document contains a full change history of this repository. Changes are sorted by date, with the most recent changes listed first. This functions as a universal changelog file for the entire repository.\n"
+  file.puts "This document contains a full pull request merge history of the #{repo_name} repository. Changes are sorted by the date the pull request was merged into the `master` branch, with the most recent changes listed first. This functions as a universal Changelog file for the entire repository. A [JSON version](https://github.com/flexera-public/policy_templates/blob/master/data/change_history/change_history.json) is also available.\n"
   file.puts "## History\n"
 
   pr_list.each do |pr|
     file.puts "### PR [##{pr[:number]}](#{pr[:pr_link]}): #{pr[:title]}\n"
-    file.puts "- **Description**: #{pr[:description]}"
+
+    file.puts "- **Description**:"
+    pr[:description].each_line { |line| file.puts "> #{line}" }
+
     file.puts "- **Labels**: #{pr[:labels].join(', ')}"
     file.puts "- **Created At**: #{pr[:created_at]}"
     file.puts "- **Merged At**: #{pr[:merged_at]}"
     file.puts "- **Modified Files**:"
 
     pr[:modified_files].each do |file_name|
-      file.puts "  - `#{file_name}`"
+      file.puts "  - [#{file_name}](https://github.com/flexera-public/policy_templates/blob/master/#{file_name})"
     end
 
     file.puts ""
