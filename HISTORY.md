@@ -10,7 +10,6 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This adds a new unpublished policy to test for AWS regions that are returned as enabled by the AWS API but that we can't actually make requests to.
 >
 
@@ -25,9 +24,8 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This fixes an issue with the policy referencing an invalid API endpoint for the APAC shard. This was fixed in other policies already but somehow this specific policy slipped through the cracks.
-> 
+>
 > Some other very minor tweaks around block names and ordering of fields were also made for the sake of conformity to other policies and to pass the new lint tests.
 >
 
@@ -42,7 +40,6 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > - currency_reference.json has been copied to `data/currency/currency_reference.json`
 > - File also remains in `cost/scheduled_reports` with a README.md file explaining why it is there and indicating not to use that location going forward
 > - Policies have been updated to point to the new location at `data/currency/currency_reference.json`
@@ -59,51 +56,51 @@ This document contains the last 100 policy template merges for the flexera-publi
 #### Description
 
 > This PR evolved into a behemoth due to changes requiring further changes to facilitate them. This PR does the following:
-> 
+>
 > ### Billing Center Access Report Policy Revamp
-> 
+>
 > From the CHANGELOG:
-> 
+>
 > - Billing Center filter condensed to a single parameter and now supports both names and IDs
 > - Incident summary is now derived from the name of the applied policy
 > - Streamlined code for better readability and faster execution
-> 
+>
 > Example Applied Policy: https://app.flexera.com/orgs/28010/automation/applied-policies/projects/123559?policyId=65fb2c113ad5094c4696143c
-> 
+>
 > ### Dangerfile short_description Link Test
-> 
+>
 > The Dangerfile now checks for invalid URLs in the `short_description` of a policy and raises an error if the link doesn't match the location of the file.
-> 
+>
 > ### Invalid short_description Link Fixes
-> 
+>
 > By running a local version of the above test, I found several existing policies with bad URLs in their `short_description`. These have been fixed.
-> 
+>
 > ### Github Repository Reorganization
-> 
+>
 > The repository has been reorganized so that Flexera policies are in their own subdirectories based on the specific product they apply to. For example, `compliance/flexera/automation`, `cost/flexera/cco`, `operational/flexera/cmp`, etc. This makes the repository much less cluttered and much easier to find things in. MSP policies also have been moved accordingly into the appropriate `flexera/msp` directories.
-> 
+>
 > The meta policy and permissions generator files have been updated to account for the new file paths.
-> 
+>
 > ### Explicit Publish False
-> 
+>
 > All policies that are currently unpublished due to special rules in the Rakefile have been updated to contain an explicit `publish: false` in their metadata. This means we can get rid of these special rules and have a consistent implementation.
-> 
+>
 > ### Rakefile Update: `updated_at` and `recommendation_type` fields added
-> 
+>
 > The Rakefile used for generating the active policy list has been updated to include two new fields. `updated_at` is an ISO-8601 datetime string indicating when the policy was last modified in the catalog. `recommendation_type` is the requivalent field from the policy's info metadata block if such a value is specified.
-> 
+>
 > The Rakefile also no longer ignores policies based on location or metadata other than the `publish` field in the info block. Policies should always have this field set to false if we don't want them to be published, and this same PR updates the relevant policies to ensure that this is the case.
-> 
+>
 > ### Gemfile Update: octokit
-> 
+>
 > `Gemfile` and `Gemfile.lock` have been updated to include the octokit gem. This is what enables the Rakefile to obtain metadata from Github, such as when a policy was last updated.
-> 
+>
 > ### Manual Workflow Updates
-> 
+>
 > The `Test Policies` and `Update Active Policy List` workflows have been updated to allow for manual execution to assist in testing changes.
-> 
+>
 > ### Defunct File Removal
-> 
+>
 > A handful of ancient defunct files from the RightScale days have been removed.
 
 #### Metadata
@@ -117,18 +114,17 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > Currently when `bill_source_expressions` is empty it creates an `or` condition with empty expressions, it causes that policy breaks in runtime, specifically with this error message:
-> 
+>
 > `Invalid filter: invalid #4 AND expression: attribute 'expressions' must contain at least one expression for type \\\"or\\\": invalid argument\`
-> 
+>
 > So we added a condition to validate if `bill_source_expressions` is empty, if so get rid to create that `or` condition.
-> 
+>
 > SQ link: https://flexera.atlassian.net/browse/SQ-7053
 > CLONE link: https://flexera.atlassian.net/browse/FOPTS-3569
-> 
+>
 > ### Issues Resolved
-> 
+>
 > - Bug on empty `bill_source_expressions`.
 >
 
@@ -143,7 +139,6 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This deprecates the Policy Update Notification policy and directs users to the more up to date and functional Flexera Automation Outdated Applied Policies policy.
 >
 
@@ -158,11 +153,10 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > New Budget API v1 not returning budgeted values for some budgets
-> 
+>
 > ### Issues Resolved
-> 
+>
 > https://flexera.atlassian.net/browse/FOPTS-3519
 >
 
@@ -177,11 +171,10 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > Fixed bug where incident showed dimensions from column `Grouping Dimensions` in random order.
-> 
+>
 > ### Issues Resolved
-> 
+>
 > https://flexera.atlassian.net/browse/SQ-6941
 >
 
@@ -196,9 +189,8 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > New Policy Template from PoC - `Google Cloud Run Anomaly Detection`.
-> 
+>
 > <img width="1500" alt="image" src="https://github.com/flexera-public/policy_templates/assets/1490015/800b8c04-eed2-4d92-969f-18e2f3c7e245">
 >
 
@@ -213,7 +205,6 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > Add links to documentation in the "Budget vs Actual Spend Report" policy short description
 >
 
@@ -228,9 +219,8 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This policy deletes all Billing Centers in the Flexera organization it is executed within. The policy will automatically self-terminate the second time it runs to avoid accidental future deletion of Billing Centers.
-> 
+>
 > This policy is unpublished and primarily intended for internal use.
 >
 
@@ -245,7 +235,6 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > - Refactored to no longer require Azure credential
 > - Removed parameter for Azure API endpoint since it is no longer needed
 >
@@ -261,7 +250,6 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This updates the Pricing API parameter in the `AWS Unused IP Addresses` and `AWS Rightsize EBS Volumes` policies to be more user friendly, and provides better README documentation for the parameter and what it does.
 >
 
@@ -276,11 +264,10 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > Email a report of budget vs actual spend so the customer doesn't need to login to Flexera One
-> 
+>
 > ### Issues Resolved
-> 
+>
 > https://flexera.atlassian.net/browse/FLEX-204
 >
 
@@ -295,9 +282,8 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > Meta policies were sometimes returning duplicate results in the consolidated incident if they terminated a child policy and then replaced it with a new one, because both the old and new incident were being scraped.
-> 
+>
 > This changes the meta policy template (and meta policies) to filter the child incidents so that only active incidents are considered.
 >
 
@@ -312,9 +298,8 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This is a revamp of the Google Open Buckets policy that also fixes a known bug with the policy. From the CHANGELOG:
-> 
+>
 > - Fixed issue where some open buckets were not being reported on
 > - Added ability to filter resources by project
 > - Added ability to filter resources by region
@@ -337,9 +322,8 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This modifies the AWS Rightsize RDS Instances policy to include Availability Zone, License Model, and vCPUs in the incident output, rendering the AWS RDS Instances policy obsolete.
-> 
+>
 > Additionally, the AWS RDS Instances policy is flagged as deprecated, and users are directed to the AWS Rightsize RDS Instances policy in the README.
 >
 
@@ -354,9 +338,8 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This adds more filtering options to the policy:
-> 
+>
 > - Added IP allocation type (Dynamic or Static) to incident output
 > - Added ability to filter results by allocation type via parameter
 > - Added ability to filter results by minimum savings via parameter
@@ -386,11 +369,10 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > The short description of the policy Azure Rightsize NetApp Files was in sync with the Flexera documentation, this change updated the `short_description` of the policy so both descriptions match.
-> 
+>
 > ### Issues Resolved
-> 
+>
 > - https://flexera.atlassian.net/browse/FOPTS-3238
 >
 
@@ -405,7 +387,6 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > The AWS Inefficient Instance Utilization using CloudWatch policy does basically the same thing as the existing Rightsize EC2 policy, so it is being deprecated.
 
 #### Metadata
@@ -419,9 +400,8 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This pull request deprecates the 4 remaining CMP policies that have not yet been deprecated.
-> 
+>
 > No testing was done since no changes were made to anything that would impact policy execution.
 >
 
@@ -436,11 +416,10 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This adds support for regex tag filtering to several Google policies.
-> 
+>
 > ### Link to Example Applied Policies
-> 
+>
 > Google Long Stopped VM Instances: https://app.flexera.com/orgs/6/automation/applied-policies/projects/7954?policyId=65d6523d72834a00010ab2f6
 > Google Idle Cloud SQL Instance Recommender: https://app.flexera.com/orgs/6/automation/applied-policies/projects/7954?policyId=65d6527660a6a60001794f0d
 > Google Idle IP Address Recommender: https://app.flexera.com/orgs/6/automation/applied-policies/projects/7954?policyId=65d6529972834a00010ab2f7
@@ -461,11 +440,10 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This adds support for regex tag filtering to several Azure policies. Additionally, it includes revamps of the two AKS Node Pools policies to help facilitate this update.
-> 
+>
 > ### Link to Example Applied Policies
-> 
+>
 > Azure AHUB Utilization with Manual Entry: https://app.flexera.com/orgs/6/automation/applied-policies/projects/7954?policyId=65d6297272834a00010ab067
 > Azure Long Stopped Compute Instances: https://app.flexera.com/orgs/6/automation/applied-policies/projects/7954?policyId=65d62a1172834a00010ab073
 > Azure Hybrid Use Benefit for Windows Server: https://app.flexera.com/orgs/6/automation/applied-policies/projects/7954?policyId=65d62ab272834a00010ab084
@@ -494,7 +472,6 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This fixes a bug where the link would render incorrectly if spaces were present. Spaces are now appropriately replaced with %20 in the link.
 >
 
@@ -509,9 +486,8 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This is a revamp of the Cloud Cost Anomaly Alerts policy. From the CHANGELOG:
-> 
+>
 > - Link to Flexera One Cloud Cost Anomalies page now includes filters
 > - Incident for invalid dimensions now includes list of valid dimensions
 > - Improved text formatting and presentation of incidents
@@ -530,11 +506,10 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This adds support for regex tag filtering to several AWS policies.
-> 
+>
 > ### Link to Example Applied Policies
-> 
+>
 > - AWS Rightsize EBS Volumes: https://app.flexera.com/orgs/6/automation/applied-policies/projects/7954?policyId=65d5090a60a6a6000179488e
 > - AWS Rightsize EC2 Instances: https://app.flexera.com/orgs/6/automation/applied-policies/projects/7954?policyId=65d5093e72834a00010aaca1
 > - AWS Rightsize RDS Instances: https://app.flexera.com/orgs/6/automation/applied-policies/projects/7954?policyId=65d50c5160a6a60001794898
@@ -557,18 +532,17 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > Deploy Rightsize NetApp Files Policy
-> 
+>
 > ### Link to applied policy
-> 
+>
 > https://app.flexeratest.com/orgs/1105/automation/applied-policies/projects/60073?policyId=65d5596c2cd37e0001aa6328
-> 
+>
 > You can also watch this GIF:
 > ![azure-rightsize-netapp-files-demo](https://github.com/flexera-public/policy_templates/assets/54189123/d820bde3-5810-41bd-a8ae-d7137fc07f89)
-> 
+>
 > ### Issues Resolved
-> 
+>
 > - https://flexera.atlassian.net/browse/FOPTS-2025
 >
 
@@ -583,7 +557,6 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This adds regex support to the AWS Old Snapshots policy. This is a breaking change, hence the major version number change, but anyone not currently using the tag filtering functionality should not be impacted by this change.
 >
 
@@ -598,9 +571,8 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This is a revamp of the AWS Burstable EC2 Instances policy, including actions. From the CHANGELOG:
-> 
+>
 > - Policy name changed to reference EC2 service directly
 > - Policy now consistently gathers correct CloudWatch statistics
 > - Several parameters altered to be more descriptive and human-readable
@@ -638,7 +610,6 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > An error was found in the currency conversion implementation in some policies. This is the fix for it.
 >
 
@@ -653,7 +624,6 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This new policy analyzes the stored billing data for Microsoft Azure from 2 days ago to a user-specified number of days back and reports on the number of VMs using the Bring-Your-Own-License (BYOL) feature each day. The report includes daily numbers and percentages as well as the peak total BYOL usage and peak percentage BYOL usage and is emailed to a user-specified list of email addresses.
 >
 
@@ -681,13 +651,12 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > - Updated the descriptions and labels of the IOPS and throughput parameters in the README and policy template files.
 > - Updated the short description of the policy.
 > - Changed the functionality of `param_min_savings`: Before this version, the `param_min_savings` parameter was used to consider the total savings (the sum of all the savings per resource) and not the savings per resource to decide whether to recommend or not. In this new version, this parameter is used to recommend or not based on the savings of each resource, just as other policies do.
-> 
+>
 > ### Issues Resolved
-> 
+>
 > - https://flexera.atlassian.net/browse/FOPTS-3170
 >
 
@@ -702,7 +671,6 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This new policy checks all applied policies against the same policy in the catalog to determine if the applied policy is using an outdated version of the catalog policy. An email is sent and an incident is raised with all outdated policies. Optionally, outdated policies can automatically be updated.
 >
 
@@ -717,9 +685,8 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This is a full revamp of the Azure Schedule Instance policy, including CWF actions. From the CHANGELOG:
-> 
+>
 > - Several parameters altered to be more descriptive and human-readable
 > - Added ability to specify custom tag keys for tracking instance schedules
 > - Added ability to use subscription filter as an allow list or a deny list
@@ -743,9 +710,8 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This is a full revamp of the AWS Schedule Instance policy, including CWF actions. From the CHANGELOG:
-> 
+>
 > - Several parameters altered to be more descriptive and human-readable
 > - Added ability to specify custom tag keys for tracking instance schedules
 > - Added ability to filter resources by multiple tag key:value pairs
@@ -767,9 +733,8 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This is a full revamp of the Google Schedule Instance policy, including CWF actions. From the CHANGELOG:
-> 
+>
 > - Several parameters altered to be more descriptive and human-readable
 > - Added ability to specify custom tag keys for tracking instance schedules
 > - Added ability to filter resources by project
@@ -795,11 +760,10 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This is a net new policy for finding missing subscriptions. For now, this policy is unpublished since the primary user is internal rather than clients directly.
-> 
+>
 > From the README:
-> 
+>
 > This policy checks the stored Flexera CCO billing data for Azure from 3 days ago to obtain a list of Azure Subscriptions that we have billing data for and compares that to the list of Azure Subscriptions returned by the Azure Resource Manager API. An incident is raised and email sent containing any subscriptions present in Flexera CCO but not returned by the Azure Resource Manager API, as well as subscriptions returned by the Azure Resource Manager API but not present in Flexera CCO. The user can select which of those two reports they'd like to produce.
 >
 
@@ -814,13 +778,12 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > Fixed error in several Azure policies where policy would fail completely when trying to access resources credential does not have access to. Policies will now simply skip these resources.
-> 
+>
 > In many cases, these were regressions caused by copying and pasting from policies that did not have this update done previously. To prevent future regressions, I have gone through all Azure policies to ensure that only the correct datasources with the proper ignore_status functionality will exist in the catalog after this update.
-> 
+>
 > I also did the same with a couple of minor, non-material changes to spacing to ensure consistency. In cases where this was the only change made, I did not bother iterating the version number or updating the changelog because these changes do not affect policy execution whatsoever. These changes are:
-> 
+>
 > query "api-version"," -> query "api-version", " (Added space after comma)
 > ignore_status [400,403,404] -> ignore_status [400, 403, 404] (Added space between numbers)
 > changelog.md -> CHANGELOG.md (Renamed this file in a couple of places where it was incorrectly in lowercase)
@@ -850,11 +813,10 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > The path for this policy is incorrect and, as a result, does not match the link in the policy's description. The path to this policy should be blob_storage_optimization, not object_storage_optimization, to keep it in line with the name of the policy itself as well as Azure’s own terminology.
-> 
+>
 > ### Issues Resolved
-> 
+>
 > Path to this policy is now correct and matches the link within the policy itself as well as the policy name.
 >
 
@@ -869,7 +831,6 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This adds the ability for the user to specify the names of the created dimensions via a parameter in the unpublished RBD creation policies. The new parameter is a list, and if this parameter is left blank, the existing functionality will occur instead.
 >
 
@@ -884,9 +845,8 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This is a revamp of the Azure Blob Storage Optimization that brings its functionality more in line with the equivalent AWS policy while also ensuring that policy actions have been revamped for better error reporting outside of NAM. From the CHANGELOG:
-> 
+>
 > - Several parameters altered to be more descriptive and human-readable
 > - Added ability to assess blobs in multiple storage accounts
 > - Added ability to filter storage accounts by subscription
@@ -912,9 +872,8 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This is a revamp of the AWS Object Storage Optimization policy, similar to other similar revamps. Both the core policy and the CWF actions have been revamped. From the CHANGELOG:
-> 
+>
 > - Several parameters altered to be more descriptive and human-readable
 > - Added ability to filter objects by multiple tag key:value pairs
 > - Added ability to filter objects/buckets by region
@@ -938,11 +897,10 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This revamps the policy actions to properly log errors in EU/APAC and also normalizes action names. The CWF code was lifted directly from other, already-updated Azure policies. General policy functionality is unchanged.
-> 
+>
 > From the CHANGELOG:
-> 
+>
 > - Added option to either gracefully or forcefully power off instances
 > - Renamed policy actions to conform with Azure's own terminology and documentation
 > - Policy action error logging modernized and now works as expected in EU/APAC
@@ -972,11 +930,10 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > Deploy first version of Rightsize Azure Managed Disks policy.
-> 
+>
 > ### Issues Resolved
-> 
+>
 > - https://flexera.atlassian.net/browse/FOPTS-2607
 >
 
@@ -991,7 +948,6 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This revamps the policy actions to properly log errors in EU/APAC. The CWF code was lifted directly from other, already-updated AWS policies. General policy functionality is unchanged.
 >
 
@@ -1006,11 +962,10 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This is a revamp similar to other revamps we've done. This revamps both the policy itself and the policy actions. It also changes the name of the policy to better conform to standards established elsewhere in the catalog.
-> 
+>
 > From the CHANGELOG:
-> 
+>
 > - Several parameters altered to be more descriptive and human-readable
 > - Added more robust ability to filter resources by subscription
 > - Added ability to filter resources by tag key:value pairs
@@ -1032,11 +987,10 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This is a revamp similar to other revamps we've done. This revamps both the policy itself and the policy actions. It also changes the name of the policy to better conform to standards established elsewhere in the catalog and adds meta policy support.
-> 
+>
 > From the CHANGELOG:
-> 
+>
 > - Several parameters altered to be more descriptive and human-readable
 > - Added more robust ability to filter resources by project
 > - Added ability to filter resources by region
@@ -1060,9 +1014,8 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This is a complete revamp and overhaul of the AWS Untagged Resources policy. Both the policy code and actions have been revamped. From the CHANGELOG:
-> 
+>
 > - Added ability to filter resources by tag key, tag key==value, or using regex
 > - Added ability to use all filters as an allow list or a deny list
 > - Added additional context to incident description
@@ -1081,7 +1034,6 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > We were receiving reports of 429 rate limiting errors from the Azure APIs when attempting to use this policy. The following has been done to try to alleviate this issue:
 > - A forced 5 second delay between requests to the Microsoft.Consumption/reservationRecommendations API endpoint has been added.
 > - Information has been added to the README recommending that the policy be applied once for each resource type for large cloud estates.
@@ -1099,11 +1051,10 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This is a revamp similar to other revamps we've done. This revamps both the policy itself and the policy actions. It also changes the name of the policy to better conform to standards established elsewhere in the catalog.
-> 
+>
 > From the CHANGELOG:
-> 
+>
 > - Several parameters altered to be more descriptive and human-readable
 > - Added more robust ability to filter resources by subscription
 > - Added ability to filter resources by region
@@ -1125,11 +1076,10 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This is a revamp similar to other revamps we've done. This revamps both the policy itself and the policy actions. It also changes the name of the policy to better conform to standards established elsewhere in the catalog.
-> 
+>
 > From the CHANGELOG:
-> 
+>
 > - Several parameters altered to be more descriptive and human-readable
 > - Added ability to filter resources by multiple tag key:value pairs
 > - Added additional context to incident description
@@ -1150,7 +1100,6 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This fixes an issue where the policy was returning all reservation recommendations instead of either 1 year or 3 year based on the parameter.
 >
 
@@ -1165,7 +1114,6 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > The script for generating meta policies has been updated. This is just a PR to regenerate some of the meta policies using this script.
 
 #### Metadata
@@ -1179,7 +1127,6 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This adds support for substrings when filtering dimensions in the parent policies.
 >
 
@@ -1194,9 +1141,8 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This changes the name of escalation blocks so that the meta policy generator can properly generate meta policies for these policies. I also removed some strange whitespace characters that were in one of the policies for some reason and replaced them with standard spaces.
-> 
+>
 > Meta policies themselves are unchanged since separate work is being done to update the meta policy templates for new functionality, which will in turn automatically update the meta policies.
 >
 
@@ -1211,9 +1157,8 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This is a revamp of the AWS Disallowed Regions policy. Both the policy itself and CWF code for actions have been updated. Most of the code was adapted from similar policies that have received similar improvements. From the CHANGELOG:
-> 
+>
 > - Several parameters altered to be more descriptive and human-readable
 > - Added ability to filter resources by multiple tag key:value pairs
 > - Added additional context to incident description
@@ -1235,11 +1180,10 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > Replaced the jq function used from rt
-> 
+>
 > ### Issues Resolved
-> 
+>
 > [FOPTS-2229](https://flexera.atlassian.net/browse/FOPTS-2229)
 >
 
@@ -1254,13 +1198,12 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > Added optional `Minimum Age (Days)` parameter to filter results by age. This is for users that want to avoid reporting on freshly created databases that, as a result of their newness, have not had any connections and would therefore be seen as "unused" by the policy.
-> 
+>
 > This is not a breaking change since the default value of this parameter is 0 and this functions just like the policy did without the parameter.
-> 
+>
 > From the README:
-> 
+>
 > - *Minimum Age (Days)* - The minimum age, in days, since a SQL database was created to produce recommendations for it. Set to 0 to ignore age entirely.
 >
 
@@ -1275,7 +1218,6 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > - Add `param_databricks_cluster_list` for filtering to a specific Databricks Cluster within a Databricks Workspace
 > - Add `p90`,`p95`,`p99` Threshold Statistic choices
 > - Fixed subscription ID and Name output in recommendation
@@ -1292,7 +1234,6 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This updates the policy actions to follow current conventions and have better error logging outside of NAM. Functionality is unchanged.
 >
 
@@ -1307,7 +1248,6 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This updates the policy actions to follow current conventions and have better error logging outside of NAM. Functionality is unchanged.
 >
 
@@ -1322,7 +1262,6 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This updates the policy actions to follow current conventions and have better error logging outside of NAM. Functionality is unchanged.
 >
 
@@ -1337,29 +1276,28 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This PR is for several related things:
-> 
+>
 > - `/data/azure/tag-support.csv` has been replaced with `/data/azure/resource_types.json` due to JSON being natively supported by the policy engine. It also contains information unrelated to tag support, so this new naming is more accurate and will allow for the file to be extended with more resource type related metadata if ever needed. The below `Azure Untagged Resources` policy is the only policy currently making use of this file, so this change should have no impact on other policies.
-> 
+>
 > - `Azure Untagged Resources` policy has been completely rebuilt from the ground up. Core functionality is the same, but new filtering features were added. From the CHANGELOG:
-> - Added ability to filter resources by tag key, tag key==value, or using regex
-> - Added ability to filter resources by region
-> - Added ability to filter resources by Azure resource type
-> - Added ability to use all filters as an allow list or a deny list
-> - Added additional context to incident description
-> - Streamlined code for better readability and faster execution
-> - Policy now requires a valid Flexera One credential
-> 
+>   - Added ability to filter resources by tag key, tag key==value, or using regex
+>   - Added ability to filter resources by region
+>   - Added ability to filter resources by Azure resource type
+>   - Added ability to use all filters as an allow list or a deny list
+>   - Added additional context to incident description
+>   - Streamlined code for better readability and faster execution
+>   - Policy now requires a valid Flexera One credential
+>
 > - `Azure Untagged Virtual Machines`: This is a new policy that only checks tags for virtual machines, but due to this narrowed focus, has more functionality than the `Azure Untagged Resources` policy. The incident reports on additional VM-specific metadata, and the policy allows for powering off or deleting instances in addition to tagging them.
-> 
+>
 > - The above policies now support a variety of conditionals as well as regex. Note that, while I have intentionally not documented this since it is not "to spec", using a single = will also work in order to account for user error when entering in values. From the READMEs:
-> - *Tags* - The policy will report resources missing the specified tags. The following formats are supported:
-> - `Key` - Find all resources missing the specified tag key.
-> - `Key==Value` - Find all resources missing the specified tag key:value pair and all resources missing the specified tag key.
-> - `Key!=Value` - Find all resources that have the specified tag key:value pair.
-> - `Key=~/Regex/` - Find all resources where the value for the specified key does not match the specified regex string and all resources missing the specified tag key.
-> - `Key!~/Regex/` - Find all resources where the value for the specified key matches the specified regex string.
+>   - *Tags* - The policy will report resources missing the specified tags. The following formats are supported:
+>     - `Key` - Find all resources missing the specified tag key.
+>     - `Key==Value` - Find all resources missing the specified tag key:value pair and all resources missing the specified tag key.
+>     - `Key!=Value` - Find all resources that have the specified tag key:value pair.
+>     - `Key=~/Regex/` - Find all resources where the value for the specified key does not match the specified regex string and all resources missing the specified tag key.
+>     - `Key!~/Regex/` - Find all resources where the value for the specified key matches the specified regex string.
 >
 
 #### Metadata
@@ -1373,7 +1311,6 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This non-breaking change updates the policy actions for the AWS Old Snapshots policy. Functionality is identical, but now the error logging is modernized and should work as expected in EU and APAC.
 >
 
@@ -1388,9 +1325,8 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This non-breaking change updates the policy actions for the AWS Unused IP policy. Functionality is identical, but now the error logging is modernized and should work as expected in EU and APAC.
-> 
+>
 > The verbiage for a parameter was also updated to be more clear and the parameter in question was added to the README
 >
 
@@ -1405,9 +1341,8 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This is a revamp of the Scheduled Report policy that streamlines it and extends functionality. From the CHANGELOG:
-> 
+>
 > - Added ability to specify custom dimensions for the graph in the report
 > - Added ability to filter costs in report by any user-specified dimension
 > - Improved incident output for readability and removed references to Optima
@@ -1439,11 +1374,10 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > n the incident of Hybrid Use Benefit Policy, currency separator is shown as undefined:
-> 
+>
 > ### Issues Resolved
-> 
+>
 > [POL-982](https://flexera.atlassian.net/browse/POL-982)
 >
 
@@ -1458,11 +1392,10 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > Enabling hyperlinks in Turbonomics policies for incidents.
-> 
+>
 > ### Issues Resolved
-> 
+>
 > [FOPTS-2702](https://flexera.atlassian.net/browse/FOPTS-2702)
 
 #### Metadata
@@ -1476,9 +1409,8 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This adds the ability to filter the results by how long a disk has been unattached for. GCP produces recommendations based on whether a disk has been detached for 15 days, and this allows the user to filter those results further, going back to 90 days, by using GCP's native event logging.
-> 
+>
 > This is a non-breaking change; the default value for the relevant parameter is 15 days, equivalent to what GCP already checks for, and if the user has not granted their GCP credential the permissions to access the above logs, then the policy will simply report all of the recommendations as it did before rather than fail.
 >
 
@@ -1493,7 +1425,6 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This fixes an issue where the policy was not correctly identifying unused instances if they had dashes in the name. The policy was incorrectly using the instance id, rather than the instance name, to find the instance in the Cloudwatch data.
 >
 
@@ -1521,7 +1452,6 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > Improved logging and error handling in the Scheduled Instance Policy Templates (AWS, Google)
 >
 
@@ -1536,11 +1466,10 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This is a revamp of the Policy Update Notification policy. The policy now works in EU and APAC, but this change required removing support for multiple projects within an org. That said, the vast majority of our users do not have multiple projects, so this is unlikely to be a major downside for most users.
-> 
+>
 > From the CHANGELOG:
-> 
+>
 > - Policy now works in all Flexera orgs regardless of zone
 > - Policy now requires a valid Flexera One credential
 > - Policy no longer makes use of deprecated APIs
@@ -1561,14 +1490,13 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > <!-- Describe what this change achieves below -->
 > We are currently migrating customers' bill configurations to the new Azure method, however this policy still uses legacy EA APIs, which will be deprecated as part of the migration.
-> 
+>
 > This is a change to update the policy to move away from the legacy EA APIs and utilize the modern Azure APIs.
-> 
+>
 > ### Issues Resolved
-> 
+>
 > <!-- List any existing issues this PR resolves below -->
 > Moving the modern Azure APIs resolves the issue of having a dependency on the Azure EA Key as an Automation Credential.
 >
@@ -1584,11 +1512,10 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This is intended to fix a couple of issues with this policy, as well as implement some improvements made to other revamped policies to ensure this one is fully up to date. While this policy should continue to function without issue for most customers, a change to the `Automatic Actions` parameter does technically constitute a breaking change, hence the major version number change.
-> 
+>
 > From the CHANGELOG:
-> 
+>
 > - Fixed issue with resource count in incident subject being off by 1
 > - Fixed minor grammar issue if results only include 1 item
 > - Renamed policy actions to make it clear whether they are for underutilized or idle instances
@@ -1610,9 +1537,8 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This is a revamp of the AWS Unused Classic Load Balancers that includes the usual updates and improvements. From the CHANGELOG:
-> 
+>
 > - Assessment algorithm now more consistently identifies unused Classic Load Balancers
 > - Added parameter to exclude recently created Classic Load Balancers
 > - Several parameters altered to be more descriptive and human-readable
@@ -1637,13 +1563,12 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This update adds the ability to backfill previous months when applying the policy. From the README:
-> 
+>
 > - *Backfill Adjustments* - Whether to add/modify currency conversion to just the current month or to backfill previous months.
-> 
+>
 > - *Backfill Start Date* - The month and year in YYYY-MM format to backfill adjustments to. Only applicable if `Backfill Previous Months` is selected for the `Backfill Adjustments` parameter.
-> 
+>
 > - *Backfill Exchange Rates* - Whether or not to use the current exchange rate, or the exchange rate at the time, when applying currency conversion to previous months. Only applicable if `Backfill Previous Months` is selected for the `Backfill Adjustments` parameter.
 >
 
@@ -1671,11 +1596,10 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This policy checks all the instances associated with Azure Databricks workspaces in Azure Subscriptions for the average or maximum CPU and/or memory usage over a user-specified number of days. If the usage is less than the user provided Idle Instance CPU and/or memory percentage threshold then the Virtual Machine is recommended for deletion.
-> 
+>
 > ### Issues Resolved
-> 
+>
 > https://flexera.atlassian.net/browse/POL-853
 >
 
@@ -1690,11 +1614,10 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This is a revamp of the AWS Open Buckets policy to clean up the code/functionality and to enable meta policy support.
-> 
+>
 > From the CHANGELOG:
-> 
+>
 > - Several parameters altered to be more descriptive and human-readable
 > - Added ability to filter resources by region
 > - Added additional context to incident description
@@ -1716,11 +1639,10 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This is part of a broader initiative to update our SaaS Manager FSM policies to use up to date APIs. The policy itself has also been revamped along similar lines to other policies. The name has also been changed to better reflect the policy's functionality.
-> 
+>
 > From the CHANGELOG:
-> 
+>
 > - Policy renamed to `SaaS Manager - Deactivated Users for Integrated Applications` to better reflect its functionality
 > - Added `Inactive Days Threshold` to allow user to filter out recently deactivated users
 > - Added `Applications` parameter to allow user to filter results by application
@@ -1742,7 +1664,6 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This just changes the default value of the `Underutilized Instance CPU Threshold (%)` parameter to 40% to match other policies and ensure that our recommendations won't cause performance issues.
 
 #### Metadata
@@ -1756,9 +1677,8 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > The default frequency for child policies is currently "daily", which is excessive in most cases and does not align with most child policies. This PR is to change it to "weekly"
-> 
+>
 > This also fixes an issue where one of the meta policy parameters would refer to the Tag Cardinality policy instead of the name of the actual policy the meta policy is for.
 
 #### Metadata
@@ -1772,13 +1692,12 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This is a revamp of the Google Old Snapshots policy that also adds meta policy support for it.
-> 
+>
 > Note: This policy does not report savings (identical to previous version) because we do not ingest GCP billing data at a granular enough level to obtain costs for specific resources. This policy should be updated if/when that changes.
-> 
+>
 > From the CHANGELOG:
-> 
+>
 > - Several parameters altered to be more descriptive and human-readable
 > - Removed deprecated "Log to CM Audit Entries" parameter
 > - Added ability to filter resources by project
@@ -1802,7 +1721,6 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > The AWS Unused RDS policy is being deprecated due to the Rightsize RDS policy now containing identical functionality. This is similar to what has been done with other similar policies.
 >
 
@@ -1831,11 +1749,10 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This is part of a broader initiative to update our SaaS Manager FSM policies to use up to date APIs. The policy itself has also been revamped along similar lines to other policies. The policy has also been renamed to better reflect what it actually checks for.
-> 
+>
 > From the CHANGELOG:
-> 
+>
 > - Policy renamed to `SaaS Manager - Deactivated Users` to better reflect its functionality
 > - Reduced minimum value of `Inactive Days Threshold` parameter from 60 to 0
 > - Added `Applications` parameter to allow user to filter results by application
@@ -1870,7 +1787,6 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This is a new policy that retrieves recommendations from the Flexera API and emails them to the specified list of email users. This offers functionality that can't currently be obtained within individual policies, such as the ability to send recommendations from multiple source policies in a single email, and the ability to email recommendations from child policies at any cadence the user wishes.
 >
 
@@ -1885,9 +1801,8 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This is a revamp of the AWS Rightsize RDS Instances policy. The changes here are pretty numerous, but the short version is that the policy now has parity with the equivalent Azure policy and reports recommendations for both underutilized and unused databases. From the CHANGELOG:
-> 
+>
 > - Added parameter to specify how far back to check instances for activity
 > - Several parameters altered to be more descriptive and human-readable
 > - Policy now reports on both unused and underutilized RDS instances
@@ -1916,11 +1831,10 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
-> - Enables triggering policy escalation actions from the Meta Parent "Consolidated Incident"
-> - Fixes the Incident Summary for some policies `with index 0` -> `AWS EC2 Volumes Found` ( [example](https://github.com/flexera-public/policy_templates/pull/1620/files#diff-622ba01a4d2f8338f7ab763d1d660e1b052ceaf93d800da5a71da2f93e45314fL971-R1013) )
-> 
-> 
+>  - Enables triggering policy escalation actions from the Meta Parent "Consolidated Incident"
+>  - Fixes the Incident Summary for some policies `with index 0` -> `AWS EC2 Volumes Found` ( [example](https://github.com/flexera-public/policy_templates/pull/1620/files#diff-622ba01a4d2f8338f7ab763d1d660e1b052ceaf93d800da5a71da2f93e45314fL971-R1013) )
+>
+>
 >
 
 #### Metadata
@@ -1947,9 +1861,8 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > Added parameter to override the AWS Pricing API Endpoint.
-> 
+>
 > This will enable us to change the API endpoint being used by the Policy Template in case a customer is using an AWS Service Control Policy to deny `us-east-1` which we previously had hard-coded.
 >
 
@@ -1964,13 +1877,12 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Description
 
-> 
 > This is part of a broader initiative to update our SaaS Manager FSM policies to use the correct API endpoints for APAC. The policy itself has also been revamped along similar lines to other policies.
-> 
+>
 > Note: This policy still uses the now-deprecated internal SaaS Manager API. This is because the new API does not yet support the requests this policy needs to make to function. This functionality will be brought to the new API before the old one is decommissioned, and this policy will need to be updated again at that time.
-> 
+>
 > From the CHANGELOG:
-> 
+>
 > - Added support for APAC API endpoint
 > - Policy now uses and requires a general Flexera One credential
 > - Incident summary now includes applied policy name
