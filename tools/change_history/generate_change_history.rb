@@ -74,6 +74,6 @@ File.open('HISTORY.md', 'w') do |file|
 
     file.puts "- **Modified Policies**: #{policy_list_string}"
 
-    file.puts "\n"
+    file.puts "\n---\n\n"
   end
 end
