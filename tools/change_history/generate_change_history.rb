@@ -28,7 +28,7 @@ pr_list = merged_pull_requests.map do |pr|
     href: pr.html_url,
     created_at: pr.created_at,
     merged_at: pr.merged_at,
-    modified_files: client.pull_request_files(repo_name, pr.number).map(&:filename)
+    modified_files: github_client.pull_request_files(repo_name, pr.number).map(&:filename)
   }
 end
 
