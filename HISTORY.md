@@ -6,7 +6,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ## History
 
-### PR [#1967](): POL-1182 New Policy: AWS Missing Regions
+### PR [#1967](https://github.com/flexera-public/policy_templates/pull/1967): POL-1182 New Policy: AWS Missing Regions
 
 #### Description
 
@@ -35,7 +35,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1954](): POL-1171 AWS Rightsize RDS Instances APAC Fix
+### PR [#1954](https://github.com/flexera-public/policy_templates/pull/1954): POL-1171 AWS Rightsize RDS Instances APAC Fix
 
 #### Description
 
@@ -60,7 +60,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1949](): POL-1161 Move currency_reference.json
+### PR [#1949](https://github.com/flexera-public/policy_templates/pull/1949): POL-1161 Move currency_reference.json
 
 #### Description
 
@@ -79,7 +79,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1937](): POL-1158 Policy Catalog Reorganization
+### PR [#1937](https://github.com/flexera-public/policy_templates/pull/1937): POL-1158 Policy Catalog Reorganization
 
 #### Description
 
@@ -140,7 +140,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1930](): FOPTS-3569 Fix: empty bill_source_expressions
+### PR [#1930](https://github.com/flexera-public/policy_templates/pull/1930): FOPTS-3569 Fix: empty bill_source_expressions
 
 #### Description
 
@@ -180,7 +180,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1931](): POL-1156 Deprecate "Policy Update Notification" Policy
+### PR [#1931](https://github.com/flexera-public/policy_templates/pull/1931): POL-1156 Deprecate "Policy Update Notification" Policy
 
 #### Description
 
@@ -203,7 +203,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1920](): FOPTS-3519 Fix work with unbudgeted spend for new API
+### PR [#1920](https://github.com/flexera-public/policy_templates/pull/1920): FOPTS-3519 Fix work with unbudgeted spend for new API
 
 #### Description
 
@@ -232,7 +232,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1916](): SQ-6941 Sort the dimensions shown in the report
+### PR [#1916](https://github.com/flexera-public/policy_templates/pull/1916): SQ-6941 Sort the dimensions shown in the report
 
 #### Description
 
@@ -271,7 +271,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1818](): feat: initial revision for Google Cloud Run Anomaly Detection PT
+### PR [#1818](https://github.com/flexera-public/policy_templates/pull/1818): feat: initial revision for Google Cloud Run Anomaly Detection PT
 
 #### Description
 
@@ -300,7 +300,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1909](): Add links to documentation in the policy short description
+### PR [#1909](https://github.com/flexera-public/policy_templates/pull/1909): Add links to documentation in the policy short description
 
 #### Description
 
@@ -323,7 +323,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1882](): POL-1118 Flexera CCO Delete All Billing Centers Policy
+### PR [#1882](https://github.com/flexera-public/policy_templates/pull/1882): POL-1118 Flexera CCO Delete All Billing Centers Policy
 
 #### Description
 
@@ -356,7 +356,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1881](): POL-1117 Azure Bring-Your-Own-License (BYOL) Report Improvements
+### PR [#1881](https://github.com/flexera-public/policy_templates/pull/1881): POL-1117 Azure Bring-Your-Own-License (BYOL) Report Improvements
 
 #### Description
 
@@ -384,7 +384,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1893](): POL-979 AWS Policies: Improve Pricing API Endpoint Parameter
+### PR [#1893](https://github.com/flexera-public/policy_templates/pull/1893): POL-979 AWS Policies: Improve Pricing API Endpoint Parameter
 
 #### Description
 
@@ -412,7 +412,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1778](): FOPTS-3024 - New Budget vs Actual Spend report policy
+### PR [#1778](https://github.com/flexera-public/policy_templates/pull/1778): FOPTS-3024 - New Budget vs Actual Spend report policy
 
 #### Description
 
@@ -449,7 +449,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1892](): POL-1127 Meta Policy Duplicate Incidents Fix
+### PR [#1892](https://github.com/flexera-public/policy_templates/pull/1892): POL-1127 Meta Policy Duplicate Incidents Fix
 
 #### Description
 
@@ -478,7 +478,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1867](): POL-1046 Google Open Buckets Revamp
+### PR [#1867](https://github.com/flexera-public/policy_templates/pull/1867): POL-1046 Google Open Buckets Revamp
 
 #### Description
 
@@ -515,7 +515,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1875](): POL-1071 Merge 'AWS RDS Instances' policy into 'AWS Rightsize RDS Instances'
+### PR [#1875](https://github.com/flexera-public/policy_templates/pull/1875): POL-1071 Merge 'AWS RDS Instances' policy into 'AWS Rightsize RDS Instances'
 
 #### Description
 
@@ -544,7 +544,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1873](): POL-973 Azure Unused IPs Better Filtering
+### PR [#1873](https://github.com/flexera-public/policy_templates/pull/1873): POL-973 Azure Unused IPs Better Filtering
 
 #### Description
 
@@ -575,7 +575,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1879](): Update Meta Parent Policy Templates
+### PR [#1879](https://github.com/flexera-public/policy_templates/pull/1879): Update Meta Parent Policy Templates
 
 #### Description
 
@@ -590,7 +590,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1870](): FOPTS-3238 Update `short_description` of the policy Azure Rightsize NetApp Files
+### PR [#1870](https://github.com/flexera-public/policy_templates/pull/1870): FOPTS-3238 Update `short_description` of the policy Azure Rightsize NetApp Files
 
 #### Description
 
@@ -625,7 +625,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1874](): POL-1070 Deprecate AWS Inefficient Instance Utilization using CloudWatch
+### PR [#1874](https://github.com/flexera-public/policy_templates/pull/1874): POL-1070 Deprecate AWS Inefficient Instance Utilization using CloudWatch
 
 #### Description
 
@@ -642,7 +642,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1833](): POL-1062 Deprecate CMP Policies
+### PR [#1833](https://github.com/flexera-public/policy_templates/pull/1833): POL-1062 Deprecate CMP Policies
 
 #### Description
 
@@ -667,7 +667,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1846](): POL-1035 Google Policy Regex Support
+### PR [#1846](https://github.com/flexera-public/policy_templates/pull/1846): POL-1035 Google Policy Regex Support
 
 #### Description
 
@@ -700,7 +700,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1845](): POL-1025 Azure Policy Regex Support
+### PR [#1845](https://github.com/flexera-public/policy_templates/pull/1845): POL-1025 Azure Policy Regex Support
 
 #### Description
 
@@ -741,7 +741,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1864](): POL-1068 Cloud Cost Anomaly Alerts Link Fix
+### PR [#1864](https://github.com/flexera-public/policy_templates/pull/1864): POL-1068 Cloud Cost Anomaly Alerts Link Fix
 
 #### Description
 
@@ -777,7 +777,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1861](): POL-1065 Cloud Cost Anomaly Alerts Revamp
+### PR [#1861](https://github.com/flexera-public/policy_templates/pull/1861): POL-1065 Cloud Cost Anomaly Alerts Revamp
 
 #### Description
 
@@ -810,7 +810,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1842](): POL-1018 AWS Policy Regex Support
+### PR [#1842](https://github.com/flexera-public/policy_templates/pull/1842): POL-1018 AWS Policy Regex Support
 
 #### Description
 
@@ -845,7 +845,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1707](): FOPTS-2025 Deployment of Rightsize Azure NetApp Files Policy
+### PR [#1707](https://github.com/flexera-public/policy_templates/pull/1707): FOPTS-2025 Deployment of Rightsize Azure NetApp Files Policy
 
 #### Description
 
@@ -879,7 +879,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1841](): POL-1017 AWS Old Snapshots Regex Support
+### PR [#1841](https://github.com/flexera-public/policy_templates/pull/1841): POL-1017 AWS Old Snapshots Regex Support
 
 #### Description
 
@@ -906,7 +906,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1840](): POL-996 AWS Burstable EC2 Instances Revamp
+### PR [#1840](https://github.com/flexera-public/policy_templates/pull/1840): POL-996 AWS Burstable EC2 Instances Revamp
 
 #### Description
 
@@ -945,7 +945,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1848](): Update Meta Parent Policy Templates
+### PR [#1848](https://github.com/flexera-public/policy_templates/pull/1848): Update Meta Parent Policy Templates
 
 #### Description
 
@@ -960,7 +960,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1847](): Currency Conversion Fixes
+### PR [#1847](https://github.com/flexera-public/policy_templates/pull/1847): Currency Conversion Fixes
 
 #### Description
 
@@ -987,7 +987,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1828](): POL-1054 New Policy: Azure Bring-Your-Own-License (BYOL) Report
+### PR [#1828](https://github.com/flexera-public/policy_templates/pull/1828): POL-1054 New Policy: Azure Bring-Your-Own-License (BYOL) Report
 
 #### Description
 
@@ -1014,7 +1014,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1837](): Update Meta Parent Policy Templates
+### PR [#1837](https://github.com/flexera-public/policy_templates/pull/1837): Update Meta Parent Policy Templates
 
 #### Description
 
@@ -1029,7 +1029,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1829](): FOPTS-3031 Update parameters of Azure Rightsize Managed Disk policy
+### PR [#1829](https://github.com/flexera-public/policy_templates/pull/1829): FOPTS-3031 Update parameters of Azure Rightsize Managed Disk policy
 
 #### Description
 
@@ -1063,7 +1063,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1830](): POL-1061 New Policy: Flexera Automation Outdated Applied Policies
+### PR [#1830](https://github.com/flexera-public/policy_templates/pull/1830): POL-1061 New Policy: Flexera Automation Outdated Applied Policies
 
 #### Description
 
@@ -1094,7 +1094,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1817](): POL-1004 Azure Schedule Instance Revamp
+### PR [#1817](https://github.com/flexera-public/policy_templates/pull/1817): POL-1004 Azure Schedule Instance Revamp
 
 #### Description
 
@@ -1132,7 +1132,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1808](): POL-998 AWS Schedule Instance Revamp
+### PR [#1808](https://github.com/flexera-public/policy_templates/pull/1808): POL-998 AWS Schedule Instance Revamp
 
 #### Description
 
@@ -1168,7 +1168,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1819](): POL-1005 Google Schedule Instance Revamp
+### PR [#1819](https://github.com/flexera-public/policy_templates/pull/1819): POL-1005 Google Schedule Instance Revamp
 
 #### Description
 
@@ -1208,7 +1208,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1805](): POL-1056 New Policy: Azure Missing Subscriptions
+### PR [#1805](https://github.com/flexera-public/policy_templates/pull/1805): POL-1056 New Policy: Azure Missing Subscriptions
 
 #### Description
 
@@ -1242,7 +1242,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1804](): POL-1007 Azure Policies - Add ignore 400 error status
+### PR [#1804](https://github.com/flexera-public/policy_templates/pull/1804): POL-1007 Azure Policies - Add ignore 400 error status
 
 #### Description
 
@@ -1273,7 +1273,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1800](): Update Meta Parent Policy Templates
+### PR [#1800](https://github.com/flexera-public/policy_templates/pull/1800): Update Meta Parent Policy Templates
 
 #### Description
 
@@ -1288,7 +1288,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1799](): POL-1055 Correct Path for Azure Blob Storage Optimization Policy
+### PR [#1799](https://github.com/flexera-public/policy_templates/pull/1799): POL-1055 Correct Path for Azure Blob Storage Optimization Policy
 
 #### Description
 
@@ -1319,7 +1319,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1786](): POL-1053 Custom Dimension Names in RBD Policies
+### PR [#1786](https://github.com/flexera-public/policy_templates/pull/1786): POL-1053 Custom Dimension Names in RBD Policies
 
 #### Description
 
@@ -1348,7 +1348,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1793](): POL-999 Azure Blob Storage Optimization Revamp
+### PR [#1793](https://github.com/flexera-public/policy_templates/pull/1793): POL-999 Azure Blob Storage Optimization Revamp
 
 #### Description
 
@@ -1388,7 +1388,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1750](): POL-997 AWS Object Storage Optimization Revamp
+### PR [#1750](https://github.com/flexera-public/policy_templates/pull/1750): POL-997 AWS Object Storage Optimization Revamp
 
 #### Description
 
@@ -1426,7 +1426,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1747](): POL-1003 Azure Long Running Instances Action Revamp
+### PR [#1747](https://github.com/flexera-public/policy_templates/pull/1747): POL-1003 Azure Long Running Instances Action Revamp
 
 #### Description
 
@@ -1459,7 +1459,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1789](): Update Meta Parent Policy Templates
+### PR [#1789](https://github.com/flexera-public/policy_templates/pull/1789): Update Meta Parent Policy Templates
 
 #### Description
 
@@ -1474,7 +1474,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1677](): FOPTS-2607 Deployment of rightsize azure managed disks policy
+### PR [#1677](https://github.com/flexera-public/policy_templates/pull/1677): FOPTS-2607 Deployment of rightsize azure managed disks policy
 
 #### Description
 
@@ -1501,7 +1501,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1746](): POL-1000 AWS Long Running Instances Action Revamp
+### PR [#1746](https://github.com/flexera-public/policy_templates/pull/1746): POL-1000 AWS Long Running Instances Action Revamp
 
 #### Description
 
@@ -1528,7 +1528,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1737](): POL-994 Azure Disallowed Regions Revamp
+### PR [#1737](https://github.com/flexera-public/policy_templates/pull/1737): POL-994 Azure Disallowed Regions Revamp
 
 #### Description
 
@@ -1566,7 +1566,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1743](): POL-995 Google Long Stopped Instances Revamp
+### PR [#1743](https://github.com/flexera-public/policy_templates/pull/1743): POL-995 Google Long Stopped Instances Revamp
 
 #### Description
 
@@ -1606,7 +1606,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1751](): POL-1042 AWS Untagged Resources Revamp
+### PR [#1751](https://github.com/flexera-public/policy_templates/pull/1751): POL-1042 AWS Untagged Resources Revamp
 
 #### Description
 
@@ -1639,7 +1639,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1748](): POL-1047 Azure Reserved Instances Recommendations Scaling Fixes
+### PR [#1748](https://github.com/flexera-public/policy_templates/pull/1748): POL-1047 Azure Reserved Instances Recommendations Scaling Fixes
 
 #### Description
 
@@ -1669,7 +1669,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1735](): POL-993 Azure Long Stopped Instances Revamp
+### PR [#1735](https://github.com/flexera-public/policy_templates/pull/1735): POL-993 Azure Long Stopped Instances Revamp
 
 #### Description
 
@@ -1707,7 +1707,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1730](): POL-992 AWS Long Stopped Instances Revamp
+### PR [#1730](https://github.com/flexera-public/policy_templates/pull/1730): POL-992 AWS Long Stopped Instances Revamp
 
 #### Description
 
@@ -1744,7 +1744,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1738](): POL-1045 Azure Reserved Instances Recommendations: Term Parameter Fix
+### PR [#1738](https://github.com/flexera-public/policy_templates/pull/1738): POL-1045 Azure Reserved Instances Recommendations: Term Parameter Fix
 
 #### Description
 
@@ -1771,7 +1771,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1736](): POL-1043 Update Meta Policies
+### PR [#1736](https://github.com/flexera-public/policy_templates/pull/1736): POL-1043 Update Meta Policies
 
 #### Description
 
@@ -1788,7 +1788,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1732](): POL-1043 Meta Policy Substring Support
+### PR [#1732](https://github.com/flexera-public/policy_templates/pull/1732): POL-1043 Meta Policy Substring Support
 
 #### Description
 
@@ -1817,7 +1817,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1731](): POL-1015 Meta Policy Escalation Name Fixes
+### PR [#1731](https://github.com/flexera-public/policy_templates/pull/1731): POL-1015 Meta Policy Escalation Name Fixes
 
 #### Description
 
@@ -1842,7 +1842,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1718](): POL-991 AWS Disallowed Regions Revamp
+### PR [#1718](https://github.com/flexera-public/policy_templates/pull/1718): POL-991 AWS Disallowed Regions Revamp
 
 #### Description
 
@@ -1878,7 +1878,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1719](): FOPTS-2229 Added a way to url decode the skiptoken
+### PR [#1719](https://github.com/flexera-public/policy_templates/pull/1719): FOPTS-2229 Added a way to url decode the skiptoken
 
 #### Description
 
@@ -1914,7 +1914,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1727](): POL-958 Add 'Minimum Age' to Azure Rightsize SQL
+### PR [#1727](https://github.com/flexera-public/policy_templates/pull/1727): POL-958 Add 'Minimum Age' to Azure Rightsize SQL
 
 #### Description
 
@@ -1949,7 +1949,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1725](): feat: add cluster id filtering for databricks PT
+### PR [#1725](https://github.com/flexera-public/policy_templates/pull/1725): feat: add cluster id filtering for databricks PT
 
 #### Description
 
@@ -1978,7 +1978,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1716](): POL-989 Azure Old Snapshots Policy Action Revamp
+### PR [#1716](https://github.com/flexera-public/policy_templates/pull/1716): POL-989 Azure Old Snapshots Policy Action Revamp
 
 #### Description
 
@@ -2005,7 +2005,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1717](): POL-990 Azure Rightsize SQL Policy Action Revamp
+### PR [#1717](https://github.com/flexera-public/policy_templates/pull/1717): POL-990 Azure Rightsize SQL Policy Action Revamp
 
 #### Description
 
@@ -2032,7 +2032,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1720](): POL-988 AWS Unused Volumes Policy Action Revamp
+### PR [#1720](https://github.com/flexera-public/policy_templates/pull/1720): POL-988 AWS Unused Volumes Policy Action Revamp
 
 #### Description
 
@@ -2059,7 +2059,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1678](): POL-981 Azure Untagged Resources Revamp / Untagged Virtual Machines
+### PR [#1678](https://github.com/flexera-public/policy_templates/pull/1678): POL-981 Azure Untagged Resources Revamp / Untagged Virtual Machines
 
 #### Description
 
@@ -2110,7 +2110,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1713](): POL-986 AWS Old Snapshots Policy Action Revamp
+### PR [#1713](https://github.com/flexera-public/policy_templates/pull/1713): POL-986 AWS Old Snapshots Policy Action Revamp
 
 #### Description
 
@@ -2138,7 +2138,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1714](): POL-987 AWS Unused IP Policy Action Revamp
+### PR [#1714](https://github.com/flexera-public/policy_templates/pull/1714): POL-987 AWS Unused IP Policy Action Revamp
 
 #### Description
 
@@ -2167,7 +2167,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1704](): POL-1010 Scheduled Report Policy Revamp
+### PR [#1704](https://github.com/flexera-public/policy_templates/pull/1704): POL-1010 Scheduled Report Policy Revamp
 
 #### Description
 
@@ -2200,7 +2200,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1708](): Update Meta Parent Policy Templates
+### PR [#1708](https://github.com/flexera-public/policy_templates/pull/1708): Update Meta Parent Policy Templates
 
 #### Description
 
@@ -2215,7 +2215,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1706](): POL-982 Hybrid Use Benefit Policy - currency separator symbol shown as undefined
+### PR [#1706](https://github.com/flexera-public/policy_templates/pull/1706): POL-982 Hybrid Use Benefit Policy - currency separator symbol shown as undefined
 
 #### Description
 
@@ -2246,7 +2246,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1700](): FOPTS-2702 Enabling hyperlinks in Turb policies for incidents.
+### PR [#1700](https://github.com/flexera-public/policy_templates/pull/1700): FOPTS-2702 Enabling hyperlinks in Turb policies for incidents.
 
 #### Description
 
@@ -2306,7 +2306,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1697](): POL-1008 Google Idle Persistent Disk Recommender: Add 'Days Unattached' Parameter
+### PR [#1697](https://github.com/flexera-public/policy_templates/pull/1697): POL-1008 Google Idle Persistent Disk Recommender: Add 'Days Unattached' Parameter
 
 #### Description
 
@@ -2336,7 +2336,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1701](): POL-1012 AWS Rightsize RDS Dash Fix
+### PR [#1701](https://github.com/flexera-public/policy_templates/pull/1701): POL-1012 AWS Rightsize RDS Dash Fix
 
 #### Description
 
@@ -2362,7 +2362,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1695](): Update Meta Parent Policy Templates
+### PR [#1695](https://github.com/flexera-public/policy_templates/pull/1695): Update Meta Parent Policy Templates
 
 #### Description
 
@@ -2377,7 +2377,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1693](): feat: improved logging error handling schedule instance PTs
+### PR [#1693](https://github.com/flexera-public/policy_templates/pull/1693): feat: improved logging error handling schedule instance PTs
 
 #### Description
 
@@ -2403,7 +2403,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1683](): POL-566 Policy Update Notification Revamp
+### PR [#1683](https://github.com/flexera-public/policy_templates/pull/1683): POL-566 Policy Update Notification Revamp
 
 #### Description
 
@@ -2440,7 +2440,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1666](): POL-971 Azure Reserved Instances Utilization - update to use Modern Azure APIs
+### PR [#1666](https://github.com/flexera-public/policy_templates/pull/1666): POL-971 Azure Reserved Instances Utilization - update to use Modern Azure APIs
 
 #### Description
 
@@ -2477,7 +2477,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1681](): POL-757 Azure Rightsize Compute Fixes/Improvements
+### PR [#1681](https://github.com/flexera-public/policy_templates/pull/1681): POL-757 Azure Rightsize Compute Fixes/Improvements
 
 #### Description
 
@@ -2515,7 +2515,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1667](): POL-836 AWS Unused Classic Load Balancers Revamp
+### PR [#1667](https://github.com/flexera-public/policy_templates/pull/1667): POL-836 AWS Unused Classic Load Balancers Revamp
 
 #### Description
 
@@ -2554,7 +2554,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1669](): POL-945 Currency Conversion Backfill Support
+### PR [#1669](https://github.com/flexera-public/policy_templates/pull/1669): POL-945 Currency Conversion Backfill Support
 
 #### Description
 
@@ -2589,7 +2589,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1663](): Update Meta Parent Policy Templates
+### PR [#1663](https://github.com/flexera-public/policy_templates/pull/1663): Update Meta Parent Policy Templates
 
 #### Description
 
@@ -2604,7 +2604,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1583](): POL-853 - Azure Databricks Rightsize Compute Instances
+### PR [#1583](https://github.com/flexera-public/policy_templates/pull/1583): POL-853 - Azure Databricks Rightsize Compute Instances
 
 #### Description
 
@@ -2635,7 +2635,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1655](): POL-889 AWS Open S3 Buckets Revamp / Meta
+### PR [#1655](https://github.com/flexera-public/policy_templates/pull/1655): POL-889 AWS Open S3 Buckets Revamp / Meta
 
 #### Description
 
@@ -2673,7 +2673,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1625](): POL-745 SaaS Manager - Deactivated Users for Integrated Applications Revamp
+### PR [#1625](https://github.com/flexera-public/policy_templates/pull/1625): POL-745 SaaS Manager - Deactivated Users for Integrated Applications Revamp
 
 #### Description
 
@@ -2713,7 +2713,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1656](): POL-977 AWS Rightsize RDS: Change Parameter Default Value
+### PR [#1656](https://github.com/flexera-public/policy_templates/pull/1656): POL-977 AWS Rightsize RDS: Change Parameter Default Value
 
 #### Description
 
@@ -2730,7 +2730,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1657](): POL-978 Update Default Frequency of Children to "Weekly"
+### PR [#1657](https://github.com/flexera-public/policy_templates/pull/1657): POL-978 Update Default Frequency of Children to "Weekly"
 
 #### Description
 
@@ -2749,7 +2749,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1649](): POL-975 Google Old Snapshots Revamp / Meta Policy
+### PR [#1649](https://github.com/flexera-public/policy_templates/pull/1649): POL-975 Google Old Snapshots Revamp / Meta Policy
 
 #### Description
 
@@ -2791,7 +2791,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1646](): POL-974 Deprecate AWS Unused RDS Policy
+### PR [#1646](https://github.com/flexera-public/policy_templates/pull/1646): POL-974 Deprecate AWS Unused RDS Policy
 
 #### Description
 
@@ -2818,7 +2818,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1629](): POL-745 Deprecate SaaS Manager - User Status Change Policy
+### PR [#1629](https://github.com/flexera-public/policy_templates/pull/1629): POL-745 Deprecate SaaS Manager - User Status Change Policy
 
 #### Description
 
@@ -2844,7 +2844,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1624](): POL-745 SaaS Manager - Deactivated Users Revamp
+### PR [#1624](https://github.com/flexera-public/policy_templates/pull/1624): POL-745 SaaS Manager - Deactivated Users Revamp
 
 #### Description
 
@@ -2882,7 +2882,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1640](): Update Meta Parent Policy Templates
+### PR [#1640](https://github.com/flexera-public/policy_templates/pull/1640): Update Meta Parent Policy Templates
 
 #### Description
 
@@ -2897,7 +2897,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1609](): POL-964 Email Cost Optimization Recommendations
+### PR [#1609](https://github.com/flexera-public/policy_templates/pull/1609): POL-964 Email Cost Optimization Recommendations
 
 #### Description
 
@@ -2924,7 +2924,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1619](): POL-968 AWS Rightsize RDS Instances Revamp
+### PR [#1619](https://github.com/flexera-public/policy_templates/pull/1619): POL-968 AWS Rightsize RDS Instances Revamp
 
 #### Description
 
@@ -2969,7 +2969,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1620](): feat: Meta Policy Consolidated Incident Actions
+### PR [#1620](https://github.com/flexera-public/policy_templates/pull/1620): feat: Meta Policy Consolidated Incident Actions
 
 #### Description
 
@@ -3006,7 +3006,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1635](): Update Meta Parent Policy Templates
+### PR [#1635](https://github.com/flexera-public/policy_templates/pull/1635): Update Meta Parent Policy Templates
 
 #### Description
 
@@ -3021,7 +3021,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1632](): feat: add param for AWS Pricing API Endpoint
+### PR [#1632](https://github.com/flexera-public/policy_templates/pull/1632): feat: add param for AWS Pricing API Endpoint
 
 #### Description
 
@@ -3050,7 +3050,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1627](): POL-745 SaaS Manager - Unsanctioned Spend Revamp
+### PR [#1627](https://github.com/flexera-public/policy_templates/pull/1627): POL-745 SaaS Manager - Unsanctioned Spend Revamp
 
 #### Description
 
