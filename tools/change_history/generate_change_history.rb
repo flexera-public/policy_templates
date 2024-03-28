@@ -75,9 +75,8 @@ File.open('HISTORY.md', 'w') do |file|
     description = ""
 
     pr[:description].each_line do |line|
-      if !line.include?("### Description") && !line.include?("### Contribution Check List") && !line.include?("New functionality has been documented in the README if applicable") && !line.include?("New functionality includes testing.") && !line.include?("New functionality has been documented in the README if applicable") && !line.include?("New functionality has been documented in CHANGELOG.MD")
-        description += "> #{line.strip}\n"
-      end
+      break if line.include?("### Contribution Check List")
+      description += "> #{line.strip}\n" if !line.include?("### Description")
     end
 
     file.puts "### PR [##{pr[:number]}](#{pr[:href]}): #{pr[:title]}\n\n"
