@@ -64,9 +64,7 @@ File.open('HISTORY.md', 'w') do |file|
 
     if pr[:modified_files].length <= 10
       policy_list = pr[:modified_files].select { |file| file.include?(".pt") }.map do |pt_file|
-        #file_text = File.read(pt_file)
-        #file_text.split("\n")[0].strip.split('"')[1]
-        pt_file
+        pt_file.split('/')[-1]
       end
 
       policy_list_string = policy_list.join(", ")
