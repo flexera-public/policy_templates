@@ -42,6 +42,10 @@ File.open('data/change_history/change_history.json', 'w') {
 
 # Generate the HISTORY.md from the same data
 # Only include PRs that actually modified policies
+active_list_text = File.read("https://raw.githubusercontent.com/flexera-public/policy_templates/master/data/active_policy_list/active_policy_list.json")
+active_list_json = JSON.parse(active_list_text)
+active_policy_list = active_list_json[:policies]
+
 policy_pr_list = pr_list.select { |pr| pr[:modified_files].any? { |file| file.match?(/\.pt\z/) } }.slice(0, 100)
 
 File.open('HISTORY.md', 'w') do |file|
@@ -51,30 +55,39 @@ File.open('HISTORY.md', 'w') do |file|
   file.puts "## History\n\n"
 
   policy_pr_list.each do |pr|
-    file.puts "### PR [##{pr[:number]}](#{pr[:href]}): #{pr[:title]}\n\n"
-
-    file.puts "#### Description\n\n"
-    pr[:description].each_line { |line| file.puts "> #{line}".strip }
-    file.puts "\n"
-
-    file.puts "#### Metadata\n\n"
-
-    file.puts "- **Labels**: #{pr[:labels].join(', ')}"
-    file.puts "- **Created At**: #{pr[:created_at]}"
-    file.puts "- **Merged At**: #{pr[:merged_at]}"
+    policy_name = "Not displayed due to PR with multiple policies or no published policies. Please see [Github Pull Request](#{pr[:href]}) for these details."
+    readme = "Not displayed due to PR with multiple policies or no published policies. Please see [Github Pull Request](#{pr[:href]}) for these details."
 
     if pr[:modified_files].length <= 10
-      policy_list = pr[:modified_files].select { |file| file.include?(".pt") }.map do |pt_file|
-        pt_file.split('/')[-1]
+      modified_policies = []
+
+      pr[:modified_files].each do |policy|
+        active_entry = active_policy_list.find { |policy| policy[:file_name] == policy }
+        modified_policies << active_entry if active_entry
       end
 
-      policy_list_string = policy_list.join(", ")
-    else
-      policy_list_string = "> 10 policies modified. Please review the [PR on Github](#{pr[:pr_link]}) for the full list."
+      if modified_policies.length == 1
+        policy_metadata = modified_policies[0]
+        policy_name = policy_metadata[:name]
+        readme = "[README.md](https://github.com/flexera-public/policy_templates/blob/master/#{policy_metadata[:readme]})"
+      end
     end
 
-    file.puts "- **Modified Policies**: #{policy_list_string}"
+    description = ""
 
+    pr[:description].each_line do |line|
+      if !line.include?("### Description") && !line.include?("### Contribution Check List") && !line.include?("New functionality has been documented in the README if applicable") && !line.include?("New functionality includes testing.") && !line.include?("New functionality has been documented in the README if applicable") && !line.include?("New functionality has been documented in CHANGELOG.MD")
+        description += "> #{line.strip}\n"
+      end
+    end
+
+    file.puts "### PR [##{pr[:number]}](#{pr[:href]}): #{pr[:title]}\n\n"
+    file.puts "#### Description\n\n"
+    file.puts "#{description.strip}\n\n"
+    file.puts "#### Metadata\n\n"
+    file.puts "- **Policy Name**: #{policy_name}"
+    file.puts "- **README**: #{readme}"
+    file.puts "- **Merged At**: #{pr[:merged_at]}"
     file.puts "\n---\n\n"
   end
 end
