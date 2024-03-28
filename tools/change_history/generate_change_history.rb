@@ -55,8 +55,7 @@ File.open('HISTORY.md', 'w') do |file|
   file.puts "## History\n\n"
 
   policy_pr_list.each do |pr|
-    policy_name = "Not displayed due to PR with multiple policies or no published policies. Please see [Github Pull Request](#{pr[:href]}) for these details."
-    readme = "Not displayed due to PR with multiple policies or no published policies. Please see [Github Pull Request](#{pr[:href]}) for these details."
+    policy_name = "Not displayed due to PR with > 5 policies or no published policies. Please see [Github Pull Request](#{pr[:href]}) for these details."
 
     if pr[:modified_files].length <= 10
       modified_policies = []
@@ -66,10 +65,10 @@ File.open('HISTORY.md', 'w') do |file|
         modified_policies << active_entry if active_entry
       end
 
-      if modified_policies.length == 1
-        policy_metadata = modified_policies[0]
-        policy_name = policy_metadata[:name]
-        readme = "[README.md](https://github.com/flexera-public/policy_templates/blob/master/#{policy_metadata[:readme]})"
+      if modified_policies.length <= 5
+        policy_name = modified_policies.map do |policy| do
+          "[#{policy[:name]}](https://github.com/flexera-public/policy_templates/tree/master/#{policy[:readme]})"
+        end.join(", ")
       end
     end
 
@@ -85,9 +84,8 @@ File.open('HISTORY.md', 'w') do |file|
     file.puts "#### Description\n\n"
     file.puts "#{description.strip}\n\n"
     file.puts "#### Metadata\n\n"
-    file.puts "- **Policy Name**: #{policy_name}"
-    file.puts "- **README**: #{readme}"
-    file.puts "- **Merged At**: #{pr[:merged_at]}"
+    file.puts "- **Policies**: #{policy_name}\n"
+    file.puts "- **Merged At**: #{pr[:merged_at]}\n"
     file.puts "\n---\n\n"
   end
 end
