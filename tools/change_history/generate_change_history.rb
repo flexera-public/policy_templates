@@ -74,12 +74,14 @@ File.open('HISTORY.md', 'w') do |file|
 
     description = ""
 
-    pr[:description].each_line do |line|
+    pr[:description].each_line.with_index do |line, index|
       break if line.include?("Contribution Check List")
       break if line.include?("Link to Example Applied Policy")
+      next if line.include?("### Description")
+      next if description.empty? && line.strip.empty?
 
       formatted_line = "> #{line.strip}".strip
-      description += "#{formatted_line}\n" if !line.include?("### Description")
+      description += "#{formatted_line}\n"
     end
 
     file.puts "### PR [##{pr[:number]}](#{pr[:href]}): #{pr[:title]}\n\n"
