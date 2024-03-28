@@ -62,12 +62,18 @@ File.open('HISTORY.md', 'w') do |file|
     file.puts "- **Created At**: #{pr[:created_at]}"
     file.puts "- **Merged At**: #{pr[:merged_at]}"
 
-    policy_list = pr[:modified_files].select { |file| file.include?(".pt") }.map do |pt_file|
-      file_text = File.read(pt_file)
-      file_text.split("\n")[0].strip.split('"')[1]
+    if pr[:modified_files].length <= 10
+      policy_list = pr[:modified_files].select { |file| file.include?(".pt") }.map do |pt_file|
+        file_text = File.read(pt_file)
+        file_text.split("\n")[0].strip.split('"')[1]
+      end
+
+      policy_list_string = policy_list.join(", ")
+    else
+      policy_list_string = "> 10 policies modified. Please review the [PR on Github](#{pr[:pr_link]}) for the full list."
     end
 
-    file.puts "- **Modified Policies**: #{policy_list.join(", ")}"
+    file.puts "- **Modified Policies**: #{policy_list_string}"
 
     file.puts "\n"
   end
