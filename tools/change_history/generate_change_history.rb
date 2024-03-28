@@ -51,7 +51,7 @@ File.open('HISTORY.md', 'w') do |file|
   file.puts "## History\n\n"
 
   policy_pr_list.each do |pr|
-    file.puts "### PR [##{pr[:number]}](#{pr[:pr_link]}): #{pr[:title]}\n\n"
+    file.puts "### PR [##{pr[:number]}](#{pr[:href]}): #{pr[:title]}\n\n"
 
     file.puts "#### Description\n\n"
     pr[:description].each_line { |line| file.puts "> #{line}".strip }
