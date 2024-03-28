@@ -65,7 +65,7 @@ File.open('HISTORY.md', 'w') do |file|
         modified_policies << active_entry if active_entry
       end
 
-      if modified_policies.length <= 5
+      if modified_policies.length > 0 && modified_policies.length <= 5
         policy_name = modified_policies.map do |policy|
           "[#{policy["name"]}](https://github.com/flexera-public/policy_templates/tree/master/#{policy["readme"]})"
         end.join(", ")
@@ -76,6 +76,7 @@ File.open('HISTORY.md', 'w') do |file|
 
     pr[:description].each_line do |line|
       break if line.include?("### Contribution Check List")
+      break if line.include?("### Link to Example Applied Policy")
       description += "> #{line.strip}\n" if !line.include?("### Description")
     end
 
