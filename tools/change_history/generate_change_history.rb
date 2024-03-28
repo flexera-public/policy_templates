@@ -53,17 +53,21 @@ File.open('HISTORY.md', 'w') do |file|
   policy_pr_list.each do |pr|
     file.puts "### PR [##{pr[:number]}](#{pr[:pr_link]}): #{pr[:title]}\n\n"
 
-    file.puts "- **Description**:"
+    file.puts "#### Description\n\n"
     pr[:description].each_line { |line| file.puts "> #{line}" }
+
+    file.puts "#### Metadata\n\n"
 
     file.puts "- **Labels**: #{pr[:labels].join(', ')}"
     file.puts "- **Created At**: #{pr[:created_at]}"
     file.puts "- **Merged At**: #{pr[:merged_at]}"
-    file.puts "- **Modified Files**:"
 
-    pr[:modified_files].each do |file_name|
-      file.puts "  - [#{file_name}](https://github.com/flexera-public/policy_templates/blob/master/#{file_name})"
+    policy_list = pr[:modified_files].select { |file| file.include?(".pt") }.map do |pt_file|
+      file_text = File.read(pt_file)
+      file_text.split("\n")[0].strip.split('"')[1]
     end
+
+    file.puts "- **Modified Policies**: #{policy_list.join(", ")}"
 
     file.puts "\n"
   end
