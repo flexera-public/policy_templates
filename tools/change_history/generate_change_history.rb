@@ -61,7 +61,8 @@ File.open('HISTORY.md', 'w') do |file|
       modified_policies = []
 
       pr[:modified_files].each do |policy|
-        active_entry = active_policy_list.find { |policy| policy[:file_name] == policy }
+        puts policy
+        active_entry = active_policy_list.find { |active_policy| active_policy[:file_name] == policy }
         modified_policies << active_entry if active_entry
       end
 
