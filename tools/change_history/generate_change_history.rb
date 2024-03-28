@@ -41,14 +41,17 @@ File.open('data/change_history/change_history.json', 'w') {
 }
 
 # Generate the HISTORY.md from the same data
-File.open('HISTORY.md', 'w') do |file|
-  file.puts "# #{repo_name} Change History\n"
-  file.puts "## Description\n"
-  file.puts "This document contains a full pull request merge history of the #{repo_name} repository. Changes are sorted by the date the pull request was merged into the `master` branch, with the most recent changes listed first. This functions as a universal Changelog file for the entire repository. A [JSON version](https://github.com/flexera-public/policy_templates/blob/master/data/change_history/change_history.json) is also available.\n"
-  file.puts "## History\n"
+# Only include PRs that actually modified policies
+policy_pr_list = pr_list.select { |pr| pr[:modified_files].any? { |file| file.match?(/\.pt\z/) } }.slice(0, 200)
 
-  pr_list.each do |pr|
-    file.puts "### PR [##{pr[:number]}](#{pr[:pr_link]}): #{pr[:title]}\n"
+File.open('HISTORY.md', 'w') do |file|
+  file.puts "# #{repo_name} Change History\n\n"
+  file.puts "## Description\n\n"
+  file.puts "This document contains the last 200 policy template merges for the #{repo_name} repository. Only merges that modify policy templates are included. Changes are sorted by the date the pull request was merged into the `master` branch, with the most recent changes listed first. A [JSON version](https://github.com/flexera-public/policy_templates/blob/master/data/change_history/change_history.json) with the full history all merges, not just the last 100 policy merges, is also available.\n\n"
+  file.puts "## History\n\n"
+
+  policy_pr_list.each do |pr|
+    file.puts "### PR [##{pr[:number]}](#{pr[:pr_link]}): #{pr[:title]}\n\n"
 
     file.puts "- **Description**:"
     pr[:description].each_line { |line| file.puts "> #{line}" }
@@ -62,6 +65,6 @@ File.open('HISTORY.md', 'w') do |file|
       file.puts "  - [#{file_name}](https://github.com/flexera-public/policy_templates/blob/master/#{file_name})"
     end
 
-    file.puts ""
+    file.puts "\n"
   end
 end
