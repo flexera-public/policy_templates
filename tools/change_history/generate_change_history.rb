@@ -42,7 +42,7 @@ File.open('data/change_history/change_history.json', 'w') {
 
 # Generate the HISTORY.md from the same data
 # Only include PRs that actually modified policies
-active_list_text = File.read("https://raw.githubusercontent.com/flexera-public/policy_templates/master/data/active_policy_list/active_policy_list.json")
+active_list_text = File.read("data/active_policy_list/active_policy_list.json")
 active_list_json = JSON.parse(active_list_text)
 active_policy_list = active_list_json[:policies]
 
