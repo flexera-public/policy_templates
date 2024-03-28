@@ -45,7 +45,7 @@ File.open('data/change_history/change_history.json', 'w') {
 policy_pr_list = pr_list.select { |pr| pr[:modified_files].any? { |file| file.match?(/\.pt\z/) } }.slice(0, 100)
 
 File.open('HISTORY.md', 'w') do |file|
-  file.puts "# #{repo_name} Change History\n\n"
+  file.puts "# #{repo_name} Policy Change History\n\n"
   file.puts "## Description\n\n"
   file.puts "This document contains the last 100 policy template merges for the #{repo_name} repository. Only merges that modify policy templates are included. Changes are sorted by the date the pull request was merged into the `master` branch, with the most recent changes listed first. A [JSON version](https://github.com/flexera-public/policy_templates/blob/master/data/change_history/change_history.json) with the full history all merges, not just the last 100 policy merges, is also available.\n\n"
   file.puts "## History\n\n"
