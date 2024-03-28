@@ -55,7 +55,7 @@ File.open('HISTORY.md', 'w') do |file|
   file.puts "## History\n\n"
 
   policy_pr_list.each do |pr|
-    policy_name = "Not displayed due to PR with > 5 policies or no published policies. Please see [Github Pull Request](#{pr[:href]}) for these details."
+    policy_name = "Not displayed due to PR with > 5 policies. Please see [Github Pull Request](#{pr[:href]}) for these details."
 
     if pr[:modified_files].length <= 10
       modified_policies = []
@@ -70,13 +70,17 @@ File.open('HISTORY.md', 'w') do |file|
           "[#{policy["name"]}](https://github.com/flexera-public/policy_templates/tree/master/#{policy["readme"]})"
         end.join(", ")
       end
+
+      if modified_policies.length == 0
+        policy_name = "Not displayed due to PR with no published policies. Please see [Github Pull Request](#{pr[:href]}) for details about unpublished policies."
+      end
     end
 
     description = ""
 
     pr[:description].each_line.with_index do |line, index|
       break if line.include?("Contribution Check List")
-      break if line.include?("Link to Example Applied Policy")
+      break if line.include?("Link to Example Applied Polic") # Covers singular and plural
       next if line.include?("### Description")
       next if description.empty? && line.strip.empty?
 
