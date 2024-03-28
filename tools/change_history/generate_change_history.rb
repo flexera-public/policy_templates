@@ -41,27 +41,59 @@ File.open('data/change_history/change_history.json', 'w') {
 }
 
 # Generate the HISTORY.md from the same data
+# Only include PRs that actually modified policies
+active_list_text = File.read("data/active_policy_list/active_policy_list.json")
+active_list_json = JSON.parse(active_list_text)
+active_policy_list = active_list_json["policies"]
+
+policy_pr_list = pr_list.slice(0, 1000).select { |pr| pr[:modified_files].any? { |file| file.strip.end_with?(".pt") } }.slice(0, 100)
+
 File.open('HISTORY.md', 'w') do |file|
-  file.puts "# #{repo_name} Change History\n"
-  file.puts "## Description\n"
-  file.puts "This document contains a full pull request merge history of the #{repo_name} repository. Changes are sorted by the date the pull request was merged into the `master` branch, with the most recent changes listed first. This functions as a universal Changelog file for the entire repository. A [JSON version](https://github.com/flexera-public/policy_templates/blob/master/data/change_history/change_history.json) is also available.\n"
-  file.puts "## History\n"
+  file.puts "# #{repo_name} Policy Change History\n\n"
+  file.puts "## Description\n\n"
+  file.puts "This document contains the last 100 policy template merges for the #{repo_name} repository. Only merges that modify policy templates are included. Changes are sorted by the date the pull request was merged into the `master` branch, with the most recent changes listed first. A [JSON version](https://github.com/flexera-public/policy_templates/blob/master/data/change_history/change_history.json) with the full history all merges, not just the last 100 policy merges, is also available.\n\n"
+  file.puts "## History\n\n"
 
-  pr_list.each do |pr|
-    file.puts "### PR [##{pr[:number]}](#{pr[:pr_link]}): #{pr[:title]}\n"
+  policy_pr_list.each do |pr|
+    policy_name = "Not displayed due to PR with > 5 policies. Please see [Github Pull Request](#{pr[:href]}) for these details."
 
-    file.puts "- **Description**:"
-    pr[:description].each_line { |line| file.puts "> #{line}" }
+    if pr[:modified_files].length <= 10
+      modified_policies = []
 
-    file.puts "- **Labels**: #{pr[:labels].join(', ')}"
-    file.puts "- **Created At**: #{pr[:created_at]}"
-    file.puts "- **Merged At**: #{pr[:merged_at]}"
-    file.puts "- **Modified Files**:"
+      pr[:modified_files].each do |policy|
+        active_entry = active_policy_list.find { |active_policy| active_policy["file_name"] == policy }
+        modified_policies << active_entry if active_entry
+      end
 
-    pr[:modified_files].each do |file_name|
-      file.puts "  - [#{file_name}](https://github.com/flexera-public/policy_templates/blob/master/#{file_name})"
+      if modified_policies.length > 0 && modified_policies.length <= 5
+        policy_name = modified_policies.map do |policy|
+          "[#{policy["name"]}](https://github.com/flexera-public/policy_templates/tree/master/#{policy["readme"]})"
+        end.join(", ")
+      end
+
+      if modified_policies.length == 0
+        policy_name = "Not displayed due to PR with no published policies. Please see [Github Pull Request](#{pr[:href]}) for details about unpublished policies."
+      end
     end
 
-    file.puts ""
+    description = ""
+
+    pr[:description].each_line.with_index do |line, index|
+      break if line.include?("Contribution Check List")
+      break if line.include?("Link to Example Applied Polic") # Covers singular and plural
+      next if line.include?("### Description")
+      next if description.empty? && line.strip.empty?
+
+      formatted_line = "> #{line}".strip
+      description += "#{formatted_line}\n"
+    end
+
+    file.puts "### PR [##{pr[:number]}](#{pr[:href]}): #{pr[:title]}\n\n"
+    file.puts "#### Description\n\n"
+    file.puts "#{description.strip}\n\n"
+    file.puts "#### Metadata\n\n"
+    file.puts "- **Policies**: #{policy_name}\n"
+    file.puts "- **Merged At**: #{pr[:merged_at]}\n"
+    file.puts "\n---\n\n"
   end
 end
