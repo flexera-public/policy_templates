@@ -44,9 +44,9 @@ File.open('data/change_history/change_history.json', 'w') {
 # Only include PRs that actually modified policies
 active_list_text = File.read("data/active_policy_list/active_policy_list.json")
 active_list_json = JSON.parse(active_list_text)
-active_policy_list = active_list_json[:policies]
+active_policy_list = active_list_json["policies"]
 
-policy_pr_list = pr_list.select { |pr| pr[:modified_files].any? { |file| file.match?(/\.pt\z/) } }.slice(0, 100)
+policy_pr_list = pr_list.slice(0, 1000).select { |pr| pr[:modified_files].any? { |file| file.strip.end_with?(".pt") } }.slice(0, 100)
 
 File.open('HISTORY.md', 'w') do |file|
   file.puts "# #{repo_name} Policy Change History\n\n"
@@ -61,14 +61,13 @@ File.open('HISTORY.md', 'w') do |file|
       modified_policies = []
 
       pr[:modified_files].each do |policy|
-        puts policy
-        active_entry = active_policy_list.find { |active_policy| active_policy[:file_name] == policy }
+        active_entry = active_policy_list.find { |active_policy| active_policy["file_name"] == policy }
         modified_policies << active_entry if active_entry
       end
 
       if modified_policies.length <= 5
         policy_name = modified_policies.map do |policy|
-          "[#{policy[:name]}](https://github.com/flexera-public/policy_templates/tree/master/#{policy[:readme]})"
+          "[#{policy["name"]}](https://github.com/flexera-public/policy_templates/tree/master/#{policy["readme"]})"
         end.join(", ")
       end
     end
