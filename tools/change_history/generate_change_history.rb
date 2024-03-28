@@ -66,7 +66,7 @@ File.open('HISTORY.md', 'w') do |file|
       end
 
       if modified_policies.length <= 5
-        policy_name = modified_policies.map do |policy| do
+        policy_name = modified_policies.map do |policy|
           "[#{policy[:name]}](https://github.com/flexera-public/policy_templates/tree/master/#{policy[:readme]})"
         end.join(", ")
       end
