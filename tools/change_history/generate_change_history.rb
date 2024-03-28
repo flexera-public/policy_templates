@@ -54,7 +54,8 @@ File.open('HISTORY.md', 'w') do |file|
     file.puts "### PR [##{pr[:number]}](#{pr[:pr_link]}): #{pr[:title]}\n\n"
 
     file.puts "#### Description\n\n"
-    pr[:description].each_line { |line| file.puts "> #{line}" }
+    pr[:description].each_line { |line| file.puts "> #{line}".strip }
+    file.puts "\n"
 
     file.puts "#### Metadata\n\n"
 
