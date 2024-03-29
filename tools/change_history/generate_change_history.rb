@@ -20,7 +20,8 @@ github_client.auto_paginate = true
 # Gather list of PRs via API and filter for ones merged into master.
 # Also sort the list by date with the most recent PRs coming first
 merged_pull_requests = github_client.pull_requests(repo_name, state: 'closed').select do |pr|
-  pr.merged_at && pr.base.ref == 'master'
+  # Omit PRs triggered by this script to avoid an infinite loop
+  pr.merged_at && pr.base.ref == 'master' && pr.title.strip != "Update Change History"
 end.sort_by(&:merged_at).reverse
 
 # Convert the API results into a simple object
