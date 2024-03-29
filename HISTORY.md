@@ -162,7 +162,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Metadata
 
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1920) for details about unpublished policies.
+- **Policies**: [Budget vs Actual Spend Report](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/budget_v_actual_spend_report/README.md)
 - **Merged At**: 2024-03-19 22:26:39 UTC
 
 ---
@@ -180,7 +180,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Metadata
 
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1916) for details about unpublished policies.
+- **Policies**: [Cloud Cost Anomaly Alerts](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/cloud_cost_anomaly_alerts/README.md)
 - **Merged At**: 2024-03-13 16:24:33 UTC
 
 ---
@@ -210,7 +210,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Metadata
 
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1909) for details about unpublished policies.
+- **Policies**: [Budget vs Actual Spend Report](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/budget_v_actual_spend_report/README.md)
 - **Merged At**: 2024-03-04 19:58:45 UTC
 
 ---
@@ -273,7 +273,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Metadata
 
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1778) for details about unpublished policies.
+- **Policies**: [Budget vs Actual Spend Report](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/budget_v_actual_spend_report/README.md)
 - **Merged At**: 2024-03-01 21:36:24 UTC
 
 ---
@@ -313,7 +313,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Metadata
 
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1867) for details about unpublished policies.
+- **Policies**: [Google Open Buckets](https://github.com/flexera-public/policy_templates/tree/master/security/google/public_buckets/README.md)
 - **Merged At**: 2024-02-29 13:45:21 UTC
 
 ---
@@ -449,7 +449,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Metadata
 
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1864) for details about unpublished policies.
+- **Policies**: [Cloud Cost Anomaly Alerts](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/cloud_cost_anomaly_alerts/README.md)
 - **Merged At**: 2024-02-26 20:25:42 UTC
 
 ---
@@ -469,7 +469,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Metadata
 
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1861) for details about unpublished policies.
+- **Policies**: [Cloud Cost Anomaly Alerts](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/cloud_cost_anomaly_alerts/README.md)
 - **Merged At**: 2024-02-26 17:09:54 UTC
 
 ---
@@ -1149,7 +1149,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Metadata
 
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1719) for details about unpublished policies.
+- **Policies**: [Schedule ITAM Report](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/itam/schedule_itam_report/README.md)
 - **Merged At**: 2024-01-09 13:36:56 UTC
 
 ---
@@ -1312,7 +1312,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Metadata
 
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1704) for details about unpublished policies.
+- **Policies**: [Scheduled Report](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/scheduled_reports/README.md)
 - **Merged At**: 2023-12-29 14:11:13 UTC
 
 ---
@@ -1534,7 +1534,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Metadata
 
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1669) for details about unpublished policies.
+- **Policies**: [Currency Conversion](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/currency_conversion/README.md)
 - **Merged At**: 2023-12-07 13:10:33 UTC
 
 ---
@@ -1590,7 +1590,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Metadata
 
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1655) for details about unpublished policies.
+- **Policies**: [AWS Open S3 Buckets](https://github.com/flexera-public/policy_templates/tree/master/security/aws/public_buckets/README.md)
 - **Merged At**: 2023-12-01 19:56:40 UTC
 
 ---
@@ -1752,7 +1752,7 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 #### Metadata
 
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1609) for details about unpublished policies.
+- **Policies**: [Email Cost Optimization Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/email_recommendations/README.md)
 - **Merged At**: 2023-11-21 21:25:49 UTC
 
 ---
