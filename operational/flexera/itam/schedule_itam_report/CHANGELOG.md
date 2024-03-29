@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.4
+
+- Updated policy metadata to make it more clear what Flexera service the policy is for
+
 ## v0.1.3
 
 - Updated description to account for new file path in Github repository
