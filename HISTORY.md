@@ -352,19 +352,6 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1879](https://github.com/flexera-public/policy_templates/pull/1879): Update Meta Parent Policy Templates
-
-#### Description
-
-> Update Meta Parent Policy Templates from GitHub Actions Workflow [Generate Meta Parent Policy Templates](https://github.com/flexera-public/policy_templates/actions/runs/8071749355)
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1879) for details about unpublished policies.
-- **Merged At**: 2024-02-27 21:48:08 UTC
-
----
-
 ### PR [#1870](https://github.com/flexera-public/policy_templates/pull/1870): FOPTS-3238 Update `short_description` of the policy Azure Rightsize NetApp Files
 
 #### Description
@@ -553,19 +540,6 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1848](https://github.com/flexera-public/policy_templates/pull/1848): Update Meta Parent Policy Templates
-
-#### Description
-
-> Update Meta Parent Policy Templates from GitHub Actions Workflow [Generate Meta Parent Policy Templates](https://github.com/flexera-public/policy_templates/actions/runs/8010285881)
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1848) for details about unpublished policies.
-- **Merged At**: 2024-02-22 20:02:39 UTC
-
----
-
 ### PR [#1847](https://github.com/flexera-public/policy_templates/pull/1847): Currency Conversion Fixes
 
 #### Description
@@ -591,19 +565,6 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 - **Policies**: [Azure Bring-Your-Own-License (BYOL) Report](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/byol_report/README.md)
 - **Merged At**: 2024-02-21 13:06:33 UTC
-
----
-
-### PR [#1837](https://github.com/flexera-public/policy_templates/pull/1837): Update Meta Parent Policy Templates
-
-#### Description
-
-> Update Meta Parent Policy Templates from GitHub Actions Workflow [Generate Meta Parent Policy Templates](https://github.com/flexera-public/policy_templates/actions/runs/7934272061)
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1837) for details about unpublished policies.
-- **Merged At**: 2024-02-16 18:04:53 UTC
 
 ---
 
@@ -756,19 +717,6 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1800](https://github.com/flexera-public/policy_templates/pull/1800): Update Meta Parent Policy Templates
-
-#### Description
-
-> Update Meta Parent Policy Templates from GitHub Actions Workflow [Generate Meta Parent Policy Templates](https://github.com/flexera-public/policy_templates/actions/runs/7816819227)
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1800) for details about unpublished policies.
-- **Merged At**: 2024-02-07 15:16:56 UTC
-
----
-
 ### PR [#1799](https://github.com/flexera-public/policy_templates/pull/1799): POL-1055 Correct Path for Azure Blob Storage Optimization Policy
 
 #### Description
@@ -870,19 +818,6 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 - **Policies**: [Azure Long Running Instances](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/azure_long_running_instances/README.md)
 - **Merged At**: 2024-02-05 13:06:34 UTC
-
----
-
-### PR [#1789](https://github.com/flexera-public/policy_templates/pull/1789): Update Meta Parent Policy Templates
-
-#### Description
-
-> Update Meta Parent Policy Templates from GitHub Actions Workflow [Generate Meta Parent Policy Templates](https://github.com/flexera-public/policy_templates/actions/runs/7782044712)
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1789) for details about unpublished policies.
-- **Merged At**: 2024-02-05 09:10:27 UTC
 
 ---
 
@@ -1317,19 +1252,6 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1708](https://github.com/flexera-public/policy_templates/pull/1708): Update Meta Parent Policy Templates
-
-#### Description
-
-> Update Meta Parent Policy Templates from GitHub Actions Workflow [Generate Meta Parent Policy Templates](https://github.com/flexera-public/policy_templates/actions/runs/7338799914)
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1708) for details about unpublished policies.
-- **Merged At**: 2023-12-27 13:39:41 UTC
-
----
-
 ### PR [#1706](https://github.com/flexera-public/policy_templates/pull/1706): POL-982 Hybrid Use Benefit Policy - currency separator symbol shown as undefined
 
 #### Description
@@ -1392,19 +1314,6 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 - **Policies**: [AWS Rightsize RDS Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_rds_instances/README.md)
 - **Merged At**: 2023-12-19 14:42:36 UTC
-
----
-
-### PR [#1695](https://github.com/flexera-public/policy_templates/pull/1695): Update Meta Parent Policy Templates
-
-#### Description
-
-> Update Meta Parent Policy Templates from GitHub Actions Workflow [Generate Meta Parent Policy Templates](https://github.com/flexera-public/policy_templates/actions/runs/7225989438)
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1695) for details about unpublished policies.
-- **Merged At**: 2023-12-15 19:11:13 UTC
 
 ---
 
@@ -1536,19 +1445,6 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 - **Policies**: [Currency Conversion](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/currency_conversion/README.md)
 - **Merged At**: 2023-12-07 13:10:33 UTC
-
----
-
-### PR [#1663](https://github.com/flexera-public/policy_templates/pull/1663): Update Meta Parent Policy Templates
-
-#### Description
-
-> Update Meta Parent Policy Templates from GitHub Actions Workflow [Generate Meta Parent Policy Templates](https://github.com/flexera-public/policy_templates/actions/runs/7065172364)
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1663) for details about unpublished policies.
-- **Merged At**: 2023-12-01 21:08:09 UTC
 
 ---
 
@@ -1730,19 +1626,6 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1640](https://github.com/flexera-public/policy_templates/pull/1640): Update Meta Parent Policy Templates
-
-#### Description
-
-> Update Meta Parent Policy Templates from GitHub Actions Workflow [Generate Meta Parent Policy Templates](https://github.com/flexera-public/policy_templates/actions/runs/6949742626)
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1640) for details about unpublished policies.
-- **Merged At**: 2023-11-21 21:27:42 UTC
-
----
-
 ### PR [#1609](https://github.com/flexera-public/policy_templates/pull/1609): POL-964 Email Cost Optimization Recommendations
 
 #### Description
@@ -1804,19 +1687,6 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 ---
 
-### PR [#1635](https://github.com/flexera-public/policy_templates/pull/1635): Update Meta Parent Policy Templates
-
-#### Description
-
-> Update Meta Parent Policy Templates from GitHub Actions Workflow [Generate Meta Parent Policy Templates](https://github.com/flexera-public/policy_templates/actions/runs/6936774725)
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1635) for details about unpublished policies.
-- **Merged At**: 2023-11-20 23:49:32 UTC
-
----
-
 ### PR [#1632](https://github.com/flexera-public/policy_templates/pull/1632): feat: add param for AWS Pricing API Endpoint
 
 #### Description
@@ -1854,6 +1724,212 @@ This document contains the last 100 policy template merges for the flexera-publi
 
 - **Policies**: [SaaS Manager - Unsanctioned Spend](https://github.com/flexera-public/policy_templates/tree/master/saas/fsm/unsanctioned_spend/README.md)
 - **Merged At**: 2023-11-20 22:19:01 UTC
+
+---
+
+### PR [#1621](https://github.com/flexera-public/policy_templates/pull/1621): POL-745 SaaS Manager - Duplicate User Accounts Revamp
+
+#### Description
+
+> This is part of a broader initiative to update our SaaS Manager FSM policies to use up to date APIs. The policy itself has also been revamped along similar lines to other policies.
+>
+> From the CHANGELOG:
+>
+> - Updated policy to use public SaaS Manager API
+> - Added support for APAC API endpoint
+> - Policy now uses and requires a general Flexera One credential
+> - Incident summary now includes applied policy name
+> - General code cleanup and normalization
+>
+
+#### Metadata
+
+- **Policies**: [SaaS Manager - Duplicate User Accounts](https://github.com/flexera-public/policy_templates/tree/master/saas/fsm/duplicate_users/README.md)
+- **Merged At**: 2023-11-20 22:18:45 UTC
+
+---
+
+### PR [#1622](https://github.com/flexera-public/policy_templates/pull/1622): POL-745 SaaS Manager - Redundant Apps Revamp
+
+#### Description
+
+> This is part of a broader initiative to update our SaaS Manager FSM policies to use up to date APIs. The policy itself has also been revamped along similar lines to other policies.
+>
+> From the CHANGELOG:
+>
+> - Updated policy to use public SaaS Manager API
+> - Added support for APAC API endpoint
+> - Policy now uses and requires a general Flexera One credential
+> - Incident summary now includes applied policy name
+> - Incident now includes additional fields to provide more context
+> - General code cleanup and normalization
+>
+
+#### Metadata
+
+- **Policies**: [SaaS Manager - Redundant Apps](https://github.com/flexera-public/policy_templates/tree/master/saas/fsm/redundant_apps/README.md)
+- **Merged At**: 2023-11-20 22:18:31 UTC
+
+---
+
+### PR [#1623](https://github.com/flexera-public/policy_templates/pull/1623): POL-745 SaaS Manager - Renewal Reminder Revamp
+
+#### Description
+
+> This is part of a broader initiative to update our SaaS Manager FSM policies to use up to date APIs. The policy itself has also been revamped along similar lines to other policies.
+>
+> From the CHANGELOG:
+>
+> - Updated policy to use public SaaS Manager API
+> - Added support for APAC API endpoint
+> - Policy now uses and requires a general Flexera One credential
+> - Added `Applications` parameter to allow user to filter results by application
+> - Incident summary now includes applied policy name
+> - Incident now includes additional fields to provide more context
+> - General code cleanup and normalization
+>
+
+#### Metadata
+
+- **Policies**: [SaaS Manager - Renewal Reminder](https://github.com/flexera-public/policy_templates/tree/master/saas/fsm/renewal_reminder/README.md)
+- **Merged At**: 2023-11-20 22:18:21 UTC
+
+---
+
+### PR [#1626](https://github.com/flexera-public/policy_templates/pull/1626): POL-745 SaaS Manager - Suspicious Users Revamp
+
+#### Description
+
+> This is part of a broader initiative to update our SaaS Manager FSM policies to use the correct API endpoints for APAC. The policy itself has also been revamped along similar lines to other policies.
+>
+> Note: This policy still uses the now-deprecated internal SaaS Manager API. This is because the new API does not yet support the requests this policy needs to make to function. This functionality will be brought to the new API before the old one is decommissioned, and this policy will need to be updated again at that time.
+>
+> From the CHANGELOG:
+>
+> - Added support for APAC API endpoint
+> - Policy now uses and requires a general Flexera One credential
+> - Incident summary now includes applied policy name
+> - General code cleanup and normalization
+>
+
+#### Metadata
+
+- **Policies**: [SaaS Manager - Suspicious Users](https://github.com/flexera-public/policy_templates/tree/master/saas/fsm/suspicious_users/README.md)
+- **Merged At**: 2023-11-20 22:18:07 UTC
+
+---
+
+### PR [#1628](https://github.com/flexera-public/policy_templates/pull/1628): POL-745 SaaS Manager - Unsanctioned Applications with Existing Contract Revamp
+
+#### Description
+
+> This is part of a broader initiative to update our SaaS Manager FSM policies to use the correct API endpoints for APAC. The policy itself has also been revamped along similar lines to other policies.
+>
+> Note: This policy still uses the now-deprecated internal SaaS Manager API. This is because the new API does not yet support the requests this policy needs to make to function. This functionality will be brought to the new API before the old one is decommissioned, and this policy will need to be updated again at that time.
+>
+> From the CHANGELOG:
+>
+> - Added support for APAC API endpoint
+> - Policy now uses and requires a general Flexera One credential
+> - Incident summary now includes applied policy name
+> - `Currency` is now a separate incident field
+> - General code cleanup and normalization
+>
+
+#### Metadata
+
+- **Policies**: [SaaS Manager - Unsanctioned Applications with Existing Contract](https://github.com/flexera-public/policy_templates/tree/master/saas/fsm/unsanctioned_apps_with_contract/README.md)
+- **Merged At**: 2023-11-20 22:17:40 UTC
+
+---
+
+### PR [#1605](https://github.com/flexera-public/policy_templates/pull/1605): POL-745 Fix APAC API Endpoints
+
+#### Description
+
+> This updates policies to point to the correct APAC API endpoints.
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1605) for these details.
+- **Merged At**: 2023-11-16 18:51:14 UTC
+
+---
+
+### PR [#1610](https://github.com/flexera-public/policy_templates/pull/1610): FOPTS-2380 Modify S3 Object Policy template to prevent tag calls if user don't input tags
+
+#### Description
+
+> Modify temporally a bucket list to prevent timeout from large buckets, and revert that changes once successfully results
+>
+> Additionally, if user did specify exclude tags, retrieve tags only for objects we will be raising incident for, instead of making calls for all discovered objects
+>
+> ### Issues Resolved
+>
+> [FOPTS-2380](https://flexera.atlassian.net/browse/FOPTS-2380)
+>
+
+#### Metadata
+
+- **Policies**: [AWS Object Storage Optimization](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/object_storage_optimization/README.md)
+- **Merged At**: 2023-11-10 22:14:42 UTC
+
+---
+
+### PR [#1613](https://github.com/flexera-public/policy_templates/pull/1613): POL-966 Azure Rightsize SQL Fix
+
+#### Description
+
+> If the list of databases returned by the Azure API included entries without a valid 'sku' field, the policy would error out instead of completing. This is a fix for that; such entries are now filtered entirely, since it wouldn't be possible to provide meaningful recommendations without knowing the SKU anyway.
+>
+
+#### Metadata
+
+- **Policies**: [Azure Rightsize SQL Databases](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_sql_instances/README.md)
+- **Merged At**: 2023-11-09 20:29:42 UTC
+
+---
+
+### PR [#1615](https://github.com/flexera-public/policy_templates/pull/1615): POL-967 Deprecate AWS GP3 Upgradeable Volumes Policy
+
+#### Description
+
+> This policy is no longer being updated. The [AWS Rightsize EBS Volumes](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ebs_volumes/) policy should be used for these recommendations instead.
+>
+> Note that, unlike the AWS Rightsize EBS Volumes policy, this policy reports on IO1 and IO2 volumes. These volumes are high performance volumes, so changing them to GP3 will result in a performance downgrade and may cause issues for workloads that rely on this performance.
+>
+> Effectively, this policy was just recommending the above change without regard for actual usage data, which is a bit reckless and shouldn't be done. A future version of the AWS Rightsize EBS Volumes policy may include this functionality, but it would be alongside actual analysis of metrics to determine if the downgrade makes sense.
+>
+
+#### Metadata
+
+- **Policies**: [AWS GP3 Upgradeable Volumes](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/gp3_volume_upgrade/README.md)
+- **Merged At**: 2023-11-09 20:27:33 UTC
+
+---
+
+### PR [#1602](https://github.com/flexera-public/policy_templates/pull/1602): POL-960 Update AWS Reserved Instances Utilization - add ability to filter by Billing Center
+
+#### Description
+
+> <!-- Describe what this change achieves below -->
+> Adds functionality to the policy so that a user can filter current reservation purchases by Billing Center.
+>
+> As we cannot currently support RBAC on reserved instances within the platform, this will allow for owners of Billing Centers to only receive the list of reservations (and their respective utilizations) that are applicable to their BCs, and not see all reservations at a global level.
+>
+> If the user does not specify a specific list of billing centers, the policy operates in the same way it did prior to this change.
+>
+> ### Issues Resolved
+>
+> <!-- List any existing issues this PR resolves below -->
+> - Fixes README title to reflect policy template name.
+> - Fixes README "Credential Configuration" section to reflect the credentials required to run the policy.
+>
+
+#### Metadata
+
+- **Policies**: [AWS Reserved Instances Utilization](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/reserved_instances/utilization/README.md)
+- **Merged At**: 2023-11-09 19:30:09 UTC
 
 ---
 
