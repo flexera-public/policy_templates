@@ -1,3 +1,8 @@
+# Generate Change History
+# This script generates the following files:
+# data/change_history/change_history.json: Full history of the repository in JSON format
+# HISTORY.md: Human readable history of the last 100 merges that impacted policies
+
 require 'rubygems'
 require 'json'
 require 'fileutils'
@@ -35,30 +40,36 @@ end
 # Construct final object
 merged_prs = { "merged_prs": pr_list }
 
-# Write the output JSON file
+# Write the data/change_history/change_history.json file
 File.open('data/change_history/change_history.json', 'w') {
   |file| file.write(JSON.pretty_generate(merged_prs) + "\n")
 }
 
-# Generate the HISTORY.md from the same data
-# Only include PRs that actually modified policies
+# Read the active policy JSON to assist in gathering policy metadata
 active_list_text = File.read("data/active_policy_list/active_policy_list.json")
 active_list_json = JSON.parse(active_list_text)
 active_policy_list = active_list_json["policies"]
 
+# Only include last 100 PRs that actually modified policies and aren't automated
+# Initial slice of 1000 is to reduce the workload of the rest of the filtering
 policy_pr_list = pr_list.slice(0, 1000).select do |pr|
   pr[:modified_files].any? { |file| file.strip.end_with?(".pt") } && !pr[:title].include?("Update Meta Parent Policy Templates")
 end.slice(0, 100)
 
+# Generate the HISTORY.md file
 File.open('HISTORY.md', 'w') do |file|
+  # Build header
   file.puts "# Published Policy Change History\n\n"
   file.puts "## Description\n\n"
   file.puts "This document contains the last 100 policy template merges for the `#{repo_name}` repository. Only merges that modify policy templates are included. Changes are sorted by the date the pull request was merged into the `master` branch, with the most recent changes listed first. A [JSON version](https://github.com/flexera-public/policy_templates/blob/master/data/change_history/change_history.json) with the full history all merges, not just the last 100 policy merges, is also available.\n\n"
   file.puts "## History\n\n"
 
+  # Build entries for each change
   policy_pr_list.each do |pr|
+    # We only display the names if <= 5 published policies were modified
     policy_name = "Not displayed due to PR with > 5 policies. Please see [Github Pull Request](#{pr[:href]}) for these details."
 
+    # Logic to find the names of modified policies and generate links to their readmes
     if pr[:modified_files].length <= 10
       modified_policies = []
 
@@ -79,11 +90,13 @@ File.open('HISTORY.md', 'w') do |file|
         end.join(", ")
       end
 
+      # If we found no modified policies that are in the active JSON list, assume they are unpublished
       if modified_policies.length == 0
         policy_name = "Not displayed due to PR with no published policies. Please see [Github Pull Request](#{pr[:href]}) for details about unpublished policies."
       end
     end
 
+    # Clean up the description to remove known extraneous elements for readability
     description = ""
 
     pr[:description].each_line.with_index do |line, index|
@@ -96,6 +109,7 @@ File.open('HISTORY.md', 'w') do |file|
       description += "#{formatted_line}\n"
     end
 
+    # Write entry to file
     file.puts "### PR [##{pr[:number]}](#{pr[:href]}): #{pr[:title]}\n\n"
     file.puts "#### Description\n\n"
     file.puts "#{description.strip}\n\n"
