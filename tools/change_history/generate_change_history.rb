@@ -46,7 +46,9 @@ active_list_text = File.read("data/active_policy_list/active_policy_list.json")
 active_list_json = JSON.parse(active_list_text)
 active_policy_list = active_list_json["policies"]
 
-policy_pr_list = pr_list.slice(0, 1000).select { |pr| pr[:modified_files].any? { |file| file.strip.end_with?(".pt") } }.slice(0, 100)
+policy_pr_list = pr_list.slice(0, 1000).select do |pr|
+  pr[:modified_files].any? { |file| file.strip.end_with?(".pt") } && !pr[:title].include?("Update Meta Parent Policy Templates")
+end.slice(0, 100)
 
 File.open('HISTORY.md', 'w') do |file|
   file.puts "# #{repo_name} Policy Change History\n\n"
