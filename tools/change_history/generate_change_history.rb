@@ -63,6 +63,12 @@ File.open('HISTORY.md', 'w') do |file|
       pr[:modified_files].each do |policy|
         active_entry = active_policy_list.find { |active_policy| active_policy["file_name"] == policy }
         modified_policies << active_entry if active_entry
+
+        # If full path is not found in active policy list, search for just the filename
+        if !active_entry
+          active_entry = active_policy_list.find { |active_policy| active_policy["file_name"].include?(policy.split('/')[-1]) }
+          modified_policies << active_entry if active_entry
+        end
       end
 
       if modified_policies.length > 0 && modified_policies.length <= 5
