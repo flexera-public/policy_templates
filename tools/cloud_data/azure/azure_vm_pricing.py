@@ -11,7 +11,7 @@ import os
 
 print("Gathering Consumption data from Azure Price API...")
 
-output_filename = "data/azure/azure_vm_pricing.json"
+output_filename = f'data/azure/azure_vm_pricing.json'
 
 api_url = "https://prices.azure.com/api/retail/prices"
 query = "serviceName eq 'Virtual Machines' and priceType eq 'Consumption'"

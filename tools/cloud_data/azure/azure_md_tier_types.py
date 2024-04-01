@@ -10,7 +10,8 @@
 
 import json
 
-OUTPUT_FILENAME = "data/azure/azure_md_tier_types.json"
+OUTPUT_FILENAME = f'data/azure/azure_md_tier_types.json'
+
 MANAGED_DISK_TIER_MAP = {
     "S4": {
         "sizeGiB": 32,
