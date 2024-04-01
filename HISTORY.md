@@ -6,6 +6,22 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#1968](https://github.com/flexera-public/policy_templates/pull/1968): POL-1183 AWS Old Snapshots RDS Duplicate Fix
+
+#### Description
+
+> The AWS API endpoint for gathering RDS snapshots will return a value for each instance of an iterative snapshot of a single RDS resource. This means a snapshot for a single RDS resource that only appears in the bill once would be returned by the API several times, even though each instance returned by the API was just a version of a single snapshot.
+>
+> This fix adds new logic to account for this. When these iterative snapshots are found, only the most recent one is considered during the analysis instead of all of them. As a result, if someone has a daily backup of an RDS instance, the same instance with the same dollar value in the bill doesn't appear several times in the results, greatly inflating them. This also means that such snapshots will not be reported erroneously simply because their oldest iteration is > 30 days.
+>
+
+#### Metadata
+
+- **Policies**: [AWS Old Snapshots](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/old_snapshots/README.md)
+- **Merged At**: 2024-03-29 19:27:52 UTC
+
+---
+
 ### PR [#1967](https://github.com/flexera-public/policy_templates/pull/1967): POL-1182 New Policy: AWS Missing Regions
 
 #### Description
@@ -1905,31 +1921,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [AWS GP3 Upgradeable Volumes](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/gp3_volume_upgrade/README.md)
 - **Merged At**: 2023-11-09 20:27:33 UTC
-
----
-
-### PR [#1602](https://github.com/flexera-public/policy_templates/pull/1602): POL-960 Update AWS Reserved Instances Utilization - add ability to filter by Billing Center
-
-#### Description
-
-> <!-- Describe what this change achieves below -->
-> Adds functionality to the policy so that a user can filter current reservation purchases by Billing Center.
->
-> As we cannot currently support RBAC on reserved instances within the platform, this will allow for owners of Billing Centers to only receive the list of reservations (and their respective utilizations) that are applicable to their BCs, and not see all reservations at a global level.
->
-> If the user does not specify a specific list of billing centers, the policy operates in the same way it did prior to this change.
->
-> ### Issues Resolved
->
-> <!-- List any existing issues this PR resolves below -->
-> - Fixes README title to reflect policy template name.
-> - Fixes README "Credential Configuration" section to reflect the credentials required to run the policy.
->
-
-#### Metadata
-
-- **Policies**: [AWS Reserved Instances Utilization](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/reserved_instances/utilization/README.md)
-- **Merged At**: 2023-11-09 19:30:09 UTC
 
 ---
 
