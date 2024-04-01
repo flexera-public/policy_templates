@@ -12,14 +12,21 @@ import urllib.request
 import os
 
 raw_filename = "aws_rds_pricing_raw.json"
-output_filename = "data/azure/aws_rds_pricing.json"
+output_filename = "data/aws/aws_rds_pricing.json"
 url = "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonRDS/current/index.json"
+
+print("Gathering data from AWS Price API...")
 
 urllib.request.urlretrieve(url, raw_filename)
 
 with open(raw_filename) as file:
-  raw_data_products = json.load(file)["products"]
-  raw_data_terms = json.load(file)["terms"]["OnDemand"]
+  raw_data = json.load(file)
+
+raw_data_products = raw_data["products"]
+raw_data_terms = raw_data["terms"]["OnDemand"]
+del raw_data
+
+print("Processing data from AWS Price API output...")
 
 starting_list = []
 
@@ -100,8 +107,14 @@ for item in starting_list:
       "pricePerUnit": pricePerUnit
     }
 
+print("Writing final output to file...")
+
 price_file = open(output_filename, "w")
 price_file.write(json.dumps(final_list, sort_keys=True, indent=2))
 price_file.close()
 
+print("Cleaning up temporary files...")
+
 os.remove(raw_filename)
+
+print("DONE!")

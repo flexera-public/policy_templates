@@ -11,15 +11,77 @@ import json
 import urllib.request
 import os
 
-raw_filename = "aws_ec2_pricing_raw.json"
-output_filename = "data/azure/aws_ec2_pricing.json"
+raw_filename = f'aws_ec2_pricing_raw.json'
+product_filename = f'aws_ec2_pricing_raw_products.json'
+terms_filename = f'aws_ec2_pricing_raw_terms.json'
+output_filename = f'data/aws/aws_ec2_pricing.json'
 url = "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/index.json"
+
+print("Gathering data from AWS Price API...")
 
 urllib.request.urlretrieve(url, raw_filename)
 
-with open(raw_filename) as file:
-  raw_data_products = json.load(file)["products"]
-  raw_data_terms = json.load(file)["terms"]["OnDemand"]
+print("Removing unnecessary data from AWS Price API output...")
+
+# Store filtered file for product list
+product_block = 0
+
+with open(product_filename, 'w') as output_file:
+  output_file.write("{\n")
+
+  with open(raw_filename, 'r') as source_file:
+    for line in source_file:
+      if product_block == 0 and '"products"' in line:
+        product_block = 1
+
+      if product_block == 1:
+        if line.rstrip() == '  },':
+          break
+        elif line.rstrip() == '    },':
+          output_file.write(line)
+        elif line.rstrip().startswith('    "'):
+          output_file.write(line)
+        elif '"sku"' in line.rstrip() or '"instanceType"' in line.rstrip() or '"operatingSystem"' in line.rstrip() or '"preInstalledSw"' in line.rstrip() or '"attributes"' in line.rstrip():
+          output_file.write(line)
+        elif '"regionCode"' in line.rstrip():
+          output_file.write(line.replace(",", ""))
+        elif line.strip() == '}' and line.rstrip() != '  }':
+          output_file.write(line)
+
+  output_file.write("}\n")
+
+# Store filtered file for terms list
+terms_block = 0
+
+with open(terms_filename, 'w') as output_file:
+  output_file.write("{\n")
+
+  with open(raw_filename, 'r') as source_file:
+    for line in source_file:
+      if terms_block == 0 and '"terms"' in line:
+        output_file.write(line)
+
+      if terms_block == 0 and '"OnDemand"' in line.split(":")[0]:
+        terms_block = 1
+
+      if terms_block == 1:
+        if line.rstrip() == '    },':
+          break
+        else:
+          output_file.write(line)
+
+  output_file.write("    }\n")
+  output_file.write("  }\n")
+  output_file.write("}\n")
+
+
+with open(product_filename) as file:
+  raw_data_products = json.load(file)
+
+with open(terms_filename) as file:
+  raw_data_terms = json.load(file)
+
+print("Processing remaining data from AWS Price API output...")
 
 starting_list = []
 
@@ -32,14 +94,14 @@ for key in raw_data_products:
     preInstalledSw = raw_data_products[key]["attributes"]["preInstalledSw"]
     prices = []
 
-    if key in raw_data_terms and preInstalledSw == "NA":
-      for pricing_key in raw_data_terms[key]:
-        offerTermCode = raw_data_terms[key][pricing_key]["offerTermCode"]
+    if key in raw_data_terms["terms"]["OnDemand"] and preInstalledSw == "NA":
+      for pricing_key in raw_data_terms["terms"]["OnDemand"][key]:
+        offerTermCode = raw_data_terms["terms"]["OnDemand"][key][pricing_key]["offerTermCode"]
         priceDimensions = []
 
-        for dimension_key in raw_data_terms[key][pricing_key]["priceDimensions"]:
-          rateCode = raw_data_terms[key][pricing_key]["priceDimensions"][dimension_key]["rateCode"]
-          pricePerUnit = raw_data_terms[key][pricing_key]["priceDimensions"][dimension_key]["pricePerUnit"]["USD"]
+        for dimension_key in raw_data_terms["terms"]["OnDemand"][key][pricing_key]["priceDimensions"]:
+          rateCode = raw_data_terms["terms"]["OnDemand"][key][pricing_key]["priceDimensions"][dimension_key]["rateCode"]
+          pricePerUnit = raw_data_terms["terms"]["OnDemand"][key][pricing_key]["priceDimensions"][dimension_key]["pricePerUnit"]["USD"]
 
           dimension_object = {
             "rateCode": rateCode,
@@ -91,8 +153,16 @@ for item in starting_list:
       "pricePerUnit": pricePerUnit
     }
 
+print("Writing final output to file...")
+
 price_file = open(output_filename, "w")
 price_file.write(json.dumps(final_list, sort_keys=True, indent=2))
 price_file.close()
 
+print("Cleaning up temporary files...")
+
 os.remove(raw_filename)
+os.remove(product_filename)
+os.remove(terms_filename)
+
+print("DONE!")
