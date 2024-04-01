@@ -1,6 +1,6 @@
-# Flexera CMP Policy Templates
+# Flexera Policy Templates
 
-This repository contains a library of open source Flexera CMP Policy Templates to provide governance via automation across Cost, Security, Operational, and Compliance categories.  All contributions are shared under the MIT license.
+This repository contains a library of open source [Flexera Policy Templates](https://docs.flexera.com/flexera/EN/Automation/AboutPolicies.htm). All contributions are shared under the MIT license.
 
 Please contact sales@flexera.com to learn more.
 
