@@ -1,6 +1,6 @@
 # Instructions for updating the price list:
 #   (1) Download the flexera-public/policy_templates repository locally.
-#   (2) Run this Python script. It should replace aws_ec2_pricing.json with a new updated file.
+#   (2) Run this Python script. It should replace aws_rds_pricing.json with a new updated file.
 #   (3) Add and commit the new file, push it to the repository, and then make a pull request.
 #
 # Note: It is recommended that you have at least 10 GB of free disk space to run this script.
@@ -10,9 +10,9 @@ import json
 import urllib.request
 import os
 
-raw_filename = "aws_ec2_pricing_raw.json"
-output_filename = "aws_ec2_pricing.json"
-url = "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/index.json"
+raw_filename = "aws_rds_pricing_raw.json"
+output_filename = "data/azure/aws_rds_pricing.json"
+url = "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonRDS/current/index.json"
 
 urllib.request.urlretrieve(url, raw_filename)
 
@@ -25,12 +25,13 @@ for key in raw_data["products"]:
   if "instanceType" in raw_data["products"][key]["attributes"] and "regionCode" in raw_data["products"][key]["attributes"]:
     instanceType = raw_data["products"][key]["attributes"]["instanceType"]
     regionCode = raw_data["products"][key]["attributes"]["regionCode"]
+    databaseEngine = raw_data["products"][key]["attributes"]["databaseEngine"]
+    deploymentOption = raw_data["products"][key]["attributes"]["deploymentOption"]
     sku = raw_data["products"][key]["sku"]
-    operatingSystem = raw_data["products"][key]["attributes"]["operatingSystem"]
-    preInstalledSw = raw_data["products"][key]["attributes"]["preInstalledSw"]
+
     prices = []
 
-    if key in raw_data["terms"]["OnDemand"] and preInstalledSw == "NA":
+    if key in raw_data["terms"]["OnDemand"]:
       for pricing_key in raw_data["terms"]["OnDemand"][key]:
         offerTermCode = raw_data["terms"]["OnDemand"][key][pricing_key]["offerTermCode"]
         priceDimensions = []
@@ -57,7 +58,8 @@ for key in raw_data["products"]:
         "instanceType": instanceType,
         "regionCode": regionCode,
         "sku": sku,
-        "operatingSystem": operatingSystem,
+        "databaseEngine": databaseEngine,
+        "deploymentOption": deploymentOption,
         "prices": prices
       }
 
@@ -69,8 +71,12 @@ for item in starting_list:
   instanceType = item["instanceType"]
   regionCode = item["regionCode"]
   sku = item["sku"]
-  operatingSystem = item["operatingSystem"]
+  databaseEngine = item["databaseEngine"]
+  deploymentOption = item["deploymentOption"]
   pricePerUnit = -1
+
+  if regionCode == "":
+    regionCode = "None"
 
   for price in item["prices"]:
     for dimension in price["priceDimensions"]:
@@ -83,8 +89,11 @@ for item in starting_list:
   if not instanceType in final_list[regionCode]:
     final_list[regionCode][instanceType] = {}
 
+  if not databaseEngine in final_list[regionCode][instanceType]:
+    final_list[regionCode][instanceType][databaseEngine] = {}
+
   if pricePerUnit != -1:
-    final_list[regionCode][instanceType][operatingSystem] = {
+    final_list[regionCode][instanceType][databaseEngine][deploymentOption] = {
       "sku": sku,
       "pricePerUnit": pricePerUnit
     }
