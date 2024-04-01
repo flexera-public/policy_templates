@@ -16,14 +16,14 @@ output_filename = "data/azure/azure_vm_pricing.json"
 api_url = "https://prices.azure.com/api/retail/prices"
 query = "serviceName eq 'Virtual Machines' and priceType eq 'Consumption'"
 response = requests.get(api_url, params={'$filter': query})
-json_data = json.loads(response.text)
+json_data = response.json()
 
 price_list = json_data['Items']
 nextPage = json_data['NextPageLink']
 
 while(nextPage):
   response = requests.get(nextPage)
-  json_data = json.loads(response.text)
+  json_data = response.json()
   nextPage = json_data['NextPageLink']
   price_list.extend(json_data['Items'])
 
