@@ -1,10 +1,10 @@
 # Azure Tag Cardinality Report
 
-## What it does
+## What It Does
 
 This Policy Template is used to generate a tag cardinality (how many unique values each tag key has) report for Azure, along with a list of those unique values for each tag key. The report includes cardinality for all tag values for Azure Subscriptions, Resource Groups, and Resources.
 
-## Functional Details
+## How It Works
 
 This policy performs the following action:
 
@@ -23,11 +23,11 @@ This policy has the following input parameter required when launching the policy
 
 ## Policy Actions
 
-This read-only policy is purely for reporting purposes and takes no action.
+- Sends an email notification
 
 ## Prerequisites
 
-This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
 ### Credential configuration
 
@@ -42,6 +42,8 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
+
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ## Supported Clouds
 
