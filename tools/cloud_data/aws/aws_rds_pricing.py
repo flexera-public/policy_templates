@@ -11,8 +11,8 @@ import json
 import urllib.request
 import os
 
-raw_filename = "aws_rds_pricing_raw.json"
-output_filename = "data/aws/aws_rds_pricing.json"
+raw_filename = f'aws_rds_pricing_raw.json'
+output_filename = f'data/aws/aws_rds_pricing.json'
 url = "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonRDS/current/index.json"
 
 print("Gathering data from AWS Price API...")
