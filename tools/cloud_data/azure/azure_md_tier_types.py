@@ -5,6 +5,7 @@
 #   (2) Create a new local branch of the repository.
 #   (3) In case there is a new disk type added by Azure, add that disk to the MANAGED_DISK_TIER_MAP.
 #   (4) Run this Python script. It should replace managed_disk_tier_types.json with a new updated file.
+#       Note: Working directory should be the *root* directory of the repository.
 #   (5) Add and commit the new file, push it to the repository, and then make a pull request.
 
 import json

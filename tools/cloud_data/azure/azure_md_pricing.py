@@ -4,6 +4,7 @@
 #   (1) Download the flexera-public/policy_templates repository locally.
 #   (2) Create a new local branch of the repository.
 #   (3) Run this Python script. It should replace azure_md_pricing.json with a new updated file.
+#       Note: Working directory should be the *root* directory of the repository.
 #   (4) Add and commit the new file, push it to the repository, and then make a pull request.
 
 import json

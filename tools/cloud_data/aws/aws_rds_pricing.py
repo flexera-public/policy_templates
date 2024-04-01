@@ -1,6 +1,7 @@
 # Instructions for updating the price list:
 #   (1) Download the flexera-public/policy_templates repository locally.
 #   (2) Run this Python script. It should replace aws_rds_pricing.json with a new updated file.
+#       Note: Working directory should be the *root* directory of the repository.
 #   (3) Add and commit the new file, push it to the repository, and then make a pull request.
 #
 # Note: It is recommended that you have at least 10 GB of free disk space to run this script.
