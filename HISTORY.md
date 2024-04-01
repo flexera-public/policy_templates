@@ -6,6 +6,20 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#1999](https://github.com/flexera-public/policy_templates/pull/1999): POL-1157 Add Region Filtering to AWS/Azure Tag Cardinality Policies
+
+#### Description
+
+> This adds region filtering to the AWS and Azure Tag Cardinality policy. The main impetus for this change is to ensure the policy can work as expected for AWS estates with SCP protections enabled. Azure policy was updated to ensure both policies have parity in terms of their functionality.
+>
+
+#### Metadata
+
+- **Policies**: [AWS Tag Cardinality Report](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/tag_cardinality/README.md), [Azure Tag Cardinality Report](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/tag_cardinality/README.md)
+- **Merged At**: 2024-04-01 17:13:44 UTC
+
+---
+
 ### PR [#1968](https://github.com/flexera-public/policy_templates/pull/1968): POL-1183 AWS Old Snapshots RDS Duplicate Fix
 
 #### Description
@@ -1903,24 +1917,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [Azure Rightsize SQL Databases](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_sql_instances/README.md)
 - **Merged At**: 2023-11-09 20:29:42 UTC
-
----
-
-### PR [#1615](https://github.com/flexera-public/policy_templates/pull/1615): POL-967 Deprecate AWS GP3 Upgradeable Volumes Policy
-
-#### Description
-
-> This policy is no longer being updated. The [AWS Rightsize EBS Volumes](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ebs_volumes/) policy should be used for these recommendations instead.
->
-> Note that, unlike the AWS Rightsize EBS Volumes policy, this policy reports on IO1 and IO2 volumes. These volumes are high performance volumes, so changing them to GP3 will result in a performance downgrade and may cause issues for workloads that rely on this performance.
->
-> Effectively, this policy was just recommending the above change without regard for actual usage data, which is a bit reckless and shouldn't be done. A future version of the AWS Rightsize EBS Volumes policy may include this functionality, but it would be alongside actual analysis of metrics to determine if the downgrade makes sense.
->
-
-#### Metadata
-
-- **Policies**: [AWS GP3 Upgradeable Volumes](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/gp3_volume_upgrade/README.md)
-- **Merged At**: 2023-11-09 20:27:33 UTC
 
 ---
 
