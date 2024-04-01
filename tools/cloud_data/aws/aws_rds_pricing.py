@@ -18,28 +18,29 @@ url = "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonRDS/current
 urllib.request.urlretrieve(url, raw_filename)
 
 with open(raw_filename) as file:
-  raw_data = json.load(file)
+  raw_data_products = json.load(file)["products"]
+  raw_data_terms = json.load(file)["terms"]["OnDemand"]
 
 starting_list = []
 
-for key in raw_data["products"]:
-  if "instanceType" in raw_data["products"][key]["attributes"] and "regionCode" in raw_data["products"][key]["attributes"]:
-    instanceType = raw_data["products"][key]["attributes"]["instanceType"]
-    regionCode = raw_data["products"][key]["attributes"]["regionCode"]
-    databaseEngine = raw_data["products"][key]["attributes"]["databaseEngine"]
-    deploymentOption = raw_data["products"][key]["attributes"]["deploymentOption"]
-    sku = raw_data["products"][key]["sku"]
+for key in raw_data_products:
+  if "instanceType" in raw_data_products[key]["attributes"] and "regionCode" in raw_data_products[key]["attributes"]:
+    instanceType = raw_data_products[key]["attributes"]["instanceType"]
+    regionCode = raw_data_products[key]["attributes"]["regionCode"]
+    databaseEngine = raw_data_products[key]["attributes"]["databaseEngine"]
+    deploymentOption = raw_data_products[key]["attributes"]["deploymentOption"]
+    sku = raw_data_products[key]["sku"]
 
     prices = []
 
-    if key in raw_data["terms"]["OnDemand"]:
-      for pricing_key in raw_data["terms"]["OnDemand"][key]:
-        offerTermCode = raw_data["terms"]["OnDemand"][key][pricing_key]["offerTermCode"]
+    if key in raw_data_terms:
+      for pricing_key in raw_data_terms[key]:
+        offerTermCode = raw_data_terms[key][pricing_key]["offerTermCode"]
         priceDimensions = []
 
-        for dimension_key in raw_data["terms"]["OnDemand"][key][pricing_key]["priceDimensions"]:
-          rateCode = raw_data["terms"]["OnDemand"][key][pricing_key]["priceDimensions"][dimension_key]["rateCode"]
-          pricePerUnit = raw_data["terms"]["OnDemand"][key][pricing_key]["priceDimensions"][dimension_key]["pricePerUnit"]["USD"]
+        for dimension_key in raw_data_terms[key][pricing_key]["priceDimensions"]:
+          rateCode = raw_data_terms[key][pricing_key]["priceDimensions"][dimension_key]["rateCode"]
+          pricePerUnit = raw_data_terms[key][pricing_key]["priceDimensions"][dimension_key]["pricePerUnit"]["USD"]
 
           dimension_object = {
             "rateCode": rateCode,
