@@ -6,6 +6,22 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#1997](https://github.com/flexera-public/policy_templates/pull/1997): POL-1159 Update Flexera Policy Metadata
+
+#### Description
+
+> This updates the metadata for all of the dedicated Flexera policies to more clearly indicate what Flexera service they are for, and to consistently flag them as "Flexera" for the `provider` field. This also removes references to dated terminology for products/services in this metadata, such as RISC and Optima.
+>
+> Note: There are a large number of warnings/errors due to the large number of policies touched, but it is not feasible to update every policy to pass the modernized linting. Those policies can be updated as they get touched organically for other reasons.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1997) for these details.
+- **Merged At**: 2024-04-02 15:37:07 UTC
+
+---
+
 ### PR [#1999](https://github.com/flexera-public/policy_templates/pull/1999): POL-1157 Add Region Filtering to AWS/Azure Tag Cardinality Policies
 
 #### Description
@@ -1903,20 +1919,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [AWS Object Storage Optimization](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/object_storage_optimization/README.md)
 - **Merged At**: 2023-11-10 22:14:42 UTC
-
----
-
-### PR [#1613](https://github.com/flexera-public/policy_templates/pull/1613): POL-966 Azure Rightsize SQL Fix
-
-#### Description
-
-> If the list of databases returned by the Azure API included entries without a valid 'sku' field, the policy would error out instead of completing. This is a fix for that; such entries are now filtered entirely, since it wouldn't be possible to provide meaningful recommendations without knowing the SKU anyway.
->
-
-#### Metadata
-
-- **Policies**: [Azure Rightsize SQL Databases](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_sql_instances/README.md)
-- **Merged At**: 2023-11-09 20:29:42 UTC
 
 ---
 
