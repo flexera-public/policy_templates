@@ -46,11 +46,11 @@ changed_pt_files = changed_files.select{ |file| file.end_with?(".pt") && !file.e
 # Changed Meta Policy Template files.
 changed_meta_pt_files = changed_files.select{ |file| file.end_with?("meta_parent.pt") }
 # Changed README files.
-changed_readme_files = changed_files.select{ |file| file.end_with?("/README.md") }
+changed_readme_files = changed_files.select{ |file| file.end_with?("/README.md") && (file.start_with?("automation/") || file.start_with?("compliance/") || file.start_with?("cost/") || file.start_with?("operational/") || file.start_with?("saas/") || file.start_with?("security/")) }
 # Changed Changelog files.
 changed_changelog_files = changed_files.select{ |file| file.end_with?("/CHANGELOG.md") }
 # Changed MD files other than the above.
-changed_misc_md_files = changed_files.select{ |file| file.end_with?(".md") && !file.end_with?("/README.md") && !file.end_with?("/CHANGELOG.md") && !file.start_with?("HISTORY.md") }
+changed_misc_md_files = changed_files.select{ |file| file.end_with?(".md") && !file.end_with?("/CHANGELOG.md") && !file.start_with?("HISTORY.md") && !(file.end_with?("/README.md") && (file.start_with?("automation/") || file.start_with?("compliance/") || file.start_with?("cost/") || file.start_with?("operational/") || file.start_with?("saas/") || file.start_with?("security/"))) }
 # Changed JSON files.
 changed_json_files = changed_files.select{ |file| file.end_with?(".json") }
 # Changed YAML files.
@@ -68,20 +68,6 @@ test = github_pr_missing_labels?(github); fail test if test
 test = github_pr_missing_ready_label?(github); message test if test
 
 ###############################################################################
-# All Files Testing
-###############################################################################
-
-# Perform a basic text lint on all changed files
-changed_files.each do |file|
-  `node_modules/.bin/textlint #{file} 1>textlint.log`
-
-  if $?.exitstatus != 0
-    message `cat textlint.log`
-    fail "**#{file}**\nTextlint failed"
-  end
-end
-
-###############################################################################
 # Modified Important Files Testing
 ###############################################################################
 
@@ -90,6 +76,15 @@ modified_important_files = modified_important_files.join("\n")
 
 # Consolidate changed files into a single warning to save space
 warn "**Important Files Modified**\nPlease make sure these modifications were intentional and have been tested. These files are necessary for configuring the Github repository and managing automation.\n\n" + modified_important_files.strip if !modified_important_files.empty?
+
+###############################################################################
+# All Files Testing
+###############################################################################
+
+changed_files.each do |file|
+  # Perform a basic text lint on all changed files
+  test = general_textlint?(file); warn test if test
+end
 
 ###############################################################################
 # Ruby File Testing
