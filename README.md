@@ -132,24 +132,21 @@ These templates can generate savings estimates for your environment.
 
 #### Flexera
 
-- CCO
+- Cloud Cost Optimization
 
   - [Billing Center Access Report](./compliance/flexera/cco/billing_center_access_report)
 
-- IAM
+- IT Asset Management
+
+  - [ITAM Expiring Licenses](./compliance/flexera/fnms/fnms_licenses_expiring)
+  - [ITAM Ignored Recent Inventory Dates](./compliance/flexera/fnms/ignored_recent_inventory_dates)
+  - [ITAM Missing Active Machines](./compliance/flexera/fnms/missing_active_machines)
+  - [ITAM Overused Licenses](./compliance/flexera/fnms/overused_licenses)
+  - [ITAM VMs Missing Host ID](./compliance/flexera/fnms/vms_missing_hostid)
+
+- Identity & Access Management
 
   - [Flexera IAM Explicit User Roles](./compliance/flexera/iam/iam_explicit_user_roles)
-
-#### Flexera FNMS
-
-- [ITAM Overused Licenses](./compliance/flexera/fnms/overused_licenses)
-
-#### Flexera ITAM
-
-- [ITAM Expiring Licenses](./compliance/flexera/fnms/fnms_licenses_expiring)
-- [ITAM Ignored Recent Inventory Dates](./compliance/flexera/fnms/ignored_recent_inventory_dates)
-- [ITAM Missing Active Machines](./compliance/flexera/fnms/missing_active_machines)
-- [ITAM VMs Missing Host ID](./compliance/flexera/fnms/vms_missing_hostid)
 
 #### GitHub
 
@@ -170,8 +167,6 @@ These templates can generate savings estimates for your environment.
   - [Google Long Stopped VM Instances](./compliance/google/long_stopped_instances)
 
 ### Policy Templates for Cost
-
-- [Currency Conversion](./cost/flexera/cco/currency_conversion)
 
 #### AWS
 
@@ -291,36 +286,33 @@ These templates can generate savings estimates for your environment.
 
 #### Flexera
 
-- [Email Cost Optimization Recommendations](./cost/flexera/cco/email_recommendations)
-
 - All
 
   - [AWS Savings Realized from Reservations](./cost/aws/savings_realized)
 
 - Cloud Cost Optimization
 
-  - [Scheduled Report](./cost/flexera/cco/scheduled_reports)
-
-- Optima
-
+  - [Budget Alerts](./cost/flexera/cco/budget_report_alerts)
+  - [Budget Alerts by Cloud Account](./cost/flexera/cco/budget_alerts_by_account)
+  - [Budget vs Actual Spend Report](./cost/flexera/cco/budget_v_actual_spend_report)
+  - [Cheaper Regions](./cost/flexera/cco/cheaper_regions)
   - [Cloud Cost Anomaly Alerts](./cost/flexera/cco/cloud_cost_anomaly_alerts)
+  - [Cloud Spend Forecast - Moving Average](./cost/flexera/cco/forecasting/moving_average)
+  - [Cloud Spend Forecast - Straight-Line (Linear Regression Model)](./cost/flexera/cco/forecasting/straight_line_forecast/linear_regression)
+  - [Cloud Spend Forecast - Straight-Line (Simple Model)](./cost/flexera/cco/forecasting/straight_line_forecast/simple)
+  - [Currency Conversion](./cost/flexera/cco/currency_conversion)
+  - [Email Cost Optimization Recommendations](./cost/flexera/cco/email_recommendations)
+  - [Low Account Usage](./cost/flexera/cco/low_account_usage)
+  - [Low Service Usage](./cost/flexera/cco/low_service_usage)
+  - [New Service Usage](./cost/flexera/cco/new_service_usage)
+  - [Scheduled Report](./cost/flexera/cco/scheduled_reports)
+  - [Vendor Commitment Forecast](./cost/flexera/cco/forecasting/commitment_forecast)
 
 #### Flexera Optima
 
 - [AWS Expiring Savings Plans](./cost/aws/savings_plan/expiration)
 - [AWS Reserved Instances Utilization](./cost/aws/reserved_instances/utilization)
-- [Budget Alerts](./cost/flexera/cco/budget_report_alerts)
-- [Budget Alerts by Cloud Account](./cost/flexera/cco/budget_alerts_by_account)
-- [Budget vs Actual Spend Report](./cost/flexera/cco/budget_v_actual_spend_report)
-- [Cheaper Regions](./cost/flexera/cco/cheaper_regions)
-- [Cloud Spend Forecast - Moving Average](./cost/flexera/cco/forecasting/moving_average)
-- [Cloud Spend Forecast - Straight-Line (Linear Regression Model)](./cost/flexera/cco/forecasting/straight_line_forecast/linear_regression)
-- [Cloud Spend Forecast - Straight-Line (Simple Model)](./cost/flexera/cco/forecasting/straight_line_forecast/simple)
-- [Low Account Usage](./cost/flexera/cco/low_account_usage)
-- [Low Service Usage](./cost/flexera/cco/low_service_usage)
-- [New Service Usage](./cost/flexera/cco/new_service_usage)
 - [Reserved Instance Report by Billing Center](./cost/aws/reserved_instances/report_by_bc)
-- [Vendor Commitment Forecast](./cost/flexera/cco/forecasting/commitment_forecast)
 
 #### GCE
 
@@ -421,17 +413,22 @@ These templates can generate savings estimates for your environment.
 
   - [Flexera Automation Outdated Applied Policies](./automation/flexera/outdated_applied_policies)
 
-- CCO
+- Cloud Cost Optimization
 
   - [Bill Processing Error Notification](./operational/flexera/cco/bill_processing_errors_notification)
 
-- FNMS
+- Cloud Migration & Modernization
+
+  - [Application Migration Recommendations](./operational/flexera/risc/compute_instance_migration)
+  - [NetFlow Top Talkers](./operational/flexera/risc/network_flow)
+
+- FlexNet Manager
 
   - [Schedule FlexNet Manager Report](./operational/flexera/fnms/schedule_fnms_reports)
 
-#### Flexera ITAM
+- IT Asset Management
 
-- [Schedule ITAM Report](./operational/flexera/itam/schedule_itam_report)
+  - [Schedule ITAM Report](./operational/flexera/itam/schedule_itam_report)
 
 #### Flexera Optima
 
@@ -439,11 +436,6 @@ These templates can generate savings estimates for your environment.
 - [AWS Usage Forecast - Number of Instance vCPUs Used](./operational/aws/total_instance_vcpus_forecast)
 - [AWS Usage Report - Number of Instance Hours Used](./operational/aws/total_instance_hours)
 - [AWS Usage Report - Number of Instance vCPUs Used](./operational/aws/total_instance_vcpus)
-
-#### Flexera RISC
-
-- [Application Migration Recommendations](./operational/flexera/risc/compute_instance_migration)
-- [NetFlow Top Talkers](./operational/flexera/risc/network_flow)
 
 ### Policy Templates for SaaS Management
 
@@ -629,12 +621,14 @@ These templates can generate savings estimates for your environment.
   Security: 74
 :optimization_count: 45
 :policy_sets:
-  '': 72
+  '': 55
   AWS Config: 1
   Allocate VMs: 3
   Automation: 1
   Burstable Compute Instances: 1
   CIS: 61
+  Cloud Cost Optimization: 13
+  Cloud Migration & Modernization: 2
   Committed Use Discount: 1
   Common Bill Ingestion: 2
   Database Services: 1
@@ -642,7 +636,8 @@ These templates can generate savings estimates for your environment.
   Disallowed Regions: 2
   Forecasting: 4
   Hybrid Use Benefit: 4
-  ITAM: 4
+  IT Asset Management: 5
+  Identity & Access Management: 1
   Idle Compute Instances: 1
   Inefficient Disk Usage: 1
   Instances not running FlexNet Inventory Agent: 2
@@ -669,9 +664,8 @@ These templates can generate savings estimates for your environment.
   Savings Plan Utilization: 1
   Savings Plans: 2
   Savings Realized: 1
-  Schedule Flexera ITAM Report: 1
   Schedule Instance: 3
-  Schedule Report: 1
+  Schedule Report: 2
   Storage Security: 1
   Superseded Compute Instances: 2
   Tag Cardinality: 2
@@ -682,15 +676,11 @@ These templates can generate savings estimates for your environment.
   Unused Load Balancers: 1
   Unused Volumes: 6
 :providers:
-  '': 1
   AWS: 74
   Azure: 82
   Azure China: 1
-  Flexera: 9
-  Flexera FNMS: 1
-  Flexera ITAM: 5
-  Flexera Optima: 18
-  Flexera RISC: 2
+  Flexera: 29
+  Flexera Optima: 7
   Flexera SaaS Manager: 9
   GCE: 5
   GitHub: 7
@@ -701,13 +691,13 @@ These templates can generate savings estimates for your environment.
   Oracle: 1
   ServiceNow: 1
 :services:
-  '': 50
+  '': 29
   AKS: 2
   All: 1
   App Service: 1
   Automation: 1
-  CCO: 2
-  Cloud Cost Optimization: 1
+  Cloud Cost Optimization: 17
+  Cloud Migration & Modernization: 2
   CloudTrail: 7
   Common Bill Ingestion: 2
   Compute: 52
@@ -718,9 +708,11 @@ These templates can generate savings estimates for your environment.
   EBS: 2
   ECS: 1
   ELB: 3
-  FNMS: 1
-  IAM: 19
+  FlexNet Manager: 1
+  IAM: 18
+  IT Asset Management: 6
   Identity: 1
+  Identity & Access Management: 1
   KMS: 1
   Kubernetes: 2
   Lambda: 1
@@ -731,7 +723,6 @@ These templates can generate savings estimates for your environment.
   Network: 1
   Network Security Group: 2
   Office 365: 1
-  Optima: 1
   Org: 1
   Policy: 1
   PostgreSQL: 4
