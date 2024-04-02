@@ -6,6 +6,36 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#1997](https://github.com/flexera-public/policy_templates/pull/1997): POL-1159 Update Flexera Policy Metadata
+
+#### Description
+
+> This updates the metadata for all of the dedicated Flexera policies to more clearly indicate what Flexera service they are for, and to consistently flag them as "Flexera" for the `provider` field. This also removes references to dated terminology for products/services in this metadata, such as RISC and Optima.
+>
+> Note: There are a large number of warnings/errors due to the large number of policies touched, but it is not feasible to update every policy to pass the modernized linting. Those policies can be updated as they get touched organically for other reasons.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1997) for these details.
+- **Merged At**: 2024-04-02 15:37:07 UTC
+
+---
+
+### PR [#1999](https://github.com/flexera-public/policy_templates/pull/1999): POL-1157 Add Region Filtering to AWS/Azure Tag Cardinality Policies
+
+#### Description
+
+> This adds region filtering to the AWS and Azure Tag Cardinality policy. The main impetus for this change is to ensure the policy can work as expected for AWS estates with SCP protections enabled. Azure policy was updated to ensure both policies have parity in terms of their functionality.
+>
+
+#### Metadata
+
+- **Policies**: [AWS Tag Cardinality Report](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/tag_cardinality/README.md), [Azure Tag Cardinality Report](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/tag_cardinality/README.md)
+- **Merged At**: 2024-04-01 17:13:44 UTC
+
+---
+
 ### PR [#1968](https://github.com/flexera-public/policy_templates/pull/1968): POL-1183 AWS Old Snapshots RDS Duplicate Fix
 
 #### Description
@@ -1889,38 +1919,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [AWS Object Storage Optimization](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/object_storage_optimization/README.md)
 - **Merged At**: 2023-11-10 22:14:42 UTC
-
----
-
-### PR [#1613](https://github.com/flexera-public/policy_templates/pull/1613): POL-966 Azure Rightsize SQL Fix
-
-#### Description
-
-> If the list of databases returned by the Azure API included entries without a valid 'sku' field, the policy would error out instead of completing. This is a fix for that; such entries are now filtered entirely, since it wouldn't be possible to provide meaningful recommendations without knowing the SKU anyway.
->
-
-#### Metadata
-
-- **Policies**: [Azure Rightsize SQL Databases](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_sql_instances/README.md)
-- **Merged At**: 2023-11-09 20:29:42 UTC
-
----
-
-### PR [#1615](https://github.com/flexera-public/policy_templates/pull/1615): POL-967 Deprecate AWS GP3 Upgradeable Volumes Policy
-
-#### Description
-
-> This policy is no longer being updated. The [AWS Rightsize EBS Volumes](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ebs_volumes/) policy should be used for these recommendations instead.
->
-> Note that, unlike the AWS Rightsize EBS Volumes policy, this policy reports on IO1 and IO2 volumes. These volumes are high performance volumes, so changing them to GP3 will result in a performance downgrade and may cause issues for workloads that rely on this performance.
->
-> Effectively, this policy was just recommending the above change without regard for actual usage data, which is a bit reckless and shouldn't be done. A future version of the AWS Rightsize EBS Volumes policy may include this functionality, but it would be alongside actual analysis of metrics to determine if the downgrade makes sense.
->
-
-#### Metadata
-
-- **Policies**: [AWS GP3 Upgradeable Volumes](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/gp3_volume_upgrade/README.md)
-- **Merged At**: 2023-11-09 20:27:33 UTC
 
 ---
 

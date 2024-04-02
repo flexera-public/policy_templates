@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1
+
+- Updated policy metadata to make it more clear what Flexera service the policy is for
+
 ## v3.0
 
 - Billing Center filter condensed to a single parameter and now supports both names and IDs
