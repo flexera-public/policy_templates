@@ -1,7 +1,7 @@
 name "AWS Usage Report - Amount of Instance Memory Used"
 rs_pt_ver 20180301
 type "policy"
-short_description "This policy produces a usage report showing the amount of memory (in Gigabytes (GiB)) used for each AWS Instance Family. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/total_instance_memory) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "This policy produces a usage report showing the amount of memory (in Gigabytes (GiB)) used for each AWS Instance Family. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/total_instance_memory) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "low"
 category "Operational"
@@ -121,21 +121,21 @@ script "js_usage_data", type: "javascript" do
 
   //get expressions for payload based on region parameter
   expressions = []
-  if ( region == "" ) { 
+  if( region == "" ){
     expressions = [
       { "dimension": "category", "type": "equal", "value": "Compute" },
-      { "dimension": "resource_type", "type": "substring", "substring": "Virtual Machines" },
-      { "dimension": "vendor", "type": "substring", substring: "Azure" }, // Use a substring type to include both "Azure" (Azure EA) and "AzureMCA-Enterprise" (Azure MCA) subscriptions
+      { "dimension": "resource_type", "type":"equal", "value":"Compute Instance" },
+      { "dimension": "vendor", "type":"equal", "value":"AWS" },
       {
         "type": "not",
         "expression": { "dimension": "instance_type", "type": "equal", "value": "None" }
       }
     ]
-  } else { 
+  } else {
     expressions = [
       { "dimension": "category", "type": "equal", "value": "Compute" },
-      { "dimension": "resource_type", "type": "substring", "substring": "Virtual Machines" },
-      { "dimension": "vendor", "type": "substring", substring: "Azure" }, // Use a substring type to include both "Azure" (Azure EA) and "AzureMCA-Enterprise" (Azure MCA) subscriptions
+      { "dimension": "resource_type", "type":"equal", "value":"Compute Instance" },
+      { "dimension": "vendor", "type":"equal", "value":"AWS" },
       { "dimension": "region", "type": "equal", "value": region },
       {
         "type": "not",
@@ -179,79 +179,49 @@ script "js_usage_data", type: "javascript" do
 end
 
 #GET DATA WITH NORMALIZATION FACTOR UNITS FOR INSTANCE TYPES
-datasource "ds_azure_instance_size_map" do
+datasource "ds_aws_instance_size_map" do
   request do
     verb "GET"
     host "raw.githubusercontent.com"
-    path "/flexera-public/policy_templates/master/data/azure/instance_types.json"
+    path "/flexera-public/policy_templates/master/data/aws/instance_types.json"
     header "User-Agent", "RS Policies"
-  end
-end
-
-#GET DATA WITH INSTANCE FAMILY FOR INSTANCE TYPES
-datasource "ds_isf_ratio_csv" do
-  request do
-    host "isfratio.blob.core.windows.net"
-    path "/isfratio/ISFRatio.csv"
-  end
-  result do
-    encoding "text"
   end
 end
 
 #GROUP INSTANCE TYPES INTO INSTANCE FAMILIES AND CALCULATE INSTANCE MEMORY
 datasource "ds_instance_memory_per_fam" do
-  run_script $js_instance_memory_per_fam, $ds_azure_instance_size_map, $ds_isf_ratio_csv, $ds_usage_data
+  run_script $js_instance_memory_per_fam, $ds_aws_instance_size_map, $ds_usage_data
 end
 
 script "js_instance_memory_per_fam", type: "javascript" do
-  parameters "azure_instance_data", "azure_inst_fam", "usage_data"
+  parameters "aws_instance_data", "usage_data"
   result "result"
   code <<-'EOS'
   temp_result = []
   result = []
 
-  //Convert Instance Family csv to json
-  var isf_ratio_array = azure_inst_fam.toString().split("\r\n")
-  var inst_families = []
-  _.each(isf_ratio_array, function(ratio) {
-    inst_families.push({
-      "instance_family": ratio.split(",")[0],
-      "instance_type": ratio.split(",")[1]
-    })
-  })
-
-  //Get Memory counts from Instance Data json and inject Instance Family
-  var instance_types = _.keys(azure_instance_data)
+  //Get Memory counts from Instance Data json
+  instance_types = _.keys(aws_instance_data)
   var memory_data = []
-  _.each(instance_types, function(inst) {
-    var instance_family = inst
-    var matched_inst_fam = _.find(inst_families, function(fam) {
-      return inst == fam.instance_type
-    })
-    if (!(matched_inst_fam == undefined || matched_inst_fam == null)) {
-      instance_family = matched_inst_fam.instance_family
-    }
-
-    var mem_count = 0 
-    if (azure_instance_data[inst].memory) {
-      var mem_count = azure_instance_data[inst].memory
+  _.each(instance_types, function(inst) {   
+    var mem_count = 0
+    if (aws_instance_data[inst].memory) {
+      mem_count = aws_instance_data[inst].memory
     }
     memory_data.push({
       "instance_type": inst,
-      "mem_count": mem_count,
-      "instance_family": instance_family
+      "mem_count": mem_count
     })
   })
 
   //Enrich current data with Instance Family, and then calculate Instance Memory
-  _.each(usage_data, function(data){
+  _.each(usage_data, function(data) {
     var matched_instance_data = _.find(memory_data, function(mem) {
       return data.instance_type == mem.instance_type
     })
     if (matched_instance_data) {
       data["mem_count"] = (data.usage_amount / 730) * matched_instance_data.mem_count
-      data["instance_family"] = matched_instance_data.instance_family
+      data["instance_family"] = data.instance_type.split(".")[0]
     }
   })
 
@@ -403,9 +373,9 @@ end
 
 policy "pol_inst_memory_per_inst_fam" do
   validate_each $ds_chart_creation do
-    summary_template "Azure Usage Report - Amount of Instance Memory Used (Normalized - past 12 months)"
+    summary_template "AWS Usage Report - Amount of Instance Memory Used (Normalized - past 12 months)"
     detail_template <<-EOS
-# Azure - {{ with index data 0 }}{{ .chart_dimensions.policy_title }}{{ end }} Report
+# AWS - {{ with index data 0 }}{{ .chart_dimensions.policy_title }}{{ end }} Report
 ![Instance Memory Used Per Instance Family Chart](https://image-charts.com/chart?{{ with index data 0 }}{{ .chart_dimensions.chart_data }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_type }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_image }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_title }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_label_position }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_label }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_style }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_color }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_data_scale }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_format }}{{ end }})
 ___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
