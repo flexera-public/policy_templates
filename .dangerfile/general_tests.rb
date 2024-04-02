@@ -14,7 +14,7 @@ def general_textlint?(file)
   `node_modules/.bin/textlint #{file} 1> textlint.log`
 
   if $?.exitstatus != 0
-    error_list = `cat textlint.log`.split("\n")
+    error_list = `cat textlint.log`
     #error_list.shift() # Remove first line since it just links to the filename in the local filesystem
     #error_list = error_list.join("\n\n")
 
