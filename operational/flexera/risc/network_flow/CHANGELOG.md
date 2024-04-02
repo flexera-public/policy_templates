@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.7
+
+- Updated policy metadata to make it more clear what Flexera service the policy is for
+
 ## v1.6
 
 - fixed link to README in policy description

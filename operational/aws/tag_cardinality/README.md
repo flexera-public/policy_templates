@@ -1,12 +1,12 @@
 # AWS Tag Cardinality Report
 
-## What it does
+## What It Does
 
 This Policy Template is used to generate a tag cardinality (how many unique values each tag key has) report for AWS, along with a list of those unique values for each tag key. The report includes cardinality for all tag values for both AWS Accounts and Resources.
 
-> *NOTE: This Policy Template must be appled to the **AWS Organization Master Payer** account.*
+> *NOTE: This Policy Template must be applied to the **AWS Organization Master Payer** account.*
 
-## Functional Details
+## How It Works
 
 This policy performs the following action:
 
@@ -17,7 +17,10 @@ This policy performs the following action:
 
 This policy has the following input parameter required when launching the policy.
 
-- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
+- *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
+- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
+- *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
+- *Allow/Deny Regions List* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled. See [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
 
 ## Policy Actions
 
@@ -30,7 +33,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 - [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
   - `tag:GetResources`
   - `ec2:DescribeRegions`
-  - `eorganizations:ListAccounts`
+  - `organizations:ListAccounts`
   - `organizations:ListTagsForResource`
 
   Example IAM Permission Policy:
@@ -52,6 +55,9 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
       ]
   }
   ```
+
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - `billing_center_viewer`
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 

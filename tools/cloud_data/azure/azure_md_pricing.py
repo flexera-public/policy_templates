@@ -4,6 +4,7 @@
 #   (1) Download the flexera-public/policy_templates repository locally.
 #   (2) Create a new local branch of the repository.
 #   (3) Run this Python script. It should replace azure_md_pricing.json with a new updated file.
+#       Note: Working directory should be the *root* directory of the repository.
 #   (4) Add and commit the new file, push it to the repository, and then make a pull request.
 
 import json
@@ -14,7 +15,7 @@ from collections import OrderedDict
 
 logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.INFO)
 
-OUTPUT_FILENAME = "azure_md_pricing.json"
+OUTPUT_FILENAME = "data/azure/azure_md_pricing.json"
 # Below commented regions are presumed to support Premium SSDv2 but the pricing page does not
 # return pricing for those regions, that is why I comment them.
 PREMIUM_SSD_V2_SUPPORTED_REGIONS = [

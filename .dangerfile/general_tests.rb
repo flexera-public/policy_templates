@@ -5,6 +5,26 @@
 # Methods: General
 ###############################################################################
 
+#### Textlint test
+# Return false if linter finds no problems
+def general_textlint?(file)
+  fail_message = ""
+
+  # Run text lint and store results in log file
+  `node_modules/.bin/textlint #{file} 1> textlint.log`
+
+  if $?.exitstatus != 0
+    error_list = `cat textlint.log`.split("\n")
+    error_list.shift(2) # Remove first line since it just links to the filename in the local filesystem
+    error_list = error_list.join("\n\n")
+
+    fail_message = "**#{file}**\nTextlint errors found:\n\n#{error_list}"
+  end
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
 ### Spell check test
 # Run the Danger spell checker on a file
 def general_spellcheck?(file)
@@ -101,6 +121,36 @@ def general_bad_urls?(file)
   end
 
   fail_message = "**#{file}**\nBad URLs found:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### Outdated Terminology test
+# Return false if no outdated terminology, such as RightScale, is found in the file
+def general_outdated_terminology?(file)
+  fail_message = ""
+
+  # Store contents of file for direct analysis
+  file_text = File.read(file)
+
+  # Exclude files not worth checking
+  if !file.include?("Dangerfile") && !file.include?(".dangerfile") && !file.start_with?("data/") && !file.start_with?("tools/")
+    file_text.each_line.with_index do |line, index|
+      line_number = index + 1
+      test_line = line.strip.downcase
+
+      if test_line.include?(" rs ") || test_line.include?(" rightscale ")
+        fail_message += "Line #{line_number.to_s}: Reference to `RightScale` found. Recommended replacements: `Flexera`, `Flexera CCO`, `Flexera Automation`\n\n"
+      end
+
+      if test_line.include?(" optima ")
+        fail_message += "Line #{line_number.to_s}: Reference to `Optima` found. Recommended replacements: `Flexera`, `Flexera CCO`, `Cloud Cost Optimization`\n\n"
+      end
+    end
+  end
+
+  fail_message = "**#{file}**\nOutdated terminology found. Please remove references to defunct internal names for products or services:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
