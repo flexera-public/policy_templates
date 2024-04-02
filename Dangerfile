@@ -68,20 +68,6 @@ test = github_pr_missing_labels?(github); fail test if test
 test = github_pr_missing_ready_label?(github); message test if test
 
 ###############################################################################
-# All Files Testing
-###############################################################################
-
-# Perform a basic text lint on all changed files
-changed_files.each do |file|
-  `node_modules/.bin/textlint #{file} 1>textlint.log`
-
-  if $?.exitstatus != 0
-    message `cat textlint.log`
-    fail "**#{file}**\nTextlint failed"
-  end
-end
-
-###############################################################################
 # Modified Important Files Testing
 ###############################################################################
 
@@ -90,6 +76,15 @@ modified_important_files = modified_important_files.join("\n")
 
 # Consolidate changed files into a single warning to save space
 warn "**Important Files Modified**\nPlease make sure these modifications were intentional and have been tested. These files are necessary for configuring the Github repository and managing automation.\n\n" + modified_important_files.strip if !modified_important_files.empty?
+
+###############################################################################
+# All Files Testing
+###############################################################################
+
+changed_files.each do |file|
+  # Perform a basic text lint on all changed files
+  test = general_textlint?(file); warn test if test
+end
 
 ###############################################################################
 # Ruby File Testing

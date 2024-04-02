@@ -5,6 +5,17 @@
 # Methods: General
 ###############################################################################
 
+#### Textlint test
+# Return false if linter finds no problems
+def general_textlint?(file)
+  # Run text lint and store results in log file
+  `node_modules/.bin/textlint #{file} 1> textlint.log`
+
+  # Return the problems found if the textlint found an error. Otherwise, return false
+  return "**#{file}**\nTextlint errors found:\n\n#{`cat textlint.log`}" if $?.exitstatus != 0
+  return false
+end
+
 ### Spell check test
 # Run the Danger spell checker on a file
 def general_spellcheck?(file)
