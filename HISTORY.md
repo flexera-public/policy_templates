@@ -6,6 +6,24 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#1960](https://github.com/flexera-public/policy_templates/pull/1960): SQ-7195 Spelling errors within 'ignored_recent_inventory_dates' policy template
+
+#### Description
+
+> There are spelling typos in our policy template that has been found by a customer.
+>
+> ### Issues Resolved
+>
+> Corrected typos in policy short description and parameter description
+>
+
+#### Metadata
+
+- **Policies**: [ITAM Ignored Recent Inventory Dates](https://github.com/flexera-public/policy_templates/tree/master/compliance/flexera/fnms/ignored_recent_inventory_dates/README.md)
+- **Merged At**: 2024-04-02 17:59:01 UTC
+
+---
+
 ### PR [#1997](https://github.com/flexera-public/policy_templates/pull/1997): POL-1159 Update Flexera Policy Metadata
 
 #### Description
@@ -1899,26 +1917,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1605) for these details.
 - **Merged At**: 2023-11-16 18:51:14 UTC
-
----
-
-### PR [#1610](https://github.com/flexera-public/policy_templates/pull/1610): FOPTS-2380 Modify S3 Object Policy template to prevent tag calls if user don't input tags
-
-#### Description
-
-> Modify temporally a bucket list to prevent timeout from large buckets, and revert that changes once successfully results
->
-> Additionally, if user did specify exclude tags, retrieve tags only for objects we will be raising incident for, instead of making calls for all discovered objects
->
-> ### Issues Resolved
->
-> [FOPTS-2380](https://flexera.atlassian.net/browse/FOPTS-2380)
->
-
-#### Metadata
-
-- **Policies**: [AWS Object Storage Optimization](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/object_storage_optimization/README.md)
-- **Merged At**: 2023-11-10 22:14:42 UTC
 
 ---
 
