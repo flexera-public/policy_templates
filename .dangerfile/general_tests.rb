@@ -15,7 +15,7 @@ def general_textlint?(file)
 
   if $?.exitstatus != 0
     error_list = `cat textlint.log`.split("\n")
-    error_list.shift() # Remove first line since it just links to the filename in the local filesystem
+    error_list.shift(2) # Remove first line since it just links to the filename in the local filesystem
     error_list = error_list.join("\n\n")
 
     fail_message = "**#{file}**\nTextlint errors found:\n\n#{error_list}"
