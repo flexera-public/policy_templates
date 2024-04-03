@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.8
+
+- Added support for organizations with Microsoft MCA accounts
+
 ## v3.7
 
 - Added support for organizations with no Microsoft Azure Enterprise Agreement (Legacy) bill connects

@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "monthly"
 info(
-  version: "3.7",
+  version: "3.8",
   provider: "Azure",
   service: "Compute",
   policy_set: "Savings Realized"
@@ -232,21 +232,47 @@ end
 
 # Filter out old Azure EA connections and new Azure EA connections
 datasource "ds_bill_connections_old" do
-  run_script $js_bill_connections_filter, $ds_bill_connections, 0
+  run_script $js_bill_connections_filter, $ds_bill_connections, "ea_old"
 end
 
 datasource "ds_bill_connections_new" do
-  run_script $js_bill_connections_filter, $ds_bill_connections, 7
+  run_script $js_bill_connections_filter, $ds_bill_connections, "ea_new"
+end
+
+datasource "ds_bill_connections_mca_en" do
+  run_script $js_bill_connections_filter, $ds_bill_connections, "mca_en"
+end
+
+datasource "ds_bill_connections_mca_cu" do
+  run_script $js_bill_connections_filter, $ds_bill_connections, "mca_cu"
 end
 
 script "js_bill_connections_filter", type:"javascript" do
-  parameters "bill_connections", "index"
+  parameters "bill_connections", "type"
   result "result"
   code <<-EOS
-  bill_sources = _.filter(bill_connections, function(connection) {
-    return connection['bill_source'].indexOf('azure-ea') == index
-  })
-
+  switch (type) {
+    case "ea_old":
+      bill_sources = _.filter(bill_connections, function(connection) {
+        return connection["bill_source"].indexOf("azure-ea") == 0
+      })
+      break;
+    case "ea_new":
+      bill_sources = _.filter(bill_connections, function(connection) {
+        return connection["bill_source"].indexOf("azure-ea") == 7
+      })
+      break;
+    case "mca_en":
+      bill_sources = _.filter(bill_connections, function(connection) {
+        return connection["bill_source"].indexOf("azure-mca-enterprise") >= 0 || connection["bill_source"].indexOf("cbi-oi-azure-mca") >= 0
+      })
+      break;
+    case "mca_cu":
+      bill_sources = _.filter(bill_connections, function(connection) {
+        return connection["bill_source"].indexOf("azure-mca-customer") >= 0
+      })
+      break;
+  }
   result = _.uniq(_.compact(_.pluck(bill_sources, 'bill_source')))
 EOS
 end
@@ -308,6 +334,39 @@ datasource "ds_aggregated_costs_new_ri" do
   end
   result do
     encoding "json"
+    collect jmes_path(response, "rows") do
+      field "instance_type", jmes_path(col_item, "dimensions.instance_type")
+      field "region", jmes_path(col_item, "dimensions.region")
+      field "usage_unit", jmes_path(col_item, "dimensions.usage_unit")
+      field "usage_amount", jmes_path(col_item, "metrics.usage_amount")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+      field "month", jmes_path(col_item, "timestamp")
+    end
+  end
+end
+
+datasource "ds_aggregated_costs_mca_en" do
+  request do
+    run_script $js_get_aggregated_costs, $ds_bill_connections_mca_en, $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host, "mca_en"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows") do
+      field "instance_type", jmes_path(col_item, "dimensions.instance_type")
+      field "region", jmes_path(col_item, "dimensions.region")
+      field "usage_unit", jmes_path(col_item, "dimensions.usage_unit")
+      field "usage_amount", jmes_path(col_item, "metrics.usage_amount")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+      field "month", jmes_path(col_item, "timestamp")
+    end
+  end
+end
+
+datasource "ds_aggregated_costs_mca_cu" do
+  request do
+    run_script $js_get_aggregated_costs, $ds_bill_connections_mca_cu, $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host, "mca_cu"
+  end
+  result do
     collect jmes_path(response, "rows") do
       field "instance_type", jmes_path(col_item, "dimensions.instance_type")
       field "region", jmes_path(col_item, "dimensions.region")
@@ -468,6 +527,64 @@ script "js_get_aggregated_costs", type: "javascript" do
     }
   }
 
+  if (connection_type == 'mca_en') {
+    filter = {
+      "type": "and",
+      "expressions": [
+        {
+          "type": "or",
+          "expressions": [
+            { "dimension": "service", "type": "equal", "value": "Microsoft.Compute" },
+            { "dimension": "service", "type": "equal", "value": "microsoft.compute" },
+
+            { "dimension": "service", "type": "equal", "value": "Microsoft.Reservation" },
+            { "dimension": "service", "type": "equal", "value": "microsoft.reservation" },
+          ]
+        },
+        //{
+        //  "type": "or",
+        //  "expressions": [
+        //    { "dimension": "vendor", "type": "equal", "value": "Azure"  },
+        //    { "dimension": "vendor", "type": "equal", "value": "azure"  }
+        //  ]
+        //},
+        {
+          "type": "not",
+          "expression": { "dimension": "instance_type", "type": "equal", "value": "None" }
+        }
+      ]
+    }
+  }
+
+  if (connection_type == 'mca_cu') {
+    filter = {
+      "type": "and",
+      "expressions": [
+         {
+          "type": "or",
+          "expressions": [
+            { "dimension": "service", "type": "equal", "value": "Microsoft.Compute" },
+            { "dimension": "service", "type": "equal", "value": "microsoft.compute" },
+
+            { "dimension": "service", "type": "equal", "value": "Microsoft.Reservation" },
+            { "dimension": "service", "type": "equal", "value": "microsoft.reservation" },
+          ]
+        },
+        //{
+        //  "type": "or",
+        //  "expressions": [
+        //    { "dimension": "vendor", "type": "equal", "value": "Azure"  },
+        //    { "dimension": "vendor", "type": "equal", "value": "azure"  }
+        //  ]
+        //},
+        {
+          "type": "not",
+          "expression": { "dimension": "instance_type", "type": "equal", "value": "None" }
+        }
+      ]
+    }
+  }
+
   // Ensure we're filtering our request to just the specific bill connection
   bill_source_expressions = _.map(bill_sources, function(bill_source) {
     return { "dimension": "bill_source", "type": "equal", "value": bill_source }
@@ -501,11 +618,11 @@ EOS
 end
 
 datasource "ds_savings_realized" do
-  run_script $js_savings_realized, $ds_aggregated_costs_old_base, $ds_aggregated_costs_old_ri, $ds_aggregated_costs_new_base, $ds_aggregated_costs_new_ri, $ds_region_table
+  run_script $js_savings_realized, $ds_aggregated_costs_old_base, $ds_aggregated_costs_old_ri, $ds_aggregated_costs_new_base, $ds_aggregated_costs_new_ri, $ds_aggregated_costs_mca_en, $ds_aggregated_costs_mca_cu, $ds_region_table
 end
 
 script "js_savings_realized", type: "javascript" do
-  parameters "ds_aggregated_costs_old_base", "ds_aggregated_costs_old_ri", "ds_aggregated_costs_new_base", "ds_aggregated_costs_new_ri", "ds_region_table"
+  parameters "ds_aggregated_costs_old_base", "ds_aggregated_costs_old_ri", "ds_aggregated_costs_new_base", "ds_aggregated_costs_new_ri", "ds_aggregated_costs_mca_en", "ds_aggregated_costs_mca_cu", "ds_region_table"
   result "result"
   code <<-'EOS'
   result = []
@@ -542,6 +659,7 @@ script "js_savings_realized", type: "javascript" do
   base_costs = old_base_mapped.concat(ds_aggregated_costs_new_base)
   ri_costs = old_ri_mapped.concat(ds_aggregated_costs_new_ri)
   all_costs = base_costs.concat(ri_costs)
+  all_costs = all_costs.concat(ds_aggregated_costs_mca_en).concat(ds_aggregated_costs_mca_cu)
 
   // Get list of Instance Types, Regions, Months
   instance_types = _.uniq(_.pluck(all_costs, 'instance_type'))
