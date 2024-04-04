@@ -7,47 +7,90 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "3.1",
+  version: "4.0",
   provider: "Azure",
-  service: "Compute",
-  policy_set: ""
+  service: "SQL",
+  policy_set: "Hybrid Use Benefit"
 )
 
 ###############################################################################
 # Parameters
 ###############################################################################
 
-parameter "param_exclusion_tag_key" do
-  category "User Inputs"
-  label "Exclusion Tag Key"
-  description "Azure-native instance tag to ignore instances that are not using AHUB/BYOL. Only supply the tag key. The policy assumes that the tag value is irrelevant."
-  type "string"
-  default "exclude_ahub"
-end
-
 parameter "param_email" do
   type "list"
-  label "Email addresses of the recipients you wish to notify"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
 end
 
 parameter "param_azure_endpoint" do
   type "string"
+  category "Policy Settings"
   label "Azure Endpoint"
-  default "management.azure.com"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
   allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_subscriptions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Subscriptions"
+  description "Allow or Deny entered Subscriptions."
+  allowed_values "Allow", "Deny"
+  default "Allow"
 end
 
 parameter "param_subscriptions_list" do
-  label "Subscription Allowed List"
   type "list"
-  description "Allowed Subscriptions, if empty, all subscriptions will be checked"
+  category "Filters"
+  label "Allow/Deny Subscriptions List"
+  description "A list of allowed or denied Subscription IDs/names. Leave blank to check all Subscriptions."
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. Leave blank to check all regions."
+  default []
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
 end
 
 parameter "param_automatic_action" do
   type "list"
+  category "Actions"
   label "Automatic Actions"
-  description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values "Hybrid use benefit for SQL"
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Apply Hybrid Use Benefit"]
   default []
 end
 
@@ -64,7 +107,7 @@ end
 
 credentials "auth_flexera" do
   schemes "oauth2"
-  label "flexera"
+  label "Flexera"
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
@@ -86,13 +129,23 @@ end
 # Datasources & Scripts
 ###############################################################################
 
-datasource "ds_subscriptions" do
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_azure_subscriptions" do
   request do
     auth $auth_azure
     pagination $pagination_azure
     host $param_azure_endpoint
     path "/subscriptions/"
-    query "api-version", "2019-06-01"
+    query "api-version", "2020-01-01"
     header "User-Agent", "RS Policies"
     # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
     # Forces `ds_is_deleted` datasource to run first during policy execution
@@ -103,123 +156,207 @@ datasource "ds_subscriptions" do
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "subscriptionId", jmes_path(col_item,"subscriptionId")
-      field "subscriptionName", jmes_path(col_item,"displayName")
+      field "id", jmes_path(col_item, "subscriptionId")
+      field "name", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
     end
   end
 end
 
-datasource "ds_filtered_subscriptions" do
-  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscriptions_list
+datasource "ds_azure_subscriptions_filtered" do
+  run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
 end
 
-script "js_filtered_subscriptions", type: "javascript" do
-  parameters "ds_subscriptions", "param_subscriptions_list"
-  result "results"
+script "js_azure_subscriptions_filtered", type: "javascript" do
+  parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
+  result "result"
   code <<-EOS
-  var results = []
-  if ( param_subscriptions_list.length != 0){
-    results = []
-    _.each(param_subscriptions_list, function(sub){
-      var found = _.find(ds_subscriptions, function(item){
-        return item.subscriptionId == sub || item.subscriptionName.toLowerCase() == sub.toLowerCase();
-      })
-      results.push(found)
+  if (param_subscriptions_list.length > 0) {
+    result = _.filter(ds_azure_subscriptions, function(subscription) {
+      include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
+
+      if (param_subscriptions_allow_or_deny == "Deny") {
+        include_subscription = !include_subscription
+      }
+
+      return include_subscription
     })
   } else {
-    results = ds_subscriptions
+    result = ds_azure_subscriptions
   }
 EOS
 end
 
 datasource "ds_sql_virtualmachines" do
-  iterate $ds_filtered_subscriptions
-    request do
-      auth $auth_azure
-      pagination $pagination_azure
-      host $param_azure_endpoint
-      path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.SqlVirtualMachine/sqlVirtualMachines"])
-      query "api-version", "2017-03-01-preview"
-      # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-      ignore_status [400, 403, 404]
+  iterate $ds_azure_subscriptions_filtered
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.SqlVirtualMachine/sqlVirtualMachines"])
+    query "api-version", "2017-03-01-preview"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value") do
+      field "id", jmes_path(col_item,"id")
+      field "name", jmes_path(col_item, "name")
+      field "region", jmes_path(col_item, "location")
+      field "tags", jmes_path(col_item, "tags")
+      field "type", jmes_path(col_item, "type")
+      field "virtualMachineResourceId", jmes_path(col_item, "properties.virtualMachineResourceId")
+      field "licenseType", jmes_path(col_item, "properties.sqlServerLicenseType")
+      field "imageSku", jmes_path(col_item, "properties.sqlImageSku")
+      field "imageOffer", jmes_path(col_item, "properties.sqlImageOffer")
+      field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
+      field "subscriptionName", val(iter_item, "name")
+      field "subscriptionId", val(iter_item, "id")
     end
-    result do
-      encoding "json"
-      collect jmes_path(response, "value") do
-        field "subscriptionName", val(iter_item,"subscriptionName")
-        field "id", jmes_path(col_item,"id")
-        field "vmid", jmes_path(col_item,"properties.virtualMachineResourceId")
-        field "name", jmes_path(col_item,"name")
-        field "location", jmes_path(col_item,"location")
-        field "licenseType", jmes_path(col_item,"properties.sqlServerLicenseType")
-        field "imageSku", jmes_path(col_item,"properties.sqlImageSku")
-        field "imageOffer", jmes_path(col_item,"properties.sqlImageOffer")
-        field "type", get(1, split(jmes_path(col_item,"type"), "/"))
-        field "tags", jmes_path(col_item,"tags")
-      end
-    end
+  end
+end
+
+datasource "ds_sql_virtualmachines_type_filtered" do
+  run_script $js_sql_virtualmachines_type_filtered, $ds_sql_virtualmachines
+end
+
+script "js_sql_virtualmachines_type_filtered", type: "javascript" do
+  parameters "ds_sql_virtualmachines"
+  result "result"
+  code <<-EOS
+  result = _.filter(sql_virtualmachines, function(vm) {
+    return vm['imageSku'] != "Developer" && vm['imageSku'] != "Express" && vm['licenseType'] != "AHUB"
+  })
+EOS
 end
 
 # For SQL databases running provisioned database applicable, serverless SQL databases are not eligible to AHUB
 datasource "ds_sql_dbserver" do
-  iterate $ds_filtered_subscriptions
-    request do
-      auth $auth_azure
-      pagination $pagination_azure
-      host $param_azure_endpoint
-      path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Sql/servers"])
-      query "api-version", "2019-06-01-preview"
-      # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-      ignore_status [400, 403, 404]
+  iterate $ds_azure_subscriptions_filtered
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Sql/servers"])
+    query "api-version", "2019-06-01-preview"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value") do
+      field "dbserverId", jmes_path(col_item, "id")
+      field "dbserverName", jmes_path(col_item, "name")
+      field "type", jmes_path(col_item, "type")
+      field "tags", jmes_path(col_item, "tags")
+      field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
+      field "subscriptionName", val(iter_item, "name")
+      field "subscriptionId", val(iter_item, "id")
     end
-    result do
-      encoding "json"
-      collect jmes_path(response, "value") do
-        field "subscriptionName", val(iter_item,"subscriptionName")
-        field "resourceGroup", get(4, split(jmes_path(col_item,"id"), "/"))
-        field "dbserverId", jmes_path(col_item,"id")
-        field "dbserverName", jmes_path(col_item,"name")
-        field "type", jmes_path(col_item,"type")
-        field "tags", jmes_path(col_item,"tags")
-      end
+  end
+end
+
+datasource "ds_sql_elastic_pools" do
+  iterate $ds_sql_dbserver
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join([val(iter_item, "dbserverId"), "/elasticPools"])
+    query "api-version", "2021-11-01"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "region", jmes_path(col_item, "location")
+      field "tags", jmes_path(col_item, "tags")
+      field "kind", jmes_path(col_item, "kind")
+      field "type", jmes_path(col_item, "type")
+      field "skuName", jmes_path(col_item, "sku.name")
+      field "skuTier", jmes_path(col_item, "sku.tier")
+      field "skuCapacity", jmes_path(col_item, "sku.capacity")
+      field "licenseType", jmes_path(col_item, "properties.licenseType")
+      field "resourceGroup", val(iter_item, "resourceGroup")
+      field "subscriptionName", val(iter_item, "subscriptionName")
+      field "subscriptionId", val(iter_item, "subscriptionId")
     end
+  end
+end
+
+datasource "ds_sql_elastic_pools_type_filtered" do
+  run_script $js_sql_elastic_pools_type_filtered, $ds_sql_elastic_pools
+end
+
+script "js_sql_elastic_pools_type_filtered", type: "javascript" do
+  parameters "ds_sql_elastic_pools"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_sql_elastic_pools, function(pool) {
+    return pool['licenseType'] != "BasePrice"
+  })
+EOS
 end
 
 datasource "ds_sql_databases" do
   iterate $ds_sql_dbserver
-    request do
-      auth $auth_azure
-      pagination $pagination_azure
-      host $param_azure_endpoint
-      path join([val(iter_item,"dbserverId"),"/databases"])
-      query "api-version", "2020-08-01-preview"
-      # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-      ignore_status [400, 403, 404]
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join([val(iter_item, "dbserverId"), "/databases"])
+    query "api-version", "2020-08-01-preview"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "region", jmes_path(col_item, "location")
+      field "tags", jmes_path(col_item, "tags")
+      field "kind", jmes_path(col_item, "kind")
+      field "type", jmes_path(col_item, "type")
+      field "skuName", jmes_path(col_item, "properties.currentSku.name")
+      field "skuTier", jmes_path(col_item, "properties.currentSku.tier")
+      field "skuCapacity", jmes_path(col_item, "properties.currentSku.capacity")
+      field "elasticPoolId", jmes_path(col_item, "properties.elasticPoolId")
+      field "licenseType", jmes_path(col_item, "properties.licenseType")
+      field "resourceGroup", val(iter_item, "resourceGroup")
+      field "subscriptionName", val(iter_item, "subscriptionName")
+      field "subscriptionId", val(iter_item, "subscriptionId")
     end
-    result do
-      encoding "json"
-      collect jmes_path(response, "value") do
-        field "subscriptionName", val(iter_item,"subscriptionName")
-        field "resourceGroup", val(iter_item,"resourceGroup")
-        field "id", jmes_path(col_item,"id")
-        field "licenseType", jmes_path(col_item,"properties.licenseType")
-        field "vCores", jmes_path(col_item,"properties.currentSku.capacity")
-        field "location", jmes_path(col_item,"location")
-        field "tags", jmes_path(col_item,"tags")
-        field "name", jmes_path(col_item,"name")
-        field "kind", jmes_path(col_item,"kind")
-        field "type", get(2, split(jmes_path(col_item,"type"), "/"))
-      end
-    end
+  end
+end
+
+datasource "ds_sql_databases_type_filtered" do
+  run_script $js_sql_databases_type_filtered, $ds_sql_databases
+end
+
+script "js_sql_databases_type_filtered", type: "javascript" do
+  parameters "ds_sql_databases"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_sql_databases, function(db) {
+    not_system = database['kind'].split(',')[3] != "serverless" && db['skuTier'] != "System"
+    not_elastic = db['elasticPoolId'] == null || db['elasticPoolId'] == undefined || db['elasticPoolId'] == ""
+    return not_system && not_elastic && db['licenseType'] != "BasePrice"
+  })
+EOS
 end
 
 datasource "ds_sql_managed_instances" do
-  iterate $ds_filtered_subscriptions
+  iterate $ds_azure_subscriptions_filtered
     request do
       auth $auth_azure
       pagination $pagination_azure
       host $param_azure_endpoint
-      path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Sql/managedInstances"])
+      path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Sql/managedInstances"])
       query "api-version", "2020-11-01-preview"
       # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
       ignore_status [400, 403, 404]
@@ -227,128 +364,222 @@ datasource "ds_sql_managed_instances" do
     result do
       encoding "json"
       collect jmes_path(response, "value") do
-        field "subscriptionName", val(iter_item,"subscriptionName")
-        field "resourceGroup", get(4, split(jmes_path(col_item,"id"), "/"))
-        field "id", jmes_path(col_item,"id")
-        field "licenseType", jmes_path(col_item,"properties.licenseType")
-        field "vCores", jmes_path(col_item,"properties.vCores")
-        field "location", jmes_path(col_item,"location")
-        field "tags", jmes_path(col_item,"tags")
-        field "name", jmes_path(col_item,"name")
-        field "type", get(1, split(jmes_path(col_item,"type"), "/"))
+        field "id", jmes_path(col_item, "id")
+        field "name", jmes_path(col_item, "name")
+        field "region", jmes_path(col_item, "location")
+        field "tags", jmes_path(col_item, "tags")
+        field "type", jmes_path(col_item, "type")
+        field "skuName", jmes_path(col_item, "sku.name")
+        field "skuTier", jmes_path(col_item, "sku.tier")
+        field "skuCapacity", jmes_path(col_item, "sku.capacity")
+        field "skuFamily", jmes_path(col_item, "sku.family")
+        field "licenseType", jmes_path(col_item, "properties.licenseType")
+        field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
+        field "subscriptionName", val(iter_item, "name")
+        field "subscriptionId", val(iter_item, "id")
       end
     end
 end
 
-
-datasource "ds_filtered_instances" do
-  run_script $js_filtered_instances, $ds_sql_virtualmachines, $ds_sql_databases, $ds_sql_managed_instances, $param_exclusion_tag_key
+datasource "ds_sql_managed_instances_type_filtered" do
+  run_script $js_sql_managed_instances_type_filtered, $ds_sql_managed_instances
 end
 
-script "js_filtered_instances", type: "javascript" do
-  parameters "sql_virtualmachines", "sql_databases", "sql_managed_instances", "exclusion_tag"
+script "js_sql_managed_instances_type_filtered", type: "javascript" do
+  parameters "ds_sql_managed_instances"
   result "result"
   code <<-EOS
-  // Dummy entry to ensure validation always executes at least once
-  var result = [{ ahub: "Yes" }];
-  // Filter to exclude SQL Server 2017 Developer and Express versions instances that Microsoft provides as free
-  sql_virtualmachines = _.filter(sql_virtualmachines, function(vm){ return vm.imageSku != "Developer" && vm.imageSku != "Express" });
+  result = _.filter(ds_sql_managed_instances, function(db) {
+    return db['licenseType'] != "BasePrice"
+  })
+EOS
+end
 
-  //SQL Virtualmachines
-    _.each(sql_virtualmachines, function(virtualmachine) {
-      if (_.has(virtualmachine.tags, exclusion_tag) == false) {
-        var resourceGroup = virtualmachine.id.split('/')[4];
-        var tags = JSON.stringify(virtualmachine["tags"]);
-        var ahub = "N/A"
+datasource "ds_resources_tag_filtered" do
+  run_script $js_resources_tag_filtered, $ds_sql_virtualmachines_type_filtered, $ds_sql_elastic_pools_type_filtered, $ds_sql_databases_type_filtered, $ds_sql_managed_instances_type_filtered, $param_exclusion_tags, $param_exclusion_tags_boolean
+end
 
-        if (virtualmachine.licenseType === "AHUB") {
-          ahub = "Yes"
-        } else {
-          ahub = "No"
+script "js_resources_tag_filtered", type: "javascript" do
+  parameters "ds_sql_virtualmachines_type_filtered", "ds_sql_elastic_pools_type_filtered", "ds_sql_databases_type_filtered", "ds_sql_managed_instances_type_filtered", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  result "result"
+  code <<-EOS
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  function tag_filter_resources(resource_list, comparators, exclusion_tags_boolean) {
+    return _.reject(resource_list, function(resource) {
+      resource_tags = {}
+      if (typeof(resource['tags']) == 'object') { resource_tags = resource['tags'] }
+
+      // Store a list of found tags
+      found_tags = []
+
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_tag = resource_tags[comparator['key']]
+
+        if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+        if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+        if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
         }
 
-        result.push({
-          subscriptionName: virtualmachine["subscriptionName"],
-          id: virtualmachine["id"],
-          vmid: virtualmachine["vmid"],
-          name: virtualmachine["name"],
-          resourceGroup: resourceGroup,
-          location: virtualmachine["location"],
-          ahub: ahub,
-          type: virtualmachine["type"],
-          imageOffer: virtualmachine["imageOffer"],
-          imageSku: virtualmachine["imageSku"]
-          licenseType: virtualmachine["licenseType"],
-          tags: tags
+        if (comparison == '!~') {
+          if (resource_tag == undefined) { found_tags.push(string) }
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+      })
+
+      all_tags_found = found_tags.length == comparators.length
+      any_tags_found = found_tags.length > 0 && exclusion_tags_boolean == 'Any'
+
+      return all_tags_found || any_tags_found
+    })
+  }
+
+  if (param_exclusion_tags.length > 0) {
+    result = {
+      sql_virtualmachines: tag_filter_resources(ds_sql_virtualmachines_type_filtered, comparators, param_exclusion_tags_boolean),
+      sql_elastic_pools: tag_filter_resources(ds_sql_elastic_pools_type_filtered, comparators, param_exclusion_tags_boolean),
+      sql_databases: tag_filter_resources(ds_sql_databases_type_filtered, comparators, param_exclusion_tags_boolean),
+      sql_managed_instances: tag_filter_resources(ds_sql_managed_instances_type_filtered, comparators, param_exclusion_tags_boolean)
+    }
+  } else {
+    result = {
+      sql_virtualmachines: ds_sql_virtualmachines_type_filtered,
+      sql_elastic_pools: ds_sql_elastic_pools_type_filtered,
+      sql_databases: ds_sql_databases_type_filtered,
+      sql_managed_instances: ds_sql_managed_instances_type_filtered
+    }
+  }
+EOS
+end
+
+datasource "ds_resources_region_filtered" do
+  run_script $js_resources_region_filtered, $ds_resources_tag_filtered, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_resources_region_filtered", type: "javascript" do
+  parameters "ds_resources_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-EOS
+  function region_filter_resources(resource_list, regions_allow_or_deny, regions_list) {
+    return _.filter(resource_list, function(resource) {
+      include_resource = _.contains(regions_list, resource['region'])
+
+      if (regions_allow_or_deny == "Deny") {
+        include_resource = !include_resource
+      }
+
+      return include_resource
+    })
+  }
+
+  if (param_regions_list.length > 0) {
+    result = {
+      sql_virtualmachines: region_filter_resources(ds_resources_tag_filtered['sql_virtualmachines'], param_regions_allow_or_deny, param_regions_list),
+      sql_elastic_pools: region_filter_resources(ds_resources_tag_filtered['sql_elastic_pools'], param_regions_allow_or_deny, param_regions_list),
+      sql_databases: region_filter_resources(ds_resources_tag_filtered['sql_databases'], param_regions_allow_or_deny, param_regions_list),
+      sql_managed_instances: region_filter_resources(ds_resources_tag_filtered['sql_managed_instances'], param_regions_allow_or_deny, param_regions_list)
+    }
+  } else {
+    result = {
+      sql_virtualmachines: ds_resources_tag_filtered['sql_virtualmachines'],
+      sql_elastic_pools: ds_resources_tag_filtered['sql_elastic_pools'],
+      sql_databases: ds_resources_tag_filtered['sql_databases'],
+      sql_managed_instances: ds_resources_tag_filtered['sql_managed_instances']
+    }
+  }
+EOS
+end
+
+datasource "ds_ahub_recommendations" do
+  run_script $js_ahub_recommendations, $ds_resources_region_filtered, $ds_applied_policy
+end
+
+script "js_ahub_recommendations", type: "javascript" do
+  parameters "ds_resources_region_filtered", "ds_applied_policy"
+  result "result"
+  code <<-EOS
+  function incident_map(resource_list) {
+    return _.map(resource_list, function(resource) {
+      tags = []
+
+      if (typeof(resource['tags']) == 'object') {
+        _.each(Object.keys(resource['tags']), function(key) {
+          tags.push([key, "=", resource['tags'][key]].join(''))
         })
+      }
+
+      recommendationDetails = [
+        "Apply Hybrid Use Benefit to Azure ", resource["type"],
+        " resource ", resource["name"], " ",
+        "in Azure Subscription ", resource["subscriptionName"],
+        " (", resource["subscriptionId"], ")"
+      ].join('')
+
+      return {
+        id: resource["id"],
+        vmId: resource["virtualMachineResourceId"],
+        resourceName: resource["name"],
+        region: resource["region"],
+        resourceType: resource["type"],
+        imageOffer: resource["imageOffer"],
+        imageSku: resource["imageSku"],
+        licenseType: resource["licenseType"],
+        skuName: resource["skuName"],
+        skuTier: resource["skuTier"],
+        skuCapacity: resource["skuCapacity"],
+        skuFamily: resource["skuFamily"],
+        resourceGroup: resource["resourceGroup"],
+        accountID: resource["subscriptionId"],
+        accountName: resource["subscriptionName"],
+        recommendationDetails: recommendationDetails,
+        tags: tags.join(", "),
+        policy_name: ds_applied_policy['name'],
+        service: "Microsoft.Sql"
       }
     })
+  }
 
-  //SQL databases
-  _.each(sql_databases, function(database){
-    var version = database.kind.split(',')[3]
-    if ((_.isNull(database.tags) || _.has(database.tags, exclusion_tag)) == false) {
-      if ((database.licenseType === "None" || _.isUndefined(database.licenseType)) == false) {
-        if (version !== "serverless" && database.skuName !== "System") {
-          var resourceGroup = database.id.split('/')[4];
-          var tags = JSON.stringify(database["tags"]);
-          var ahub = "N/A";
+  result = incident_map(ds_resources_region_filtered['sql_virtualmachines']).concat(
+    incident_map(ds_resources_region_filtered['sql_databases']),
+    incident_map(ds_resources_region_filtered['sql_managed_instances'])
+  )
 
-          if (database.licenseType === "BasePrice") {
-            ahub = "Yes"
-          } else {
-            ahub = "No"
-          }
-
-          result.push({
-            subscriptionName: database["subscriptionName"],
-            id: database["id"],
-            name: database["name"],
-            resourceGroup: database["resourceGroup"],
-            location: database["location"],
-            ahub: ahub,
-            licenseType: database["licenseType"],
-            vCores: database["vCores"]
-            type: database["type"],
-            tags: tags
-          })
-        }
-      }
-    }
-  })
-
-  //SQL Managed Instances
-  _.each(sql_managed_instances, function(instance){
-    if (_.has(instance.tags, exclusion_tag) == false) {
-      if ((instance.licenseType == "None" || _.isUndefined(instance.licenseType)) == false) {
-        var tags = JSON.stringify(instance["tags"]);
-        var ahub = "N/A"
-
-        if (instance.licenseType === "BasePrice") {
-          ahub = "Yes"
-        } else {
-          ahub = "No"
-        }
-
-        result.push({
-          subscriptionName: instance["subscriptionName"],
-          id: instance["id"],
-          name: instance["name"],
-          resourceGroup: instance["resourceGroup"],
-          location: instance["location"],
-          ahub: ahub,
-          licenseType: instance["licenseType"],
-          vCores: instance["vCores"]
-          type: instance["type"],
-          tags: tags
-        })
-      }
-    }
-  })
-
-  result = _.sortBy(result, 'subscriptionName');
-  result = _.sortBy(result, 'location');
-  result = _.sortBy(result, 'type');
+  // Dummy entry to ensure validation runs at least once
+  result.push({ id: "", policy_name: "", tags: "" })
 EOS
 end
 
@@ -356,52 +587,69 @@ end
 # Policy
 ###############################################################################
 
-policy "pol_azure_license_policy" do
-  validate_each $ds_filtered_instances do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Instances Not Using Azure Hybrid Use Benefit for SQL"
+policy "pol_azure_sql_ahub_recommendations" do
+  validate_each $ds_ahub_recommendations do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure SQL Resources Without Hybrid Use Benefit Found"
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "id"), ""))
     escalate $esc_email
-    escalate $esc_license_sqlahub
-    check logic_or($ds_parent_policy_terminated, eq(val(item,"ahub"), "Yes"))
+    escalate $esc_license_instances
+    hash_exclude "tags"
     export do
       resource_level true
-      field "subscriptionName" do
+      field "accountID" do
+        label "Subscription ID"
+      end
+      field "accountName" do
         label "Subscription Name"
-      end
-      field "name" do
-        label "Instance Name"
-      end
-      field "location" do
-        label "Location"
       end
       field "resourceGroup" do
         label "Resource Group"
       end
-      field "type" do
-        label "SQL Type"
-      end
-      field "vCores" do
-        label "vCores"
-      end
-      field "licenseType" do
-        label "Current License"
-      end
-      field "ahub" do
-        label "AHUB"
-      end
-      field "imageSku" do
-        label "Edition"
-      end
-      field "imageOffer" do
-        label "Version/VM OS"
+      field "resourceName" do
+        label "Resource Name"
       end
       field "tags" do
-        label "Tags"
+        label "Resource Tags"
+      end
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "imageOffer" do
+        label "Image Offer"
+      end
+      field "imageSku" do
+        label "Image SKU"
+      end
+      field "skuName" do
+        label "SKU Name"
+      end
+      field "skuTier" do
+        label "SKU Tier"
+      end
+      field "skuCapacity" do
+        label "SKU Capacity"
+      end
+      field "skuFamily" do
+        label "SKU Family"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "vmId" do
+        label "VM ID"
+      end
+      field "resourceID" do
+        label "Resource ID"
+        path "id"
       end
       field "id" do
-        label "Id"
-      end
-      field "vmid" do
-        label "VirtualMachineResourceId"
+        label "ID"
       end
     end
   end
@@ -414,93 +662,201 @@ end
 escalation "esc_email" do
   automatic true
   label "Send Email"
-  description "Send Incident email"
+  description "Send incident email"
   email $param_email
 end
 
-escalation "esc_license_sqlahub" do
-  automatic contains($param_automatic_action, "Hybrid Use Benefit for SQL")
-  label "Approve AHUB for SQL"
-  description "Approve escalation to apply Hybrid Use Benefit for SQL"
-  run "license_sqlahub", data
+escalation "esc_license_instances" do
+  automatic contains($param_automatic_action, "Apply Hybrid Use Benefit")
+  label "Apply Hybrid Use Benefit"
+  description "Apply Hybrid Use Benefit to the selected instances"
+  run "license_instances", data, $param_azure_endpoint
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define license_sqlahub($data) return $all_responses do
-  $all_responses = []
-  foreach $item in $data do
-    sub on_error: skip do
-      if ($item["type"] == "sqlVirtualMachines")
-        $update_inst_response = http_request(
-          auth: $$auth_azure,
-          verb: "put",
-          host: "management.azure.com",
-          https: true,
-          href: $item["id"],
-          query_strings: {
-            "api-version": "2017-03-01-preview"
-          },
-          headers: {
-            "cache-control": "no-cache",
-            "content-type": "application/json"
-          },
-          body: {
-            "location": $item['location'],
-            "properties": {
-              "virtualMachineResourceId": $item['vmid'],
-              "sqlServerLicenseType": "AHUB"
-            }
-          }
-        )
-        $all_responses << $update_inst_response
-      elsif ($item["type"] == "databases")
-        $update_inst_response = http_request(
-          auth: $$auth_azure,
-          verb: "patch",
-          host: "management.azure.com",
-          https: true,
-          href: $item["id"],
-          query_strings: {
-            "api-version": "2020-11-01-preview"
-          },
-          headers: {
-            "cache-control": "no-cache",
-            "content-type": "application/json"
-          },
-          body: {
-            "properties": {
-              "licenseType": "BasePrice"
-            }
-          }
-        )
-        $all_responses << $update_inst_response
-      elsif ($item["type"] == "managedInstances")
-        $update_inst_response = http_request(
-        auth: $$auth_azure,
-          verb: "patch",
-          host: "management.azure.com",
-          https: true,
-          href: $item["id"],
-          query_strings: {
-            "api-version": "2020-11-01-preview"
-          },
-          headers: {
-            "cache-control": "no-cache",
-            "content-type": "application/json"
-          },
-          body: {
-            "properties": {
-              "licenseType": "BasePrice"
-            }
-          }
-        )
-        $all_responses << $update_inst_response
+define license_instances($data, $param_azure_endpoint) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      if ($item["resourceType"] == "Microsoft.SqlVirtualMachine/sqlVirtualMachines")
+        call license_vm($instance, $param_azure_endpoint) retrieve $license_response
+      elsif ($item["resourceType"] == "Microsoft.Sql/servers/elasticPools")
+        call license_elastic_pool($instance, $param_azure_endpoint) retrieve $license_response
+      elsif ($item["resourceType"] == "Microsoft.Sql/servers/databases")
+        call license_db($instance, $param_azure_endpoint) retrieve $license_response
+      elsif ($item["resourceType"] == "Microsoft.Sql/managedInstances")
+        call license_managed_instance($instance, $param_azure_endpoint) retrieve $license_response
       end
     end
   end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define license_vm($instance, $param_azure_endpoint) return $response do
+  $host = $param_azure_endpoint
+  $href = $instance["id"]
+  $params = "?api-version=2017-03-01-preview"
+  $url = $host + $href + $params
+  task_label("PUT " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure,
+    verb: "put",
+    host: $host,
+    https: true,
+    href: $href,
+    query_strings: {
+      "api-version": "2017-03-01-preview"
+    },
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json"
+    },
+    body: {
+      "location": $instance['region'],
+      "properties": {
+        "virtualMachineResourceId": $item['vmId'],
+        "sqlServerLicenseType": "AHUB"
+      }
+    }
+  )
+
+  task_label("Put Azure SQL VM instance response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "PUT " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response putting Azure SQL VM instance: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Put Azure SQL VM instance successful: " + $instance["id"])
+  end
+end
+
+define license_elastic_pool($instance, $param_azure_endpoint) return $response do
+  $host = $param_azure_endpoint
+  $href = $instance["id"]
+  $params = "?api-version=2021-11-01"
+  $url = $host + $href + $params
+  task_label("PATCH " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure,
+    verb: "patch",
+    host: $host,
+    https: true,
+    href: $href,
+    query_strings: {
+      "api-version": "2021-11-01"
+    },
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json"
+    },
+    body: {
+      "properties": {
+        "licenseType": "BasePrice"
+      }
+    }
+  )
+
+  task_label("Patch Azure SQL Elastic Pool response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "PATCH " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response patching Azure Elastic Pool: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Patch Azure SQL Elastic Pool successful: " + $instance["id"])
+  end
+end
+
+define license_db($instance, $param_azure_endpoint) return $response do
+  $host = $param_azure_endpoint
+  $href = $instance["id"]
+  $params = "?api-version=2020-11-01-preview"
+  $url = $host + $href + $params
+  task_label("PATCH " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure,
+    verb: "patch",
+    host: $host,
+    https: true,
+    href: $href,
+    query_strings: {
+      "api-version": "2020-11-01-preview"
+    },
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json"
+    },
+    body: {
+      "properties": {
+        "licenseType": "BasePrice"
+      }
+    }
+  )
+
+  task_label("Patch Azure SQL database response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "PATCH " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response patching Azure SQL database: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Patch Azure SQL database successful: " + $instance["id"])
+  end
+end
+
+define license_managed_instance($instance, $param_azure_endpoint) return $response do
+  $host = $param_azure_endpoint
+  $href = $instance["id"]
+  $params = "?api-version=2020-11-01-preview"
+  $url = $host + $href + $params
+  task_label("PATCH " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure,
+    verb: "patch",
+    host: $host,
+    https: true,
+    href: $href,
+    query_strings: {
+      "api-version": "2020-11-01-preview"
+    },
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json"
+    },
+    body: {
+      "properties": {
+        "licenseType": "BasePrice"
+      }
+    }
+  )
+
+  task_label("Patch Azure SQL Managed Instance response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "PATCH " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response patching Azure SQL Managed Instance: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Patch Azure SQL Managed Instance successful: " + $instance["id"])
+  end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
 end
 
 ###############################################################################
