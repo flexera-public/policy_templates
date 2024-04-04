@@ -345,9 +345,9 @@ datasource "ds_aggregated_costs_new_ri" do
   end
 end
 
-datasource "ds_aggregated_costs_mca_en" do
+datasource "ds_aggregated_costs_mca_en_base" do
   request do
-    run_script $js_get_aggregated_costs, $ds_bill_connections_mca_en, $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host, "mca_en"
+    run_script $js_get_aggregated_costs, $ds_bill_connections_mca_en, $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host, "mca_en_base"
   end
   result do
     encoding "json"
@@ -362,9 +362,25 @@ datasource "ds_aggregated_costs_mca_en" do
   end
 end
 
-datasource "ds_aggregated_costs_mca_cu" do
+datasource "ds_aggregated_costs_mca_cu_base" do
   request do
-    run_script $js_get_aggregated_costs, $ds_bill_connections_mca_cu, $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host, "mca_cu"
+    run_script $js_get_aggregated_costs, $ds_bill_connections_mca_cu, $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host, "mca_cu_base"
+  end
+  result do
+    collect jmes_path(response, "rows") do
+      field "instance_type", jmes_path(col_item, "dimensions.instance_type")
+      field "region", jmes_path(col_item, "dimensions.region")
+      field "usage_unit", jmes_path(col_item, "dimensions.usage_unit")
+      field "usage_amount", jmes_path(col_item, "metrics.usage_amount")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+      field "month", jmes_path(col_item, "timestamp")
+    end
+  end
+end
+
+datasource "ds_aggregated_costs_mca_cu_ri" do
+  request do
+    run_script $js_get_aggregated_costs, $ds_bill_connections_mca_cu, $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host, "mca_cu_ri"
   end
   result do
     collect jmes_path(response, "rows") do
@@ -527,7 +543,7 @@ script "js_get_aggregated_costs", type: "javascript" do
     }
   }
 
-  if (connection_type == 'mca_en') {
+  if (connection_type == "mca_en_base") {
     filter = {
       "type": "and",
       "expressions": [
@@ -536,18 +552,8 @@ script "js_get_aggregated_costs", type: "javascript" do
           "expressions": [
             { "dimension": "service", "type": "equal", "value": "Microsoft.Compute" },
             { "dimension": "service", "type": "equal", "value": "microsoft.compute" },
-
-            { "dimension": "service", "type": "equal", "value": "Microsoft.Reservation" },
-            { "dimension": "service", "type": "equal", "value": "microsoft.reservation" },
           ]
         },
-        //{
-        //  "type": "or",
-        //  "expressions": [
-        //    { "dimension": "vendor", "type": "equal", "value": "Azure"  },
-        //    { "dimension": "vendor", "type": "equal", "value": "azure"  }
-        //  ]
-        //},
         {
           "type": "not",
           "expression": { "dimension": "instance_type", "type": "equal", "value": "None" }
@@ -556,7 +562,7 @@ script "js_get_aggregated_costs", type: "javascript" do
     }
   }
 
-  if (connection_type == 'mca_cu') {
+  if (connection_type == 'mca_cu_base') {
     filter = {
       "type": "and",
       "expressions": [
@@ -565,18 +571,62 @@ script "js_get_aggregated_costs", type: "javascript" do
           "expressions": [
             { "dimension": "service", "type": "equal", "value": "Microsoft.Compute" },
             { "dimension": "service", "type": "equal", "value": "microsoft.compute" },
-
-            { "dimension": "service", "type": "equal", "value": "Microsoft.Reservation" },
-            { "dimension": "service", "type": "equal", "value": "microsoft.reservation" },
           ]
         },
-        //{
-        //  "type": "or",
-        //  "expressions": [
-        //    { "dimension": "vendor", "type": "equal", "value": "Azure"  },
-        //    { "dimension": "vendor", "type": "equal", "value": "azure"  }
-        //  ]
-        //},
+        {
+          "type": "or",
+          "expressions": [
+            { "dimension": "vendor", "type": "equal", "value": "Azure"  },
+            { "dimension": "vendor", "type": "equal", "value": "azure"  }
+          ]
+        },
+        {
+          "type": "not",
+          "expression": {
+            "type": "or",
+            "expressions": [
+              { "dimension": "purchase_option", "type": "equal", "value": "Reserved" },
+              { "dimension": "purchase_option", "type": "equal", "value": "reserved" },
+              { "dimension": "purchase_option", "type": "equal", "value": "Savings Plan" },
+              { "dimension": "purchase_option", "type": "equal", "value": "savings plan" },
+              { "dimension": "purchase_option", "type": "equal", "value": "Spot" },
+              { "dimension": "purchase_option", "type": "equal", "value": "spot" }
+            ]
+          }
+        },
+        {
+          "type": "not",
+          "expression": { "dimension": "instance_type", "type": "equal", "value": "None" }
+        }
+      ]
+    }
+  }
+
+  if (connection_type == 'mca_cu_ri') {
+    filter = {
+      "type": "and",
+      "expressions": [
+         {
+          "type": "or",
+          "expressions": [
+            { "dimension": "service", "type": "equal", "value": "Microsoft.Compute" },
+            { "dimension": "service", "type": "equal", "value": "microsoft.compute" },
+          ]
+        },
+        {
+          "type": "or",
+          "expressions": [
+            { "dimension": "vendor", "type": "equal", "value": "Azure"  },
+            { "dimension": "vendor", "type": "equal", "value": "azure"  }
+          ]
+        },
+        {
+          "type": "or",
+          "expressions": [
+            { "dimension": "purchase_option", "type": "equal", "value": "Reserved" },
+            { "dimension": "purchase_option", "type": "equal", "value": "reserved" }
+          ]
+        },
         {
           "type": "not",
           "expression": { "dimension": "instance_type", "type": "equal", "value": "None" }
@@ -618,11 +668,11 @@ EOS
 end
 
 datasource "ds_savings_realized" do
-  run_script $js_savings_realized, $ds_aggregated_costs_old_base, $ds_aggregated_costs_old_ri, $ds_aggregated_costs_new_base, $ds_aggregated_costs_new_ri, $ds_aggregated_costs_mca_en, $ds_aggregated_costs_mca_cu, $ds_region_table
+  run_script $js_savings_realized, $ds_aggregated_costs_old_base, $ds_aggregated_costs_old_ri, $ds_aggregated_costs_new_base, $ds_aggregated_costs_new_ri, $ds_aggregated_costs_mca_en_base, $ds_aggregated_costs_mca_cu_base, $ds_aggregated_costs_mca_cu_ri, $ds_region_table
 end
 
 script "js_savings_realized", type: "javascript" do
-  parameters "ds_aggregated_costs_old_base", "ds_aggregated_costs_old_ri", "ds_aggregated_costs_new_base", "ds_aggregated_costs_new_ri", "ds_aggregated_costs_mca_en", "ds_aggregated_costs_mca_cu", "ds_region_table"
+  parameters "ds_aggregated_costs_old_base", "ds_aggregated_costs_old_ri", "ds_aggregated_costs_new_base", "ds_aggregated_costs_new_ri", "ds_aggregated_costs_mca_en_base", "ds_aggregated_costs_mca_cu_base", "ds_aggregated_costs_mca_cu_ri", "ds_region_table"
   result "result"
   code <<-'EOS'
   result = []
@@ -659,7 +709,7 @@ script "js_savings_realized", type: "javascript" do
   base_costs = old_base_mapped.concat(ds_aggregated_costs_new_base)
   ri_costs = old_ri_mapped.concat(ds_aggregated_costs_new_ri)
   all_costs = base_costs.concat(ri_costs)
-  all_costs = all_costs.concat(ds_aggregated_costs_mca_en).concat(ds_aggregated_costs_mca_cu)
+  all_costs = all_costs.concat(ds_aggregated_costs_mca_en_base).concat(ds_aggregated_costs_mca_cu_base).concat(ds_aggregated_costs_mca_cu_ri)
 
   // Get list of Instance Types, Regions, Months
   instance_types = _.uniq(_.pluck(all_costs, 'instance_type'))
