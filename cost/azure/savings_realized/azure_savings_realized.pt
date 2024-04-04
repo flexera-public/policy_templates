@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "monthly"
 info(
-  version: "3.7",
+  version: "3.8",
   provider: "Azure",
   service: "Compute",
   policy_set: "Savings Realized"
@@ -629,12 +629,28 @@ script "js_savings_realized", type: "javascript" do
 EOS
 end
 
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
 datasource "ds_chart_data" do
-  run_script $js_chart_data, $ds_savings_realized, $ds_applied_policy, $param_chart_type
+  run_script $js_chart_data, $ds_savings_realized, $ds_applied_policy, $param_chart_type, $ds_currency_code
 end
 
 script "js_chart_data", type: "javascript" do
-  parameters "ds_savings_realized", "ds_applied_policy", "param_chart_type"
+  parameters "ds_savings_realized", "ds_applied_policy", "param_chart_type", "ds_currency_code"
   result "result"
   code <<-'EOS'
   // Create report data
@@ -714,7 +730,7 @@ script "js_chart_data", type: "javascript" do
       chart_image: encodeURI("chof=.png"),
       chart_y_axis: encodeURI("chxt=y,x"),
       chart_axis_label: encodeURI(chart_axis_labels),
-      chart_axis_format: encodeURI("chxs=0N*cUSD0sz*|1,min40"),
+      chart_axis_format: encodeURI("chxs=0N*c" + ds_currency_code.value + "0sz*|1,min40"),
       chart_line_style: encodeURI("chls=3|3|3|3|3|3|3|3|3|3|3"),
       chart_line_color: encodeURI("chco=1f5ab8,55b81f,198038,b28600,1192e8,009d9a,005d5d,007d79"),
       chart_data_scale: encodeURI("chds=a"),

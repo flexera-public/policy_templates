@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.8
+
+- Fixed the currency shown in the incident
+
 ## v3.7
 
 - Added support for organizations with no Microsoft Azure Enterprise Agreement (Legacy) bill connects
