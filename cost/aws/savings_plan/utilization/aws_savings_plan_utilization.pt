@@ -17,37 +17,38 @@ info(
 # Parameters
 ###############################################################################
 
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify when new incidents are created."
+  default []
+end
+
 parameter "param_savings_threshold" do
+  type "number"
   category "Savings Plan"
   label "Savings Plan Utilization Threshold"
   description "Specify the minimum Savings Plan Utilization threshold as a percentage that should result in an alert"
   default 100
-  type "number"
-end
-
-parameter "param_email" do
-  type "list"
-  label "Email addresses to notify"
-  default []
-  description "Email addresses of the recipients you wish to notify"
 end
 
 parameter "param_time_period" do
+  type "string"
   category "Savings Plan"
   label "Look Back Period"
-  default "Last 7 days"
   description "The number of days of past AWS Savings Plans Utilization data to analyze"
-  allowed_values "Last 7 days","Last 30 days"
-  type "string"
+  allowed_values "Last 7 days", "Last 30 days"
+  default "Last 7 days"
 end
 
 parameter "param_sp_arn" do
+  type "string"
   category "Savings Plan"
   label "Savings Plan ARN"
   description "Optional; The unique Amazon Resource Name (ARN) for a particular Savings Plan.  If no ARN is specified, all Savings Plans will have utilization reported."
-  default "" # Default value of empty string indicates that all Savings Plans will be checked
   allowed_pattern /(arn:aws:savingsplans::[a-zA-Z0-9]*|^$)/ # Regex to validate ARN format, or allow empty string
-  type "string"
+  default "" # Default value of empty string indicates that all Savings Plans will be checked
 end
 
 ###############################################################################
@@ -117,8 +118,8 @@ datasource "ds_savings_plans" do
   request do
     auth $auth_aws
     pagination $pagination_aws_savingsplans
-    host "savingsplans.us-east-1.amazonaws.com"
     verb "POST"
+    host "savingsplans.us-east-1.amazonaws.com"
     path "/DescribeSavingsPlans"
     header "User-Agent", "RS Policies"
     header "Content-Type", "application/json"
@@ -276,17 +277,6 @@ EOS
 end
 
 ###############################################################################
-# Escalations
-###############################################################################
-
-escalation "esc_savings_plans_utilizations" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
-end
-
-###############################################################################
 # Policy
 ###############################################################################
 
@@ -303,8 +293,8 @@ ___
 {{ end }}
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 EOS
-    escalate $esc_savings_plans_utilizations
     check eq(0,1)
+    escalate $esc_email
     export do
       # no actions so resource_level can be false
       resource_level false
@@ -325,4 +315,15 @@ EOS
       end
     end
   end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
 end
