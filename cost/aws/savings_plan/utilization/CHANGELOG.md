@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.3
+
+- Updated policy metadata to align policy to other `Savings Plans` policies.
+
 ## v3.2
 
 - Updated policy to use new source for currency information. Policy functionality is unchanged.
