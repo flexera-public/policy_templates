@@ -10,23 +10,26 @@ info(
   version: "2.5",
   provider: "Flexera",
   service: "SaaS Manager",
-  policy_set: "",
+  policy_set: ""
 )
 
 ###############################################################################
-# User inputs
+# Parameters
 ###############################################################################
-
-parameter "param_category" do
-  type "string"
-  label "Department to report entitled SaaS users"
-  description "Enter Department for SaaS User Report"
-end
 
 parameter "param_email" do
   type "list"
-  label "Email addresses to notify"
-  description "Email addresses of the recipients you wish to notify"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+  default []
+end
+
+parameter "param_category" do
+  type "string"
+  category "Policy Settings"
+  label "Department to report entitled SaaS users"
+  description "Enter Department for SaaS User Report"
 end
 
 ###############################################################################
@@ -42,7 +45,7 @@ credentials "fsm_auth" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
 datasource "ds_get_host" do
@@ -53,9 +56,8 @@ datasource "ds_managed_products" do
   iterate $ds_get_host
   request do
     auth $fsm_auth
-    host val(iter_item,"host")
     verb "GET"
-    scheme "https"
+    host val(iter_item, "host")
     path join(["/svc/orgs/", rs_org_id, "/managed-products"])
     header "content-type", "application/json"
   end
@@ -73,7 +75,7 @@ end
 datasource "ds_managed_product_agents" do
   iterate $ds_managed_products
   request do
-    run_script $js_managed_product_agents, val(iter_item, "appId"), $param_category, rs_org_id, val(iter_item, "saas_host")
+    run_script $js_managed_product_agents, val(iter_item, "appId"), val(iter_item, "saas_host"), $param_category, rs_org_id
   end
   result do
     encoding "json"
@@ -90,10 +92,6 @@ datasource "ds_managed_product_agents" do
   end
 end
 
-###############################################################################
-# Scripts
-###############################################################################
-
 script "js_get_host", type: "javascript" do
   parameters "rs_governance_host"
   result "result"
@@ -108,7 +106,7 @@ script "js_get_host", type: "javascript" do
 end
 
 script "js_managed_product_agents", type: "javascript" do
-  parameters "appId", "param_category", "rs_org_id", "saas_host"
+  parameters "appId", "saas_host", "param_category", "rs_org_id"
   result "request"
   code <<-EOS
   request = {
@@ -129,23 +127,14 @@ EOS
 end
 
 ###############################################################################
-# Escalations
-###############################################################################
-
-escalation "report_summary" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
-end
-
-###############################################################################
 # Policy
 ###############################################################################
 
 policy "pol_dept_app_users" do
   validate $ds_managed_product_agents do
     summary_template "{{ len data }} SaaS Subscribers for {{ parameters.param_category }} Found"
+    check eq(size(data), 0)
+    escalate $esc_email
     export do
       field "appName" do
         label "Application"
@@ -166,7 +155,16 @@ policy "pol_dept_app_users" do
         label "Email"
       end
     end
-    escalate $report_summary
-    check eq(size(data), 0)
   end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
 end
