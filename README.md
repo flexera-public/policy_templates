@@ -226,7 +226,6 @@ These templates can generate savings estimates for your environment.
 - Compute
 
   - [Azure Hybrid Use Benefit for Linux Server](./cost/azure/hybrid_use_benefit_linux)
-  - [Azure Hybrid Use Benefit for SQL](./cost/azure/hybrid_use_benefit_sql)
   - [Azure Hybrid Use Benefit for Windows Server](./cost/azure/hybrid_use_benefit)
   - [Azure Reserved Instances Recommendations](./cost/azure/reserved_instances/recommendations)
   - [Azure Reserved Instances Utilization](./cost/azure/reserved_instances/utilization)
@@ -258,6 +257,7 @@ These templates can generate savings estimates for your environment.
 
 - SQL
 
+  - [Azure Hybrid Use Benefit for SQL](./cost/azure/hybrid_use_benefit_sql)
   - [Azure Rightsize SQL Databases](./cost/azure/rightsize_sql_instances)
   - [Azure SQL Databases without Elastic Pools](./operational/azure/azure_sql_using_elastic_pool)
 
@@ -621,7 +621,7 @@ These templates can generate savings estimates for your environment.
   Security: 74
 :optimization_count: 45
 :policy_sets:
-  '': 55
+  '': 54
   AWS Config: 1
   Allocate VMs: 3
   Automation: 1
@@ -635,7 +635,7 @@ These templates can generate savings estimates for your environment.
   Databricks: 1
   Disallowed Regions: 2
   Forecasting: 4
-  Hybrid Use Benefit: 4
+  Hybrid Use Benefit: 5
   IT Asset Management: 5
   Identity & Access Management: 1
   Idle Compute Instances: 1
@@ -700,7 +700,7 @@ These templates can generate savings estimates for your environment.
   Cloud Migration & Modernization: 2
   CloudTrail: 7
   Common Bill Ingestion: 2
-  Compute: 52
+  Compute: 51
   Config: 1
   Cost Explorer: 1
   DBS: 1
@@ -728,7 +728,7 @@ These templates can generate savings estimates for your environment.
   PostgreSQL: 4
   RDS: 4
   S3: 8
-  SQL: 14
+  SQL: 15
   Security: 3
   Storage: 22
   Storage Accounts: 2
