@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1
+
+- Policy updated so that policy is correctly identified as a Flexera policy
+
 ## v3.0
 
 - Policy renamed to `SaaS Manager - Deactivated Users for Integrated Applications` to better reflect its functionality

@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1
+
+- Policy updated so that policy is correctly identified as a Flexera policy
+
 ## v3.0
 
 - Updated policy to use public SaaS Manager API
