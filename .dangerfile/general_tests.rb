@@ -5,6 +5,26 @@
 # Methods: General
 ###############################################################################
 
+#### Textlint test
+# Return false if linter finds no problems
+def general_textlint?(file)
+  fail_message = ""
+
+  # Run text lint and store results in log file
+  `node_modules/.bin/textlint #{file} 1> textlint.log`
+
+  if $?.exitstatus != 0
+    error_list = `cat textlint.log`.split("\n")
+    error_list.shift(2) # Remove first line since it just links to the filename in the local filesystem
+    error_list = error_list.join("\n\n")
+
+    fail_message = "**#{file}**\nTextlint errors found:\n\n#{error_list}"
+  end
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
 ### Spell check test
 # Run the Danger spell checker on a file
 def general_spellcheck?(file)

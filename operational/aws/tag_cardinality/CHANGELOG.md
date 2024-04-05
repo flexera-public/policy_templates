@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1
+
+- Added parameter to enable region filtering
+
 ## v3.0
 
 - Added logic required for "Meta Policy" use-cases

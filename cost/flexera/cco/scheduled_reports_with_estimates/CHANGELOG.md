@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.6
+
+- Updated policy metadata to make it more clear what Flexera service the policy is for
+
 ## v1.5
 
 - Updated policy to use new source for currency information. Policy functionality is unchanged.

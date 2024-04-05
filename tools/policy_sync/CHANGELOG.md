@@ -1,4 +1,9 @@
-# CHANGELOG
+# Changelog
+
+## v2.0.0
+
+- Added parameters for the Policy Template Github Repo to enable this to be used for other repos without modifying Policy Template
+- Renamed parameters to align with on Policy Developement testing and best practices
 
 ## v1.17
 
@@ -24,11 +29,11 @@
 
 - updated README.md rightscale documentation links with docs.flexera documentation links
 
-## 1.11
+## v1.11
 
 - Adding `param_branch` to support automatic publishing to the EU Shard.
 
-## 1.10
+## v1.10
 
 - fix an issue with publishing
 
