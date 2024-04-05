@@ -409,7 +409,7 @@ def policy_readme_missing_credentials?(file)
     fail_message += "Policy contains Oracle credential but this credential either missing from or incorrectly formatted in the associated `README.md` file.\n\n"
   end
 
-  if !pol_flexera_credential && readme_flexera_credential && !file.start_with("saas/fsm/")
+  if !pol_flexera_credential && readme_flexera_credential && !file.start_with?("saas/fsm/")
     fail_message += "Policy's `README.md` file contains documentation for a Flexera credential that does not exist or is incorrectly named in the policy.\n\n"
   end
 
