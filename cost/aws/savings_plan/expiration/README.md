@@ -1,6 +1,6 @@
 # AWS Expiring Savings Plans
 
-## What it does
+## What It Does
 
 This Policy Template leverages the Savings Plan API for savings plan information. It will notify only if expiration is within the timeframe specified in `Number of days to prior to expiration date to trigger incident` field. It will email the user specified in `Email addresses of the recipients you wish to notify`.
 
