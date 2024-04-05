@@ -17,24 +17,29 @@ info(
 # Parameters
 ###############################################################################
 
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify when new incidents are created."
+  default []
+end
+
 parameter "param_utilization" do
-  category "RI"
-  label "Show Reservations with utilization below this value (%)"
   type "number"
+  category "Policy Settings"
+  label "Utilization Percentage"
+  description "Show Reservations with utilization below this value (%)"
   min_value 1
   max_value 100
   default 100
 end
 
-parameter "param_email" do
-  label "Email addresses of the recipients you wish to notify"
-  type "list"
-end
-
 parameter "param_billing_centers" do
+  type "list"
+  category "Policy Settings"
   label "Billing Center Name"
   description "Filter reservations for a specific Billing Center/s by entering Billing Center names"
-  type "list"
   default []
 end
 
@@ -59,9 +64,9 @@ datasource "ds_billing_centers" do
     auth $auth_flexera
     host rs_optima_host
     path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
   end
   result do
     encoding "json"
@@ -118,7 +123,7 @@ end
 #GET LIST OF ACCOUNTS FOR BILLING CENTERS
 datasource "ds_accounts_by_billing_center" do
   request do
-    run_script $js_get_accounts_by_bc, rs_optima_host, rs_org_id, $ds_filtered_billing_centers
+    run_script $js_get_accounts_by_bc, $ds_filtered_billing_centers, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -133,7 +138,7 @@ datasource "ds_accounts_by_billing_center" do
 end
 
 script "js_get_accounts_by_bc", type: "javascript" do
-  parameters "rs_optima_host", "org_id", "ds_filtered_billing_centers"
+  parameters "ds_filtered_billing_centers", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
   //Get start and end date for previous month
@@ -160,7 +165,7 @@ script "js_get_accounts_by_bc", type: "javascript" do
     auth: "auth_flexera",
     verb: "POST",
     host: rs_optima_host,
-    path: "/bill-analysis/orgs/" + org_id + "/costs/aggregated",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
     body_fields: {
       "dimensions": dimensions,
       "granularity": "month",
