@@ -15,7 +15,7 @@ This Policy leverages Flexera CCO APIs to determine a usage forecast for a view 
 
 This policy has the following input parameters required when launching the policy.
 
-- *Region* - Name of the AWS Region to filter by. Example: 'US West (Oregon)'. Leave this blank for 'Organization' scope
+- *Region* - Name of the AWS Region to filter by. Example: 'US West (Oregon)'. Leave this blank for 'Organization' scope.
 - *Lookback Months* - Number of months to lookback to generate forecast.
 - *Months to forecast* - Number of months in the future to forecast.
 - *Email addresses to notify* - A list of email addresses to notify.
