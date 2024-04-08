@@ -263,6 +263,8 @@ datasource "ds_aws_buckets_with_tags" do
     host "s3.amazonaws.com"
     path join(["/", val(iter_item, "name")])
     query "tagging", ""
+    # Buckets with no tags cause a 404 response so we ignore that
+    ignore_status [404]
   end
   result do
     encoding "xml"
@@ -279,13 +281,25 @@ datasource "ds_aws_buckets_with_tags" do
 end
 
 datasource "ds_aws_buckets_tag_filtered" do
-  run_script $js_aws_buckets_tag_filtered, $ds_aws_buckets_with_tags, $param_exclusion_tags, $param_exclusion_tags_boolean
+  run_script $js_aws_buckets_tag_filtered, $ds_aws_buckets_with_tags, $ds_aws_buckets_region_filtered, $param_exclusion_tags, $param_exclusion_tags_boolean
 end
 
 script "js_aws_buckets_tag_filtered", type: "javascript" do
-  parameters "ds_aws_buckets_with_tags", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  parameters "ds_aws_buckets_with_tags", "ds_aws_buckets_region_filtered", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-EOS
+  // Logic to ensure any buckets skipped because of a 404 response due to no tags
+  // are still included in the final result
+  tagged_bucket_list = _.map(ds_aws_buckets_tag_filtered, function(bucket) {
+    return bucket['name'] + '___' + bucket['region']
+  })
+
+  tagless_buckets = _.reject(ds_aws_buckets_region_filtered, function(bucket) {
+    return _.contains(tagged_bucket_list, bucket['name'] + '___' + bucket['region'])
+  })
+
+  aws_buckets = ds_aws_buckets_tag_filtered.concat(tagless_buckets)
+
   comparators = _.map(param_exclusion_tags, function(item) {
     if (item.indexOf('==') != -1) {
       return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
@@ -317,7 +331,7 @@ script "js_aws_buckets_tag_filtered", type: "javascript" do
   })
 
   if (param_exclusion_tags.length > 0) {
-    result = _.filter(ds_aws_buckets_with_tags, function(bucket) {
+    result = _.filter(aws_buckets, function(bucket) {
       resource_tags = {}
 
       if (typeof(resource['tags']) == 'object') {
@@ -355,7 +369,7 @@ script "js_aws_buckets_tag_filtered", type: "javascript" do
       return all_tags_found || any_tags_found
     })
   } else {
-    result = ds_aws_buckets_with_tags
+    result = aws_buckets
   }
 EOS
 end
