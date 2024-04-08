@@ -216,11 +216,41 @@ datasource "ds_get_aws_buckets" do
   end
 end
 
+datasource "ds_aws_buckets" do
+  run_script $js_aws_buckets, $ds_get_aws_buckets
+end
+
+script "js_aws_buckets", type: "javascript" do
+  parameters "ds_get_aws_buckets"
+  result "result"
+  code <<-'EOS'
+  result = _.map(ds_get_aws_buckets, function(bucket) {
+    if (typeof(bucket['region']) != 'string' || bucket['region'] == '' || bucket['region'] == 'us-east-1') {
+      region = 'us-east-1'
+      host = 's3.amazonaws.com'
+    } else if (bucket['region'] == 'EU') {
+      region = 'eu-west-1'
+      host = 's3-eu-west-1.amazonaws.com'
+    } else {
+      region = bucket['region'].toLowerCase().trim()
+      host = 's3-' + region + '.amazonaws.com'
+    }
+
+    return {
+      name: bucket['name'],
+      creation_date: bucket['creation_date'],
+      region: region,
+      host: host
+    }
+  })
+EOS
+end
+
 datasource "ds_aws_buckets_with_region" do
   iterate $ds_get_aws_buckets
   request do
     auth $auth_aws
-    host "s3.amazonaws.com"
+    host val(iter_item, "host")
     path join(["/", val(iter_item, "name")])
     query "location", ""
   end
@@ -260,7 +290,7 @@ datasource "ds_aws_buckets_with_tags" do
   iterate $ds_aws_buckets_region_filtered
   request do
     auth $auth_aws
-    host "s3.amazonaws.com"
+    host val(iter_item, "host")
     path join(["/", val(iter_item, "name")])
     query "tagging", ""
     # Buckets with no tags cause a 404 response so we ignore that
@@ -374,43 +404,6 @@ script "js_aws_buckets_tag_filtered", type: "javascript" do
 EOS
 end
 
-datasource "ds_aws_buckets" do
-  run_script $js_aws_buckets, $ds_aws_buckets_tag_filtered
-end
-
-script "js_aws_buckets", type: "javascript" do
-  parameters "ds_aws_buckets_tag_filtered"
-  result "result"
-  code <<-'EOS'
-  result = _.map(ds_aws_buckets_tag_filtered, function(bucket) {
-    if (typeof(bucket['region']) != 'string' || bucket['region'] == '' || bucket['region'] == 'us-east-1') {
-      region = 'us-east-1'
-      host = 's3.amazonaws.com'
-    } else if (bucket['region'] == 'EU') {
-      region = 'eu-west-1'
-      host = 's3-eu-west-1.amazonaws.com'
-    } else {
-      region = bucket['region'].toLowerCase().trim()
-      host = 's3-' + region + '.amazonaws.com'
-    }
-
-    tags = []
-
-    if (instance['tags'] != undefined && instance['tags'] != null) {
-      tags = _.map(instance['tags'], function(tag) { return [tag['key'], tag['value']].join('=') })
-    }
-
-    return {
-      name: bucket['name'],
-      creation_date: bucket['creation_date'],
-      region: region,
-      host: host,
-      tags: tags.join(", ")
-    }
-  })
-EOS
-end
-
 datasource "ds_aws_bucket_sizes" do
   iterate $ds_aws_buckets
   request do
@@ -486,12 +479,18 @@ script "js_aws_oversized_buckets", type: "javascript" do
   })
 
   result = _.map(oversized_buckets, function(bucket) {
+    tags = []
+
+    if (bucket['tags'] != undefined && bucket['tags'] != null) {
+      tags = _.map(bucket['tags'], function(tag) { return [tag['key'], tag['value']].join('=') })
+    }
+
     return {
       resourceID: bucket['name'],
       name: bucket['name'],
       region: bucket['region'],
       host: bucket['host'],
-      tags: bucket['tags'],
+      tags: tags.join(", "),
       creation_date: new Date(bucket['creation_date']).toISOString(),
       threshold: param_size_threshold,
       // Convert size from bytes to GiB
