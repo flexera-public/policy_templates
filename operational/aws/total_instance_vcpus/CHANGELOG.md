@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2
+
+- Updated policy metadata to correctly identify it as an AWS policy
+
 ## v3.1
 
 - Updated indentation for chart url so it renders corrrectly in the policy incident email

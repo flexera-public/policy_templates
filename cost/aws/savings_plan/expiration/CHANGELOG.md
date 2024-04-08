@@ -1,8 +1,12 @@
 # Changelog
 
+## v2.2
+
+- Updated policy metadata to correctly identify it as an AWS policy
+
 ## v2.1
 
-- fixed link to README in policy description
+- Fixed link to README in policy description
 
 ## v2.0
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.5
+
+- Policy updated so that policy is correctly identified as a Flexera policy
+
 ## v2.4
 
 - Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`

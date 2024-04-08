@@ -1,6 +1,6 @@
 # AWS Expiring Savings Plans
 
-## What it does
+## What It Does
 
 This Policy Template leverages the Savings Plan API for savings plan information. It will notify only if expiration is within the timeframe specified in `Number of days to prior to expiration date to trigger incident` field. It will email the user specified in `Email addresses of the recipients you wish to notify`.
 
@@ -20,10 +20,6 @@ The following policy actions are taken on any resources found to be out of compl
 ## Prerequisites
 
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
-
-### Credential configuration
-
-For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
 
 - [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
   - `savingsplans:DescribeSavingsPlans`

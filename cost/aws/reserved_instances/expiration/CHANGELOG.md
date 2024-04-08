@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.2
+
+- Updated policy metadata to correctly identify it as an AWS policy
+
 ## v2.1
 
 - Deprecated: This policy is no longer being updated.
