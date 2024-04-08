@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.12
+
+- Updated policy metadata to correctly identify it as a `Reserved Instances` policy
+
 ## v2.11
 
 - Updated description of `Account Number` parameter

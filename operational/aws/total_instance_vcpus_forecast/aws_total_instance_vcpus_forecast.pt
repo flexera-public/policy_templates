@@ -7,10 +7,10 @@ severity "low"
 category "Operational"
 default_frequency "monthly"
 info(
-  version: "3.2",
-  provider: "Flexera Optima",
-  service: "",
-  policy_set: ""
+  version: "3.3",
+  provider: "AWS",
+  service: "Compute",
+  policy_set: "Usage Report"
 )
 
 ###############################################################################
@@ -19,26 +19,33 @@ info(
 
 parameter "param_email" do
   type "list"
+  category "Policy Settings"
   label "Email addresses to notify"
+  description "A list of email addresses to notify."
+  default []
 end
 
 parameter "param_region" do
   type "string"
+  category "Policy Settings"
   label "Region"
   description "Name of the AWS Region to filter by. Example: 'US West (Oregon)'. Leave this blank for 'Organization' scope"
+  default ""
 end
 
 parameter "param_lookback_months" do
+  type "number"
+  category "Policy Settings"
   label "Lookback Months"
   description "Number of months to lookback to generate forecast"
-  type "number"
   default 10
 end
 
 parameter "param_forecasted_months" do
+  type "number"
+  category "Policy Settings"
   label "Months to forecast"
   description "Number of months in the future to forecast"
-  type "number"
   default 6
 end
 
@@ -55,7 +62,7 @@ credentials "auth_flexera" do
 end
 
 ###############################################################################
-# Datasources and Scripts
+# Datasources & Scripts
 ###############################################################################
 
 #GET BILLING CENTERS FOR ORG
@@ -63,30 +70,30 @@ datasource "ds_billing_centers" do
   request do
     auth $auth_flexera
     host rs_optima_host
-    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
   end
   result do
     encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "href", jmes_path(col_item,"href")
-      field "id", jmes_path(col_item,"id")
-      field "name", jmes_path(col_item,"name")
-      field "parent_id", jmes_path(col_item,"parent_id")
-      field "ancestor_ids", jmes_path(col_item,"ancestor_ids")
-      field "allocation_table", jmes_path(col_item,"allocation_table")
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+      field "ancestor_ids", jmes_path(col_item, "ancestor_ids")
+      field "allocation_table", jmes_path(col_item, "allocation_table")
     end
   end
 end
 
 #GET TOP-LEVEL BILLING CENTERS
 datasource "ds_top_level_billing_centers" do
-  run_script $js_top_level_bc, $ds_billing_centers
+  run_script $js_top_level_billing_centers, $ds_billing_centers
 end
 
-script "js_top_level_bc", type: "javascript" do
+script "js_top_level_billing_centers", type: "javascript" do
   parameters "billing_centers"
   result "filtered_billing_centers"
   code <<-EOS
@@ -97,10 +104,10 @@ end
 
 #CREATE LIST OF PAST MONTHS
 datasource "ds_past_month_list" do
-  run_script $js_generate_past_month_list, $param_lookback_months
+  run_script $js_past_month_list, $param_lookback_months
 end
 
-script "js_generate_past_month_list", type: "javascript" do
+script "js_past_month_list", type: "javascript" do
   parameters "param_lookback_months"
   result "month_list"
   code <<-EOS
@@ -131,23 +138,23 @@ end
 datasource "ds_usage_data" do
   iterate $ds_past_month_list
   request do
-    run_script $js_get_usage_data, $ds_top_level_billing_centers, $param_region, rs_org_id, rs_optima_host, val(iter_item, 'start_date'), val(iter_item, 'end_date')
+    run_script $js_usage_data, val(iter_item, 'start_date'), val(iter_item, 'end_date'), $ds_top_level_billing_centers, $param_region, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
     collect jmes_path(response, "rows") do
-      field "billing_center_id", jmes_path(col_item,"dimensions.billing_center_id")
-      field "instance_type", jmes_path(col_item,"dimensions.instance_type")
-      field "usage_unit", jmes_path(col_item,"dimensions.usage_unit")
-      field "cost", jmes_path(col_item,"metrics.cost_nonamortized_unblended_adj")
-      field "usage_amount", jmes_path(col_item,"metrics.usage_amount")
-      field "month", jmes_path(col_item,"timestamp")
+      field "billing_center_id", jmes_path(col_item, "dimensions.billing_center_id")
+      field "instance_type", jmes_path(col_item, "dimensions.instance_type")
+      field "usage_unit", jmes_path(col_item, "dimensions.usage_unit")
+      field "cost", jmes_path(col_item, "metrics.cost_nonamortized_unblended_adj")
+      field "usage_amount", jmes_path(col_item, "metrics.usage_amount")
+      field "month", jmes_path(col_item, "timestamp")
     end
   end
 end
 
-script "js_get_usage_data", type: "javascript" do
-  parameters "top_level_billing_centers", "region", "org_id", "optima_host", "start_date", "end_date"
+script "js_usage_data", type: "javascript" do
+  parameters "start_date", "end_date", "top_level_billing_centers", "region", "org_id", "optima_host"
   result "request"
   code <<-EOS
   //Billing Center IDs into array
@@ -220,17 +227,17 @@ datasource "ds_aws_instance_size_map" do
   request do
     verb "GET"
     host "raw.githubusercontent.com"
-    path "/flexera/policy_templates/master/data/aws/instance_types.json"
+    path "/flexera-public/policy_templates/master/data/aws/instance_types.json"
     header "User-Agent", "RS Policies"
   end
 end
 
 #GROUP INSTANCE TYPES INTO INSTANCE FAMILIES AND CALCULATE INSTANCE VCPUS
 datasource "ds_instance_vcpus_per_fam" do
-  run_script $js_get_instance_vcpus_per_fam, $ds_aws_instance_size_map, $ds_usage_data
+  run_script $js_instance_vcpus_per_fam, $ds_aws_instance_size_map, $ds_usage_data
 end
 
-script "js_get_instance_vcpus_per_fam", type: "javascript" do
+script "js_instance_vcpus_per_fam", type: "javascript" do
   parameters "aws_instance_data", "usage_data"
   result "result"
   code <<-'EOS'
@@ -297,7 +304,7 @@ script "js_get_instance_vcpus_per_fam", type: "javascript" do
     })
   })
 
-  top_8_inst_fams = _.last( _.pluck( _.sortBy(vcpu_totals_per_fam,"total_vcpus_12_months"), "instance_family" ), [8] )
+  top_8_inst_fams = _.last(_.pluck(_.sortBy(vcpu_totals_per_fam, "total_vcpus_12_months"), "instance_family" ), [8])
 
   //If Instance Family is not in 8 highest vCPUs used, then put into "Other" category
   _.each(month, function(mo){
@@ -327,10 +334,10 @@ end
 
 #CALCULATE FORECAST DATA
 datasource "ds_forecast_data" do
-  run_script $js_get_forecast_data, $ds_instance_vcpus_per_fam, $param_forecasted_months
+  run_script $js_forecast_data, $ds_instance_vcpus_per_fam, $param_forecasted_months
 end
 
-script "js_get_forecast_data", type: "javascript" do
+script "js_forecast_data", type: "javascript" do
   parameters "data_package", "param_forecast_months"
   result "report_data"
   code <<-EOS
@@ -432,10 +439,10 @@ end
 
 #CHART CREATION
 datasource "ds_chart_creation" do
-  run_script $js_create_chart_data, $ds_forecast_data, $param_region
+  run_script $js_chart_creation, $ds_forecast_data, $param_region
 end
 
-script "js_create_chart_data", type: "javascript" do
+script "js_chart_creation", type: "javascript" do
   parameters "inst_vcpu_data", "param_region"
   result "report"
   code <<-EOS
@@ -468,7 +475,7 @@ script "js_create_chart_data", type: "javascript" do
   chart_axis_labels =
   ("chxl=1:," +
     _.uniq(inst_vcpu_data, function(data) { return data.month })
-    .map(function(data){ return data.month.substring(0,7) })
+    .map(function(data){ return data.month.substring(0, 7) })
   ).split(",").join("|")
 
   //Create legend
@@ -526,17 +533,6 @@ script "js_create_chart_data", type: "javascript" do
 end
 
 ###############################################################################
-# Escalations
-###############################################################################
-
-escalation "esc_instance_vcpus_report" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
-end
-
-###############################################################################
 # Policy
 ###############################################################################
 
@@ -549,8 +545,8 @@ policy "pol_uage_forecast_inst_vcpus" do
 ___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 EOS
-    escalate $esc_instance_vcpus_report
-    check eq(0,1)
+    check eq(0, 1)
+    escalate $esc_email
     export do
       # no actions so resource_level can be false
       resource_level false
@@ -565,4 +561,15 @@ EOS
       end
     end
   end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
 end
