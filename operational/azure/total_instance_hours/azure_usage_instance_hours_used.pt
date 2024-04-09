@@ -73,23 +73,26 @@ datasource "ds_billing_centers" do
 end
   
 #GET TOP-LEVEL BILLING CENTERS
-datasource "ds_top_level_billing_centers" do
-  run_script $js_top_level_billing_centers, $ds_billing_centers
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
 end
-  
-script "js_top_level_billing_centers", type: "javascript" do
-  parameters "billing_centers"
-  result "filtered_billing_centers"
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
   code <<-EOS
-  var filtered_billing_centers =
-    _.reject(billing_centers, function(bc){ return bc.parent_id != null })
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
   EOS
 end
 
 #GET USAGE DATA FOR INSTANCE TYPES
 datasource "ds_usage_data" do
   request do
-    run_script $js_usage_data, $ds_top_level_billing_centers, $param_region, rs_org_id, rs_optima_host
+    run_script $js_usage_data, $ds_top_level_bcs, $param_region, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -300,13 +303,13 @@ end
 
 script "js_chart_creation", type: "javascript" do
   parameters "inst_hrs_data", "param_region"
-  result "report"
+  result "result"
   code <<-EOS
 
   //Group data by Instance Family
   var group_by_inst_fam = 
   _.groupBy(inst_hrs_data, function(data) { return data.instance_family })
-  report = inst_hrs_data
+  result = inst_hrs_data
 
   //Create chart axis labels
   var chart_axis_labels = 
@@ -365,7 +368,7 @@ script "js_chart_creation", type: "javascript" do
     policy_title: policy_title
   }
 
-  report[0]["chart_dimensions"] = chart
+  result[0]["chart_dimensions"] = chart
   EOS
 end
 
@@ -383,7 +386,7 @@ ___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 EOS
     check eq(0,1)
-    escalate $esc_instance_hours_report  
+    escalate $esc_email  
     export do
       # no actions so resource_level can be false
       resource_level false
@@ -404,7 +407,7 @@ end
 # Escalations
 ###############################################################################
 
-escalation "esc_instance_hours_report" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
