@@ -25,12 +25,21 @@ parameter "param_email" do
   default []
 end
 
-parameter "param_region" do
+parameter "param_regions_allow_or_deny" do
   type "string"
   category "Filters"
-  label "Region"
-  description "Name of the Azure Region to filter by. Example: 'US East'. Leave this blank for 'Organization' scope"
-  default ""
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. Example: 'US East'. Leave blank to check all regions."
+  default []
 end
 
 ###############################################################################
@@ -92,7 +101,7 @@ end
 #GET USAGE DATA FOR INSTANCE TYPES
 datasource "ds_usage_data" do
   request do
-    run_script $js_usage_data, $ds_top_level_bcs, $param_region, rs_org_id, rs_optima_host
+    run_script $js_usage_data, $ds_top_level_bcs, $param_regions_allow_or_deny, $param_regions_list, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -108,43 +117,61 @@ datasource "ds_usage_data" do
 end
 
 script "js_usage_data", type: "javascript" do
-  parameters "top_level_billing_centers", "region", "org_id", "optima_host"
+  parameters "ds_top_level_bcs", "param_regions_allow_or_deny", "param_regions_list", "org_id", "optima_host"
   result "request"
   code <<-EOS 
   //Billing Center IDs into array
-  billing_center_ids = []
-  _.each(top_level_billing_centers, function(bc) {
+  var billing_center_ids = []
+  _.each(ds_top_level_bcs, function(bc) {
     billing_center_ids.push(bc.id)
   })
 
   //Get Start and End dates
-  start_date = new Date(), end_date = new Date()
+  var start_date = new Date(), end_date = new Date()
   start_date.setMonth(start_date.getMonth() - 13)
   end_date.setMonth(end_date.getMonth() - 1)
 
-  //get expressions for payload based on region parameter
-  expressions = []
-  if( region == "" ) { 
-    expressions = [
-      { "dimension": "category", "type": "equal", "value": "Compute" },
-      { "dimension": "resource_type", "type": "substring", "substring": "Virtual Machines" },
-      { "dimension": "vendor", "type": "substring", substring: "Azure" }, // Use a substring type to include both "Azure" (Azure EA) and "AzureMCA-Enterprise" (Azure MCA) subscriptions
-      {
+  //Define Expressions for API Filter 
+  var expressions = [
+    { "dimension": "category", "type": "equal", "value": "Compute" },
+    { "dimension": "resource_type", "type": "substring", "substring": "Virtual Machines" },
+    { "dimension": "vendor", "type": "substring", substring: "Azure" }, // Use a substring type to include both "Azure" (Azure EA) and "AzureMCA-Enterprise" (Azure MCA) subscriptions
+    {
+      "type": "not",
+      "expression": { "dimension": "instance_type", "type": "equal", "value": "None" }
+    }
+  ]
+
+  //Get Regions list if applicable
+  if (param_regions_list.length > 0) {
+    
+    var regions_filter_list = []
+    _.each(param_regions_list, function(reg) {
+        var region_dimension = { "dimension": "region", "type": "equal", "value": reg }
+        regions_filter_list.push(region_dimension)
+    })
+
+    var region_filter_json = {}
+    if (param_regions_allow_or_deny == "Deny") {
+      
+      region_filter_json = {
         "type": "not",
-        "expression": { "dimension": "instance_type", "type": "equal", "value": "None" }
+        "expression": {
+          "type": "or",
+          "expressions": regions_filter_list
+        }
       }
-    ]
-  } else { 
-    expressions = [
-      { "dimension": "category", "type": "equal", "value": "Compute" },
-      { "dimension": "resource_type", "type": "substring", "substring": "Virtual Machines" },
-      { "dimension": "vendor", "type": "substring", substring: "Azure" }, // Use a substring type to include both "Azure" (Azure EA) and "AzureMCA-Enterprise" (Azure MCA) subscriptions
-      { "dimension": "region", "type": "equal", "value": region },
-      {
-        "type": "not",
-        "expression": { "dimension": "instance_type", "type": "equal", "value": "None" }
+      expressions.push(region_filter_json)
+
+    } else {
+      
+      region_filter_json = {
+        "type": "or",
+        "expressions": regions_filter_list
       }
-    ]
+      expressions.push(region_filter_json)
+
+    }
   }
   
   //POST JSON payload
@@ -298,11 +325,11 @@ end
 
 #CHART CREATION
 datasource "ds_chart_creation" do
-  run_script $js_chart_creation, $ds_instance_hours_per_fam, $param_region
+  run_script $js_chart_creation, $ds_instance_hours_per_fam, $param_regions_allow_or_deny, $param_regions_list
 end
 
 script "js_chart_creation", type: "javascript" do
-  parameters "inst_hrs_data", "param_region"
+  parameters "inst_hrs_data", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-EOS
 
@@ -342,12 +369,8 @@ script "js_chart_creation", type: "javascript" do
   })
 
   //Create Chart Title
-  var policy_title = "Total Instance Hours Used Per Instance Family For " + param_region
+  var policy_title = "Total Instance Hours Used Per Instance Family"
   var chart_title = "chtt=" + policy_title
-  if ( param_region == "" ) {
-    policy_title = "Total Instance Hours Used Per Instance Family"
-    chart_title = "chtt=" + policy_title
-  }
 
   //Whole Chart object
   var chart = {
