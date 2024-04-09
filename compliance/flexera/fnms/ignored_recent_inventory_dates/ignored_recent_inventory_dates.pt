@@ -1,31 +1,41 @@
 name "ITAM Ignored Recent Inventory Dates"
 rs_pt_ver 20180301
 type "policy"
-short_description "Looks for machines that are ignored but have been invenotry recently and sends the result as an email.  See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/flexera/fnms/ignored_recent_inventory_dates/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Looks for machines that are ignored but have been inventoried recently and sends the result as an email.  See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/flexera/fnms/ignored_recent_inventory_dates/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "medium"
 category "Compliance"
 default_frequency "weekly"
 
 info(
-  version: "2.3",
-  provider: "Flexera ITAM",
-  service: "",
-  policy_set: "ITAM"
+  version: "2.4",
+  provider: "Flexera",
+  service: "IT Asset Management",
+  policy_set: "IT Asset Management"
 )
+
+###############################################################################
+# Parameters
+###############################################################################
 
 parameter "param_days_active" do
   type "number"
+  category "Policy Settings"
   label "Days since last inventory"
-  description "Number of days since Last Invenotry"
+  description "Number of days since Last Inventory"
   default 5
 end
 
 parameter "param_email" do
   type "list"
+  category "Policy Settings"
   label "Email addresses of the recipients you wish to notify"
   description "A list of email addresse(s) to notify"
 end
+
+###############################################################################
+# Authentication
+###############################################################################
 
 credentials "auth_flexeraone" do
   schemes "oauth2"
@@ -34,7 +44,11 @@ credentials "auth_flexeraone" do
   tags "provider=flexera"
 end
 
-pagination "itam_pagination" do
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_itam" do
   get_page_marker do
     body_path jq(response, "if .total == 0 then null else .offset + 10000 end")
   end
@@ -43,16 +57,20 @@ pagination "itam_pagination" do
   end
 end
 
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
 datasource "ds_inventories" do
   request do
     auth $auth_flexeraone
+    pagination $pagination_itam
     host join(["api.", get(1, split(f1_app_host, "app."))])
     path join(["/fnms/v1/orgs/", rs_org_id, "/inventories"])
-    header "Api-Version", "0.1"
-    header "User-Agent", "RS Policies"
     query "status", "Ignored"
     query "limit", "10000"
-    pagination $itam_pagination
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
   end
 end
 
@@ -79,11 +97,15 @@ script "js_check_date", type: "javascript" do
 EOF
 end
 
+###############################################################################
+# Policy
+###############################################################################
+
 policy 'itam_policy' do
   validate_each $ds_check_date do
     summary_template 'ITAM - Ignored active machines'
-    escalate $send_report
     check eq(to_n(val(item,"ignored")),0)
+    escalate $esc_send_report
     export do
       field "name"
       field "os"
@@ -101,7 +123,12 @@ policy 'itam_policy' do
   end
 end
 
-escalation "send_report" do
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_send_report" do
   automatic true
   label "Send Email"
   description "Send incident email"

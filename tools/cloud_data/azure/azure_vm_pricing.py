@@ -2,6 +2,7 @@
 #   (1) Download the flexera-public/policy_templates repository locally.
 #   (2) Create a new local branch of the repository.
 #   (3) Run this Python script. It should replace azure_vm_pricing.json with a new updated file.
+#       Note: Working directory should be the *root* directory of the repository.
 #   (4) Add and commit the new file, push it to the repository, and then make a pull request.
 
 import requests
@@ -10,19 +11,19 @@ import os
 
 print("Gathering Consumption data from Azure Price API...")
 
-output_filename = "azure_vm_pricing.json"
+output_filename = f'data/azure/azure_vm_pricing.json'
 
 api_url = "https://prices.azure.com/api/retail/prices"
 query = "serviceName eq 'Virtual Machines' and priceType eq 'Consumption'"
 response = requests.get(api_url, params={'$filter': query})
-json_data = json.loads(response.text)
+json_data = response.json()
 
 price_list = json_data['Items']
 nextPage = json_data['NextPageLink']
 
 while(nextPage):
   response = requests.get(nextPage)
-  json_data = json.loads(response.text)
+  json_data = response.json()
   nextPage = json_data['NextPageLink']
   price_list.extend(json_data['Items'])
 

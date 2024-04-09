@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.2
+
+- Updated policy metadata to correctly identify it as an AWS policy
+
 ## v2.1
 
 - Added new parameter to allow users to filter reservations by a list of specific billing centers.

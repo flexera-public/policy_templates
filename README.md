@@ -1,6 +1,6 @@
-# Flexera CMP Policy Templates
+# Flexera Policy Templates
 
-This repository contains a library of open source Flexera CMP Policy Templates to provide governance via automation across Cost, Security, Operational, and Compliance categories.  All contributions are shared under the MIT license.
+This repository contains a library of open source [Flexera Policy Templates](https://docs.flexera.com/flexera/EN/Automation/AboutPolicies.htm). All contributions are shared under the MIT license.
 
 Please contact sales@flexera.com to learn more.
 
@@ -132,24 +132,21 @@ These templates can generate savings estimates for your environment.
 
 #### Flexera
 
-- CCO
+- Cloud Cost Optimization
 
   - [Billing Center Access Report](./compliance/flexera/cco/billing_center_access_report)
 
-- IAM
+- IT Asset Management
+
+  - [ITAM Expiring Licenses](./compliance/flexera/fnms/fnms_licenses_expiring)
+  - [ITAM Ignored Recent Inventory Dates](./compliance/flexera/fnms/ignored_recent_inventory_dates)
+  - [ITAM Missing Active Machines](./compliance/flexera/fnms/missing_active_machines)
+  - [ITAM Overused Licenses](./compliance/flexera/fnms/overused_licenses)
+  - [ITAM VMs Missing Host ID](./compliance/flexera/fnms/vms_missing_hostid)
+
+- Identity & Access Management
 
   - [Flexera IAM Explicit User Roles](./compliance/flexera/iam/iam_explicit_user_roles)
-
-#### Flexera FNMS
-
-- [ITAM Overused Licenses](./compliance/flexera/fnms/overused_licenses)
-
-#### Flexera ITAM
-
-- [ITAM Expiring Licenses](./compliance/flexera/fnms/fnms_licenses_expiring)
-- [ITAM Ignored Recent Inventory Dates](./compliance/flexera/fnms/ignored_recent_inventory_dates)
-- [ITAM Missing Active Machines](./compliance/flexera/fnms/missing_active_machines)
-- [ITAM VMs Missing Host ID](./compliance/flexera/fnms/vms_missing_hostid)
 
 #### GitHub
 
@@ -171,27 +168,24 @@ These templates can generate savings estimates for your environment.
 
 ### Policy Templates for Cost
 
-- [Currency Conversion](./cost/flexera/cco/currency_conversion)
-
 #### AWS
 
 - Compute
 
   - [AWS Burstable EC2 Instances](./cost/aws/burstable_ec2_instances)
+  - [AWS Expiring Savings Plans](./cost/aws/savings_plan/expiration)
   - [AWS Reserved Instances Recommendations](./cost/aws/reserved_instances/recommendations)
+  - [AWS Reserved Instances Utilization](./cost/aws/reserved_instances/utilization)
   - [AWS Rightsize EBS Volumes](./cost/aws/rightsize_ebs_volumes)
   - [AWS Rightsize EC2 Instances](./cost/aws/rightsize_ec2_instances)
   - [AWS Savings Plan Recommendations](./cost/aws/savings_plan/recommendations)
+  - [AWS Savings Plan Utilization](./cost/aws/savings_plan/utilization)
   - [AWS Schedule Instance](./cost/aws/schedule_instance)
   - [AWS Superseded EC2 Instances](./cost/aws/superseded_instances)
   - [AWS Unused IP Addresses](./cost/aws/unused_ip_addresses)
   - [Reserved Instances Coverage](./cost/aws/reserved_instances/coverage)
   - [Turbonomic Allocate Virtual Machine Recommendations AWS](./cost/turbonomics/allocate_virtual_machines_recommendations/aws)
   - [Turbonomic Rightsize Virtual Machines Recommendations AWS](./cost/turbonomics/scale_virtual_machines_recommendations/aws)
-
-- Cost Explorer
-
-  - [AWS Savings Plan Utilization](./cost/aws/savings_plan/utilization)
 
 - EBS
 
@@ -231,7 +225,6 @@ These templates can generate savings estimates for your environment.
 - Compute
 
   - [Azure Hybrid Use Benefit for Linux Server](./cost/azure/hybrid_use_benefit_linux)
-  - [Azure Hybrid Use Benefit for SQL](./cost/azure/hybrid_use_benefit_sql)
   - [Azure Hybrid Use Benefit for Windows Server](./cost/azure/hybrid_use_benefit)
   - [Azure Reserved Instances Recommendations](./cost/azure/reserved_instances/recommendations)
   - [Azure Reserved Instances Utilization](./cost/azure/reserved_instances/utilization)
@@ -263,6 +256,7 @@ These templates can generate savings estimates for your environment.
 
 - SQL
 
+  - [Azure Hybrid Use Benefit for SQL](./cost/azure/hybrid_use_benefit_sql)
   - [Azure Rightsize SQL Databases](./cost/azure/rightsize_sql_instances)
   - [Azure SQL Databases without Elastic Pools](./operational/azure/azure_sql_using_elastic_pool)
 
@@ -291,36 +285,31 @@ These templates can generate savings estimates for your environment.
 
 #### Flexera
 
-- [Email Cost Optimization Recommendations](./cost/flexera/cco/email_recommendations)
-
 - All
 
   - [AWS Savings Realized from Reservations](./cost/aws/savings_realized)
 
 - Cloud Cost Optimization
 
-  - [Scheduled Report](./cost/flexera/cco/scheduled_reports)
-
-- Optima
-
+  - [Budget Alerts](./cost/flexera/cco/budget_report_alerts)
+  - [Budget Alerts by Cloud Account](./cost/flexera/cco/budget_alerts_by_account)
+  - [Budget vs Actual Spend Report](./cost/flexera/cco/budget_v_actual_spend_report)
+  - [Cheaper Regions](./cost/flexera/cco/cheaper_regions)
   - [Cloud Cost Anomaly Alerts](./cost/flexera/cco/cloud_cost_anomaly_alerts)
+  - [Cloud Spend Forecast - Moving Average](./cost/flexera/cco/forecasting/moving_average)
+  - [Cloud Spend Forecast - Straight-Line (Linear Regression Model)](./cost/flexera/cco/forecasting/straight_line_forecast/linear_regression)
+  - [Cloud Spend Forecast - Straight-Line (Simple Model)](./cost/flexera/cco/forecasting/straight_line_forecast/simple)
+  - [Currency Conversion](./cost/flexera/cco/currency_conversion)
+  - [Email Cost Optimization Recommendations](./cost/flexera/cco/email_recommendations)
+  - [Low Account Usage](./cost/flexera/cco/low_account_usage)
+  - [Low Service Usage](./cost/flexera/cco/low_service_usage)
+  - [New Service Usage](./cost/flexera/cco/new_service_usage)
+  - [Scheduled Report](./cost/flexera/cco/scheduled_reports)
+  - [Vendor Commitment Forecast](./cost/flexera/cco/forecasting/commitment_forecast)
 
 #### Flexera Optima
 
-- [AWS Expiring Savings Plans](./cost/aws/savings_plan/expiration)
-- [AWS Reserved Instances Utilization](./cost/aws/reserved_instances/utilization)
-- [Budget Alerts](./cost/flexera/cco/budget_report_alerts)
-- [Budget Alerts by Cloud Account](./cost/flexera/cco/budget_alerts_by_account)
-- [Budget vs Actual Spend Report](./cost/flexera/cco/budget_v_actual_spend_report)
-- [Cheaper Regions](./cost/flexera/cco/cheaper_regions)
-- [Cloud Spend Forecast - Moving Average](./cost/flexera/cco/forecasting/moving_average)
-- [Cloud Spend Forecast - Straight-Line (Linear Regression Model)](./cost/flexera/cco/forecasting/straight_line_forecast/linear_regression)
-- [Cloud Spend Forecast - Straight-Line (Simple Model)](./cost/flexera/cco/forecasting/straight_line_forecast/simple)
-- [Low Account Usage](./cost/flexera/cco/low_account_usage)
-- [Low Service Usage](./cost/flexera/cco/low_service_usage)
-- [New Service Usage](./cost/flexera/cco/new_service_usage)
 - [Reserved Instance Report by Billing Center](./cost/aws/reserved_instances/report_by_bc)
-- [Vendor Commitment Forecast](./cost/flexera/cco/forecasting/commitment_forecast)
 
 #### GCE
 
@@ -381,6 +370,10 @@ These templates can generate savings estimates for your environment.
 
   - [AWS Instance Scheduled Events](./operational/aws/instance_scheduled_events)
   - [AWS Long Running Instances](./operational/aws/long_running_instances)
+  - [AWS Usage Forecast - Number of Instance Hours Used](./operational/aws/total_instance_hours_forecast)
+  - [AWS Usage Forecast - Number of Instance vCPUs Used](./operational/aws/total_instance_vcpus_forecast)
+  - [AWS Usage Report - Number of Instance Hours Used](./operational/aws/total_instance_hours)
+  - [AWS Usage Report - Number of Instance vCPUs Used](./operational/aws/total_instance_vcpus)
 
 - Lambda
 
@@ -408,6 +401,7 @@ These templates can generate savings estimates for your environment.
   - [Azure Bring-Your-Own-License (BYOL) Report](./operational/azure/byol_report)
   - [Azure Long Running Instances](./operational/azure/azure_long_running_instances)
   - [Azure Migrate Integration](./operational/azure/azure_migrate)
+  - [Azure Usage Report - Number of Instance Hours Used](./operational/azure/total_instance_hours)
   - [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks)
   - [Expiring Azure Certificates](./operational/azure/azure_certificates)
 
@@ -421,43 +415,38 @@ These templates can generate savings estimates for your environment.
 
   - [Flexera Automation Outdated Applied Policies](./automation/flexera/outdated_applied_policies)
 
-- CCO
+- Cloud Cost Optimization
 
   - [Bill Processing Error Notification](./operational/flexera/cco/bill_processing_errors_notification)
 
-- FNMS
+- Cloud Migration & Modernization
+
+  - [Application Migration Recommendations](./operational/flexera/risc/compute_instance_migration)
+  - [NetFlow Top Talkers](./operational/flexera/risc/network_flow)
+
+- FlexNet Manager
 
   - [Schedule FlexNet Manager Report](./operational/flexera/fnms/schedule_fnms_reports)
 
-#### Flexera ITAM
+- IT Asset Management
 
-- [Schedule ITAM Report](./operational/flexera/itam/schedule_itam_report)
-
-#### Flexera Optima
-
-- [AWS Usage Forecast - Number of Instance Hours Used](./operational/aws/total_instance_hours_forecast)
-- [AWS Usage Forecast - Number of Instance vCPUs Used](./operational/aws/total_instance_vcpus_forecast)
-- [AWS Usage Report - Number of Instance Hours Used](./operational/aws/total_instance_hours)
-- [AWS Usage Report - Number of Instance vCPUs Used](./operational/aws/total_instance_vcpus)
-
-#### Flexera RISC
-
-- [Application Migration Recommendations](./operational/flexera/risc/compute_instance_migration)
-- [NetFlow Top Talkers](./operational/flexera/risc/network_flow)
+  - [Schedule ITAM Report](./operational/flexera/itam/schedule_itam_report)
 
 ### Policy Templates for SaaS Management
 
-#### Flexera SaaS Manager
+#### Flexera
 
-- [SaaS Manager - Deactivated Users](./saas/fsm/deactivated_users)
-- [SaaS Manager - Deactivated Users for Integrated Applications](./saas/fsm/deactivated_users_for_integrated_apps)
-- [SaaS Manager - Duplicate User Accounts](./saas/fsm/duplicate_users)
-- [SaaS Manager - Redundant Apps](./saas/fsm/redundant_apps)
-- [SaaS Manager - Renewal Reminder](./saas/fsm/renewal_reminder)
-- [SaaS Manager - SaaS App User Report by Category](./saas/fsm/users_by_category)
-- [SaaS Manager - Suspicious Users](./saas/fsm/suspicious_users)
-- [SaaS Manager - Unsanctioned Applications with Existing Contract](./saas/fsm/unsanctioned_apps_with_contract)
-- [SaaS Manager - Unsanctioned Spend](./saas/fsm/unsanctioned_spend)
+- SaaS Manager
+
+  - [SaaS Manager - Deactivated Users](./saas/fsm/deactivated_users)
+  - [SaaS Manager - Deactivated Users for Integrated Applications](./saas/fsm/deactivated_users_for_integrated_apps)
+  - [SaaS Manager - Duplicate User Accounts](./saas/fsm/duplicate_users)
+  - [SaaS Manager - Redundant Apps](./saas/fsm/redundant_apps)
+  - [SaaS Manager - Renewal Reminder](./saas/fsm/renewal_reminder)
+  - [SaaS Manager - SaaS App User Report by Category](./saas/fsm/users_by_category)
+  - [SaaS Manager - Suspicious Users](./saas/fsm/suspicious_users)
+  - [SaaS Manager - Unsanctioned Applications with Existing Contract](./saas/fsm/unsanctioned_apps_with_contract)
+  - [SaaS Manager - Unsanctioned Spend](./saas/fsm/unsanctioned_spend)
 
 #### Microsoft
 
@@ -624,25 +613,28 @@ These templates can generate savings estimates for your environment.
 :categories:
   Compliance: 33
   Cost: 91
-  Operational: 24
+  Operational: 25
   SaaS Management: 12
   Security: 74
 :optimization_count: 45
 :policy_sets:
-  '': 72
+  '': 47
   AWS Config: 1
   Allocate VMs: 3
   Automation: 1
   Burstable Compute Instances: 1
   CIS: 61
+  Cloud Cost Optimization: 13
+  Cloud Migration & Modernization: 2
   Committed Use Discount: 1
   Common Bill Ingestion: 2
   Database Services: 1
   Databricks: 1
   Disallowed Regions: 2
   Forecasting: 4
-  Hybrid Use Benefit: 4
-  ITAM: 4
+  Hybrid Use Benefit: 5
+  IT Asset Management: 5
+  Identity & Access Management: 1
   Idle Compute Instances: 1
   Inefficient Disk Usage: 1
   Instances not running FlexNet Inventory Agent: 2
@@ -658,7 +650,7 @@ These templates can generate savings estimates for your environment.
   Open S3 Buckets: 1
   Public Database Access: 2
   Reserved Instance: 2
-  Reserved Instances: 3
+  Reserved Instances: 5
   Rightsize Clusters: 1
   Rightsize Compute Instances: 6
   Rightsize Containers: 1
@@ -666,12 +658,10 @@ These templates can generate savings estimates for your environment.
   Rightsize Database Services: 1
   Rightsize Storage: 2
   Rightsize Volumes: 2
-  Savings Plan Utilization: 1
-  Savings Plans: 2
+  Savings Plans: 4
   Savings Realized: 1
-  Schedule Flexera ITAM Report: 1
   Schedule Instance: 3
-  Schedule Report: 1
+  Schedule Report: 2
   Storage Security: 1
   Superseded Compute Instances: 2
   Tag Cardinality: 2
@@ -681,17 +671,13 @@ These templates can generate savings estimates for your environment.
   Unused IP Addresses: 3
   Unused Load Balancers: 1
   Unused Volumes: 6
+  Usage Report: 5
 :providers:
-  '': 1
-  AWS: 74
-  Azure: 82
+  AWS: 80
+  Azure: 83
   Azure China: 1
-  Flexera: 9
-  Flexera FNMS: 1
-  Flexera ITAM: 5
-  Flexera Optima: 18
-  Flexera RISC: 2
-  Flexera SaaS Manager: 9
+  Flexera: 38
+  Flexera Optima: 1
   GCE: 5
   GitHub: 7
   Google: 14
@@ -701,26 +687,27 @@ These templates can generate savings estimates for your environment.
   Oracle: 1
   ServiceNow: 1
 :services:
-  '': 50
+  '': 14
   AKS: 2
   All: 1
   App Service: 1
   Automation: 1
-  CCO: 2
-  Cloud Cost Optimization: 1
+  Cloud Cost Optimization: 17
+  Cloud Migration & Modernization: 2
   CloudTrail: 7
   Common Bill Ingestion: 2
-  Compute: 52
+  Compute: 59
   Config: 1
-  Cost Explorer: 1
   DBS: 1
   Databricks: 1
   EBS: 2
   ECS: 1
   ELB: 3
-  FNMS: 1
-  IAM: 19
+  FlexNet Manager: 1
+  IAM: 18
+  IT Asset Management: 6
   Identity: 1
+  Identity & Access Management: 1
   KMS: 1
   Kubernetes: 2
   Lambda: 1
@@ -731,13 +718,13 @@ These templates can generate savings estimates for your environment.
   Network: 1
   Network Security Group: 2
   Office 365: 1
-  Optima: 1
   Org: 1
   Policy: 1
   PostgreSQL: 4
   RDS: 4
   S3: 8
-  SQL: 14
+  SQL: 15
+  SaaS Manager: 9
   Security: 3
   Storage: 22
   Storage Accounts: 2
@@ -745,7 +732,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 234
+:total_count: 235
 -->
 <!-- End Policy Template Stats -->
 

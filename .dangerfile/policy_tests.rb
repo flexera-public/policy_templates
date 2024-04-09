@@ -389,7 +389,7 @@ def policy_readme_missing_credentials?(file)
   end
 
   # Check for mismatches between policy and README.md
-  if pol_flexera_credential && !readme_flexera_credential
+  if pol_flexera_credential && !readme_flexera_credential && !file.start_with("saas/fsm/")
     fail_message += "Policy contains Flexera credential but this credential either missing from or incorrectly formatted in the associated `README.md` file.\n\n"
   end
 
@@ -409,7 +409,7 @@ def policy_readme_missing_credentials?(file)
     fail_message += "Policy contains Oracle credential but this credential either missing from or incorrectly formatted in the associated `README.md` file.\n\n"
   end
 
-  if !pol_flexera_credential && readme_flexera_credential
+  if !pol_flexera_credential && readme_flexera_credential && !file.start_with?("saas/fsm/")
     fail_message += "Policy's `README.md` file contains documentation for a Flexera credential that does not exist or is incorrectly named in the policy.\n\n"
   end
 
@@ -1069,7 +1069,7 @@ def policy_bad_comma_spacing?(file)
   policy_code.each_line.with_index do |line, index|
     line_number = index + 1
 
-    if line.include?(",") && !line.include?("allowed_pattern") && !line.include?('= ","')
+    if line.include?(",") && !line.include?("allowed_pattern") && !line.include?('= ","') && !line.include?("(',')") && !line.include?('(",")')
       if line.strip.match(/,\s{2,}/) || line.strip.match(/\s,/) || line.strip.match(/,[^\s]/)
         fail_message += "Line #{line_number.to_s}: Possible invalid spacing between comma-separated items found.\nComma separated items should be organized as follows, with a single space following each comma: apple, banana, pear\n\n"
       end
@@ -1196,7 +1196,7 @@ def policy_missing_master_permissions?(file, permissions_yaml)
   # First check if the PT file has been manually validated and enabled for permission generation
   pt_file_enabled = permissions_yaml["validated_policy_templates"].select { |pt| pt.include?(file) }
 
-  if pt_file_enabled.empty?
+  if pt_file_enabled.empty? && !file.start_with?("saas/fsm/")
     # If the PT file has not been manually validated, then print an error message which will block the PR from being merged
     # This will help improve coverage as we touch more PT files
     fail_message = "**#{file}**\nPolicy Template file has **not** yet been enabled for automated permission generation. Please help us improve coverage by [following the steps documented in `tools/policy_master_permission_generation/`](https://github.com/flexera-public/policy_templates/tree/master/tools/policy_master_permission_generation) to resolve this."

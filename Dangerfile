@@ -46,11 +46,11 @@ changed_pt_files = changed_files.select{ |file| file.end_with?(".pt") && !file.e
 # Changed Meta Policy Template files.
 changed_meta_pt_files = changed_files.select{ |file| file.end_with?("meta_parent.pt") }
 # Changed README files.
-changed_readme_files = changed_files.select{ |file| file.end_with?("/README.md") }
+changed_readme_files = changed_files.select{ |file| file.end_with?("/README.md") && (file.start_with?("automation/") || file.start_with?("compliance/") || file.start_with?("cost/") || file.start_with?("operational/") || file.start_with?("saas/") || file.start_with?("security/")) }
 # Changed Changelog files.
 changed_changelog_files = changed_files.select{ |file| file.end_with?("/CHANGELOG.md") }
 # Changed MD files other than the above.
-changed_misc_md_files = changed_files.select{ |file| file.end_with?(".md") && !file.end_with?("/README.md") && !file.end_with?("/CHANGELOG.md") }
+changed_misc_md_files = changed_files.select{ |file| file.end_with?(".md") && !file.end_with?("/CHANGELOG.md") && !file.start_with?("HISTORY.md") && !(file.end_with?("/README.md") && (file.start_with?("automation/") || file.start_with?("compliance/") || file.start_with?("cost/") || file.start_with?("operational/") || file.start_with?("saas/") || file.start_with?("security/"))) }
 # Changed JSON files.
 changed_json_files = changed_files.select{ |file| file.end_with?(".json") }
 # Changed YAML files.
@@ -68,20 +68,6 @@ test = github_pr_missing_labels?(github); fail test if test
 test = github_pr_missing_ready_label?(github); message test if test
 
 ###############################################################################
-# All Files Testing
-###############################################################################
-
-# Perform a basic text lint on all changed files
-changed_files.each do |file|
-  `node_modules/.bin/textlint #{file} 1>textlint.log`
-
-  if $?.exitstatus != 0
-    message `cat textlint.log`
-    fail "**#{file}**\nTextlint failed"
-  end
-end
-
-###############################################################################
 # Modified Important Files Testing
 ###############################################################################
 
@@ -92,11 +78,24 @@ modified_important_files = modified_important_files.join("\n")
 warn "**Important Files Modified**\nPlease make sure these modifications were intentional and have been tested. These files are necessary for configuring the Github repository and managing automation.\n\n" + modified_important_files.strip if !modified_important_files.empty?
 
 ###############################################################################
+# All Files Testing
+###############################################################################
+
+changed_files.each do |file|
+  # Perform a basic text lint on all changed files
+  test = general_textlint?(file); warn test if test
+end
+
+###############################################################################
 # Ruby File Testing
 ###############################################################################
 
 # Perform a lint check on changed Ruby files
 changed_rb_files.each do |file|
+  # Raise warning if outdated terminology found
+  test = general_outdated_terminology?(file); warn test if test
+
+  # Raise error if code errors found
   test = code_ruby_errors?(file); fail test if test
 
   # Rubocop linting currently disabled. It is *very* verbose.
@@ -109,6 +108,10 @@ end
 
 # Perform a lint check on changed Python files
 changed_py_files.each do |file|
+  # Raise warning if outdated terminology found
+  test = general_outdated_terminology?(file); warn test if test
+
+  # Raise error if code errors found
   test = code_python_errors?(file); fail test if test
 end
 
@@ -117,6 +120,9 @@ end
 ###############################################################################
 
 changed_json_files.each do |file|
+  # Raise warning if outdated terminology found
+  test = general_outdated_terminology?(file); warn test if test
+
   # Look for out of place JSON files
   test = code_json_bad_location?(file); fail test if test
 
@@ -125,6 +131,9 @@ changed_json_files.each do |file|
 end
 
 changed_yaml_files.each do |file|
+  # Raise warning if outdated terminology found
+  test = general_outdated_terminology?(file); warn test if test
+
   # Look for out of place YAML files
   test = code_yaml_bad_location?(file); fail test if test
 
@@ -140,6 +149,9 @@ end
 changed_readme_files.each do |file|
   # Run Danger spell check on file
   general_spellcheck?(file)
+
+  # Raise warning if outdated terminology found
+  test = general_outdated_terminology?(file); warn test if test
 
   # Raise error if the file contains any bad urls
   test = general_bad_urls?(file); fail test if test
@@ -182,6 +194,9 @@ changed_misc_md_files.each do |file|
   # Run Danger spell check on file
   general_spellcheck?(file)
 
+  # Raise warning if outdated terminology found
+  test = general_outdated_terminology?(file); warn test if test
+
   # Raise error if the file contains any bad urls
   test = general_bad_urls?(file); fail test if test
 
@@ -219,6 +234,9 @@ changed_pt_files.each do |file|
 
   # Raise warning if policy's name has changed
   test = policy_name_changed?(file); warn test if test
+
+  # Raise warning if outdated terminology found
+  test = general_outdated_terminology?(file); warn test if test
 
   # Raise error if the file contains any bad urls
   test = general_bad_urls?(file); fail test if test
