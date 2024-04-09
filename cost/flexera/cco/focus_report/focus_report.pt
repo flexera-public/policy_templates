@@ -87,17 +87,17 @@ script "js_dates", type: "javascript" do
   code <<-EOS
   month = new Date().toISOString()
   if (param_month != "") { month = new Date(param_month).toISOString() }
-  month = month.split('-')[0] + ' ' + month.split('-')[1]
+  month = month.split('-')[0] + '-' + month.split('-')[1]
 
   next_month = new Date(month)
   next_month.setMonth(next_month.getMonth() + 1)
   next_month = next_month.toISOString()
-  next_month = next_month.split('-')[0] + ' ' + next_month.split('-')[1]
+  next_month = next_month.split('-')[0] + '-' + next_month.split('-')[1]
 
   prior_month = new Date(month)
   prior_month.setMonth(prior_month.getMonth() - 1)
   prior_month = prior_month.toISOString()
-  prior_month = prior_month.split('-')[0] + ' ' + prior_month.split('-')[1]
+  prior_month = prior_month.split('-')[0] + '-' + prior_month.split('-')[1]
 
   result = {
     month: month,
@@ -220,7 +220,6 @@ datasource "ds_flexera_costs" do
       field "category", jmes_path(col_item, "dimensions.category")
       field "service", jmes_path(col_item, "dimensions.service")
       field "usage_unit", jmes_path(col_item, "dimensions.usage_unit")
-      field "billing_center_id", jmes_path(col_item, "dimensions.billing_center_id")
       field "cost_amortized", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
       field "cost_unamortized", jmes_path(col_item, "metrics.cost_unamortized_unblended_adj")
     end
@@ -250,14 +249,13 @@ script "js_flexera_costs", type: "javascript" do
         "resource_type",
         "category",
         "service",
-        "usage_unit",
-        "billing_center_id"
+        "usage_unit"
       ],
       "granularity": "month",
       "start_at": ds_dates["month"],
       "end_at": ds_dates["next_month"],
       "metrics": [amortization],
-      "billing_center_ids": _.pluck(_.compact(ds_included_bcs, "id")),
+      "billing_center_ids": _.pluck(ds_included_bcs, "id"),
       "limit": 100000
     },
     headers: {
@@ -269,11 +267,11 @@ EOS
 end
 
 datasource "ds_flexera_costs_normalized" do
-  run_script $js_flexera_costs_normalized, $ds_flexera_costs, $ds_applied_policy, $ds_dates, $ds_currency, $ds_billing_centers, $ds_included_bcs, $param_amortization, $param_billing_centers
+  run_script $js_flexera_costs_normalized, $ds_flexera_costs, $ds_applied_policy, $ds_dates, $ds_currency, $ds_included_bcs, $param_amortization, $param_billing_centers
 end
 
 script "js_flexera_costs_normalized", type: "javascript" do
-  parameters "ds_flexera_costs", "ds_applied_policy", "ds_dates", "ds_currency", "ds_billing_centers", "ds_included_bcs", "param_amortization", "param_billing_centers"
+  parameters "ds_flexera_costs", "ds_applied_policy", "ds_dates", "ds_currency", "ds_included_bcs", "param_amortization", "param_billing_centers"
   result "result"
   code <<-EOS
   includedBCs = "All Billing Centers"
@@ -291,10 +289,6 @@ script "js_flexera_costs_normalized", type: "javascript" do
       cost = Math.round(Number(item['cost_unamortized']) * 1000) / 1000
     }
 
-    billing_center = _.find(ds_billing_centers, function(bc) {
-      return bc['id'] == item['billing_center_id']
-    })
-
     return {
       providerName: item['vendor'],
       subAccountId: item['vendor_account'],
@@ -306,8 +300,6 @@ script "js_flexera_costs_normalized", type: "javascript" do
       serviceCategory: item['category'],
       serviceName: item['service'],
       usageUnit: item['usage_unit'],
-      billingCenterId: billing_center['id'],
-      billingCenterName: billing_center['name'],
       billingCurrency: ds_currency['symbol'],
       policyName: ds_applied_policy['name'],
       amortization: param_amortization,
@@ -333,9 +325,6 @@ policy "pol_flexera_focus_report" do
     escalate $esc_email
     export do
       resource_level false
-      field "billingCenterName" do
-        label "BillingCenterName"
-      end
       field "providerName" do
         label "ProviderName"
       end
