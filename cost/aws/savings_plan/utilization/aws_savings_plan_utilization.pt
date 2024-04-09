@@ -7,47 +7,48 @@ severity "medium"
 category "Cost"
 default_frequency "monthly"
 info(
-  version: "3.2",
+  version: "3.3",
   provider: "AWS",
-  service: "Cost Explorer",
-  policy_set: "Savings Plan Utilization"
+  service: "Compute",
+  policy_set: "Savings Plans"
 )
 
 ###############################################################################
 # Parameters
 ###############################################################################
 
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify when new incidents are created."
+  default []
+end
+
 parameter "param_savings_threshold" do
+  type "number"
   category "Savings Plan"
   label "Savings Plan Utilization Threshold"
   description "Specify the minimum Savings Plan Utilization threshold as a percentage that should result in an alert"
   default 100
-  type "number"
-end
-
-parameter "param_email" do
-  type "list"
-  label "Email addresses to notify"
-  default []
-  description "Email addresses of the recipients you wish to notify"
 end
 
 parameter "param_time_period" do
+  type "string"
   category "Savings Plan"
   label "Look Back Period"
-  default "Last 7 days"
   description "The number of days of past AWS Savings Plans Utilization data to analyze"
-  allowed_values "Last 7 days","Last 30 days"
-  type "string"
+  allowed_values "Last 7 days", "Last 30 days"
+  default "Last 7 days"
 end
 
 parameter "param_sp_arn" do
+  type "string"
   category "Savings Plan"
   label "Savings Plan ARN"
   description "Optional; The unique Amazon Resource Name (ARN) for a particular Savings Plan.  If no ARN is specified, all Savings Plans will have utilization reported."
-  default "" # Default value of empty string indicates that all Savings Plans will be checked
   allowed_pattern /(arn:aws:savingsplans::[a-zA-Z0-9]*|^$)/ # Regex to validate ARN format, or allow empty string
-  type "string"
+  default "" # Default value of empty string indicates that all Savings Plans will be checked
 end
 
 ###############################################################################
@@ -64,7 +65,7 @@ end
 
 #AUTHENTICATE WITH AWS
 credentials "auth_aws" do
-  schemes "aws","aws_sts"
+  schemes "aws", "aws_sts"
   label "AWS"
   description "Select the AWS Credential from the list"
   tags "provider=aws"
@@ -84,7 +85,7 @@ pagination "pagination_aws_savingsplans" do
 end
 
 ###############################################################################
-# Datasources and Scripts
+# Datasources & Scripts
 ###############################################################################
 
 #GET CURRENCY REFERENCE
@@ -101,14 +102,14 @@ datasource "ds_currency_code" do
   request do
     auth $auth_flexera
     host rs_optima_host
-    path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
     header "Api-Version", "0.1"
     header "User-Agent", "RS Policies"
   end
   result do
     encoding "json"
-    field "id", jmes_path(response,"id")
-    field "value", jmes_path(response,"value")
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
   end
 end
 
@@ -117,8 +118,8 @@ datasource "ds_savings_plans" do
   request do
     auth $auth_aws
     pagination $pagination_aws_savingsplans
-    host "savingsplans.us-east-1.amazonaws.com"
     verb "POST"
+    host "savingsplans.us-east-1.amazonaws.com"
     path "/DescribeSavingsPlans"
     header "User-Agent", "RS Policies"
     header "Content-Type", "application/json"
@@ -148,37 +149,36 @@ script "js_savings_plan_selected", type: "javascript" do
       return sp.savingsPlanArn === param_sp_arn;
     });
   }
-  EOS
+EOS
 end
 
 #GET SAVINGS PLANS UTILIZATIONS DATA FROM AWS API
 datasource "ds_aws_utilization" do
   iterate $ds_savings_plan_selected
   request do
-    run_script $js_get_aws_utilization, $param_time_period, val(iter_item, "savingsPlanArn")
+    run_script $js_aws_utilization, val(iter_item, "savingsPlanArn"), $param_time_period
   end
   result do
     encoding "json"
     collect jmes_path(response, "SavingsPlansUtilizationsByTime[*].Utilization") do
-      field "savingsPlanArn", jmes_path(iter_item,"savingsPlanArn")
-      field "total_commitment", jmes_path(col_item,"TotalCommitment")
-      field "unused_commitment", jmes_path(col_item,"UnusedCommitment")
-      field "used_commitment", jmes_path(col_item,"UsedCommitment")
-      field "utilization_percentage", jmes_path(col_item,"UtilizationPercentage")
+      field "savingsPlanArn", jmes_path(iter_item, "savingsPlanArn")
+      field "total_commitment", jmes_path(col_item, "TotalCommitment")
+      field "unused_commitment", jmes_path(col_item, "UnusedCommitment")
+      field "used_commitment", jmes_path(col_item, "UsedCommitment")
+      field "utilization_percentage", jmes_path(col_item, "UtilizationPercentage")
     end
   end
 end
 
-script "js_get_aws_utilization", type: "javascript" do
-  parameters "time_period", "savingsPlanArn"
+script "js_aws_utilization", type: "javascript" do
+  parameters "savingsPlanArn", "param_time_period"
   result "request"
   code <<-EOS
-
   var start_date = new Date(), end_date = new Date()
-  if(time_period === "Last 7 days"){
+  if(param_time_period === "Last 7 days"){
     end_date.setDate(end_date.getDate() - 1)
     start_date.setDate(start_date.getDate() - 8)
-  } else if(time_period === "Last 30 days"){
+  } else if(param_time_period === "Last 30 days"){
     end_date.setDate(end_date.getDate() - 1)
     start_date.setDate(start_date.getDate() - 31)
   }
@@ -213,19 +213,18 @@ script "js_get_aws_utilization", type: "javascript" do
       "Content-Type": "application/x-amz-json-1.1",
     }
   }
-  EOS
+EOS
 end
 
 #PROCESS RESPONSE AND DEFINE CHART DATA
 datasource "ds_chart_data" do
-  run_script $js_define_chart_data, $ds_aws_utilization, $ds_currency_reference, $ds_currency_code, $param_savings_threshold
+  run_script $js_chart_data, $ds_aws_utilization, $ds_currency_reference, $ds_currency_code, $param_savings_threshold
 end
 
-script "js_define_chart_data", type: "javascript" do
+script "js_chart_data", type: "javascript" do
   parameters "aws_utilization_data", "curr_ref", "curr_code", "savings_threshold"
   result "outputs"
   code <<-EOS
-
   var curr = "$", separator = ","
   if (curr_code.value !== undefined){
     curr = curr_ref[curr_code.value].symbol,
@@ -274,25 +273,14 @@ script "js_define_chart_data", type: "javascript" do
       outputs.push(report)
     }
   })
-  EOS
-end
-
-###############################################################################
-# Escalations
-###############################################################################
-
-escalation "esc_savings_plans_utilizations" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
+EOS
 end
 
 ###############################################################################
 # Policy
 ###############################################################################
 
-policy "policy_aws_sp_utilization" do
+policy "pol_aws_sp_utilization" do
   validate_each $ds_chart_data do
     summary_template "AWS Savings Plan Utilization Details for Account {{with(index data 0)}}{{.payer_account_id}}{{end}}"
     detail_template <<-EOS
@@ -305,8 +293,8 @@ ___
 {{ end }}
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 EOS
-    escalate $esc_savings_plans_utilizations
-    check eq(0,1)
+    check eq(0, 1)
+    escalate $esc_email
     export do
       # no actions so resource_level can be false
       resource_level false
@@ -327,4 +315,15 @@ EOS
       end
     end
   end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
 end

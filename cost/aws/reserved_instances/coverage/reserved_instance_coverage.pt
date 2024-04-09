@@ -7,20 +7,22 @@ severity "medium"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.11",
+  version: "2.12",
   provider: "AWS",
   service: "Compute",
-  policy_set: ""
+  policy_set: "Reserved Instances"
 )
 
-##################
-# User inputs    #
-##################
+###############################################################################
+# Parameters
+###############################################################################
 
 parameter "param_email" do
-  label "Email addresses"
-  description "A list of email addresses of the recipients you wish to notify"
   type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify when new incidents are created."
+  default []
 end
 
 parameter "param_aws_account_number" do
@@ -33,8 +35,10 @@ end
 
 parameter "param_historical_number_of_days_in_past" do
   type "string"
-  label "Number of days in the past to view Reserved Instance Coverage"
-  allowed_values "7","14","30","90","180","365"
+  category "Policy Settings"
+  label "Look Back Period (Days)"
+  description "Number of days in the past to view Reserved Instance Coverage"
+  allowed_values "7", "14", "30", "90", "180", "365"
   default "7"
 end
 
@@ -44,7 +48,7 @@ end
 
 #authenticate with AWS
 credentials "auth_aws" do
-  schemes "aws","aws_sts"
+  schemes "aws", "aws_sts"
   label "AWS"
   description "Select the AWS Credential from the list"
   tags "provider=aws"
@@ -52,8 +56,24 @@ credentials "auth_aws" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
+
+# https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/cost-explorer-api.html
+datasource "ds_reservations_coverage" do
+  request do
+    run_script $js_reservations_coverage, $param_historical_number_of_days_in_past
+  end
+  result do
+    encoding "json"
+    field "total_coverage_hours_percentage", jmes_path(response, "Total.CoverageHours.CoverageHoursPercentage")
+    field "total_on_demand_hours", jmes_path(response, "Total.CoverageHours.OnDemandHours")
+    field "total_reserved_hours", jmes_path(response, "Total.CoverageHours.ReservedHours")
+    field "total_running_hours",  jmes_path(response, "Total.CoverageHours.TotalRunningHours")
+    field "timeperiod_start_time", jmes_path(response, "CoveragesByTime[0].TimePeriod.Start")
+    field "timeperiod_end_time", jmes_path(response, "CoveragesByTime[0].TimePeriod.End")
+  end
+end
 
 # Creating the end_date generally setting it to right now
 # Expected Result: "2018-05-29"
@@ -61,13 +81,13 @@ end
 # We are converting param_historical_number_of_days_in_past from string to a number.
 # daysToMove has to be negative
 # Expected result example: "2018-04-29"
-script "aws_reserved_instance_coverage_request", type: "javascript" do
+script "js_reservations_coverage", type: "javascript" do
   parameters "param_number_of_days_in_past"
   result "results"
   code <<-EOS
   var end_date = new Date();
   var start_date = new Date();
-  var daysToMove = parseInt(param_number_of_days_in_past,10);
+  var daysToMove = parseInt(param_number_of_days_in_past, 10);
   start_date.setDate(end_date.getDate() - daysToMove);
   var end_dates = end_date.toISOString().slice(0, 10);
   var start_dates = start_date.toISOString().slice(0, 10);
@@ -89,23 +109,7 @@ script "aws_reserved_instance_coverage_request", type: "javascript" do
     },
 
   }
-  EOS
-end
-
-# https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/cost-explorer-api.html
-datasource "ds_reservations_coverage" do
-  request do
-    run_script $aws_reserved_instance_coverage_request, $param_historical_number_of_days_in_past
-  end
-  result do
-    encoding "json"
-    field "total_coverage_hours_percentage", jmes_path(response, "Total.CoverageHours.CoverageHoursPercentage")
-    field "total_on_demand_hours", jmes_path(response, "Total.CoverageHours.OnDemandHours")
-    field "total_reserved_hours", jmes_path(response, "Total.CoverageHours.ReservedHours")
-    field "total_running_hours",  jmes_path(response, "Total.CoverageHours.TotalRunningHours")
-    field "timeperiod_start_time", jmes_path(response,"CoveragesByTime[0].TimePeriod.Start")
-    field "timeperiod_end_time", jmes_path(response,"CoveragesByTime[0].TimePeriod.End")
-  end
+EOS
 end
 
 datasource "ds_reservations_coverage_map" do
@@ -114,35 +118,31 @@ end
 
 #parse the json files
 script "js_reservations_coverage_map", type: "javascript" do
-  parameters "reservations_coverage"
+  parameters "ds_reservations_coverage"
   result "content"
   code <<-EOS
-    var content=[]
-    var coverage =  parseInt(reservations_coverage['total_coverage_hours_percentage'], 10).toString() + "%"
+  var content=[]
+  var coverage =  parseInt(ds_reservations_coverage['total_coverage_hours_percentage'], 10).toString() + "%"
 
-    content={total_coverage_hours_percentage: coverage,
-      total_on_demand_hours: reservations_coverage['total_on_demand_hours'],
-      total_reserved_hours: reservations_coverage['total_reserved_hours'],
-      total_running_hours: reservations_coverage['total_running_hours'],
-      timeperiod_start_time: reservations_coverage['timeperiod_start_time'],
-      timeperiod_end_timer: reservations_coverage['timeperiod_end_time']
-    }
+  content={total_coverage_hours_percentage: coverage,
+    total_on_demand_hours: ds_reservations_coverage['total_on_demand_hours'],
+    total_reserved_hours: ds_reservations_coverage['total_reserved_hours'],
+    total_running_hours: ds_reservations_coverage['total_running_hours'],
+    timeperiod_start_time: ds_reservations_coverage['timeperiod_start_time'],
+    timeperiod_end_timer: ds_reservations_coverage['timeperiod_end_time']
+  }
 EOS
 end
 
-
-escalation "report_reserved_instances_coverage" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
-end
+###############################################################################
+# Policy
+###############################################################################
 
 policy "pol_ri_coverage" do
   validate $ds_reservations_coverage_map do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Reserved Instances Coverage."
-    escalate $report_reserved_instances_coverage
-    check gt(0,0)
+    check gt(0, 0)
+    escalate $esc_email
     export do
       resource_level true
       field "id" do
@@ -175,4 +175,15 @@ policy "pol_ri_coverage" do
       end
     end
   end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
 end

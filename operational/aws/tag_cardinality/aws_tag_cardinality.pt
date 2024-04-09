@@ -7,7 +7,7 @@ severity "low"
 category "Operational"
 default_frequency "weekly"
 info(
-  version: "3.0",
+  version: "3.1",
   provider: "AWS",
   service: "Tags",
   policy_set: "Tag Cardinality"
@@ -19,16 +19,36 @@ info(
 
 parameter "param_email" do
   type "list"
-  label "Email addresses to notify"
-  description "Email addresses of the recipients you wish to notify"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+  default []
 end
 
 parameter "param_aws_account_number" do
   type "string"
   category "Policy Settings"
   label "Account Number"
-  description "The account number for AWS STS Cross Account Roles."
+  description "Leave blank; this is for automated use with Meta Policies. See README for more details."
   default ""
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details"
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  default []
 end
 
 ###############################################################################
@@ -36,7 +56,7 @@ end
 ###############################################################################
 
 credentials "auth_aws" do
-  schemes "aws","aws_sts"
+  schemes "aws", "aws_sts"
   label "AWS"
   description "Select the AWS credential."
   tags "provider=aws"
@@ -54,7 +74,7 @@ end
 # Pagination
 ###############################################################################
 
-pagination "aws_pagination" do
+pagination "pagination_aws" do
   get_page_marker do
     body_path jmes_path(response, "NextToken")
   end
@@ -64,24 +84,24 @@ pagination "aws_pagination" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
 datasource "ds_aws_accounts_without_tags" do
   request do
     auth $auth_aws
-    pagination $aws_pagination
+    pagination $pagination_aws
+    verb "POST"
     host "organizations.us-east-1.amazonaws.com"
     path '/'
-    verb "POST"
     header "User-Agent", "RS Policies"
     header "X-Amz-Target", "AWSOrganizationsV20161128.ListAccounts"
     header "Content-Type", "application/x-amz-json-1.1"
-    body "{}"
-    ignore_status [400] # Ignore Status 400 - You don't have permissions to access this resource - This is expected in AWS Org Member Accounts (not the AWS Org Master Account)
     # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
     # Forces `ds_is_deleted` datasource to run first during policy execution
     header "Meta-Flexera", val($ds_is_deleted, "path")
+    body "{}"
+    ignore_status [400] # Ignore Status 400 - You don't have permissions to access this resource - This is expected in AWS Org Member Accounts (not the AWS Org Master Account)
   end
   result do
     encoding "json"
@@ -98,10 +118,10 @@ datasource "ds_aws_accounts" do
   iterate $ds_aws_accounts_without_tags
   request do
     auth $auth_aws
-    pagination $aws_pagination
+    pagination $pagination_aws
+    verb "POST"
     host "organizations.us-east-1.amazonaws.com"
     path '/'
-    verb "POST"
     header "User-Agent", "RS Policies"
     header "X-Amz-Target", "AWSOrganizationsV20161128.ListTagsForResource"
     header "Content-Type", "application/x-amz-json-1.1"
@@ -118,7 +138,7 @@ datasource "ds_aws_accounts" do
   end
 end
 
-datasource "ds_regions" do
+datasource "ds_describe_regions" do
   request do
     auth $auth_aws
     verb "GET"
@@ -129,6 +149,9 @@ datasource "ds_regions" do
     query "Filter.1.Name", "opt-in-status"
     query "Filter.1.Value.1", "opt-in-not-required"
     query "Filter.1.Value.2", "opted-in"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
   end
   result do
     encoding "xml"
@@ -138,13 +161,33 @@ datasource "ds_regions" do
   end
 end
 
+datasource "ds_regions" do
+  run_script $js_regions, $ds_describe_regions, $param_regions_list, $param_regions_allow_or_deny
+end
+
+script "js_regions", type:"javascript" do
+  parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
+  result "result"
+  code <<-EOS
+  allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_describe_regions, function(item) {
+      return _.contains(param_regions_list, item['region']) == allow_deny_test[param_regions_allow_or_deny]
+    })
+  } else {
+    result = ds_describe_regions
+  }
+EOS
+end
+
 datasource "ds_aws_resources" do
   iterate $ds_regions
   request do
     auth $auth_aws
-    pagination $aws_pagination
-    host join(["tagging.", val(iter_item, "region"), ".amazonaws.com"])
+    pagination $pagination_aws
     verb "POST"
+    host join(["tagging.", val(iter_item, "region"), ".amazonaws.com"])
     path "/"
     header "X-Amz-Target", "ResourceGroupsTaggingAPI_20170126.GetResources"
     header "Content-Type", "application/x-amz-json-1.1"
@@ -252,7 +295,7 @@ end
 policy "pol_aws_tag_cardinality_report" do
   validate $ds_tag_report do
     summary_template "AWS Tag Cardinality Report"
-    check logic_or($ds_parent_policy_terminated,    eq(1, 0)    )
+    check logic_or($ds_parent_policy_terminated, eq(1, 0))
     escalate $esc_email
     export do
       resource_level false
@@ -277,6 +320,7 @@ end
 ###############################################################################
 
 escalation "esc_email" do
+  automatic true
   label "Send Email"
   description "Send incident email"
   email $param_email
@@ -294,7 +338,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
     header "Api-Version", "1.0"
   end
   result do
@@ -302,7 +346,6 @@ datasource "ds_get_policy" do
     field "id", jmes_path(response, "id")
   end
 end
-
 
 datasource "ds_parent_policy_terminated" do
   run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
