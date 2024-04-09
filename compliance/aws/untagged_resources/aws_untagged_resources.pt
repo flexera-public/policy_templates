@@ -68,6 +68,15 @@ parameter "param_regions_list" do
   default []
 end
 
+parameter "param_consider_tag_dimensions" do
+  type "string"
+  category "Filters"
+  label "Consider Tag Dimensions"
+  description "Exclude results when a tag has a value for a tag key normalized by a Tag Dimension. Please see README for more details."
+  allowed_values "Consider Tag Dimensions", "Do Not Consider Tag Dimensions"
+  default "Consider Tag Dimensions"
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -158,6 +167,74 @@ datasource "ds_cloud_vendor_accounts" do
       field "tags", jmes_path(col_item, "tags")
     end
   end
+end
+
+# Get Tag Dimensions
+# Used for exluding resources that already have a value for one of the enable tag dimensions
+datasource "ds_tag_dimensions" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-customizations/v1/orgs/", rs_org_id, "/tag-dimensions"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+
+# Recommendations List
+# Used to provide the savings amount per resource in the results (if available)
+# A user can then sort the untagged resource list results and sort by highest savings to prioritize tagging
+datasource "ds_recommendations_all" do
+  request do
+    auth $auth_flexera
+    host "api.optima.flexeraeng.com"
+    path join(["/recommendations/orgs/", rs_org_id, "/recommendations"])
+    verb "GET"
+    header "Api-Version", "1.0"
+    header "content-type", "application/json"
+  end
+end
+
+datasource "ds_recommendation_resources_total_savings" do
+  run_script $js_recommendation_resources_total_savings, $ds_recommendations_all
+end
+
+script "js_recommendation_resources_total_savings", type: "javascript" do
+  parameters "ds_recommendations_all"
+  result "results"
+  code <<-EOS
+  // Placeholder for the results
+  results = {};
+  // Remove all recommendations without a resourceID
+  // These are generally rate recommendations with no associated resource
+  // The end result is incidene/actions at resource level for visibility and management of tags so no need to include recommendations without a resourceID
+  ds_recommendations_with_resource = _.reject(ds_recommendations_all, function(recommendation) {
+    return recommendation.resourceID == "";
+  })
+
+  // Group recommendations by resourceID
+  ds_recommendations_with_resource_grouped = _.groupBy(ds_recommendations_with_resource, function(recommendation) {
+    return recommendation.resourceID;
+  });
+  // For each resourceID, calculate the total savings that has been identified
+  _.each(ds_recommendations_with_resource_grouped, function(recommendations, resourceID) {
+    total_savings = _.reduce(recommendations, function(total, recommendation) {
+      return total + recommendation.savings;
+    }, 0);
+    // Store the total savings for the resourceID in the results object
+    results[resourceID] = {
+      "resourceID": resourceID,
+      "total_savings": total_savings
+    }
+  });
+EOS
 end
 
 datasource "ds_get_caller_identity" do
@@ -273,11 +350,11 @@ datasource "ds_aws_resources" do
 end
 
 datasource "ds_aws_resources_missing_tags" do
-  run_script $js_aws_resources_missing_tags, $ds_aws_resources, $param_tags, $param_tags_boolean
+  run_script $js_aws_resources_missing_tags, $ds_aws_resources, $ds_tag_dimensions, $param_tags, $param_tags_boolean, $param_consider_tag_dimensions
 end
 
 script "js_aws_resources_missing_tags", type:"javascript" do
-  parameters "ds_aws_resources", "param_tags", "param_tags_boolean"
+  parameters "ds_aws_resources", "ds_tag_dimensions", "param_tags", "param_tags_boolean", "param_consider_tag_dimensions"
   result "result"
   code <<-EOS
   result = []
@@ -346,10 +423,42 @@ script "js_aws_resources_missing_tags", type:"javascript" do
         }
       })
 
+      missing_tags_result = missing_tags
+      if (param_consider_tag_dimensions == "Consider Tag Dimension") {
+        // Exclude resources that have a tag value for one of the tag dimensions
+        // For each tag on the resource
+        _.each(missing_tags, function(missing_tag) {
+          matching_tag_dimension_tag_keys = []
+          // For each missing tag
+          // Check if the tag is a tag dimension
+          // If it is, check if the resource has one of the tag keys under the tag dimension
+          // If it does, remove the missing tag
+
+          tag_dimension = _.find(ds_tag_dimensions, function(tag_dimension) {
+            // Check if the missing tag matches any tag dimension name or ids
+            return tag_dimension['id'] == missing_tag || tag_dimension['name'] == missing_tag
+          })
+          // Check if we found a matching tag dimension
+          if (tag_dimension != undefined) {
+            // Pluck tag keys from the tag dimension
+            tag_dimension_tag_keys = _.pluck(tag_dimension['tags'], 'key')
+            // Plug tag keys from the resource
+            resource_tag_keys = _.keys(resource_tags)
+            // Check if the resource has any of the tag keys which are normalized under the tag dimension
+            if (_.intersection(tag_dimension_tag_keys, resource_tag_keys).length > 0) {
+              // If there is a resource tag matching tag key under the tag dimension, then remove the tag from missing tags result for the resource
+              missing_tags_result = _.without(missing_tags_result, missing_tag)
+            }
+          }
+        });
+      }
+
       if (missing_tags.length == comparators.length || (missing_tags.length > 0 && param_tags_boolean == 'Any')) {
         new_resource = resource
         new_resource['tags'] = resource_tags
-        new_resource['missing_tags'] = missing_tags
+        new_resource['missing_tags'] = missing_tags_result
+        new_resource['__debug__'] = tag_dimension_tag_keys
+        // new_resource['tag_dimension_tag_keys_string'] = tag_dimension_tag_keys.join(', ')
         result.push(new_resource)
       }
     })
@@ -358,11 +467,11 @@ EOS
 end
 
 datasource "ds_missing_tags_incident" do
-  run_script $js_missing_tags_incident, $ds_aws_resources_missing_tags, $ds_aws_account, $ds_applied_policy, $param_tags, $param_tags_boolean
+  run_script $js_missing_tags_incident, $ds_aws_resources_missing_tags, $ds_aws_account, $ds_applied_policy, $ds_recommendation_resources_total_savings, $param_tags, $param_tags_boolean
 end
 
 script "js_missing_tags_incident", type:"javascript" do
-  parameters "ds_aws_resources_missing_tags", "ds_aws_account", "ds_applied_policy", "param_tags", "param_tags_boolean"
+  parameters "ds_aws_resources_missing_tags", "ds_aws_account", "ds_applied_policy", "ds_recommendation_resources_total_savings", "param_tags", "param_tags_boolean"
   result "result"
   code <<-'EOS'
   result = _.map(ds_aws_resources_missing_tags, function(resource) {
@@ -383,6 +492,21 @@ script "js_missing_tags_incident", type:"javascript" do
     service = arn_parts[2]
     resourceType = arn_parts[5].split('/')[0]
 
+    // Attempt to look up the resource name from the tags
+    // find returns the first element that satisfies the condition
+    savings = _.find(ds_recommendation_resources_total_savings, function(savings) {
+      // Condition checks that the resourceID from Savings Recommendation is a substring of the full ARN from AWS Tagging API
+      return resource['arn'].indexOf(savings.resourceID) != -1
+    });
+    // If no savings are found, savings is undefined
+    // We want to default to an object with a total_savings key to avoid errors
+    if (savings == undefined) {
+      // Default to empty object if no savings are found
+      savings = {
+        "total_savings": 0
+      }
+    }
+
     return {
       accountID: ds_aws_account['id'],
       accountName: ds_aws_account['name'],
@@ -395,6 +519,7 @@ script "js_missing_tags_incident", type:"javascript" do
       tags_object: resource['tags'],
       missing_tags: resource['missing_tags'].join(', '),
       policy_name: ds_applied_policy['name'],
+      savings: savings.total_savings,
       message: ''
     }
   })
@@ -462,6 +587,10 @@ policy "policy_untagged_resources" do
       field "id" do
         label "ID"
         path "resourceID"
+      end
+      field "savings" do
+        label "Estimated Savings"
+        path "savings"
       end
     end
   end

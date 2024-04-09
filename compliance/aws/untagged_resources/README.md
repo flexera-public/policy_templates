@@ -23,6 +23,16 @@ This policy template checks for AWS resources missing the user-specified tags. A
   - `Key=~/Regex/` - Find all resources where the value for the specified key does not match the specified regex string and all resources missing the specified tag key.
   - `Key!~/Regex/` - Find all resources where the value for the specified key matches the specified regex string.
 - *Any / All* - Whether to report on instances missing any of the specified tags or all of them. Only applicable if more than one value is entered in the `Tags` field.
+- *Consider Tag Dimensions* - Exclude results when a resource is tagged with a tag key that is normalized by a Tag Dimension.
+  - Considers resource tags which are normalized under tag dimensions and excludes those matching from the missing tags results.
+  - Mitigates/prevents seeing resources that are tagged using some tag key which is normalized under a matching Tag Dimension.
+  - `Tags` param value must match a Tag Dimension Name ("Cost Center") or Tag Dimension ID ("tag_cost_center") for the lookup to occur
+
+  For example,
+   - A resource tagged `app=prod-cluster`
+   - A Tag Dimension named "Application" (tag_application) which normalizes tag resource tag keys `app`, `Application`, `App`, `application`, etc...
+
+  If Exclude Tag Dimensions is enabled and `Tags=["Application"]` the example resource would be considered to **not** be missing the `Application` tag, because it has the `app` tag which is normalized under the "Application" tag dimension
 
 ## Policy Actions
 
