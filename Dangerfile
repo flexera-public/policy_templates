@@ -175,9 +175,6 @@ end
 
 # Check CHANGELOG.md for issues for each file
 changed_changelog_files.each do |file|
-  # Raise warning if outdated terminology found
-  test = general_outdated_terminology?(file); warn test if test
-
   # Raise error if the file contains any bad urls
   test = general_bad_urls?(file); fail test if test
 

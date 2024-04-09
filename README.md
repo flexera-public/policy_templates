@@ -173,20 +173,19 @@ These templates can generate savings estimates for your environment.
 - Compute
 
   - [AWS Burstable EC2 Instances](./cost/aws/burstable_ec2_instances)
+  - [AWS Expiring Savings Plans](./cost/aws/savings_plan/expiration)
   - [AWS Reserved Instances Recommendations](./cost/aws/reserved_instances/recommendations)
+  - [AWS Reserved Instances Utilization](./cost/aws/reserved_instances/utilization)
   - [AWS Rightsize EBS Volumes](./cost/aws/rightsize_ebs_volumes)
   - [AWS Rightsize EC2 Instances](./cost/aws/rightsize_ec2_instances)
   - [AWS Savings Plan Recommendations](./cost/aws/savings_plan/recommendations)
+  - [AWS Savings Plan Utilization](./cost/aws/savings_plan/utilization)
   - [AWS Schedule Instance](./cost/aws/schedule_instance)
   - [AWS Superseded EC2 Instances](./cost/aws/superseded_instances)
   - [AWS Unused IP Addresses](./cost/aws/unused_ip_addresses)
   - [Reserved Instances Coverage](./cost/aws/reserved_instances/coverage)
   - [Turbonomic Allocate Virtual Machine Recommendations AWS](./cost/turbonomics/allocate_virtual_machines_recommendations/aws)
   - [Turbonomic Rightsize Virtual Machines Recommendations AWS](./cost/turbonomics/scale_virtual_machines_recommendations/aws)
-
-- Cost Explorer
-
-  - [AWS Savings Plan Utilization](./cost/aws/savings_plan/utilization)
 
 - EBS
 
@@ -226,7 +225,6 @@ These templates can generate savings estimates for your environment.
 - Compute
 
   - [Azure Hybrid Use Benefit for Linux Server](./cost/azure/hybrid_use_benefit_linux)
-  - [Azure Hybrid Use Benefit for SQL](./cost/azure/hybrid_use_benefit_sql)
   - [Azure Hybrid Use Benefit for Windows Server](./cost/azure/hybrid_use_benefit)
   - [Azure Reserved Instances Recommendations](./cost/azure/reserved_instances/recommendations)
   - [Azure Reserved Instances Utilization](./cost/azure/reserved_instances/utilization)
@@ -258,6 +256,7 @@ These templates can generate savings estimates for your environment.
 
 - SQL
 
+  - [Azure Hybrid Use Benefit for SQL](./cost/azure/hybrid_use_benefit_sql)
   - [Azure Rightsize SQL Databases](./cost/azure/rightsize_sql_instances)
   - [Azure SQL Databases without Elastic Pools](./operational/azure/azure_sql_using_elastic_pool)
 
@@ -310,8 +309,6 @@ These templates can generate savings estimates for your environment.
 
 #### Flexera Optima
 
-- [AWS Expiring Savings Plans](./cost/aws/savings_plan/expiration)
-- [AWS Reserved Instances Utilization](./cost/aws/reserved_instances/utilization)
 - [Reserved Instance Report by Billing Center](./cost/aws/reserved_instances/report_by_bc)
 
 #### GCE
@@ -373,6 +370,10 @@ These templates can generate savings estimates for your environment.
 
   - [AWS Instance Scheduled Events](./operational/aws/instance_scheduled_events)
   - [AWS Long Running Instances](./operational/aws/long_running_instances)
+  - [AWS Usage Forecast - Number of Instance Hours Used](./operational/aws/total_instance_hours_forecast)
+  - [AWS Usage Forecast - Number of Instance vCPUs Used](./operational/aws/total_instance_vcpus_forecast)
+  - [AWS Usage Report - Number of Instance Hours Used](./operational/aws/total_instance_hours)
+  - [AWS Usage Report - Number of Instance vCPUs Used](./operational/aws/total_instance_vcpus)
 
 - Lambda
 
@@ -400,6 +401,7 @@ These templates can generate savings estimates for your environment.
   - [Azure Bring-Your-Own-License (BYOL) Report](./operational/azure/byol_report)
   - [Azure Long Running Instances](./operational/azure/azure_long_running_instances)
   - [Azure Migrate Integration](./operational/azure/azure_migrate)
+  - [Azure Usage Report - Number of Instance Hours Used](./operational/azure/total_instance_hours)
   - [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks)
   - [Expiring Azure Certificates](./operational/azure/azure_certificates)
 
@@ -430,26 +432,21 @@ These templates can generate savings estimates for your environment.
 
   - [Schedule ITAM Report](./operational/flexera/itam/schedule_itam_report)
 
-#### Flexera Optima
-
-- [AWS Usage Forecast - Number of Instance Hours Used](./operational/aws/total_instance_hours_forecast)
-- [AWS Usage Forecast - Number of Instance vCPUs Used](./operational/aws/total_instance_vcpus_forecast)
-- [AWS Usage Report - Number of Instance Hours Used](./operational/aws/total_instance_hours)
-- [AWS Usage Report - Number of Instance vCPUs Used](./operational/aws/total_instance_vcpus)
-
 ### Policy Templates for SaaS Management
 
-#### Flexera SaaS Manager
+#### Flexera
 
-- [SaaS Manager - Deactivated Users](./saas/fsm/deactivated_users)
-- [SaaS Manager - Deactivated Users for Integrated Applications](./saas/fsm/deactivated_users_for_integrated_apps)
-- [SaaS Manager - Duplicate User Accounts](./saas/fsm/duplicate_users)
-- [SaaS Manager - Redundant Apps](./saas/fsm/redundant_apps)
-- [SaaS Manager - Renewal Reminder](./saas/fsm/renewal_reminder)
-- [SaaS Manager - SaaS App User Report by Category](./saas/fsm/users_by_category)
-- [SaaS Manager - Suspicious Users](./saas/fsm/suspicious_users)
-- [SaaS Manager - Unsanctioned Applications with Existing Contract](./saas/fsm/unsanctioned_apps_with_contract)
-- [SaaS Manager - Unsanctioned Spend](./saas/fsm/unsanctioned_spend)
+- SaaS Manager
+
+  - [SaaS Manager - Deactivated Users](./saas/fsm/deactivated_users)
+  - [SaaS Manager - Deactivated Users for Integrated Applications](./saas/fsm/deactivated_users_for_integrated_apps)
+  - [SaaS Manager - Duplicate User Accounts](./saas/fsm/duplicate_users)
+  - [SaaS Manager - Redundant Apps](./saas/fsm/redundant_apps)
+  - [SaaS Manager - Renewal Reminder](./saas/fsm/renewal_reminder)
+  - [SaaS Manager - SaaS App User Report by Category](./saas/fsm/users_by_category)
+  - [SaaS Manager - Suspicious Users](./saas/fsm/suspicious_users)
+  - [SaaS Manager - Unsanctioned Applications with Existing Contract](./saas/fsm/unsanctioned_apps_with_contract)
+  - [SaaS Manager - Unsanctioned Spend](./saas/fsm/unsanctioned_spend)
 
 #### Microsoft
 
@@ -616,12 +613,12 @@ These templates can generate savings estimates for your environment.
 :categories:
   Compliance: 33
   Cost: 91
-  Operational: 24
+  Operational: 25
   SaaS Management: 12
   Security: 74
 :optimization_count: 45
 :policy_sets:
-  '': 55
+  '': 47
   AWS Config: 1
   Allocate VMs: 3
   Automation: 1
@@ -635,7 +632,7 @@ These templates can generate savings estimates for your environment.
   Databricks: 1
   Disallowed Regions: 2
   Forecasting: 4
-  Hybrid Use Benefit: 4
+  Hybrid Use Benefit: 5
   IT Asset Management: 5
   Identity & Access Management: 1
   Idle Compute Instances: 1
@@ -653,7 +650,7 @@ These templates can generate savings estimates for your environment.
   Open S3 Buckets: 1
   Public Database Access: 2
   Reserved Instance: 2
-  Reserved Instances: 3
+  Reserved Instances: 5
   Rightsize Clusters: 1
   Rightsize Compute Instances: 6
   Rightsize Containers: 1
@@ -661,8 +658,7 @@ These templates can generate savings estimates for your environment.
   Rightsize Database Services: 1
   Rightsize Storage: 2
   Rightsize Volumes: 2
-  Savings Plan Utilization: 1
-  Savings Plans: 2
+  Savings Plans: 4
   Savings Realized: 1
   Schedule Instance: 3
   Schedule Report: 2
@@ -675,13 +671,13 @@ These templates can generate savings estimates for your environment.
   Unused IP Addresses: 3
   Unused Load Balancers: 1
   Unused Volumes: 6
+  Usage Report: 5
 :providers:
-  AWS: 74
-  Azure: 82
+  AWS: 80
+  Azure: 83
   Azure China: 1
-  Flexera: 29
-  Flexera Optima: 7
-  Flexera SaaS Manager: 9
+  Flexera: 38
+  Flexera Optima: 1
   GCE: 5
   GitHub: 7
   Google: 14
@@ -691,7 +687,7 @@ These templates can generate savings estimates for your environment.
   Oracle: 1
   ServiceNow: 1
 :services:
-  '': 29
+  '': 14
   AKS: 2
   All: 1
   App Service: 1
@@ -700,9 +696,8 @@ These templates can generate savings estimates for your environment.
   Cloud Migration & Modernization: 2
   CloudTrail: 7
   Common Bill Ingestion: 2
-  Compute: 52
+  Compute: 59
   Config: 1
-  Cost Explorer: 1
   DBS: 1
   Databricks: 1
   EBS: 2
@@ -728,7 +723,8 @@ These templates can generate savings estimates for your environment.
   PostgreSQL: 4
   RDS: 4
   S3: 8
-  SQL: 14
+  SQL: 15
+  SaaS Manager: 9
   Security: 3
   Storage: 22
   Storage Accounts: 2
@@ -736,7 +732,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 234
+:total_count: 235
 -->
 <!-- End Policy Template Stats -->
 

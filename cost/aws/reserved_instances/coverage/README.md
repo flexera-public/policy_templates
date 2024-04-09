@@ -1,6 +1,6 @@
 # Reserved Instances Coverage
 
-## What it does
+## What It Does
 
 This Policy Template leverages the Reserved Instance Coverage report. Retrieves the reservation coverage for your account.
 It will email the user specified in `Email addresses of the recipients you wish to notify`
@@ -42,6 +42,8 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
       ]
   }
   ```
+
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ## Supported Clouds
 
