@@ -207,15 +207,31 @@ datasource "ds_get_aws_buckets" do
   end
 end
 
-datasource "ds_aws_buckets" do
-  run_script $js_aws_buckets, $ds_get_aws_buckets
+datasource "ds_aws_buckets_with_region" do
+  iterate $ds_get_aws_buckets
+  request do
+    auth $auth_aws
+    host "s3.amazonaws.com"
+    path join(["/", val(iter_item, "name")])
+    query "location", ""
+  end
+  result do
+    encoding "xml"
+    field "region", xpath(response, "//LocationConstraint")
+    field "name", val(iter_item, "name")
+    field "creation_date", val(iter_item, "creation_date")
+  end
 end
 
-script "js_aws_buckets", type: "javascript" do
-  parameters "ds_get_aws_buckets"
+datasource "ds_aws_buckets_sanitized" do
+  run_script $js_aws_buckets_sanitized, $ds_aws_buckets_with_region
+end
+
+script "js_aws_buckets_sanitized", type: "javascript" do
+  parameters "ds_aws_buckets_with_region"
   result "result"
   code <<-'EOS'
-  result = _.map(ds_get_aws_buckets, function(bucket) {
+  result = _.map(ds_aws_buckets_with_region, function(bucket) {
     if (typeof(bucket['region']) != 'string' || bucket['region'] == '' || bucket['region'] == 'us-east-1') {
       region = 'us-east-1'
       host = 's3.amazonaws.com'
@@ -237,32 +253,16 @@ script "js_aws_buckets", type: "javascript" do
 EOS
 end
 
-datasource "ds_aws_buckets_with_region" do
-  iterate $ds_get_aws_buckets
-  request do
-    auth $auth_aws
-    host val(iter_item, "host")
-    path join(["/", val(iter_item, "name")])
-    query "location", ""
-  end
-  result do
-    encoding "xml"
-    field "region", xpath(response, "//LocationConstraint")
-    field "name", val(iter_item, "name")
-    field "creation_date", val(iter_item, "creation_date")
-  end
-end
-
 datasource "ds_aws_buckets_region_filtered" do
-  run_script $js_aws_buckets_region_filtered, $ds_aws_buckets_with_region, $param_regions_allow_or_deny, $param_regions_list
+  run_script $js_aws_buckets_region_filtered, $ds_aws_buckets_sanitized, $param_regions_allow_or_deny, $param_regions_list
 end
 
 script "js_aws_buckets_region_filtered", type: "javascript" do
-  parameters "ds_aws_buckets_with_region", "param_regions_allow_or_deny", "param_regions_list"
+  parameters "ds_aws_buckets_sanitized", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-EOS
   if (param_regions_list.length > 0) {
-    result = _.filter(ds_aws_buckets_with_region, function(bucket) {
+    result = _.filter(ds_aws_buckets_sanitized, function(bucket) {
       include_bucket = _.contains(param_regions_list, bucket['region'])
 
       if (param_regions_allow_or_deny == "Deny") {
@@ -272,7 +272,7 @@ script "js_aws_buckets_region_filtered", type: "javascript" do
       return include_bucket
     })
   } else {
-    result = ds_aws_buckets_with_region
+    result = ds_aws_buckets_sanitized
   }
 EOS
 end
@@ -292,6 +292,7 @@ datasource "ds_aws_buckets_with_tags" do
     field "name", val(iter_item, "name")
     field "region", val(iter_item, "region")
     field "creation_date", val(iter_item, "creation_date")
+    field "host", val(iter_item, "host")
     field "tags" do
       collect xpath(response, "//Tagging/TagSet/Tag", "array") do
         field "key", xpath(col_item, "Key")
@@ -311,7 +312,7 @@ script "js_aws_buckets_tag_filtered", type: "javascript" do
   code <<-EOS
   // Logic to ensure any buckets skipped because of a 404 response due to no tags
   // are still included in the final result
-  tagged_bucket_list = _.map(ds_aws_buckets_tag_filtered, function(bucket) {
+  tagged_bucket_list = _.map(ds_aws_buckets_with_tags, function(bucket) {
     return bucket['name'] + '___' + bucket['region']
   })
 
@@ -319,7 +320,7 @@ script "js_aws_buckets_tag_filtered", type: "javascript" do
     return _.contains(tagged_bucket_list, bucket['name'] + '___' + bucket['region'])
   })
 
-  aws_buckets = ds_aws_buckets_tag_filtered.concat(tagless_buckets)
+  aws_buckets = ds_aws_buckets_with_tags.concat(tagless_buckets)
 
   comparators = _.map(param_exclusion_tags, function(item) {
     if (item.indexOf('==') != -1) {
@@ -410,6 +411,7 @@ datasource "ds_aws_bucket_policies" do
     field "name", val(iter_item, "name")
     field "region", val(iter_item, "region")
     field "creation_date", val(iter_item, "creation_date")
+    field "host", val(iter_item, "host")
     field "tags", val(iter_item, "tags")
   end
 end
