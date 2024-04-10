@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This Policy Template scans all S3 buckets in the given account and checks if the bucket has an intelligent tiering policy configured. An incident is raised with any buckets without such a policy and, optionally, and email is sent.
+This Policy Template scans all S3 buckets in the given account and checks if the bucket has an [intelligent tiering](https://docs.aws.amazon.com/AmazonS3/latest/userguide/intelligent-tiering-overview.html) policy configured. An incident is raised with any buckets without such a policy and, optionally, and email is sent.
 
 ## Input Parameters
 
