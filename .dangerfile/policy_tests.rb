@@ -764,6 +764,10 @@ def policy_block_missing_field?(file, block_name, field_name)
     # Check for the field if we're in a block
     present = true if line_number && line.strip.start_with?(field_name + ' ')
 
+    # For default field, and default value not present, check for comment declaring no default value
+    # This is to avoid false errors for parameters that require user input
+    present = true if !present && field_name == "default" && line.strip.start_with?('# No default value, user input required')
+
     # When we reach the end of a block, check if field was present
     if line.strip == 'end' && line_number
       fail_message += "Line #{line_number.to_s}\n" unless present
