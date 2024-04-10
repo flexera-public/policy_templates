@@ -775,10 +775,20 @@ def policy_block_missing_field?(file, block_name, field_name)
     end
   end
 
-  fail_message = "**#{file}**\n#{block_name} code blocks with missing `#{field_name}` field found. Please add the `#{field_name}` field to these blocks:\n\n" + fail_message if !fail_message.empty?
-
-  return fail_message.strip if !fail_message.empty?
-  return false
+  # After looping through all lines, check if we found any missing fields
+  if !fail_message.empty?
+    # Construct resulting fail message with block name and line numbers
+    fail_message = "**#{file}**\n#{block_name} code blocks with missing `#{field_name}` field found. Please add the `#{field_name}` field to these blocks:\n\n" + fail_message
+    # If we're checking for default field, add a note about comment `# No default value, user input required`
+    if field_name == "default" && !fail_message.empty?
+      fail_message += "Optionally, you can add a comment within the #{block_name} code blocks `# No default value, user input required` to indicate that the parameter requires user input and avoid this message.\n"
+    end
+    # Return resulting fail message
+    return fail_message.strip
+  else
+    # If we didn't find any missing fields, return false
+    return false
+  end
 end
 
 ### Datasource/script name matching test
