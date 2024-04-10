@@ -1,9 +1,9 @@
 # Changelog
 
-## v5.1
+## v5.1.0
 
 - Added parameter for *Consider Tag Dimensions* to help mitigate/prevent seeing results for resources which have the tag key/tag value through a normalized Tag Dimension
-- Added Estimated Savings mappings for each resource
+- Added *Estimated Savings* field for each resource in the results
 
 ## v5.0
 
