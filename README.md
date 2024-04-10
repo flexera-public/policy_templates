@@ -205,13 +205,13 @@ These templates can generate savings estimates for your environment.
 
 - S3
 
-  - [AWS Bucket Size Check](./cost/aws/s3_bucket_size)
   - [AWS S3 Bucket Intelligent Tiering Check](./cost/aws/s3_storage_policy)
 
 - Storage
 
   - [AWS Object Storage Optimization](./cost/aws/object_storage_optimization)
   - [AWS Old Snapshots](./cost/aws/old_snapshots)
+  - [AWS Oversized S3 Buckets](./cost/aws/s3_bucket_size)
   - [Turbonomic Delete Unattached Volumes Recommendations AWS](./cost/turbonomics/delete_unattached_volumes/aws)
 
 - Usage Discount
@@ -723,11 +723,11 @@ These templates can generate savings estimates for your environment.
   Policy: 1
   PostgreSQL: 4
   RDS: 4
-  S3: 8
+  S3: 7
   SQL: 15
   SaaS Manager: 9
   Security: 3
-  Storage: 22
+  Storage: 23
   Storage Accounts: 2
   Tags: 2
   Usage Discount: 6
