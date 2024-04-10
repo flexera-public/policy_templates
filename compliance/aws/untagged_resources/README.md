@@ -26,7 +26,7 @@ This policy template checks for AWS resources missing the user-specified tags. A
 - *Consider Tag Dimensions* - Exclude results when a resource is tagged with a tag key that is normalized by a Tag Dimension.
   - Considers resource tags which are normalized under tag dimensions and excludes those matching from the missing tags results.
   - Mitigates/prevents seeing resources that are tagged using some tag key which is normalized under a matching Tag Dimension.
-  - `Tags` param value must match a Tag Dimension Name ("Cost Center") or Tag Dimension ID ("tag_cost_center") for the lookup to occur
+  - `Tags` parameter value must match a Tag Dimension Name ("Cost Center") or Tag Dimension ID ("tag_cost_center") for the lookup to occur
 
   For example,
    - A resource tagged `app=prod-cluster`
