@@ -1,0 +1,388 @@
+name "Flexera FOCUS Report"
+rs_pt_ver 20180301
+type "policy"
+short_description "Produces a FOCUS-compliant report of cloud costs for the current month or user-specified month. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/focus_report/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+category "Cost"
+severity "low"
+default_frequency "weekly"
+info(
+  version: "0.1",
+  provider: "Flexera",
+  service: "Cloud Cost Optimization",
+  policy_set: "Cloud Cost Optimization"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_month" do
+  type "string"
+  category "Policy Settings"
+  label "Billing Month"
+  description "Billing month to report on in YYYY-MM format. Leave blank to do current month."
+  allowed_pattern /^(|(\d{4}-(0[1-9]|1[0-2])))/
+  default ""
+end
+
+parameter "param_amortization" do
+  type "string"
+  category "Policy Settings"
+  label "Amortization"
+  description "Whether to report costs amortized or unamortized."
+  allowed_values "Amortized", "Unamortized"
+  default "Amortized"
+end
+
+parameter "param_billing_centers" do
+  type "list"
+  category "Filters"
+  label "Billing Centers"
+  description "List of Billing Center names/IDs to report on. Leave empty to report on the entire organization without filtering by Billing Center."
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_dates" do
+  run_script $js_dates, $param_month
+end
+
+script "js_dates", type: "javascript" do
+  parameters "param_month"
+  result "result"
+  code <<-EOS
+  month = new Date().toISOString()
+  if (param_month != "") { month = new Date(param_month).toISOString() }
+  month = month.split('-')[0] + '-' + month.split('-')[1]
+
+  next_month = new Date(month)
+  next_month.setMonth(next_month.getMonth() + 1)
+  next_month = next_month.toISOString()
+  next_month = next_month.split('-')[0] + '-' + next_month.split('-')[1]
+
+  prior_month = new Date(month)
+  prior_month.setMonth(prior_month.getMonth() - 1)
+  prior_month = prior_month.toISOString()
+  prior_month = prior_month.split('-')[0] + '-' + prior_month.split('-')[1]
+
+  result = {
+    month: month,
+    next_month: next_month,
+    prior_month: prior_month
+  }
+EOS
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  symbol = "US$"
+  code = "USD"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+      code = ds_currency_reference[ds_currency_code['value']]['code']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator,
+    code: code
+  }
+EOS
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather billing center IDs for when we pull cost data
+datasource "ds_included_bcs" do
+  run_script $js_included_bcs, $ds_billing_centers, $param_billing_centers
+end
+
+script "js_included_bcs", type: "javascript" do
+  parameters "ds_billing_centers", "param_billing_centers"
+  result "result"
+  code <<-EOS
+  if (param_billing_centers.length > 0) {
+    result = _.filter(ds_billing_centers, function(bc) {
+      return _.contains(param_billing_centers, bc['id']) || _.contains(param_billing_centers, bc['name'])
+    })
+  } else {
+    result = _.filter(ds_billing_centers, function(bc) {
+      return bc['parent_id'] == null || bc['parent_id'] == undefined
+    })
+  }
+EOS
+end
+
+datasource "ds_flexera_costs" do
+  request do
+    run_script $js_flexera_costs, $ds_included_bcs, $ds_dates, $param_amortization, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "vendor", jmes_path(col_item, "dimensions.vendor")
+      field "vendor_account", jmes_path(col_item, "dimensions.vendor_account")
+      field "vendor_account_name", jmes_path(col_item, "dimensions.vendor_account_name")
+      field "line_item_type", jmes_path(col_item, "dimensions.line_item_type")
+      field "manufacturer_name", jmes_path(col_item, "dimensions.manufacturer_name")
+      field "region", jmes_path(col_item, "dimensions.region")
+      field "resource_type", jmes_path(col_item, "dimensions.resource_type")
+      field "category", jmes_path(col_item, "dimensions.category")
+      field "service", jmes_path(col_item, "dimensions.service")
+      field "usage_unit", jmes_path(col_item, "dimensions.usage_unit")
+      field "cost_amortized", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+      field "cost_unamortized", jmes_path(col_item, "metrics.cost_unamortized_unblended_adj")
+    end
+  end
+end
+
+script "js_flexera_costs", type: "javascript" do
+  parameters "ds_included_bcs", "ds_dates", "param_amortization", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  amortization = "cost_unamortized_unblended_adj"
+  if (param_amortization == "Amortized") { amortization = "cost_amortized_unblended_adj" }
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
+    body_fields: {
+      "dimensions": [
+        "vendor",
+        "vendor_account",
+        "vendor_account_name",
+        "line_item_type",
+        "manufacturer_name",
+        "region",
+        "resource_type",
+        "category",
+        "service",
+        "usage_unit"
+      ],
+      "granularity": "month",
+      "start_at": ds_dates["month"],
+      "end_at": ds_dates["next_month"],
+      "metrics": [amortization],
+      "billing_center_ids": _.pluck(ds_included_bcs, "id"),
+      "limit": 100000
+    },
+    headers: {
+      "User-Agent": "RS Policies",
+      "Api-Version": "1.0"
+    }
+  }
+EOS
+end
+
+datasource "ds_flexera_costs_normalized" do
+  run_script $js_flexera_costs_normalized, $ds_flexera_costs, $ds_applied_policy, $ds_dates, $ds_currency, $ds_included_bcs, $param_amortization, $param_billing_centers
+end
+
+script "js_flexera_costs_normalized", type: "javascript" do
+  parameters "ds_flexera_costs", "ds_applied_policy", "ds_dates", "ds_currency", "ds_included_bcs", "param_amortization", "param_billing_centers"
+  result "result"
+  code <<-EOS
+  includedBCs = "All Billing Centers"
+  if (param_billing_centers.length > 0) { includedBCs = _.pluck(ds_included_bcs, "name").join(", ") }
+
+  billingPeriodStart = ds_dates['month'] + '-01'
+  chargePeriodEnd = new Date(ds_dates['next_month'])
+  chargePeriodEnd.setDate(chargePeriodEnd.getDate() - 1)
+  chargePeriodEnd = chargePeriodEnd.toISOString().split('T')[0]
+
+  result = _.map(ds_flexera_costs, function(item) {
+    if (param_amortization == "Amortized") {
+      cost = Math.round(Number(item['cost_amortized']) * 1000) / 1000
+    } else {
+      cost = Math.round(Number(item['cost_unamortized']) * 1000) / 1000
+    }
+
+    return {
+      providerName: item['vendor'],
+      subAccountId: item['vendor_account'],
+      subAccountName: item['vendor_account_name'],
+      chargeCategory: item['line_item_type'],
+      publisherName: item['manufacturer_name'],
+      region: item['region'],
+      resourceType: item['resource_type'],
+      serviceCategory: item['category'],
+      serviceName: item['service'],
+      usageUnit: item['usage_unit'],
+      billingCurrency: ds_currency['code'],
+      policyName: ds_applied_policy['name'],
+      amortization: param_amortization,
+      billingPeriodStart: billingPeriodStart,
+      chargePeriodStart: billingPeriodStart,
+      chargePeriodEnd: chargePeriodEnd,
+      cost: cost,
+      includedBCs: includedBCs
+    }
+  })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_flexera_focus_report" do
+  validate_each $ds_flexera_costs_normalized do
+    summary_template "{{ with index data 0 }}{{ .policyName }}{{ end }} - {{ with index data 0 }}{{ .billingPeriodStart }}{{ end }} - {{ with index data 0 }}{{ .amortization }}{{ end }}"
+    detail_template "Billing Centers: {{ with index data 0 }}{{ .includedBCs }}{{ end }}"
+    check eq(val(item, "ProviderName"), "")
+    escalate $esc_email
+    export do
+      resource_level false
+      field "providerName" do
+        label "ProviderName"
+      end
+      field "subAccountId" do
+        label "SubAccountId"
+      end
+      field "subAccountName" do
+        label "SubAccountName"
+      end
+      field "resourceType" do
+        label "ResourceType"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "publisherName" do
+        label "PublisherName"
+      end
+      field "serviceName" do
+        label "ServiceName"
+      end
+      field "serviceCategory" do
+        label "ServiceCategory"
+      end
+      field "chargeCategory" do
+        label "ChargeCategory"
+      end
+      field "billingPeriodStart" do
+        label "BillingPeriodStart"
+      end
+      field "chargePeriodStart" do
+        label "ChargePeriodStart"
+      end
+      field "chargePeriodEnd" do
+        label "ChargePeriodEnd"
+      end
+      field "usageUnit" do
+        label "UsageUnit"
+      end
+      field "billingCurrency" do
+        label "BillingCurrency"
+      end
+      field "cost" do
+        label "Cost"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
