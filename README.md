@@ -372,6 +372,7 @@ These templates can generate savings estimates for your environment.
   - [AWS Long Running Instances](./operational/aws/long_running_instances)
   - [AWS Usage Forecast - Number of Instance Hours Used](./operational/aws/total_instance_hours_forecast)
   - [AWS Usage Forecast - Number of Instance vCPUs Used](./operational/aws/total_instance_vcpus_forecast)
+  - [AWS Usage Report - Amount of Instance Memory Used](./operational/aws/total_instance_memory)
   - [AWS Usage Report - Number of Instance Hours Used](./operational/aws/total_instance_hours)
   - [AWS Usage Report - Number of Instance vCPUs Used](./operational/aws/total_instance_vcpus)
 
@@ -615,7 +616,7 @@ These templates can generate savings estimates for your environment.
 :categories:
   Compliance: 33
   Cost: 91
-  Operational: 27
+  Operational: 28
   SaaS Management: 12
   Security: 74
 :optimization_count: 45
@@ -673,9 +674,9 @@ These templates can generate savings estimates for your environment.
   Unused IP Addresses: 3
   Unused Load Balancers: 1
   Unused Volumes: 6
-  Usage Report: 7
+  Usage Report: 8
 :providers:
-  AWS: 80
+  AWS: 81
   Azure: 85
   Azure China: 1
   Flexera: 38
@@ -698,7 +699,7 @@ These templates can generate savings estimates for your environment.
   Cloud Migration & Modernization: 2
   CloudTrail: 7
   Common Bill Ingestion: 2
-  Compute: 61
+  Compute: 62
   Config: 1
   DBS: 1
   Databricks: 1
@@ -734,7 +735,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 237
+:total_count: 238
 -->
 <!-- End Policy Template Stats -->
 
