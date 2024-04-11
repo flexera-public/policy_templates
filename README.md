@@ -301,6 +301,7 @@ These templates can generate savings estimates for your environment.
   - [Cloud Spend Forecast - Straight-Line (Simple Model)](./cost/flexera/cco/forecasting/straight_line_forecast/simple)
   - [Currency Conversion](./cost/flexera/cco/currency_conversion)
   - [Email Cost Optimization Recommendations](./cost/flexera/cco/email_recommendations)
+  - [Flexera FOCUS Report](./cost/flexera/cco/focus_report)
   - [Low Account Usage](./cost/flexera/cco/low_account_usage)
   - [Low Service Usage](./cost/flexera/cco/low_service_usage)
   - [New Service Usage](./cost/flexera/cco/new_service_usage)
@@ -615,7 +616,7 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 33
-  Cost: 91
+  Cost: 92
   Operational: 28
   SaaS Management: 12
   Security: 74
@@ -627,7 +628,7 @@ These templates can generate savings estimates for your environment.
   Automation: 1
   Burstable Compute Instances: 1
   CIS: 61
-  Cloud Cost Optimization: 13
+  Cloud Cost Optimization: 14
   Cloud Migration & Modernization: 2
   Committed Use Discount: 1
   Common Bill Ingestion: 2
@@ -679,7 +680,7 @@ These templates can generate savings estimates for your environment.
   AWS: 81
   Azure: 85
   Azure China: 1
-  Flexera: 38
+  Flexera: 39
   Flexera Optima: 1
   GCE: 5
   GitHub: 7
@@ -695,7 +696,7 @@ These templates can generate savings estimates for your environment.
   All: 1
   App Service: 1
   Automation: 1
-  Cloud Cost Optimization: 17
+  Cloud Cost Optimization: 18
   Cloud Migration & Modernization: 2
   CloudTrail: 7
   Common Bill Ingestion: 2
@@ -735,7 +736,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 238
+:total_count: 239
 -->
 <!-- End Policy Template Stats -->
 
