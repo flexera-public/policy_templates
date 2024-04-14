@@ -6,6 +6,145 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#2036](https://github.com/flexera-public/policy_templates/pull/2036): POL-1193 New Policy: Flexera FOCUS Report
+
+#### Description
+
+> This is a new policy that produces an aggregated billing report for a month that aligns with the FinOps FOCUS framework.
+>
+
+#### Metadata
+
+- **Policies**: [Flexera FOCUS Report](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/focus_report/README.md)
+- **Merged At**: 2024-04-11 10:11:12 UTC
+
+---
+
+### PR [#2012](https://github.com/flexera-public/policy_templates/pull/2012): POL-1184 Add AWS Usage Report - Amount of Instance Memory Used
+
+#### Description
+
+> <!-- Describe what this change achieves below -->
+>
+> - Adds AWS Usage Report showing the amount of instance memory in GiB used over a historical 12 month period.
+> - Also updates the READMEs and policy template file names of the following existing policies:
+>   - AWS Usage Report - Number of Instance Hours Used
+>   - AWS Usage Report - Number of Instance vCPUs Used
+>   - AWS Usage Forecast - Number of Instance Hours Used
+>   - AWS Usage Forecast - Number of Instance vCPUs Used
+>
+> ### Issues Resolved
+>
+> <!-- List any existing issues this PR resolves below -->
+> Adds another variation of existing usage reports tracking Instance Hours Used and Instance vCPUs used.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2012) for these details.
+- **Merged At**: 2024-04-11 08:29:46 UTC
+
+---
+
+### PR [#1970](https://github.com/flexera-public/policy_templates/pull/1970): POL-1179 Add Azure Usage Report - Amount of Instance Memory Used
+
+#### Description
+
+> <!-- Describe what this change achieves below -->
+> Adds Azure Usage Report showing the amount of instance memory in GiB used over a historical 12 month period.
+>
+> ### Issues Resolved
+>
+> <!-- List any existing issues this PR resolves below -->
+> Adds another variation of existing usage reports tracking Instance Hours Used and Instance vCPUs used.
+>
+
+#### Metadata
+
+- **Policies**: [Azure Usage Report - Amount of Instance Memory Used](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/total_instance_memory/README.md)
+- **Merged At**: 2024-04-10 15:56:27 UTC
+
+---
+
+### PR [#2033](https://github.com/flexera-public/policy_templates/pull/2033): POL-1076 AWS Bucket Size Revamp
+
+#### Description
+
+> This is a revamp of the AWS Bucket Size policy. From the CHANGELOG:
+>
+> - Several parameters altered to be more descriptive and human-readable
+> - `Size Threshold (GiB)` parameter no longer expects user to specify size in bytes
+> - Added ability to filter buckets by region and tags
+> - Normalized incident export to be consistent with other policies
+> - Added additional fields to incident export
+> - Streamlined code for better readability and faster execution
+> - Policy now requires a valid Flexera credential
+>
+> Additionally, the policy now has meta policy support.
+>
+
+#### Metadata
+
+- **Policies**: [AWS Oversized S3 Buckets](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_bucket_size/README.md)
+- **Merged At**: 2024-04-10 13:13:30 UTC
+
+---
+
+### PR [#1969](https://github.com/flexera-public/policy_templates/pull/1969): POL-600 Add Azure Usage Report - Number of Instance vCPUs Used
+
+#### Description
+
+> <!-- Describe what this change achieves below -->
+> Adds Azure Usage Report showing the number of instance vCPUs used over a historical 12 month period.
+>
+> ### Issues Resolved
+>
+> <!-- List any existing issues this PR resolves below -->
+> Resolves cadence between AWS and Azure (AWS version of this policy already exists in the Catalog)
+>
+
+#### Metadata
+
+- **Policies**: [Azure Usage Report - Number of Instance vCPUs Used](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/total_instance_vcpus/README.md)
+- **Merged At**: 2024-04-10 08:39:34 UTC
+
+---
+
+### PR [#1961](https://github.com/flexera-public/policy_templates/pull/1961): POL-599 Add Azure Usage Report - Number of Instance Hours Used
+
+#### Description
+
+> <!-- Describe what this change achieves below -->
+> Adds Azure Usage Report showing the number of instance hours used over a historical 12 month period.
+>
+> ### Issues Resolved
+>
+> <!-- List any existing issues this PR resolves below -->
+> Resolves cadence between AWS and Azure (AWS version of this policy already exists in the Catalog)
+>
+
+#### Metadata
+
+- **Policies**: [Azure Usage Report - Number of Instance Hours Used](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/total_instance_hours/README.md)
+- **Merged At**: 2024-04-09 14:16:40 UTC
+
+---
+
+### PR [#2022](https://github.com/flexera-public/policy_templates/pull/2022): POL-1192 Policy Metadata Fixes
+
+#### Description
+
+> This corrects metadata in a large number of policies to align them with our general categorization schema. This should result in a cleaner list of policies in the global README. A lot of very minor stylistic changes (spacing, ordering of parameters, etc.) were also made to some of the affected policies based on feedback from the Dangerfile linter.
+>
+> The Dangerfile was also updated to avoid some false positives, particularly around the SaaS Manager policies.
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2022) for these details.
+- **Merged At**: 2024-04-08 12:24:02 UTC
+
+---
+
 ### PR [#2020](https://github.com/flexera-public/policy_templates/pull/2020): POL-1191 Azure Hybrid Use Benefit Policy for SQL Revamp
 
 #### Description
@@ -1769,155 +1908,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [AWS Rightsize RDS Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_rds_instances/README.md)
 - **Merged At**: 2023-11-21 21:24:48 UTC
-
----
-
-### PR [#1620](https://github.com/flexera-public/policy_templates/pull/1620): feat: Meta Policy Consolidated Incident Actions
-
-#### Description
-
->  - Enables triggering policy escalation actions from the Meta Parent "Consolidated Incident"
->  - Fixes the Incident Summary for some policies `with index 0` -> `AWS EC2 Volumes Found` ( [example](https://github.com/flexera-public/policy_templates/pull/1620/files#diff-622ba01a4d2f8338f7ab763d1d660e1b052ceaf93d800da5a71da2f93e45314fL971-R1013) )
->
->
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1620) for these details.
-- **Merged At**: 2023-11-21 00:21:43 UTC
-
----
-
-### PR [#1632](https://github.com/flexera-public/policy_templates/pull/1632): feat: add param for AWS Pricing API Endpoint
-
-#### Description
-
-> Added parameter to override the AWS Pricing API Endpoint.
->
-> This will enable us to change the API endpoint being used by the Policy Template in case a customer is using an AWS Service Control Policy to deny `us-east-1` which we previously had hard-coded.
->
-
-#### Metadata
-
-- **Policies**: [AWS Rightsize EBS Volumes](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ebs_volumes/README.md), [AWS Unused IP Addresses](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/unused_ip_addresses/README.md)
-- **Merged At**: 2023-11-20 22:55:52 UTC
-
----
-
-### PR [#1627](https://github.com/flexera-public/policy_templates/pull/1627): POL-745 SaaS Manager - Unsanctioned Spend Revamp
-
-#### Description
-
-> This is part of a broader initiative to update our SaaS Manager FSM policies to use the correct API endpoints for APAC. The policy itself has also been revamped along similar lines to other policies.
->
-> Note: This policy still uses the now-deprecated internal SaaS Manager API. This is because the new API does not yet support the requests this policy needs to make to function. This functionality will be brought to the new API before the old one is decommissioned, and this policy will need to be updated again at that time.
->
-> From the CHANGELOG:
->
-> - Added support for APAC API endpoint
-> - Policy now uses and requires a general Flexera One credential
-> - Incident summary now includes applied policy name
-> - `Expense Sum` and `Currency` are now separate incident fields
-> - General code cleanup and normalization
->
-
-#### Metadata
-
-- **Policies**: [SaaS Manager - Unsanctioned Spend](https://github.com/flexera-public/policy_templates/tree/master/saas/fsm/unsanctioned_spend/README.md)
-- **Merged At**: 2023-11-20 22:19:01 UTC
-
----
-
-### PR [#1621](https://github.com/flexera-public/policy_templates/pull/1621): POL-745 SaaS Manager - Duplicate User Accounts Revamp
-
-#### Description
-
-> This is part of a broader initiative to update our SaaS Manager FSM policies to use up to date APIs. The policy itself has also been revamped along similar lines to other policies.
->
-> From the CHANGELOG:
->
-> - Updated policy to use public SaaS Manager API
-> - Added support for APAC API endpoint
-> - Policy now uses and requires a general Flexera One credential
-> - Incident summary now includes applied policy name
-> - General code cleanup and normalization
->
-
-#### Metadata
-
-- **Policies**: [SaaS Manager - Duplicate User Accounts](https://github.com/flexera-public/policy_templates/tree/master/saas/fsm/duplicate_users/README.md)
-- **Merged At**: 2023-11-20 22:18:45 UTC
-
----
-
-### PR [#1622](https://github.com/flexera-public/policy_templates/pull/1622): POL-745 SaaS Manager - Redundant Apps Revamp
-
-#### Description
-
-> This is part of a broader initiative to update our SaaS Manager FSM policies to use up to date APIs. The policy itself has also been revamped along similar lines to other policies.
->
-> From the CHANGELOG:
->
-> - Updated policy to use public SaaS Manager API
-> - Added support for APAC API endpoint
-> - Policy now uses and requires a general Flexera One credential
-> - Incident summary now includes applied policy name
-> - Incident now includes additional fields to provide more context
-> - General code cleanup and normalization
->
-
-#### Metadata
-
-- **Policies**: [SaaS Manager - Redundant Apps](https://github.com/flexera-public/policy_templates/tree/master/saas/fsm/redundant_apps/README.md)
-- **Merged At**: 2023-11-20 22:18:31 UTC
-
----
-
-### PR [#1623](https://github.com/flexera-public/policy_templates/pull/1623): POL-745 SaaS Manager - Renewal Reminder Revamp
-
-#### Description
-
-> This is part of a broader initiative to update our SaaS Manager FSM policies to use up to date APIs. The policy itself has also been revamped along similar lines to other policies.
->
-> From the CHANGELOG:
->
-> - Updated policy to use public SaaS Manager API
-> - Added support for APAC API endpoint
-> - Policy now uses and requires a general Flexera One credential
-> - Added `Applications` parameter to allow user to filter results by application
-> - Incident summary now includes applied policy name
-> - Incident now includes additional fields to provide more context
-> - General code cleanup and normalization
->
-
-#### Metadata
-
-- **Policies**: [SaaS Manager - Renewal Reminder](https://github.com/flexera-public/policy_templates/tree/master/saas/fsm/renewal_reminder/README.md)
-- **Merged At**: 2023-11-20 22:18:21 UTC
-
----
-
-### PR [#1626](https://github.com/flexera-public/policy_templates/pull/1626): POL-745 SaaS Manager - Suspicious Users Revamp
-
-#### Description
-
-> This is part of a broader initiative to update our SaaS Manager FSM policies to use the correct API endpoints for APAC. The policy itself has also been revamped along similar lines to other policies.
->
-> Note: This policy still uses the now-deprecated internal SaaS Manager API. This is because the new API does not yet support the requests this policy needs to make to function. This functionality will be brought to the new API before the old one is decommissioned, and this policy will need to be updated again at that time.
->
-> From the CHANGELOG:
->
-> - Added support for APAC API endpoint
-> - Policy now uses and requires a general Flexera One credential
-> - Incident summary now includes applied policy name
-> - General code cleanup and normalization
->
-
-#### Metadata
-
-- **Policies**: [SaaS Manager - Suspicious Users](https://github.com/flexera-public/policy_templates/tree/master/saas/fsm/suspicious_users/README.md)
-- **Merged At**: 2023-11-20 22:18:07 UTC
 
 ---
 
