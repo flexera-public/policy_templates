@@ -34,6 +34,7 @@ These templates can generate savings estimates for your environment.
 - [AWS Rightsize RDS Instances](./cost/aws/rightsize_rds_instances)
 - [AWS Savings Plan Recommendations](./cost/aws/savings_plan/recommendations)
 - [AWS Superseded EC2 Instances](./cost/aws/superseded_instances)
+- [AWS Untagged Resources](./compliance/aws/untagged_resources)
 - [AWS Unused Classic Load Balancers](./cost/aws/unused_clbs)
 - [AWS Unused IP Addresses](./cost/aws/unused_ip_addresses)
 - [AWS Unused Volumes](./cost/aws/unused_volumes)
@@ -617,7 +618,7 @@ These templates can generate savings estimates for your environment.
   Operational: 28
   SaaS Management: 12
   Security: 74
-:optimization_count: 45
+:optimization_count: 46
 :policy_sets:
   '': 47
   AWS Config: 1
