@@ -1,5 +1,13 @@
 # Changelog
 
+## v4.0
+
+- Several parameters altered to be more descriptive and human-readable
+- Added ability to filter buckets by region and tags
+- Normalized incident export to be consistent with other policies
+- Added additional fields to incident export
+- Streamlined code for better readability and faster execution
+
 ## v3.1
 
 - Updated description of `Account Number` parameter

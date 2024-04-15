@@ -203,15 +203,12 @@ These templates can generate savings estimates for your environment.
 
   - [AWS Rightsize RDS Instances](./cost/aws/rightsize_rds_instances)
 
-- S3
-
-  - [AWS S3 Bucket Intelligent Tiering Check](./cost/aws/s3_storage_policy)
-
 - Storage
 
   - [AWS Object Storage Optimization](./cost/aws/object_storage_optimization)
   - [AWS Old Snapshots](./cost/aws/old_snapshots)
   - [AWS Oversized S3 Buckets](./cost/aws/s3_bucket_size)
+  - [AWS S3 Buckets Without Intelligent Tiering](./cost/aws/s3_storage_policy)
   - [Turbonomic Delete Unattached Volumes Recommendations AWS](./cost/turbonomics/delete_unattached_volumes/aws)
 
 - Usage Discount
@@ -301,6 +298,7 @@ These templates can generate savings estimates for your environment.
   - [Cloud Spend Forecast - Straight-Line (Simple Model)](./cost/flexera/cco/forecasting/straight_line_forecast/simple)
   - [Currency Conversion](./cost/flexera/cco/currency_conversion)
   - [Email Cost Optimization Recommendations](./cost/flexera/cco/email_recommendations)
+  - [Flexera FOCUS Report](./cost/flexera/cco/focus_report)
   - [Low Account Usage](./cost/flexera/cco/low_account_usage)
   - [Low Service Usage](./cost/flexera/cco/low_service_usage)
   - [New Service Usage](./cost/flexera/cco/new_service_usage)
@@ -372,6 +370,7 @@ These templates can generate savings estimates for your environment.
   - [AWS Long Running Instances](./operational/aws/long_running_instances)
   - [AWS Usage Forecast - Number of Instance Hours Used](./operational/aws/total_instance_hours_forecast)
   - [AWS Usage Forecast - Number of Instance vCPUs Used](./operational/aws/total_instance_vcpus_forecast)
+  - [AWS Usage Report - Amount of Instance Memory Used](./operational/aws/total_instance_memory)
   - [AWS Usage Report - Number of Instance Hours Used](./operational/aws/total_instance_hours)
   - [AWS Usage Report - Number of Instance vCPUs Used](./operational/aws/total_instance_vcpus)
 
@@ -614,8 +613,8 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 33
-  Cost: 91
-  Operational: 27
+  Cost: 92
+  Operational: 28
   SaaS Management: 12
   Security: 74
 :optimization_count: 45
@@ -626,7 +625,7 @@ These templates can generate savings estimates for your environment.
   Automation: 1
   Burstable Compute Instances: 1
   CIS: 61
-  Cloud Cost Optimization: 13
+  Cloud Cost Optimization: 14
   Cloud Migration & Modernization: 2
   Committed Use Discount: 1
   Common Bill Ingestion: 2
@@ -673,12 +672,12 @@ These templates can generate savings estimates for your environment.
   Unused IP Addresses: 3
   Unused Load Balancers: 1
   Unused Volumes: 6
-  Usage Report: 7
+  Usage Report: 8
 :providers:
-  AWS: 80
+  AWS: 81
   Azure: 85
   Azure China: 1
-  Flexera: 38
+  Flexera: 39
   Flexera Optima: 1
   GCE: 5
   GitHub: 7
@@ -694,11 +693,11 @@ These templates can generate savings estimates for your environment.
   All: 1
   App Service: 1
   Automation: 1
-  Cloud Cost Optimization: 17
+  Cloud Cost Optimization: 18
   Cloud Migration & Modernization: 2
   CloudTrail: 7
   Common Bill Ingestion: 2
-  Compute: 61
+  Compute: 62
   Config: 1
   DBS: 1
   Databricks: 1
@@ -724,17 +723,17 @@ These templates can generate savings estimates for your environment.
   Policy: 1
   PostgreSQL: 4
   RDS: 4
-  S3: 7
+  S3: 6
   SQL: 15
   SaaS Manager: 9
   Security: 3
-  Storage: 23
+  Storage: 24
   Storage Accounts: 2
   Tags: 2
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 237
+:total_count: 239
 -->
 <!-- End Policy Template Stats -->
 

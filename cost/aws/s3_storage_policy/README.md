@@ -1,16 +1,22 @@
-# AWS S3 Bucket Intelligent Tiering Check
+# AWS S3 Buckets Without Intelligent Tiering
 
-## What it does
+## What It Does
 
-This Policy Template scans all S3 buckets in the given account and checks if the bucket has an intelligent tiering policy configured. If the bucket does not have intelligent tiering enabled an email will be sent to the user-specified email address.
+This Policy Template scans all S3 buckets in the given account and checks if the bucket has an [intelligent tiering](https://docs.aws.amazon.com/AmazonS3/latest/userguide/intelligent-tiering-overview.html) policy configured. An incident is raised with any buckets without such a policy and, optionally, and email is sent.
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
-
-- *Email Address* - Email addresses of the recipients you wish to notify
-- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [more](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
-- *Exclude Tags* - A list of tags used to excluded volumes from the incident.
+- *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
+- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
+- *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
+- *Allow/Deny Regions List* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled. See [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
+- *Exclusion Tags* - The policy will filter resources containing the specified tags from the results. The following formats are supported:
+  - `Key` - Filter all resources with the specified tag key.
+  - `Key==Value` - Filter all resources with the specified tag key:value pair.
+  - `Key!=Value` - Filter all resources missing the specified tag key:value pair. This will also filter all resources missing the specified tag key.
+  - `Key=~/Regex/` - Filter all resources where the value for the specified key matches the specified regex string.
+  - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified tag key.
+- *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
 
 ## Policy Actions
 
@@ -22,11 +28,16 @@ The following policy actions are taken on any resources found to be out of compl
 
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
+### Credential configuration
+
+For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
+
 - [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
   - `s3:ListAllMyBuckets`
-  - `s3:GetBucketlocation`
-  - `s3:GetIntelligentTieringConfiguration`
+  - `s3:GetBucketLocation`
   - `s3:GetBucketTagging`
+  - `s3:GetBucketIntelligentTieringConfiguration`
+  - `sts:GetCallerIdentity`
 
   Example IAM Permission Policy:
 
@@ -38,9 +49,10 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
               "Effect": "Allow",
               "Action": [
                   "s3:ListAllMyBuckets",
-                  "s3:GetBucketlocation",
-                  "s3:GetIntelligentTieringConfiguration",
-                  "s3:GetBucketTagging"
+                  "s3:GetBucketLocation",
+                  "s3:GetBucketTagging",
+                  "s3:GetBucketIntelligentTieringConfiguration",
+                  "sts:GetCallerIdentity"
               ],
               "Resource": "*"
           }
