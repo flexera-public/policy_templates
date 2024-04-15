@@ -7,7 +7,7 @@ severity "low"
 category "Operational"
 default_frequency "monthly"
 info(
-  version: "1.0",
+  version: "2.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Usage Report"
@@ -39,6 +39,23 @@ parameter "param_regions_list" do
   category "Filters"
   label "Allow/Deny Regions List"
   description "A list of allowed or denied regions. Example: 'US East'. Leave blank to check all regions."
+  default []
+end
+
+parameter "param_bc_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Billing Centers"
+  description "Allow or Deny entered Billing Centers."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_bc_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Billing Center List"
+  description "A list of allowed or denied Billing Center names/IDs. Leave blank to check all Billing Centers."
   default []
 end
 
@@ -101,7 +118,7 @@ end
 #GET USAGE DATA FOR INSTANCE TYPES
 datasource "ds_usage_data" do
   request do
-    run_script $js_usage_data, $ds_top_level_bcs, $param_regions_allow_or_deny, $param_regions_list, rs_org_id, rs_optima_host
+    run_script $js_usage_data, $ds_top_level_bcs, $ds_billing_centers, $param_regions_allow_or_deny, $param_regions_list, $param_bc_allow_or_deny, $param_bc_list, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -117,13 +134,36 @@ datasource "ds_usage_data" do
 end
 
 script "js_usage_data", type: "javascript" do
-  parameters "ds_top_level_bcs", "param_regions_allow_or_deny", "param_regions_list", "org_id", "optima_host"
+  parameters "ds_top_level_bcs", "ds_billing_centers", "param_regions_allow_or_deny", "param_regions_list", "param_bc_allow_or_deny", "param_bc_list", "org_id", "optima_host"
   result "request"
   code <<-EOS
   //Get Start and End dates
   var start_date = new Date(), end_date = new Date()
   start_date.setMonth(start_date.getMonth() - 13)
   end_date.setMonth(end_date.getMonth() - 1)
+
+  //Define Billing Center list if applicable
+  var billing_center_ids = []
+  var allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_bc_list.length > 0) {
+    billing_center_ids = _.filter(ds_top_level_bcs, function(bc) {
+      var bc_name = ""
+      var matched_bc = _.find(ds_billing_centers, function(data) { return bc == data.id })
+      
+      if (matched_bc != undefined) {
+        bc_name = matched_bc.name
+
+        if (param_bc_allow_or_deny == "Allow") {
+          return _.contains(param_bc_list, bc) == allow_deny_test[param_bc_allow_or_deny] || _.contains(param_bc_list, bc_name) == allow_deny_test[param_bc_allow_or_deny]
+        } else {
+          return _.contains(param_bc_list, bc) == allow_deny_test[param_bc_allow_or_deny] && _.contains(param_bc_list, bc_name) == allow_deny_test[param_bc_allow_or_deny]
+        }
+      }
+    })
+  } else {
+    billing_center_ids = ds_top_level_bcs
+  }
 
   //Define Expressions for API Filter 
   var expressions = [
@@ -170,12 +210,13 @@ script "js_usage_data", type: "javascript" do
   
   //POST JSON payload
   payload = {
-    "billing_center_ids": ds_top_level_bcs,
+    "billing_center_ids": billing_center_ids,
     "filter": {
       "type": "and",
       "expressions": expressions
     },
     "dimensions": [
+      "billing_center_id",
       "instance_type",
       "usage_unit"
     ],
