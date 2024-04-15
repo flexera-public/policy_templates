@@ -1,5 +1,10 @@
 # Changelog
 
+## v5.1.0
+
+- Added parameter for *Consider Tag Dimensions* to help mitigate/prevent seeing results for resources which have the tag key/tag value through a normalized Tag Dimension
+- Added *Estimated Savings* field for each resource in the results
+
 ## v5.0
 
 - Added ability to filter resources by tag key, tag key==value, or using regex
