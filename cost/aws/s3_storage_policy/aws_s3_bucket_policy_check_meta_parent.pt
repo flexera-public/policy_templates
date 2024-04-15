@@ -1,14 +1,14 @@
-name "AWS S3 Bucket Intelligent Tiering Check Meta Parent"
+name "AWS S3 Buckets Without Intelligent Tiering Meta Parent"
 rs_pt_ver 20180301
 type "policy"
-short_description "Applies and manages \"child\" [AWS S3 Bucket Intelligent Tiering Check](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_storage_policy) Policies."
+short_description "Applies and manages \"child\" [AWS S3 Buckets Without Intelligent Tiering](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_storage_policy) Policies."
 severity "low"
 category "Cost"
 tenancy "single"
 default_frequency "15 minutes"
 info(
   provider: "AWS",
-  version: "3.1", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "4.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "false"
 )
 
@@ -62,24 +62,52 @@ end
 parameter "param_template_source" do
   type "string"
   label "Child Policy Template Source"
-  description "By default, will use the \"AWS S3 Bucket Intelligent Tiering Check\" Policy Template from Catalog.  Optionally, you can use the \"AWS S3 Bucket Intelligent Tiering Check\" Policy Template uploaded in the current Flexera Project."
+  description "By default, will use the \"AWS S3 Buckets Without Intelligent Tiering\" Policy Template from Catalog.  Optionally, you can use the \"AWS S3 Buckets Without Intelligent Tiering\" Policy Template uploaded in the current Flexera Project."
   default "Published Catalog Template"
   allowed_values "Published Catalog Template", "Uploaded Template"
 end
 
 ## Child Policy Parameters
-parameter "param_exclude_tags" do
+parameter "param_exclusion_tags" do
   type "list"
-  category "User Inputs"
-  label "Exclude Tags"
-  description "A list of tags used to excluded volumes from the incident."
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details"
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  default []
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 credentials "auth_aws" do
-  schemes "aws","aws_sts"
+  schemes "aws", "aws_sts"
   label "AWS"
   description "Select the AWS Credential from the list"
   tags "provider=aws"
@@ -185,7 +213,7 @@ datasource "ds_published_child_policy_information" do
   result do
     encoding "json"
     # Select the published policy that is published by "support@flexera.com" and matches the name of the child policy template
-    collect jq(response, '.items[] | select(.name == "AWS S3 Bucket Intelligent Tiering Check" and .created_by.email == "support@flexera.com")' ) do
+    collect jq(response, '.items[] | select(.name == "AWS S3 Buckets Without Intelligent Tiering" and .created_by.email == "support@flexera.com")' ) do
       field "name", jmes_path(col_item, "name")
       field "href", jmes_path(col_item, "href")
       field "short_description", jmes_path(col_item, "short_description")
@@ -204,7 +232,7 @@ datasource "ds_project_child_policy_information" do
   result do
     encoding "json"
     # Select the uploaded policy that matches the name of the child policy template
-    collect jq(response, '.items[] | select(.name == "AWS S3 Bucket Intelligent Tiering Check")' ) do
+    collect jq(response, '.items[] | select(.name == "AWS S3 Buckets Without Intelligent Tiering")' ) do
       field "name", jmes_path(col_item, "name")
       field "href", jmes_path(col_item, "href")
       field "short_description", jmes_path(col_item, "short_description")
@@ -747,8 +775,8 @@ script "js_ds_combined_bucket_info_combined_incidents", type: "javascript" do
   result = []
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
-    // If the incident summary contains "Buckets found without intelligent tiering policies" then include it in the filter result
-    if (s.indexOf("Buckets found without intelligent tiering policies") > -1) {
+    // If the incident summary contains "AWS S3 Buckets Without Intelligent Tiering Found" then include it in the filter result
+    if (s.indexOf("AWS S3 Buckets Without Intelligent Tiering Found") > -1) {
       _.each(incident["violation_data"], function(violation) {
         violation["incident_id"] = incident["id"];
         result.push(violation);
@@ -767,25 +795,37 @@ end
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
-    # Consolidated incident for Buckets found without intelligent tiering policies
+    # Consolidated incident for AWS S3 Buckets Without Intelligent Tiering Found
   validate $ds_combined_bucket_info_combined_incidents do
-    summary_template "Consolidated Incident: {{ len data }} Buckets found without intelligent tiering policies"
+    summary_template "Consolidated Incident: {{ len data }} AWS S3 Buckets Without Intelligent Tiering Found"
     escalate $esc_email
     
     check eq(size(data), 0)
     export do
       resource_level true
-      field "id" do
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
         label "Bucket Name"
       end
-      field "creation_date" do
-        label "Creation Date"
+      field "tags" do
+        label "Bucket Tags"
       end
       field "region" do
         label "Region"
       end
-      field "tagKeyValue" do
-        label "Tags"
+      field "creation_date" do
+        label "Creation Date"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "ID"
       end
       field "incident_id" do
         label "Child Incident ID"
