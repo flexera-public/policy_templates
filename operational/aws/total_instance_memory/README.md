@@ -14,7 +14,10 @@ This policy allows the user to specify a *Region* to filter results by, and will
 
 This policy has the following input parameters required when launching the policy.
 
-- *Region* - Name of the AWS Region to filter by. Example: 'US West (Oregon)'. Leave this blank for 'Organization' scope.
+- *Allow/Deny Regions* - Allow or Deny entered regions.
+- *Allow/Deny Regions List* - A list of allowed or denied regions. Example: 'US East'. Leave blank to check all regions.
+- *Allow/Deny Billing Centers* - Allow or Deny entered Billing Centers.
+- *Allow/Deny Billing Center List* - A list of allowed or denied Billing Center names/IDs. Leave blank to check all Billing Centers.
 - *Email addresses to notify* - A list of email addresses to notify.
 
 ## Policy Actions
