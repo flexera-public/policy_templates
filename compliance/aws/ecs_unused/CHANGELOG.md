@@ -1,5 +1,14 @@
 # Changelog
 
+## v4.0
+
+- Several parameters altered to be more descriptive and human-readable
+- Added ability to filter resources by multiple tag key:value pairs and with regex
+- Normalized incident export to be consistent with other policies
+- Added human-readable recommendation to incident export
+- Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera credential
+
 ## v3.1
 
 - Updated description of `Account Number` parameter
