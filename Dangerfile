@@ -1,375 +1,1246 @@
-# DangerFile
-# https://danger.systems/reference.html
-# Tests located in .dangerfile directory
+# DangerFile Policy Tests
+# See ./Dangerfile for more details
 
 ###############################################################################
-# Required Libraries
+# Methods: Policy
 ###############################################################################
 
-require 'uri'
-require 'yaml'
+### Unmodified README test
+# Verify that .pt file also has an updated README
+def policy_unmodified_readme?(file, changed_readme_files)
+  fail_message = ""
 
-###############################################################################
-# Required External Files
-###############################################################################
+  # Get file path for readme file
+  file_sections = file.split('/')
+  file_sections.pop
+  readme_file_path = file_sections.join('/') + "/README.md"
 
-require_relative '.dangerfile/policy_parser'
-require_relative '.dangerfile/github_tests'
-require_relative '.dangerfile/general_tests'
-require_relative '.dangerfile/code_tests'
-require_relative '.dangerfile/readme_tests'
-require_relative '.dangerfile/changelog_tests'
-require_relative '.dangerfile/policy_tests'
-
-###############################################################################
-# File Sorting
-###############################################################################
-
-# Create lists of files based on specific attributes for testing
-# Renamed Files.
-renamed_files = git.renamed_files.collect{ |r| r[:before] }
-# Changed Files. Ignores renamed files to prevent errors on files that don't exist
-changed_files = git.added_files + git.modified_files - renamed_files
-# Changed Dangerfile
-changed_dangerfiles = changed_files.select{ |file| file == "Dangerfile" || file.start_with?(".dangerfile/") }
-# Changed Dot Files
-changed_dot_files = changed_files.select{ |file| file.start_with?(".") && !file.start_with?(".dangerfile/") }
-# Changed Config Files
-config_files = ["Gemfile", "Gemfile.lock", "Rakefile", "package.json", "package-lock.json"]
-changed_config_files = changed_files.select{ |file| config_files.include?(file) }
-# Changed Ruby files.
-changed_rb_files = changed_files.select{ |file| file.end_with?(".rb") || file == "Dangerfile" || file == "Rakefile" }
-# Changed Python files.
-changed_py_files = changed_files.select{ |file| file.end_with?(".py") }
-# Changed Policy Template files. Ignore meta policy files.
-changed_pt_files = changed_files.select{ |file| file.end_with?(".pt") && !file.end_with?("meta_parent.pt") }
-# Changed Meta Policy Template files.
-changed_meta_pt_files = changed_files.select{ |file| file.end_with?("meta_parent.pt") }
-# Changed README files.
-changed_readme_files = changed_files.select{ |file| file.end_with?("/README.md") && (file.start_with?("automation/") || file.start_with?("compliance/") || file.start_with?("cost/") || file.start_with?("operational/") || file.start_with?("saas/") || file.start_with?("security/")) }
-# Changed Changelog files.
-changed_changelog_files = changed_files.select{ |file| file.end_with?("/CHANGELOG.md") }
-# Changed MD files other than the above.
-changed_misc_md_files = changed_files.select{ |file| file.end_with?(".md") && !file.end_with?("/CHANGELOG.md") && !file.start_with?("HISTORY.md") && !(file.end_with?("/README.md") && (file.start_with?("automation/") || file.start_with?("compliance/") || file.start_with?("cost/") || file.start_with?("operational/") || file.start_with?("saas/") || file.start_with?("security/"))) }
-# Changed JSON files.
-changed_json_files = changed_files.select{ |file| file.end_with?(".json") }
-# Changed YAML files.
-changed_yaml_files = changed_files.select{ |file| file.end_with?(".yaml") || file.end_with?(".yml") }
-# New Policy Template files. Ignore meta policy files.
-new_pt_files = git.added_files.select{ |file| file.end_with?(".pt") && !file.end_with?("meta_parent.pt") }
-
-###############################################################################
-# Github Pull Request Testing
-###############################################################################
-
-test = github_pr_bad_title?(github); warn test if test
-test = github_pr_missing_summary?(github); fail test if test
-test = github_pr_missing_labels?(github); fail test if test
-test = github_pr_missing_ready_label?(github); message test if test
-
-###############################################################################
-# Modified Important Files Testing
-###############################################################################
-
-modified_important_files = changed_dangerfiles + changed_dot_files + changed_config_files
-modified_important_files = modified_important_files.join("\n")
-
-# Consolidate changed files into a single warning to save space
-warn "**Important Files Modified**\nPlease make sure these modifications were intentional and have been tested. These files are necessary for configuring the Github repository and managing automation.\n\n" + modified_important_files.strip if !modified_important_files.empty?
-
-###############################################################################
-# All Files Testing
-###############################################################################
-
-changed_files.each do |file|
-  # Perform a basic text lint on all changed files
-  test = general_textlint?(file); warn test if test
-end
-
-###############################################################################
-# Ruby File Testing
-###############################################################################
-
-# Perform a lint check on changed Ruby files
-changed_rb_files.each do |file|
-  # Raise warning if outdated terminology found
-  test = general_outdated_terminology?(file); warn test if test
-
-  # Raise error if code errors found
-  test = code_ruby_errors?(file); fail test if test
-
-  # Rubocop linting currently disabled. It is *very* verbose.
-  #test = code_rubocop_problems?(file); warn test if test
-end
-
-###############################################################################
-# Python File Testing
-###############################################################################
-
-# Perform a lint check on changed Python files
-changed_py_files.each do |file|
-  # Raise warning if outdated terminology found
-  test = general_outdated_terminology?(file); warn test if test
-
-  # Raise error if code errors found
-  test = code_python_errors?(file); fail test if test
-end
-
-###############################################################################
-# JSON/YAML File Testing
-###############################################################################
-
-changed_json_files.each do |file|
-  # Raise warning if outdated terminology found
-  test = general_outdated_terminology?(file); warn test if test
-
-  # Look for out of place JSON files
-  test = code_json_bad_location?(file); fail test if test
-
-  # Lint test JSON files
-  test = code_json_errors?(file); fail test if test
-end
-
-changed_yaml_files.each do |file|
-  # Raise warning if outdated terminology found
-  test = general_outdated_terminology?(file); warn test if test
-
-  # Look for out of place YAML files
-  test = code_yaml_bad_location?(file); fail test if test
-
-  # Lint test YAML files
-  test = code_yaml_errors?(file); fail test if test
-end
-
-###############################################################################
-# README Testing
-###############################################################################
-
-# Check README.md for issues for each file
-changed_readme_files.each do |file|
-  # Run Danger spell check on file
-  general_spellcheck?(file)
-
-  # Raise warning if outdated terminology found
-  test = general_outdated_terminology?(file); warn test if test
-
-  # Raise error if the file contains any bad urls
-  test = general_bad_urls?(file); fail test if test
-
-  # Raise error if improper markdown is found via linter
-  test = general_bad_markdown?(file); fail test if test
-
-  # Raise error if README is missing required sections
-  test = readme_missing_sections?(file); fail test if test
-
-  # Raise error if README sections are out of order
-  test = readme_sections_out_of_order?(file); fail test if test
-
-  # Raise error if README credentials are formatted incorrectly
-  test = readme_invalid_credentials?(file); fail test if test
-end
-
-###############################################################################
-# CHANGELOG Testing
-###############################################################################
-
-# Check CHANGELOG.md for issues for each file
-changed_changelog_files.each do |file|
-  # Raise error if the file contains any bad urls
-  test = general_bad_urls?(file); fail test if test
-
-  # Raise error if improper markdown is found via linter
-  test = general_bad_markdown?(file); fail test if test
-
-  # Raise error if CHANGELOG is incorrectly formatted
-  test = changelog_bad_formatting?(file); fail test if test
-end
-
-###############################################################################
-# Misc. Markdown Testing
-###############################################################################
-
-# Check Markdown files for issues for each file
-changed_misc_md_files.each do |file|
-  # Run Danger spell check on file
-  general_spellcheck?(file)
-
-  # Raise warning if outdated terminology found
-  test = general_outdated_terminology?(file); warn test if test
-
-  # Raise error if the file contains any bad urls
-  test = general_bad_urls?(file); fail test if test
-
-  # Raise error if improper markdown is found via linter
-  test = general_bad_markdown?(file); fail test if test
-end
-
-###############################################################################
-# Policy Testing
-###############################################################################
-
-# Load external YAML file for testing
-permissions_yaml = YAML.load_file('tools/policy_master_permission_generation/validated_policy_templates.yaml')
-
-# Check policies for issues for each file
-changed_pt_files.each do |file|
-  # Run policy through various methods that test for problems.
-  # These methods will return false if no problems are found.
-  # Otherwise, they return the warning or error message that should be raised.
-
-  # Raise error if policy changed but changelog has not been
-  test = policy_unmodified_changelog?(file, changed_changelog_files); fail test if test
-
-  # Raise warning if policy changed but readme has not been
-  test = policy_unmodified_readme?(file, changed_readme_files); warn test if test
-
-  # Raise error if policy filename/path contains any uppercase letters
-  test = policy_bad_filename_casing?(file); fail test if test
-
-  # Raise error if policy short_description is missing valid README link
-  test = policy_bad_readme_link?(file); fail test if test
-
-  # Raise warning if policy won't be published
-  test = policy_unpublished?(file); warn test if test
-
-  # Raise warning if policy's name has changed
-  test = policy_name_changed?(file); warn test if test
-
-  # Raise warning if outdated terminology found
-  test = general_outdated_terminology?(file); warn test if test
-
-  # Raise error if the file contains any bad urls
-  test = general_bad_urls?(file); fail test if test
-
-  # Run policy through fpt testing. Only raise error if there is a syntax error.
-  test = policy_fpt_syntax_error?(file); fail test if test
-
-  # Raise warning if policy contains invalid indentation
-  test = policy_bad_indentation?(file); warn test if test
-
-  # Raise errors or warnings if bad metadata is found
-  test = policy_bad_metadata?(file, "name"); fail test if test
-  test = policy_bad_metadata?(file, "short_description"); fail test if test
-  test = policy_bad_metadata?(file, "long_description"); fail test if test
-  test = policy_bad_metadata?(file, "category"); fail test if test
-  test = policy_bad_metadata?(file, "default_frequency"); fail test if test
-  test = policy_bad_metadata?(file, "severity"); fail test if test
-  test = policy_bad_metadata?(file, "info"); fail test if test
-
-  # Raise errors or warnings if bad info block metadata is found
-  if !test
-    info_test = policy_missing_info_field?(file, "version"); fail info_test if info_test
-    info_test = policy_missing_info_field?(file, "provider"); fail info_test if info_test
-    info_test = policy_missing_info_field?(file, "service"); warn info_test if info_test
-    info_test = policy_missing_info_field?(file, "policy_set"); warn info_test if info_test
+  if !File.exist?(readme_file_path)
+    fail_message = "**#{file}**\nPolicy template has no README.md file. Please create this file and document the policy's functionality within."
+  elsif !changed_readme_files.include?(readme_file_path)
+    fail_message = "**#{file}**\nPolicy template updated but associated README.md file has not been. Please verify that any necessary changes have been made to the README."
   end
 
-  # Raise error if policy and changelog do not have matching version numbers
-  test = policy_changelog_mismatch?(file); fail test if test
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
 
-  # Raise error if there is a mismatch between the policy's credentials and the README
-  test = policy_readme_missing_credentials?(file); fail test if test
+### Unmodified CHANGELOG test
+# Verify that .pt file also has an updated CHANGELOG
+def policy_unmodified_changelog?(file, changed_changelog_files)
+  fail_message = ""
 
-  # Raise error if policy sections are out of order
-  test = policy_sections_out_of_order?(file); fail test if test
+  # Get file path for changelog file
+  file_sections = file.split('/')
+  file_sections.pop
+  changelog_file_path = file_sections.join('/') + "/CHANGELOG.md"
 
-  # Raise error of code blocks exist in policy that aren't used anywhere
-  test = policy_orphaned_blocks?(file, "parameter"); fail test if test
-  test = policy_orphaned_blocks?(file, "credentials"); fail test if test
-  test = policy_orphaned_blocks?(file, "pagination"); fail test if test
-  test = policy_orphaned_blocks?(file, "datasource"); fail test if test
-  test = policy_orphaned_blocks?(file, "script"); fail test if test
-  test = policy_orphaned_blocks?(file, "escalation"); fail test if test
-  test = policy_orphaned_blocks?(file, "define"); fail test if test
+  if !File.exist?(changelog_file_path)
+    fail_message = "**#{file}**\nPolicy template has no CHANGELOG.md file. Please create this file and document the policy's version changes within."
+  elsif !changed_changelog_files.include?(changelog_file_path)
+    fail_message = "**#{file}**\nPolicy template updated but associated CHANGELOG.md file has not been. Please increment version number and update CHANGELOG.md accordingly."
+  end
 
-  # Raise error if policy blocks are not grouped together by type
-  test = policy_blocks_ungrouped?(file); fail test if test
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
 
-  # Report on missing policy section comments
-  test = policy_missing_section_comments?(file, "parameter"); fail test if test
-  test = policy_missing_section_comments?(file, "credentials"); fail test if test
-  test = policy_missing_section_comments?(file, "pagination"); fail test if test
-  test = policy_missing_section_comments?(file, "datasource"); fail test if test
-  test = policy_missing_section_comments?(file, "policy"); fail test if test
-  test = policy_missing_section_comments?(file, "escalation"); fail test if test
-  test = policy_missing_section_comments?(file, "cwf"); fail test if test
+### Policy syntax error test
+# Return false if no syntax errors are found using fpt.
+def policy_fpt_syntax_error?(file)
+  fpt = `[ -x ./fpt ] && ./fpt check #{file} | grep -v Checking`
 
-  # Report on invalidly named code blocks
-  test = policy_bad_block_name?(file, "parameter"); fail test if test
-  test = policy_bad_block_name?(file, "credentials"); fail test if test
-  test = policy_bad_block_name?(file, "pagination"); fail test if test
-  test = policy_bad_block_name?(file, "datasource"); fail test if test
-  test = policy_bad_block_name?(file, "script"); fail test if test
-  test = policy_bad_block_name?(file, "policy"); fail test if test
-  test = policy_bad_block_name?(file, "escalation"); fail test if test
+  # Return errors if any are found. Otherwise, return false
+  return "**#{file}**\nfpt has detected errors:\n\n#{fpt}" if !fpt.empty?
+  return false
+end
 
-  # Report on invalid/deprecated code blocks
-  test = policy_deprecated_code_blocks?(file, "permission"); warn test if test
-  test = policy_deprecated_code_blocks?(file, "resources"); warn test if test
+### Filename Casing test
+# Verify that the filename is in lowercase
+def policy_bad_filename_casing?(file)
+  fail_message = ""
 
-  # Report on missing fields in code blocks
-  fields_to_check = [
-    { block: "parameter", fields: ["type", "category", "label", "description"] },
-    { block: "credentials", fields: ["schemes", "tags", "label", "description"] },
-    { block: "escalation", fields: ["automatic", "label", "description"] }
-  ]
+  if file.match?(/[A-Z]/)
+    fail_message = "**#{file}**\nPolicy template name and file path should be in lowercase. Please remove any uppercase [A-Z] characters."
+  end
 
-  fields_to_check.each do |item|
-    item[:fields].each do |field|
-      test = policy_block_missing_field?(file, item[:block], field); fail test if test
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### README Link test
+# Verify that the readme in the short_description is valid
+def policy_bad_readme_link?(file)
+  fail_message = ""
+
+  pp = PolicyParser.new
+  pp.parse(file)
+  short_description = pp.parsed_short_description
+
+  file_path = file.split('/')
+  file_path.pop
+  file_url = "https://github.com/flexera-public/policy_templates/tree/master/" + file_path.join('/')
+
+  url_regex = /https:\/\/[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+(?:\/[^\s]*[^\s)])?/
+  url_list = short_description.scan(url_regex)
+
+  good_urls = 0
+  bad_urls = 0
+
+  url_list.each do |url|
+    if url.include?("github.com")
+      bad_urls += 1 if url != file_url && url != file_url + "/"
+      good_urls += 1 unless url != file_url && url != file_url + "/"
     end
   end
 
-  # Raise warning, not error, if parameter block is missing a default field.
-  # This is because there are occasionally legitimate reasons to not have a default
-  test = policy_block_missing_field?(file, "parameter", "default")
-
-  if test
-    warn test + "\n\nWhile not required, it is recommended that every parameter have a default value unless user input for that parameter is required and too specific for any default value to make sense"
+  if bad_urls > 0 || good_urls == 0
+    fail_message = "**#{file}**\nPolicy `short_description` is missing a valid link to the policy README. Please ensure that the following link is present in the `short_description`:\n\n#{file_url}/"
   end
 
-  # Raise warning, not error, if a datasource and the script it calls have mismatched names.
-  # Warning because there are occasionally legitimate reasons to do this.
-  test = policy_ds_js_name_mismatch?(file); warn test if test
-
-  # Raise error if run_script statements with incorrect parameter ordering are found
-  test = policy_run_script_incorrect_order?(file); fail test if test
-
-  # Raise error if code blocks have fields in improper order
-  test = policy_block_fields_incorrect_order?(file, "parameter"); fail test if test
-  test = policy_block_fields_incorrect_order?(file, "credentials"); fail test if test
-  test = policy_block_fields_incorrect_order?(file, "pagination"); fail test if test
-  test = policy_block_fields_incorrect_order?(file, "datasource"); fail test if test
-  test = policy_block_fields_incorrect_order?(file, "script"); fail test if test
-  test = policy_block_fields_incorrect_order?(file, "policy"); fail test if test
-  test = policy_block_fields_incorrect_order?(file, "escalation"); fail test if test
-
-  # Raise error if recommendation policy is missing required export fields
-  test = policy_missing_recommendation_fields?(file, "required"); fail test if test
-
-  # Raise warning if recommendation policy is missing recommended export fields
-  test = policy_missing_recommendation_fields?(file, "recommended"); warn test if test
-
-  # Raise error if policy has invalid Github links in datasources
-  test = policy_bad_github_datasources?(file); fail test if test
-
-  # Raise warning if policy has any datasources using http instead of https
-  test = policy_http_connections?(file); warn test if test
-
-  # Raise warning if improper spacing between comma-separated items found
-  test = policy_bad_comma_spacing?(file); warn test if test
-
-  # Raise error if policy is not in the master permissions file.
-  # Raise warning if policy is in this file, but datasources have been added.
-  test = policy_missing_master_permissions?(file, permissions_yaml); fail test if test
-  ds_test = policy_new_datasource?(file, permissions_yaml); warn ds_test if ds_test && !test
+  return fail_message.strip if !fail_message.empty?
+  return false
 end
 
-###############################################################################
-# Meta Policy Testing
-###############################################################################
+### Publish test
+# Return false if policy info block is missing publish field or publish is set to a value other than "false"
+def policy_unpublished?(file)
+  pp = PolicyParser.new
+  pp.parse(file)
 
-# Check meta policies for issues for each file
-changed_meta_pt_files.each do |file|
-  # TBD
+  info = pp.parsed_info
+
+  fail_message = ""
+
+  if !info[:publish].nil?
+    if info[:publish].downcase == "false"
+      fail_message = "**#{file}**\nPolicy will not be published in the public catalog. If this is not the intended behavior, remove the `publish` field from the policy's info metadata block."
+    end
+  end
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### Name change test
+# Return false if policy's name has not changed
+def policy_name_changed?(file)
+  # Get the diff to see only the new changes
+  diff = git.diff_for_file(file)
+
+  fail_message = ""
+
+  diff.patch.each_line do |line|
+    if line.start_with?('-name "')
+      fail_message = "**#{file}**\nPolicy's name has been changed. Please ensure that this is intentional and that the README has been updated accordingly. Once this change is merged, the old version of the policy may need to be manually removed from the public catalog."
+      break
+    end
+  end
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### Bad Indentation test
+# Verify that everything is properly indented
+def policy_bad_indentation?(file)
+  # Store contents of file for direct analysis
+  policy_code = File.read(file)
+
+  # Message to return of test fails
+  fail_message = ""
+
+  indent_level = 0
+  code_block = false
+  eos_block = false
+  define_block = false
+
+  policy_code.each_line.with_index do |line, index|
+    break if line.strip.start_with?('# Meta Policy [alpha]')
+
+    line_number = index + 1
+    indentation = line.match(/\A\s*/).to_s.length
+
+    # Skip blocks of EOS/EOF text and define blocks, since these contain arbitrarily spaced code/text
+    code_block = false if code_block && line.strip == "EOS" || line.strip == "EOF"
+    eos_block = false if eos_block && line.strip == "EOS" || line.strip == "EOF"
+    define_block = false if define_block && line.start_with?("end")
+
+    if !code_block && !define_block && !eos_block
+      indent_level -= 2 if line.strip == "end" || line.strip == ")"
+
+      if indentation != indent_level && !line.strip.empty? && line.strip != "EOS" && line.strip != "EOF"
+        fail_message += "Line #{line_number.to_s}: Expected indentation of #{indent_level.to_s} spaces but found #{indentation} spaces.\n"
+      end
+
+      indent_level += 2 if line.strip.end_with?(" do") || line.start_with?("info(")
+
+      # We only check EOS blocks if they are for the code field
+      code_block = true if line.include?("<<-") && line.include?("code")
+      eos_block = true if line.include?("<<-") && !line.include?("code")
+      define_block = true if line.start_with?("define ") && line.strip.end_with?(" do")
+
+    # If we're within one of these blocks, at least make sure we're 2 spaces indented
+    elsif (code_block || define_block) && indentation < 2 && !line.strip.empty?
+      fail_message += "Line #{line_number.to_s}: Expected indentation of at least two spaces within code/text block.\n"
+    end
+  end
+
+  fail_message = "**#{file}**\nPolicy Template has indentation issues. Code should be indented with 2 spaces inside each do/end block, info() block, and EOS block, with additional spacing for nested blocks as appropriate:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### Metadata test
+# Return false if policy metadata has missing or problematic field
+def policy_bad_metadata?(file, field_name)
+  # Valid values
+  # https://docs.flexera.com/flexera/EN/Automation/PoliciesList.htm
+  categories = [ 'cost', 'compliance', 'operational', 'saas management', 'security' ]
+  frequencies = [ '15 minutes', 'hourly', 'daily', 'weekly', 'monthly' ]
+  severities = [ 'low', 'medium', 'high', 'critical' ]
+
+  pp = PolicyParser.new
+  pp.parse(file)
+
+  name = pp.parsed_name
+  short_description = pp.parsed_short_description
+  long_description = pp.parsed_long_description
+  category = pp.parsed_category
+  default_frequency = pp.parsed_default_frequency
+  severity = pp.parsed_severity
+  info = pp.parsed_info
+
+  fail_message = ""
+
+  if field_name == "name"
+    fail_message += "Please add a name field.\n\n" if !name
+    fail_message += "Please add a value other than an empty string to the name field.\n\n" if name && name == ""
+  end
+
+  if field_name == "short_description"
+    fail_message += "Please add a short_description field.\n\n" if !short_description
+    fail_message += "Please add a value other than an empty string to the short_description field.\n\n" if short_description && short_description == ""
+  end
+
+  if field_name == "long_description"
+    fail_message += "Please add a long_description field with an empty string as its value.\n\n" if !long_description
+    fail_message += "Please make the long_description field an empty string.\n\n" if long_description && long_description != ""
+  end
+
+  if field_name == "category"
+    fail_message += "Please add a category field.\n\n" if !category
+    fail_message += "The Category is not valid: #{category}. Valid Categories include #{categories.join(', ')}\n\n" if category && !categories.include?(category.downcase)
+    fail_message += "The First letter of Category is not capitalized: #{category}.\n\n" if category !~ /^[A-Z]/
+  end
+
+  if field_name == "default_frequency"
+    fail_message += "Please add a default_frequency field.\n\n" if !default_frequency
+    fail_message += "The default_frequency is not valid: #{default_frequency}. Valid frequencies include #{frequencies.join(', ')}\n\n" if default_frequency && !frequencies.include?(default_frequency)
+  end
+
+  if field_name == "severity"
+    fail_message += "Please add a severity field.\n\n" if !severity
+    fail_message += "The severity is not valid: #{severity}. Valid severities include #{severities.join(', ')}\n\n" if severity && !severities.include?(severity)
+  end
+
+  if field_name == "info"
+    fail_message += "Please add an info field.\n\n" if info.nil?
+  end
+
+  fail_message = "**#{file}**\nBad #{field_name} metadata found:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### Info block test
+# Return false if policy info block has missing or problematic fields
+def policy_missing_info_field?(file, field_name)
+  pp = PolicyParser.new
+  pp.parse(file)
+
+  info = pp.parsed_info
+
+  fail_message = ""
+
+  if info.nil?
+    fail_message += "Please add the info field.\n\n" if info.nil?
+  else
+    if field_name == "version"
+      fail_message += "Please add version to the info field.\n\n" if info[:version].nil?
+    end
+
+    if field_name == "provider"
+      fail_message += "Please add provider to the info field.\n\n" if info[:provider].nil?
+    end
+
+    if field_name == "service"
+      fail_message += "Should this include service in the info field?\n\n" if info[:service].nil?
+    end
+
+    if field_name == "policy_set"
+      fail_message += "Should this include policy_set in the info field?\n\n" if info[:policy_set].nil?
+    end
+  end
+
+  fail_message = "**#{file}**\nBad #{field_name} info metadata field found:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### Changelog Version Test
+# Return false if policy's version number matches the latest entry in the CHANGELOG
+def policy_changelog_mismatch?(file)
+  fail_message = ""
+
+  # Derive path to CHANGELOG file from file name/path
+  file_parts = file.split('/')
+  file_parts.pop
+  changelog_file = file_parts.join('/') + "/CHANGELOG.md"
+
+  # Store contents of file for direct analysis
+  changelog_text = File.read(changelog_file)
+
+  # Get version number from policy
+  policy_version = nil
+
+  pp = PolicyParser.new
+  pp.parse(file)
+  policy_version = pp.parsed_info[:version] if pp.parsed_info
+
+  # Get version number from changelog
+  changelog_version = nil
+
+  if changelog_text && changelog_text.split("\n")[2].start_with?("## v")
+    changelog_version = changelog_text.split("\n")[2].split('v')[1].strip
+  end
+
+  # We ignore situations where one of the values is missing.
+  # Other tests will catch that.
+  if policy_version && changelog_version && policy_version != changelog_version
+    fail_message = "**#{file}**\nVersion number in policy template does not match latest version number in `CHANGELOG.md`. Please review both files to make sure they are correct and aligned with each other."
+  end
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### README Credential Test
+# Return false if policy's README has documentation for all of the credentials in the policy itself
+def policy_readme_missing_credentials?(file)
+  fail_message = ""
+
+  # Derive path to CHANGELOG file from file name/path
+  file_parts = file.split('/')
+  file_parts.pop
+  readme_file = file_parts.join('/') + "/README.md"
+
+  # Store contents of files for direct analysis
+  policy_code = File.read(file)
+  readme_text = File.read(readme_file)
+
+  # Find out which providers have credentials in the policy
+  pol_flexera_credential = false
+  pol_aws_credential = false
+  pol_azure_credential = false
+  pol_google_credential = false
+  pol_oracle_credential = false
+
+  policy_code.each_line.with_index do |line, index|
+    line_number = index + 1
+
+    if line.start_with?("credentials ")
+      pol_flexera_credential = true if line.include?("flexera")
+      pol_aws_credential = true if line.include?("aws")
+      pol_aws_credential = true if line.include?("amazon")
+      pol_azure_credential = true if line.include?("azure")
+      pol_google_credential = true if line.include?("google")
+      pol_google_credential = true if line.include?("gcp")
+      pol_google_credential = true if line.include?("gce")
+      pol_oracle_credential = true if line.include?("oracle")
+      pol_oracle_credential = true if line.include?("oci")
+    end
+  end
+
+  # Find out which providers have credentials in the README
+  readme_flexera_credential = false
+  readme_aws_credential = false
+  readme_azure_credential = false
+  readme_google_credential = false
+  readme_oracle_credential = false
+
+  flexera_regex = /(?i)(?=.*flexera)(?=.*credential)(?=.*provider=flexera).*/
+  aws_regex = /(?i)(?=.*aws)(?=.*credential)(?=.*provider=aws).*/
+  azure_regex = /(?i)(?=.*azure)(?=.*credential)(?=.*provider=azure_rm).*/
+  google_regex = /(?i)(?=.*google)(?=.*credential)(?=.*provider=gce).*/
+  oracle_regex = /(?i)(?=.*oracle)(?=.*credential)(?=.*provider=oracle).*/
+
+  readme_text.each_line.with_index do |line, index|
+    line_number = index + 1
+
+    readme_flexera_credential = true if line.strip.match?(flexera_regex)
+    readme_aws_credential = true if line.strip.match?(aws_regex)
+    readme_azure_credential = true if line.strip.match?(azure_regex)
+    readme_google_credential = true if line.strip.match?(google_regex)
+    readme_oracle_credential = true if line.strip.match?(oracle_regex)
+  end
+
+  # Check for mismatches between policy and README.md
+  if pol_flexera_credential && !readme_flexera_credential && !file.start_with("saas/fsm/")
+    fail_message += "Policy contains Flexera credential but this credential either missing from or incorrectly formatted in the associated `README.md` file.\n\n"
+  end
+
+  if pol_aws_credential && !readme_aws_credential
+    fail_message += "Policy contains AWS credential but this credential either missing from or incorrectly formatted in the associated `README.md` file.\n\n"
+  end
+
+  if pol_azure_credential && !readme_azure_credential
+    fail_message += "Policy contains Azure credential but this credential either missing from or incorrectly formatted in the associated `README.md` file.\n\n"
+  end
+
+  if pol_google_credential && !readme_google_credential
+    fail_message += "Policy contains Google credential but this credential either missing from or incorrectly formatted in the associated `README.md` file.\n\n"
+  end
+
+  if pol_oracle_credential && !readme_oracle_credential
+    fail_message += "Policy contains Oracle credential but this credential either missing from or incorrectly formatted in the associated `README.md` file.\n\n"
+  end
+
+  if !pol_flexera_credential && readme_flexera_credential && !file.start_with?("saas/fsm/")
+    fail_message += "Policy's `README.md` file contains documentation for a Flexera credential that does not exist or is incorrectly named in the policy.\n\n"
+  end
+
+  if !pol_aws_credential && readme_aws_credential
+    fail_message += "Policy's `README.md` file contains documentation for an AWS credential that does not exist or is incorrectly named in the policy.\n\n"
+  end
+
+  if !pol_azure_credential && readme_azure_credential
+    fail_message += "Policy's `README.md` file contains documentation for an Azure credential that does not exist or is incorrectly named in the policy.\n\n"
+  end
+
+  if !pol_google_credential && readme_google_credential
+    fail_message += "Policy's `README.md` file contains documentation for a Google credential that does not exist or is incorrectly named in the policy.\n\n"
+  end
+
+  if !pol_oracle_credential && readme_oracle_credential
+    fail_message += "Policy's `README.md` file contains documentation for an Oracle credential that does not exist or is incorrectly named in the policy.\n\n"
+  end
+
+  fail_message = "**#{file}**\nPolicy Template's credentials and `README.md` documentation do not match:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### Section order test
+# Return false if policy sections are in the correct order.
+def policy_sections_out_of_order?(file)
+  # Store contents of file for direct analysis
+  policy_code = File.read(file)
+
+  # Message to return of test fails
+  fail_message = ""
+
+  # Report back 'true' if policy sections are not properly ordered based on blocks
+  found_metadata = false
+  found_parameters = false
+  found_credentials = false
+  found_pagination = false
+  found_datasources = false
+  found_policy = false
+  found_escalations = false
+  found_cwf = false
+
+  # Ensure that each type of error is only reported once
+  metadata_fail = false
+  parameters_fail = false
+  credentials_fail = false
+  datasources_fail = false
+  policy_fail = false
+  escalations_fail = false
+
+  # Failsafe for meta policy code which won't be in the correct order by design
+  found_meta = false
+
+  policy_code.each_line.with_index do |line, index|
+    line_number = index + 1
+
+    found_meta = true if line.strip.start_with?('# Meta Policy [alpha]')
+
+    if !found_meta
+      found_metadata = true if line.start_with?('name ')
+      found_parameters = true if line.strip.start_with?('parameter ') && line.strip.end_with?('do')
+      found_credentials = true if line.strip.start_with?('credentials ') && line.strip.end_with?('do')
+      found_pagination = true if line.strip.start_with?('pagination ') && line.strip.end_with?('do')
+      found_datasources = true if line.strip.start_with?('datasource ') && line.strip.end_with?('do')
+      found_policy = true if line.strip.start_with?('policy ') && line.strip.end_with?('do')
+      found_escalations = true if line.strip.start_with?('escalation ') && line.strip.end_with?('do')
+      found_cwf = true if line.strip.start_with?('define ') && line.strip.end_with?('do')
+
+      if !metadata_fail && !found_metadata && (found_parameters || found_credentials || found_pagination || found_datasources || found_policy || found_escalations || found_cwf)
+        fail_message += "Line #{line_number.to_s}: Invalid blocks found before metadata\n\n"
+        metadata_fail = true
+      end
+
+      if !parameters_fail && !found_parameters && (found_credentials || found_pagination || found_datasources || found_policy || found_escalations || found_cwf)
+        fail_message += "Line #{line_number.to_s}: Invalid blocks found before parameter\n\n"
+        parameters_fail = true
+      end
+
+      if !credentials_fail && !found_credentials && (found_pagination || found_datasources || found_policy || found_escalations || found_cwf)
+        fail_message += "Line #{line_number.to_s}: Invalid blocks found before credentials\n\n"
+        credentials_fail = true
+      end
+
+      if !datasources_fail && !found_datasources && (found_policy || found_escalations || found_cwf)
+        fail_message += "Line #{line_number.to_s}: Invalid blocks found before datasources\n\n"
+        datasources_fail = true
+      end
+
+      if !policy_fail && !found_policy && (found_escalations || found_cwf)
+        fail_message += "Line #{line_number.to_s}: Invalid blocks found before policy block\n\n"
+        policy_fail = true
+      end
+
+      if !escalations_fail && !found_escalations && (found_cwf)
+        fail_message += "Line #{line_number.to_s}: Invalid blocks found before escalations\n\n"
+        escalations_fail = true
+      end
+    end
+  end
+
+  fail_message = "**#{file}**\nPolicy Template does not have code blocks in the correct order.\nCode blocks should be in the following order: Metadata, Parameters, Credentials, Pagination, Datasources & Scripts, Policy, Escalations, Cloud Workflow, Meta Policy\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### Orphaned block test
+# Return false if code blocks of the specified block_name are all referenced elsewhere in the policy
+def policy_orphaned_blocks?(file, block_name)
+  # Store failure message
+  fail_message = ""
+
+  # Store contents of file for direct analysis
+  policy_code = File.read(file)
+
+  # Get a full list of names for all of the blocks of the specified type
+  block_list = []
+
+  policy_code.each_line.with_index do |line, index|
+    if line.start_with?(block_name + " ")
+      block_list << line.split('"')[1] if block_name != "define"
+      block_list << line.split("(")[0].split(" ")[1] if block_name == "define"
+    end
+  end
+
+  block_list.each do |block|
+    reference_found = false
+
+    policy_code.each_line.with_index do |line, index|
+      if !line.start_with?(block_name + " ") && line.include?(block)
+        reference_found = true
+        break
+      end
+    end
+
+    fail_message += "#{block}\n" if !reference_found
+  end
+
+  fail_message = "**#{file}**\nOrphaned `#{block_name}` code blocks found. Blocks that are not used anywhere in the policy should be removed:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### Block grouping test
+# Return false if code blocks are all grouped together by type.
+def policy_blocks_ungrouped?(file)
+  # Store contents of file for direct analysis
+  policy_code = File.read(file)
+
+  # Store failure message
+  fail_message = ""
+
+  # Report back 'true' if specific block types are not organized together in the policy
+  block_names = [
+    'parameter ', 'credentials ', 'pagination ',
+    'datasource ', 'policy ', 'escalation ', 'define '
+  ]
+
+  block_names.each do |block|
+    found_block = false
+    found_other_blocks = false
+
+    # Failsafe for meta policy code which won't be in the correct order by design
+    found_meta = false
+
+    policy_code.each_line.with_index do |line, index|
+      line_number = index + 1
+
+      found_meta = true if line.strip.start_with?('# Meta Policy [alpha]')
+
+      if !found_meta
+        # If we've found the block we're testing, and then other blocks,
+        # and then found the block we're testing again, return error
+        if line.start_with?(block) && line.strip.end_with?('do') && found_other_blocks
+          fail_message += "Line #{line_number.to_s}: Unsorted #{block.strip} code block found\n"
+          found_block = false
+          found_other_blocks = false
+        end
+
+        # Once we've found the block we're testing, start looking for other blocks
+        if found_block
+          block_names.each do |other_block|
+            if other_block != block
+              found_other_blocks = true if line.start_with?(other_block) && line.strip.end_with?('do')
+            end
+          end
+        end
+
+        found_block = true if line.start_with?(block) && line.strip.end_with?('do')
+      end
+    end
+  end
+
+  fail_message = "**#{file}**\nUngrouped code blocks found. Code blocks should be grouped together in sections by type e.g. all parameter blocks should be next to each other, all credentials blocks should be next to each other, etc. with the exception of Meta Policy code:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### Section comment test
+# Return false if all required policy section comments are present.
+def policy_missing_section_comments?(file, section_name)
+  # Store contents of file for direct analysis
+  policy_code = File.read(file)
+
+  fail_message = ""
+
+  # Set values based on which section we're checking.
+  # block_regex: Test for presence of block
+  # comment_regex: Test for presence of section comment for that block
+  # pretty_name: Name as it should appear in section comment
+  case section_name
+  when "parameter"
+    block_regex = /^parameter\s+"[^"]*"\s+do$/
+    comment_regex = /^\#{79}\n# Parameters\n\#{79}$/
+    pretty_name = "Parameters"
+  when "credentials"
+    block_regex = /^credentials\s+"[^"]*"\s+do$/
+    comment_regex = /^\#{79}\n# Authentication\n\#{79}$/
+    pretty_name = "Authentication"
+  when "pagination"
+    block_regex = /^pagination\s+"[^"]*"\s+do$/
+    comment_regex = /^\#{79}\n# Pagination\n\#{79}$/
+    pretty_name = "Pagination"
+  when "datasource"
+    block_regex = /^datasource\s+"[^"]*"\s+do$/
+    comment_regex = /^\#{79}\n# Datasources & Scripts\n\#{79}$/
+    pretty_name = "Datasources & Scripts"
+  when "policy"
+    block_regex = /^policy\s+"[^"]*"\s+do$/
+    comment_regex = /^\#{79}\n# Policy\n\#{79}$/
+    pretty_name = "Policy"
+  when "escalation"
+    block_regex = /^escalation\s+"[^"]*"\s+do$/
+    comment_regex = /^\#{79}\n# Escalations\n\#{79}$/
+    pretty_name = "Escalations"
+  when "cwf"
+    block_regex = /^define\s+\w+\(\s*([$]\w+\s*,\s*)*([$]\w+\s*)?\)\s*(return\s+([$]\w+\s*,\s*)*([$]\w+\s*)?)?do$/
+    comment_regex = /^\#{79}\n# Cloud Workflow\n\#{79}$/
+    pretty_name = "Cloud Workflow"
+  else
+    block_regex = /.*/
+    comment_regex = /.*/
+    pretty_name = ""
+  end
+
+  # Failure message to return if problem is detected
+  if block_regex.match?(policy_code) && !comment_regex.match?(policy_code)
+    hash_string = "###############################################################################"
+    fail_message += "Policy Template does **not** have a comment indicating where the #{pretty_name} section begins. Please add a comment like the below before the parameters blocks:\n\n#{hash_string}<br>\# #{pretty_name}<br>#{hash_string}\n\n"
+  end
+
+  fail_message = "**#{file}**\nMissing policy section comments:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### Bad block name test
+# Return false if no invalidly named code blocks are found.
+def policy_bad_block_name?(file, block_name)
+  # Store contents of file for direct analysis
+  policy_code = File.read(file)
+
+  fail_message = ""
+
+  # Set values based on which section we're checking.
+  # proper_name: Correct prefix that block name ought to have
+  # block_regex: Test for presence of block with an invalid name
+  case block_name
+  when "parameter"
+    proper_name = "param_"
+    block_regex = /^parameter\s+"(?!param_[^"]+")[^"]*"\s+do$/
+  when "credentials"
+    proper_name = "auth_"
+    block_regex = /^credentials\s+"(?!auth_[^"]+")[^"]*"\s+do$/
+  when "pagination"
+    proper_name = "pagination_"
+    block_regex = /^pagination\s+"(?!pagination_[^"]+")[^"]*"\s+do$/
+  when "datasource"
+    proper_name = "ds_"
+    block_regex = /^datasource\s+"(?!ds_[^"]+")[^"]*"\s+do$/
+  when "script"
+    proper_name = "js_"
+    block_regex = /^script\s+"(?!js_[^"]+)([^"]*)",\s+type:\s+"javascript"\s+do$/
+  when "policy"
+    proper_name = "pol_"
+    block_regex = /^policy\s+"(?!pol_[^"]+")[^"]*"\s+do$/
+  when "escalation"
+    proper_name = "esc_"
+    block_regex = /^escalation\s+"(?!esc_[^"]+")[^"]*"\s+do$/
+  else
+    proper_name = ""
+    block_regex = /.*/
+  end
+
+  policy_code.each_line.with_index do |line, index|
+    line_number = index + 1
+    fail_message += "Line #{line_number.to_s}\n" if block_regex.match?(line)
+  end
+
+  fail_message = "**#{file}**\nInvalidly named #{block_name} blocks. Please ensure all #{block_name} blocks have names that begin with `#{proper_name}`:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### Deprecated block test
+# Return false if no deprecated blocks are found.
+def policy_deprecated_code_blocks?(file, block_name)
+  # Store contents of file for direct analysis
+  policy_code = File.read(file)
+
+  permission_regex = /^permission\s+"[^"]*"\s+do$/
+  resources_regex = /^resources\s+"[^"]*",\s+type:\s+"[^"]*"\s+do$/
+
+  fail_message = ""
+
+  policy_code.each_line.with_index do |line, index|
+    line_number = index + 1
+    fail_message += "Line #{line_number.to_s}: Permission block found\n" if permission_regex.match?(line)
+    fail_message += "Line #{line_number.to_s}: Resources block found\n" if resources_regex.match?(line)
+  end
+
+  fail_message = "**#{file}**\nDeprecated #{block_name} blocks found. It is recommended that the policy be refactored to no longer use these code blocks:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### Missing block field test
+# Return false if specified field is not missing from any of the specified blocks.
+def policy_block_missing_field?(file, block_name, field_name)
+  # Store contents of file for direct analysis
+  policy_code = File.read(file)
+
+  fail_message = ""
+
+  present = false
+  line_number = nil
+
+  policy_code.each_line.with_index do |line, index|
+    # Check if we're entering the block
+    if line.strip.start_with?(block_name + ' ') && line.strip.end_with?('do')
+      present = false
+      line_number = index + 1
+    end
+
+    # Check for the field if we're in a block
+    present = true if line_number && line.strip.start_with?(field_name + ' ')
+
+    # For default field, and default value not present, check for comment declaring no default value
+    # This is to avoid false errors for parameters that require user input
+    present = true if !present && field_name == "default" && line.strip.start_with?('# No default value, user input required')
+
+    # When we reach the end of a block, check if field was present
+    if line.strip == 'end' && line_number
+      fail_message += "Line #{line_number.to_s}\n" unless present
+      line_number = nil
+    end
+  end
+
+  # After looping through all lines, check if we found any missing fields
+  if !fail_message.empty?
+    # Construct resulting fail message with block name and line numbers
+    fail_message = "**#{file}**\n#{block_name} code blocks with missing `#{field_name}` field found. Please add the `#{field_name}` field to these blocks:\n\n" + fail_message + "\n"
+    # If we're checking for default field, add a note about comment `# No default value, user input required`
+    if field_name == "default" && !fail_message.empty?
+      fail_message += "Optionally, you can add a comment within the #{block_name} code blocks to indicate that the parameter requires user input and avoid this message.\n\n - `# No default value, user input required`"
+    end
+    # Return resulting fail message
+    return fail_message.strip
+  else
+    # If we didn't find any missing fields, return false
+    return false
+  end
+end
+
+### Datasource/script name matching test
+# Return message if datasource and script do not have matching names. Otherwise, return false
+def policy_ds_js_name_mismatch?(file)
+  # Store contents of file for direct analysis
+  policy_code = File.read(file)
+
+  fail_message = ""
+  ds_name = nil
+  js_name = nil
+  line_number = nil
+
+  policy_code.each_line.with_index do |line, index|
+    # Stop doing the check once we hit the Meta Policy section
+    if line.strip.start_with?('# Meta Policy [alpha]')
+      break
+    # When we find a datasource, store its name
+    elsif line.strip.start_with?("datasource ") && line.strip.end_with?('do')
+      name_test = line.match(/"([^"]*)"/)
+      ds_name = name_test[1] if name_test
+      line_number = index + 1
+    # When we find a run_script, store its name and compare to datasource
+    elsif line.strip.start_with?("run_script ")
+      name_test = line.match(/run_script \$([a-zA-Z0-9_]+)/)
+      js_name = name_test[1] if name_test
+
+      if ds_name != nil && js_name != nil
+        if ds_name[3..-1] != js_name[3..-1]
+          fail_message += "Line #{line_number.to_s}: #{ds_name} / #{js_name}\n"
+        end
+      end
+
+      # Reset all variables to start the process over for the next datasource we find
+      ds_name = nil
+      js_name = nil
+      line_number = nil
+    end
+  end
+
+  fail_message = "**#{file}**\nDatasources and scripts with mismatched names found. These names should match; for example, a datasource named ds_currency should be paired with a script named js_currency. This convention should only be ignored when the same script is called by multiple datasources. The following datasource/script pairs have mismatched names:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### Script parameter order test
+# Return message if script parameters are not in the correct order. Otherwise, return false
+def policy_run_script_incorrect_order?(file)
+  # Store contents of file for direct analysis
+  policy_code = File.read(file)
+
+  fail_message = ""
+  ds_name = nil
+
+  policy_code.each_line.with_index do |line, index|
+    line_number = index + 1
+
+    # Stop doing the check if we've reached the meta policy section
+    break if line.strip.start_with?('# Meta Policy [alpha]')
+
+    if line.strip.start_with?("datasource ") && line.strip.end_with?('do')
+      name_test = line.match(/"([^"]*)"/)
+      ds_name = name_test[1] if name_test
+    end
+
+    disordered = false
+    iter_index = -5
+
+    if line.strip.start_with?("run_script")
+      # Store a list of all of the parameters for the run_script
+      parameters = line.strip.sub('run_script ', '').split(',').map(&:strip)
+
+      # Remove the first item because it's just the name of the script itself
+      script_name = parameters.shift
+
+      iter_found = false      # Whether we've found a val(iter_item, "") parameter
+      ds_found = false        # Whether we've found a datasource parameter
+      param_found = false     # Whether we've found a parameter parameter
+      constant_found = false  # Whether we've found a constant, like rs_org_id
+      value_found = false     # Whether we've found a raw value, like a number or string
+
+      parameters.each_with_index do |parameter, index|
+        if parameter.start_with?("val(") && parameter.include?("iter_item")
+          iter_found = true
+          iter_index = index
+          disordered = true if ds_found || param_found || constant_found || value_found
+        elsif index == iter_index + 1
+          # Do nothing, since splitting by , is going to split functions like val() into two entries
+        elsif parameter.start_with?('$ds')
+          ds_found = true
+          disordered = true if param_found || constant_found || value_found
+        elsif parameter.start_with?('$param')
+          param_found = true
+          disordered = true if constant_found || value_found
+        elsif /[A-Za-z]/.match(parameter[0]) # If parameter starts with a letter
+          constant_found = true
+          disordered = true if value_found
+        else # Assume a raw value, like a number or string, if none of the above
+          value_found = true
+          iter_index = index if parameter.start_with?("val(")
+        end
+      end
+    end
+
+    fail_message += "Line #{line_number.to_s}: #{ds_name} / run_script #{script_name}\n" if disordered
+  end
+
+  fail_message = "**#{file}**\nrun_script statements found whose parameters are not in the correct order. run_script parameters should be in the following order: script, val(iter_item, *string*), datasources, parameters, variables, raw values:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### Code block field order test
+# Return message if fields for the specified code block type are not in the proper order
+def policy_block_fields_incorrect_order?(file, block_type)
+  # Store contents of file for direct analysis
+  policy_code = File.read(file)
+
+  fail_message = ""
+
+  field_list = []
+  correct_order = nil
+  testing_block = false
+  sub_block = false
+  export_block = false
+  field_block = false
+  block_line_number = 0
+  block_names = [ block_type ]
+  block_id = ""
+  policy_id = nil
+
+  case block_type
+  when "parameter"
+    correct_order = [ "type", "category", "label", "description", "allowed_values", "allowed_pattern", "min_value", "max_value", "default" ]
+  when "credentials"
+    correct_order = [ "schemes", "label", "description", "tags", "aws_account_number" ]
+  when "pagination"
+    correct_order = [ "get_page_marker", "set_page_marker" ]
+  when "datasource"
+    correct_order = [ "auth", "pagination", "verb", "scheme", "host", "path", "query", "header", "body", "body_field", "ignore_status" ]
+  when "script"
+    correct_order = [ "parameters", "result", "code" ]
+  when "policy"
+    correct_order = [ "summary_template", "detail_template", "check", "escalate", "hash_include", "hash_exclude", "export" ]
+    block_names = [ "  validate", "  validate_each" ]
+  when "escalation"
+    correct_order = [ "automatic", "label", "description", "email", "run" ]
+  end
+
+  if correct_order
+    block_names.each do |block_name|
+      policy_code.each_line.with_index do |line, index|
+        line_number = index + 1
+
+        break if line.strip.start_with?('# Meta Policy [alpha]')
+
+        policy_id = line.split('"')[1] if line.start_with?("policy ")
+
+        if testing_block && !sub_block && !export_block && !line.strip.start_with?("end") && !line.strip.start_with?("request do") && !line.strip.start_with?("result do")
+          sub_block = true if line.strip.end_with?(" do") || line.include?("<<-")
+          export_block = true if line.strip == "export do"
+          field_list << line.strip.split(" ")[0]
+        elsif !sub_block && !export_block && line.strip.start_with?("end")
+          filtered_list = field_list.select { |item| correct_order.include?(item) }
+          order_indices = filtered_list.map { |item| correct_order.index(item) }
+
+          if order_indices != order_indices.sort
+            if policy_id && block_type == "policy"
+              fail_message += "Line #{block_line_number.to_s}: policy \"#{policy_id}\" #{block_name.strip}\n"
+            else
+              fail_message += "Line #{block_line_number.to_s}: #{block_name} \"#{block_id}\"\n"
+            end
+          end
+
+          testing_block = false
+          sub_block = false
+          export_block = false
+          field_list = []
+        elsif sub_block && !export_block && (line.strip.start_with?("end") || line.include?("EOS") || line.include?("EOF"))
+          sub_block = false
+        elsif export_block
+          export_block = false if line.strip.start_with?("end") && !field_block
+          field_block = true if line.strip.start_with?("field") && line.strip.end_with?(" do")
+          field_block = false if line.strip.start_with?("end") && field_block
+        end
+
+        if line.start_with?(block_name + " ") && line.strip.end_with?(" do")
+          testing_block = true
+          sub_block = false
+          export_block = false
+          field_list = []
+
+          block_line_number = line_number
+          block_id = line.split('"')[1]
+        end
+      end
+    end
+  end
+
+  fail_message = "**#{file}**\n#{block_type} code blocks found with out of order fields.\nFields should be in the following order: " + correct_order.join(", ") + "\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### Recommendation policy export field test
+# Return message if required recommendation policy fields are missing
+def policy_missing_recommendation_fields?(file, field_type)
+  # Store contents of file for direct analysis
+  policy_code = File.read(file)
+
+  fail_message = ""
+
+  pp = PolicyParser.new
+  pp.parse(file)
+  info = pp.parsed_info
+
+  if field_type == "required"
+    required_fields = [ "accountID", "accountName", "resourceID", "recommendationDetails", "service", "savings", "savingsCurrency", "id" ]
+  end
+
+  if field_type == "recommended"
+    required_fields = [ "resourceType", "resourceName", "region", "tags" ]
+  end
+
+  if !info[:recommendation_type].nil?
+    fields_found = []
+    export_block = false
+    export_line = nil
+    field_block = false
+
+    export_info = []
+
+    policy_code.each_line.with_index do |line, index|
+      line_number = index + 1
+
+      if line.strip.start_with?("export do")
+        export_block = true
+        export_line = line_number
+      end
+
+      if export_block && !field_block && line.strip.start_with?("end")
+        export_block = false
+
+        export_info << {
+          "line": export_line,
+          "list": fields_found
+        }
+
+        export_line = nil
+        fields_found = []
+      end
+
+      if export_block && !field_block && line.strip.start_with?("field")
+        fields_found << line.strip.split('"')[1]
+        field_block = true
+      end
+
+      field_block = false if field_block && line.strip.start_with?("end")
+    end
+
+    export_info.each do |export|
+      missing_fields = []
+
+      required_fields.each do |field|
+        missing_fields << field if !export[:list].include?(field)
+      end
+
+      if missing_fields.length > 0
+        fail_message += "Line #{export[:line].to_s}: " + missing_fields.join(", ") + "\n"
+      end
+    end
+  end
+
+  fail_message = "**#{file}**\nRecommendation policy has export that is missing #{field_type} fields. These fields are scraped by the Flexera platform for dashboards:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+
+### Improper Comma Spacing Test
+# Return false if all comma separated items have a space between them like so: one, two, three
+def policy_bad_comma_spacing?(file)
+  # Store contents of file for direct analysis
+  policy_code = File.read(file)
+
+  fail_message = ""
+
+  policy_code.each_line.with_index do |line, index|
+    line_number = index + 1
+
+    if line.include?(",") && !line.include?("allowed_pattern") && !line.include?('= ","') && !line.include?("(',')") && !line.include?('(",")')
+      if line.strip.match(/,\s{2,}/) || line.strip.match(/\s,/) || line.strip.match(/,[^\s]/)
+        fail_message += "Line #{line_number.to_s}: Possible invalid spacing between comma-separated items found.\nComma separated items should be organized as follows, with a single space following each comma: apple, banana, pear\n\n"
+      end
+    end
+  end
+
+  fail_message = "**#{file}**\nIssues with comma-separation found:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### Github Source File Test
+# Return false if all datasources pointed to assets at raw.githubusercontent.com are valid
+def policy_bad_github_datasources?(file)
+  # Store contents of file for direct analysis
+  policy_code = File.read(file)
+
+  fail_message = ""
+
+  within_datasource = false
+  github_host = false
+  datasource_line = nil
+
+  policy_code.each_line.with_index do |line, index|
+    line_number = index + 1
+
+    if line.start_with?("datasource ")
+      within_datasource = true
+      datasource_line = line_number
+    end
+
+    if within_datasource && line.start_with?("end")
+      within_datasource = false
+      github_host = false
+    end
+
+    if within_datasource
+      github_host = true if line.strip.start_with?('host "raw.githubusercontent.com"')
+
+      if github_host && line.strip.start_with?("path ")
+        if line.include?("/policy_templates/")
+          if !line.include?("/flexera-public/policy_templates/master/")
+            fail_message += "Line #{datasource_line.to_s}: Datasource has outdated or incorrect Github path. Please update `path` field to point to `/flexera-public/policy_templates/master/`.\n\n"
+          else
+            file_path = line.split("/master/")[1].split('"')[0]
+
+            if !File.exist?(file_path)
+              fail_message += "Line #{datasource_line.to_s}: Datasource has invalid link to Github asset. The file `#{file_path}` does not appear to exist. Please make sure the `path` field points to a valid file.\n\n"
+            end
+          end
+        end
+      end
+    end
+  end
+
+  fail_message = "**#{file}**\nInvalid file paths found in datasources:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### Insecure HTTP Test
+# Return false if all datasources use HTTPS instead of HTTP
+def policy_http_connections?(file)
+  # Store contents of file for direct analysis
+  policy_code = File.read(file)
+
+  fail_message = ""
+
+  within_datasource = false
+  within_script = false
+  within_cwf = false
+
+  policy_code.each_line.with_index do |line, index|
+    line_number = index + 1
+
+    within_datasource = true if line.start_with?("datasource ")
+    within_script = true if line.start_with?("script ")
+    within_cwf = true if line.start_with?("define ")
+
+    within_datasource = false if within_datasource && line.strip == "end"
+    within_script = false if within_script && (line.strip == "EOS" || line.strip == "EOF")
+    within_cwf = false if within_cwf && line.strip == "end"
+
+    if within_datasource
+      if line.strip.start_with?("scheme ") && line.strip.split('"')[1] == "http"
+        fail_message += "Line #{line_number.to_s}: Datasource `scheme` field is configured to use insecure `http` connection instead of `https`. Please consider using `https` instead.\n\n"
+      end
+    end
+
+    if within_script
+      if line.include?("scheme") && line.include?(":") && line.include?("http") && !line.include?("https")
+        fail_message += "Line #{line_number.to_s}: Script found where `scheme` field may be configured to use insecure `http` connection instead of `https`. Please consider using `https` instead.\n\n"
+      end
+    end
+
+    if within_cwf
+      if line.include?("https") && line.include?(":") && line.include?("false") && !line.include?("true")
+        fail_message += "Line #{line_number.to_s}: Cloud Workflow found where `https` field may be set to `false`. Please consider using `https` instead.\n\n"
+      end
+    end
+  end
+
+  fail_message = "**#{file}**\nInsecure `http` connections found:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### Master permissions test
+# Return false if master permissions have been recorded for the policy
+def policy_missing_master_permissions?(file, permissions_yaml)
+  # Get the diff to see only the new changes
+  diff = git.diff_for_file(file)
+
+  fail_message = ""
+
+  # Use regex to look for blocks that have a "datasource", "request", and "auth" sections of the datasource
+  # Example String:
+  #   "diff --git a/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt b/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt\nindex 14b3236f..bf6a161d 100644\n--- a/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt\n+++ b/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt\n@@ -193,6 +193,16 @@ datasource \"ds_applied_policy\" do\n   end\n end\n \n+datasource \"ds_applied_policy_test_will_be_removed_later\" do\n+  request do\n+    auth $auth_flexera\n+    host rs_governance_host\n+    path join([\"/api/governance/projects/\", rs_project_id, \"/applied_policies/\", policy_id])\n+    header \"Api-Version\", \"1.0\"\n+    header \"Test\", \"True\"\n+  end\n+end\n+\n # Get region-specific Flexera API endpoints\n datasource \"ds_flexera_api_hosts\" do\n   run_script $js_flexera_api_hosts, rs_optima_host"
+  regex = /datasource.*do(\s)+.*request.*do(\s)+.*auth.*([\s\S])+end([\s\+])+end/
+
+  # First check if the PT file has been manually validated and enabled for permission generation
+  pt_file_enabled = permissions_yaml["validated_policy_templates"].select { |pt| pt.include?(file) }
+
+  if pt_file_enabled.empty? && !file.start_with?("saas/fsm/")
+    # If the PT file has not been manually validated, then print an error message which will block the PR from being merged
+    # This will help improve coverage as we touch more PT files
+    fail_message = "**#{file}**\nPolicy Template file has **not** yet been enabled for automated permission generation. Please help us improve coverage by [following the steps documented in `tools/policy_master_permission_generation/`](https://github.com/flexera-public/policy_templates/tree/master/tools/policy_master_permission_generation) to resolve this."
+  end
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### New datasource test
+# Return false if no new datasources are found.
+def policy_new_datasource?(file, permissions_yaml)
+  # Get the diff to see only the new changes
+  diff = git.diff_for_file(file)
+
+  fail_message = ""
+
+  # Use regex to look for blocks that have a "datasource", "request", and "auth" sections of the datasource
+  # Example String:
+  #   "diff --git a/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt b/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt\nindex 14b3236f..bf6a161d 100644\n--- a/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt\n+++ b/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt\n@@ -193,6 +193,16 @@ datasource \"ds_applied_policy\" do\n   end\n end\n \n+datasource \"ds_applied_policy_test_will_be_removed_later\" do\n+  request do\n+    auth $auth_flexera\n+    host rs_governance_host\n+    path join([\"/api/governance/projects/\", rs_project_id, \"/applied_policies/\", policy_id])\n+    header \"Api-Version\", \"1.0\"\n+    header \"Test\", \"True\"\n+  end\n+end\n+\n # Get region-specific Flexera API endpoints\n datasource \"ds_flexera_api_hosts\" do\n   run_script $js_flexera_api_hosts, rs_optima_host"
+  regex = /datasource.*do(\s)+.*request.*do(\s)+.*auth.*([\s\S])+end([\s\+])+end/
+
+  # First check if the PT file has been manually validated and enabled for permission generation
+  pt_file_enabled = permissions_yaml["validated_policy_templates"].select { |pt| pt.include?(file) }
+
+  if diff && diff.patch =~ regex && !pt_file_enabled.empty?
+    # If the PT file has been manually validated, but there are new datasources, then print a warning message
+    fail_message = "**#{file}**\nDetected new request datasource(s) in Policy Template file. Please verify the README.md has any new permissions that may be required."
+  end
+
+  return fail_message.strip if !fail_message.empty?
+  return false
 end
