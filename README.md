@@ -188,6 +188,10 @@ These templates can generate savings estimates for your environment.
   - [Turbonomic Allocate Virtual Machine Recommendations AWS](./cost/turbonomics/allocate_virtual_machines_recommendations/aws)
   - [Turbonomic Rightsize Virtual Machines Recommendations AWS](./cost/turbonomics/scale_virtual_machines_recommendations/aws)
 
+- Database
+
+  - [AWS Resources Under Extended Support](./cost/aws/extended_support)
+
 - EBS
 
   - [AWS Unused Volumes](./cost/aws/unused_volumes)
@@ -614,7 +618,7 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 33
-  Cost: 92
+  Cost: 93
   Operational: 28
   SaaS Management: 12
   Security: 74
@@ -632,6 +636,7 @@ These templates can generate savings estimates for your environment.
   Common Bill Ingestion: 2
   Database Services: 1
   Databricks: 1
+  Deprecated Resources: 1
   Disallowed Regions: 2
   Forecasting: 4
   Hybrid Use Benefit: 5
@@ -675,7 +680,7 @@ These templates can generate savings estimates for your environment.
   Unused Volumes: 6
   Usage Report: 8
 :providers:
-  AWS: 81
+  AWS: 82
   Azure: 85
   Azure China: 1
   Flexera: 39
@@ -701,6 +706,7 @@ These templates can generate savings estimates for your environment.
   Compute: 62
   Config: 1
   DBS: 1
+  Database: 1
   Databricks: 1
   EBS: 2
   ECS: 1
@@ -734,7 +740,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 239
+:total_count: 240
 -->
 <!-- End Policy Template Stats -->
 
