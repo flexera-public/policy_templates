@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "monthly"
 info(
-  version: "3.7",
+  version: "3.8",
   provider: "Azure",
   service: "Compute",
   policy_set: "Savings Realized"
@@ -191,7 +191,7 @@ EOS
 end
 
 
-# Gather list of bill connections from Optima data
+# Gather list of bill connections from Flexera data
 datasource "ds_bill_connections" do
   request do
     run_script $js_bill_connections, $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host
@@ -205,7 +205,7 @@ datasource "ds_bill_connections" do
 end
 
 script "js_bill_connections", type: "javascript" do
-  parameters "ds_filtered_bcs", "start_date","end_date", "org_id", "optima_host"
+  parameters "ds_filtered_bcs", "start_date", "end_date", "org_id", "optima_host"
   result "request"
   code <<-EOS
   payload = {
@@ -232,21 +232,38 @@ end
 
 # Filter out old Azure EA connections and new Azure EA connections
 datasource "ds_bill_connections_old" do
-  run_script $js_bill_connections_filter, $ds_bill_connections, 0
+  run_script $js_bill_connections_filter, $ds_bill_connections, "ea_old"
 end
 
 datasource "ds_bill_connections_new" do
-  run_script $js_bill_connections_filter, $ds_bill_connections, 7
+  run_script $js_bill_connections_filter, $ds_bill_connections, "ea_new"
+end
+
+datasource "ds_bill_connections_mca_encbi" do
+  run_script $js_bill_connections_filter, $ds_bill_connections, "mca_encbi"
 end
 
 script "js_bill_connections_filter", type:"javascript" do
-  parameters "bill_connections", "index"
+  parameters "bill_connections", "type"
   result "result"
   code <<-EOS
-  bill_sources = _.filter(bill_connections, function(connection) {
-    return connection['bill_source'].indexOf('azure-ea') == index
-  })
-
+  switch (type) {
+    case "ea_old":
+      bill_sources = _.filter(bill_connections, function(connection) {
+        return connection["bill_source"].indexOf("azure-ea") == 0
+      })
+      break;
+    case "ea_new":
+      bill_sources = _.filter(bill_connections, function(connection) {
+        return connection["bill_source"].indexOf("azure-ea") == 7
+      })
+      break;
+    case "mca_encbi":
+      bill_sources = _.filter(bill_connections, function(connection) {
+        return connection["bill_source"].indexOf("cbi-oi-azure-mca") >= 0
+      })
+      break;
+  }
   result = _.uniq(_.compact(_.pluck(bill_sources, 'bill_source')))
 EOS
 end
@@ -308,6 +325,38 @@ datasource "ds_aggregated_costs_new_ri" do
   end
   result do
     encoding "json"
+    collect jmes_path(response, "rows") do
+      field "instance_type", jmes_path(col_item, "dimensions.instance_type")
+      field "region", jmes_path(col_item, "dimensions.region")
+      field "usage_unit", jmes_path(col_item, "dimensions.usage_unit")
+      field "usage_amount", jmes_path(col_item, "metrics.usage_amount")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+      field "month", jmes_path(col_item, "timestamp")
+    end
+  end
+end
+
+datasource "ds_aggregated_costs_mca_encbi_base" do
+  request do
+    run_script $js_get_aggregated_costs, $ds_bill_connections_mca_encbi, $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host, "mca_encbi_base"
+  end
+  result do
+    collect jmes_path(response, "rows") do
+      field "instance_type", jmes_path(col_item, "dimensions.instance_type")
+      field "region", jmes_path(col_item, "dimensions.region")
+      field "usage_unit", jmes_path(col_item, "dimensions.usage_unit")
+      field "usage_amount", jmes_path(col_item, "metrics.usage_amount")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+      field "month", jmes_path(col_item, "timestamp")
+    end
+  end
+end
+
+datasource "ds_aggregated_costs_mca_encbi_ri" do
+  request do
+    run_script $js_get_aggregated_costs, $ds_bill_connections_mca_encbi, $ds_filtered_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host, "mca_encbi_ri"
+  end
+  result do
     collect jmes_path(response, "rows") do
       field "instance_type", jmes_path(col_item, "dimensions.instance_type")
       field "region", jmes_path(col_item, "dimensions.region")
@@ -468,6 +517,58 @@ script "js_get_aggregated_costs", type: "javascript" do
     }
   }
 
+  if (connection_type == 'mca_encbi_base') {
+    filter = {
+      "type": "and",
+      "expressions": [
+         {
+          "type": "or",
+          "expressions": [
+            { "dimension": "service", "type": "equal", "value": "Microsoft.Compute" },
+            { "dimension": "service", "type": "equal", "value": "microsoft.compute" },
+          ]
+        },
+        {
+          "type": "or",
+          "expressions": [
+            { "dimension": "purchase_option", "type": "equal", "value": "On Demand" },
+            { "dimension": "purchase_option", "type": "equal", "value": "on demand" }
+          ]
+        },
+        {
+          "type": "not",
+          "expression": { "dimension": "instance_type", "type": "equal", "value": "None" }
+        }
+      ]
+    }
+  }
+
+  if (connection_type == 'mca_encbi_ri') {
+    filter = {
+      "type": "and",
+      "expressions": [
+         {
+          "type": "or",
+          "expressions": [
+            { "dimension": "service", "type": "equal", "value": "Microsoft.Compute" },
+            { "dimension": "service", "type": "equal", "value": "microsoft.compute" },
+          ]
+        },
+        {
+          "type": "or",
+          "expressions": [
+            { "dimension": "purchase_option", "type": "equal", "value": "Reserved" },
+            { "dimension": "purchase_option", "type": "equal", "value": "reserved" }
+          ]
+        },
+        {
+          "type": "not",
+          "expression": { "dimension": "instance_type", "type": "equal", "value": "None" }
+        }
+      ]
+    }
+  }
+
   // Ensure we're filtering our request to just the specific bill connection
   bill_source_expressions = _.map(bill_sources, function(bill_source) {
     return { "dimension": "bill_source", "type": "equal", "value": bill_source }
@@ -501,11 +602,11 @@ EOS
 end
 
 datasource "ds_savings_realized" do
-  run_script $js_savings_realized, $ds_aggregated_costs_old_base, $ds_aggregated_costs_old_ri, $ds_aggregated_costs_new_base, $ds_aggregated_costs_new_ri, $ds_region_table
+  run_script $js_savings_realized, $ds_aggregated_costs_old_base, $ds_aggregated_costs_old_ri, $ds_aggregated_costs_new_base, $ds_aggregated_costs_new_ri, $ds_aggregated_costs_mca_encbi_base, $ds_aggregated_costs_mca_encbi_ri, $ds_region_table
 end
 
 script "js_savings_realized", type: "javascript" do
-  parameters "ds_aggregated_costs_old_base", "ds_aggregated_costs_old_ri", "ds_aggregated_costs_new_base", "ds_aggregated_costs_new_ri", "ds_region_table"
+  parameters "ds_aggregated_costs_old_base", "ds_aggregated_costs_old_ri", "ds_aggregated_costs_new_base", "ds_aggregated_costs_new_ri", "ds_aggregated_costs_mca_encbi_base", "ds_aggregated_costs_mca_encbi_ri", "ds_region_table"
   result "result"
   code <<-'EOS'
   result = []
@@ -539,8 +640,8 @@ script "js_savings_realized", type: "javascript" do
     }
   })
 
-  base_costs = old_base_mapped.concat(ds_aggregated_costs_new_base)
-  ri_costs = old_ri_mapped.concat(ds_aggregated_costs_new_ri)
+  base_costs = old_base_mapped.concat(ds_aggregated_costs_new_base).concat(ds_aggregated_costs_mca_encbi_base)
+  ri_costs = old_ri_mapped.concat(ds_aggregated_costs_new_ri).concat(ds_aggregated_costs_mca_encbi_ri)
   all_costs = base_costs.concat(ri_costs)
 
   // Get list of Instance Types, Regions, Months
@@ -629,12 +730,28 @@ script "js_savings_realized", type: "javascript" do
 EOS
 end
 
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
 datasource "ds_chart_data" do
-  run_script $js_chart_data, $ds_savings_realized, $ds_applied_policy, $param_chart_type
+  run_script $js_chart_data, $ds_savings_realized, $ds_applied_policy, $ds_currency_code, $param_chart_type
 end
 
 script "js_chart_data", type: "javascript" do
-  parameters "ds_savings_realized", "ds_applied_policy", "param_chart_type"
+  parameters "ds_savings_realized", "ds_applied_policy", "ds_currency_code", "param_chart_type"
   result "result"
   code <<-'EOS'
   // Create report data
@@ -714,7 +831,7 @@ script "js_chart_data", type: "javascript" do
       chart_image: encodeURI("chof=.png"),
       chart_y_axis: encodeURI("chxt=y,x"),
       chart_axis_label: encodeURI(chart_axis_labels),
-      chart_axis_format: encodeURI("chxs=0N*cUSD0sz*|1,min40"),
+      chart_axis_format: encodeURI("chxs=0N*c" + ds_currency_code.value + "0sz*|1,min40"),
       chart_line_style: encodeURI("chls=3|3|3|3|3|3|3|3|3|3|3"),
       chart_line_color: encodeURI("chco=1f5ab8,55b81f,198038,b28600,1192e8,009d9a,005d5d,007d79"),
       chart_data_scale: encodeURI("chds=a"),

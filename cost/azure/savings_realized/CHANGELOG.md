@@ -1,5 +1,10 @@
 # Changelog
 
+## v3.8
+
+- Added support for organizations with Microsoft MCA accounts
+- Policy incident report now presents the savings in the same currency as the organization
+
 ## v3.7
 
 - Added support for organizations with no Microsoft Azure Enterprise Agreement (Legacy) bill connects
