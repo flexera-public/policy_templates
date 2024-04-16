@@ -1,0 +1,425 @@
+name "AWS Resources Under Extended Support"
+rs_pt_ver 20180301
+type "policy"
+short_description "Reports any AWS RDS and EKS resources that are under extended support. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/extended_support) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+category "Cost"
+severity "low"
+default_frequency "weekly"
+info(
+  version: "0.1",
+  provider: "AWS",
+  service: "Database",
+  policy_set: "Deprecated Resources"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email addresses to notify"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_billing_centers" do
+  type "list"
+  category "Filters"
+  label "Billing Center List"
+  description "List of Billing Center names or IDs you want to report on. Leave blank to report on resources in all Billing Centers."
+  default []
+end
+
+parameter "param_accounts_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny AWS Accounts"
+  description "Allow or Deny entered AWS Accounts."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_accounts_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny AWS Accounts List"
+  description "A list of allowed or denied AWS Account IDs/names. Leave blank to check all AWS Accounts."
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+datasource "ds_filtered_bcs" do
+  run_script $js_filtered_bcs, $ds_billing_centers, $param_billing_centers
+end
+
+script "js_filtered_bcs", type: "javascript" do
+  parameters "ds_billing_centers", "param_billing_centers"
+  result "result"
+  code <<-EOS
+  if (param_billing_centers.length == 0) {
+    result = _.filter(ds_billing_centers, function(bc) {
+      return bc['parent_id'] == null || bc['parent_id'] == undefined
+    })
+  } else {
+    result = _.filter(ds_billing_centers, function(bc) {
+      return _.contains(param_billing_centers, bc['id']) || _.contains(param_billing_centers, bc['name'])
+    })
+  }
+EOS
+end
+
+datasource "ds_regions_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/aws/regions.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_regions_table" do
+  run_script $js_regions_table, $ds_regions_reference
+end
+
+script "js_regions_table", type:"javascript" do
+  parameters "ds_regions_reference"
+  result "result"
+  code <<-EOS
+  result = {}
+
+  _.each(ds_regions_reference, function(region) {
+    result[region['name']] = region['region']
+  })
+EOS
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
+end
+
+datasource "ds_flexera_cco_data" do
+  request do
+    run_script $js_flexera_cco_data, $ds_filtered_bcs, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "billing_center_id", jmes_path(col_item, "dimensions.billing_center_id")
+      field "vendor_account", jmes_path(col_item, "dimensions.vendor_account")
+      field "vendor_account_name", jmes_path(col_item, "dimensions.vendor_account_name")
+      field "service", jmes_path(col_item, "dimensions.service")
+      field "region", jmes_path(col_item, "dimensions.region")
+      field "resource_id", jmes_path(col_item, "dimensions.resource_id")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+    end
+  end
+end
+
+script "js_flexera_cco_data", type: "javascript" do
+  parameters "ds_filtered_bcs", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-'EOS'
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
+    body_fields: {
+      dimensions: [
+        "billing_center_id",
+        "vendor_account",
+        "vendor_account_name",
+        "service",
+        "region",
+        "resource_id"
+      ],
+      granularity: "day",
+      start_at: start_date,
+      end_at: end_date,
+      metrics: ["cost_amortized_unblended_adj"],
+      billing_center_ids: _.pluck(ds_filtered_bcs, 'id'),
+      limit: 100000,
+      filter: {
+        "type": "and",
+        "expressions": [
+          {
+            "type": "or",
+            "expressions": [
+              { "dimension": "service", "type": "equal", "value": "AmazonRDS" },
+              { "dimension": "service", "type": "equal", "value": "AmazonEKS" }
+            ]
+          },
+          {
+            "type": "or",
+            "expressions": [
+              { "dimension": "usage_type", "type": "substring", "substring": "ExtendedSupport" },
+              { "dimension": "usage_type", "type": "substring", "substring": "extendedSupport" },
+              { "dimension": "usage_type", "type": "substring", "substring": "Extendedsupport" },
+              { "dimension": "usage_type", "type": "substring", "substring": "extendedsupport" }
+            ]
+          }
+        ]
+      }
+    },
+    headers: {
+      "User-Agent": "RS Policies",
+      "Api-Version": "1.0"
+    }
+  }
+EOS
+end
+
+datasource "ds_flexera_cco_data_filtered" do
+  run_script $js_flexera_cco_data_filtered, $ds_flexera_cco_data, $ds_regions_table, $param_accounts_allow_or_deny, $param_accounts_list, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_flexera_cco_data_filtered", type: "javascript" do
+  parameters "ds_flexera_cco_data", "ds_regions_table", "param_accounts_allow_or_deny", "param_accounts_list", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-'EOS'
+  allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_accounts_list.length > 0) {
+    result = _.filter(ds_flexera_cco_data, function(item) {
+      return _.contains(param_accounts_list, item['vendor_account']) == allow_deny_test[param_accounts_allow_or_deny] || _.contains(param_accounts_list, item['vendor_account_name']) == allow_deny_test[param_accounts_allow_or_deny]
+    })
+  } else {
+    result = ds_flexera_cco_data
+  }
+
+  if (param_regions_list.length > 0) {
+    result = _.filter(result, function(item) {
+      return _.contains(param_regions_list, item['region']) == allow_deny_test[param_regions_allow_or_deny] || _.contains(param_regions_list, ds_regions_table[item['region']]) == allow_deny_test[param_regions_allow_or_deny]
+    })
+  }
+EOS
+end
+
+
+datasource "ds_extended_support_resources" do
+  run_script $js_extended_support_resources, $ds_flexera_cco_data_filtered, $ds_applied_policy, $ds_currency, $ds_billing_centers
+end
+
+script "js_extended_support_resources", type: "javascript" do
+  parameters "ds_flexera_cco_data_filtered", "ds_applied_policy", "ds_currency", "ds_billing_centers"
+  result "result"
+  code <<-'EOS'
+  // Store Billing Center names to match them with their id
+  bc_names = {}
+
+  _.each(ds_billing_centers, function(bc) {
+    bc_names[bc['id']] = bc['name']
+  })
+
+  // Combine costs for individual resources with multiple line items
+  resources_object = {}
+
+  _.each(ds_flexera_cco_data_filtered, function(item) {
+    if (resources_object[item['resource_id']] == undefined) {
+      resources_object[item['resource_id']] = item
+    } else {
+      resources_object[item['resource_id']]['cost'] += item['cost']
+    }
+  })
+
+  result = []
+
+  // Multiple a single day's cost by the average number of days in a month.
+  // The 0.25 is to account for leap years for extra precision.
+  cost_multiplier = 365.25 / 12
+
+  _.each(_.keys(resources_object), function(id) {
+    resource = resources_object[id]
+    cost = Math.round(resource['cost'] * cost_multiplier * 1000) / 1000
+
+    result.push({
+      accountID: resource['vendor_account'],
+      accountName: resource['vendor_account_name'],
+      resourceID: resource['resource_id'],
+      service: resource['service'],
+      region: resource['region'],
+      billing_center: bc_names[resource['billing_center_id']],
+      cost: cost,
+      costCurrency: ds_currency['symbol'],
+      policy_name: ds_applied_policy['name']
+    })
+  })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_extended_support_resources" do
+  validate_each $ds_extended_support_resources do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Resources Under Extended Support Found"
+    check eq(val(item, "resourceID"), "")
+    escalate $esc_email
+    hash_exclude "cost", "costCurrency"
+    export do
+      resource_level true
+      field "billing_center" do
+        label "Billing Center"
+      end
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "cost" do
+        label "Estimated Monthly Cost"
+      end
+      field "costCurrency" do
+        label "Cost Currency"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
