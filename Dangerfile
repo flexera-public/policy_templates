@@ -248,7 +248,7 @@ changed_pt_files.each do |file|
   test = policy_bad_indentation?(file); warn test if test
 
   # Raise error if policy contains multiple empty lines in a row
-  test = policy_consecutive_empty_lines; fail test if test
+  test = policy_consecutive_empty_lines?(file); fail test if test
 
   # Raise errors or warnings if bad metadata is found
   test = policy_bad_metadata?(file, "name"); fail test if test
