@@ -2,11 +2,11 @@
 
 ## What It Does
 
-This policy checks the billing data stored in the Flexera CCO platform for AWS RDS/EKS resources that are under extended support. These resources are outdated and may be more expensive than more modern resources. A report is produced containing a list of these resources, and optionally, an email is sent with this report.
+This policy checks the billing data stored in the Flexera CCO platform for AWS resources that are under extended support. These resources are outdated and AWS charges an extended support fee for continued use. A report is produced containing a list of these resources, and optionally, an email is sent with this report.
 
 ## How It Works
 
-- The policy pulls resource-level billing data from the Flexera CCO platform from 3 days ago. This data is filtered to just those resources with a `Service` of `AmazonRDS` or `AmazonEKS` and a `Usage Type` that contains the string `ExtendedSupport`. Data from 3 days ago is used to ensure that we have available, processed billing data to search through.
+- The policy pulls resource-level billing data from the Flexera CCO platform from 3 days ago. This data is filtered to just those resources with a `Usage Type` that contains the string `ExtendedSupport`. Data from 3 days ago is used to ensure that we have available, processed billing data to search through.
 - The above is filtered by account or region based on user parameters.
 - Finally, the data is normalized by combining costs for individual resources listed multiple times and extrapolating an estimated monthly cost from one day of billing data.
 
