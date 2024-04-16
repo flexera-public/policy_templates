@@ -192,6 +192,36 @@ def policy_bad_indentation?(file)
   return false
 end
 
+### Consecutive Empty Lines test
+# Verify that the policy does not have multiple blank lines in a row
+def policy_consecutive_empty_lines?(file)
+  # Store contents of file for direct analysis
+  policy_code = File.read(file)
+
+  # Message to return of test fails
+  fail_message = ""
+
+  blank_lines_count = 0
+  blank_line_number = nil
+
+  policy_code.each_line.with_index do |line, index|
+    line_number = index + 1
+
+    blank_lines_count += 1 if line.strip.empty?
+    blank_line_number = line_number if line.strip.empty? && blank_lines_count == 1
+
+    fail_message += "Line #{blank_line_number.to_s}\n" if !line.strip.empty? && blank_lines_count > 1
+
+    blank_lines_count = 0 if !line.strip.empty?
+    blank_line_number = nil if !line.strip.empty?
+  end
+
+  fail_message = "**#{file}**\nPolicy Template has consecutive empty lines. Code blocks and other code constructs should never be separated by more than one empty line:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
 ### Metadata test
 # Return false if policy metadata has missing or problematic field
 def policy_bad_metadata?(file, field_name)
@@ -586,7 +616,7 @@ def policy_blocks_ungrouped?(file)
       if !found_meta
         # If we've found the block we're testing, and then other blocks,
         # and then found the block we're testing again, return error
-        if line.strip.start_with?(block) && line.strip.end_with?('do') && found_other_blocks
+        if line.start_with?(block) && line.strip.end_with?('do') && found_other_blocks
           fail_message += "Line #{line_number.to_s}: Unsorted #{block.strip} code block found\n"
           found_block = false
           found_other_blocks = false
@@ -596,12 +626,12 @@ def policy_blocks_ungrouped?(file)
         if found_block
           block_names.each do |other_block|
             if other_block != block
-              found_other_blocks = true if line.strip.start_with?(other_block) && line.strip.end_with?('do')
+              found_other_blocks = true if line.start_with?(other_block) && line.strip.end_with?('do')
             end
           end
         end
 
-        found_block = true if line.strip.start_with?(block) && line.strip.end_with?('do')
+        found_block = true if line.start_with?(block) && line.strip.end_with?('do')
       end
     end
   end
