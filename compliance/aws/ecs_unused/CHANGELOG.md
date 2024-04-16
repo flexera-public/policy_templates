@@ -30,7 +30,7 @@
 
 - Added default to aws_account_number parameter to enable existing API users.
 
-## 2.6
+## v2.6
 
 - Added support for a single AWS STS Cross account role to be used for multiple policies.
 
