@@ -15,6 +15,7 @@ This policy checks the billing data stored in the Flexera CCO platform for AWS r
 This policy has the following input parameters required when launching the policy.
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
+- *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation.
 - *Billing Center List* - List of Billing Center names or IDs you want to report on. Leave blank to report on resources in all Billing Centers.
 - *Allow/Deny AWS Accounts* - Whether to treat `Allow/Deny AWS Accounts List` parameter as allow or deny list. Has no effect if `Allow/Deny AWS Accounts List` is left empty.
 - *Allow/Deny AWS Accounts List* - A list of allowed or denied AWS Account IDs/names. Leave blank to check all AWS Accounts.

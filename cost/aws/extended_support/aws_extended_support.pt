@@ -26,6 +26,15 @@ parameter "param_email" do
   default []
 end
 
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation"
+  min_value 0
+  default 0
+end
+
 parameter "param_billing_centers" do
   type "list"
   category "Filters"
@@ -312,11 +321,11 @@ EOS
 end
 
 datasource "ds_extended_support_resources" do
-  run_script $js_extended_support_resources, $ds_flexera_cco_data_filtered, $ds_applied_policy, $ds_currency, $ds_billing_centers
+  run_script $js_extended_support_resources, $ds_flexera_cco_data_filtered, $ds_applied_policy, $ds_currency, $ds_billing_centers, $param_min_savings
 end
 
 script "js_extended_support_resources", type: "javascript" do
-  parameters "ds_flexera_cco_data_filtered", "ds_applied_policy", "ds_currency", "ds_billing_centers"
+  parameters "ds_flexera_cco_data_filtered", "ds_applied_policy", "ds_currency", "ds_billing_centers", "param_min_savings"
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
@@ -365,29 +374,32 @@ script "js_extended_support_resources", type: "javascript" do
 
   _.each(_.keys(resources_object), function(id) {
     resource = resources_object[id]
-    total_savings += resource['cost'] * cost_multiplier
     savings = Math.round(resource['cost'] * cost_multiplier * 1000) / 1000
 
-    recommendationDetails = [
-      "Upgrade or migrate AWS resource ", resource['resource_id'], " ",
-      "in AWS Account ", resource['vendor_account_name'], " ",
-      "(", resource['vendor_account'], ") ",
-      "to a newer resource type that is not in extended support."
-    ].join('')
+    if (savings >= param_min_savings) {
+      total_savings += resource['cost'] * cost_multiplier
 
-    result.push({
-      accountID: resource['vendor_account'],
-      accountName: resource['vendor_account_name'],
-      resourceID: resource['resource_id'],
-      service: resource['service'],
-      region: resource['region'],
-      billing_center: bc_names[resource['billing_center_id']],
-      recommendationDetails: recommendationDetails,
-      savings: savings,
-      savingsCurrency: ds_currency['symbol'],
-      policy_name: ds_applied_policy['name'],
-      total_savings: 0
-    })
+      recommendationDetails = [
+        "Upgrade or migrate AWS resource ", resource['resource_id'], " ",
+        "in AWS Account ", resource['vendor_account_name'], " ",
+        "(", resource['vendor_account'], ") ",
+        "to a newer resource type that is not in extended support."
+      ].join('')
+
+      result.push({
+        accountID: resource['vendor_account'],
+        accountName: resource['vendor_account_name'],
+        resourceID: resource['resource_id'],
+        service: resource['service'],
+        region: resource['region'],
+        billing_center: bc_names[resource['billing_center_id']],
+        recommendationDetails: recommendationDetails,
+        savings: savings,
+        savingsCurrency: ds_currency['symbol'],
+        policy_name: ds_applied_policy['name'],
+        total_savings: 0
+      })
+    }
   })
 
   if (result.length > 0) {
