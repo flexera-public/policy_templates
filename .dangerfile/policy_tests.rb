@@ -586,7 +586,7 @@ def policy_blocks_ungrouped?(file)
       if !found_meta
         # If we've found the block we're testing, and then other blocks,
         # and then found the block we're testing again, return error
-        if line.strip.start_with?(block) && line.strip.end_with?('do') && found_other_blocks
+        if line.start_with?(block) && line.strip.end_with?('do') && found_other_blocks
           fail_message += "Line #{line_number.to_s}: Unsorted #{block.strip} code block found\n"
           found_block = false
           found_other_blocks = false
@@ -596,12 +596,12 @@ def policy_blocks_ungrouped?(file)
         if found_block
           block_names.each do |other_block|
             if other_block != block
-              found_other_blocks = true if line.strip.start_with?(other_block) && line.strip.end_with?('do')
+              found_other_blocks = true if line.start_with?(other_block) && line.strip.end_with?('do')
             end
           end
         end
 
-        found_block = true if line.strip.start_with?(block) && line.strip.end_with?('do')
+        found_block = true if line.start_with?(block) && line.strip.end_with?('do')
       end
     end
   end
