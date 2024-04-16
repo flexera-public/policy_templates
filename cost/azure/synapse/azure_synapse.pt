@@ -1,4 +1,4 @@
-name "Synapse test for pools with usage"
+name "Synapse test for pools with usage - Test Version"
 rs_pt_ver 20180301
 type "policy"
 short_description "Checks for Synapse Dedicated SQL Pools instances that have inefficient utilization for the last N days and downsizes or pauses them after approval. \n See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
@@ -91,6 +91,16 @@ parameter "param_stats_lookback" do
   category "Statistics"
   label "Statistic Lookback Period"
   description "How many days back to look at metrics. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days."
+  default 30
+  min_value 1
+  max_value 90
+end
+
+parameter "param_pause_lookback" do
+  type "number"
+  category "Statistics"
+  label "Pause Lookback Period"
+  description "Number of days back to look at connection inactivity for pause recommendations."
   default 30
   min_value 1
   max_value 90
@@ -368,7 +378,7 @@ end
 datasource "ds_sql_pool_metrics" do
   iterate $ds_sql_pools
   request do
-    run_script $js_azure_metrics, val(iter_item, "resourceId"), $param_azure_endpoint, $param_stats_lookback, val(iter_item, "creationDate")
+    run_script $js_azure_metrics, val(iter_item, "resourceId"), $param_azure_endpoint, $param_stats_lookback, $param_pause_lookback, val(iter_item, "creationDate")
   end
   result do
     encoding "json"
@@ -386,7 +396,7 @@ datasource "ds_sql_pool_metrics" do
 end
 
 script "js_azure_metrics", type: "javascript" do
-  parameters "resourceId", "param_azure_endpoint", "param_stats_lookback", "creationDate"
+  parameters "resourceId", "param_azure_endpoint", "param_stats_lookback", "param_pause_lookback", "creationDate"
   result "request"
   code <<-EOS
   end_date = new Date()
@@ -395,23 +405,34 @@ script "js_azure_metrics", type: "javascript" do
   end_date.setMinutes(59)
   end_date.setHours(23)
 
-  start_date = new Date()
-  start_date.setDate(start_date.getDate() - param_stats_lookback)
+  start_date_dwu = new Date()
+  start_date_dwu.setDate(start_date_dwu.getDate() - param_stats_lookback)
+
+  start_date_pause = new Date()
+  start_date_pause.setDate(start_date_pause.getDate() - param_pause_lookback)
 
   creation_date = new Date(creationDate)
-
-  if (start_date.getDate() < creation_date.getDate()) {
-      start_date.setDate(creation_date.getDate())
+  if (start_date_dwu < creation_date) {
+      start_date_dwu = creation_date
+  }
+  if (start_date_pause < creation_date) {
+      start_date_pause = creation_date
   }
 
-  start_date.setMilliseconds(0)
-  start_date.setSeconds(0)
-  start_date.setMinutes(0)
-  start_date.setHours(0)
+  start_date_dwu.setMilliseconds(0)
+  start_date_dwu.setSeconds(0)
+  start_date_dwu.setMinutes(0)
+  start_date_dwu.setHours(0)
 
-  timespan = start_date.toISOString() + "/" + end_date.toISOString()
+  start_date_pause.setMilliseconds(0)
+  start_date_pause.setSeconds(0)
+  start_date_pause.setMinutes(0)
+  start_date_pause.setHours(0)
 
-  var request = {
+  timespan_dwu = start_date_dwu.toISOString() + "/" + end_date.toISOString()
+  timespan_pause = start_date_pause.toISOString() + "/" + end_date.toISOString()
+
+  request = {
     auth: "auth_azure",
     pagination: "pagination_azure",
     host: param_azure_endpoint,
@@ -419,7 +440,7 @@ script "js_azure_metrics", type: "javascript" do
     path: resourceId + "/providers/microsoft.insights/metrics",
     query_params: {
       "api-version": "2023-10-01",
-      "timespan": timespan,
+      "timespan": timespan_dwu,
       "interval": "FULL",
       "metricnames": "DWUUsed,DWUUsedPercent,CPUPercent,MemoryUsedPercent,Connections",
       "aggregation": "average,maximum,minimum"
@@ -427,65 +448,65 @@ script "js_azure_metrics", type: "javascript" do
     headers: {
       "User-Agent": "RS Policies"
     },
-    // Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
     ignore_status: [400, 403, 404]
   }
 EOS
 end
 
 datasource "ds_pools_with_metrics" do
-  run_script $js_pools_with_metrics, $ds_sql_pool_metrics, $ds_sql_pools, $param_stats_lookback, $param_stats_threshold
+  run_script $js_pools_with_metrics, $ds_sql_pool_metrics, $ds_sql_pools, $param_stats_lookback, $param_stats_threshold, $param_pause_lookback  # Asegúrate de que todos estos parámetros están siendo pasados
 end
 
 script "js_pools_with_metrics", type: "javascript" do
-  parameters "ds_sql_pool_metrics", "ds_sql_pools", "param_stats_lookback", "param_stats_threshold"
+  parameters "ds_sql_pool_metrics", "ds_sql_pools", "param_stats_lookback", "param_stats_threshold", "param_pause_lookback"  # Añadir aquí param_pause_lookback
   result "result"
   code <<-EOS
-  result = []
-  pools = {}
+    result = []
+    pools = {}
 
-  _.each(ds_sql_pools, function(item) {
-      id = item['resourceId'].toLowerCase()
+    _.each(ds_sql_pools, function(item) {
+        id = item['resourceId'].toLowerCase()
 
-      pools[id] = item
-  })
-
-  _.each(ds_sql_pool_metrics, function(item) {
-      id = item['resourceId'].toLowerCase()
-
-      metrics = {}
-      values = item['value']
-
-      _.each(values, function(metric) {
-          metrics[metric['name']['value']] = metric['timeseries'][0]['data']
-
-      })
-      result.push({
-        resourceName: item['resourceName'],
-        resourceGroup: item['resourceGroup'],
-        resourceId: item['resourceId'],
-        region: item['region'],
-        resourceType: pools[id]['sku'],
-        subscriptionId: item['subscriptionId'],
-        subscriptionName: item['subscriptionName'],
-        tags: item['tags'],
-        region: item['region'],
-        status: pools[id]['status'],
-        creationDate: pools[id]['creationDate'],
-        maxSizeBytes: pools[id]['maxSizeBytes'],
-        provisioningState: pools[id]['provisioningState'],
-        storageAccountType: pools[id]['storageAccountType'],
-        DWUUsed: metrics['DWUUsed'][0]['maximum'],
-        DWUUsedPercent: metrics['DWUUsedPercent'][0]['maximum'],
-        MemoryUsedPercent: metrics['MemoryUsedPercent'][0]['maximum'],
-        Connections: metrics['Connections'][0]['maximum'],
-        service: "Microsoft.Synapse",
-        lookbackPeriod: param_stats_lookback,
-        threshold: param_stats_threshold
-
+        pools[id] = item
     })
-  })
-EOS
+
+    _.each(ds_sql_pool_metrics, function(item) {
+        id = item['resourceId'].toLowerCase()
+
+        metrics = {}
+        values = item['value']
+
+        _.each(values, function(metric) {
+            metrics[metric['name']['value']] = metric['timeseries'][0]['data']
+
+        })
+        result.push({
+            resourceName: item['resourceName'],
+            resourceGroup: item['resourceGroup'],
+            resourceId: item['resourceId'],
+            region: item['region'],
+            resourceType: pools[id]['sku'],
+            subscriptionId: item['subscriptionId'],
+            subscriptionName: item['subscriptionName'],
+            tags: item['tags'],
+            region: item['region'],
+            status: pools[id]['status'],
+            creationDate: pools[id]['creationDate'],
+            maxSizeBytes: pools[id]['maxSizeBytes'],
+            provisioningState: pools[id]['provisioningState'],
+            storageAccountType: pools[id]['storageAccountType'],
+            DWUUsed: metrics['DWUUsed'][0]['maximum'],
+            DWUUsedPercent: metrics['DWUUsedPercent'][0]['maximum'],
+            MemoryUsedPercent: metrics['MemoryUsedPercent'][0]['maximum'],
+            Connections: metrics['Connections'][0]['maximum'],
+            service: "Microsoft.Synapse",
+            lookbackPeriod: param_stats_lookback,
+            pauseLookbackPeriod: param_pause_lookback,
+            threshold: param_stats_threshold
+
+        })
+    })
+  EOS 
 end
 
 
@@ -675,7 +696,10 @@ policy "ds_pools_with_metrics" do
       field "threshold" do
         label "Threshold"
       end
-      field "lookbackPeriod" do
+      field "pauseLookbackPeriod" do
+        label "Pause Look Back Period (Days)"
+      end
+        field "lookbackPeriod" do
         label "Look Back Period (Days)"
       end
       field "service" do
