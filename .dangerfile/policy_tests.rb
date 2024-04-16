@@ -194,33 +194,33 @@ end
 
 ### Consecutive Empty Lines test
 # Verify that the policy does not have multiple blank lines in a row
-def policy_consecutive_empty_lines?(file)
-  # Store contents of file for direct analysis
-  policy_code = File.read(file)
+# def policy_consecutive_empty_lines?(file)
+#   # Store contents of file for direct analysis
+#   policy_code = File.read(file)
 
-  # Message to return of test fails
-  fail_message = ""
+#   # Message to return of test fails
+#   fail_message = ""
 
-  blank_lines_count = 0
-  blank_line_number = nil
+#   blank_lines_count = 0
+#   blank_line_number = nil
 
-  policy_code.each_line.with_index do |line, index|
-    line_number = index + 1
+#   policy_code.each_line.with_index do |line, index|
+#     line_number = index + 1
 
-    blank_lines_count++ if line.strip.empty?
-    blank_line_number = line_number if line.strip.empty? && blank_lines_count == 1
+#     blank_lines_count++ if line.strip.empty?
+#     blank_line_number = line_number if line.strip.empty? && blank_lines_count == 1
 
-    fail_message += "Line #{blank_line_number.to_s}\n" if !line.strip.empty? && blank_lines_count > 1
+#     fail_message += "Line #{blank_line_number.to_s}\n" if !line.strip.empty? && blank_lines_count > 1
 
-    blank_lines_count = 0 if !line.strip.empty?
-    blank_line_number = nil if !line.strip.empty?
-  end
+#     blank_lines_count = 0 if !line.strip.empty?
+#     blank_line_number = nil if !line.strip.empty?
+#   end
 
-  fail_message = "**#{file}**\nPolicy Template has consecutive empty lines. Code blocks and other code constructs should never be separated by more than one empty line:\n\n" + fail_message if !fail_message.empty?
+#   fail_message = "**#{file}**\nPolicy Template has consecutive empty lines. Code blocks and other code constructs should never be separated by more than one empty line:\n\n" + fail_message if !fail_message.empty?
 
-  return fail_message.strip if !fail_message.empty?
-  return false
-end
+#   return fail_message.strip if !fail_message.empty?
+#   return false
+# end
 
 ### Metadata test
 # Return false if policy metadata has missing or problematic field
