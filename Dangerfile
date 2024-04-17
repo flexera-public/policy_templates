@@ -387,7 +387,7 @@ changed_pt_files.each do |file|
   test = policy_block_missing_field?(file, "parameter", "default")
 
   if test
-    warn test + "\n\nWhile not required, it is recommended that every parameter have a default value unless user input for that parameter is required and too specific for any default value to make sense"
+    warnings << test + "\n\nWhile not required, it is recommended that every parameter have a default value unless user input for that parameter is required and too specific for any default value to make sense"
   end
 
   # Raise warning, not error, if a datasource and the script it calls have mismatched names.
