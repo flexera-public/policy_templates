@@ -29,6 +29,7 @@ These templates can generate savings estimates for your environment.
 
 - [AWS Old Snapshots](./cost/aws/old_snapshots)
 - [AWS Reserved Instances Recommendations](./cost/aws/reserved_instances/recommendations)
+- [AWS Resources Under Extended Support](./cost/aws/extended_support)
 - [AWS Rightsize EBS Volumes](./cost/aws/rightsize_ebs_volumes)
 - [AWS Rightsize EC2 Instances](./cost/aws/rightsize_ec2_instances)
 - [AWS Rightsize RDS Instances](./cost/aws/rightsize_rds_instances)
@@ -171,6 +172,10 @@ These templates can generate savings estimates for your environment.
 
 #### AWS
 
+- All
+
+  - [AWS Resources Under Extended Support](./cost/aws/extended_support)
+
 - Compute
 
   - [AWS Burstable EC2 Instances](./cost/aws/burstable_ec2_instances)
@@ -187,10 +192,6 @@ These templates can generate savings estimates for your environment.
   - [Reserved Instances Coverage](./cost/aws/reserved_instances/coverage)
   - [Turbonomic Allocate Virtual Machine Recommendations AWS](./cost/turbonomics/allocate_virtual_machines_recommendations/aws)
   - [Turbonomic Rightsize Virtual Machines Recommendations AWS](./cost/turbonomics/scale_virtual_machines_recommendations/aws)
-
-- Database
-
-  - [AWS Resources Under Extended Support](./cost/aws/extended_support)
 
 - EBS
 
@@ -622,7 +623,7 @@ These templates can generate savings estimates for your environment.
   Operational: 28
   SaaS Management: 12
   Security: 74
-:optimization_count: 46
+:optimization_count: 47
 :policy_sets:
   '': 47
   AWS Config: 1
@@ -696,7 +697,7 @@ These templates can generate savings estimates for your environment.
 :services:
   '': 14
   AKS: 2
-  All: 1
+  All: 2
   App Service: 1
   Automation: 1
   Cloud Cost Optimization: 18
@@ -706,7 +707,6 @@ These templates can generate savings estimates for your environment.
   Compute: 62
   Config: 1
   DBS: 1
-  Database: 1
   Databricks: 1
   EBS: 2
   ECS: 1
