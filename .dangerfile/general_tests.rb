@@ -18,7 +18,7 @@ def general_textlint?(file)
     error_list.shift(2) # Remove first line since it just links to the filename in the local filesystem
     error_list = error_list.join("\n\n")
 
-    fail_message = "**#{file}**\nTextlint errors found:\n\n#{error_list}"
+    fail_message = "Textlint errors found:\n\n#{error_list}"
   end
 
   return fail_message.strip if !fail_message.empty?
@@ -59,7 +59,7 @@ def general_bad_markdown?(file)
   end
 
   # Return the problems found if the mdl file is not empty. Otherwise, return false
-  return "**#{file}**\nMarkdown syntax errors found:\n\n#{mdl}" if !mdl.empty?
+  return "Markdown syntax errors found:\n\n#{mdl}" if !mdl.empty?
   return false
 end
 
@@ -120,7 +120,7 @@ def general_bad_urls?(file)
     end
   end
 
-  fail_message = "**#{file}**\nBad URLs found:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "Bad URLs found:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
@@ -150,7 +150,7 @@ def general_outdated_terminology?(file)
     end
   end
 
-  fail_message = "**#{file}**\nOutdated terminology found. Please remove references to defunct internal names for products or services:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "Outdated terminology found. Please remove references to defunct internal names for products or services:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
