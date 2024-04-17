@@ -19,6 +19,7 @@ info(
 
 parameter "param_allowed_regions_allow_or_deny" do
   type "string"
+  category "Policy Settings"
   label "Allow/Deny Regions"
   description "Allow or Deny entered regions. See the README for more details"
   allowed_values "Allow", "Deny"
@@ -27,6 +28,7 @@ end
 
 parameter "param_allowed_regions" do
   type "list"
+  category "Policy Settings"
   label "Regions"
   description "A list of allowed or denied regions. See the README for more details"
   allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
@@ -35,6 +37,7 @@ end
 
 parameter "param_fnms_host" do
   type "string"
+  category "Policy Settings"
   label "FlexNet Manager host"
   description "Flexera One FlexNet Manager host"
   allowed_values "slo.app.flexera.com", "slo.app.flexera.eu", "slo.app.flexera.au", "slo-uat.app.flexera.com", "slo-uat.app.flexera.eu", "slo-uat.app.flexera.au"
@@ -43,6 +46,7 @@ end
 
 parameter "param_report_id" do
   type "string"
+  category "Policy Settings"
   label "FNMS Report ID"
   description "FlexNet manager Custom View ID."
   # No default value, user input required
@@ -50,6 +54,7 @@ end
 
 parameter "param_email" do
   type "list"
+  category "Policy Settings"
   label "Email addresses to notify"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
   default []
@@ -57,8 +62,9 @@ end
 
 parameter "param_exclude_tags" do
   type "list"
+  category "Policy Settings"
   label "Tags to ignore"
-  description "List of tags that will exclude EC2 instance from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'"
+  description "List of tags that will exclude EC2 instance from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: `[\"test\", \"env=dev\"]`"
   default []
 end
 
@@ -121,7 +127,7 @@ end
 
 # Get only SCP enabled regions
 datasource "ds_regions" do
-  run_script $js_regions, $ds_regions_list, $param_allowed_regions,$param_allowed_regions_allow_or_deny
+  run_script $js_regions, $ds_regions_list, $param_allowed_regions, $param_allowed_regions_allow_or_deny
 end
 
 script "js_regions", type:"javascript" do
@@ -168,7 +174,7 @@ datasource "ds_aws_ec2_instances_list" do
   request do
     auth $auth_aws
     verb "GET"
-    host join(["ec2.",val(iter_item,"region"),".amazonaws.com"])
+    host join(["ec2.", val(iter_item,"region"),".amazonaws.com"])
     path "/"
     query "Action", "DescribeInstances"
     query "Version", "2016-11-15"
@@ -225,11 +231,11 @@ datasource "ds_fnms_report" do
 end
 
 datasource "ds_formatted_instances", type: "javascript" do
-  run_script $js_format_instances,  $ds_aws_ec2_instances_list, $ds_fnms_report, $param_exclude_tags
+  run_script $js_formatted_instances,  $ds_aws_ec2_instances_list, $ds_fnms_report, $param_exclude_tags
 end
 
 #Formatter script for the Instance data
-script "js_format_instances", type: "javascript" do
+script "js_formatted_instances", type: "javascript" do
   parameters "ds_aws_ec2_instances_list","ds_fnms_report", "param_exclude_tags"
   result "result"
   code <<-EOS
@@ -276,17 +282,6 @@ script "js_format_instances", type: "javascript" do
 end
 
 ###############################################################################
-# Escalations
-###############################################################################
-
-escalation "esc_email" do
-  automatic true
-  label "Send Email"
-  description "Send Incident Email"
-  email $param_email
-end
-
-###############################################################################
 # Policy
 ###############################################################################
 
@@ -315,6 +310,17 @@ policy "pol_long_running_instances" do
       end
     end
   end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send Incident Email"
+  email $param_email
 end
 
 ###############################################################################
