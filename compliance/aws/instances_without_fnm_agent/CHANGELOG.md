@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.3.1
+
+- Added default value for parameters that do not require user input
+
 ## v4.3
 
 - Updated description of `Account Number` parameter
