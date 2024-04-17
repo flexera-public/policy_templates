@@ -1,8 +1,9 @@
 # Changelog
 
-## v2.4
+## v3.0
 
 - Fixed issue where policy would fail if org has existing adjustment rules for future months
+- Removed unused `Email Addresses` parameter
 
 ## v2.3
 
