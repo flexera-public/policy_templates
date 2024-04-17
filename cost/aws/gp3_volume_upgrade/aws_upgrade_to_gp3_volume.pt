@@ -462,6 +462,175 @@ datasource "ds_volume_cost_mapping" do
   run_script $js_volume_cost_mapping, $ds_superseded_volumes, $param_aws_edp_percentage, $ds_aws_products, $ds_volume_costs, $ds_billing_centers, $ds_get_caller_identity
 end
 
+script "js_volume_cost_mapping", type:"javascript" do
+  parameters "volumes", "aws_edp_percentage", "aws_products", "volume_costs", "ds_billing_centers", "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+  // map the prices by region and type for easy lookup
+  var prices_by_region_and_type = {}, iops_prices_by_region_and_type = {}, max_iops_volume_by_region_and_type = {};
+  _.each(volumes, function (volume) {
+    if (prices_by_region_and_type[volume.region] == null) {
+      prices_by_region_and_type[volume.region] = {};
+      iops_prices_by_region_and_type[volume.region] = {};
+      max_iops_volume_by_region_and_type[volume.region] = {};
+    }
+  });
+  _.each(aws_products, function (product) {
+    if (/EBS:VolumeUsage/.test(product.usage_type)) {
+      var prices_by_type = prices_by_region_and_type[product.region];
+      if (prices_by_type != null) {
+        prices_by_type[product.volume_type] = parseFloat(product.price_per_unit);
+        if (product.max_iops_volume != null) {
+          max_iops_volume_by_region_and_type[product.region][product.volume_type] = parseInt(product.max_iops_volume);
+        }
+      }
+    } else if (/EBS:VolumeP-IOPS/.test(product.usage_type) && !/\\.tier\\d+$/.test(product.usage_type)) {
+      var iops_prices_by_type = iops_prices_by_region_and_type[product.region];
+      if (iops_prices_by_type != null) {
+        iops_prices_by_type[product.volume_type] = parseFloat(product.price_per_unit);
+      }
+    }
+  });
+  // calculate the gp3 savings ratios for the other types by region
+  var gp3_savings_ratios_by_region_and_type = {};
+  _.each(prices_by_region_and_type, function(prices_by_type, region) {
+    var gp3_savings_ratios_by_type = gp3_savings_ratios_by_region_and_type[region] = {};
+    var gp3_price = prices_by_type["gp3"];
+    _.each(prices_by_type, function(price, type) {
+      if (type != "gp3") {
+        gp3_savings_ratios_by_type[type] = gp3_price / price;
+      }
+    });
+  });
+  var upgradeable_volumes=[];
+  var result = {};
+  var message='';
+  var count=0;
+  function formatNumber(number, separator){
+    var numString =number.toFixed(2);
+    var values=numString.split(".");
+    var result = ''
+    while (values[0].length > 3){
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      result = separator + chunk + result
+    }
+    if (values[0].length > 0){
+      result = values[0] + result
+    }
+    if(values[1]==undefined){
+      return result;
+    }
+    return result+"."+values[1];
+  }
+  // calculate the discount ratio from Optima costs unless a positive AWS EDP percentage has been specified
+  var discount_ratio, discount_percentage_string;
+  if (aws_edp_percentage < 0) {
+    if(ds_billing_centers.length!=0){
+      // Put costs into a map by resource ID and only include them for resource IDs we actually need
+      var costs_by_resource_id = {};
+      _.each(volumes, function(volume) {
+        costs_by_resource_id[volume.volume_id] = [];
+      });
+      _.each(volume_costs, function(cost) {
+        var costs = costs_by_resource_id[cost.resource_id];
+        if (costs != null) {
+          costs.push(cost);
+        }
+      });
+      var discount_ratios = [];
+      _.each(volumes, function(volume) {
+        var costs = costs_by_resource_id[volume.volume_id];
+        var price = _.reduce(costs, function(memo, cost) { return memo + cost.cost_nonamortized_unblended_adj; }, 0) * 30 / parseInt(volume.size);
+        if (price > 0) {
+          discount_ratios.push(price / prices_by_region_and_type[volume.region][volume.volume_type]);
+        }
+      });
+      if (discount_ratios.length > 0) {
+        discount_ratio = _.reduce(discount_ratios, function(memo, ratio) { return memo + ratio; }) / discount_ratios.length;
+        discount_percentage = aws_edp_percentage = 100 - discount_ratio * 100;
+        discount_percentage_string = discount_percentage.toFixed(1).replace(/\\.0$/, '') + "% calculated from Flexera Optima costs";
+        discount_calculated = true;
+      } else {
+        discount_ratio = 1;
+        discount_percentage = 0;
+        discount_percentage_string = "0% since the Flexera Optima system does not have any data to calculate from";
+        discount_calculated = false;
+      }
+    } else {
+      discount_ratio = 1;
+      discount_percentage = 0;
+      discount_percentage_string = "0% since you do not have the minimum required role of billing_center_viewer to calculate from Flexera Optima costs";
+      discount_calculated = false;
+    }
+  } else {
+    discount_ratio = 1 - aws_edp_percentage / 100;
+    discount_percentage = aws_edp_percentage;
+    discount_percentage_string = discount_percentage.toFixed(1).replace(/\\.0$/, '') + '%';
+    discount_calculated = false;
+  }
+  var cur = "$"
+  var separator = ","
+  var total_savings=0;
+  _.each(volumes, function(volume){
+    var tags = volume['tags'];
+    var tagKeyValue = "";
+    for(var k=0; k < tags.length; k++){
+      tag = tags[k];
+      // Constructing tags with comma separated to display in detail_template
+      if((tag['tagValue']).length > 0){
+        tagKeyValue = tagKeyValue+" , "+tag['tagKey']+'='+tag['tagValue'];
+      }else{
+        tagKeyValue = tagKeyValue+" , "+tag['tagKey'];
+      }
+    }
+    if(tagKeyValue === "" || tagKeyValue === " " || tagKeyValue == ""){
+      tagKeyValue = "   < No Value >";
+    }
+    var price = prices_by_region_and_type[volume.region][volume.volume_type] * parseInt(volume.size);
+    var monthly_savings = (price - (price * gp3_savings_ratios_by_region_and_type[volume.region][volume.volume_type])) * discount_ratio;
+    var iops;
+    if (/^io/.test(volume.volume_type)) {
+      iops = parseInt(volume.iops);
+      // skip volumes with more IOPS than gp3 supports
+      if (iops > max_iops_volume_by_region_and_type[volume.region]["gp3"]) {
+        return;
+      }
+      var iops_price = iops_prices_by_region_and_type[volume.region][volume.volume_type] * iops;
+      var gp3_iops_price = iops <= 3000 ? 0 : iops_prices_by_region_and_type[volume.region]["gp3"] * (iops - 3000);
+      monthly_savings += (iops_price - gp3_iops_price) * discount_ratio;
+    }
+    total_savings += monthly_savings;
+    upgradeable_volumes.push({
+      accountId: ds_get_caller_identity[0]['account'],
+      volume_id: volume['volume_id'],
+      id: volume['volume_id'],
+      region: volume['region'],
+      availabilityZone: volume['availability_zone'],
+      volume_type: volume['volume_type'],
+      tags: (tagKeyValue.slice(2)),
+      createdTime: volume['createdTime'],
+      size: volume['size'],
+      iops: iops,
+      status: volume['status'],
+      savings: cur + ' '+formatNumber((Math.round(monthly_savings * 100) / 100), separator),
+      discount_ratio: discount_ratio,
+      discount_percentage: discount_percentage,
+      discount_calculated: discount_calculated,
+    });
+  });
+
+  total_savings=cur + ' '+formatNumber((Math.round(total_savings * 100) / 100), separator);
+  message="The total estimated monthly savings are "+total_savings+" based on an AWS EDP of "+discount_percentage_string;
+  result={
+    "upgradeable_volumes": upgradeable_volumes,
+    "message": message,
+    "accountId": ds_get_caller_identity[0]['account']
+  }
+  result.upgradeable_volumes=_.sortBy(result.upgradeable_volumes,'region')
+  EOS
+end
+
 ###############################################################################
 # Policy
 ###############################################################################
