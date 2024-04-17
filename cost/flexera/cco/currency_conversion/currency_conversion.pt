@@ -7,7 +7,7 @@ severity "low"
 default_frequency "monthly"
 category "Cost"
 info(
-  version: "2.3",
+  version: "2.4",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization"
@@ -332,16 +332,33 @@ script "js_update_adjustments", type: "javascript" do
     }
   }
 
-  result = [{
-    list: JSON.stringify({ dated_adjustment_lists: new_adjustments }),
+  new_adjustments = _.sortBy(new_adjustments, "effective_at")
+
+  result = {
+    list: { dated_adjustment_lists: new_adjustments },
     message: message + message_rules.join("\n")
+  }
+EOS
+end
+
+datasource "ds_updated_adjustments_payload" do
+  run_script $js_update_adjustments_payload, $ds_updated_adjustments
+end
+
+script "js_update_adjustments_payload", type: "javascript" do
+  parameters "ds_updated_adjustments"
+  result "result"
+  code <<-'EOS'
+  result = [{
+    list: JSON.stringify(ds_updated_adjustments['list']),
+    message: ds_updated_adjustments['message']
   }]
 EOS
 end
 
 # Update adjustment table to include new currency conversion adjustments
 datasource "ds_new_adjustments" do
-  iterate $ds_updated_adjustments
+  iterate $ds_updated_adjustments_payload
   request do
     auth $auth_flexera
     host rs_optima_host

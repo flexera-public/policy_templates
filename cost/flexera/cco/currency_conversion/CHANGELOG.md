@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.4
+
+- Fixed issue where policy would fail if org has existing adjustment rules for future months
+
 ## v2.3
 
 - Updated policy metadata to make it more clear what Flexera service the policy is for
