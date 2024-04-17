@@ -4,7 +4,7 @@
 
 This policy creates adjustment rules that convert the currency of the cost associated with the Cloud Vendor of choice. It utilizes xe.com to retrieve the latest exchange rates.
 
-## Functional Details
+## How It Works
 
 - This policy supports currency codes as per [ISO 4217](https://www.xe.com/iso4217.php), and uses the xe.com API to retrieve monthly average exchange rate.
 - This policy supports four cloud providers natively: AWS, Azure, Google Cloud, and Oracle Cloud.
@@ -16,7 +16,6 @@ This policy creates adjustment rules that convert the currency of the cost assoc
 
 This policy has the following input parameters required when launching the policy.
 
-- *Email Addresses* - Email addresses of the recipients you wish to notify when currency conversion adjustment rules are updated.
 - *Backfill Adjustments* - Whether to add/modify currency conversion to just the current month or to backfill previous months.
 - *Backfill Start Date* - The month and year in YYYY-MM format to backfill adjustments to. Only applicable if `Backfill Previous Months` is selected for the `Backfill Adjustments` parameter.
 - *Backfill Exchange Rates* - Whether or not to use the current exchange rate, or the exchange rate at the time, when applying currency conversion to previous months. Only applicable if `Backfill Previous Months` is selected for the `Backfill Adjustments` parameter.
