@@ -58,16 +58,16 @@ end
 parameter "param_aws_edp_percentage" do
   type "number"
   label "AWS EDP Percentage"
-  description "The AWS Enterprise Discount Program percentage, by default this is calculated from Flexera Optima costs"
+  description "The AWS Enterprise Discount Program percentage, by default this is calculated from Flexera Cloud Cost Optimization costs"
   min_value -1
   max_value 100
   default -1
 end
 
-parameter "param_flexera_org_id_for_optima" do
+parameter "param_flexera_org_id" do
   type "string"
-  label "Flexera One Org ID for Optima"
-  description "The Flexera One org ID for Optima queries used to determine estimated costs, by default the current org is used"
+  label "Flexera One Org ID"
+  description "The Flexera One org ID for queries used to determine estimated costs, by default the current org is used"
   allowed_pattern /^(current|[0-9]+)$/
   default "current"
 end
@@ -156,6 +156,45 @@ datasource "ds_regions" do
   run_script $js_regions, $param_allowed_regions, $ds_regions_list, $param_allowed_regions_allow_or_deny
 end
 
+
+script "js_regions", type: "javascript" do
+  parameters "user_entered_regions", "all_regions", "regions_allow_or_deny"
+  result "regions"
+  code <<-EOS
+    if(_.isEmpty(user_entered_regions)){
+      regions = all_regions;
+    }else{
+      //Filter unique regions
+      var uniqueRegions = _.uniq(user_entered_regions);
+      var all_regions_list = [];
+      //Filter and remove denied regions from all_regions
+      if (regions_allow_or_deny == "Deny"){
+        var all_regions = all_regions.filter(function(obj){
+          return user_entered_regions.indexOf(obj.region) === -1;
+        });
+      }
+      all_regions.forEach(function(all_region){
+        all_regions_list.push(all_region.region)
+      })
+
+      //Filter valid regions
+      var valid_regions = [];
+      _.map(uniqueRegions, function(uniqueRegion){
+        if(all_regions_list.indexOf(uniqueRegion) > -1){
+          valid_regions.push({"region": uniqueRegion})
+        }
+      })
+
+      //Throw an error if no valid regions found
+      if (_.isEmpty(valid_regions)) {
+        regions = all_regions;
+      }else{
+        regions = valid_regions
+      }
+    }
+  EOS
+end
+
 # Get list of gp2, io1, and io2 Volumes.
 datasource "ds_superseded_volumes_list" do
   iterate $ds_regions
@@ -201,140 +240,6 @@ datasource "ds_superseded_volumes" do
   run_script $js_filter_aws_superseded_volumes, $ds_superseded_volumes_list, $param_exclude_tags
 end
 
-datasource "ds_volume_types" do
-  run_script $js_volume_types, $ds_superseded_volumes
-end
-
-datasource "ds_aws_products" do
-  iterate $ds_volume_types
-  request do
-    auth $auth_aws
-    pagination $pagination_aws_products
-    host "api.pricing.us-east-1.amazonaws.com"
-    verb "POST"
-    path "/"
-    header "Content-Type", "application/x-amz-json-1.1"
-    header "X-Amz-Target", "AWSPriceListService.GetProducts"
-    body_field "Filters", [{Field: "volumeApiName", Type: "TERM_MATCH", Value: iter_item}]
-    body_field "ServiceCode", "AmazonEC2"
-  end
-  result do
-    collect jq(response, '.PriceList[] | fromjson') do
-      field 'max_iops_volume', jq(col_item, '.product.attributes.maxIopsvolume')
-      field 'price_per_unit', jq(col_item, '.terms.OnDemand[].priceDimensions[].pricePerUnit.USD')
-      field 'region', jq(col_item, '.product.attributes.regionCode')
-      field 'usage_type', jq(col_item, '.product.attributes.usagetype')
-      field 'volume_type', iter_item
-    end
-  end
-end
-
-datasource "ds_flexera_optima" do
-  run_script $js_flexera_optima, $param_flexera_org_id_for_optima, rs_org_id
-end
-
-datasource "ds_billing_centers" do
-  request do
-    auth $auth_flexera
-    host rs_optima_host
-    path join(["/analytics/orgs/", val($ds_flexera_optima, "org_id"), "/billing_centers"])
-    header "Api-Version", "1.0"
-    header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
-    ignore_status [403]
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "[*]") do
-      field "href", jmes_path(col_item, "href")
-      field "id", jmes_path(col_item, "id")
-      field "name", jmes_path(col_item, "name")
-      field "parent_id", jmes_path(col_item, "parent_id")
-    end
-  end
-end
-
-datasource "ds_top_level_billing_centers" do
-  run_script $js_top_level_bc, $ds_billing_centers
-end
-
-datasource "ds_get_caller_identity" do
-  request do
-    auth $auth_aws
-    verb "GET"
-    host "sts.amazonaws.com"
-    path "/"
-    header "User-Agent", "RS Policies"
-    query "Action", "GetCallerIdentity"
-    query "Version", "2011-06-15"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
-      field "account", xpath(col_item, "Account")
-    end
-  end
-end
-
-datasource "ds_volume_costs" do
-  request do
-    run_script $js_get_costs, $ds_get_caller_identity, $ds_top_level_billing_centers, val($ds_flexera_optima, "org_id"), rs_optima_host
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "rows[*]") do
-      field "resource_id", jmes_path(col_item, "dimensions.resource_id")
-      field "cost_nonamortized_unblended_adj", jmes_path(col_item, "metrics.cost_nonamortized_unblended_adj")
-    end
-  end
-end
-
-datasource "ds_volume_cost_mapping" do
-  run_script $js_volume_cost_mapping, $ds_superseded_volumes, $param_aws_edp_percentage, $ds_aws_products, $ds_volume_costs, $ds_billing_centers, $ds_get_caller_identity
-end
-
-###############################################################################
-# Script
-###############################################################################
-
-script "js_regions", type: "javascript" do
-  parameters "user_entered_regions", "all_regions", "regions_allow_or_deny"
-  result "regions"
-  code <<-EOS
-    if(_.isEmpty(user_entered_regions)){
-      regions = all_regions;
-    }else{
-      //Filter unique regions
-      var uniqueRegions = _.uniq(user_entered_regions);
-      var all_regions_list = [];
-      //Filter and remove denied regions from all_regions
-      if (regions_allow_or_deny == "Deny"){
-        var all_regions = all_regions.filter(function(obj){
-          return user_entered_regions.indexOf(obj.region) === -1;
-        });
-      }
-      all_regions.forEach(function(all_region){
-        all_regions_list.push(all_region.region)
-      })
-
-      //Filter valid regions
-      var valid_regions = [];
-      _.map(uniqueRegions, function(uniqueRegion){
-        if(all_regions_list.indexOf(uniqueRegion) > -1){
-          valid_regions.push({"region": uniqueRegion})
-        }
-      })
-
-      //Throw an error if no valid regions found
-      if (_.isEmpty(valid_regions)) {
-        regions = all_regions;
-      }else{
-        regions = valid_regions
-      }
-    }
-  EOS
-end
-
 script "js_filter_aws_superseded_volumes", type: "javascript" do
   parameters "ds_superseded_volumes_list", "param_exclude_tags"
   result "content"
@@ -374,6 +279,10 @@ script "js_filter_aws_superseded_volumes", type: "javascript" do
   EOS
 end
 
+datasource "ds_volume_types" do
+  run_script $js_volume_types, $ds_superseded_volumes
+end
+
 script "js_volume_types", type: "javascript", type: "javascript" do
   parameters "volumes"
   result "types"
@@ -386,7 +295,35 @@ script "js_volume_types", type: "javascript", type: "javascript" do
   EOS
 end
 
-script "js_flexera_optima", type: "javascript" do
+datasource "ds_aws_products" do
+  iterate $ds_volume_types
+  request do
+    auth $auth_aws
+    pagination $pagination_aws_products
+    host "api.pricing.us-east-1.amazonaws.com"
+    verb "POST"
+    path "/"
+    header "Content-Type", "application/x-amz-json-1.1"
+    header "X-Amz-Target", "AWSPriceListService.GetProducts"
+    body_field "Filters", [{Field: "volumeApiName", Type: "TERM_MATCH", Value: iter_item}]
+    body_field "ServiceCode", "AmazonEC2"
+  end
+  result do
+    collect jq(response, '.PriceList[] | fromjson') do
+      field 'max_iops_volume', jq(col_item, '.product.attributes.maxIopsvolume')
+      field 'price_per_unit', jq(col_item, '.terms.OnDemand[].priceDimensions[].pricePerUnit.USD')
+      field 'region', jq(col_item, '.product.attributes.regionCode')
+      field 'usage_type', jq(col_item, '.product.attributes.usagetype')
+      field 'volume_type', iter_item
+    end
+  end
+end
+
+datasource "ds_flexera_org_id" do
+  run_script $js_flexera_org_id, $param_flexera_org_id, rs_org_id
+end
+
+script "js_flexera_org_id", type: "javascript" do
   parameters "flexera_org_id_for_optima", "current_flexera_org_id"
   result "flexera_optima"
   code <<-EOS
@@ -396,6 +333,31 @@ script "js_flexera_optima", type: "javascript" do
   EOS
 end
 
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", val($ds_flexera_org_id, "org_id"), "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+datasource "ds_top_level_billing_centers" do
+  run_script $js_top_level_bc, $ds_billing_centers
+end
+
 script "js_top_level_bc", type: "javascript" do
   parameters "billing_centers"
   result "filtered_billing_centers"
@@ -403,6 +365,37 @@ script "js_top_level_bc", type: "javascript" do
   var filtered_billing_centers =
     _.reject(billing_centers, function(bc){ return bc.parent_id != null });
   EOS
+end
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account", xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_volume_costs" do
+  request do
+    run_script $js_get_costs, $ds_get_caller_identity, $ds_top_level_billing_centers, val($ds_flexera_org_id, "org_id"), rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "resource_id", jmes_path(col_item, "dimensions.resource_id")
+      field "cost_nonamortized_unblended_adj", jmes_path(col_item, "metrics.cost_nonamortized_unblended_adj")
+    end
+  end
 end
 
 script "js_get_costs", type: "javascript" do
@@ -465,173 +458,8 @@ script "js_get_costs", type: "javascript" do
   EOS
 end
 
-script "js_volume_cost_mapping", type:"javascript" do
-  parameters "volumes", "aws_edp_percentage", "aws_products", "volume_costs", "ds_billing_centers", "ds_get_caller_identity"
-  result "result"
-  code <<-EOS
-  // map the prices by region and type for easy lookup
-  var prices_by_region_and_type = {}, iops_prices_by_region_and_type = {}, max_iops_volume_by_region_and_type = {};
-  _.each(volumes, function (volume) {
-    if (prices_by_region_and_type[volume.region] == null) {
-      prices_by_region_and_type[volume.region] = {};
-      iops_prices_by_region_and_type[volume.region] = {};
-      max_iops_volume_by_region_and_type[volume.region] = {};
-    }
-  });
-  _.each(aws_products, function (product) {
-    if (/EBS:VolumeUsage/.test(product.usage_type)) {
-      var prices_by_type = prices_by_region_and_type[product.region];
-      if (prices_by_type != null) {
-        prices_by_type[product.volume_type] = parseFloat(product.price_per_unit);
-        if (product.max_iops_volume != null) {
-          max_iops_volume_by_region_and_type[product.region][product.volume_type] = parseInt(product.max_iops_volume);
-        }
-      }
-    } else if (/EBS:VolumeP-IOPS/.test(product.usage_type) && !/\\.tier\\d+$/.test(product.usage_type)) {
-      var iops_prices_by_type = iops_prices_by_region_and_type[product.region];
-      if (iops_prices_by_type != null) {
-        iops_prices_by_type[product.volume_type] = parseFloat(product.price_per_unit);
-      }
-    }
-  });
-  // calculate the gp3 savings ratios for the other types by region
-  var gp3_savings_ratios_by_region_and_type = {};
-  _.each(prices_by_region_and_type, function(prices_by_type, region) {
-    var gp3_savings_ratios_by_type = gp3_savings_ratios_by_region_and_type[region] = {};
-    var gp3_price = prices_by_type["gp3"];
-    _.each(prices_by_type, function(price, type) {
-      if (type != "gp3") {
-        gp3_savings_ratios_by_type[type] = gp3_price / price;
-      }
-    });
-  });
-  var upgradeable_volumes=[];
-  var result = {};
-  var message='';
-  var count=0;
-  function formatNumber(number, separator){
-    var numString =number.toFixed(2);
-    var values=numString.split(".");
-    var result = ''
-    while (values[0].length > 3){
-      var chunk = values[0].substr(-3)
-      values[0] = values[0].substr(0, values[0].length - 3)
-      result = separator + chunk + result
-    }
-    if (values[0].length > 0){
-      result = values[0] + result
-    }
-    if(values[1]==undefined){
-      return result;
-    }
-    return result+"."+values[1];
-  }
-  // calculate the discount ratio from Optima costs unless a positive AWS EDP percentage has been specified
-  var discount_ratio, discount_percentage_string;
-  if (aws_edp_percentage < 0) {
-    if(ds_billing_centers.length!=0){
-      // Put costs into a map by resource ID and only include them for resource IDs we actually need
-      var costs_by_resource_id = {};
-      _.each(volumes, function(volume) {
-        costs_by_resource_id[volume.volume_id] = [];
-      });
-      _.each(volume_costs, function(cost) {
-        var costs = costs_by_resource_id[cost.resource_id];
-        if (costs != null) {
-          costs.push(cost);
-        }
-      });
-      var discount_ratios = [];
-      _.each(volumes, function(volume) {
-        var costs = costs_by_resource_id[volume.volume_id];
-        var price = _.reduce(costs, function(memo, cost) { return memo + cost.cost_nonamortized_unblended_adj; }, 0) * 30 / parseInt(volume.size);
-        if (price > 0) {
-          discount_ratios.push(price / prices_by_region_and_type[volume.region][volume.volume_type]);
-        }
-      });
-      if (discount_ratios.length > 0) {
-        discount_ratio = _.reduce(discount_ratios, function(memo, ratio) { return memo + ratio; }) / discount_ratios.length;
-        discount_percentage = aws_edp_percentage = 100 - discount_ratio * 100;
-        discount_percentage_string = discount_percentage.toFixed(1).replace(/\\.0$/, '') + "% calculated from Flexera Optima costs";
-        discount_calculated = true;
-      } else {
-        discount_ratio = 1;
-        discount_percentage = 0;
-        discount_percentage_string = "0% since the Flexera Optima system does not have any data to calculate from";
-        discount_calculated = false;
-      }
-    } else {
-      discount_ratio = 1;
-      discount_percentage = 0;
-      discount_percentage_string = "0% since you do not have the minimum required role of billing_center_viewer to calculate from Flexera Optima costs";
-      discount_calculated = false;
-    }
-  } else {
-    discount_ratio = 1 - aws_edp_percentage / 100;
-    discount_percentage = aws_edp_percentage;
-    discount_percentage_string = discount_percentage.toFixed(1).replace(/\\.0$/, '') + '%';
-    discount_calculated = false;
-  }
-  var cur = "$"
-  var separator = ","
-  var total_savings=0;
-  _.each(volumes, function(volume){
-    var tags = volume['tags'];
-    var tagKeyValue = "";
-    for(var k=0; k < tags.length; k++){
-      tag = tags[k];
-      // Constructing tags with comma separated to display in detail_template
-      if((tag['tagValue']).length > 0){
-        tagKeyValue = tagKeyValue+" , "+tag['tagKey']+'='+tag['tagValue'];
-      }else{
-        tagKeyValue = tagKeyValue+" , "+tag['tagKey'];
-      }
-    }
-    if(tagKeyValue === "" || tagKeyValue === " " || tagKeyValue == ""){
-      tagKeyValue = "   < No Value >";
-    }
-    var price = prices_by_region_and_type[volume.region][volume.volume_type] * parseInt(volume.size);
-    var monthly_savings = (price - (price * gp3_savings_ratios_by_region_and_type[volume.region][volume.volume_type])) * discount_ratio;
-    var iops;
-    if (/^io/.test(volume.volume_type)) {
-      iops = parseInt(volume.iops);
-      // skip volumes with more IOPS than gp3 supports
-      if (iops > max_iops_volume_by_region_and_type[volume.region]["gp3"]) {
-        return;
-      }
-      var iops_price = iops_prices_by_region_and_type[volume.region][volume.volume_type] * iops;
-      var gp3_iops_price = iops <= 3000 ? 0 : iops_prices_by_region_and_type[volume.region]["gp3"] * (iops - 3000);
-      monthly_savings += (iops_price - gp3_iops_price) * discount_ratio;
-    }
-    total_savings += monthly_savings;
-    upgradeable_volumes.push({
-      accountId: ds_get_caller_identity[0]['account'],
-      volume_id: volume['volume_id'],
-      id: volume['volume_id'],
-      region: volume['region'],
-      availabilityZone: volume['availability_zone'],
-      volume_type: volume['volume_type'],
-      tags: (tagKeyValue.slice(2)),
-      createdTime: volume['createdTime'],
-      size: volume['size'],
-      iops: iops,
-      status: volume['status'],
-      savings: cur + ' '+formatNumber((Math.round(monthly_savings * 100) / 100), separator),
-      discount_ratio: discount_ratio,
-      discount_percentage: discount_percentage,
-      discount_calculated: discount_calculated,
-    });
-  });
-
-  total_savings=cur + ' '+formatNumber((Math.round(total_savings * 100) / 100), separator);
-  message="The total estimated monthly savings are "+total_savings+" based on an AWS EDP of "+discount_percentage_string;
-  result={
-    "upgradeable_volumes": upgradeable_volumes,
-    "message": message,
-    "accountId": ds_get_caller_identity[0]['account']
-  }
-  result.upgradeable_volumes=_.sortBy(result.upgradeable_volumes,'region')
-  EOS
+datasource "ds_volume_cost_mapping" do
+  run_script $js_volume_cost_mapping, $ds_superseded_volumes, $param_aws_edp_percentage, $ds_aws_products, $ds_volume_costs, $ds_billing_centers, $ds_get_caller_identity
 end
 
 ###############################################################################
