@@ -14,15 +14,12 @@ info(
 )
 
 ###############################################################################
-# Permissions
-###############################################################################
-
-###############################################################################
 # Parameters
 ###############################################################################
 
 parameter "param_allowed_regions_allow_or_deny" do
   type "string"
+  category "Policy Settings"
   label "Allow/Deny Regions"
   description "Allow or Deny entered regions. See the README for more details"
   allowed_values "Allow", "Deny"
@@ -31,14 +28,16 @@ end
 
 parameter "param_allowed_regions" do
   type "list"
+  category "Policy Settings"
   label "Regions"
-  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   description "A list of allowed or denied regions. See the README for more details"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   default []
 end
 
 parameter "param_aws_account_number" do
   type "string"
+  category "Policy Settings"
   category "Policy Settings"
   label "Account Number"
   description "Leave blank; this is for automated use with Meta Policies. See README for more details."
@@ -47,6 +46,7 @@ end
 
 parameter "param_email" do
   type "list"
+  category "Policy Settings"
   label "Email addresses to notify"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
   default []
@@ -73,7 +73,7 @@ credentials "auth_flexera" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
 datasource "ds_get_caller_identity" do
@@ -82,9 +82,9 @@ datasource "ds_get_caller_identity" do
     verb "GET"
     host "sts.amazonaws.com"
     path "/"
-    header "User-Agent", "RS Policies"
     query "Action", "GetCallerIdentity"
     query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
   end
   result do
     encoding "xml"
@@ -121,7 +121,7 @@ end
 
 # Get only SCP enabled regions
 datasource "ds_regions" do
-  run_script $js_regions, $param_allowed_regions, $ds_regions_list, $param_allowed_regions_allow_or_deny
+  run_script $js_regions, $ds_regions_list, $param_allowed_regions, $param_allowed_regions_allow_or_deny
 end
 
 datasource "ds_instances_set" do
@@ -130,10 +130,10 @@ datasource "ds_instances_set" do
     auth $auth_aws
     host join(["rds.", val(iter_item, "region"), ".amazonaws.com"])
     path "/"
-    header "User-Agent", "RS Policies"
-    header "Content-Type", "text/xml"
     query "Action", "DescribeDBInstances"
     query "Version", "2014-10-31"
+    header "User-Agent", "RS Policies"
+    header "Content-Type", "text/xml"
   end
   result do
     encoding "xml"
@@ -162,7 +162,7 @@ datasource "ds_aws_instance_size_map" do
   request do
     verb "GET"
     host "raw.githubusercontent.com"
-    path "/flexera/policy_templates/master/data/aws/instance_types.json"
+    path "/flexera-public/policy_templates/master/data/aws/instance_types.json"
     header "User-Agent", "RS Policies"
   end
 end
@@ -176,7 +176,7 @@ end
 ###############################################################################
 
 script "js_regions", type:"javascript" do
-  parameters "user_entered_regions", "all_regions", "regions_allow_or_deny"
+  parameters "all_regions", "user_entered_regions", "regions_allow_or_deny"
   result "regions"
   code <<-EOS
     if(_.isEmpty(user_entered_regions)){
@@ -326,7 +326,6 @@ datasource "ds_get_policy" do
     field "id", jmes_path(response, "id")
   end
 end
-
 
 datasource "ds_parent_policy_terminated" do
   run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
