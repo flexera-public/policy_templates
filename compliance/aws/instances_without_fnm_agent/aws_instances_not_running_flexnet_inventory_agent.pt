@@ -14,7 +14,7 @@ info(
 )
 
 ###############################################################################
-# User inputs
+# Parameters
 ###############################################################################
 
 parameter "param_allowed_regions_allow_or_deny" do
@@ -28,8 +28,8 @@ end
 parameter "param_allowed_regions" do
   type "list"
   label "Regions"
-  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   description "A list of allowed or denied regions. See the README for more details"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   default []
 end
 
@@ -71,19 +71,6 @@ parameter "param_aws_account_number" do
 end
 
 ###############################################################################
-# Pagination
-###############################################################################
-
-pagination "aws_pagination_xml" do
-  get_page_marker do
-    body_path "//DescribeInstancesResponse/nextToken"
-  end
-  set_page_marker do
-    query "NextToken"
-  end
-end
-
-###############################################################################
 # Authentication
 ###############################################################################
 
@@ -104,7 +91,7 @@ credentials "auth_flexera" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
 # ds_region_list is a list of regions that are opted-in or opt-in-not-required
@@ -134,11 +121,11 @@ end
 
 # Get only SCP enabled regions
 datasource "ds_regions" do
-  run_script $js_regions, $param_allowed_regions, $ds_regions_list, $param_allowed_regions_allow_or_deny
+  run_script $js_regions, $ds_regions_list, $param_allowed_regions,$param_allowed_regions_allow_or_deny
 end
 
 script "js_regions", type:"javascript" do
-  parameters "user_entered_regions", "all_regions", "regions_allow_or_deny"
+  parameters "all_regions", "user_entered_regions", "regions_allow_or_deny"
   result "regions"
   code <<-EOS
     if(_.isEmpty(user_entered_regions)){
@@ -212,9 +199,9 @@ end
 datasource "ds_fnms_report" do
   request do
     auth $auth_flexera
-    host $param_fnms_host
     verb "POST"
     scheme "https"
+    host $param_fnms_host
     path "/ManageSoftServices/ComplianceAPIService/ComplianceAPIService.asmx"
     query "orgid", to_s(rs_org_id) # Must convert rs_org_id to string otherwise query param does not get set
     header "Content-Type", "text/xml;charset=utf-8"
@@ -303,7 +290,7 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_long_running_instances" do
+policy "pol_long_running_instances" do
   validate $ds_formatted_instances do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} EC2 instances missing in FlexNet Manager."
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
@@ -350,7 +337,6 @@ datasource "ds_get_policy" do
     field "id", jmes_path(response, "id")
   end
 end
-
 
 datasource "ds_parent_policy_terminated" do
   run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
