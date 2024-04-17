@@ -2,6 +2,8 @@
 
 ## v3.2.1
 
+- Added default value for parameters that do not require user input
+
 ## v3.2
 
 - Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.
@@ -36,6 +38,6 @@
 
 - Added subscription filter option and ability to specify Azure API endpoint
 
-## 2.0
+## v2.0
 
 - Initial Release

@@ -1,6 +1,6 @@
 # Changelog
 
-## 5.6.1
+## v5.6.1
 
 - Added default value for parameters that do not require user input
 
