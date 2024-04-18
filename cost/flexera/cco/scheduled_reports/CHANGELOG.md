@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.4
+
+- Fixed issue where filter would not work correctly if `Month` was selected for the `Billing Term` parameter.
+
 ## v3.3
 
 - Updated policy metadata to make it more clear what Flexera service the policy is for

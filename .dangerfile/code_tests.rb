@@ -11,7 +11,7 @@ def code_ruby_errors?(file)
   linter = `ruby -c #{file}`
 
   # Return the problems found if applicable
-  return "**#{file}**\nRuby linting found errors:\n\n#{linter}" if linter.strip != "Syntax OK"
+  return "Ruby linting found errors:\n\n#{linter}" if linter.strip != "Syntax OK"
   return false
 end
 
@@ -27,7 +27,7 @@ def code_rubocop_problems?(file)
   end
 
   # Return the problems found if applicable
-  return "**#{file}**\nRubocop linting found problems:\n\n#{fail_message}" if !fail_message.empty?
+  return "Rubocop linting found problems:\n\n#{fail_message}" if !fail_message.empty?
   return false
 end
 
@@ -47,7 +47,7 @@ def code_python_errors?(file)
   end
 
   # Return the problems found if applicable
-  return "**#{file}**\nPython linting found errors:\n\n#{fail_message}" if !fail_message.strip.empty?
+  return "Python linting found errors:\n\n#{fail_message}" if !fail_message.strip.empty?
   return false
 end
 
@@ -59,7 +59,7 @@ def code_json_bad_location?(file)
   fail_message = ""
 
   if file.start_with?("automation/") || file.start_with?("compliance/") || file.start_with?("cost/") || file.start_with?("operational/") || file.start_with?("saas/") || file.start_with?("security/")
-    fail_message = "**#{file}**\nJSON file located inside policy directory. Please move JSON file to an appropriate subdirectory in `data/`"
+    fail_message = "JSON file located inside policy directory. Please move JSON file to an appropriate subdirectory in `data/`"
   end
 
   return fail_message.strip if !fail_message.empty?
@@ -70,7 +70,7 @@ def code_yaml_bad_location?(file)
   fail_message = ""
 
   if file.start_with?("automation/") || file.start_with?("compliance/") || file.start_with?("cost/") || file.start_with?("operational/") || file.start_with?("saas/") || file.start_with?("security/")
-    fail_message = "**#{file}**\nYAML file located inside policy directory. Please move YAML file to an appropriate subdirectory in `data/`"
+    fail_message = "YAML file located inside policy directory. Please move YAML file to an appropriate subdirectory in `data/`"
   end
 
   return fail_message.strip if !fail_message.empty?
@@ -81,7 +81,7 @@ def code_json_errors?(file)
   linter = `jsonlint #{file}`
 
   # Return the problems found if applicable
-  return "**#{file}**\nJSON linting found errors:\n\n#{linter}" if !linter.strip.empty?
+  return "JSON linting found errors:\n\n#{linter}" if !linter.strip.empty?
   return false
 end
 
@@ -89,6 +89,6 @@ def code_yaml_errors?(file)
   linter = `yaml-lint -q #{file}`
 
   # Return the problems found if applicable
-  return "**#{file}**\nYAML linting found errors:\n\n#{linter}" if !linter.strip.empty?
+  return "YAML linting found errors:\n\n#{linter}" if !linter.strip.empty?
   return false
 end
