@@ -7,7 +7,7 @@ category "Operational"
 severity "low"
 default_frequency "daily"
 info(
-  version: "3.2",
+  version: "3.2.1",
   provider: "Azure",
   service: "Compute",
   policy_set: ""
@@ -19,33 +19,43 @@ info(
 
 parameter "param_email" do
   type "list"
-  label "Email addresses of the recipients you wish to notify."
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
 end
 
 parameter "param_azure_endpoint" do
   type "string"
+  category "Policy Settings"
   label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
   allowed_values "management.azure.com", "management.chinacloudapi.cn"
   default "management.azure.com"
 end
 
 parameter "param_subscriptions_list" do
-  label "Subscription Allowed List"
   type "list"
+  category "Policy Settings"
+  label "Subscription Allowed List"
   description "Allowed Subscriptions, if empty, all subscriptions will be checked"
+  default []
 end
 
 parameter "param_numberofdays" do
   type "string"
+  category "Policy Settings"
   label "Days"
   description "Number of days from expiration to raise an incident."
+  default ""
 end
 
 parameter "param_exclusion_tag_key" do
-  category "User Inputs"
+  type "string"
+  category "Policy Settings"
   label "Exclusion Tag Key"
   description "Azure-native instance tag to ignore instances that match the disallowed instance type. Only supply the tag key. The policy assumes that the tag value is irrelevant."
-  type "string"
+  default ""
 end
 
 ###############################################################################
@@ -100,8 +110,8 @@ datasource "ds_subscriptions" do
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "subscriptionId", jmes_path(col_item,"subscriptionId")
-      field "subscriptionName", jmes_path(col_item,"displayName")
+      field "subscriptionId", jmes_path(col_item, "subscriptionId")
+      field "subscriptionName", jmes_path(col_item, "displayName")
     end
   end
 end
@@ -164,10 +174,10 @@ datasource "ds_certificates" do
 end
 
 datasource "ds_filtered_certificates" do
-  run_script $js_filter_certificates, $ds_certificates, $param_exclusion_tag_key, $param_numberofdays
+  run_script $js_filtered_certificates, $ds_certificates, $param_exclusion_tag_key, $param_numberofdays
 end
 
-script "js_filter_certificates", type: "javascript" do
+script "js_filtered_certificates", type: "javascript" do
   parameters "certificates", "exclusion_tag", "expire_days"
   result "bad_certs"
   code <<-EOS
@@ -204,8 +214,8 @@ end
 policy "pol_azure_certificate_policy" do
   validate $ds_filtered_certificates do
     summary_template "Expiring/Expired Certificates Found: {{ len data }} App Service Certificates"
-    escalate $esc_email
     check logic_or($ds_parent_policy_terminated, eq(size(data), 0))
+    escalate $esc_email
     export do
       resource_level true
       field "id" do
@@ -280,7 +290,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
     header "Api-Version", "1.0"
   end
   result do

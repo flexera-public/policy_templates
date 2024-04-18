@@ -1,5 +1,7 @@
 # Changelog
 
+## v5.5.1
+
 ## v5.5
 
 - Updated policy to use new source for currency information. Policy functionality is unchanged.

@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.6.1
+
+- Added default value for parameters that do not require user input
+
 ## v5.6
 
 - Updated policy to use new source for currency information. Policy functionality is unchanged.
