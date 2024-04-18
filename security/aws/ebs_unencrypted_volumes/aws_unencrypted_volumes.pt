@@ -55,7 +55,7 @@ parameter "param_exclude_tags" do
   type "list"
   category "Policy Settings"
   label "Tags to ignore"
-  description "List of tags that will exclude resources from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'"
+  description "List of tags that will exclude resources from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test, env=dev'"
   default []
 end
 
@@ -64,7 +64,7 @@ end
 ###############################################################################
 
 credentials "auth_aws" do
-  schemes "aws","aws_sts"
+  schemes "aws", "aws_sts"
   label "AWS"
   description "Select the AWS Credential from the list"
   tags "provider=aws"
@@ -166,7 +166,7 @@ end
 datasource "ds_unencrypted_volume_list" do
   iterate $ds_regions
   request do
-    run_script $js_aws_unencrypted_volumes_list, val(iter_item,"region")
+    run_script $js_unencrypted_volume_list, val(iter_item, "region")
   end
   result do
     encoding "xml"
@@ -188,13 +188,13 @@ datasource "ds_unencrypted_volume_list" do
       field "encrypted", xpath(col_item, "encrypted")
       field "vol_status", xpath(col_item, "status")
       field "vol_type", xpath(col_item, "volumeType")
-      field "region", val(iter_item,"region")
+      field "region", val(iter_item, "region")
     end
   end
 end
 
 #https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeVolumes.html
-script "js_aws_unencrypted_volumes_list", type: "javascript" do
+script "js_unencrypted_volume_list", type: "javascript" do
   parameters "region"
   result "results"
   code <<-EOS
@@ -214,12 +214,12 @@ script "js_aws_unencrypted_volumes_list", type: "javascript" do
 end
 
 datasource "ds_unencrypted_volumes_map" do
-  run_script $js_unencrypted_vol_filter_map, $ds_unencrypted_volume_list, $param_exclude_tags
+  run_script $js_unencrypted_volumes_map, $ds_unencrypted_volume_list, $param_exclude_tags
 end
 
 #Process the response data and check for the tags and unencrypted voulmes
-script "js_unencrypted_vol_filter_map", type: "javascript" do
-  parameters "ds_unencrypted_volume_list","param_exclude_tags"
+script "js_unencrypted_volumes_map", type: "javascript" do
+  parameters "ds_unencrypted_volume_list", "param_exclude_tags"
   result "content"
   code <<-EOS
     var param_exclude_tags_lower=[];
@@ -270,9 +270,9 @@ script "js_unencrypted_vol_filter_map", type: "javascript" do
         })
       }
     }
-  content = _.sortBy(content,'id')
-  content = _.sortBy(content,'region')
-  content = _.sortBy(content,'availability_zone')
+  content = _.sortBy(content, 'id')
+  content = _.sortBy(content, 'region')
+  content = _.sortBy(content, 'availability_zone')
   EOS
 end
 
@@ -283,7 +283,7 @@ policy "pol_unencrypted_volumes_list" do
   validate $ds_unencrypted_volumes_map do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Unencrypted Volumes Found in AWS"
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
-    check logic_or($ds_parent_policy_terminated, eq(size(data),0))
+    check logic_or($ds_parent_policy_terminated, eq(size(data), 0))
     escalate $esc_email
     export do
       resource_level true
@@ -341,7 +341,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
     header "Api-Version", "1.0"
   end
   result do
