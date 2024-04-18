@@ -7,7 +7,7 @@ severity "low"
 category "Operational"
 default_frequency "monthly"
 info(
-  version: "1.0",
+  version: "2.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Usage Report"
@@ -39,6 +39,23 @@ parameter "param_regions_list" do
   category "Filters"
   label "Allow/Deny Regions List"
   description "A list of allowed or denied regions. Example: 'US West (Oregon)'. Leave blank to check all regions."
+  default []
+end
+
+parameter "param_bc_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Billing Centers"
+  description "Allow or Deny entered Billing Centers."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_bc_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Billing Center List"
+  description "A list of allowed or denied Billing Center names/IDs. Leave blank to check all Billing Centers."
   default []
 end
 
@@ -78,9 +95,9 @@ datasource "ds_billing_centers" do
       field "ancestor_ids", jmes_path(col_item, "ancestor_ids")
       field "allocation_table", jmes_path(col_item, "allocation_table")
     end
-  end  
+  end
 end
-  
+
 #GET TOP-LEVEL BILLING CENTERS
 datasource "ds_top_level_bcs" do
   run_script $js_top_level_bcs, $ds_billing_centers
@@ -101,7 +118,7 @@ end
 #GET USAGE DATA FOR INSTANCE TYPES
 datasource "ds_usage_data" do
   request do
-    run_script $js_usage_data, $ds_top_level_bcs, $param_regions_allow_or_deny, $param_regions_list, rs_org_id, rs_optima_host
+    run_script $js_usage_data, $ds_top_level_bcs, $ds_billing_centers, $param_regions_allow_or_deny, $param_regions_list, $param_bc_allow_or_deny, $param_bc_list, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -117,13 +134,36 @@ datasource "ds_usage_data" do
 end
 
 script "js_usage_data", type: "javascript" do
-  parameters "ds_top_level_bcs", "param_regions_allow_or_deny", "param_regions_list", "org_id", "optima_host"
+  parameters "ds_top_level_bcs", "ds_billing_centers", "param_regions_allow_or_deny", "param_regions_list", "param_bc_allow_or_deny", "param_bc_list", "org_id", "optima_host"
   result "request"
   code <<-EOS
   //Get Start and End dates
   start_date = new Date(), end_date = new Date()
-  start_date.setMonth(start_date.getMonth() - 13)
-  end_date.setMonth(end_date.getMonth() - 1)
+  start_date.setMonth(start_date.getMonth() - 12)
+  end_date.setMonth(end_date.getMonth())
+
+  //Define Billing Center list if applicable
+  var billing_center_ids = []
+  var allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_bc_list.length > 0) {
+    billing_center_ids = _.filter(ds_top_level_bcs, function(bc) {
+      var bc_name = ""
+      var matched_bc = _.find(ds_billing_centers, function(data) { return bc == data.id })
+
+      if (matched_bc != undefined) {
+        bc_name = matched_bc.name
+
+        if (param_bc_allow_or_deny == "Allow") {
+          return _.contains(param_bc_list, bc) == allow_deny_test[param_bc_allow_or_deny] || _.contains(param_bc_list, bc_name) == allow_deny_test[param_bc_allow_or_deny]
+        } else {
+          return _.contains(param_bc_list, bc) == allow_deny_test[param_bc_allow_or_deny] && _.contains(param_bc_list, bc_name) == allow_deny_test[param_bc_allow_or_deny]
+        }
+      }
+    })
+  } else {
+    billing_center_ids = ds_top_level_bcs
+  }
 
   //Define Expressions for API Filter 
   var expressions = [
@@ -170,12 +210,13 @@ script "js_usage_data", type: "javascript" do
   
   //POST JSON payload
   payload = {
-    "billing_center_ids": ds_top_level_bcs,
+    "billing_center_ids": billing_center_ids,
     "filter": {
       "type": "and",
       "expressions": expressions
     },
     "dimensions": [
+      "billing_center_id",
       "instance_type",
       "usage_unit"
     ],
@@ -227,7 +268,7 @@ script "js_instance_memory_per_fam", type: "javascript" do
   //Get Memory counts from Instance Data json
   instance_types = _.keys(aws_instance_data)
   var memory_data = []
-  _.each(instance_types, function(inst) {   
+  _.each(instance_types, function(inst) {
     var mem_count = 0
     if (aws_instance_data[inst].memory) {
       mem_count = aws_instance_data[inst].memory
@@ -396,7 +437,7 @@ policy "pol_inst_memory_per_inst_fam" do
     summary_template "AWS Usage Report - Amount of Instance Memory Used (Normalized - past 12 months)"
     detail_template <<-EOS
 # AWS - {{ with index data 0 }}{{ .chart_dimensions.policy_title }}{{ end }} Report
-![Instance Memory Used Per Instance Family Chart](https://image-charts.com/chart?{{ with index data 0 }}{{ .chart_dimensions.chart_data }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_type }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_image }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_title }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_label_position }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_label }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_style }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_color }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_data_scale }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_format }}{{ end }})
+![Instance Memory Used Per Instance Family Chart](https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id={{ rs_org_id }}&rs_project_id={{ rs_project_id }}&{{ with index data 0 }}{{ .chart_dimensions.chart_data }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_type }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_image }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_title }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_label_position }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_label }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_style }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_color }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_data_scale }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_format }}{{ end }})
 ___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 EOS
