@@ -24,6 +24,7 @@
 For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following permissions:
+
   - `governance:action_status:index`
   - `governance:action_status:show`
   - `governance:applied_policy:create`
@@ -65,10 +66,13 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ### Expected lifecycle
+
 #### First Parent Policy run
+
 Creates the initial batch of create child policies and summary incidents.  Child policies are created in batches and if number of children is >20 [or `max_actions`], then it will take more than one run to deploy all child policies.
 
 #### 2nd, 3rd, 4th, etc.. Parent Policy runs
+
 Subsequent runs triggers `create`/`update`/`delete` of child policies associated with the Parent Applied Policy.
 
 Child policies are managed in batches and each run can result in `max_actions` number of each; `create`, `update`, and `delete` actions.
@@ -76,37 +80,41 @@ Child policies are managed in batches and each run can result in `max_actions` n
 For example, if you have 200 child policies to be created, the first run would create 50, the second run would create another 50, and so on until all 200 child policies are created.
 
 #### Terminate Parent Policy
-Terminating the Parent Policy will only delete the Parent Policy in that moment.  The child policies will terminate themselves on their next scheduled run when they see that the Parent Policy no longer exists.
 
+Terminating the Parent Policy will only delete the Parent Policy in that moment.  The child policies will terminate themselves on their next scheduled run when they see that the Parent Policy no longer exists.
 
 ----
 
 ## Known Limitations
 
 #### Recommendations may take up to 1hr to appear in the UI
+
 Microservice that generates recommendations is configured to run on a schedule, so they will not immediately appear when an incident is created.  This is a Flexera One limitation and not necessarily related to Meta Policies.
 
 #### Child Applied Policies and Incidents are not currently visible in the UI
+
 It's not possible to view logs or trigger "run now" on child policies.
 It's not possible to view incidents from child policies in the UI beside the Cost Recommendations page.
 
 #### Recommendations from Child Policy Incidents take minimum 1day to disappear
+
 Cost Savings Recommendations disappear when the Child Applied Policy is terminated, which happens on schedule depending `param_policy_schedule` (default: daily, [weekly, monthly]). Child Policies and Incidents are hidden from UI, and so this can be a little confusing and it's not possible using UI to trigger terminate or run now of child policy to clean up incidents/recommendations in < 1hr.  Must use API to "run" all child policies and trigger the ad-hoc "clean" when the child policies delete themselves if they don't have a parent policy that exists.
 
-
 ----
-
 
 ## Meta Policy Development
 
 ### Child Policy Template Modifications
+
 A "child" policy is essentially just a standard policy template [i.e. from the catalog] which has some additional datasources and logic to make it work with the Meta Parent Policy.  The child policy can be used exactly as before and the additions have no resulting impact to their current functionality.
 
 #### **Increment Version and Update CHANGELOG**
+
 These changes should follow the standard change management processes, which includes bumping the version and updating the CHANGELOG.  Example CHANGELOG message:
 `- Added logic required for "Meta Policy" use-cases`
 
 #### **Identify "first" datasource and Add Header**
+
 The easiest way to identify the "first" datasource absolutely is to apply the policy and then "View Logs" -- the first datasource listed is the one that should be modified.  The header parameter below should be added to the request.
 
 ```ruby
@@ -131,6 +139,7 @@ end
 ```
 
 #### **Modify Policy Validation `check` statements**
+
 All `check` statements needs to be modified to add an additional `logic_or()` statement to check if the `ds_parent_policy_terminated` is true.  This is required to ensure that the policy does not generate incidents if there is a parent policy and it has been deleted.
 ```ruby
 # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
@@ -152,6 +161,7 @@ end
 ```
 
 #### **Append Common Meta Policy Logic**
+
 The majority of additions for child policies are common to all policies.  Generally it is recommended to place this at the bottom with the following comments.
 
 <details><summary><b>Click to Expand</b> Common Meta Policy Logic</summary>
@@ -177,7 +187,6 @@ datasource "ds_get_policy" do
     field "id", jmes_path(response, "id")
   end
 end
-
 
 datasource "ds_parent_policy_terminated" do
   run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
@@ -254,9 +263,9 @@ end
 ---
 
 ### Meta Parent Policy Template
+
 The Meta Parent Policy Template is a new policy template, that is associated with a specific child policy template.  We have a script to compile the Meta Parent Policy Templates once the child policy template has the appropriate "meta" code added to it and those changes have been published.
 
 When we want to create a new Meta Parent policy template regularly, we should append the list defined in [tools/meta_parent_policy_compiler/meta_parent_policy_compiler.rb](tools/meta_parent_policy_compiler/meta_parent_policy_compiler.rb)
-
 
 More information at [tools/meta_parent_policy_compiler/README.md](tools/meta_parent_policy_compiler/README.md)
