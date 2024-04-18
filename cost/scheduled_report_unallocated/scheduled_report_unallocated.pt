@@ -56,6 +56,7 @@ parameter "param_cost_time_period" do
   type "string"
   category "Policy Settings"
   label "Date Range"
+  description "Select the date range for your report"
   allowed_values "Last 7 Days", "Last 30 Days", "Last 45 Days", "Last 90 Days", "Previous Month", "Previous 3 Months"
   default "Last 30 Days"
 end
@@ -78,7 +79,7 @@ end
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    path "/flexera-public/policy_templates/master/cost/scheduled_reports/currency_reference.json"
     header "User-Agent", "RS Policies"
   end
 end
@@ -133,9 +134,9 @@ datasource "ds_toplevel_billing_centers" do
     auth $auth_flexera
     host rs_optima_host
     path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
+    query "view", "allocation_table"
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
   end
   result do
     encoding "json"
@@ -154,7 +155,7 @@ end
 datasource "ds_costs_aggregated" do
   iterate $ds_toplevel_billing_centers
   request do
-    run_script $js_costs_aggregated, $param_cost_dimensions, $param_cost_filters, $param_cost_metric, $param_cost_time_period, val(iter_item, "id"), rs_optima_host, rs_org_id
+    run_script $js_costs_aggregated, val(iter_item, "id"), $param_cost_dimensions, $param_cost_filters, $param_cost_metric, $param_cost_time_period, rs_optima_host, rs_org_id
   end
   result do
     encoding "json"
@@ -168,7 +169,7 @@ datasource "ds_costs_aggregated" do
 end
 
 script "js_costs_aggregated", type: "javascript" do
-  parameters "rs_optima_host", "rs_org_id", "param_cost_dimensions", "param_cost_filters", "param_cost_metric", "param_cost_time_period", "bc_id"
+  parameters "bc_id", "param_cost_dimensions", "param_cost_filters", "param_cost_metric", "param_cost_time_period", "rs_optima_host", "rs_org_id"
   result "request"
   code <<-EOS
   var cost_metric = {
@@ -388,8 +389,8 @@ policy "pol_scheduled_report" do
 {{- end }} | {{ end }}
 {{ end -}}
     EOS
-    escalate $esc_send_email
     check eq(1,0) # Always trigger
+    escalate $esc_send_email
   end
 end
 
