@@ -280,7 +280,13 @@ changed_pt_files.each do |file|
   test = policy_unmodified_changelog?(file, changed_changelog_files); failures << test if test
 
   # Raise warning if policy changed but readme has not been
-  test = policy_unmodified_readme?(file, changed_readme_files); warnings << test if test
+  rd_test = policy_unmodified_readme?(file, changed_readme_files); warnings << rd_test if rd_test
+
+  # Raise error if policy is not in the master permissions file.
+  # Raise warning if policy is in this file, but datasources have been added.
+  # Only raise the above warning if the more general warning about updating the README doesn't exist.
+  test = policy_missing_master_permissions?(file, permissions_yaml); failures << test if test
+  ds_test = policy_new_datasource?(file, permissions_yaml); warnings << ds_test if ds_test && !test && !rd_test
 
   # Raise error if policy filename/path contains any uppercase letters
   test = policy_bad_filename_casing?(file); failures << test if test
@@ -420,11 +426,6 @@ changed_pt_files.each do |file|
 
   # Raise warning if improper spacing between comma-separated items found
   test = policy_bad_comma_spacing?(file); warnings << test if test
-
-  # Raise error if policy is not in the master permissions file.
-  # Raise warning if policy is in this file, but datasources have been added.
-  test = policy_missing_master_permissions?(file, permissions_yaml); failures << test if test
-  ds_test = policy_new_datasource?(file, permissions_yaml); warnings << ds_test if ds_test && !test
 
   # Output final list of failures and warnings
   fail "## **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
