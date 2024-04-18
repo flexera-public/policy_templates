@@ -332,6 +332,9 @@ changed_pt_files.each do |file|
     info_test = policy_missing_info_field?(file, "policy_set"); warnings << info_test if info_test
   end
 
+  # Raise error if policy version number does not use semantic versioning
+  test = policy_nonsemantic_version?(file); failures << test if test
+
   # Raise error if policy and changelog do not have matching version numbers
   test = policy_changelog_mismatch?(file); failures << test if test
 

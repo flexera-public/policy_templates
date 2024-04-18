@@ -321,6 +321,25 @@ def policy_missing_info_field?(file, field_name)
   return false
 end
 
+### Semantic Version Test
+# Return false if policy's version number is compliant with semantic versioning
+def policy_nonsemantic_version?(file)
+  fail_message = ""
+
+  semantic_regex = /^\d+\.\d+\.\d+$/
+
+  pp = PolicyParser.new
+  pp.parse(file)
+  policy_version = pp.parsed_info[:version] if pp.parsed_info
+
+  if !policy_version.match?(semantic_regex)
+    fail_message = "Policy template version number is not compliant with [semantic versioning](https://github.com/flexera-public/policy_templates/blob/master/VERSIONING.md). Please update the version number accordingly."
+  end
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
 ### Changelog Version Test
 # Return false if policy's version number matches the latest entry in the CHANGELOG
 def policy_changelog_mismatch?(file)
