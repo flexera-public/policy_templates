@@ -50,6 +50,8 @@ def general_bad_markdown?(file)
   case file
   when "README.md"
     mdl = `mdl -r "~MD007","~MD013","~MD024" #{file}`
+  when "README_META_POLICIES.md"
+    mdl = `mdl -r "~MD007","~MD013","~MD024" #{file}`
   when "tools/cloudformation-template/README.md"
     mdl = `mdl -r "~MD007","~MD013","~MD033","~MD034" #{file}`
   when ".github/PULL_REQUEST_TEMPLATE.md"
