@@ -9,12 +9,12 @@
    - Terraform [aws_iam_role resource docs]
    - AWS APIs directly [AWS Docs]
 
-2. **Create AWS STS Credential on the Flexera Platform [Flexera Docs]**
+1. **Create AWS STS Credential on the Flexera Platform [Flexera Docs]**
    > Note: if your Organization in on **app.flexera.com** has multiple "Projects" within the Organization, you must use your Org "Master" Project.
 
-3. **Upload Meta Parent Policy to Flexera Platform [Flexera Docs]**
+1. **Upload Meta Parent Policy to Flexera Platform [Flexera Docs]**
 
-4. **Apply Meta Parent Policy to Org Master Account**
+1. **Apply Meta Parent Policy to Org Master Account**
    - Org "Master" Project must be used for recommendations to get created from policy incidents
    - "15 Minute" frequency recommended for all Meta Parent Policies
    - "Daily" frequency is currently suggested for all Child Policies frequency due to limitations on Policies Engine.
@@ -87,16 +87,16 @@ Terminating the Parent Policy will only delete the Parent Policy in that moment.
 
 ## Known Limitations
 
-#### Recommendations may take up to 1hr to appear in the UI
+### Recommendations may take up to 1hr to appear in the UI
 
 Microservice that generates recommendations is configured to run on a schedule, so they will not immediately appear when an incident is created.  This is a Flexera One limitation and not necessarily related to Meta Policies.
 
-#### Child Applied Policies and Incidents are not currently visible in the UI
+### Child Applied Policies and Incidents are not currently visible in the UI
 
 It's not possible to view logs or trigger "run now" on child policies.
 It's not possible to view incidents from child policies in the UI beside the Cost Recommendations page.
 
-#### Recommendations from Child Policy Incidents take minimum 1day to disappear
+### Recommendations from Child Policy Incidents take minimum 1day to disappear
 
 Cost Savings Recommendations disappear when the Child Applied Policy is terminated, which happens on schedule depending `param_policy_schedule` (default: daily, [weekly, monthly]). Child Policies and Incidents are hidden from UI, and so this can be a little confusing and it's not possible using UI to trigger terminate or run now of child policy to clean up incidents/recommendations in < 1hr.  Must use API to "run" all child policies and trigger the ad-hoc "clean" when the child policies delete themselves if they don't have a parent policy that exists.
 
@@ -124,6 +124,7 @@ header "Meta-Flexera", val($ds_is_deleted, "path")
 ```
 
 Example in datasource:
+
 ```ruby
 datasource "ds_regions_list" do
   request do
@@ -141,6 +142,7 @@ end
 #### **Modify Policy Validation `check` statements**
 
 All `check` statements needs to be modified to add an additional `logic_or()` statement to check if the `ds_parent_policy_terminated` is true.  This is required to ensure that the policy does not generate incidents if there is a parent policy and it has been deleted.
+
 ```ruby
 # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
 check logic_or($ds_parent_policy_terminated,    <original check statement>    )
@@ -149,6 +151,7 @@ check logic_or($ds_parent_policy_terminated,    <original check statement>    )
 Given this original `check`: `check eq(size(val(data, "idle_instances")), 0)`
 
 Example modified `check`:
+
 ```ruby
 policy "pol_utilization" do
   validate $ds_instance_cost_mapping do
