@@ -999,12 +999,12 @@ def policy_block_fields_incorrect_order?(file, block_type)
           sub_block = false
           export_block = false
           field_list = []
-        elsif sub_block && !export_block && (line.strip.start_with?("end") || line.include?("EOS") || line.include?("EOF"))
+        elsif sub_block && !export_block && (line.strip == "end" || line.include?("EOS") || line.include?("EOF"))
           sub_block = false
         elsif export_block
-          export_block = false if line.strip.start_with?("end") && !field_block
+          export_block = false if line.strip == "end" && !field_block
           field_block = true if line.strip.start_with?("field") && line.strip.end_with?(" do")
-          field_block = false if line.strip.start_with?("end") && field_block
+          field_block = false if line.strip  == "end" && field_block
         end
 
         if line.start_with?(block_name + " ") && line.strip.end_with?(" do")
