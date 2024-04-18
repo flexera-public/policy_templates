@@ -1,7 +1,7 @@
 name "Scheduled Report for Unallocated Costs"
 rs_pt_ver 20180301
 type "policy"
-short_description "This policy allows you to set up scheduled reports that will provide summaries of cloud cost that are unallocated for the dimensions you specify, delivered to any email addresses you specify."
+short_description "This policy allows you to set up scheduled reports that will provide summaries of cloud cost that are unallocated for the dimensions you specify, delivered to any email addresses you specify.  See [README](https://github.com/flexera-public/policy_templates/tree/master/cost/scheduled_report_unallocated/) for more details"
 long_description ""
 severity "low"
 category "Cost"
@@ -15,8 +15,13 @@ info(
   policy_set: ""
   )
 
+###############################################################################
+# Parameters
+###############################################################################
+
 parameter "param_email" do
   type "list"
+  category "Policy Settings"
   label "Email List"
   description "Email addresses of the recipients you wish to notify"
   default []
@@ -24,6 +29,7 @@ end
 
 parameter "param_cost_dimensions" do
   type "list"
+  category "Policy Settings"
   label "Dimensions List"
   description "List of Dimensions you want to report on (i.e. billing_center_id). Must provide at least one dimension"
   default ["billing_center_id"]
@@ -31,6 +37,7 @@ end
 
 parameter "param_cost_filters" do
   type "string"
+  category "Policy Settings"
   label "Cost Filters"
   description "JSON object of filters to apply to the report.  Example: `{\"dimension\": \"vendor\",\"type\": \"equal\",\"value\": \"aws\"}`"
   default ""
@@ -38,26 +45,24 @@ end
 
 parameter "param_cost_metric" do
   type "string"
+  category "Policy Settings"
   label "Cost Metric"
   allowed_values "Unamortized Unblended","Amortized Unblended","Unamortized Blended","Amortized Blended"
-  default "Unamortized Unblended"
   description "Select the cost metric for your report.  See the README file for more details"
+  default "Unamortized Unblended"
 end
-
-# parameter "param_graph_dimension" do
-#   type "string"
-#   label "Graph Dimension"
-#   allowed_values "Category","Billing Centers","Instance Type","Region","Resource Group","Resource Type","Service","Usage Type","Usage Unit","Cloud Vendor","Cloud Vendor Account","Cloud Vendor Account Name"
-#   default "Category"
-#   description "Select which dimension you'd like to be broken out on the graph in the report."
-# end
 
 parameter "param_cost_time_period" do
   type "string"
+  category "Policy Settings"
   label "Date Range"
   allowed_values "Last 7 Days", "Last 30 Days", "Last 45 Days", "Last 90 Days", "Previous Month", "Previous 3 Months"
   default "Last 30 Days"
 end
+
+###############################################################################
+# Authentication
+###############################################################################
 
 credentials "auth_flexera" do
   schemes "oauth2"
@@ -65,6 +70,10 @@ credentials "auth_flexera" do
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
 
 datasource "ds_currency_reference" do
   request do
@@ -145,7 +154,7 @@ end
 datasource "ds_costs_aggregated" do
   iterate $ds_toplevel_billing_centers
   request do
-    run_script $js_costs_aggregated, rs_optima_host, rs_org_id, $param_cost_dimensions, $param_cost_filters, $param_cost_metric, $param_cost_time_period, val(iter_item, "id")
+    run_script $js_costs_aggregated, $param_cost_dimensions, $param_cost_filters, $param_cost_metric, $param_cost_time_period, val(iter_item, "id"), rs_optima_host, rs_org_id
   end
   result do
     encoding "json"
@@ -347,14 +356,11 @@ script "js_costs_flattened", type: "javascript" do
   EOS
 end
 
-escalation "escalation_send_email" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
-end
+###############################################################################
+# Policy
+###############################################################################
 
-policy "policy_scheduled_report" do
+policy "pol_scheduled_report" do
   validate $ds_costs_flattened do
     summary_template "{{ rs_org_name }} (Org ID: {{ rs_org_id }}): Full Cost Scheduled Report"
     detail_template <<-EOS
@@ -382,7 +388,18 @@ policy "policy_scheduled_report" do
 {{- end }} | {{ end }}
 {{ end -}}
     EOS
-    escalate $escalation_send_email
+    escalate $esc_send_email
     check eq(1,0) # Always trigger
   end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_send_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
 end
