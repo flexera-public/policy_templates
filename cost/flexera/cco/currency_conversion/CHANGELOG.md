@@ -1,5 +1,11 @@
 # Changelog
 
+## v3.0
+
+- Fixed issue where policy would fail if org has existing adjustment rules for future months
+- Removed unused `Email Addresses` parameter
+- Added `Set Organization Currency` parameter to automatically set the Flexera organization's currency
+
 ## v2.3
 
 - Updated policy metadata to make it more clear what Flexera service the policy is for

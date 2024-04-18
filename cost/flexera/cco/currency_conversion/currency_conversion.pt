@@ -7,7 +7,7 @@ severity "low"
 default_frequency "monthly"
 category "Cost"
 info(
-  version: "2.3",
+  version: "3.0",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization"
@@ -16,14 +16,6 @@ info(
 ###############################################################################
 # Parameters
 ###############################################################################
-
-parameter "param_email" do
-  type "list"
-  category "Policy Settings"
-  label "Email Addresses"
-  description "Email addresses of the recipients you wish to notify when currency conversion adjustment rules are updated."
-  default []
-end
 
 parameter "param_cloud_provider" do
   type "string"
@@ -84,6 +76,15 @@ parameter "param_currency_to" do
   default "USD"
 end
 
+parameter "param_set_org_currency" do
+  type "string"
+  category "Currency"
+  label "Set Organization Currency"
+  description "Whether or not to configure the Flexera CCO user interface to present costs in the currency specified in the \"Currency To\" parameter. See README for more information."
+  allowed_values "Yes", "No"
+  default "No"
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -98,6 +99,33 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+# Branching Logic: Whether or not to set the organization currency
+datasource "ds_set_org_currency_logic" do
+  run_script $js_set_org_currency_logic, $param_set_org_currency, $param_currency_to
+end
+
+script "js_set_org_currency_logic", type: "javascript" do
+  parameters "param_set_org_currency", "param_currency_to"
+  result "result"
+  code <<-'EOS'
+  result = []
+  if (param_set_org_currency == "Yes") { result = [{ currency_code: param_currency_to }] }
+EOS
+end
+
+datasource "ds_set_org_currency" do
+  iterate $ds_set_org_currency_logic
+  request do
+    auth $auth_flexera
+    verb "PUT"
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    body_field "value", val(iter_item, "currency_code")
+  end
+end
 
 # Create a list of months in YYYY-MM format that we need to apply adjustments for
 datasource "ds_month_list" do
@@ -234,10 +262,10 @@ datasource "ds_current_adjustments" do
 end
 
 datasource "ds_updated_adjustments" do
-  run_script $js_update_adjustments, $ds_exchange_rates, $ds_current_adjustments, $ds_month_list, $param_cloud_provider, $param_cloud_provider_name, $param_currency_from, $param_currency_to, $param_backfill_exchange_rate, $param_backfill, $param_backfill_start_date
+  run_script $js_updated_adjustments, $ds_exchange_rates, $ds_current_adjustments, $ds_month_list, $param_cloud_provider, $param_cloud_provider_name, $param_currency_from, $param_currency_to, $param_backfill_exchange_rate, $param_backfill, $param_backfill_start_date
 end
 
-script "js_update_adjustments", type: "javascript" do
+script "js_updated_adjustments", type: "javascript" do
   parameters "ds_exchange_rates", "ds_current_adjustments", "ds_month_list", "param_cloud_provider", "param_cloud_provider_name", "param_currency_from", "param_currency_to", "param_backfill_exchange_rate", "param_backfill", "param_backfill_start_date"
   result "result"
   code <<-'EOS'
@@ -332,20 +360,38 @@ script "js_update_adjustments", type: "javascript" do
     }
   }
 
-  result = [{
-    list: JSON.stringify({ dated_adjustment_lists: new_adjustments }),
+  new_adjustments = _.sortBy(new_adjustments, "effective_at")
+
+  result = {
+    list: { dated_adjustment_lists: new_adjustments },
     message: message + message_rules.join("\n")
+  }
+EOS
+end
+
+# Include ds_set_org_currency to ensure it executes, not because it's used by this script
+datasource "ds_updated_adjustments_payload" do
+  run_script $js_updated_adjustments_payload, $ds_updated_adjustments, $ds_set_org_currency
+end
+
+script "js_updated_adjustments_payload", type: "javascript" do
+  parameters "ds_updated_adjustments", "ds_set_org_currency"
+  result "result"
+  code <<-'EOS'
+  result = [{
+    list: JSON.stringify(ds_updated_adjustments['list']),
+    message: ds_updated_adjustments['message']
   }]
 EOS
 end
 
 # Update adjustment table to include new currency conversion adjustments
 datasource "ds_new_adjustments" do
-  iterate $ds_updated_adjustments
+  iterate $ds_updated_adjustments_payload
   request do
     auth $auth_flexera
-    host rs_optima_host
     verb "PUT"
+    host rs_optima_host
     path join(["/bill-analysis/orgs/", rs_org_id, "/adjustments/"])
     header "content-type", "application/json"
     header "User-Agent", "RS Policies"

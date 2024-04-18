@@ -1,5 +1,10 @@
 # Changelog
 
+## v4.0
+
+- Added ability to filter the report for a list of Billing Centers that can either be allowed or denied.
+- Added ability to filter the report for a list of Regions that can either be allowed or denied.
+
 ## v3.2
 
 - Updated policy metadata to correctly identify it as an AWS policy
