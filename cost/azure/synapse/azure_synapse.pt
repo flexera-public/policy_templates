@@ -454,11 +454,11 @@ EOS
 end
 
 datasource "ds_pools_with_metrics" do
-  run_script $js_pools_with_metrics, $ds_sql_pool_metrics, $ds_sql_pools, $param_stats_lookback, $param_stats_threshold, $param_pause_lookback  # Asegúrate de que todos estos parámetros están siendo pasados
+  run_script $js_pools_with_metrics, $ds_sql_pool_metrics, $ds_sql_pools, $param_stats_lookback, $param_stats_threshold, $param_pause_lookback
 end
 
 script "js_pools_with_metrics", type: "javascript" do
-  parameters "ds_sql_pool_metrics", "ds_sql_pools", "param_stats_lookback", "param_stats_threshold", "param_pause_lookback"  # Añadir aquí param_pause_lookback
+  parameters "ds_sql_pool_metrics", "ds_sql_pools", "param_stats_lookback", "param_stats_threshold", "param_pause_lookback"
   result "result"
   code <<-EOS
     result = []
@@ -509,6 +509,61 @@ script "js_pools_with_metrics", type: "javascript" do
   EOS 
 end
 
+datasource "ds_pools_with_metrics_copy" do
+  run_script $js_pools_with_metrics_copy, $ds_sql_pool_metrics, $ds_sql_pools, $param_stats_lookback, $param_stats_threshold, $param_pause_lookback
+end
+
+script "js_pools_with_metrics_copy", type: "javascript" do
+  parameters "ds_sql_pool_metrics", "ds_sql_pools", "param_stats_lookback", "param_stats_threshold", "param_pause_lookback"
+  result "result"
+  code <<-EOS
+    result = []
+    pools = {}
+
+    _.each(ds_sql_pools, function(item) {
+        id = item['resourceId'].toLowerCase()
+
+        pools[id] = item
+    })
+
+    _.each(ds_sql_pool_metrics, function(item) {
+        id = item['resourceId'].toLowerCase()
+
+        metrics = {}
+        values = item['value']
+
+        _.each(values, function(metric) {
+            metrics[metric['name']['value']] = metric['timeseries'][0]['data']
+
+        })
+        result.push({
+            resourceName: item['resourceName'],
+            resourceGroup: item['resourceGroup'],
+            resourceId: item['resourceId'],
+            region: item['region'],
+            resourceType: pools[id]['sku'],
+            subscriptionId: item['subscriptionId'],
+            subscriptionName: item['subscriptionName'],
+            tags: item['tags'],
+            region: item['region'],
+            status: pools[id]['status'],
+            creationDate: pools[id]['creationDate'],
+            maxSizeBytes: pools[id]['maxSizeBytes'],
+            provisioningState: pools[id]['provisioningState'],
+            storageAccountType: pools[id]['storageAccountType'],
+            DWUUsed: metrics['DWUUsed'][0]['maximum'],
+            DWUUsedPercent: metrics['DWUUsedPercent'][0]['maximum'],
+            MemoryUsedPercent: metrics['MemoryUsedPercent'][0]['maximum'],
+            Connections: metrics['Connections'][0]['maximum'],
+            service: "Microsoft.Synapse",
+            lookbackPeriod: param_stats_lookback,
+            pauseLookbackPeriod: param_pause_lookback,
+            threshold: param_stats_threshold
+
+        })
+    })
+  EOS 
+end
 
 
 datasource "ds_instance_costs" do
@@ -625,6 +680,94 @@ policy "ds_pools_with_metrics" do
   validate $ds_pools_with_metrics do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Synapse SQL pools found"
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
+    check eq(size(data),0)
+#    escalate $esc_email
+#    escalate $esc_downsize_instances
+#    hash_exclude "underutil_message", "idle_message", "underutil_total_savings", "idle_total_savings", "tags", "savings", "savingsCurrency", "cpu_maximum", "cpu_minimum", "cpu_average", "mem_maximum", "mem_minimum", "mem_average"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Subscription ID"
+        path "subscriptionId"
+      end
+      field "accountName" do
+        label "Subscription Name"
+        path "subscriptionName"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "resourceName" do
+        label "Resource Name"
+        path "name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+        path "resourceId"
+      end
+      field "resourceType" do
+        label "Pool SKU"
+        path "sku"
+      end
+      field "resourceKind" do
+        label "Resource Kind"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "status" do
+        label "Status"
+      end
+      field "creationDate" do
+        label "Creation Date"
+      end
+      field "maxSizeBytes" do
+        label "Max Size Bytes"
+      end
+      field "provisioningState" do
+        label "Provisioning State"
+      end
+      field "storageAccountType" do
+        label "Storage Account Type"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "DWUUsed" do
+        label "DWU Used Max"
+      end
+      field "DWUUsedPercent" do
+        label "DWU Used % Max"
+      end
+      field "Connections" do
+        label "Connections Max"
+      end
+      field "MemoryUsedPercent" do
+        label "Memory Used % Max"
+      end
+      field "threshold" do
+        label "Threshold"
+      end
+      field "pauseLookbackPeriod" do
+        label "Pause Look Back Period (Days)"
+      end
+        field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "ID"
+        path "resourceId"
+      end
+    end
+  end
+  validate $ds_pools_with_metrics_copy do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Synapse SQL pools found"
     check eq(size(data),0)
 #    escalate $esc_email
 #    escalate $esc_downsize_instances
