@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.6
+
+- Fixed bug where incident link was redirecting to wrong url
+
 ## v3.5
 
 - Updated policy metadata to make it more clear what Flexera service the policy is for
