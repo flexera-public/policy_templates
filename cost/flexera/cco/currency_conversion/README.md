@@ -11,6 +11,7 @@ This policy creates adjustment rules that convert the currency of the cost assoc
 - This policy also supports custom cloud provider names to handle specialized use cases.
 - This policy creates an adjustment rule for currency conversion using the exchange rate from xe.com.
 - This policy can create such adjustment rules for the current month or backfill previous months.
+- This policy can also set the Flexera CCO user interface to present all costs in the currency that costs are being converted to.
 
 ## Input Parameters
 
@@ -23,6 +24,7 @@ This policy has the following input parameters required when launching the polic
 - *Cloud Provider Name* - Name of the cloud provider to apply currency conversion to. Only applicable if 'Other' is selected for Cloud Provider. This should correspond to the Cloud Vendor field in the Flexera One UI or the 'vendor' field in Optima.
 - *Currency From* - Currency you want to convert from (based on ISO 4217 codes - e.g., 'USD' for US Dollar)
 - *Currency To* - Currency you want to convert to (based on ISO 4217 codes - e.g., 'EUR' for Euro)
+- *Set Organization Currency* - Whether or not to configure the Flexera CCO user interface to present costs in the currency specified in the `Currency To` parameter. If set to `Yes`, this will be done, and all costs in Flexera CCO for this organization will be presented in the currency costs are converted to.
 
 ## Policy Actions
 
