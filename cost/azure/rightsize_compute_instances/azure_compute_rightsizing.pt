@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "5.1",
+  version: "5.2.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -21,7 +21,7 @@ info(
 parameter "param_email" do
   type "list"
   category "Policy Settings"
-  label "Email addresses"
+  label "Email Addresses"
   description "A list of email addresses to notify."
   default []
 end
@@ -93,6 +93,24 @@ parameter "param_regions_list" do
   label "Allow/Deny Regions List"
   description "A list of allowed or denied regions. See the README for more details."
   default []
+end
+
+parameter "param_exclude_stopped" do
+  type "string"
+  category "Filters"
+  label "Exclude Stopped Virtual Machines"
+  description "Whether or not to filter stopped virtual machines from the results. If set to \"Yes\", only running virtual machines will be included in the results."
+  allowed_values "Yes", "No"
+  default "Yes"
+end
+
+parameter "param_exclude_databricks" do
+  type "string"
+  category "Filters"
+  label "Exclude Databricks"
+  description "Whether or not to filter virtual machines used for Azure Databricks from the results. If set to \"Yes\", virtual machines for Azure Databricks will not be included in the results."
+  allowed_values "Yes", "No"
+  default "Yes"
 end
 
 parameter "param_stats_idle_threshold_cpu_value" do
@@ -373,7 +391,8 @@ datasource "ds_azure_instances" do
     pagination $pagination_azure
     host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Compute/virtualMachines"])
-    query "api-version", "2019-03-01"
+    query "$expand", "instanceView"
+    query "api-version", "2024-03-01"
     header "User-Agent", "RS Policies"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
     ignore_status [400, 403, 404]
@@ -386,6 +405,10 @@ datasource "ds_azure_instances" do
       field "resourceKind", jmes_path(col_item, "type")
       field "name", jmes_path(col_item, "name")
       field "region", jmes_path(col_item, "location")
+      field "statuses", jmes_path(col_item, "properties.instanceView.statuses")
+      field "imagePublisher", jmes_path(col_item, "properties.storageProfile.imageReference.publisher")
+      field "imageOffer", jmes_path(col_item, "properties.storageProfile.imageReference.offer")
+      field "imageSKU", jmes_path(col_item, "properties.storageProfile.imageReference.sku")
       field "osType", jmes_path(col_item, "properties.storageProfile.osDisk.osType")
       field "resourceType", jmes_path(col_item, "properties.hardwareProfile.vmSize")
       field "tags", jmes_path(col_item, "tags")
@@ -497,6 +520,43 @@ script "js_azure_instances_region_filtered", type: "javascript" do
 EOS
 end
 
+datasource "ds_azure_instances_databricks_filtered" do
+  run_script $js_azure_instances_databricks_filtered, $ds_azure_instances_region_filtered, $param_exclude_databricks
+end
+
+script "js_azure_instances_databricks_filtered", type: "javascript" do
+  parameters "ds_azure_instances_region_filtered", "param_exclude_databricks"
+  result "result"
+  code <<-EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_azure_instances_region_filtered, function(vm) {
+      return vm['imageOffer'].toLowerCase().indexOf('databricks') == -1 && vm['imagePublisher'].toLowerCase().indexOf('databricks') == -1
+    })
+  } else {
+    result = ds_azure_instances_tag_filtered
+  }
+EOS
+end
+
+datasource "ds_azure_instances_status_filtered" do
+  run_script $js_azure_instances_status_filtered, $ds_azure_instances_databricks_filtered, $param_exclude_stopped
+end
+
+script "js_azure_instances_status_filtered", type: "javascript" do
+  parameters "ds_azure_instances_databricks_filtered", "param_exclude_stopped"
+  result "result"
+  code <<-EOS
+  if (param_exclude_stopped == "Yes") {
+    result = _.filter(ds_azure_instances_databricks_filtered, function(vm) {
+      status_codes = _.pluck(vm['statuses'], 'code')
+      return _.contains(status_codes, 'PowerState/running')
+    })
+  } else {
+    result = ds_azure_instances_databricks_filtered
+  }
+EOS
+end
+
 datasource "ds_azure_skus" do
   iterate $ds_azure_subscriptions_filtered
   request do
@@ -546,7 +606,7 @@ EOS
 end
 
 datasource "ds_azure_instances_metrics" do
-  iterate $ds_azure_instances_region_filtered
+  iterate $ds_azure_instances_status_filtered
   request do
     run_script $js_azure_instances_metrics, val(iter_item, "resourceID"), $param_azure_endpoint, $param_stats_lookback
   end
@@ -559,6 +619,10 @@ datasource "ds_azure_instances_metrics" do
     field "resourceKind", val(iter_item, "resourceKind")
     field "region", val(iter_item, "region")
     field "tags", val(iter_item, "tags")
+    field "statuses", val(iter_item, "statuses")
+    field "imagePublisher", val(iter_item, "imagePublisher")
+    field "imageOffer", val(iter_item, "imageOffer")
+    field "imageSKU", val(iter_item, "imageSKU")
     field "osType", val(iter_item, "osType")
     field "resourceType", val(iter_item, "resourceType")
     field "subscriptionId",val(iter_item, "subscriptionId")
@@ -708,17 +772,25 @@ script "js_azure_instances_metrics_organized", type: "javascript" do
       })
     }
 
+    status_codes = _.pluck(vm['statuses'], 'code')
+    powerstate = _.find(status_codes, function(code) { return code.indexOf('PowerState') == 0 })
+    state = powerstate.split('/')[1]
+
     result.push({
       resourceName: vm['resourceName'],
       resourceGroup: vm['resourceGroup'],
       resourceID: vm['resourceID'],
       resourceKind: vm['resourceKind'],
       region: vm['region'],
+      imagePublisher: vm['imagePublisher'],
+      imageOffer: vm['imageOffer'],
+      imageSKU: vm['imageSKU'],
       osType: vm['osType'],
       resourceType: vm['resourceType'],
       accountID: vm['subscriptionId'],
       accountName: vm['subscriptionName'],
       tags: vm_tags.join(', '),
+      state: state,
       cpu_minimum: parseFloat(cpu_min.toFixed(2)),
       cpu_maximum: parseFloat(cpu_max.toFixed(2)),
       cpu_average: parseFloat(cpu_avg.toFixed(2)),
@@ -948,6 +1020,7 @@ script "js_idle_and_underutil_instances", type:"javascript" do
         instance["recommendationType"] = "Delete"
         instance["threshold"] = param_stats_idle_threshold_cpu_value
         instance["memoryThreshold"] = param_stats_idle_threshold_mem_value
+        instance["newResourceType"] = "Delete Virtual Machine"
 
         recommendationDetails = [
           "Delete Azure virtual machine ", instance["resourceName"], " ",
@@ -1225,6 +1298,18 @@ policy "pol_utilization" do
       field "osType" do
         label "Operating System"
       end
+      field "imagePublisher" do
+        label "Image Publisher"
+      end
+      field "imageOffer" do
+        label "Image Offer"
+      end
+      field "imageSKU" do
+        label "Image SKU"
+      end
+      field "state" do
+        label "Power State"
+      end
       field "savings" do
         label "Estimated Monthly Savings"
       end
@@ -1315,6 +1400,9 @@ policy "pol_utilization" do
       field "resourceType" do
         label "Instance Size"
       end
+      field "newResourceType" do
+        label "Recommended Instance Size"
+      end
       field "resourceKind" do
         label "Resource Kind"
       end
@@ -1323,6 +1411,18 @@ policy "pol_utilization" do
       end
       field "osType" do
         label "Operating System"
+      end
+      field "imagePublisher" do
+        label "Image Publisher"
+      end
+      field "imageOffer" do
+        label "Image Offer"
+      end
+      field "imageSKU" do
+        label "Image SKU"
+      end
+      field "state" do
+        label "Power State"
       end
       field "savings" do
         label "Estimated Monthly Savings"
@@ -1418,7 +1518,9 @@ define downsize_instances($data, $param_azure_endpoint) return $all_responses do
 
   foreach $instance in $data do
     sub on_error: handle_error() do
-      call downsize_instance($instance, $param_azure_endpoint) retrieve $downsize_response
+      if $instance["recommendedVmSize"] != "Delete Virtual Machine"
+        call downsize_instance($instance, $param_azure_endpoint) retrieve $downsize_response
+      end
     end
   end
 
