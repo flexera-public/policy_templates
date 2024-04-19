@@ -29,6 +29,7 @@ These templates can generate savings estimates for your environment.
 
 - [AWS Old Snapshots](./cost/aws/old_snapshots)
 - [AWS Reserved Instances Recommendations](./cost/aws/reserved_instances/recommendations)
+- [AWS Resources Under Extended Support](./cost/aws/extended_support)
 - [AWS Rightsize EBS Volumes](./cost/aws/rightsize_ebs_volumes)
 - [AWS Rightsize EC2 Instances](./cost/aws/rightsize_ec2_instances)
 - [AWS Rightsize RDS Instances](./cost/aws/rightsize_rds_instances)
@@ -170,6 +171,10 @@ These templates can generate savings estimates for your environment.
 ### Policy Templates for Cost
 
 #### AWS
+
+- All
+
+  - [AWS Resources Under Extended Support](./cost/aws/extended_support)
 
 - Compute
 
@@ -614,11 +619,11 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 33
-  Cost: 92
+  Cost: 93
   Operational: 28
   SaaS Management: 12
   Security: 74
-:optimization_count: 46
+:optimization_count: 47
 :policy_sets:
   '': 47
   AWS Config: 1
@@ -632,6 +637,7 @@ These templates can generate savings estimates for your environment.
   Common Bill Ingestion: 2
   Database Services: 1
   Databricks: 1
+  Deprecated Resources: 1
   Disallowed Regions: 2
   Forecasting: 4
   Hybrid Use Benefit: 5
@@ -675,7 +681,7 @@ These templates can generate savings estimates for your environment.
   Unused Volumes: 6
   Usage Report: 8
 :providers:
-  AWS: 81
+  AWS: 82
   Azure: 85
   Azure China: 1
   Flexera: 39
@@ -691,7 +697,7 @@ These templates can generate savings estimates for your environment.
 :services:
   '': 14
   AKS: 2
-  All: 1
+  All: 2
   App Service: 1
   Automation: 1
   Cloud Cost Optimization: 18
@@ -734,7 +740,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 239
+:total_count: 240
 -->
 <!-- End Policy Template Stats -->
 

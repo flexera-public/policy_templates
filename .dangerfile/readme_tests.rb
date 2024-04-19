@@ -40,7 +40,7 @@ def readme_missing_sections?(file)
   fail_message += "```## Supported Clouds```\n" if !supported_clouds_found
   fail_message += "```## Cost```\n" if !cost_found
 
-  fail_message = "**#{file}**\nREADME.md is missing required sections. Please make sure the following sections exist and are indicated with the below markdown. Spelling, spacing, and capitalization should conform to the below:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "README.md is missing required sections. Please make sure the following sections exist and are indicated with the below markdown. Spelling, spacing, and capitalization should conform to the below:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
@@ -128,7 +128,7 @@ def readme_sections_out_of_order?(file)
     end
   end
 
-  fail_message = "**#{file}**\nREADME.md sections are out of order. Sections should be in the following order: Policy Name, What It Does, How It Works, Policy Savings Details, Input Parameters, Policy Actions, Prerequisites, Supported Clouds, Cost\n\n" + fail_message if !fail_message.empty?
+  fail_message = "README.md sections are out of order. Sections should be in the following order: Policy Name, What It Does, How It Works, Policy Savings Details, Input Parameters, Policy Actions, Prerequisites, Supported Clouds, Cost\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
@@ -431,7 +431,7 @@ def readme_invalid_credentials?(file)
     end
   end
 
-  fail_message = "**#{file}**\nREADME.md has problems with how credential permissions are presented:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "README.md has problems with how credential permissions are presented:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false

@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "5.4",
+  version: "5.4.1",
   provider: "Azure",
   service: "SQL",
   policy_set: "Unused Database Services",
@@ -20,19 +20,23 @@ info(
 
 parameter "param_email" do
   type "list"
+  category "Policy Settings"
   label "Email addresses to notify"
   description "Email addresses of the recipients you wish to notify when new incidents are created."
+  default []
 end
 
 parameter "param_exclusion_tag_key" do
   type "string"
-  category "User Inputs"
+  category "Policy Settings"
   label "Exclusion Tag Key"
   description "Azure-native SQL Database tag key to ignore databases. Only supply the tag key. The policy assumes that the tag value is irrelevant."
+  default ""
 end
 
 parameter "param_azure_endpoint" do
   type "string"
+  category "Policy Settings"
   label "Azure Endpoint"
   description "Azure Endpoint to access resources"
   allowed_values "management.azure.com", "management.chinacloudapi.cn"
@@ -40,13 +44,16 @@ parameter "param_azure_endpoint" do
 end
 
 parameter "param_subscriptions_list" do
-  label "Subscription Allowed List"
   type "list"
+  category "Policy Settings"
+  label "Subscription Allowed List"
   description "Allowed Subscriptions, if empty, all subscriptions will be checked"
+  default []
 end
 
 parameter "param_automatic_action" do
   type "list"
+  category "Policy Settings"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
   allowed_values ["Terminate Instances"]
@@ -55,10 +62,11 @@ end
 
 parameter "param_log_to_cm_audit_entries" do
   type "string"
+  category "Policy Settings"
   label "Log to CM Audit Entries"
   description "Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left set to No on Flexera EU"
-  default "No"
   allowed_values "Yes", "No"
+  default "No"
 end
 
 ###############################################################################
@@ -83,7 +91,7 @@ end
 # Pagination
 ###############################################################################
 
-pagination "azure_pagination" do
+pagination "pagination_azure" do
   get_page_marker do
     body_path "nextLink"
   end
@@ -93,14 +101,14 @@ pagination "azure_pagination" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 #
 #To get all subscriptions
 datasource "ds_subscriptions" do
   request do
     auth $auth_azure
-    pagination $azure_pagination
+    pagination $pagination_azure
     host $param_azure_endpoint
     path "/subscriptions/"
     query "api-version", "2020-01-01"
@@ -114,9 +122,9 @@ datasource "ds_subscriptions" do
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "subscriptionID", jmes_path(col_item,"subscriptionId")
-      field "subscriptionName", jmes_path(col_item,"displayName")
-      field "state", jmes_path(col_item,"state")
+      field "subscriptionID", jmes_path(col_item, "subscriptionId")
+      field "subscriptionName", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
     end
   end
 end
@@ -124,135 +132,6 @@ end
 datasource "ds_filtered_subscriptions" do
   run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscriptions_list
 end
-
-#https://docs.microsoft.com/en-us/rest/api/resources/resources/list
-datasource "ds_azure_sql_databases" do
-  iterate $ds_filtered_subscriptions
-  request do
-    auth $auth_azure
-    pagination $azure_pagination
-    host $param_azure_endpoint
-    path join(["/subscriptions/", val(iter_item,"subscriptionID"), "/resources"])
-    query "api-version", "2021-04-01"
-    query "$filter", "resourceType eq 'Microsoft.Sql/servers/databases'"
-    header "User-Agent", "RS Policies"
-    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-    ignore_status [400, 403, 404]
-  end
-  result do
-    encoding "json"
-      collect jmes_path(response, "value") do
-        field "resourceID", jmes_path(col_item,"id")
-        field "resourceName", jmes_path(col_item,"name")
-        field "region", jmes_path(col_item,"location")
-        field "resourceType", jmes_path(col_item,"type")
-        field "resourceKind", jmes_path(col_item,"kind")
-        field "sku" , jmes_path(col_item,"sku")
-        field "tags", jmes_path(col_item,"tags")
-        field "subscriptionID",val(iter_item,"subscriptionID")
-        field "subscriptionName",val(iter_item,"subscriptionName")
-    end
-  end
-end
-
-datasource "ds_azure_sql_database_metrics" do
-  iterate $ds_azure_sql_databases
-  request do
-    run_script $js_utilization_request, val(iter_item,"resourceID"), $param_azure_endpoint
-  end
-  result do
-    encoding "json"
-      collect jmes_path(response, "value") do
-        field "resourceID", val(iter_item,"resourceID")
-        field "region", val(iter_item,"region")
-        field "resourceName", val(iter_item,"resourceName")
-        field "resourceKind", val(iter_item,"resourceKind")
-        field "resourceType", val(iter_item,"resourceType")
-        field "sku" , val(iter_item,"sku")
-        field "unit", jmes_path(col_item,"unit")
-        field "timeseries", jmes_path(col_item,"timeseries")
-        field "subscriptionID",val(iter_item,"subscriptionID")
-        field "subscriptionName",val(iter_item,"subscriptionName")
-        field "tags", val(iter_item,"tags")
-    end
-  end
-end
-
-datasource "ds_currency_reference" do
-  request do
-    host "raw.githubusercontent.com"
-    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
-    header "User-Agent", "RS Policies"
-  end
-end
-
-datasource "ds_currency_code" do
-  request do
-    auth $auth_flexera
-    host rs_optima_host
-    path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
-    header "Api-Version", "0.1"
-    header "User-Agent", "RS Policies"
-    ignore_status [403]
-  end
-  result do
-    encoding "json"
-    field "id", jmes_path(response,"id")
-    field "value", jmes_path(response,"value")
-  end
-end
-
-datasource "ds_billing_centers" do
-  request do
-    auth $auth_flexera
-    host rs_optima_host
-    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
-    header "Api-Version", "1.0"
-    header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
-    ignore_status [403]
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "href", jmes_path(col_item,"href")
-      field "id", jmes_path(col_item,"id")
-      field "name", jmes_path(col_item,"name")
-      field "parent_id", jmes_path(col_item,"parent_id")
-    end
-  end
-end
-
-datasource "ds_instance_costs" do
-  iterate $ds_filtered_subscriptions
-  request do
-    run_script $js_get_costs, val(iter_item,"subscriptionID"), $ds_top_level_billing_centers, rs_org_id, rs_optima_host
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"rows[*]") do
-      field "resource_id", jmes_path(col_item, "dimensions.resource_id")
-      field "resource_type", jmes_path(col_item, "dimensions.resource_type")
-      field "cost_nonamortized_unblended_adj", jmes_path(col_item,"metrics.cost_nonamortized_unblended_adj")
-    end
-  end
-end
-
-datasource "ds_top_level_billing_centers" do
-  run_script $js_top_level_bc, $ds_billing_centers
-end
-
-datasource "ds_merged_metrics" do
-  run_script $js_merged_metrics, $ds_azure_sql_database_metrics, $param_exclusion_tag_key
-end
-
-datasource "ds_instance_cost_mapping" do
-  run_script $js_instance_cost_mapping, $ds_merged_metrics, $ds_instance_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers
-end
-
-###############################################################################
-# Scripts
-###############################################################################
 
 script "js_filtered_subscriptions", type: "javascript" do
   parameters "ds_subscriptions", "param_subscriptions_list"
@@ -273,8 +152,61 @@ script "js_filtered_subscriptions", type: "javascript" do
 EOS
 end
 
+#https://docs.microsoft.com/en-us/rest/api/resources/resources/list
+datasource "ds_azure_sql_databases" do
+  iterate $ds_filtered_subscriptions
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "subscriptionID"), "/resources"])
+    query "api-version", "2021-04-01"
+    query "$filter", "resourceType eq 'Microsoft.Sql/servers/databases'"
+    header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value") do
+      field "resourceID", jmes_path(col_item, "id")
+      field "resourceName", jmes_path(col_item, "name")
+      field "region", jmes_path(col_item, "location")
+      field "resourceType", jmes_path(col_item, "type")
+      field "resourceKind", jmes_path(col_item, "kind")
+      field "sku", jmes_path(col_item, "sku")
+      field "tags", jmes_path(col_item, "tags")
+      field "subscriptionID", val(iter_item, "subscriptionID")
+      field "subscriptionName", val(iter_item, "subscriptionName")
+    end
+  end
+end
+
+datasource "ds_azure_sql_database_metrics" do
+  iterate $ds_azure_sql_databases
+  request do
+    run_script $js_azure_sql_database_metrics, val(iter_item, "resourceID"), $param_azure_endpoint
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value") do
+      field "resourceID", val(iter_item, "resourceID")
+      field "region", val(iter_item, "region")
+      field "resourceName", val(iter_item, "resourceName")
+      field "resourceKind", val(iter_item, "resourceKind")
+      field "resourceType", val(iter_item, "resourceType")
+      field "sku", val(iter_item, "sku")
+      field "unit", jmes_path(col_item, "unit")
+      field "timeseries", jmes_path(col_item, "timeseries")
+      field "subscriptionID", val(iter_item, "subscriptionID")
+      field "subscriptionName", val(iter_item, "subscriptionName")
+      field "tags", val(iter_item, "tags")
+    end
+  end
+end
+
 # Build the API request object dynamically
-script "js_utilization_request", type: "javascript" do
+script "js_azure_sql_database_metrics", type: "javascript" do
   parameters "resource_id", "param_azure_endpoint"
   result "request"
   code <<-EOS
@@ -307,7 +239,7 @@ script "js_utilization_request", type: "javascript" do
         "interval" :  "P1D"                    //Dailey
       },
       // Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-      ignore_status: [400,403,404],
+      ignore_status: [400, 403, 404],
       headers: {
         "User-Agent" : "RS Policies"
       }
@@ -315,89 +247,68 @@ script "js_utilization_request", type: "javascript" do
   EOS
 end
 
-script "js_merged_metrics", type: "javascript" do
-  parameters "databases_metrics", "exclusion_tag"
-  result "result"
-  code <<-EOS
-    var result = [];
-    //exclude the database with the exclution tags, and the system databases
-    for(i=0; i< databases_metrics.length; i++){
-      var tags = []
-
-      if (typeof databases_metrics[i].tags === "undefined" || databases_metrics[i].tags === null) {
-        databases_metrics[i].tags = tags
-      }
-
-      if(!(_.has(databases_metrics[i].tags, exclusion_tag) || databases_metrics[i].resourceKind.toLowerCase().indexOf(",system") > -1)){
-        //Find the Resource groupe
-        var aTemp = databases_metrics[i].resourceID.split("/resourceGroups/")
-        var resourceGroup="";
-        if(aTemp.length > 1){
-          aTemp = aTemp[1].split("/");
-          resourceGroup = aTemp[0];
-        }else{
-          resourceGroup = "";
-        }
-
-        Object.keys(databases_metrics[i]['tags']).forEach(function(key) {
-          tags.push(key+'='+databases_metrics[i]['tags'][key])
-        })
-
-        resourceTypeSplit = databases_metrics[i].resourceType.split("/")
-        service = resourceTypeSplit[0]
-
-        //now find the metrics for the devices
-        var objMetric = databases_metrics[i];
-        var total = 0;
-        if (typeof objMetric == "object" && typeof objMetric.timeseries[0].data == "object"){
-          var ts_data =  objMetric.timeseries[0].data;
-          for (x=0; x < ts_data.length; x++) {
-            total += ts_data[x].count;
-          }
-          if(total == 0){
-            if(databases_metrics[i].sku === null || typeof databases_metrics[i].sku === "undefined"){
-              var sku={
-                "capacity": "Not available",
-                "name": "Not available",
-                "tier": "Not available"
-              }
-            } else {
-              var sku=databases_metrics[i].sku;
-            }
-            result.push({
-              resourceID: databases_metrics[i].resourceID,
-              region: databases_metrics[i].region,
-              resourceName: databases_metrics[i].resourceName,
-              resourceGroup: resourceGroup,
-              resourceKind: databases_metrics[i].resourceKind,
-              resourceType: sku.name + "_" + sku.capacity,
-              sku: sku,
-              tags: tags,
-              service: service,
-              unit: databases_metrics[i].unit,
-              subscriptionName: databases_metrics[i].subscriptionName,
-              subscriptionID: databases_metrics[i].subscriptionID
-            })
-          }
-        }
-      }
-    }
-    result = _.sortBy(result, 'subscriptionName');
-    result = _.sortBy(result, 'region');
-  EOS
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
 end
 
-script "js_top_level_bc", type: "javascript" do
-  parameters "billing_centers"
-  result "filtered_billing_centers"
-  code <<-EOS
-  var filtered_billing_centers =
-    _.reject(billing_centers, function(bc){ return bc.parent_id != null });
-EOS
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
 end
 
-script "js_get_costs", type:"javascript" do
-  parameters  "account_id","billing_centers","org", "rs_optima_host"
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+datasource "ds_instance_costs" do
+  iterate $ds_filtered_subscriptions
+  request do
+    run_script $js_instance_costs, val(iter_item, "subscriptionID"), $ds_top_level_billing_centers, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "resource_id", jmes_path(col_item, "dimensions.resource_id")
+      field "resource_type", jmes_path(col_item, "dimensions.resource_type")
+      field "cost_nonamortized_unblended_adj", jmes_path(col_item, "metrics.cost_nonamortized_unblended_adj")
+    end
+  end
+end
+
+script "js_instance_costs", type:"javascript" do
+  parameters  "account_id", "billing_centers", "org", "rs_optima_host"
   result "request"
   code <<-EOS
     // returns date formatted as string: YYYY-mm-dd
@@ -459,8 +370,101 @@ script "js_get_costs", type:"javascript" do
   EOS
 end
 
+datasource "ds_top_level_billing_centers" do
+  run_script $js_top_level_billing_centers, $ds_billing_centers
+end
+
+script "js_top_level_billing_centers", type: "javascript" do
+  parameters "billing_centers"
+  result "filtered_billing_centers"
+  code <<-EOS
+  var filtered_billing_centers =
+    _.reject(billing_centers, function(bc){ return bc.parent_id != null });
+EOS
+end
+
+datasource "ds_merged_metrics" do
+  run_script $js_merged_metrics, $ds_azure_sql_database_metrics, $param_exclusion_tag_key
+end
+
+script "js_merged_metrics", type: "javascript" do
+  parameters "databases_metrics", "exclusion_tag"
+  result "result"
+  code <<-EOS
+    var result = [];
+    //exclude the database with the exclution tags, and the system databases
+    for(i=0; i< databases_metrics.length; i++){
+      var tags = []
+
+      if (typeof databases_metrics[i].tags === "undefined" || databases_metrics[i].tags === null) {
+        databases_metrics[i].tags = tags
+      }
+
+      if(!(_.has(databases_metrics[i].tags, exclusion_tag) || databases_metrics[i].resourceKind.toLowerCase().indexOf(", system") > -1)){
+        //Find the Resource groupe
+        var aTemp = databases_metrics[i].resourceID.split("/resourceGroups/")
+        var resourceGroup="";
+        if(aTemp.length > 1){
+          aTemp = aTemp[1].split("/");
+          resourceGroup = aTemp[0];
+        }else{
+          resourceGroup = "";
+        }
+
+        Object.keys(databases_metrics[i]['tags']).forEach(function(key) {
+          tags.push(key+'='+databases_metrics[i]['tags'][key])
+        })
+
+        resourceTypeSplit = databases_metrics[i].resourceType.split("/")
+        service = resourceTypeSplit[0]
+
+        //now find the metrics for the devices
+        var objMetric = databases_metrics[i];
+        var total = 0;
+        if (typeof objMetric == "object" && typeof objMetric.timeseries[0].data == "object"){
+          var ts_data =  objMetric.timeseries[0].data;
+          for (x=0; x < ts_data.length; x++) {
+            total += ts_data[x].count;
+          }
+          if(total == 0){
+            if(databases_metrics[i].sku === null || typeof databases_metrics[i].sku === "undefined"){
+              var sku={
+                "capacity": "Not available",
+                "name": "Not available",
+                "tier": "Not available"
+              }
+            } else {
+              var sku=databases_metrics[i].sku;
+            }
+            result.push({
+              resourceID: databases_metrics[i].resourceID,
+              region: databases_metrics[i].region,
+              resourceName: databases_metrics[i].resourceName,
+              resourceGroup: resourceGroup,
+              resourceKind: databases_metrics[i].resourceKind,
+              resourceType: sku.name + "_" + sku.capacity,
+              sku: sku,
+              tags: tags,
+              service: service,
+              unit: databases_metrics[i].unit,
+              subscriptionName: databases_metrics[i].subscriptionName,
+              subscriptionID: databases_metrics[i].subscriptionID
+            })
+          }
+        }
+      }
+    }
+    result = _.sortBy(result, 'subscriptionName');
+    result = _.sortBy(result, 'region');
+  EOS
+end
+
+datasource "ds_instance_cost_mapping" do
+  run_script $js_instance_cost_mapping, $ds_merged_metrics, $ds_instance_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers
+end
+
 script "js_instance_cost_mapping", type:"javascript" do
-  parameters  "instance_list","instance_costs","ds_currency_code","ds_currency_reference", "ds_billing_centers"
+  parameters  "instance_list", "instance_costs", "ds_currency_code", "ds_currency_reference", "ds_billing_centers"
   result "result"
   code <<-EOS
     var result = {};
@@ -537,7 +541,7 @@ script "js_instance_cost_mapping", type:"javascript" do
         message="The total estimated monthly savings are " +total_savings;
       }
       else{
-        message="The Flexera Optima system does not have any data to calculate savings for these resources";
+        message="Flexera does not have any data to calculate savings for these resources";
       }
     }
     else{
@@ -546,8 +550,8 @@ script "js_instance_cost_mapping", type:"javascript" do
     }
     result={ "instance_list": idle_instance_list,
       "message": message}
-    result.instance_list = _.sortBy(result.instance_list,"region");
-    result.instance_list = _.sortBy(result.instance_list,"subscriptionName");
+    result.instance_list = _.sortBy(result.instance_list, "region");
+    result.instance_list = _.sortBy(result.instance_list, "subscriptionName");
   EOS
 end
 
@@ -555,16 +559,16 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_azure_db_utilization" do
+policy "pol_azure_db_utilization" do
   validate $ds_instance_cost_mapping do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instance_list }} Unused Azure Databases Found"
     detail_template <<-EOS
 {{data.message}}.
 EOS
-    escalate $esc_email_report
-    escalate $esc_delete_unused_sql_databases_approval
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
     check logic_or($ds_parent_policy_terminated, eq(size(val(data, "instance_list")), 0))
+    escalate $esc_email_report
+    escalate $esc_delete_unused_sql_databases_approval
     export "instance_list" do
       resource_level true
       field "accountID" do
@@ -653,7 +657,7 @@ end
 # Cloud Workflow
 ###############################################################################
 
-define delete_unused_sql_databases($data,$param_log_to_cm_audit_entries, $param_azure_endpoint, $$rs_optima_host) return $all_responses do
+define delete_unused_sql_databases($data, $param_log_to_cm_audit_entries, $param_azure_endpoint, $$rs_optima_host) return $all_responses do
   $$debug = $param_log_to_cm_audit_entries == "Yes"
   $$errors = []
   $all_responses = []
@@ -673,7 +677,7 @@ define delete_unused_sql_databases($data,$param_log_to_cm_audit_entries, $param_
           "content-type": "application/json"
         }
       )
-      call sys_log('Deleted Azure Unused SQL databases: ',to_s($response))
+      call sys_log('Deleted Azure Unused SQL databases: ', to_s($response))
       $all_responses << $response
     end
   end
@@ -725,7 +729,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
     header "Api-Version", "1.0"
   end
   result do
@@ -733,7 +737,6 @@ datasource "ds_get_policy" do
     field "id", jmes_path(response, "id")
   end
 end
-
 
 datasource "ds_parent_policy_terminated" do
   run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id

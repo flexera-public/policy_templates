@@ -7,7 +7,7 @@ severity "low"
 category "Operational"
 default_frequency "monthly"
 info(
-  version: "3.2",
+  version: "4.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Usage Report"
@@ -21,26 +21,52 @@ parameter "param_email" do
   type "list"
   category "Policy Settings"
   label "Email addresses to notify"
-  description "A list of email addresses to notify."
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
   default []
 end
 
-parameter "param_region" do
+parameter "param_regions_allow_or_deny" do
   type "string"
-  category "Policy Settings"
-  label "Region"
-  description "Name of the AWS Region to filter by. Example: 'US West (Oregon)'. Leave this blank for 'Organization' scope"
-  default ""
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. Example: 'US West (Oregon)'. Leave blank to check all regions."
+  default []
+end
+
+parameter "param_bc_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Billing Centers"
+  description "Allow or Deny entered Billing Centers."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_bc_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Billing Center List"
+  description "A list of allowed or denied Billing Center names/IDs. Leave blank to check all Billing Centers."
+  default []
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-#AUTHENTICATE WITH FEXERA/OPTIMA
+#AUTHENTICATE WITH FLEXERA
 credentials "auth_flexera" do
   schemes "oauth2"
-  label "flexera"
+  label "Flexera"
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
@@ -73,23 +99,26 @@ datasource "ds_billing_centers" do
 end
 
 #GET TOP-LEVEL BILLING CENTERS
-datasource "ds_top_level_billing_centers" do
-  run_script $js_top_level_billing_centers, $ds_billing_centers
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
 end
 
-script "js_top_level_billing_centers", type: "javascript" do
-  parameters "billing_centers"
-  result "filtered_billing_centers"
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
   code <<-EOS
-  var filtered_billing_centers =
-    _.reject(billing_centers, function(bc){ return bc.parent_id != null })
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
   EOS
 end
 
 #GET USAGE DATA FOR INSTANCE TYPES
 datasource "ds_usage_data" do
   request do
-    run_script $js_usage_data, $ds_top_level_billing_centers, $param_region, rs_org_id, rs_optima_host
+    run_script $js_usage_data, $ds_top_level_bcs, $ds_billing_centers, $param_regions_allow_or_deny, $param_regions_list, $param_bc_allow_or_deny, $param_bc_list, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -105,45 +134,80 @@ datasource "ds_usage_data" do
 end
 
 script "js_usage_data", type: "javascript" do
-  parameters "top_level_billing_centers", "region", "org_id", "optima_host"
+  parameters "ds_top_level_bcs", "ds_billing_centers", "param_regions_allow_or_deny", "param_regions_list", "param_bc_allow_or_deny", "param_bc_list", "org_id", "optima_host"
   result "request"
   code <<-EOS
-  //Billing Center IDs into array
-  billing_center_ids = []
-  _.each(top_level_billing_centers, function(bc){
-    billing_center_ids.push(bc.id)
-  })
-
   //Get Start and End dates
   start_date = new Date(), end_date = new Date()
-  start_date.setMonth(start_date.getMonth() - 13)
-  end_date.setMonth(end_date.getMonth() - 1)
+  start_date.setMonth(start_date.getMonth() - 12)
+  end_date.setMonth(end_date.getMonth())
 
-  //get expressions for payload based on region parameter
-  expressions = []
-  if( region == "" ){
-    expressions = [
-      { "dimension": "category", "type": "equal", "value": "Compute" },
-      { "dimension": "resource_type", "type":"equal", "value":"Compute Instance" },
-      { "dimension": "vendor", "type":"equal", "value":"AWS" },
-      {
-        "type": "not",
-        "expression": { "dimension": "instance_type", "type": "equal", "value": "None" }
+  //Define Billing Center list if applicable
+  var billing_center_ids = []
+  var allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_bc_list.length > 0) {
+    billing_center_ids = _.filter(ds_top_level_bcs, function(bc) {
+      var bc_name = ""
+      var matched_bc = _.find(ds_billing_centers, function(data) { return bc == data.id })
+
+      if (matched_bc != undefined) {
+        bc_name = matched_bc.name
+
+        if (param_bc_allow_or_deny == "Allow") {
+          return _.contains(param_bc_list, bc) == allow_deny_test[param_bc_allow_or_deny] || _.contains(param_bc_list, bc_name) == allow_deny_test[param_bc_allow_or_deny]
+        } else {
+          return _.contains(param_bc_list, bc) == allow_deny_test[param_bc_allow_or_deny] && _.contains(param_bc_list, bc_name) == allow_deny_test[param_bc_allow_or_deny]
+        }
       }
-    ]
+    })
   } else {
-    expressions = [
-      { "dimension": "category", "type": "equal", "value": "Compute" },
-      { "dimension": "resource_type", "type":"equal", "value":"Compute Instance" },
-      { "dimension": "vendor", "type":"equal", "value":"AWS" },
-      { "dimension": "region", "type": "equal", "value": region },
-      {
-        "type": "not",
-        "expression": { "dimension": "instance_type", "type": "equal", "value": "None" }
-      }
-    ]
+    billing_center_ids = ds_top_level_bcs
   }
 
+  //Define Expressions for API Filter 
+  var expressions = [
+    { "dimension": "category", "type": "equal", "value": "Compute" },
+    { "dimension": "resource_type", "type":"equal", "value":"Compute Instance" },
+    { "dimension": "vendor", "type":"equal", "value":"AWS" },
+    {
+      "type": "not",
+      "expression": { "dimension": "instance_type", "type": "equal", "value": "None" }
+    }
+  ]
+
+  //Get Regions list if applicable
+  if (param_regions_list.length > 0) {
+    
+    var regions_filter_list = []
+    _.each(param_regions_list, function(reg) {
+        var region_dimension = { "dimension": "region", "type": "equal", "value": reg }
+        regions_filter_list.push(region_dimension)
+    })
+
+    var region_filter_json = {}
+    if (param_regions_allow_or_deny == "Deny") {
+      
+      region_filter_json = {
+        "type": "not",
+        "expression": {
+          "type": "or",
+          "expressions": regions_filter_list
+        }
+      }
+      expressions.push(region_filter_json)
+
+    } else {
+      
+      region_filter_json = {
+        "type": "or",
+        "expressions": regions_filter_list
+      }
+      expressions.push(region_filter_json)
+
+    }
+  }
+  
   //POST JSON payload
   payload = {
     "billing_center_ids": billing_center_ids,
@@ -152,6 +216,7 @@ script "js_usage_data", type: "javascript" do
       "expressions": expressions
     },
     "dimensions": [
+      "billing_center_id",
       "instance_type",
       "usage_unit"
     ],
@@ -167,13 +232,13 @@ script "js_usage_data", type: "javascript" do
   //Request
   request = {
     auth: "auth_flexera",
+    verb: "POST",
     host: optima_host,
     path: "/bill-analysis/orgs/" + org_id + "/costs/aggregated",
-    verb: "POST",
-    body_fields: payload,
     headers: {
       "User-Agent": "RS Policies",
-    }
+    },
+    body_fields: payload
   }
   EOS
 end
@@ -203,9 +268,11 @@ script "js_instance_vcpus_per_fam", type: "javascript" do
   //Get vCPU counts from Instance Data json
   instance_types = _.keys(aws_instance_data)
   var vcpu_data = []
-  _.each(instance_types, function(inst){
-    var vcpu_count = aws_instance_data[inst].vcpu
-    if(aws_instance_data[inst].vcpu == null){ vcpu = 0 }
+  _.each(instance_types, function(inst) {
+    var vcpu_count = 0
+    if (aws_instance_data[inst].vcpu) { 
+      vcpu_count = aws_instance_data[inst].vcpu
+    }
     vcpu_data.push({
       "instance_type": inst,
       "vcpu_count": vcpu_count
@@ -213,25 +280,26 @@ script "js_instance_vcpus_per_fam", type: "javascript" do
   })
 
   //Enrich current data with Instance Family, and then vCPU count.  - //then calculate Normalized Instance Hours using NFU
-  _.each(usage_data, function(data){
-    data["instance_family"] = data.instance_type.split(".")[0]
-    _.each(vcpu_data, function(vcpu){
-      if(data.instance_type == vcpu.instance_type ){
-        data["vcpu_count"] = (data.usage_amount / 730 ) * vcpu.vcpu_count //Normalize Usage Amount (divide by 730 ) to get more accurate vCPU count
-      }
+  _.each(usage_data, function(data) {
+    var matched_instance_data = _.find(vcpu_data, function(vcpu) {
+      return data.instance_type == vcpu.instance_type
     })
+    if (matched_instance_data) {
+      data["vcpu_count"] = (data.usage_amount / 730 ) * matched_instance_data.vcpu_count //Normalize Usage Amount (divide by 730 ) to get more accurate vCPU count
+      data["instance_family"] = data.instance_type.split(".")[0]
+    }
   })
 
   //For each month, sum Instance Hours for each Instance Family
-  month = _.pluck( _.uniq(usage_data, function(data){ return data.month }), "month" )
-  inst_family = _.pluck( _.uniq(usage_data, function(data){ return data.instance_family }), "instance_family" )
+  var month = _.pluck(_.uniq(usage_data, function(data){ return data.month }), "month")
+  var inst_family = _.pluck(_.uniq(usage_data, function(data){ return data.instance_family }), "instance_family")
 
-  _.each(month, function(mo){
-    _.each(inst_family, function(fam){
-      total_vcpu_count = 0
-      _.each(usage_data, function(data){
-        if(data.month == mo && data.instance_family == fam){
-          if(data.vcpu_count == null){
+  _.each(month, function(mo) {
+    _.each(inst_family, function(fam) {
+      var total_vcpu_count = 0
+      _.each(usage_data, function(data) {
+        if (data.month == mo && data.instance_family == fam) {
+          if (data.vcpu_count == null) {
             data.vcpu_count = 0
           }
           total_vcpu_count += data.vcpu_count
@@ -246,11 +314,11 @@ script "js_instance_vcpus_per_fam", type: "javascript" do
   })
 
   //Get highest 8 Instance Families for vCPUs used
-  vcpu_totals_per_fam = []
-  _.each(inst_family, function(fam){
+  var vcpu_totals_per_fam = []
+  _.each(inst_family, function(fam) {
     total_vcpus_12_months = 0
-    _.each(temp_result, function(data){
-      if(data.instance_family == fam){
+    _.each(temp_result, function(data) {
+      if (data.instance_family == fam) {
         total_vcpus_12_months += data.total_vcpu_count
       }
     })
@@ -260,15 +328,15 @@ script "js_instance_vcpus_per_fam", type: "javascript" do
     })
   })
 
-  top_8_inst_fams = _.last(_.pluck(_.sortBy(vcpu_totals_per_fam, "total_vcpus_12_months"), "instance_family" ), [8])
+  var top_8_inst_fams = _.last(_.pluck(_.sortBy(vcpu_totals_per_fam, "total_vcpus_12_months"), "instance_family"), [8])
 
   //If Instance Family is not in 8 highest vCPUs used, then put into "Other" category
-  _.each(month, function(mo){
-    total_vcpus_other = 0
-    _.each(temp_result, function(data){
-      if(data.month == mo ){
-        exists = _.find(top_8_inst_fams, function(inst_fam){ return inst_fam == data.instance_family })
-        if(exists == null){
+  _.each(month, function(mo) {
+    var total_vcpus_other = 0
+    _.each(temp_result, function(data) {
+      if (data.month == mo) {
+        var exists = _.find(top_8_inst_fams, function(inst_fam){ return inst_fam == data.instance_family })
+        if (exists == null) {
           total_vcpus_other += data.total_vcpu_count
         } else {
           result.push({
@@ -290,28 +358,28 @@ end
 
 #CHART CREATION
 datasource "ds_chart_creation" do
-  run_script $js_chart_creation, $ds_instance_vcpus_per_fam, $param_region
+  run_script $js_chart_creation, $ds_instance_vcpus_per_fam, $param_regions_allow_or_deny, $param_regions_list
 end
 
 script "js_chart_creation", type: "javascript" do
-  parameters "inst_vcpu_data", "param_region"
-  result "report"
+  parameters "inst_vcpu_data", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
   code <<-EOS
 
   //Group data by Instance Family
-  group_by_inst_fam =
-  _.groupBy(inst_vcpu_data, function(data){ return data.instance_family })
-  report = inst_vcpu_data
+  var group_by_inst_fam =
+  _.groupBy(inst_vcpu_data, function(data) { return data.instance_family })
+  result = inst_vcpu_data
 
   //Create chart axis labels
-  chart_axis_labels =
+  var chart_axis_labels =
   ("chxl=1:," +
     _.uniq(inst_vcpu_data, function(data) { return data.month })
-    .map(function(data){ return data.month.substring(0, 7) })
+    .map(function(data) { return data.month.substring(0, 7) })
   ).split(",").join("|")
 
   //Create legend
-  chart_legend = "chdl="
+  var chart_legend = "chdl="
   var i = 0
   for (var key in group_by_inst_fam) {
     chart_legend += key
@@ -320,29 +388,25 @@ script "js_chart_creation", type: "javascript" do
   }
 
   //Create chart dataset
-  chart_data = "chd=t:"
+  var chart_data = "chd=t:"
   var count_1 = 0
-  _.each(group_by_inst_fam, function(o){
+  _.each(group_by_inst_fam, function(o) {
     var count_2 = 0
-    _.each(o, function(p){
+    _.each(o, function(p) {
       chart_data = chart_data + p.total_vcpu_count
       count_2++
-      if (count_2 < _.size(o)){ chart_data = chart_data + "," }
+      if (count_2 < _.size(o)) { chart_data = chart_data + "," }
     })
     count_1++
-    if (count_1 < _.size(group_by_inst_fam)){ chart_data = chart_data + "|" }
+    if (count_1 < _.size(group_by_inst_fam)) { chart_data = chart_data + "|" }
   })
 
   //Create Chart Title
-  policy_title = "Total Instance vCPUs Used Per Instance Family For " + param_region
-  chart_title = "chtt=" + policy_title
-  if( param_region == "" ){
-    policy_title = "Total Instance vCPUs Used Per Instance Family"
-    chart_title = "chtt=" + policy_title
-  }
+  var policy_title = "Total Instance vCPUs Used Per Instance Family"
+  var chart_title = "chtt=" + policy_title
 
   //Whole Chart object
-  chart = {
+  var chart = {
     chart_type: encodeURI("cht=bvs"),
     chart_size: encodeURI("chs=900x500"),
     chart_data: encodeURI(chart_data),
@@ -360,7 +424,7 @@ script "js_chart_creation", type: "javascript" do
     policy_title: policy_title
   }
 
-  report[0]["chart_dimensions"] = chart
+  result[0]["chart_dimensions"] = chart
   EOS
 end
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.2.1
+
+- Added default value for parameters that do not require user input
+
 ## v4.2
 
 - Deprecated: This policy is no longer being updated. Please see policy README for more information.

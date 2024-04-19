@@ -5,8 +5,9 @@ short_description "Report any Elastic Block Store (EBS) volumes in AWS that are 
 long_description ""
 category "Security"
 severity "low"
+default_frequency "weekly"
 info(
-  version: "4.2",
+  version: "4.2.1",
   provider: "AWS",
   service: "EBS",
   policy_set: ""
@@ -18,6 +19,7 @@ info(
 
 parameter "param_allowed_regions_allow_or_deny" do
   type "string"
+  category "Policy Settings"
   label "Allow/Deny Regions"
   description "Allow or Deny entered regions. See the README for more details"
   allowed_values "Allow", "Deny"
@@ -26,15 +28,19 @@ end
 
 parameter "param_allowed_regions" do
   type "list"
+  category "Policy Settings"
   label "Regions"
-  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   description "A list of allowed or denied regions. See the README for more details"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  default []
 end
 
 parameter "param_email" do
   type "list"
+  category "Policy Settings"
   label "Email addresses to notify"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
+  default []
 end
 
 parameter "param_aws_account_number" do
@@ -47,8 +53,10 @@ end
 
 parameter "param_exclude_tags" do
   type "list"
+  category "Policy Settings"
   label "Tags to ignore"
-  description "List of tags that will exclude resources from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'"
+  description "List of tags that will exclude resources from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test, env=dev'"
+  default []
 end
 
 ###############################################################################
@@ -56,7 +64,7 @@ end
 ###############################################################################
 
 credentials "auth_aws" do
-  schemes "aws","aws_sts"
+  schemes "aws", "aws_sts"
   label "AWS"
   description "Select the AWS Credential from the list"
   tags "provider=aws"
@@ -74,7 +82,7 @@ end
 # Pagination
 ###############################################################################
 
-pagination "aws_pagination_xml" do
+pagination "pagination_aws_describevolumesresponse_xml" do
   get_page_marker do
     body_path "//DescribeVolumesResponse/nextToken"
   end
@@ -84,7 +92,7 @@ pagination "aws_pagination_xml" do
 end
 
 ###############################################################################
-# Datasource
+# Datasources & Scripts
 ###############################################################################
 
 # ds_region_list is a list of regions that are opted-in or opt-in-not-required
@@ -114,50 +122,11 @@ end
 
 # Get only SCP enabled regions
 datasource "ds_regions" do
-  run_script $js_regions, $param_allowed_regions, $ds_regions_list, $param_allowed_regions_allow_or_deny
+  run_script $js_regions, $ds_regions_list, $param_allowed_regions, $param_allowed_regions_allow_or_deny
 end
-
-#To get list of All Unencrypted Volumes.
-datasource "ds_unencrypted_volume_list" do
-  iterate $ds_regions
-  request do
-    run_script $js_aws_unencrypted_volumes_list, val(iter_item,"region")
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeVolumesResponse/volumeSet/item", "array") do
-      field "tags" do
-        collect xpath(col_item, "tagSet/item") do
-          field "tagKey", xpath(col_item, "key")
-          field "tagValue", xpath(col_item, "value")
-        end
-      end
-      field "attachments" do
-        collect xpath(col_item, "attachmentSet/item") do
-          field "instance_Id", xpath(col_item, "instanceId")
-        end
-      end
-      field "volume_id", xpath(col_item, "volumeId")
-      field "availability_zone", xpath(col_item, "availabilityZone")
-      field "snapshot_id", xpath(col_item, "snapshotId")
-      field "encrypted", xpath(col_item, "encrypted")
-      field "vol_status", xpath(col_item, "status")
-      field "vol_type", xpath(col_item, "volumeType")
-      field "region", val(iter_item,"region")
-    end
-  end
-end
-
-datasource "ds_unencrypted_volumes_map" do
-  run_script $js_unencrypted_vol_filter_map, $ds_unencrypted_volume_list, $param_exclude_tags
-end
-
-###############################################################################
-# Script
-###############################################################################
 
 script "js_regions", type:"javascript" do
-  parameters "user_entered_regions", "all_regions", "regions_allow_or_deny"
+  parameters "all_regions", "user_entered_regions", "regions_allow_or_deny"
   result "regions"
   code <<-EOS
     if(_.isEmpty(user_entered_regions)){
@@ -193,8 +162,39 @@ script "js_regions", type:"javascript" do
   EOS
 end
 
+#To get list of All Unencrypted Volumes.
+datasource "ds_unencrypted_volume_list" do
+  iterate $ds_regions
+  request do
+    run_script $js_unencrypted_volume_list, val(iter_item, "region")
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeVolumesResponse/volumeSet/item", "array") do
+      field "tags" do
+        collect xpath(col_item, "tagSet/item") do
+          field "tagKey", xpath(col_item, "key")
+          field "tagValue", xpath(col_item, "value")
+        end
+      end
+      field "attachments" do
+        collect xpath(col_item, "attachmentSet/item") do
+          field "instance_Id", xpath(col_item, "instanceId")
+        end
+      end
+      field "volume_id", xpath(col_item, "volumeId")
+      field "availability_zone", xpath(col_item, "availabilityZone")
+      field "snapshot_id", xpath(col_item, "snapshotId")
+      field "encrypted", xpath(col_item, "encrypted")
+      field "vol_status", xpath(col_item, "status")
+      field "vol_type", xpath(col_item, "volumeType")
+      field "region", val(iter_item, "region")
+    end
+  end
+end
+
 #https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeVolumes.html
-script "js_aws_unencrypted_volumes_list", type: "javascript" do
+script "js_unencrypted_volume_list", type: "javascript" do
   parameters "region"
   result "results"
   code <<-EOS
@@ -202,7 +202,7 @@ script "js_aws_unencrypted_volumes_list", type: "javascript" do
       auth: "auth_aws",
       host: 'ec2.'+region+'.amazonaws.com',
       path: '/',
-      pagination: "aws_pagination_xml",
+      pagination: "pagination_aws_describevolumesresponse_xml",
       query_params: {
         "Action": "DescribeVolumes",
         "Filter.1.Name": "encrypted",
@@ -213,9 +213,13 @@ script "js_aws_unencrypted_volumes_list", type: "javascript" do
   EOS
 end
 
+datasource "ds_unencrypted_volumes_map" do
+  run_script $js_unencrypted_volumes_map, $ds_unencrypted_volume_list, $param_exclude_tags
+end
+
 #Process the response data and check for the tags and unencrypted voulmes
-script "js_unencrypted_vol_filter_map", type: "javascript" do
-  parameters "ds_unencrypted_volume_list","param_exclude_tags"
+script "js_unencrypted_volumes_map", type: "javascript" do
+  parameters "ds_unencrypted_volume_list", "param_exclude_tags"
   result "content"
   code <<-EOS
     var param_exclude_tags_lower=[];
@@ -266,21 +270,21 @@ script "js_unencrypted_vol_filter_map", type: "javascript" do
         })
       }
     }
-  content = _.sortBy(content,'id')
-  content = _.sortBy(content,'region')
-  content = _.sortBy(content,'availability_zone')
+  content = _.sortBy(content, 'id')
+  content = _.sortBy(content, 'region')
+  content = _.sortBy(content, 'availability_zone')
   EOS
 end
 
 ###############################################################################
 # Policy
 ###############################################################################
-policy "policy_unencrypted_volumes_list" do
+policy "pol_unencrypted_volumes_list" do
   validate $ds_unencrypted_volumes_map do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Unencrypted Volumes Found in AWS"
-    escalate $esc_email
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
-    check logic_or($ds_parent_policy_terminated, eq(size(data),0))
+    check logic_or($ds_parent_policy_terminated, eq(size(data), 0))
+    escalate $esc_email
     export do
       resource_level true
       field "id" do
@@ -313,6 +317,7 @@ policy "policy_unencrypted_volumes_list" do
     end
   end
 end
+
 ###############################################################################
 # Escalations
 ###############################################################################
@@ -336,7 +341,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
     header "Api-Version", "1.0"
   end
   result do
@@ -344,7 +349,6 @@ datasource "ds_get_policy" do
     field "id", jmes_path(response, "id")
   end
 end
-
 
 datasource "ds_parent_policy_terminated" do
   run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id

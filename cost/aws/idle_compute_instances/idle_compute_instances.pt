@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "5.6",
+  version: "5.6.1",
   provider: "AWS",
   service: "Compute",
   policy_set: "Idle Compute Instances",
@@ -28,8 +28,10 @@ end
 
 parameter "param_email" do
   type "list"
+  category "Policy Settings"
   label "Email addresses to notify"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
+  default []
 end
 
 #TODO: param_avg_cpu and param_avg_used_memory need to be renamed to param_threshold_cpu_value and param_threshold_mem_used
@@ -37,40 +39,45 @@ end
 
 parameter "param_avg_cpu" do
   type "number"
+  category "Policy Settings"
   label "Used CPU Threshold"
   description "The threshold at which to consider an instance to be 'idle'. Set to -1 to ignore CPU utilization"
-  default -1
   min_value -1
   max_value 100
+  default -1
 end
 
 parameter "param_avg_used_memory" do
   type "number"
+  category "Policy Settings"
   label "Used Memory Threshold"
   description "The threshold at which to consider an instance to be 'idle'. Set to -1 to ignore memory utilization"
-  default -1
   min_value -1
   max_value 100
+  default -1
 end
 
 parameter "param_check_both" do
   type "string"
+  category "Policy Settings"
   label "Idle for both CPU/Memory or either"
   description "Whether an instance should be considered idle only if both CPU and memory are under the thresholds or if either CPU or memory are under."
-  default "Either CPU or Memory"
   allowed_values "Both CPU and Memory", "Either CPU or Memory"
+  default "Either CPU or Memory"
 end
 
 parameter "param_threshold_statistic" do
   type "string"
+  category "Policy Settings"
   label "Threshold Statistic"
   description "Statistic to use for the metric threshold"
-  default "Average"
   allowed_values "Average", "p99", "p95", "p90"
+  default "Average"
 end
 
 parameter "param_allowed_regions_allow_or_deny" do
   type "string"
+  category "Policy Settings"
   label "Allow/Deny Regions"
   description "Allow or Deny entered regions. See the README for more details"
   allowed_values "Allow", "Deny"
@@ -79,22 +86,25 @@ end
 
 parameter "param_allowed_regions" do
   type "list"
+  category "Policy Settings"
   label "Regions"
-  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   description "A list of allowed or denied regions. See the README for more details"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  default []
 end
 
 parameter "param_exclusion_tag_key" do
-  category "User Inputs"
+  type "string"
+  category "Policy Settings"
   label "Exclusion Tag Key:Value"
   description "Cloud native tag to ignore instances. Format: Key:Value"
-  type "string"
   allowed_pattern /(^$)|([\w]?)+\:([\w]?)+/
   default ""
 end
 
 parameter "param_automatic_action" do
   type "list"
+  category "Policy Settings"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
   allowed_values ["Terminate Instances"]
@@ -103,19 +113,12 @@ end
 
 parameter "param_api_wait" do
   type "number"
+  category "Policy Settings"
   label "CloudWatch API Wait Time"
   description "Amount of time to wait between CloudWatch API requests to avoid throttling (seconds)"
-  default 5
   min_value 1
   max_value 60
-end
-
-parameter "param_log_to_cm_audit_entries" do
-  type "string"
-  label "Log to CM Audit Entries"
-  description "Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left set to No on Flexera EU"
-  default "No"
-  allowed_values "Yes", "No"
+  default 5
 end
 
 ###############################################################################
@@ -124,7 +127,7 @@ end
 
 #authenticate with AWS
 credentials "auth_aws" do
-  schemes "aws","aws_sts"
+  schemes "aws", "aws_sts"
   label "AWS"
   description "Select the AWS Credential from the list"
   tags "provider=aws"
@@ -139,7 +142,7 @@ credentials "auth_flexera" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
 datasource "ds_currency_reference" do
@@ -154,21 +157,45 @@ datasource "ds_currency_code" do
   request do
     auth $auth_flexera
     host rs_optima_host
-    path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
     header "Api-Version", "0.1"
     header "User-Agent", "RS Policies"
     ignore_status [403]
   end
   result do
     encoding "json"
-    field "id", jmes_path(response,"id")
-    field "value", jmes_path(response,"value")
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
   end
 end
 
 # Create a simple object containing the currency code and number separator for later usage
 datasource "ds_currency" do
   run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  symbol = ""
+  separator = ""
+  if( ds_currency_code['value'] !== undefined ) {
+    if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+      if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      }
+    }
+  } else {
+    symbol = "$"
+    separator = ","
+  }
+  result = {
+    'symbol': symbol,
+    'separator': separator
+  }
+EOS
 end
 
 # Get the AWS account number to filter requests to just the account being checked
@@ -178,9 +205,9 @@ datasource "ds_get_caller_identity" do
     verb "GET"
     host "sts.amazonaws.com"
     path "/"
-    header "User-Agent", "RS Policies"
     query "Action", "GetCallerIdentity"
     query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
   end
   result do
     encoding "xml"
@@ -192,6 +219,14 @@ end
 
 datasource "ds_aws_account" do
   run_script $js_aws_account, $ds_get_caller_identity
+end
+
+script "js_aws_account", type:"javascript" do
+  parameters "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+  result = ds_get_caller_identity[0]['account']
+EOS
 end
 
 # ds_region_list is a list of regions that are opted-in or opt-in-not-required
@@ -221,190 +256,11 @@ end
 
 # Filter the regions list by just the regions allowed by the parameter
 datasource "ds_regions" do
-  run_script $js_regions, $param_allowed_regions, $ds_regions_list, $param_allowed_regions_allow_or_deny
-end
-
-datasource "ds_instances_set" do
-  iterate $ds_regions
-  request do
-    auth $auth_aws
-    host join(['ec2.', val(iter_item, 'region'), '.amazonaws.com'])
-    path '/'
-    header 'User-Agent', 'RS Policies'
-    header 'Content-Type', 'text/xml'
-    query 'Action', 'DescribeInstances'
-    query 'Version', '2016-11-15'
-    query 'Filter.1.Name', 'instance-state-name'
-    query 'Filter.1.Value.1', 'running'
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeInstancesResponse/reservationSet/item", "array") do
-      field "instances_set" do
-        collect xpath(col_item,"instancesSet/item","array") do
-          field "region",val(iter_item, "region")
-          field "instanceId", xpath(col_item,"instanceId")
-          field "imageId", xpath(col_item,"imageId")
-          field "resourceType", xpath(col_item, "instanceType")
-          field "platform", xpath(col_item, "platformDetails")
-          field "privateDnsName", xpath(col_item, "privateDnsName")
-          field "launchTime", xpath(col_item, "launchTime")
-          field "tags" do
-            collect xpath(col_item,"tagSet/item","array") do
-              field "key", xpath(col_item, "key")
-              field "value", xpath(col_item, "value")
-            end
-          end
-        end
-      end
-    end
-  end
-end
-
-# Filter the instances list by just the regions allowed by the parameter
-datasource "ds_instances" do
-  run_script $js_instances, $ds_instances_set, $param_exclusion_tag_key
-end
-
-# Build out a list of queries to send into Cloudwatch for the above instances
-datasource "ds_instances_queries" do
-  run_script $js_instances_queries, $ds_instances, $param_avg_cpu, $param_avg_used_memory
-end
-
-# Combine the above queries into discrete requests of 500 or fewer queries to
-# send into the API
-datasource "ds_instances_requests" do
-  run_script $js_instances_requests, $ds_instances_queries
-end
-
-datasource "ds_cloudwatch_data" do
-  iterate $ds_instances_requests
-  request do
-    run_script $js_cloudwatch_data, val(iter_item, "region"), val(iter_item, "body"), $param_api_wait
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "MetricDataResults[*]") do
-      field "region", val(iter_item, "region")
-      field "id", jmes_path(col_item, "Id")
-      field "label", jmes_path(col_item, "Label")
-      field "values", jmes_path(col_item, "Values")
-    end
-  end
-end
-
-# Organize the CloudWatch data into a JavaScript object
-datasource "ds_cloudwatch_data_sorted" do
-  run_script $js_cloudwatch_data_sorted, $ds_cloudwatch_data
-end
-
-datasource "ds_billing_centers" do
-  request do
-    auth $auth_flexera
-    host rs_optima_host
-    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
-    header "Api-Version", "1.0"
-    header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
-    ignore_status [403]
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "href", jmes_path(col_item,"href")
-      field "id", jmes_path(col_item,"id")
-      field "name", jmes_path(col_item,"name")
-      field "parent_id", jmes_path(col_item,"parent_id")
-    end
-  end
-end
-
-datasource "ds_top_level_billing_centers" do
-  run_script $js_top_level_bc, $ds_billing_centers
-end
-
-# Build the request to send into the Optima API for cost data
-datasource "ds_instances_costs_request" do
-  run_script $js_instances_costs_request, $ds_aws_account, $ds_top_level_billing_centers
-end
-
-datasource "ds_instances_costs" do
-  iterate $ds_instances_costs_request
-  request do
-    auth $auth_flexera
-    host rs_optima_host
-    verb "POST"
-    path join(["/bill-analysis/orgs/", rs_org_id, "/costs/select"])
-    header "Api-Version", "1.0"
-    header "User-Agent", "RS Policies"
-    ignore_status [400]
-    body_field "dimensions", val(iter_item, "dimensions")
-    body_field "granularity", val(iter_item, "granularity")
-    body_field "start_at", val(iter_item, "start_at")
-    body_field "end_at", val(iter_item, "end_at")
-    body_field "metrics", val(iter_item, "metrics")
-    body_field "billing_center_ids", val(iter_item, "billing_center_ids")
-    body_field "limit", val(iter_item, "limit")
-    body_field "filter", val(iter_item, "filter")
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"rows[*]") do
-      field "resource_id", jmes_path(col_item,"dimensions.resource_id")
-      field "vendorAccountName", jmes_path(col_item, "dimensions.vendor_account_name")
-      field "cost_nonamortized_unblended_adj", jmes_path(col_item,"metrics.cost_nonamortized_unblended_adj")
-    end
-  end
-end
-
-# Combine the list of instances with the CloudWatch data
-datasource "ds_merged_metrics" do
-  run_script $js_merged_metrics, $ds_cloudwatch_data_sorted, $ds_instances, $ds_aws_account, $ds_currency
-end
-
-# Create a final list of idle instances and incorporate cost data into it
-datasource "ds_idle_instances" do
-  run_script $js_idle_instances, $ds_merged_metrics, $ds_instances_costs, $param_avg_cpu, $param_avg_used_memory, $ds_currency, $param_check_both, $param_threshold_statistic
-end
-
-###############################################################################
-# Scripts
-###############################################################################
-
-script "js_currency", type:"javascript" do
-  parameters "ds_currency_reference", "ds_currency_code"
-  result "result"
-  code <<-EOS
-  symbol = ""
-  separator = ""
-  if( ds_currency_code['value'] !== undefined ) {
-    if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
-      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
-      if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
-        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
-      }
-    }
-  } else {
-    symbol = "$"
-    separator = ","
-  }
-  result = {
-    'symbol': symbol,
-    'separator': separator
-  }
-EOS
-end
-
-script "js_aws_account", type:"javascript" do
-  parameters "ds_get_caller_identity"
-  result "result"
-  code <<-EOS
-  result = ds_get_caller_identity[0]['account']
-EOS
+  run_script $js_regions, $ds_regions_list, $param_allowed_regions, $param_allowed_regions_allow_or_deny
 end
 
 script "js_regions", type:"javascript" do
-  parameters "user_entered_regions", "all_regions", "regions_allow_or_deny"
+  parameters "all_regions", "user_entered_regions", "regions_allow_or_deny"
   result "regions"
   code <<-EOS
   if (_.isEmpty(user_entered_regions)) {
@@ -439,9 +295,51 @@ script "js_regions", type:"javascript" do
 EOS
 end
 
+datasource "ds_instances_set" do
+  iterate $ds_regions
+  request do
+    auth $auth_aws
+    host join(['ec2.', val(iter_item, 'region'), '.amazonaws.com'])
+    path '/'
+    query 'Action', 'DescribeInstances'
+    query 'Version', '2016-11-15'
+    query 'Filter.1.Name', 'instance-state-name'
+    query 'Filter.1.Value.1', 'running'
+    header 'User-Agent', 'RS Policies'
+    header 'Content-Type', 'text/xml'
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeInstancesResponse/reservationSet/item", "array") do
+      field "instances_set" do
+        collect xpath(col_item, "instancesSet/item", "array") do
+          field "region", val(iter_item, "region")
+          field "instanceId", xpath(col_item, "instanceId")
+          field "imageId", xpath(col_item, "imageId")
+          field "resourceType", xpath(col_item, "instanceType")
+          field "platform", xpath(col_item, "platformDetails")
+          field "privateDnsName", xpath(col_item, "privateDnsName")
+          field "launchTime", xpath(col_item, "launchTime")
+          field "tags" do
+            collect xpath(col_item, "tagSet/item", "array") do
+              field "key", xpath(col_item, "key")
+              field "value", xpath(col_item, "value")
+            end
+          end
+        end
+      end
+    end
+  end
+end
+
+# Filter the instances list by just the regions allowed by the parameter
+datasource "ds_instances" do
+  run_script $js_instances, $ds_instances_set, $param_exclusion_tag_key
+end
+
 script "js_instances", type: "javascript" do
-  result "result"
   parameters "ds_instance_set", "param_exclusion_tag_key"
+  result "result"
   code <<-EOS
   var tag_key = param_exclusion_tag_key.split(':')[0]
   var tag_value = param_exclusion_tag_key.split(':')[1]
@@ -449,7 +347,7 @@ script "js_instances", type: "javascript" do
   _.each(ds_instance_set, function(ds_item) {
     _.each(ds_item['instances_set'], function(instance) {
       var tags = instance.tags
-      if (!(_.contains(_.pluck(tags,'key'), tag_key) && _.contains(_.pluck(tags,'value'), tag_value))) {
+      if (!(_.contains(_.pluck(tags, 'key'), tag_key) && _.contains(_.pluck(tags, 'value'), tag_value))) {
         result.push(instance)
       }
     })
@@ -457,9 +355,14 @@ script "js_instances", type: "javascript" do
 EOS
 end
 
+# Build out a list of queries to send into Cloudwatch for the above instances
+datasource "ds_instances_queries" do
+  run_script $js_instances_queries, $ds_instances, $param_avg_cpu, $param_avg_used_memory
+end
+
 script "js_instances_queries", type: "javascript" do
-  result "queries"
   parameters "ds_instances", "param_avg_cpu", "param_avg_used_memory"
+  result "queries"
   code <<-EOS
   // Create the various queries we're going to send to CloudWatch for each instance
   queries = {}
@@ -532,9 +435,15 @@ script "js_instances_queries", type: "javascript" do
 EOS
 end
 
+# Combine the above queries into discrete requests of 500 or fewer queries to
+# send into the API
+datasource "ds_instances_requests" do
+  run_script $js_instances_requests, $ds_instances_queries
+end
+
 script "js_instances_requests", type: "javascript" do
-  result "result"
   parameters "queries"
+  result "result"
   code <<-EOS
   // Organize the queries into discrete requests to send in.
   // Queries are first sorted by region and then split into 500 item blocks.
@@ -554,9 +463,25 @@ script "js_instances_requests", type: "javascript" do
 EOS
 end
 
+datasource "ds_cloudwatch_data" do
+  iterate $ds_instances_requests
+  request do
+    run_script $js_cloudwatch_data, val(iter_item, "region"), val(iter_item, "body"), $param_api_wait
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "MetricDataResults[*]") do
+      field "region", val(iter_item, "region")
+      field "id", jmes_path(col_item, "Id")
+      field "label", jmes_path(col_item, "Label")
+      field "values", jmes_path(col_item, "Values")
+    end
+  end
+end
+
 script "js_cloudwatch_data", type: "javascript" do
-  result "results"
   parameters "region", "body", "api_wait"
+  result "results"
   code <<-EOS
   // Slow down rate of requests to prevent throttling
   var now = new Date().getTime()
@@ -582,9 +507,14 @@ script "js_cloudwatch_data", type: "javascript" do
 EOS
 end
 
+# Organize the CloudWatch data into a JavaScript object
+datasource "ds_cloudwatch_data_sorted" do
+  run_script $js_cloudwatch_data_sorted, $ds_cloudwatch_data
+end
+
 script "js_cloudwatch_data_sorted", type: "javascript" do
-  result "result"
   parameters "ds_cloudwatch_data"
+  result "result"
   code <<-EOS
   // Sort the CloudWatch data into an object with keys for regions and instance names.
   // This eliminates the need to "double loop" later on to match it with our instances list.
@@ -605,7 +535,32 @@ script "js_cloudwatch_data_sorted", type: "javascript" do
 EOS
 end
 
-script "js_top_level_bc", type: "javascript" do
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+datasource "ds_top_level_billing_centers" do
+  run_script $js_top_level_billing_centers, $ds_billing_centers
+end
+
+script "js_top_level_billing_centers", type: "javascript" do
   parameters "billing_centers"
   result "result"
   code <<-EOS
@@ -616,6 +571,11 @@ script "js_top_level_bc", type: "javascript" do
     }
   })
 EOS
+end
+
+# Build the request to send into the Flexera API for cost data
+datasource "ds_instances_costs_request" do
+  run_script $js_instances_costs_request, $ds_aws_account, $ds_top_level_billing_centers
 end
 
 script "js_instances_costs_request", type:"javascript" do
@@ -666,9 +626,43 @@ script "js_instances_costs_request", type:"javascript" do
 EOS
 end
 
+datasource "ds_instances_costs" do
+  iterate $ds_instances_costs_request
+  request do
+    auth $auth_flexera
+    verb "POST"
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/costs/select"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    body_field "dimensions", val(iter_item, "dimensions")
+    body_field "granularity", val(iter_item, "granularity")
+    body_field "start_at", val(iter_item, "start_at")
+    body_field "end_at", val(iter_item, "end_at")
+    body_field "metrics", val(iter_item, "metrics")
+    body_field "billing_center_ids", val(iter_item, "billing_center_ids")
+    body_field "limit", val(iter_item, "limit")
+    body_field "filter", val(iter_item, "filter")
+    ignore_status [400]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "resource_id", jmes_path(col_item, "dimensions.resource_id")
+      field "vendorAccountName", jmes_path(col_item, "dimensions.vendor_account_name")
+      field "cost_nonamortized_unblended_adj", jmes_path(col_item, "metrics.cost_nonamortized_unblended_adj")
+    end
+  end
+end
+
+# Combine the list of instances with the CloudWatch data
+datasource "ds_merged_metrics" do
+  run_script $js_merged_metrics, $ds_cloudwatch_data_sorted, $ds_instances, $ds_aws_account, $ds_currency
+end
+
 script "js_merged_metrics", type: "javascript" do
-  result "result"
   parameters "cloudwatch_data", "ds_instances", "aws_account", "currency"
+  result "result"
   code <<-EOS
   result = []
   //We want to collect each of these list of statistics we care about
@@ -730,8 +724,13 @@ script "js_merged_metrics", type: "javascript" do
 EOS
 end
 
+# Create a final list of idle instances and incorporate cost data into it
+datasource "ds_idle_instances" do
+  run_script $js_idle_instances, $ds_merged_metrics, $ds_instances_costs, $ds_currency, $param_avg_cpu, $param_avg_used_memory, $param_check_both, $param_threshold_statistic
+end
+
 script "js_idle_instances", type:"javascript" do
-  parameters "ds_merged_metrics", "ds_instances_costs", "param_avg_cpu", "param_avg_used_memory", "currency", "param_check_both", "param_threshold_statistic"
+  parameters "ds_merged_metrics", "ds_instances_costs", "currency", "param_avg_cpu", "param_avg_used_memory", "param_check_both", "param_threshold_statistic"
   result "result"
   code <<-EOS
   // Used for formatting numbers to look pretty
@@ -829,7 +828,7 @@ script "js_idle_instances", type:"javascript" do
     message = "The total estimated monthly savings are " + pretty_savings + '.'
   }
   if (idle_instances.length > 0 && cost_data_found == false) {
-    message = "No cost data found. Either the Flexera Optima system does not have any data to calculate savings for these resources, or you do not have the minimum required role of billing_center_viewer to view cost data."
+    message = "No cost data found. Either Flexera does not have any data to calculate savings for these resources, or you do not have the minimum required role of billing_center_viewer to view cost data."
   }
   // Create final result
   result = {
@@ -849,9 +848,9 @@ policy "pol_utilization" do
     detail_template <<-EOS
 {{data.message}}
 EOS
+    check logic_or($ds_parent_policy_terminated, eq(size(val(data, "idle_instances")), 0)    )
     escalate $esc_email
     escalate $esc_terminate_resources
-    check logic_or($ds_parent_policy_terminated,    eq(size(val(data, "idle_instances")), 0)    )
     export "idle_instances" do
       resource_level true
       field "accountID" do
@@ -979,78 +978,39 @@ escalation "esc_terminate_resources" do
   automatic contains($param_automatic_action, "Terminate Instances")
   label "Terminate Instances"
   description "Approval to terminate all selected instances"
-  run "terminate_resources", data, $param_log_to_cm_audit_entries, rs_optima_host
+  run "terminate_resources", data, rs_optima_host
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define terminate_resources($data,$param_log_to_cm_audit_entries, $$rs_optima_host) return $all_responses do
-  $$debug = $param_log_to_cm_audit_entries == "Yes"
-  $$log = []
-  $all_responses = []
-  $syslog_subject = "AWS Idle Compute: "
-  call sys_log(join([$syslog_subject, "Identified Instances"]),to_s($data))
+define terminate_resources($data, $$rs_optima_host) return $all_responses do
+  $$errors = []
+  $$all_responses = []
   foreach $item in $data do
-    $response = http_request(
-      auth: $$auth_aws,
-      https: true,
-      verb: "post",
-      href: "/",
-      host: "ec2."+$item["region"]+".amazonaws.com",
-      query_strings: {
-        "Action": "TerminateInstances",
-        "Version": "2012-06-01",
-        "InstanceId.1": $item["id"]
-      }
-    )
-    $all_responses << $response
+    sub on_error:skip_error_and_append($task) do
+      $response = http_request(
+        auth: $$auth_aws,
+        https: true,
+        verb: "post",
+        href: "/",
+        host: "ec2."+$item["region"]+".amazonaws.com",
+        query_strings: {
+          "Action": "TerminateInstances",
+          "Version": "2012-06-01",
+          "InstanceId.1": $item["id"]
+        }
+      )
+      $$all_responses << $response
+    end
   end
-  call sys_log(join([$syslog_subject, "Responses"]),to_s($all_responses))
-end
-
-define handle_error($response) do
-  $status_code = $response["code"]
-  $syslog_subject = "AWS Idle Compute Termination Error: "
-  call sys_log(join([$syslog_subject, $status_code]),to_s($response))
-  $_error_behavior = "skip"
-end
-
-define sys_log($subject, $detail) do
-  # Create empty errors array if doesn't already exist
-  if !$$errors
-    $$errors = []
-  end
-  # Check if debug is enabled
-  if $$debug
-    # Append to global $$errors
-    # This is the suggested way to capture errors
-    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
-    # If Flexera NAM Zone, create audit_entries [to be deprecated]
-    # This is the legacy method for capturing errors and only supported on Flexera NAM
-    if $$rs_optima_host == "api.optima.flexeraeng.com"
-      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
-      $task_label = "Creating audit entry for " + $subject
-      sub task_label: $task, on_error: skip_error_and_append($task) do
-        rs_cm.audit_entries.create(
-          notify: "None",
-          audit_entry: {
-            auditee_href: @@account,
-            summary: $subject,
-            detail: $detail
-          }
-        )
-      end # End sub on_error
-    end # End if rs_optima_host
-  end # End if debug is enabled
 end
 
 define skip_error_and_append($subject) do
   $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
   $_error_behavior = "skip"
 end
-
 
 ###############################################################################
 # Meta Policy [alpha]
@@ -1064,7 +1024,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
     header "Api-Version", "1.0"
   end
   result do
@@ -1072,7 +1032,6 @@ datasource "ds_get_policy" do
     field "id", jmes_path(response, "id")
   end
 end
-
 
 datasource "ds_parent_policy_terminated" do
   run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
