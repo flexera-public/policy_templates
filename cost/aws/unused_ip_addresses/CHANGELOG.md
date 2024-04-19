@@ -68,7 +68,7 @@
 - Policy no longer raises new escalations if savings data changed but nothing else has
 - Streamlined code for better readability and faster execution
 
-## 5.2
+## v5.2
 
 - Added `Resource Name` incident field
 
@@ -137,8 +137,7 @@
 ## v2.14
 
 - Improve error handling and debug logging so that errors from taking action are actually surfaced
-- Add a `param_log_to_cm_audit_entries` parameter to control whether action debug logging is sent to CM Audit
-  Entries; this should be left set to No on Flexera EU
+- Add a `param_log_to_cm_audit_entries` parameter to control whether action debug logging is sent to CM Audit Entries; this should be left set to No on Flexera EU
 
 ## v2.13
 
@@ -163,8 +162,7 @@
 
 ## v2.8
 
-- Use `DescribeAddresses` instead of `DescribeRegions` to more accurately check if the call is enabled by the
-  Service Control Policy in each region
+- Use `DescribeAddresses` instead of `DescribeRegions` to more accurately check if the call is enabled by the Service Control Policy in each region
 
 ## v2.7
 
