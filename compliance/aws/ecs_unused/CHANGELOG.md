@@ -1,6 +1,6 @@
 # Changelog
 
-## v4.0
+## v4.0.0
 
 - Several parameters altered to be more descriptive and human-readable
 - Added ability to filter resources by multiple tag key:value pairs and with regex
