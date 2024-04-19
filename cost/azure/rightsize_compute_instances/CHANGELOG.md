@@ -7,6 +7,7 @@
 - `Power State` field added to results to indicate whether a virtual machine is running or stopped
 - Fields related to the image the virtual machine was created with added to results
 - Idle Virtual Machines incident now includes a `Recommended Instance Size` field with a value of `Delete Virtual Machine` for ease of analyzing recommendations from the Flexera Optimization dashboard
+- Fixed issue that would cause downsize actions to fail
 
 ## v5.1
 
