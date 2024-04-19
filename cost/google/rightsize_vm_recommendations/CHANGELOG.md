@@ -1,4 +1,4 @@
-# Google Rightsize VM Recommender
+# Changelog
 
 ## v3.1.1
 
