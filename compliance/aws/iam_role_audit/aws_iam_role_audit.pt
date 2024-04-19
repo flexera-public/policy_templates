@@ -1,14 +1,14 @@
 name "AWS IAM Role Audit"
 rs_pt_ver 20180301
 type "policy"
-short_description "This policy checks to see if the provided roles exist in an account. \n See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/iam_role_audit) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "This policy checks to see if a list of user-specified roles exist in an AWS account. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/iam_role_audit) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 category "Compliance"
 severity "medium"
 info(
-  version: "2.6",
+  version: "3.0.0",
   provider:"AWS",
   service: "IAM",
-  policy_set: ""
+  policy_set: "Identity & Access Management"
 )
 
 ###############################################################################
@@ -17,8 +17,10 @@ info(
 
 parameter "param_email" do
   type "list"
-  label "Email addresses"
-  description "A list of email addresses to notify."
+  category "Policy Settings"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+  default []
 end
 
 parameter "param_aws_account_number" do
@@ -31,21 +33,28 @@ end
 
 parameter "param_role_names" do
   type "list"
-  label "IAM Role Names"
-  description "A list of IAM Role names to audit."
+  category "Policy Settings"
+  label "IAM Role Names/IDs"
+  description "List of IAM role names/IDs to check."
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-#authenticate with AWS
 credentials "auth_aws" do
-  schemes "aws","aws_sts"
+  schemes "aws", "aws_sts"
   label "AWS"
   description "Select the AWS Credential from the list"
   tags "provider=aws"
   aws_account_number $param_aws_account_number
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
 end
 
 ###############################################################################
@@ -71,8 +80,64 @@ pagination "pagination_aws_iam_role_tag_json" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get AWS account info
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
 
 datasource "ds_get_caller_identity" do
   request do
@@ -87,22 +152,45 @@ datasource "ds_get_caller_identity" do
   result do
     encoding "xml"
     collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
-      field "account",xpath(col_item, "Account")
+      field "account", xpath(col_item, "Account")
     end
   end
 end
 
-datasource "ds_iam_roles" do
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_get_caller_identity
+end
+
+script "js_aws_account", type:"javascript" do
+  parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+  result = _.find(ds_cloud_vendor_accounts, function(account) {
+    return account['id'] == ds_get_caller_identity[0]['account']
+  })
+
+  // This is in case the API does not return the relevant account info
+  if (result == undefined) {
+    result = {
+      id: ds_get_caller_identity[0]['account'],
+      name: "",
+      tags: {}
+    }
+  }
+EOS
+end
+
+datasource "ds_iam_roles_without_tags" do
   request do
     auth $auth_aws
     pagination $pagination_aws_iam_role_json
     verb "GET"
     host "iam.amazonaws.com"
     path "/"
-    header "Accept", "application/json"
-    header "User-Agent", "RS Policies"
     query "Action", "ListRoles"
     query "Version", "2010-05-08"
+    header "Accept", "application/json"
+    header "User-Agent", "RS Policies"
   end
   result do
     encoding "json"
@@ -118,8 +206,8 @@ datasource "ds_iam_roles" do
   end
 end
 
-datasource "ds_iam_role_tags" do
-  iterate $ds_iam_roles
+datasource "ds_iam_roles" do
+  iterate $ds_iam_roles_without_tags
   request do
     auth $auth_aws
     pagination $pagination_aws_iam_role_tag_json
@@ -135,6 +223,12 @@ datasource "ds_iam_role_tags" do
   result do
     encoding "json"
     collect jmes_path(response, "ListRoleTagsResponse.ListRoleTagsResult") do
+      field "tags" do
+        collect jmes_path(col_item, "Tags") do
+          field "key", jmes_path(col_item, "Key")
+          field "value", jmes_path(col_item, "Value")
+        end
+      end
       field "path", val(iter_item, "path")
       field "arn", val(iter_item, "arn")
       field "roleName", val(iter_item, "roleName")
@@ -142,71 +236,66 @@ datasource "ds_iam_role_tags" do
       field "roleId", val(iter_item, "roleId")
       field "description", val(iter_item, "description")
       field "maxSessionDuration", val(iter_item, "maxSessionDuration")
-      field "tags" do
-        collect jmes_path(col_item,"Tags") do
-          field "tagKey", jmes_path(col_item,"Key")
-          field "tagValue", jmes_path(col_item,"Value")
-        end
-      end
     end
   end
 end
 
-datasource "ds_filter_roles" do
-  run_script $js_filter_roles, $ds_get_caller_identity, $ds_iam_role_tags, $param_role_names
+datasource "ds_missing_roles" do
+  run_script $js_missing_roles, $ds_iam_roles, $ds_aws_account, $ds_applied_policy, $param_role_names
 end
 
-###############################################################################
-# Scripts
-###############################################################################
-
-script "js_filter_roles", type: "javascript" do
-  parameters "ds_get_caller_identity", "ds_iam_role_tags", "param_role_names"
+script "js_missing_roles", type: "javascript" do
+  parameters "ds_iam_roles", "ds_aws_account", "ds_applied_policy", "param_role_names"
   result "result"
   code <<-EOS
-  var result=[];
+  existing_roles_by_name = {}
+  existing_roles_by_id = {}
 
-  _.each(param_role_names, function(roleName){
-    var role = _.findWhere(ds_iam_role_tags, {roleName: roleName})
+  _.each(ds_iam_roles, function(role) {
+    existing_roles_by_name[role["roleName"]] = role
+    existing_roles_by_id[role["roleId"]] = role
+  })
 
-    if ( role !== undefined ) {
-      var unix_timestamp = role["createDate"]
-      var date = new Date(unix_timestamp * 1000);
+  result = _.map(param_role_names, function(role) {
+    found = false
+    description = ""
+    id = ""
+    name = ""
+    arn = ""
+    createDate = ""
+    tags = []
 
-      var tags = role['tags']
-      var tagKeyValue=""
-      if( typeof(tags) !== undefined ){
-        for(var j=0; j < tags.length; j++){
-          tag = tags[j]
-          if( tag['tagValue'] != null ){
-            if((tag['tagValue']).length > 0){
-              tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
-            }else{
-              tagKeyValue = tagKeyValue + ', '+ tag['tagKey']
-            }
-          }
-        }
+    found_role = null
+
+    if (existing_roles_by_name[role] != undefined) { found_role = existing_roles_by_name[role] }
+    if (existing_roles_by_id[role] != undefined) { found_role = existing_roles_by_id[role] }
+
+    if (found_role != null) {
+      found = true
+      description = found_role["description"]
+      id = found_role["roleId"]
+      arn = found_role["arn"]
+      createDate = new Date(found_role["createDate"]).toISOString()
+
+      if (typeof(found_role['tags']) == 'object') {
+        tags = _.map(found_role['tags'], function(tag) {
+          return tag['key'] + "=" + tag['value']
+        })
       }
+    }
 
-      result.push({
-        id: ds_get_caller_identity[0]['account'],
-        roleName: role.roleName,
-        description: role.description
-        found: true,
-        arn: role.arn,
-        createDate: date.toString(),
-        tagKeyValue:(tagKeyValue.slice(2)),
-      })
-    } else {
-      result.push({
-        id: ds_get_caller_identity[0]['account'],
-        roleName: roleName,
-        description: null
-        found: false,
-        arn: null,
-        createDate: null,
-        tagKeyValue: null
-      })
+    return {
+      accountID: ds_applied_policy["id"],
+      accountName: ds_applied_policy["name"],
+      searchName: role,
+      resourceID: id,
+      resourceARN: arn,
+      resourceName: name,
+      description: description,
+      createDate: createDate,
+      found: found,
+      tags: tags.join(", "),
+      policy_name: ds_applied_policy["name"]
     }
   })
 EOS
@@ -219,9 +308,7 @@ end
 policy "pol_iam_role_audit" do
   validate $ds_filter_roles do
     summary_template "AWS IAM Role Audit for Account Id {{with(index data 0)}}{{.id}}{{end}}"
-
     escalate $esc_email
-
     check eq(size(data), 0)
     export do
       field "id" do
