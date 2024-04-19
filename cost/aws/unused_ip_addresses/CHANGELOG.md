@@ -1,5 +1,9 @@
 # Changelog
 
+## v9.0.0
+
+- Fixed issue where policy would fail during execution due to changes in AWS Price List API
+
 ## v8.1
 
 - Updated policy to use new source for currency information. Policy functionality is unchanged.

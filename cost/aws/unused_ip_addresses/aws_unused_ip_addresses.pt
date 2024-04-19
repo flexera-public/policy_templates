@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "8.1",
+  version: "9.0.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Unused IP Addresses",
@@ -42,15 +42,6 @@ parameter "param_days_unattached" do
   default 30
   min_value 0
   max_value 90
-end
-
-parameter "param_pricing_api_endpoint" do
-  type "string"
-  category "Policy Settings"
-  label "AWS Regional Pricing API"
-  description "The regional AWS Pricing API to use when retrieving pricing data for unused IP addresses. Pricing may vary based on region. See README for more details."
-  allowed_values "US East", "EU Central", "AP South"
-  default "US East"
 end
 
 parameter "param_regions_allow_or_deny" do
@@ -150,25 +141,6 @@ datasource "ds_applied_policy" do
     path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
     header "Api-Version", "1.0"
   end
-end
-
-# Get region-specific AWS API endpoints
-datasource "ds_aws_api_hosts" do
-  run_script $js_aws_api_hosts, $param_pricing_api_endpoint
-end
-
-script "js_aws_api_hosts", type: "javascript" do
-  parameters "param_pricing_api_endpoint"
-  result "result"
-  code <<-EOS
-  host_table = {
-    "US East": "api.pricing.us-east-1.amazonaws.com",
-    "EU Central": "api.pricing.eu-central-1.amazonaws.com",
-    "AP South": "api.pricing.ap-south-1.amazonaws.com"
-  }
-
-  result = { pricing: host_table[param_pricing_api_endpoint] }
-EOS
 end
 
 # Get region-specific Flexera API endpoints
@@ -664,51 +636,25 @@ script "js_unused_ips", type: "javascript" do
 EOS
 end
 
-# Gather list prices for unassigned IPs for each region
-datasource "ds_ip_address_prices" do
-  request do
-    auth $auth_aws
-    pagination $pagination_aws_pricing
-    host val($ds_aws_api_hosts, 'pricing')
-    verb "POST"
-    path "/"
-    header "Content-Type", "application/x-amz-json-1.1"
-    header "X-Amz-Target", "AWSPriceListService.GetProducts"
-    body_field "Filters", [{Field: "productFamily", Type: "TERM_MATCH", Value: "IP Address"}]
-    body_field "ServiceCode", "AmazonEC2"
-  end
-  result do
-    collect jq(response, '.PriceList[] | fromjson | select(.product.attributes.usagetype | test("ElasticIP:IdleAddress"))') do
-      field 'price', jq(col_item, '.terms.OnDemand[].priceDimensions[] | select(.description | test("Elastic IP address not attached to a running instance per hour")).pricePerUnit.USD')
-      field 'region', jq(col_item, '.product.attributes.regionCode')
-    end
-  end
+datasource "ds_ip_address_monthly_price_usd" do
+  run_script $js_ip_address_monthly_price_usd
 end
 
-datasource "ds_ip_address_prices_grouped" do
-  run_script $js_ip_address_prices_grouped, $ds_ip_address_prices
-end
-
-script "js_ip_address_prices_grouped", type: "javascript" do
-  parameters "ip_address_prices"
+script "js_ip_address_monthly_price_usd", type: "javascript" do
   result "result"
   code <<-EOS
-  // Group price data by region for later use
-  result = {}
-
-  _.each(ip_address_prices, function(item) {
-    result[item['region'].toLowerCase()] = item['price']
-  })
+  hourly = 0.005
+  result = (hourly * 24 * 365.25) / 12
 EOS
 end
 
 # Combine IP information with cost data and prepare final datasource for incident
 datasource "ds_ip_cost_mapping" do
-  run_script $js_ip_cost_mapping, $ds_unused_ips, $ds_ip_addresses_filtered, $ds_ip_address_prices_grouped, $ds_aws_account, $ds_currency, $ds_currency_conversion, $ds_applied_policy, $param_days_unattached
+  run_script $js_ip_cost_mapping, $ds_unused_ips, $ds_ip_addresses_filtered, $ds_ip_address_monthly_price_usd, $ds_aws_account, $ds_currency, $ds_currency_conversion, $ds_applied_policy, $param_days_unattached
 end
 
 script "js_ip_cost_mapping", type:"javascript" do
-  parameters "ds_unused_ips", "ds_ip_addresses_filtered", "ds_ip_address_prices_grouped", "ds_aws_account", "ds_currency", "ds_currency_conversion", "ds_applied_policy", "param_days_unattached"
+  parameters "ds_unused_ips", "ds_ip_addresses_filtered", "ds_ip_address_monthly_price_usd", "ds_aws_account", "ds_currency", "ds_currency_conversion", "ds_applied_policy", "param_days_unattached"
   result "result"
   code <<-'EOS'
   // Function for formatting currency numbers later
@@ -734,11 +680,7 @@ script "js_ip_cost_mapping", type:"javascript" do
   total_savings = 0.0
 
   _.each(ds_unused_ips, function(ip) {
-    ip_cost = ds_ip_address_prices_grouped[ip['region'].toLowerCase()] * 24 * 365.25 / 12 * ds_currency['exchange_rate']
-
-    if (typeof(ip_cost) != 'number') {
-      ip_cost = 0.0
-    }
+    ip_cost = ds_ip_address_monthly_price_usd * ds_currency['exchange_rate']
 
     total_savings += ip_cost
 
