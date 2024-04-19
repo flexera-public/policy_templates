@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1.1
+
+- Added default value for parameters that do not require user input
+
 ## v3.1
 
 - Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.
