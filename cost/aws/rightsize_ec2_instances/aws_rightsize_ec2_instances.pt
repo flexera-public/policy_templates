@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "5.1",
+  version: "5.1.1",
   provider: "AWS",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -1082,6 +1082,7 @@ script "js_idle_and_underutil_instances", type:"javascript" do
         ]
 
         instance["recommendationDetails"] = recommendationDetails.join('')
+        instance["newResourceType"] = "Terminate EC2 Instance"
 
         if (instance['savings'] >= param_min_savings) {
           idle_total_savings += total_cost
@@ -1450,6 +1451,9 @@ policy "pol_utilization" do
       field "resourceType" do
         label "Instance Size"
       end
+      field "newResourceType" do
+        label "Recommended Instance Size"
+      end
       field "region" do
         label "Region"
       end
@@ -1591,7 +1595,7 @@ define stop_instances($data) do
 
   # If we encountered any errors, use `raise` to mark the CWF process as errored
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -1599,19 +1603,21 @@ end
 define downsize_instances($data) do
   foreach $instance in $data do
     sub on_error: handle_error() do
-      # Get the initial state of the instance before we take any action
-      call get_instance_state($instance) retrieve $initial_state
-      # Check to see if the instance is in a state that we can actual change instance type
-      if $initial_state != "terminated" && $initial_state != "pending"
-        # Stop the instance if it's not already stopped
-        if $initial_state != "stopped"
-          call stop_instance($instance)
-        end
-        # Resize the instance
-        call resize_instance($instance)
-        # Start the instance if it was running before we stopped it
-        if $initial_state == "running"
-          call start_instance($instance)
+      if $instance["newResourceType"] != "Terminate EC2 Instance"
+        # Get the initial state of the instance before we take any action
+        call get_instance_state($instance) retrieve $initial_state
+        # Check to see if the instance is in a state that we can actual change instance type
+        if $initial_state != "terminated" && $initial_state != "pending"
+          # Stop the instance if it's not already stopped
+          if $initial_state != "stopped"
+            call stop_instance($instance)
+          end
+          # Resize the instance
+          call resize_instance($instance)
+          # Start the instance if it was running before we stopped it
+          if $initial_state == "running"
+            call start_instance($instance)
+          end
         end
       end
     end
@@ -1619,7 +1625,7 @@ define downsize_instances($data) do
 
   # If we encountered any errors, use `raise` to mark the CWF process as errored
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -1637,7 +1643,7 @@ define terminate_instances($data) do
 
   # If we encountered any errors, use `raise` to mark the CWF process as errored
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 

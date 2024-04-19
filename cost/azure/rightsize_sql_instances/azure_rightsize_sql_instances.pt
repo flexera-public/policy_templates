@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "5.1",
+  version: "5.1.1",
   provider: "Azure",
   service: "SQL",
   policy_set: "Rightsize Database Instances",
@@ -1007,6 +1007,7 @@ script "js_unused_sql_incident", type: "javascript" do
         policy_name: db['policy_name'],
         savings: parseFloat(savings.toFixed(3)),
         savingsCurrency: ds_currency['symbol'],
+        newResourceType: "Delete Instance",
         service: "Microsoft.Sql",
         platform: "Azure SQL Database",
         total_savings: "",
@@ -1219,6 +1220,9 @@ policy "pol_azure_sql_utilization" do
         label "SKU - Capacity"
         path "sku.capacity"
       end
+      field "newResourceType" do
+        label "Recommended Capacity"
+      end
       field "savings" do
         label "Estimated Monthly Savings"
       end
@@ -1274,13 +1278,15 @@ define downsize_instances($data, $param_azure_endpoint) return $all_responses do
   $$all_responses = []
 
   foreach $instance in $data do
-    sub on_error: handle_error() do
-      call downsize_instance($instance, $param_azure_endpoint) retrieve $downsize_response
+    if $instance["newResourceType"] != "Delete Instance"
+      sub on_error: handle_error() do
+        call downsize_instance($instance, $param_azure_endpoint) retrieve $downsize_response
+      end
     end
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -1331,7 +1337,7 @@ define delete_instances($data, $param_azure_endpoint) return $all_responses do
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 

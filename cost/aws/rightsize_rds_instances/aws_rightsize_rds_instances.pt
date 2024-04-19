@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "5.3",
+  version: "5.3.1",
   provider: "AWS",
   service: "RDS",
   policy_set: "Rightsize Database Instances",
@@ -1371,6 +1371,7 @@ script "js_rds_idle_incident", type: "javascript" do
         savings: parseFloat(savings.toFixed(3)),
         savingsCurrency: ds_currency['symbol'],
         lookbackPeriod: param_stats_lookback,
+        newResourceType: "Terminate RDS Instance",
         service: "AmazonRDS",
         policy_name: ds_applied_policy['name'],
         // Dummy values to ensure hash_exclude works properly
@@ -1728,6 +1729,9 @@ policy "pol_rightsize_rds" do
       field "resourceType" do
         label "Resource Type"
       end
+      field "newResourceType" do
+        label "Recommended Resource Type"
+      end
       field "databaseEngine" do
         label "Database Engine"
       end
@@ -1793,13 +1797,15 @@ define downsize_rds_instances($data, $param_downsize_timeframe) return $all_resp
   $$all_responses = []
 
   foreach $instance in $data do
-    sub on_error: handle_error() do
-      call downsize_instance($instance, $param_downsize_timeframe) retrieve $downsize_response
+    if $instance["newResourceType"] != "Terminate RDS Instance"
+      sub on_error: handle_error() do
+        call downsize_instance($instance, $param_downsize_timeframe) retrieve $downsize_response
+      end
     end
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -1813,7 +1819,7 @@ define terminate_rds_instances($data) return $all_responses do
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
