@@ -101,7 +101,7 @@ parameter "param_exclude_stopped" do
   label "Exclude Stopped Virtual Machines"
   description "Whether or not to filter stopped virtual machines from the results. If set to \"Yes\", only running virtual machines will be included in the results."
   allowed_values "Yes", "No"
-  default "Yes"
+  default "No"
 end
 
 parameter "param_exclude_databricks" do
@@ -110,7 +110,7 @@ parameter "param_exclude_databricks" do
   label "Exclude Databricks"
   description "Whether or not to filter virtual machines used for Azure Databricks from the results. If set to \"Yes\", virtual machines for Azure Databricks will not be included in the results."
   allowed_values "Yes", "No"
-  default "Yes"
+  default "No"
 end
 
 parameter "param_stats_idle_threshold_cpu_value" do
@@ -391,7 +391,6 @@ datasource "ds_azure_instances" do
     pagination $pagination_azure
     host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Compute/virtualMachines"])
-    query "$expand", "instanceView"
     query "api-version", "2024-03-01"
     header "User-Agent", "RS Policies"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
@@ -405,26 +404,81 @@ datasource "ds_azure_instances" do
       field "resourceKind", jmes_path(col_item, "type")
       field "name", jmes_path(col_item, "name")
       field "region", jmes_path(col_item, "location")
-      field "statuses", jmes_path(col_item, "properties.instanceView.statuses")
       field "imagePublisher", jmes_path(col_item, "properties.storageProfile.imageReference.publisher")
       field "imageOffer", jmes_path(col_item, "properties.storageProfile.imageReference.offer")
       field "imageSKU", jmes_path(col_item, "properties.storageProfile.imageReference.sku")
       field "osType", jmes_path(col_item, "properties.storageProfile.osDisk.osType")
       field "resourceType", jmes_path(col_item, "properties.hardwareProfile.vmSize")
       field "tags", jmes_path(col_item, "tags")
-      field "subscriptionId",val(iter_item, "id")
-      field "subscriptionName",val(iter_item, "name")
+      field "subscriptionId", val(iter_item, "id")
+      field "subscriptionName", val(iter_item, "name")
     end
   end
 end
 
+datasource "ds_azure_instance_statuses" do
+  iterate $ds_azure_subscriptions_filtered
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Compute/virtualMachines"])
+    query "api-version", "2024-03-01"
+    query "statusOnly", "true"
+    header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "resourceID", jmes_path(col_item, "id")
+      field "statuses", jmes_path(col_item, "properties.instanceView.statuses")
+    end
+  end
+end
+
+datasource "ds_azure_instances_with_status" do
+  run_script $js_azure_instances_with_status, $ds_azure_instances, $ds_azure_instance_statuses
+end
+
+script "js_azure_instances_with_status", type: "javascript" do
+  parameters "ds_azure_instances", "ds_azure_instance_statuses"
+  result "result"
+  code <<-EOS
+  status_object = {}
+
+  _.each(ds_azure_instance_statuses, function(item) {
+    status_object[item['resourceID']] = item['statuses']
+  })
+
+  result = _.map(ds_azure_instances, function(vm) {
+    return {
+      resourceID: vm["resourceID"],
+      resourceGroup: vm["resourceGroup"],
+      resourceKind: vm["resourceKind"],
+      name: vm["name"],
+      region: vm["region"],
+      imagePublisher: vm["imagePublisher"],
+      imageOffer: vm["imageOffer"],
+      imageSKU: vm["imageSKU"],
+      osType: vm["osType"],
+      resourceType: vm["resourceType"],
+      tags: vm["tags"],
+      subscriptionId: vm["subscriptionId"],
+      subscriptionName: vm["subscriptionName"],
+      statuses: status_object[vm["resourceID"]]
+    }
+  })
+EOS
+end
 
 datasource "ds_azure_instances_tag_filtered" do
-  run_script $js_azure_instances_tag_filtered, $ds_azure_instances, $param_exclusion_tags, $param_exclusion_tags_boolean
+  run_script $js_azure_instances_tag_filtered, $ds_azure_instances_with_status, $param_exclusion_tags, $param_exclusion_tags_boolean
 end
 
 script "js_azure_instances_tag_filtered", type: "javascript" do
-  parameters "ds_azure_instances", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  parameters "ds_azure_instances_with_status", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-EOS
   comparators = _.map(param_exclusion_tags, function(item) {
@@ -458,7 +512,7 @@ script "js_azure_instances_tag_filtered", type: "javascript" do
   })
 
   if (param_exclusion_tags.length > 0) {
-    result = _.reject(ds_azure_instances, function(resource) {
+    result = _.reject(ds_azure_instances_with_status, function(resource) {
       resource_tags = {}
       if (typeof(resource['tags']) == 'object') { resource_tags = resource['tags'] }
 
@@ -491,7 +545,7 @@ script "js_azure_instances_tag_filtered", type: "javascript" do
       return all_tags_found || any_tags_found
     })
   } else {
-    result = ds_azure_instances
+    result = ds_azure_instances_with_status
   }
 EOS
 end
@@ -528,12 +582,12 @@ script "js_azure_instances_databricks_filtered", type: "javascript" do
   parameters "ds_azure_instances_region_filtered", "param_exclude_databricks"
   result "result"
   code <<-EOS
-  if (param_regions_list.length > 0) {
+  if (param_exclude_databricks == "Yes") {
     result = _.filter(ds_azure_instances_region_filtered, function(vm) {
       return vm['imageOffer'].toLowerCase().indexOf('databricks') == -1 && vm['imagePublisher'].toLowerCase().indexOf('databricks') == -1
     })
   } else {
-    result = ds_azure_instances_tag_filtered
+    result = ds_azure_instances_region_filtered
   }
 EOS
 end
