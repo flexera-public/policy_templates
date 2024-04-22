@@ -2,8 +2,10 @@ name "AWS IAM Role Audit"
 rs_pt_ver 20180301
 type "policy"
 short_description "This policy checks to see if a list of user-specified roles exist in an AWS account. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/iam_role_audit) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
-category "Compliance"
+long_description ""
 severity "medium"
+category "Compliance"
+default_frequency "daily"
 info(
   version: "3.0.0",
   provider:"AWS",
@@ -34,8 +36,8 @@ end
 parameter "param_role_names" do
   type "list"
   category "Policy Settings"
-  label "IAM Role Names/IDs"
-  description "List of IAM role names/IDs to check."
+  label "IAM Role Names/IDs/ARNs"
+  description "List of IAM role names/IDs/ARNs to check."
 end
 
 ###############################################################################
@@ -191,6 +193,9 @@ datasource "ds_iam_roles_without_tags" do
     query "Version", "2010-05-08"
     header "Accept", "application/json"
     header "User-Agent", "RS Policies"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
   end
   result do
     encoding "json"
@@ -206,8 +211,22 @@ datasource "ds_iam_roles_without_tags" do
   end
 end
 
+datasource "ds_iam_roles_filtered" do
+  run_script $js_iam_roles_filtered, $ds_iam_roles_without_tags, $param_role_names
+end
+
+script "js_iam_roles_filtered", type:"javascript" do
+  parameters "ds_iam_roles_without_tags", "param_role_names"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_iam_roles_without_tags, function(role) {
+    return _.contains(param_role_names, role['roleId']) || _.contains(param_role_names, role['roleName']) || _.contains(param_role_names, role['arn'])
+  })
+EOS
+end
+
 datasource "ds_iam_roles" do
-  iterate $ds_iam_roles_without_tags
+  iterate $ds_iam_roles_filtered
   request do
     auth $auth_aws
     pagination $pagination_aws_iam_role_tag_json
@@ -250,10 +269,12 @@ script "js_missing_roles", type: "javascript" do
   code <<-EOS
   existing_roles_by_name = {}
   existing_roles_by_id = {}
+  existing_roles_by_arn = {}
 
   _.each(ds_iam_roles, function(role) {
     existing_roles_by_name[role["roleName"]] = role
     existing_roles_by_id[role["roleId"]] = role
+    existing_roles_by_arn[role["arn"]] = role
   })
 
   result = _.map(param_role_names, function(role) {
@@ -267,13 +288,23 @@ script "js_missing_roles", type: "javascript" do
 
     found_role = null
 
-    if (existing_roles_by_name[role] != undefined) { found_role = existing_roles_by_name[role] }
-    if (existing_roles_by_id[role] != undefined) { found_role = existing_roles_by_id[role] }
+    if (existing_roles_by_name[role] != undefined) {
+      found_role = existing_roles_by_name[role]
+    }
+
+    if (existing_roles_by_id[role] != undefined && found_role == null) {
+      found_role = existing_roles_by_id[role]
+    }
+
+    if (existing_roles_by_arn[role] != undefined && found_role == null) {
+      found_role = existing_roles_by_arn[role]
+    }
 
     if (found_role != null) {
       found = true
       description = found_role["description"]
       id = found_role["roleId"]
+      name = found_role["roleName"]
       arn = found_role["arn"]
       createDate = new Date(found_role["createDate"]).toISOString()
 
@@ -285,8 +316,8 @@ script "js_missing_roles", type: "javascript" do
     }
 
     return {
-      accountID: ds_applied_policy["id"],
-      accountName: ds_applied_policy["name"],
+      accountID: ds_aws_account["id"],
+      accountName: ds_aws_account["name"],
       searchName: role,
       resourceID: id,
       resourceARN: arn,
@@ -298,6 +329,21 @@ script "js_missing_roles", type: "javascript" do
       policy_name: ds_applied_policy["name"]
     }
   })
+
+  // Dummy entry to ensure validation occurs at least once
+  result.push({
+    accountID: "",
+    accountName: "",
+    searchName: "",
+    resourceID: "",
+    resourceARN: "",
+    resourceName: "",
+    description: "",
+    createDate: "",
+    found: "",
+    tags: "",
+    policy_name: ""
+  })
 EOS
 end
 
@@ -306,31 +352,46 @@ end
 ###############################################################################
 
 policy "pol_iam_role_audit" do
-  validate $ds_filter_roles do
-    summary_template "AWS IAM Role Audit for Account Id {{with(index data 0)}}{{.id}}{{end}}"
+  validate_each $ds_missing_roles do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS IAM Roles Checked"
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "searchName"), ""))
     escalate $esc_email
-    check eq(size(data), 0)
+    hash_exclude "tags"
     export do
-      field "id" do
-        label "Account Id"
+      resource_level true
+      field "accountID" do
+        label "Account ID"
       end
-      field "roleName" do
+      field "accountName" do
+        label "Account Name"
+      end
+      field "searchName" do
+        label "Search Name/ID/ARN"
+      end
+      field "found" do
+        label "Role Exists?"
+      end
+      field "resourceID" do
+        label "Role ID"
+      end
+      field "resourceName" do
         label "Role Name"
+      end
+      field "resourceARN" do
+        label "Role ARN"
       end
       field "description" do
         label "Description"
       end
-      field "found" do
-        label "Exists?"
-      end
-      field "arn" do
-        label "ARN"
-      end
       field "createDate" do
-        label "Create Date"
+        label "Creation Date"
       end
-      field "tagKeyValue" do
+      field "tags" do
         label "Tags"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
       end
     end
   end
@@ -345,4 +406,94 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = { "path": "/" }
+EOS
 end

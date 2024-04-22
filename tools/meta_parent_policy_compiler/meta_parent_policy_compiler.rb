@@ -8,6 +8,7 @@ default_child_policy_template_files = [
   # AWS Policy Templates
   "../../automation/aws/aws_missing_regions/aws_missing_regions.pt",
   "../../compliance/aws/disallowed_regions/aws_disallowed_regions.pt",
+  "../../compliance/aws/iam_role_audit/aws_iam_role_audit.pt",
   "../../compliance/aws/instances_without_fnm_agent/aws_instances_not_running_flexnet_inventory_agent.pt",
   "../../compliance/aws/long_stopped_instances/aws_long_stopped_instances.pt",
   "../../compliance/aws/untagged_resources/aws_untagged_resources.pt",
