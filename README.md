@@ -97,9 +97,6 @@ These templates can generate savings estimates for your environment.
   - [AWS EC2 Instances not running FlexNet Inventory Agent](./compliance/aws/instances_without_fnm_agent)
   - [AWS Long Stopped EC2 Instances](./compliance/aws/long_stopped_instances)
   - [AWS Untagged Resources](./compliance/aws/untagged_resources)
-
-- ECS
-
   - [AWS Unused ECS Clusters](./compliance/aws/ecs_unused)
 
 - IAM
@@ -625,7 +622,7 @@ These templates can generate savings estimates for your environment.
   Security: 74
 :optimization_count: 47
 :policy_sets:
-  '': 47
+  '': 46
   AWS Config: 1
   Allocate VMs: 3
   Automation: 1
@@ -675,6 +672,7 @@ These templates can generate savings estimates for your environment.
   Tag Cardinality: 2
   Unlabeled Resources: 1
   Untagged Resources: 3
+  Unused Containers: 1
   Unused Database Services: 1
   Unused IP Addresses: 3
   Unused Load Balancers: 1
@@ -704,12 +702,11 @@ These templates can generate savings estimates for your environment.
   Cloud Migration & Modernization: 2
   CloudTrail: 7
   Common Bill Ingestion: 2
-  Compute: 62
+  Compute: 63
   Config: 1
   DBS: 1
   Databricks: 1
   EBS: 2
-  ECS: 1
   ELB: 3
   FlexNet Manager: 1
   IAM: 18
