@@ -1,5 +1,9 @@
 # NetFlow Top Talkers
 
+## Deprecated
+
+This policy is no longer being updated.
+
 ## What it does
 
 This Policy Template will analyze RISC Foundations NetFlow data and will leverage these traffic patterns to identify the top communication routes from each application stack to external dependencies.

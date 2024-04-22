@@ -1,5 +1,9 @@
 # AzureAD Group Sync
 
+## Deprecated
+
+This policy is no longer being updated.
+
 ## What it does
 
 This policy collects groups and their members from AzureAD and synchronizes them to the Flexera Cloud Management Platform.
