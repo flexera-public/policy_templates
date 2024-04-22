@@ -1,5 +1,9 @@
 # AzureAD Group Sync
 
+## Deprecated
+
+This policy is no longer being updated. Group Sync for Azure Active Directory is now [natively supported in the Flexera platform](https://docs.flexera.com/flexera/EN/Administration/GroupSync.htm).
+
 ## What it does
 
 This policy collects groups and their members from AzureAD and synchronizes them to the Flexera Cloud Management Platform.

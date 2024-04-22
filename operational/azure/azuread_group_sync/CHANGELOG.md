@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.4.1
+
+- Deprecated: This policy is no longer being updated.
+
 ## v2.4
 
 - Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM

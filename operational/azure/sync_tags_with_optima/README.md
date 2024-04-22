@@ -1,5 +1,11 @@
 # Azure Sync Tags with Optima
 
+## Deprecated
+
+This policy is no longer being updated.
+
+## What It Does
+
 This Policy identifies all Azure tag keys that are not being used as custom dimensions in Flexera Optima.
 
 ## Prerequisites

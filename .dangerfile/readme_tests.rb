@@ -5,6 +5,19 @@
 # Methods: README
 ###############################################################################
 
+### Deprecated README test
+# Utility method. Returns true if README is for a deprecated policy
+def readme_deprecated?(file)
+  # Store contents of file for direct analysis
+  readme_text = File.read(file)
+
+  readme_text.each_line do |line|
+    return true if line.start_with?("## Deprecated")
+  end
+
+  return false
+end
+
 ### Missing README Sections
 # Verify that README file has all required sections
 def readme_missing_sections?(file)
