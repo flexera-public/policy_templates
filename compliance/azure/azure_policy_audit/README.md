@@ -1,6 +1,6 @@
 # Azure Policy Audit
 
-## What it does
+## What It Does
 
 This policy checks to see if a list of user-specified Azure Policies exist in each Azure Subscription. An incident is raised with a list of all checked Azure Policies and whether or not they exist. Optionally, an email is sent with this information.
 
