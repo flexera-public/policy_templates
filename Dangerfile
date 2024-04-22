@@ -185,26 +185,29 @@ changed_readme_files.each do |file|
   warnings = []
   failures = []
 
-  # Run Danger spell check on file
-  general_spellcheck?(file)
+  # Don't run tests against deprecated READMEs
+  unless readme_deprecated?(file)
+    # Run Danger spell check on file
+    general_spellcheck?(file)
 
-  # Raise warning if outdated terminology found
-  test = general_outdated_terminology?(file); warnings << test if test
+    # Raise warning if outdated terminology found
+    test = general_outdated_terminology?(file); warnings << test if test
 
-  # Raise error if the file contains any bad urls
-  test = general_bad_urls?(file); failures << test if test
+    # Raise error if the file contains any bad urls
+    test = general_bad_urls?(file); failures << test if test
 
-  # Raise error if improper markdown is found via linter
-  test = general_bad_markdown?(file); failures << test if test
+    # Raise error if improper markdown is found via linter
+    test = general_bad_markdown?(file); failures << test if test
 
-  # Raise error if README is missing required sections
-  test = readme_missing_sections?(file); failures << test if test
+    # Raise error if README is missing required sections
+    test = readme_missing_sections?(file); failures << test if test
 
-  # Raise error if README sections are out of order
-  test = readme_sections_out_of_order?(file); failures << test if test
+    # Raise error if README sections are out of order
+    test = readme_sections_out_of_order?(file); failures << test if test
 
-  # Raise error if README credentials are formatted incorrectly
-  test = readme_invalid_credentials?(file); failures << test if test
+    # Raise error if README credentials are formatted incorrectly
+    test = readme_invalid_credentials?(file); failures << test if test
+  end
 
   # Output final list of failures and warnings
   fail "## **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
@@ -220,14 +223,17 @@ changed_changelog_files.each do |file|
   warnings = []
   failures = []
 
-  # Raise error if the file contains any bad urls
-  test = general_bad_urls?(file); failures << test if test
+  # Don't run tests against deprecated CHANGELOGs
+  unless changelog_deprecated?(file)
+    # Raise error if the file contains any bad urls
+    test = general_bad_urls?(file); failures << test if test
 
-  # Raise error if improper markdown is found via linter
-  test = general_bad_markdown?(file); failures << test if test
+    # Raise error if improper markdown is found via linter
+    test = general_bad_markdown?(file); failures << test if test
 
-  # Raise error if CHANGELOG is incorrectly formatted
-  test = changelog_bad_formatting?(file); failures << test if test
+    # Raise error if CHANGELOG is incorrectly formatted
+    test = changelog_bad_formatting?(file); failures << test if test
+  end
 
   # Output final list of failures and warnings
   fail "## **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
