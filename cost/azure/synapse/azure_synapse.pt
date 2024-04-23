@@ -96,6 +96,16 @@ parameter "param_stats_lookback" do
   max_value 90
 end
 
+parameter "param_paused_lookback" do
+  type "number"
+  category "Statistics"
+  label "Paused Lookback Period"
+  description "How many days back to look at paused metrics. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days."
+  default 30
+  min_value 1
+  max_value 90
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -433,17 +443,17 @@ script "js_azure_metrics", type: "javascript" do
 EOS
 end
 
-datasource "ds_pools_with_metrics" do
-  run_script $js_pools_with_metrics, $ds_sql_pool_metrics, $ds_sql_pools, $param_stats_lookback, $param_stats_threshold
+datasource "ds_underutil_pools" do
+  run_script $js_underutil_pools, $ds_sql_pool_metrics, $ds_sql_pools, $ds_instance_costs_grouped, $param_stats_lookback, $param_stats_threshold, $param_paused_lookback
 end
 
-script "js_pools_with_metrics", type: "javascript" do
-  parameters "ds_sql_pool_metrics", "ds_sql_pools", "param_stats_lookback", "param_stats_threshold"
+script "js_underutil_pools", type: "javascript" do
+  parameters "ds_sql_pool_metrics", "ds_sql_pools", "ds_instance_costs_grouped", "param_stats_lookback", "param_stats_threshold", "param_paused_lookback"
   result "result"
   code <<-EOS
   result = []
   pools = {}
-
+  var underutil_total_savings = 0.0
   _.each(ds_sql_pools, function(item) {
       id = item['resourceId'].toLowerCase()
 
@@ -451,15 +461,162 @@ script "js_pools_with_metrics", type: "javascript" do
   })
 
   _.each(ds_sql_pool_metrics, function(item) {
-      id = item['resourceId'].toLowerCase()
+    id = item['resourceId'].toLowerCase()
 
-      metrics = {}
-      values = item['value']
+    total_cost = 0.0
+    if (ds_instance_costs_grouped[id] != undefined) { total_cost = ds_instance_costs_grouped[id] }
 
-      _.each(values, function(metric) {
-          metrics[metric['name']['value']] = metric['timeseries'][0]['data']
+    metrics = {}
+    values = item['value']
 
+    _.each(values, function(metric) {
+      metrics[metric['name']['value']] = metric['timeseries'][0]['data']
+    })
+
+    var dwuUsedPercent = metrics['DWUUsedPercent'][0]['maximum']
+
+    if (dwuUsedPercent <= param_stats_threshold) {
+      underutil_total_savings += total_cost / 2
+      result.push({
+        resourceName: item['resourceName'],
+        resourceGroup: item['resourceGroup'],
+        resourceId: item['resourceId'],
+        region: item['region'],
+        resourceType: pools[id]['sku'],
+        subscriptionId: item['subscriptionId'],
+        subscriptionName: item['subscriptionName'],
+        tags: item['tags'],
+        region: item['region'],
+        status: pools[id]['status'],
+        creationDate: pools[id]['creationDate'],
+        maxSizeBytes: pools[id]['maxSizeBytes'],
+        provisioningState: pools[id]['provisioningState'],
+        storageAccountType: pools[id]['storageAccountType'],
+        DWUUsed: metrics['DWUUsed'][0]['maximum'],
+        DWUUsedPercent: dwuUsedPercent,
+        MemoryUsedPercent: metrics['MemoryUsedPercent'][0]['maximum'],
+        Connections: metrics['Connections'][0]['maximum'],
+        service: "Microsoft.Synapse",
+        lookbackPeriod: param_stats_lookback,
+        pausedLookbackPeriod: param_paused_lookback,
+        threshold: param_stats_threshold,
+        savings: parseFloat(parseFloat(total_cost / 2).toFixed(3)),
+        recommendationDetails: "Downsize sql pool"
       })
+    }    
+  })
+  EOS
+end
+
+datasource "ds_paused_pool_metrics" do
+  iterate $ds_sql_pools
+  request do
+    run_script $js_paused_pool_metrics, val(iter_item, "resourceId"), $param_azure_endpoint, $param_paused_lookback, val(iter_item, "creationDate")
+  end
+  result do
+    encoding "json"
+    field "value", val(response, "value")
+    field "resourceName", val(iter_item, "name")
+    field "resourceGroup", val(iter_item, "resourceGroup")
+    field "resourceId", val(iter_item, "resourceId")
+    field "resourceKind", val(iter_item, "resourceKind")
+    field "region", val(iter_item, "region")
+    field "tags", val(iter_item, "tags")
+    field "resourceType", val(iter_item, "resourceType")
+    field "subscriptionId",val(iter_item, "subscriptionId")
+    field "subscriptionName",val(iter_item, "subscriptionName")
+  end
+end
+
+script "js_paused_pool_metrics", type: "javascript" do
+  parameters "resourceId", "param_azure_endpoint", "param_paused_lookback", "creationDate"
+  result "request"
+  code <<-EOS
+  end_date = new Date()
+  end_date.setMilliseconds(999)
+  end_date.setSeconds(59)
+  end_date.setMinutes(59)
+  end_date.setHours(23)
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - param_paused_lookback)
+
+  creation_date = new Date(creationDate)
+
+  if (start_date.getDate() < creation_date.getDate()) {
+      start_date.setDate(creation_date.getDate())
+  }
+
+  start_date.setMilliseconds(0)
+  start_date.setSeconds(0)
+  start_date.setMinutes(0)
+  start_date.setHours(0)
+
+  timespan = start_date.toISOString() + "/" + end_date.toISOString()
+
+  var request = {
+    auth: "auth_azure",
+    pagination: "pagination_azure",
+    host: param_azure_endpoint,
+    verb: "GET",
+    path: resourceId + "/providers/microsoft.insights/metrics",
+    query_params: {
+      "api-version": "2023-10-01",
+      "timespan": timespan,
+      "interval": "FULL",
+      "metricnames": "DWUUsed,DWUUsedPercent,CPUPercent,MemoryUsedPercent,Connections",
+      "aggregation": "average,maximum,minimum"
+    },
+    headers: {
+      "User-Agent": "RS Policies"
+    },
+    // Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status: [400, 403, 404]
+  }
+EOS
+end
+
+datasource "ds_paused_pools" do
+  run_script $js_paused_pools, $ds_sql_pool_metrics, $ds_sql_pools, $ds_instance_costs_grouped, $param_stats_lookback, $param_stats_threshold, $param_paused_lookback
+end
+
+script "js_paused_pools", type: "javascript" do
+  parameters "ds_sql_pool_metrics", "ds_sql_pools", "ds_instance_costs_grouped","param_stats_lookback", "param_stats_threshold", "param_paused_lookback"
+  result "result"
+  code <<-EOS
+  result = []
+  pools = {}
+
+  var paused_total_savings = 0.0
+
+  _.each(ds_sql_pools, function(item) {
+    id = item['resourceId'].toLowerCase()
+    pools[id] = item
+  })
+
+  _.each(ds_sql_pool_metrics, function(item) {
+    id = item['resourceId'].toLowerCase()
+
+    total_cost = 0.0
+    if (ds_instance_costs_grouped[id] != undefined) { total_cost = ds_instance_costs_grouped[id] }
+
+    metrics = {}
+    values = item['value']
+
+    _.each(values, function(metric) {
+      metrics[metric['name']['value']] = metric['timeseries'][0]['data']
+    })
+
+    var connections = parseInt(metrics['Connections'][0]['maximum'])
+
+    recommendationDetails = [
+      "Pause sql pool ", item['resourceId'], " ",
+      "in Azure Account ", item['subscriptionName'], " ",
+      "(", item['subscriptionId'], ")"
+    ]
+
+    if (connections == 0) {
+      paused_total_savings += total_cost
       result.push({
         resourceName: item['resourceName'],
         resourceGroup: item['resourceGroup'],
@@ -478,16 +635,18 @@ script "js_pools_with_metrics", type: "javascript" do
         DWUUsed: metrics['DWUUsed'][0]['maximum'],
         DWUUsedPercent: metrics['DWUUsedPercent'][0]['maximum'],
         MemoryUsedPercent: metrics['MemoryUsedPercent'][0]['maximum'],
-        Connections: metrics['Connections'][0]['maximum'],
+        Connections: connections,
         service: "Microsoft.Synapse",
         lookbackPeriod: param_stats_lookback,
-        threshold: param_stats_threshold
-
-    })
+        pausedLookbackPeriod: param_paused_lookback,
+        threshold: param_stats_threshold,
+        savings: parseFloat(parseFloat(total_cost).toFixed(3)),
+        recommendationDetails: recommendationDetails.join('')
+      })
+    }   
   })
 EOS
 end
-
 
 
 datasource "ds_instance_costs" do
@@ -600,14 +759,17 @@ end
 # Policy
 ###############################################################################
 
-policy "ds_pools_with_metrics" do
-  validate $ds_pools_with_metrics do
+policy "pol_utilization" do
+  validate $ds_underutil_pools do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Synapse SQL pools found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .underutil_total_savings }}{{ end }}
+    EOS
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
     check eq(size(data),0)
-#    escalate $esc_email
-#    escalate $esc_downsize_instances
-#    hash_exclude "underutil_message", "idle_message", "underutil_total_savings", "idle_total_savings", "tags", "savings", "savingsCurrency", "cpu_maximum", "cpu_minimum", "cpu_average", "mem_maximum", "mem_minimum", "mem_average"
+    # escalate $esc_email
+    # escalate $esc_downsize_instances
+    # hash_exclude "underutil_message", "idle_message", "underutil_total_savings", "idle_total_savings", "tags", "savings", "savingsCurrency", "cpu_maximum", "cpu_minimum", "cpu_average", "mem_maximum", "mem_minimum", "mem_average"
     export do
       resource_level true
       field "accountID" do
@@ -684,6 +846,107 @@ policy "ds_pools_with_metrics" do
       field "id" do
         label "ID"
         path "resourceId"
+      end
+      field "pausedLookbackPeriod" do
+        label "Paused Look Back Period (Days)"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+    end
+  end
+  validate $ds_paused_pools do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Synapse SQL pools found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .paused_total_savings }}{{ end }}
+    EOS
+    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
+    check eq(size(data),0)
+    # escalate $esc_emailW
+    # escalate $esc_downsize_instances
+    # hash_exclude "underutil_message", "idle_message", "underutil_total_savings", "idle_total_savings", "tags", "savings", "savingsCurrency", "cpu_maximum", "cpu_minimum", "cpu_average", "mem_maximum", "mem_minimum", "mem_average"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Subscription ID"
+        path "subscriptionId"
+      end
+      field "accountName" do
+        label "Subscription Name"
+        path "subscriptionName"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "resourceName" do
+        label "Resource Name"
+        path "name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+        path "resourceId"
+      end
+      field "resourceType" do
+        label "Pool SKU"
+        path "sku"
+      end
+      field "resourceKind" do
+        label "Resource Kind"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "status" do
+        label "Status"
+      end
+      field "creationDate" do
+        label "Creation Date"
+      end
+      field "maxSizeBytes" do
+        label "Max Size Bytes"
+      end
+      field "provisioningState" do
+        label "Provisioning State"
+      end
+      field "storageAccountType" do
+        label "Storage Account Type"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "DWUUsed" do
+        label "DWU Used Max"
+      end
+      field "DWUUsedPercent" do
+        label "DWU Used % Max"
+      end
+      field "Connections" do
+        label "Connections Max"
+      end
+      field "MemoryUsedPercent" do
+        label "Memory Used % Max"
+      end
+      field "threshold" do
+        label "Threshold"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "ID"
+        path "resourceId"
+      end
+      field "pausedLookbackPeriod" do
+        label "Paused Look Back Period (Days)"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
       end
     end
   end
