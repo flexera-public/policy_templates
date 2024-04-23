@@ -40,22 +40,21 @@ The following policy actions are taken on any resources found to be out of compl
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
 - [**Google Cloud Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1121577) (*provider=gce*) which has the following:
-  - Permissions
-    - `resourcemanager.projects.get`
-    - `compute.disks.list`
-    - `compute.disks.setLabels`*
-    - `compute.externalVpnGateways.list`
-    - `compute.externalVpnGateways.setLabels`*
-    - `compute.images.list`
-    - `compute.images.setLabels`*
-    - `compute.instances.list`
-    - `compute.instances.setLabels`*
-    - `compute.snapshots.list`
-    - `compute.snapshots.setLabels`*
-    - `compute.vpnGateways.list`
-    - `compute.vpnGateways.setLabels`*
-    - `storage.buckets.list`
-    - `storage.buckets.update`*
+  - `resourcemanager.projects.get`
+  - `compute.disks.list`
+  - `compute.disks.setLabels`*
+  - `compute.externalVpnGateways.list`
+  - `compute.externalVpnGateways.setLabels`*
+  - `compute.images.list`
+  - `compute.images.setLabels`*
+  - `compute.instances.list`
+  - `compute.instances.setLabels`*
+  - `compute.snapshots.list`
+  - `compute.snapshots.setLabels`*
+  - `compute.vpnGateways.list`
+  - `compute.vpnGateways.setLabels`*
+  - `storage.buckets.list`
+  - `storage.buckets.update`*
 
   \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
 
