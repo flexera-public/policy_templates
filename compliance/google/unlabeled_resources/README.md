@@ -2,20 +2,31 @@
 
 ## What It does
 
-Find all Google cloud resources(disks, images, instances, snapshots, buckets, vpnGateways) missing any of the user provided labels with the option to update the resources with the missing labels.
+This policy template checks for Google Cloud resources missing the user-specified labels. An incident is raised containing the unlabeled resources, and the user has the option to label them.
 
-## Functional Details
+## How It Works
 
-- The policy leverages the Google Cloud API to retrieve a list of all labelable resources across Google Cloud Projects.
-- Using the 'List of labels' parameter, the policy identifies all resources that are missing the label keys specified by the user.
-- The policy outputs resources missing the specified label keys as well as resources with the specified label keys but are missing label values.
+- The policy leverages the Google Compute and Storage APIs to retrieve a list of all resources in the Google Cloud estate.
+- The policy then filters that list based on user-specified parameters.
+- The policy then identifies the resources in the filtered list that are missing the labels specified by the user.
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+- *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
+- *Allow/Deny Projects* - Whether to treat Allow/Deny Projects List parameter as allow or deny list. Has no effect if Allow/Deny Projects List is left empty.
+- *Allow/Deny Projects List* - Filter results by project ID/name, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all projects.
+- *Resource Types* - The types of resources to check labels for. Any options not selected will not be reported on.
+- *Labels* - The policy will report resources missing the specified labels. The following formats are supported:
+  - `Key` - Find all resources missing the specified label key.
+  - `Key==Value` - Find all resources missing the specified label key:value pair and all resources missing the specified label key.
+  - `Key!=Value` - Find all resources that have the specified label key:value pair.
+  - `Key=~/Regex/` - Find all resources where the value for the specified key does not match the specified regex string and all resources missing the specified label key.
+  - `Key!~/Regex/` - Find all resources where the value for the specified key matches the specified regex string.
+- *Any / All* - Whether to report on instances missing any of the specified labels or all of them. Only applicable if more than one value is entered in the `Labels` field.
 
-- *Email addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
-- *List of labels* - List of labels to find resources which are not labeled by given inputs.
+This policy has the following input parameters required when adding labels to resources from a raised incident:
+
+- *Add Labels (Key=Value)* - Cloud native labels to add to resources with missing labels. Use Key=Value format. Examples: env=production, team=finance
 
 ## Policy Actions
 
@@ -35,21 +46,23 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 
 - [**Google Cloud Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1121577) (*provider=gce*) which has the following:
   - Permissions
-    - `compute.disks.list`
-    - `compute.disks.setLabels`
-    - `compute.externalVpnGateways.list`
-    - `compute.externalVpnGateways.setLabels`
-    - `compute.images.list`
-    - `compute.images.setLabels`
-    - `compute.instances.list`
-    - `compute.instances.setLabels`
-    - `compute.snapshots.list`
-    - `compute.snapshots.setLabels`
-    - `compute.vpnGateways.list`
-    - `compute.vpnGateways.setLabels`
     - `resourcemanager.projects.get`
+    - `compute.disks.list`
+    - `compute.disks.setLabels`*
+    - `compute.externalVpnGateways.list`
+    - `compute.externalVpnGateways.setLabels`*
+    - `compute.images.list`
+    - `compute.images.setLabels`*
+    - `compute.instances.list`
+    - `compute.instances.setLabels`*
+    - `compute.snapshots.list`
+    - `compute.snapshots.setLabels`*
+    - `compute.vpnGateways.list`
+    - `compute.vpnGateways.setLabels`*
     - `storage.buckets.list`
-    - `storage.buckets.update`
+    - `storage.buckets.update`*
+
+  \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
