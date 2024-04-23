@@ -5,6 +5,18 @@
 # Methods: Policy
 ###############################################################################
 
+### Deprecated test
+# Utility method. Returns true if policy is deprecated and false if it isn't
+def policy_deprecated?(file)
+  pp = PolicyParser.new
+  pp.parse(file)
+
+  short_description = pp.parsed_short_description
+
+  return true if short_description.downcase.include?("deprecated")
+  return false
+end
+
 ### Unmodified README test
 # Verify that .pt file also has an updated README
 def policy_unmodified_readme?(file, changed_readme_files)

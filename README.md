@@ -391,8 +391,6 @@ These templates can generate savings estimates for your environment.
 
 #### Azure
 
-- [Azure Sync Tags with Optima](./operational/azure/sync_tags_with_optima)
-
 - AKS
 
   - [AKS Node Pools Without Autoscaling](./operational/azure/aks_nodepools_without_autoscaling)
@@ -402,7 +400,6 @@ These templates can generate savings estimates for your environment.
 
   - [Azure Bring-Your-Own-License (BYOL) Report](./operational/azure/byol_report)
   - [Azure Long Running Instances](./operational/azure/azure_long_running_instances)
-  - [Azure Migrate Integration](./operational/azure/azure_migrate)
   - [Azure Usage Report - Amount of Instance Memory Used](./operational/azure/total_instance_memory)
   - [Azure Usage Report - Number of Instance Hours Used](./operational/azure/total_instance_hours)
   - [Azure Usage Report - Number of Instance vCPUs Used](./operational/azure/total_instance_vcpus)
@@ -422,11 +419,6 @@ These templates can generate savings estimates for your environment.
 - Cloud Cost Optimization
 
   - [Bill Processing Error Notification](./operational/flexera/cco/bill_processing_errors_notification)
-
-- Cloud Migration & Modernization
-
-  - [Application Migration Recommendations](./operational/flexera/risc/compute_instance_migration)
-  - [NetFlow Top Talkers](./operational/flexera/risc/network_flow)
 
 - FlexNet Manager
 
@@ -617,19 +609,18 @@ These templates can generate savings estimates for your environment.
 :categories:
   Compliance: 33
   Cost: 93
-  Operational: 28
+  Operational: 24
   SaaS Management: 12
   Security: 74
 :optimization_count: 47
 :policy_sets:
-  '': 46
+  '': 45
   AWS Config: 1
   Allocate VMs: 3
   Automation: 1
   Burstable Compute Instances: 1
   CIS: 61
   Cloud Cost Optimization: 14
-  Cloud Migration & Modernization: 2
   Committed Use Discount: 1
   Common Bill Ingestion: 2
   Database Services: 1
@@ -644,7 +635,7 @@ These templates can generate savings estimates for your environment.
   Inefficient Disk Usage: 1
   Instances not running FlexNet Inventory Agent: 2
   Lifecycle Management: 1
-  Long Running Instances: 3
+  Long Running Instances: 2
   Long Stopped Instances: 3
   N/A: 1
   Native Recommendations: 1
@@ -680,9 +671,9 @@ These templates can generate savings estimates for your environment.
   Usage Report: 8
 :providers:
   AWS: 82
-  Azure: 85
+  Azure: 83
   Azure China: 1
-  Flexera: 39
+  Flexera: 37
   Flexera Optima: 1
   GCE: 5
   GitHub: 7
@@ -693,16 +684,15 @@ These templates can generate savings estimates for your environment.
   Oracle: 1
   ServiceNow: 1
 :services:
-  '': 14
+  '': 13
   AKS: 2
   All: 2
   App Service: 1
   Automation: 1
   Cloud Cost Optimization: 18
-  Cloud Migration & Modernization: 2
   CloudTrail: 7
   Common Bill Ingestion: 2
-  Compute: 63
+  Compute: 62
   Config: 1
   DBS: 1
   Databricks: 1
@@ -737,7 +727,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 240
+:total_count: 236
 -->
 <!-- End Policy Template Stats -->
 
