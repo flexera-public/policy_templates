@@ -450,7 +450,7 @@ def policy_readme_missing_credentials?(file)
   end
 
   # Check for mismatches between policy and README.md
-  if pol_flexera_credential && !readme_flexera_credential && !file.start_with("saas/fsm/")
+  if pol_flexera_credential && !readme_flexera_credential && !file.start_with?("saas/fsm/")
     fail_message += "Policy contains Flexera credential but this credential either missing from or incorrectly formatted in the associated `README.md` file.\n\n"
   end
 
