@@ -357,7 +357,7 @@ datasource "ds_get_disks" do
   end
   result do
     encoding "json"
-    field "disks", jq(response, "[ .items | to_entries | map_values(.value) | map(select(has(\"disks\"))) | .[].disks | .[] | { id,name,kind,type,description,labels,status,sizeGb,selfLink,zone,creationTimestamp }]")
+    field "disks", jq(response, "[ .items | to_entries | map_values(.value) | map(select(has(\"disks\"))) | .[].disks | .[] | { id,name,kind,type,description,labels,status,sizeGb,selfLink,zone,creationTimestamp,labelFingerprint }]")
     field "projectId", val(iter_item, "projectId")
     field "projectName", val(iter_item, "projectName")
     field "projectNumber", val(iter_item, "projectNumber")
@@ -430,7 +430,7 @@ datasource "ds_get_vpn_gateways" do
   end
   result do
     encoding "json"
-    field "vpnGateways", jq(response, "[ .items | to_entries | map_values(.value) | map(select(has(\"vpnGateways\"))) | .[].vpnGateways | .[] | { id,name,kind,description,labels,selfLink,region,gatewayIpVersion }]")
+    field "vpnGateways", jq(response, "[ .items | to_entries | map_values(.value) | map(select(has(\"vpnGateways\"))) | .[].vpnGateways | .[] | { id,name,kind,description,labels,selfLink,region,gatewayIpVersion,labelFingerprint }]")
     field "projectId", val(iter_item, "projectId")
     field "projectName", val(iter_item, "projectName")
     field "projectNumber", val(iter_item, "projectNumber")
@@ -553,7 +553,7 @@ datasource "ds_get_instances" do
   end
   result do
     encoding "json"
-    field "instances", jq(response, "[ .items | to_entries | map_values(.value) | map(select(has(\"instances\"))) | .[].instances | .[] | {id,name,selfLink,status,tags,zone,kind,hostname,cpuPlatform,labels,description,machineType}]")
+    field "instances", jq(response, "[ .items | to_entries | map_values(.value) | map(select(has(\"instances\"))) | .[].instances | .[] | {id,name,selfLink,status,tags,zone,kind,hostname,cpuPlatform,labels,description,machineType,labelFingerprint}]")
     field "projectId", val(iter_item, "projectId")
     field "projectName", val(iter_item, "projectName")
     field "projectNumber", val(iter_item, "projectNumber")
@@ -572,21 +572,21 @@ script "js_instances", type: "javascript" do
   result = []
 
   _.each(ds_get_instances, function(response) {
-    _.each(response['instances'], function(instance) {
-      zone = instance['zone'].split('/')[8]
+    _.each(response['instances'], function(resource) {
+      zone = resource['zone'].split('/')[8]
       region = ds_zone_to_region[zone]
 
       result.push({
-        id: instance['id'],
-        name: instance['name'],
-        description: instance['description'],
-        status: instance['status'],
-        selfLink: instance['selfLink'],
-        cpuPlatform: instance['cpuPlatform'],
-        machineType: instance['machineType'],
-        hostname: instance['hostname'],
-        kind: instance['kind'],
-        labels: instance['labels'],
+        id: resource['id'],
+        name: resource['name'],
+        description: resource['description'],
+        status: resource['status'],
+        selfLink: resource['selfLink'],
+        cpuPlatform: resource['cpuPlatform'],
+        machineType: resource['machineType'],
+        hostname: resource['hostname'],
+        kind: resource['kind'],
+        labels: resource['labels'],
         labelFingerprint: resource['labelFingerprint'],
         projectId: response['projectId'],
         projectName: response['projectName'],
@@ -944,6 +944,10 @@ end
 define label_bucket($resource, $param_labels_to_add) return $response do
   $labels_to_add = $resource["labels_object"]
 
+  if $labels_to_add == null
+    $labels_to_add = {}
+  end
+
   foreach $label in $param_labels_to_add do
     $key = first(split($label, "=" ))
     $value = last(split($label, "="))
@@ -977,6 +981,10 @@ end
 
 define label_resource($resource, $param_labels_to_add) return $response do
   $labels_to_add = $resource["labels_object"]
+
+  if $labels_to_add == null
+    $labels_to_add = {}
+  end
 
   foreach $label in $param_labels_to_add do
     $key = first(split($label, "=" ))
