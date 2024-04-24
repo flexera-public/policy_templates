@@ -1,5 +1,19 @@
 # Changelog
 
+## v3.0
+
+- Policy now requires a Flexera credential
+- Policy now converts savings to local currency when appropriate
+- Several parameters altered to be more descriptive and human-readable
+- Added ability to only report recommendations that meet a minimum savings threshold
+- Added ability to filter results by project and by region via an allow list or a deny list
+- Added additional context to incident description
+- Normalized incident export to be consistent with other policies
+- Added additional fields to incident export for additional context
+- Policy no longer raises new escalations if savings data changed but nothing else has
+- Streamlined code for better readability and faster execution
+- Added logic required for "Meta Policy" use-cases
+
 ## v2.5
 
 - Modified the number of GCP recommender API calls that can be done before waiting to prevent a quota limit error: 100 request per minute.
