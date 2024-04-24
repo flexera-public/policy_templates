@@ -2,6 +2,7 @@ name "Google Old Snapshots"
 rs_pt_ver 20180301
 type "policy"
 short_description "Checks for snapshots older than specified number of days and, optionally, deletes them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/google/old_snapshots) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
 category "Cost"
 severity "low"
 default_frequency "weekly"
@@ -38,9 +39,9 @@ parameter "param_snapshot_age" do
   type "number"
   category "Policy Settings"
   label "Snapshot Age Threshold"
-  default 30
   description "The number of days since the snapshot was created to consider a snapshot old."
   min_value 1
+  default 30
 end
 
 parameter "param_projects_allow_or_deny" do
@@ -118,7 +119,7 @@ pagination "pagination_google" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
 # Table to derive region from zone
@@ -240,7 +241,6 @@ datasource "ds_applied_policy" do
     header "Api-Version", "1.0"
   end
 end
-
 
 # Gather local currency info
 datasource "ds_currency_reference" do
@@ -853,7 +853,7 @@ script "js_google_old_snapshots_with_savings", type: "javascript" do
       projectNumber: snapshot['projectNumber'],
       policy_name: snapshot['policy_name'],
       createdAt: snapshot['createdAt'],
-      labels: snapshot['labels'],
+      tags: snapshot['labels'],
       lookbackPeriod: snapshot['lookbackPeriod'],
       recommendationDetails: snapshot['recommendationDetails'],
       age: snapshot['age'],
@@ -863,6 +863,7 @@ script "js_google_old_snapshots_with_savings", type: "javascript" do
       savings: Math.round(savings * 1000) / 1000,
       savings_unrounded: savings,
       savingsCurrency: ds_currency['symbol'],
+      resourceType: 'Snapshot',
       total_savings: ""
     }
   })
@@ -950,7 +951,7 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_old_snapshots" do
+policy "pol_old_snapshots" do
   validate_each $ds_google_old_snapshots_incident do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Google Old Snapshots Found"
     detail_template <<-'EOS'
@@ -979,7 +980,7 @@ policy "policy_old_snapshots" do
       field "resourceName" do
         label "Resource Name"
       end
-      field "labels" do
+      field "tags" do
         label "Resource Labels"
       end
       field "createdAt" do
@@ -1002,6 +1003,9 @@ policy "policy_old_snapshots" do
       end
       field "savingsCurrency" do
         label "Savings Currency"
+      end
+      field "resourceType" do
+        label "Resource Type"
       end
       field "service" do
         label "Service"
@@ -1101,7 +1105,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
     header "Api-Version", "1.0"
   end
   result do

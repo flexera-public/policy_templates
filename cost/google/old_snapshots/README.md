@@ -14,6 +14,7 @@ This policy finds Google snapshots older than the specified number of days and r
 The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the resource is deleted.
 
 - The `Estimated Monthly Savings` is calculated using the monthly price obtained from the Google Cloud Billing API. Regional pricing is used when the region of the snapshot's source disk is obtainable; otherwise, general pricing is used.
+  - **Note:** Due to the fact that snapshot prices vary based on region and whether a snapshot is multi-region, and the fact that Google's APIs do not return this information about snapshots due to snapshots technically not being a regional resource, all estimated savings should be taken as a best guess.
 - Since the prices of individual resources are *not* obtained from Flexera CCO, they will *not* take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
 - The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
 - If the Flexera organization is configured to use a currency other than USD, the savings values will be converted from USD using the exchange rate at the time that the policy executes.
