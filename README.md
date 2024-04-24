@@ -319,7 +319,6 @@ These templates can generate savings estimates for your environment.
 
   - [Google Committed Use Discount (CUD)](./cost/google/cud_report)
   - [Google Expiring Committed Use Discount (CUD)](./cost/google/cud_expiration)
-  - [Google Idle Compute Instances](./cost/google/idle_compute_instances)
 
 - SQL
 
@@ -609,7 +608,7 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 33
-  Cost: 94
+  Cost: 93
   Operational: 24
   SaaS Management: 12
   Security: 74
@@ -632,7 +631,6 @@ These templates can generate savings estimates for your environment.
   Hybrid Use Benefit: 5
   IT Asset Management: 5
   Identity & Access Management: 1
-  Idle Compute Instances: 1
   Inefficient Disk Usage: 1
   Instances not running FlexNet Inventory Agent: 2
   Lifecycle Management: 1
@@ -676,7 +674,7 @@ These templates can generate savings estimates for your environment.
   Azure China: 1
   Flexera: 37
   Flexera Optima: 2
-  GCE: 5
+  GCE: 4
   GitHub: 7
   Google: 14
   Kubecost: 2
@@ -693,7 +691,7 @@ These templates can generate savings estimates for your environment.
   Cloud Cost Optimization: 18
   CloudTrail: 7
   Common Bill Ingestion: 2
-  Compute: 62
+  Compute: 61
   Config: 1
   DBS: 1
   Databricks: 1
@@ -728,7 +726,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 237
+:total_count: 236
 -->
 <!-- End Policy Template Stats -->
 
