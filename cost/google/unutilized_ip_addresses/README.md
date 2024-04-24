@@ -1,5 +1,9 @@
 # Google Unutilized IP Addresses
 
+## Deprecated
+
+This policy is no longer being updated. The [Google Idle IP Address Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/idle_ip_address_recommendations/) policy should be used instead.
+
 ## What it does
 
 Checks Google for Unutilized IP Addresses and deletes them after approval.
