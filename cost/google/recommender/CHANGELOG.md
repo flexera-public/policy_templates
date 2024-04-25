@@ -2,7 +2,9 @@
 
 ## v3.0.0
 
-- Added support for `Idle Cloud SQL Instance` recommender
+- Added support for new recommender: Idle Cloud SQL Instance
+- Added support for new recommender: Overprovisioned Cloud SQL Instance
+- Added support for new recommender: Idle GKE Cluster
 - Policy now requires a Flexera credential
 - Policy now converts savings to local currency when appropriate
 - Several parameters altered to be more descriptive and human-readable

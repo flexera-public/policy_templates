@@ -41,12 +41,14 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   - `recommender.cloudSecurityGeneralRecommendations.list`*
   - `recommender.cloudsqlIdleInstanceRecommendations.list`*
   - `recommender.cloudsqlInstanceOutOfDiskRecommendations.list`*
+  - `recommender.cloudsqlOverprovisionedInstanceRecommendations.list`*
   - `recommender.computeAddressIdleResourceRecommendations.list`*
   - `recommender.computeDiskIdleResourceRecommendations.list`*
   - `recommender.computeImageIdleResourceRecommendations.list`*
   - `recommender.computeInstanceGroupManagerMachineTypeRecommendations.list`*
   - `recommender.computeInstanceIdleResourceRecommendations.list`*
   - `recommender.computeInstanceMachineTypeRecommendations.list`*
+  - `recommender.containerDiagnosisRecommendations.list`*
   - `recommender.iamPolicyRecommendations.list`*
   - `recommender.loggingProductSuggestionContainerRecommendations.list`*
   - `recommender.monitoringProductSuggestionComputeRecommendations.list`*
