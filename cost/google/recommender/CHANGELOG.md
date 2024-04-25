@@ -6,7 +6,7 @@
 - Added support for new recommender: Overprovisioned Cloud SQL Instance
 - Added support for new recommender: Idle GKE Cluster
 - Policy now requires a Flexera credential
-- Policy now converts savings to local currency when appropriate
+- Policy now reports savings and converts it to local currency when appropriate
 - Several parameters altered to be more descriptive and human-readable
 - Added ability to only report recommendations that meet a minimum savings threshold
 - Added ability to filter results by project and by region via an allow list or a deny list
