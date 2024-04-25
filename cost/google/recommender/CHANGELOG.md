@@ -1,6 +1,6 @@
 # Changelog
 
-## v3.0
+## v3.0.0
 
 - Policy now requires a Flexera credential
 - Policy now converts savings to local currency when appropriate
