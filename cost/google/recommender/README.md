@@ -21,7 +21,7 @@ This policy gathers cloud native Google recommendations using the Google Recomme
 ## Input Parameters
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify.
-- *Recommenders* - Google Recommenders to report on. Only selected options will be reported on.
+- *Recommenders* - Google Recommenders to report on. Only selected options will be reported on. At least one recommender needs to be selected; otherwise, no incident will be raised.
 - *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation.
 - *Allow/Deny Projects* - Whether to treat Allow/Deny Projects List parameter as allow or deny list. Has no effect if Allow/Deny Projects List is left empty.
 - *Allow/Deny Projects List* - Filter results by project ID/name, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all projects
