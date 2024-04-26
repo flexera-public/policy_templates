@@ -1,0 +1,551 @@
+name "Azure Web Apps With Unoptimized Scaling"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks for Azure Web Apps without autoscaling or with poorly optimized autoscaling. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/unoptimized_web_app_scaling/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+category "Cost"
+severity "low"
+default_frequency "weekly"
+info(
+  version: "0.1.0",
+  provider: "Azure",
+  service: "PaaS",
+  policy_set: "PaaS Optimization"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  category "Policy Settings"
+  label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_min_capacity" do
+  type "number"
+  category "Policy Settings"
+  label "Highest Minimum Capacity"
+  description "The highest setting to permit for autoscaling minimum capacity. Web Apps with a Minimum Capacity higher than this will be considered unoptimized. Set to -1 to not consider Minimum Capacity."
+  min_value -1
+  default 2
+end
+
+parameter "param_cpu_threshold" do
+  type "number"
+  category "Policy Settings"
+  label "Lowest CPU Threshold (%)"
+  description "The lowest percentage to permit for CPU Threshold before adding more nodes. Web Apps with a CPU Threshold lower than this will be considered unoptimized. Set to -1 to not consider CPU Threshold."
+  min_value -1
+  default 80
+end
+
+parameter "param_subscriptions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Subscriptions"
+  description "Allow or Deny entered Subscriptions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_subscriptions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Subscriptions List"
+  description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_azure" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_azure" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_azure_subscriptions" do
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path "/subscriptions/"
+    query "api-version", "2020-01-01"
+    header "User-Agent", "RS Policies"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "subscriptionId")
+      field "name", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
+    end
+  end
+end
+
+datasource "ds_azure_subscriptions_filtered" do
+  run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
+end
+
+script "js_azure_subscriptions_filtered", type: "javascript" do
+  parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
+  result "result"
+  code <<-EOS
+  if (param_subscriptions_list.length > 0) {
+    result = _.filter(ds_azure_subscriptions, function(subscription) {
+      include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
+
+      if (param_subscriptions_allow_or_deny == "Deny") {
+        include_subscription = !include_subscription
+      }
+
+      return include_subscription
+    })
+  } else {
+    result = ds_azure_subscriptions
+  }
+EOS
+end
+
+datasource "ds_azure_web_apps" do
+  iterate $ds_azure_subscriptions_filtered
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Web/sites"])
+    query "api-version", "2023-01-01"
+    header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "type", jmes_path(col_item, "type")
+      field "kind", jmes_path(col_item, "kind")
+      field "region", jmes_path(col_item, "location")
+      field "state", jmes_path(col_item, "properties.state")
+      field "hostNames", jmes_path(col_item, "properties.hostNames")
+      field "enabled", jmes_path(col_item, "properties.enabled")
+      field "availabilityState", jmes_path(col_item, "properties.availabilityState")
+      field "serverFarmId", jmes_path(col_item, "properties.serverFarmId")
+      field "resourceConfig", jmes_path(col_item, "properties.resourceConfig")
+      field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
+      field "subscriptionId", val(iter_item, "id")
+      field "subscriptionName", val(iter_item, "name")
+    end
+  end
+end
+
+datasource "ds_azure_web_apps_region_filtered" do
+  run_script $js_azure_web_apps_region_filtered, $ds_azure_web_apps, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_azure_web_apps_region_filtered", type: "javascript" do
+  parameters "ds_azure_web_apps", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-EOS
+  if (param_regions_list.length > 0) {
+    web_apps = _.filter(ds_azure_web_apps, function(resource) {
+      include_resource = _.contains(param_regions_list, resource['region'])
+      if (param_regions_allow_or_deny == "Deny") { include_resource = !include_resource }
+      return include_resource
+    })
+  } else {
+    web_apps = ds_azure_web_apps
+  }
+
+  // Filter disabled apps
+  result = _.filter(web_apps, function(resource) { return resource["enabled"] })
+EOS
+end
+
+datasource "ds_azure_autoscale_settings" do
+  iterate $ds_azure_subscriptions_filtered
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Insights/autoscalesettings"])
+    query "api-version", "2022-10-01"
+    header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "type", jmes_path(col_item, "type")
+      field "region", jmes_path(col_item, "location")
+      field "profiles", jmes_path(col_item, "properties.profiles")
+      field "enabled", jmes_path(col_item, "properties.enabled")
+      field "targetResourceUri", jmes_path(col_item, "properties.targetResourceUri")
+      field "predictiveAutoscalePolicy", jmes_path(col_item, "properties.predictiveAutoscalePolicy")
+      field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
+      field "subscriptionId", val(iter_item, "id")
+      field "subscriptionName", val(iter_item, "name")
+    end
+  end
+end
+
+datasource "ds_azure_web_apps_with_scaling" do
+  run_script $js_azure_web_apps_with_scaling, $ds_azure_web_apps_region_filtered, $ds_azure_autoscale_settings
+end
+
+script "js_azure_web_apps_with_scaling", type: "javascript" do
+  parameters "ds_azure_web_apps_region_filtered", "ds_azure_autoscale_settings"
+  result "result"
+  code <<-EOS
+  scaling_object = {}
+
+  _.each(ds_azure_autoscale_settings, function(item) {
+    scaling_object[item["targetResourceUri"].toLowerCase()] = item
+  })
+
+  result = _.map(ds_azure_web_apps_region_filtered, function(app) {
+    return {
+      id: app["id"],
+      name: app["name"],
+      type: app["type"],
+      kind: app["kind"],
+      region: app["region"],
+      state: app["state"],
+      hostNames: app["hostNames"],
+      enabled: app["enabled"],
+      availabilityState: app["availabilityState"],
+      serverFarmId: app["serverFarmId"],
+      resourceConfig: app["resourceConfig"],
+      resourceGroup: app["resourceGroup"],
+      subscriptionId: app["subscriptionId"],
+      subscriptionName: app["subscriptionName"],
+      scaling: scaling_object[app["serverFarmId"].toLowerCase()]
+    }
+  })
+EOS
+end
+
+datasource "ds_azure_unoptimized_web_apps" do
+  run_script $js_azure_unoptimized_web_apps, $ds_azure_web_apps_with_scaling, $ds_applied_policy, $param_min_capacity, $param_cpu_threshold
+end
+
+script "js_azure_unoptimized_web_apps", type: "javascript" do
+  parameters "ds_azure_web_apps_with_scaling", "ds_applied_policy", "param_min_capacity", "param_cpu_threshold"
+  result "result"
+  code <<-EOS
+  result = []
+
+  _.each(ds_azure_web_apps_with_scaling, function(app) {
+    autoscaling = "Disabled"
+    capacities = []
+    rules = []
+    recommendations = []
+
+    if (typeof(app["scaling"]) == "object") {
+      if (app["scaling"]["enabled"] == true) {
+        autoscaling = "Enabled"
+
+        _.each(app["scaling"]["profiles"], function(profile) {
+          capacities.push({
+            profile_name: profile["name"],
+            default_capacity: profile["capacity"]["default"],
+            min_capacity: profile["capacity"]["minimum"],
+            max_capacity: profile["capacity"]["maximum"],
+          })
+
+          _.each(profile["rules"], function(rule) {
+            if (rule["metricTrigger"]["metricName"] == "CpuPercentage") {
+              if (rule["metricTrigger"]["operator"].toLowerCase().indexOf("greater") != -1) {
+                rules.push({
+                  profile_name: profile["name"],
+                  metric_name: rule["metricTrigger"]["metricName"],
+                  operator: rule["metricTrigger"]["operator"],
+                  statistic: rule["metricTrigger"]["statistic"],
+                  theshold: rule["metricTrigger"]["threshold"]
+                })
+              }
+            }
+          })
+        })
+      }
+    }
+
+    if (autoscaling == "Disabled") {
+      recommendations.push("Enable Autoscaling")
+    } else {
+      _.each(capacities, function(capacity) {
+        if (capacity["min_capacity"] > param_min_capacity) {
+          recommendations.push("Reduce Minimum Capacity for Profile " + rule["profile_name"])
+        }
+      })
+
+      _.each(rules, function(rule) {
+        if (rule["theshold"] < param_cpu_threshold) {
+          recommendations.push("Increase CPU Threshold for Profile " + rule["profile_name"])
+        }
+      })
+    }
+
+    if (recommendations.length > 0) {
+      result.push({
+        accountID: app["subscriptionId"],
+        accountName: app["subscriptionName"],
+        resourceGroup: app["resourceGroup"],
+        resourceID: app["id"],
+        resourceName: app["name"],
+        resourceType: app["type"],
+        region: app["region"],
+        state: app["state"],
+        appServicePlanID: app["serverFarmId"],
+        autoscaling: autoscaling,
+        recommendationDetails: _.uniq(recommendations).join(', '),
+        service: "Microsoft.Web",
+        policy_name: ds_applied_policy["name"]
+      })
+    }
+  })
+
+  // Dummy entry to ensure validation runs at least once
+  result.push({
+    accountID: "",
+    accountName: "",
+    resourceGroup: "",
+    resourceID: "",
+    resourceName: "",
+    resourceType: "",
+    region: "",
+    state: "",
+    appServicePlanID: "",
+    autoscaling: "",
+    recommendationDetails: "",
+    service: "",
+    policy_name: ""
+  })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_azure_unoptimized_web_apps" do
+  validate_each $ds_azure_unoptimized_web_apps do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Web Apps With Unoptimized Scaling Found"
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    export do
+      resource_level true
+      field "accountID" do
+        label "Subscription ID"
+      end
+      field "accountName" do
+        label "Subscription Name"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "resourceName" do
+        label "App Name"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "autoscaling" do
+        label "Autoscaling"
+      end
+      field "recommendationDetails" do
+        label "Recommendations"
+      end
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
+end
