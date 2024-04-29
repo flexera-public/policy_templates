@@ -3,6 +3,11 @@
 ## v0.5.0
 
 - Added parameter `Always Email Incident` that forces incident to always be emailed if enabled
+- Added support for `AWS Rightsize EBS Volumes` recommendations
+- Added support for `AWS Unused Classic Load Balancers` recommendations
+- Added support for `Azure Rightsize Managed Disks` recommendations
+- Added support for `Azure Rightsize NetApp Files` recommendations
+- Added support for `Google Old Snapshots` recommendations
 
 ## v0.4
 
