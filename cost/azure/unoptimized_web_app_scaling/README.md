@@ -10,6 +10,9 @@ This Policy finds Azure Web Apps with either no autoscaling or poorly configured
 - The `microsoft.insights/autoscalesettings` API endpoint is used to get a list of all Azure autoscaling configurations.
 - The `serverFarmId` from the first list is related to the `targetResourceUri` in the second list to find the autoscaling configurations for these Web Apps. These fields represent the id of Azure App Service Plan that powers the Azure Web App.
 - The Azure Web Apps are filtered to just those without an autoscaling configuration, or whose autoscaling configuration does not meet the criteria specified in the policy parameters.
+  - If no autoscaling configuration is found with the Azure Web App's `serverFarmId`, it is assumed that the Azure Web App does not have autoscaling enabled at all.
+  - Each profile in the autoscaling configuration is checked individually. The Azure Web App is considered unoptimized if *any* of the profiles does not meet the criteria specified in the policy parameters.
+  - Profiles that do not check the `CpuPercentage` metric and whose `metricTrigger` is not either *greater than* or *greater than or equal to* are ignored.
 
 ## Input Parameters
 
