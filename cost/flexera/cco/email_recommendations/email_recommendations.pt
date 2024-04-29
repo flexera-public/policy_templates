@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "0.4",
+  version: "0.5.0",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization"
@@ -23,6 +23,15 @@ parameter "param_email" do
   label "Email Addresses"
   description "The email addresses to send recommendations to."
   default []
+end
+
+parameter "param_always_send_incident" do
+  type "string"
+  category "Policy Settings"
+  label "Always Email Incident"
+  description "Whether or not to always email the incident even if no new items were added to the recommendations since the policy's last execution."
+  allowed_values "Yes", "No"
+  default "No"
 end
 
 parameter "param_vendor_list" do
@@ -250,11 +259,11 @@ EOS
 end
 
 datasource "ds_recommendations_organized" do
-  run_script $js_recommendations_organized, $ds_recommendations_filtered, $ds_currency
+  run_script $js_recommendations_organized, $ds_recommendations_filtered, $ds_currency, $param_always_send_incident
 end
 
 script "js_recommendations_organized", type: "javascript" do
-  parameters "ds_recommendations_filtered", "ds_currency"
+  parameters "ds_recommendations_filtered", "ds_currency", "param_always_send_incident"
   result "result"
   code <<-'EOS'
   result = []
@@ -375,6 +384,9 @@ script "js_recommendations_organized", type: "javascript" do
       }
     }
 
+    send_incident = ""
+    if (param_always_send_incident == "Yes") { send_incident = new Date().toISOString() }
+
     result.push({
       recommendationID: recommendation['id'],
       billingCenter: recommendation['billingCenterName'],
@@ -395,6 +407,7 @@ script "js_recommendations_organized", type: "javascript" do
       offeringId: offeringId,
       recommendationDetails: recommendationDetails,
       tags: tags,
+      send_incident: send_incident,
       message: ""
     })
   })
@@ -475,6 +488,9 @@ policy "pol_recommendations" do
       field "id" do
         label "ID"
         path "resourceID"
+      end
+      field "send_incident" do
+        label "Send Incident"
       end
     end
   end

@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.5.0
+
+- Added parameter `Always Email Incident` that forces incident to always be emailed if enabled
+
 ## v0.4
 
 - Updated policy metadata to make it more clear what Flexera service the policy is for
