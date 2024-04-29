@@ -376,10 +376,70 @@ script "js_azure_unoptimized_web_apps", type: "javascript" do
         autoscaling: autoscaling,
         recommendationDetails: _.uniq(recommendations).join(', '),
         service: "Microsoft.Web",
-        policy_name: ds_applied_policy["name"]
+        policy_name: ds_applied_policy["name"],
+        message: ""
       })
     }
   })
+
+  result = _.sortBy(result, 'resourceName')
+  result = _.sortBy(result, 'resourceGroup')
+  result = _.sortBy(result, 'accountName')
+
+  // Message for incident output
+  total_apps = ds_azure_web_apps_with_scaling.length.toString()
+  total_unoptimized_apps = result.length.toString()
+  unoptimized_apps_percentage = (total_unoptimized_apps / total_apps * 100).toFixed(2).toString() + '%'
+
+  if (param_min_capacity != -1 && param_cpu_threshold != -1) {
+    findings = [
+      "Out of ", total_apps, " Azure Web Apps analyzed, ",
+      total_unoptimized_apps, " (", unoptimized_apps_percentage,
+      ") have disabled or poorly optimized autoscaling. ",
+      "An Azure Web app is considered poorly optimized if ",
+      "it has no autoscaling configuration, ",
+      "the minimum number of instances of the configuration is greater than ", param_min_capacity, ", ",
+      "or the CPU threshold for adding more instances is less than ", param_cpu_threshold, "%.\n\n"
+    ].join('')
+  }
+
+  if (param_min_capacity != -1 && param_cpu_threshold == -1) {
+    findings = [
+      "Out of ", total_apps, " Azure Web Apps analyzed, ",
+      total_unoptimized_apps, " (", unoptimized_apps_percentage,
+      ") have disabled or poorly optimized autoscaling. ",
+      "An Azure Web app is considered poorly optimized if ",
+      "it has no autoscaling configuration ",
+      "or the minimum number of instances of the configuration is greater than ",
+      param_min_capacity, ". ",
+      "The CPU threshold of the configuration was not assessed.\n\n"
+    ].join('')
+  }
+
+  if (param_min_capacity == -1 && param_cpu_threshold != -1) {
+    findings = [
+      "Out of ", total_apps, " Azure Web Apps analyzed, ",
+      total_unoptimized_apps, " (", unoptimized_apps_percentage,
+      ") have disabled or poorly optimized autoscaling. ",
+      "An Azure Web app is considered poorly optimized if ",
+      "it has no autoscaling configuration ",
+      "or the CPU threshold for adding more instances is less than ", param_cpu_threshold, "%. ",
+      "The minimum number of instances in the configuration was not assessed.\n\n"
+    ].join('')
+  }
+
+  if (param_min_capacity == -1 && param_cpu_threshold == -1) {
+    findings = [
+      "Out of ", total_apps, " Azure Web Apps analyzed, ",
+      total_unoptimized_apps, " (", unoptimized_apps_percentage,
+      ") have disabled or poorly optimized autoscaling. ",
+      "An Azure Web app is considered poorly optimized if ",
+      "it has no autoscaling configuration. Other aspects of the ",
+      "autoscaling configuration were not assessed.\n\n"
+    ].join('')
+  }
+
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
 
   // Dummy entry to ensure validation runs at least once
   result.push({
@@ -395,8 +455,11 @@ script "js_azure_unoptimized_web_apps", type: "javascript" do
     autoscaling: "",
     recommendationDetails: "",
     service: "",
-    policy_name: ""
+    policy_name: "",
+    message: ""
   })
+
+  result[0]['message'] = findings + disclaimer
 EOS
 end
 
@@ -407,6 +470,7 @@ end
 policy "pol_azure_unoptimized_web_apps" do
   validate_each $ds_azure_unoptimized_web_apps do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Web Apps With Unoptimized Scaling Found"
+    detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     export do
