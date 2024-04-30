@@ -25,7 +25,7 @@ This policy checks all Azure Certificates and reports on any that have either ex
 Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
 For example if a user selects the "Delete Expiring Azure Certificates" action while applying the policy, all the Azure Certificates that didn't satisfy the policy condition will be deleted.
 
-## Actions
+## Policy Actions
 
 - Sends an email notification
 - Delete expiring/expired Azure Certificates after an approval
@@ -42,6 +42,8 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
+
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ## Supported Clouds
 
