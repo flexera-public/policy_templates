@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1.1
+
+- Updated Microsoft URL referencing Azure Virtual Machine Families and ISF Ratios. Policy functionality is unchanged.
+
 ## v3.1
 
 - Updated policy to use new source for currency information. Policy functionality is unchanged.
