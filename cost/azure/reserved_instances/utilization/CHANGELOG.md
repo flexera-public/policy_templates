@@ -2,7 +2,7 @@
 
 ## v3.1.1
 
-- Fixed Microsoft VM Size Flexibility URL which prevented the policy from completing without error. Policy functionality is unchanged.
+- Fixed Microsoft VM Size Flexibility URL which prevented the policy from completing without error.
 
 ## v3.1
 
