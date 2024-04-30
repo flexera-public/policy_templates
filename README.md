@@ -78,6 +78,7 @@ These templates can generate savings estimates for your environment.
 - [Google Idle Cloud SQL Instance Recommender](./cost/google/cloud_sql_idle_instance_recommendations)
 - [Google Idle IP Address Recommender](./cost/google/idle_ip_address_recommendations)
 - [Google Idle Persistent Disk Recommender](./cost/google/idle_persistent_disk_recommendations)
+- [Google Old Snapshots](./cost/google/old_snapshots)
 - [Google Rightsize VM Recommender](./cost/google/rightsize_vm_recommendations)
 - [Turbonomic Allocate Virtual Machine Recommendations Google](./cost/turbonomics/allocate_virtual_machines_recommendations/google)
 - [Turbonomic Delete Unattached Volumes Recommendations Google](./cost/turbonomics/delete_unattached_volumes/google)
@@ -617,7 +618,7 @@ These templates can generate savings estimates for your environment.
   Operational: 24
   SaaS Management: 12
   Security: 74
-:optimization_count: 48
+:optimization_count: 49
 :policy_sets:
   '': 46
   AWS Config: 1
