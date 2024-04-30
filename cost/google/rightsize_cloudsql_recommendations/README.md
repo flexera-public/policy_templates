@@ -25,13 +25,6 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
 - If the Flexera organization is configured to use a currency other than the one Google Recommender is reporting the savings estimates in, the savings values will be converted using the exchange rate at the time that the policy executes.
 
-## Policy Actions
-
-- Send an email report
-- Downsize underutilized Cloud SQL instances after approval
-- Stop idle Cloud SQL instances after approval
-- Delete idle Cloud SQL instances after approval
-
 ## Input Parameters
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify.
@@ -53,6 +46,13 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
 For example, if a user selects the "Delete Cloud SQL Instances" action while applying the policy, all idle Cloud SQL instances will be deleted.
 
+## Policy Actions
+
+- Send an email report
+- Downsize underutilized Cloud SQL instances after approval
+- Stop idle Cloud SQL instances after approval
+- Delete idle Cloud SQL instances after approval
+
 ## Prerequisites
 
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
@@ -65,7 +65,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   - `cloudsql.instances.update`*
   - `cloudsql.instances.delete`*
 
-\* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
+  \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
