@@ -2,7 +2,7 @@
 
 ## v3.1.1
 
-- Updated Microsoft URL referencing Azure Virtual Machine Families and ISF Ratios. Policy functionality is unchanged.
+- Fixed Microsoft VM Size Flexibility URL which prevented the policy from completing without error. Policy functionality is unchanged.
 
 ## v3.1
 
