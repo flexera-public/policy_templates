@@ -58,6 +58,7 @@ These templates can generate savings estimates for your environment.
 - [Azure Rightsize SQL Databases](./cost/azure/rightsize_sql_instances)
 - [Azure Savings Plan Recommendations](./cost/azure/savings_plan/recommendations)
 - [Azure Superseded Compute Instances](./cost/azure/superseded_instances)
+- [Azure Unused Firewalls](./cost/azure/unused_firewalls)
 - [Azure Unused IP Addresses](./cost/azure/unused_ip_addresses)
 - [Azure Unused Volumes](./cost/azure/unused_volumes)
 - [Turbonomic Allocate Virtual Machine Recommendations Azure](./cost/turbonomics/allocate_virtual_machines_recommendations/azure)
@@ -253,6 +254,10 @@ These templates can generate savings estimates for your environment.
 - NetApp Files
 
   - [Azure Rightsize NetApp Files](./cost/azure/rightsize_netapp_files)
+
+- Network
+
+  - [Azure Unused Firewalls](./cost/azure/unused_firewalls)
 
 - SQL
 
@@ -608,11 +613,11 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 33
-  Cost: 93
+  Cost: 94
   Operational: 24
   SaaS Management: 12
   Security: 74
-:optimization_count: 47
+:optimization_count: 48
 :policy_sets:
   '': 46
   AWS Config: 1
@@ -664,13 +669,14 @@ These templates can generate savings estimates for your environment.
   Untagged Resources: 3
   Unused Containers: 1
   Unused Database Services: 1
+  Unused Firewalls: 1
   Unused IP Addresses: 3
   Unused Load Balancers: 1
   Unused Volumes: 6
   Usage Report: 8
 :providers:
   AWS: 82
-  Azure: 83
+  Azure: 84
   Azure China: 1
   Flexera: 37
   Flexera Optima: 2
@@ -709,7 +715,7 @@ These templates can generate savings estimates for your environment.
   Marketplace: 2
   MySQL: 2
   NetApp Files: 1
-  Network: 1
+  Network: 2
   Network Security Group: 2
   Office 365: 1
   Org: 1
@@ -726,7 +732,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 236
+:total_count: 237
 -->
 <!-- End Policy Template Stats -->
 
