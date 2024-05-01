@@ -450,7 +450,7 @@ def policy_readme_missing_credentials?(file)
   end
 
   # Check for mismatches between policy and README.md
-  if pol_flexera_credential && !readme_flexera_credential && !file.start_with("saas/fsm/")
+  if pol_flexera_credential && !readme_flexera_credential && !file.start_with?("saas/fsm/")
     fail_message += "Policy contains Flexera credential but this credential either missing from or incorrectly formatted in the associated `README.md` file.\n\n"
   end
 
@@ -1144,7 +1144,7 @@ def policy_bad_comma_spacing?(file)
   policy_code.each_line.with_index do |line, index|
     line_number = index + 1
 
-    if line.include?(",") && !line.include?("allowed_pattern") && !line.include?('= ","') && !line.include?("(',')") && !line.include?('(",")')
+    if line.include?(",") && !line.include?("allowed_pattern") && !line.include?('= ","') && !line.include?("(',')") && !line.include?('(",")') && !line.include?("jq(")
       if line.strip.match(/,\s{2,}/) || line.strip.match(/\s,/) || line.strip.match(/,[^\s]/)
         fail_message += "Line #{line_number.to_s}: Possible invalid spacing between comma-separated items found.\nComma separated items should be organized as follows, with a single space following each comma: apple, banana, pear\n\n"
       end
