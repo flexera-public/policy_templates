@@ -161,11 +161,10 @@ These templates can generate savings estimates for your environment.
 
 #### Google
 
-- [Google Unlabeled Resources](./compliance/google/unlabeled_resources)
-
 - Compute
 
   - [Google Long Stopped VM Instances](./compliance/google/long_stopped_instances)
+  - [Google Unlabeled Resources](./compliance/google/unlabeled_resources)
 
 ### Policy Templates for Cost
 
@@ -666,8 +665,7 @@ These templates can generate savings estimates for your environment.
   Storage Security: 1
   Superseded Compute Instances: 2
   Tag Cardinality: 2
-  Unlabeled Resources: 1
-  Untagged Resources: 3
+  Untagged Resources: 4
   Unused Containers: 1
   Unused Database Services: 1
   Unused Firewalls: 1
@@ -690,7 +688,7 @@ These templates can generate savings estimates for your environment.
   Oracle: 1
   ServiceNow: 1
 :services:
-  '': 14
+  '': 13
   AKS: 2
   All: 2
   App Service: 1
@@ -698,7 +696,7 @@ These templates can generate savings estimates for your environment.
   Cloud Cost Optimization: 18
   CloudTrail: 7
   Common Bill Ingestion: 2
-  Compute: 61
+  Compute: 62
   Config: 1
   DBS: 1
   Databricks: 1
