@@ -73,7 +73,7 @@ parameter "param_error_rate" do
   category "Statistics"
   label "Error Rate Percentage"
   description "Percentage of requests that result in an error to include a Lambda function in the results."
-  min_value 0
+  min_value 1
   default 10
 end
 
@@ -278,11 +278,7 @@ datasource "ds_aws_lambda_functions" do
       field "name", jmes_path(col_item, "FunctionName")
       field "description", jmes_path(col_item, "Description")
       field "lastModified", jmes_path(col_item, "LastModified")
-      field "lastUpdateStatus", jmes_path(col_item, "LastUpdateStatus")
       field "runtime", jmes_path(col_item, "Runtime")
-      field "state", jmes_path(col_item, "State")
-      field "stateReason", jmes_path(col_item, "StateReason")
-      field "stateReasonCode", jmes_path(col_item, "StateReasonCode")
       field "version", jmes_path(col_item, "Version")
     end
   end
@@ -304,11 +300,7 @@ datasource "ds_aws_lambda_functions_with_tags" do
     field "name", val(iter_item, "name")
     field "description", val(iter_item, "description")
     field "lastModified", val(iter_item, "lastModified")
-    field "lastUpdateStatus", val(iter_item, "lastUpdateStatus")
     field "runtime", val(iter_item, "runtime")
-    field "state", val(iter_item, "state")
-    field "stateReason", val(iter_item, "stateReason")
-    field "stateReasonCode", val(iter_item, "stateReasonCode")
     field "version", val(iter_item, "version")
   end
 end
@@ -354,12 +346,7 @@ script "js_aws_lambda_functions_tag_filtered", type: "javascript" do
   if (param_exclusion_tags.length > 0) {
     result = _.reject(ds_aws_lambda_functions_with_tags, function(resource) {
       resource_tags = {}
-
-      if (typeof(resource['tags']) == 'object') {
-        _.each(resource['tags'], function(tag) {
-          resource_tags[tag['key']] = tag['value']
-        })
-      }
+      if (typeof(resource['tags']) == 'object') { resource_tags = resource['tags'] }
 
       // Store a list of found tags
       found_tags = []
@@ -414,11 +401,11 @@ script "js_cloudwatch_queries", type: "javascript" do
 
     //We want to collect each of these list of statistics we care about
     metrics = ["Invocations", "Errors"]
-    lookback = param_stats_lookback * 86400 * 24
+    lookback = param_stats_lookback * 3600
 
     _.each(metrics, function(metric) {
       query = {
-        "Id": metric.toLowerCase() + "_" + resource['name'].replace('-', '_'),
+        "Id": metric.toLowerCase() + "_" + resource['name'].replace(/-/g, "_"),
         "MetricStat": {
           "Metric": {
             "Namespace": "AWS/Lambda",
@@ -570,7 +557,7 @@ script "js_aws_lambda_functions_with_errors", type: "javascript" do
 
   _.each(ds_aws_lambda_functions_tag_filtered, function(resource) {
     region = resource['region']
-    cw_name = resource['name'].replace('-', '_')
+    cw_name = resource['name'].replace(/-/g, "_")
 
     // Only proceed if the CloudWatch data actually has the region and resource name.
     // Otherwise, we have no data on the resource and thus don't include it in the results.
@@ -588,9 +575,9 @@ script "js_aws_lambda_functions_with_errors", type: "javascript" do
         if (error_rate >= param_error_rate) {
           tags = []
 
-          if (instance['tags'] != undefined && instance['tags'] != null) {
-            _.each(instance['tags'], function(tag) {
-              tags.push([tag['key'], tag['value']].join('='))
+          if (typeof(resource['tags']) == 'object') {
+            _.each(Object.keys(resource['tags']), function(key) {
+              tags.push(key + '=' + resource['tags'][key])
             })
           }
 
@@ -600,11 +587,7 @@ script "js_aws_lambda_functions_with_errors", type: "javascript" do
             description: resource['description'],
             region: resource['region'],
             lastModified: resource['lastModified'],
-            lastUpdateStatus: resource['lastUpdateStatus'],
             runtime: resource['runtime'],
-            state: resource['state'],
-            stateReason: resource['stateReason'],
-            stateReasonCode: resource['stateReasonCode'],
             version: resource['version'],
             tags: tags.join(', '),
             invocations: invocations,
@@ -633,11 +616,7 @@ script "js_incident", type: "javascript" do
       description: resource['description'],
       region: resource['region'],
       lastModified: resource['lastModified'],
-      lastUpdateStatus: resource['lastUpdateStatus'],
       runtime: resource['runtime'],
-      state: resource['state'],
-      stateReason: resource['stateReason'],
-      stateReasonCode: resource['stateReasonCode'],
       version: resource['version'],
       tags: resource['tags'],
       invocations: resource['invocations'],
@@ -657,7 +636,7 @@ script "js_incident", type: "javascript" do
   result = _.sortBy(result, "error_rate").reverse()
 
   // Message for incident output
-  total_lambda = ds_snapshots_combined.length.toString()
+  total_lambda = ds_aws_lambda_functions_tag_filtered.length.toString()
   total_error_lambda = result.length.toString()
   error_lambda_percentage = (total_error_lambda / total_lambda * 100).toFixed(2).toString() + '%'
 
@@ -680,11 +659,7 @@ script "js_incident", type: "javascript" do
     description: "",
     region: "",
     lastModified: "",
-    lastUpdateStatus: "",
     runtime: "",
-    state: "",
-    stateReason: "",
-    stateReasonCode: "",
     version: "",
     tags: "",
     invocations: "",
@@ -749,9 +724,6 @@ policy "pol_functions_in_error" do
       end
       field "version" do
         label "Version"
-      end
-      field "state" do
-        label "State"
       end
       field "service" do
         label "Service"
