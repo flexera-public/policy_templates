@@ -5,9 +5,9 @@ short_description "Report any AWS Lambda functions with high error rates. See th
 long_description ""
 severity "high"
 category "Operational"
-default_frequency "daily"
+default_frequency "hourly"
 info(
-  version: "4.2.1",
+  version: "5.0.0",
   provider: "AWS",
   service: "PaaS",
   policy_set: "Lambda"
@@ -31,15 +31,6 @@ parameter "param_aws_account_number" do
   label "Account Number"
   description "Leave blank; this is for automated use with Meta Policies. See README for more details."
   default ""
-end
-
-parameter "param_error_rate" do
-  type "number"
-  category "Policy Settings"
-  label "Error Rate Percentage"
-  description "Percentage of requests that result in an error to include a Lambda function in the results."
-  min_value 1
-  default 10
 end
 
 parameter "param_regions_allow_or_deny" do
@@ -77,14 +68,23 @@ parameter "param_exclusion_tags_boolean" do
   default "Any"
 end
 
+parameter "param_error_rate" do
+  type "number"
+  category "Statistics"
+  label "Error Rate Percentage"
+  description "Percentage of requests that result in an error to include a Lambda function in the results."
+  min_value 0
+  default 10
+end
+
 parameter "param_stats_lookback" do
   type "number"
   category "Statistics"
-  label "Statistic Lookback Period"
-  description "How many days back to look at CloudWatch data for AWS Lambda. This value cannot be set higher than 90 because AWS does not retain metrics for longer than 90 days."
+  label "Statistic Lookback Period (Hours)"
+  description "How many hours back to look at CloudWatch data for AWS Lambda. This value cannot be set higher than 2160 because AWS does not retain metrics for longer than 90 days."
   default 1
   min_value 1
-  max_value 90
+  max_value 2160
 end
 
 ###############################################################################
@@ -415,7 +415,7 @@ script "js_cloudwatch_queries", type: "javascript" do
 
     //We want to collect each of these list of statistics we care about
     metrics = ["Invocations", "Errors"]
-    lookback = param_stats_lookback * 86400
+    lookback = param_stats_lookback * 86400 * 24
 
     _.each(metrics, function(metric) {
       query = {
@@ -461,7 +461,7 @@ script "js_cloudwatch_requests", type: "javascript" do
   end_date = parseInt(end_date.getTime() / 1000)
 
   start_date = new Date()
-  start_date.setDate(start_date.getDate() - param_stats_lookback)
+  start_date.setHours(start_date.getHours() - param_stats_lookback)
   start_date.setMinutes(0, 0, 0)
   start_date = parseInt(start_date.getTime() / 1000)
 
@@ -571,13 +571,13 @@ script "js_aws_lambda_functions_with_errors", type: "javascript" do
 
   _.each(ds_aws_lambda_functions_tag_filtered, function(resource) {
     region = resource['region']
-    stat_name = resource['name'].replace('-', '_')
+    cw_name = resource['name'].replace('-', '_')
 
     // Only proceed if the CloudWatch data actually has the region and resource name.
     // Otherwise, we have no data on the resource and thus don't include it in the results.
     if (ds_cloudwatch_data_sorted[region] != undefined) {
-      if (ds_cloudwatch_data_sorted[region][id] != undefined) {
-        data = ds_cloudwatch_data_sorted[region][id]
+      if (ds_cloudwatch_data_sorted[region][cw_name] != undefined) {
+        data = ds_cloudwatch_data_sorted[region][cw_name]
         invocations = 0
         errors = 0
         error_rate = 0
@@ -586,7 +586,7 @@ script "js_aws_lambda_functions_with_errors", type: "javascript" do
         if (typeof(data["errors"]) == 'number') { errors = data["errors"] }
         if (invocations != 0) { error_rate = (errors / invocations) * 100 }
 
-        if (error_rate > param_error_rate) {
+        if (error_rate >= param_error_rate) {
           tags = []
 
           if (instance['tags'] != undefined && instance['tags'] != null) {
@@ -649,6 +649,7 @@ script "js_incident", type: "javascript" do
       policy_name: ds_applied_policy['name'],
       threshold: param_error_rate,
       lookbackPeriod: param_stats_lookback,
+      service: "AWS Lambda",
       message: ""
     }
   })
@@ -661,14 +662,14 @@ script "js_incident", type: "javascript" do
   total_error_lambda = result.length.toString()
   error_lambda_percentage = (total_error_lambda / total_lambda * 100).toFixed(2).toString() + '%'
 
-  days = param_stats_lookback.toString() + " days"
-  if (param_stats_lookback == 1) { days = " day" }
+  hours_string = param_stats_lookback.toString() + " hours"
+  if (param_stats_lookback == 1) { hours_string = " hour" }
 
   findings = [
     "Out of ", total_lambda, " AWS Lambda functions analyzed, ",
     total_error_lambda, " (", error_lambda_percentage,
-    ") have an error rate of over ", param_error_rate, "% ",
-    "over the last ", days, ".\n\n"
+    ") have an error rate greater than or equal to ", param_error_rate, "% ",
+    "over the last ", hours_string, ".\n\n"
   ].join('')
 
   disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
@@ -692,6 +693,7 @@ script "js_incident", type: "javascript" do
     error_rate: "",
     accountID: "",
     accountName: "",
+    service: "",
     policy_name: "",
     threshold: "",
     lookbackPeriod: "",
@@ -707,34 +709,60 @@ end
 ###############################################################################
 
 policy "pol_functions_in_error" do
-  validate_each $ds_merged_results do
-    summary_template "AWS Account ID: {{with index data 0}}{{ .accountId }}{{end}}: {{ len data }} AWS Functions over error percentage"
+  validate_each $ds_incident do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Lambda Functions With High Error Rate Found"
+    detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
-    check logic_or($ds_parent_policy_terminated, lt(val(item, "error_percentage"), $param_error_rate))
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
+    hash_exclude "message", "tags", "invocations", "errors", "error_rate"
     export do
       resource_level true
-      field "accountId" do
-        label "AWS Account Id"
+      field "accountID" do
+        label "Account ID"
       end
-      field "id" do
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Function ARN"
+      end
+      field "resourceName" do
         label "Function Name"
-        path "function_name"
+      end
+      field "description" do
+        label "Description"
       end
       field "region" do
         label "Region"
       end
+      field "tags" do
+        label "tags"
+      end
       field "invocations" do
         label "Invocations"
       end
-      field "error_count" do
+      field "errors" do
         label "Errors"
       end
-      field "error_percentage" do
-        label "Error Percentage"
+      field "error_rate" do
+        label "Error Rate (%)"
       end
-      field "tags" do
-        label "tags"
+      field "version" do
+        label "Version"
+      end
+      field "state" do
+        label "State"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Hours)"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
       end
     end
   end
@@ -752,10 +780,6 @@ escalation "esc_email" do
 end
 
 ###############################################################################
-# Cloud Workflow
-###############################################################################
-
-###############################################################################
 # Meta Policy [alpha]
 # Not intended to be modified or used by policy developers
 ###############################################################################
@@ -767,7 +791,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
     header "Api-Version", "1.0"
   end
   result do
