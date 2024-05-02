@@ -429,8 +429,8 @@ changed_pt_files.each do |file|
     # Raise warning if recommendation policy is missing recommended export fields
     test = policy_missing_recommendation_fields?(file, "recommended"); warnings << test if test
 
-    # Raise error if policy has invalid Github links in datasources
-    test = policy_bad_github_datasources?(file); failures << test if test
+    # Raise error if policy has outdated links
+    test = policy_outdated_links?(file); failures << test if test
 
     # Raise warning if policy has any datasources using http instead of https
     test = policy_http_connections?(file); warnings << test if test
