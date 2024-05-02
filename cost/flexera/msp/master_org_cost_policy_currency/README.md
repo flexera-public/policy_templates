@@ -1,5 +1,7 @@
 # Master Org Cost Policy with Currency Conversion
 
+## What It Does
+
 This policy allows you to set up cross organization scheduled reports that will provide summaries of cloud cost across all organizations you have access to, delivered to any email addresses you specify with all currencies converted to a single currency. The policy will report the following:
 
 Chart of the previous 6 months of utilization based on whichever [Reporting Dimension](https://docs.rightscale.com/optima/reference/rightscale_dimensions.html) you select (only bill data and RightScale-generated dimensions are supported).
@@ -26,8 +28,6 @@ There are four cost metrics to choose from.
 - Amortized Blended - One-time and upfront costs are spread evenly over the term of the item purchased. (AWS Only) Saving from reserved instances are shared equally by all matching instances in all accounts.
 
 ## Input Parameters
-
-This policy has the following input parameters required when launching the policy.
 
 - *Email list* - Email addresses of the recipients you wish to notify
 - *Excluded Organizations* - Names of organizations to exclude
