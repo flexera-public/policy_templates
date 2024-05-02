@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "3.1",
+  version: "3.1.1",
   provider: "Google",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -384,7 +384,7 @@ datasource "ds_get_instances" do
   end
   result do
     encoding "json"
-    field "instances", jq(response, "[ .items | to_entries | map_values(.value) | map(select(has(\"instances\"))) | .[].instances | .[] | {id,name,selfLink,status,tags,zone,kind,hostname,cpuPlatform,labels,description,machineType}]")
+    field "instances", jq(response, "[ .items | to_entries | map_values(.value) | map(select(has(\"instances\"))) | .[].instances | .[] | {id,name,selfLink,status,tags,zone,kind,hostname,cpuPlatform,labels,description,machineType} ]")
     field "projectId", val(iter_item, "id")
     field "projectName", val(iter_item, "name")
     field "projectNumber", val(iter_item, "number")
@@ -851,6 +851,7 @@ script "js_sorted_recommendations", type:"javascript" do
             state: recommendation['state'],
             recommendationCategory: recommendation['recommendationCategory'],
             resourceType: resourceType,
+            newResourceType: "Stop VM Instance",
             policy_name: ds_applied_policy['name'],
             tags: labels.join(', '),
             savings: parseFloat(savings.toFixed(3)),
@@ -1009,7 +1010,7 @@ script "js_idle_incident", type:"javascript" do
   if (total_idle_instances > 1) { instance_verb = "are" }
 
   findings = [
-    "Out of ", total_instances , " Google VM ", instance_noun, " analyzed, ",
+    "Out of ", total_instances, " Google VM ", instance_noun, " analyzed, ",
     total_idle_instances, " (", idle_percentage,
     ") ", instance_verb, " idle and recommended for stopping.\n\n"
   ].join('')
@@ -1024,17 +1025,39 @@ script "js_idle_incident", type:"javascript" do
 
   // Dummy item to ensure that the check statement in the policy executes at least once
   result.push({
-    resourceID: "",               resourceName: "",              description: "",
-    status: "",                   zone: "",                      selfLink: "",
-    cpuPlatform: "",              hostname: "",                  labels: "",
-    region: "",                   kind: "",                      accountID: "",
-    accountName: "",              projectNumber: "",             cpuAverage: "",
-    cpuMaximum: "",               cpuMinimum: "",                resourceType: "",
-    newResourceType: "",          priority: "",                  primaryImpact: "",
-    primaryImpactCategory: "",    recommendationDetails: "",     recommenderSubtype: "",
-    state: "",                    recommendationCategory: "",    policy_name: "",
-    tags: "",                     savings: "",                   savingsCurrency: "",
-    service: "",                  total_savings: "",             message: ""
+    resourceID: "",
+    resourceName: "",
+    description: "",
+    status: "",
+    zone: "",
+    selfLink: "",
+    cpuPlatform: "",
+    hostname: "",
+    labels: "",
+    region: "",
+    kind: "",
+    accountID: "",
+    accountName: "",
+    projectNumber: "",
+    cpuAverage: "",
+    cpuMaximum: "",
+    cpuMinimum: "",
+    resourceType: "",
+    newResourceType: "",
+    priority: "",
+    primaryImpact: "",
+    primaryImpactCategory: "",
+    recommendationDetails: "",
+    recommenderSubtype: "",
+    state: "",
+    recommendationCategory: "",
+    policy_name: "",
+    tags: "",
+    savings: "",
+    savingsCurrency: "",
+    service: "",
+    total_savings: "",
+    message: ""
   })
 
   result[0]['total_savings'] = savings_message
@@ -1090,7 +1113,7 @@ script "js_underutil_incident", type:"javascript" do
   if (total_underutil_instances > 1) { instance_verb = "are" }
 
   findings = [
-    "Out of ", total_instances , " Google VM ", instance_noun, " analyzed, ",
+    "Out of ", total_instances, " Google VM ", instance_noun, " analyzed, ",
     total_underutil_instances, " (", underutil_percentage,
     ") ", instance_verb, " underutilized and recommended for downsizing.\n\n"
   ].join('')
@@ -1105,17 +1128,39 @@ script "js_underutil_incident", type:"javascript" do
 
   // Dummy item to ensure that the check statement in the policy executes at least once
   result.push({
-    resourceID: "",               resourceName: "",              description: "",
-    status: "",                   zone: "",                      selfLink: "",
-    cpuPlatform: "",              hostname: "",                  labels: "",
-    region: "",                   kind: "",                      accountID: "",
-    accountName: "",              projectNumber: "",             cpuAverage: "",
-    cpuMaximum: "",               cpuMinimum: "",                resourceType: "",
-    newResourceType: "",          priority: "",                  primaryImpact: "",
-    primaryImpactCategory: "",    recommendationDetails: "",     recommenderSubtype: "",
-    state: "",                    recommendationCategory: "",    policy_name: "",
-    tags: "",                     savings: "",                   savingsCurrency: "",
-    service: "",                  total_savings: "",             message: ""
+    resourceID: "",
+    resourceName: "",
+    description: "",
+    status: "",
+    zone: "",
+    selfLink: "",
+    cpuPlatform: "",
+    hostname: "",
+    labels: "",
+    region: "",
+    kind: "",
+    accountID: "",
+    accountName: "",
+    projectNumber: "",
+    cpuAverage: "",
+    cpuMaximum: "",
+    cpuMinimum: "",
+    resourceType: "",
+    newResourceType: "",
+    priority: "",
+    primaryImpact: "",
+    primaryImpactCategory: "",
+    recommendationDetails: "",
+    recommenderSubtype: "",
+    state: "",
+    recommendationCategory: "",
+    policy_name: "",
+    tags: "",
+    savings: "",
+    savingsCurrency: "",
+    service: "",
+    total_savings: "",
+    message: ""
   })
 
   result[0]['total_savings'] = savings_message
@@ -1127,7 +1172,7 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_recommendations" do
+policy "pol_recommendations" do
   validate_each $ds_underutil_incident do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Google Underutilized VM Instances Found"
     detail_template <<-'EOS'
@@ -1254,6 +1299,9 @@ policy "policy_recommendations" do
       field "resourceType" do
         label "Resource Type"
       end
+      field "newResourceType" do
+        label "Recommended Resource Type"
+      end
       field "zone" do
         label "Zone"
       end
@@ -1356,15 +1404,17 @@ define downsize_instances($data) return $all_responses do
   $$all_responses = []
 
   foreach $instance in $data do
-    sub on_error: handle_error() do
-      call stop_instance($instance) retrieve $stop_response
-      call resize_instance($instance) retrieve $resize_response
-      call start_instance($instance) retrieve $start_response
+    if $instance["newResourceType"] != "Delete VM Instance"
+      sub on_error: handle_error() do
+        call stop_instance($instance) retrieve $stop_response
+        call resize_instance($instance) retrieve $resize_response
+        call start_instance($instance) retrieve $start_response
+      end
     end
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -1378,7 +1428,7 @@ define stop_instances($data) return $all_responses do
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -1393,7 +1443,7 @@ define delete_instances($data) return $all_responses do
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -1452,7 +1502,6 @@ define delete_instance($instance) return $response do
     task_label("Delete Google VM instance successful: " + $instance["resourceName"])
   end
 end
-
 
 define start_instance($instance) return $response do
   task_label("POST " + $instance['selfLink'] + '/start')
@@ -1552,7 +1601,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
     header "Api-Version", "1.0"
   end
   result do

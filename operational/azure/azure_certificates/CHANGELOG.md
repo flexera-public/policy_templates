@@ -1,5 +1,18 @@
 # Changelog
 
+## v4.0.0
+
+- Added ability to delete Azure certificates automatically or manually
+- Several parameters altered to be more descriptive and human-readable
+- Added ability to use Subscription filter as an allow or a deny list
+- Added ability to filter resources by multiple tag key:value pairs
+- Added ability to filter resources by region
+- Added additional context to incident description
+- Normalized incident export to be consistent with other policies
+- Added human-readable recommendation to incident export
+- Policy no longer raises new escalations if inconsequential metadata like tag values change
+- Streamlined code for better readability and faster execution
+
 ## v3.2.1
 
 - Added default value for parameters that do not require user input

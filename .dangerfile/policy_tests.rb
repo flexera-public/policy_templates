@@ -450,7 +450,7 @@ def policy_readme_missing_credentials?(file)
   end
 
   # Check for mismatches between policy and README.md
-  if pol_flexera_credential && !readme_flexera_credential && !file.start_with("saas/fsm/")
+  if pol_flexera_credential && !readme_flexera_credential && !file.start_with?("saas/fsm/")
     fail_message += "Policy contains Flexera credential but this credential either missing from or incorrectly formatted in the associated `README.md` file.\n\n"
   end
 
@@ -862,6 +862,7 @@ def policy_ds_js_name_mismatch?(file)
   ds_name = nil
   js_name = nil
   line_number = nil
+  found_mismatches = []
 
   policy_code.each_line.with_index do |line, index|
     # Stop doing the check once we hit the Meta Policy section
@@ -879,7 +880,13 @@ def policy_ds_js_name_mismatch?(file)
 
       if ds_name != nil && js_name != nil
         if ds_name[3..-1] != js_name[3..-1]
-          fail_message += "Line #{line_number.to_s}: #{ds_name} / #{js_name}\n"
+          found_mismatches << {
+            line_number: line_number,
+            ds_name: ds_name[3..-1],
+            js_name: js_name[3..-1]
+          }
+
+          #fail_message += "Line #{line_number.to_s}: #{ds_name} / #{js_name}\n"
         end
       end
 
@@ -888,6 +895,19 @@ def policy_ds_js_name_mismatch?(file)
       js_name = nil
       line_number = nil
     end
+  end
+
+  # Filter out mismatches where the javascript block is referenced by multiple datasources
+  js_name_counts = found_mismatches.each_with_object(Hash.new(0)) do |item, counts|
+    counts[item[:js_name]] += 1
+  end
+
+  filtered_mismatches = found_mismatches.reject do |item|
+    js_name_counts[item[:js_name]] > 1
+  end
+
+  filtered_mismatches.each do |mismatch|
+    fail_message += "Line #{mismatch[:line_number]}: ds_#{mismatch[:ds_name]} / js_#{mismatch[:js_name]}\n"
   end
 
   fail_message = "Datasources and scripts with mismatched names found. These names should match; for example, a datasource named ds_currency should be paired with a script named js_currency. This convention should only be ignored when the same script is called by multiple datasources. The following datasource/script pairs have mismatched names:\n\n" + fail_message if !fail_message.empty?
@@ -926,14 +946,14 @@ def policy_run_script_incorrect_order?(file)
       # Remove the first item because it's just the name of the script itself
       script_name = parameters.shift
 
-      iter_found = false      # Whether we've found a val(iter_item, "") parameter
+      iter_found = false      # Whether we've found a iter_item or val(iter_item, "") parameter
       ds_found = false        # Whether we've found a datasource parameter
       param_found = false     # Whether we've found a parameter parameter
       constant_found = false  # Whether we've found a constant, like rs_org_id
       value_found = false     # Whether we've found a raw value, like a number or string
 
       parameters.each_with_index do |parameter, index|
-        if parameter.start_with?("val(") && parameter.include?("iter_item")
+        if parameter.include?("iter_item")
           iter_found = true
           iter_index = index
           disordered = true if ds_found || param_found || constant_found || value_found
@@ -1144,7 +1164,7 @@ def policy_bad_comma_spacing?(file)
   policy_code.each_line.with_index do |line, index|
     line_number = index + 1
 
-    if line.include?(",") && !line.include?("allowed_pattern") && !line.include?('= ","') && !line.include?("(',')") && !line.include?('(",")')
+    if line.include?(",") && !line.include?("allowed_pattern") && !line.include?('= ","') && !line.include?("(',')") && !line.include?('(",")') && !line.include?("jq(")
       if line.strip.match(/,\s{2,}/) || line.strip.match(/\s,/) || line.strip.match(/,[^\s]/)
         fail_message += "Line #{line_number.to_s}: Possible invalid spacing between comma-separated items found.\nComma separated items should be organized as follows, with a single space following each comma: apple, banana, pear\n\n"
       end

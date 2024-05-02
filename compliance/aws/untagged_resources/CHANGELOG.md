@@ -1,5 +1,13 @@
 # Changelog
 
+## v5.1.2
+
+- Fixed issue with policy failing in EU/AU Flexera organizations due to invalid API host
+
+## v5.1.1
+
+- Fix bug for `ReferenceError: 'tag_dimension_tag_keys' is not defined`
+
 ## v5.1.0
 
 - Added parameter for *Consider Tag Dimensions* to help mitigate/prevent seeing results for resources which have the tag key/tag value through a normalized Tag Dimension
