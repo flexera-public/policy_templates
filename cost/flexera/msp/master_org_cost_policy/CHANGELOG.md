@@ -1,8 +1,9 @@
 # Changelog
 
-## v1.7.1
+## v2.0.0
 
 - Updated policy to use internal Flexera API for generating charts. Policy functionality is unchanged.
+- Policy now requires a valid Flexera credential
 
 ## v1.7
 

@@ -16,7 +16,7 @@ severity "low"
 category "Cost"
 tenancy "single"
 info(
-  version: "1.5.1",
+  version: "2.0.0",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Managed Service Provider",
@@ -24,36 +24,36 @@ info(
 )
 
 ###############################################################################
-# Permissions
-###############################################################################
-
-###############################################################################
 # Parameters
 ###############################################################################
+
 parameter "param_email" do
   type "list"
   label "Email List"
+  category "Policy Settings"
   description "Email addresses of the recipients you wish to notify"
 end
 
 parameter "param_exclude_organizations" do
   type "list"
   label "Excluded Organizations"
-  description "Names of organizations to exclude"
+  category "Filters"
+  description "Names of organizations to exclude."
 end
 
 parameter "param_cost_metric" do
   type "string"
   label "Cost Metric"
-  allowed_values "Unamortized Unblended","Amortized Unblended","Unamortized Blended","Amortized Blended"
-  default "Unamortized Unblended"
+  category "Policy Settings"
   description "Select the cost metric for your report.  See the README file for more details"
+  allowed_values "Unamortized Unblended", "Amortized Unblended", "Unamortized Blended","Amortized Blended"
+  default "Unamortized Unblended"
 end
 
 parameter "param_graph_dimension" do
   type "string"
   label "Graph Dimension"
-  allowed_values "Category","Instance Type","Region","Resource Group","Resource Type","Service","Usage Type","Usage Unit","Cloud Vendor","Cloud Vendor Account","Cloud Vendor Account Name"
+  allowed_values "Category", "Instance Type", "Region", "Resource Group", "Resource Type", "Service", "Usage Type", "Usage Unit", "Cloud Vendor", "Cloud Vendor Account", "Cloud Vendor Account Name"
   default "Category"
   description "Select which dimension you'd like to be broken out on the graph in the report."
 end
@@ -70,11 +70,12 @@ end
 # Authentication
 ###############################################################################
 
-auth "auth_rs", type: "rightscale"
-
-###############################################################################
-# Resources
-###############################################################################
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
 
 ###############################################################################
 # Datasources
@@ -82,7 +83,7 @@ auth "auth_rs", type: "rightscale"
 
 datasource "ds_session" do
   request do
-    auth $auth_rs
+    auth $auth_flexera
     verb "GET"
     host rs_cm_host
     path "/api/sessions"
@@ -90,7 +91,7 @@ datasource "ds_session" do
     query "view", "whoami"
   end
   result do
-    field "userid", join(["/grs/users/",last(split(first(jmes_path(response, "links[?rel == 'user'].href")),'/'))])
+    field "userid", join(["/grs/users/", last(split(first(jmes_path(response, "links[?rel == 'user'].href")), '/'))])
   end
 end
 
@@ -101,19 +102,70 @@ datasource "ds_current_user_organizations" do
   result do
     collect jmes_path(response, "orgs") do
       field "href", jmes_path(col_item, "href")
-      field "org_id", last(split(jmes_path(col_item, "href"),"/"))
+      field "org_id", last(split(jmes_path(col_item, "href"), "/"))
       field "name", jmes_path(col_item, "name")
       field "cluster", jmes_path(col_item, "starts_with(legacy.account_url, 'https://us-3') && '3' || starts_with(legacy.account_url, 'https://us-4') && '4'")
     end
   end
 end
 
+script "js_current_user_organizations", type: "javascript" do
+  parameters "ds_session"
+  result "request"
+  code <<-EOS
+    var request = {
+      "auth": "auth_flexera",
+      "verb": "GET",
+      "host": "governance.rightscale.com",
+      "path": ds_session["userid"],
+      "headers": {"X-Api-Version": "2.0" },
+      "query_params":{"view":"extended"}
+    }
+  EOS
+end
+
 datasource "ds_filtered_rejected_organizations" do
   run_script $js_filter_rejected_organizations, $ds_current_user_organizations, $param_exclude_organizations
 end
 
+script "js_filter_rejected_organizations", type: "javascript" do
+  parameters "ds_current_user_organizations", "param_exclude_organizations"
+  result "results"
+  code <<-EOS
+    var results = _.reject(ds_current_user_organizations, function(org){
+      return _.contains(param_exclude_organizations, org["name"])
+    })
+  EOS
+end
+
 datasource "ds_filtered_user_organizations" do
   run_script $js_filter_organizations, $ds_filtered_rejected_organizations, $ds_currency_code, $ds_currency_conversion
+end
+
+script "js_filter_organizations", type: "javascript" do
+  parameters "ds_filtered_rejected_organizations", "ds_currency_code", "ds_currency_conversion"
+  result "results"
+  code <<-EOS
+    var results = [];
+    _.each(ds_filtered_rejected_organizations, function(org){
+      var org_id = org["org_id"]
+      var org_currency_code = _.pluck(_.where(ds_currency_code, {"org_id": org_id}), "value")
+      if( org_currency_code == undefined ) {
+        org_currency_code = "USD"
+      }
+
+      var conversion_rate = ds_currency_conversion["rates"][org_currency_code]
+
+      results.push({
+        href: org.href,
+        org_id: org_id,
+        name: org.name,
+        cluster: org.cluster,
+        currency: org_currency_code[0],
+        conversion_rate: conversion_rate
+      })
+    })
+  EOS
 end
 
 datasource "ds_currency_reference" do
@@ -136,41 +188,41 @@ end
 datasource "ds_currency_code" do
   iterate $ds_filtered_rejected_organizations
   request do
-    auth $auth_rs
+    auth $auth_flexera
     host rs_optima_host
-    path join(["/bill-analysis/orgs/",val(iter_item,"org_id"),"/settings/currency_code"])
+    path join(["/bill-analysis/orgs/", val(iter_item,"org_id"), "/settings/currency_code"])
     header "Api-Version", "0.1"
     header "User-Agent", "RS Policies"
   end
   result do
     encoding "json"
-    field "org_id", val(iter_item,"org_id")
+    field "org_id", val(iter_item, "org_id")
     field "org_name", val(iter_item, "name")
-    field "id", jmes_path(response,"id")
-    field "value", jmes_path(response,"value")
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
   end
 end
 
 datasource "ds_billing_centers" do
   iterate $ds_filtered_user_organizations
   request do
-    auth $auth_rs
+    auth $auth_flexera
     host rs_optima_host
-    path join(["/analytics/orgs/",val(iter_item,"org_id"),"/billing_centers"])
+    path join(["/analytics/orgs/", val(iter_item, "org_id"), "/billing_centers"])
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
     query "view", "allocation_table"
   end
   result do
     encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "org_id", val(iter_item,"org_id")
-      field "href", jmes_path(col_item,"href")
-      field "id", jmes_path(col_item,"id")
-      field "name", jmes_path(col_item,"name")
-      field "parent_id", jmes_path(col_item,"parent_id")
-      field "ancestor_ids", jmes_path(col_item,"ancestor_ids")
-      field "allocation_table", jmes_path(col_item,"allocation_table")
+    collect jmes_path(response, "[*]") do
+      field "org_id", val(iter_item, "org_id")
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+      field "ancestor_ids", jmes_path(col_item, "ancestor_ids")
+      field "allocation_table", jmes_path(col_item, "allocation_table")
     end
   end
 end
@@ -178,136 +230,15 @@ end
 datasource "ds_current_week_costs" do
   iterate $ds_filtered_user_organizations
   request do
-    run_script $js_current_week_cost_request, $param_cost_metric, val(iter_item,"org_id"), rs_optima_host, $ds_billing_centers
+    run_script $js_current_week_cost_request, $param_cost_metric, val(iter_item, "org_id"), rs_optima_host, $ds_billing_centers
   end
   result do
     encoding "json"
-    collect jmes_path(response,"rows[*]") do
-      field "metrics", jmes_path(col_item,"metrics")
-      field "org_id", val(iter_item,"org_id")
+    collect jmes_path(response, "rows[*]") do
+      field "metrics", jmes_path(col_item, "metrics")
+      field "org_id", val(iter_item, "org_id")
     end
   end
-end
-
-datasource "ds_previous_week_costs" do
-  iterate $ds_filtered_user_organizations
-  request do
-    run_script $js_previous_week_cost_request, $param_cost_metric, val(iter_item,"org_id"), rs_optima_host, $ds_billing_centers
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"rows[*]") do
-      field "metrics", jmes_path(col_item,"metrics")
-      field "org_id", val(iter_item,"org_id")
-    end
-  end
-end
-
-datasource "ds_current_month_costs" do
-  iterate $ds_filtered_user_organizations
-  request do
-    run_script $js_current_month_cost_request, $param_cost_metric, val(iter_item,"org_id"), rs_optima_host, $ds_billing_centers
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"rows[*]") do
-      field "metrics", jmes_path(col_item,"metrics")
-      field "org_id", val(iter_item,"org_id")
-    end
-  end
-end
-
-datasource "ds_previous_month_costs" do
-  iterate $ds_filtered_user_organizations
-  request do
-    run_script $js_previous_month_cost_request, $param_cost_metric, val(iter_item,"org_id"), rs_optima_host, $ds_billing_centers
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"rows[*]") do
-      field "metrics", jmes_path(col_item,"metrics")
-      field "org_id", val(iter_item,"org_id")
-    end
-  end
-end
-
-datasource "ds_report" do
-  run_script $js_report, $ds_current_week_costs, $ds_previous_week_costs, $ds_current_month_costs, $ds_previous_month_costs, $param_cost_metric, $ds_currency_code, $ds_currency_reference, $ds_currency_conversion, $ds_filtered_user_organizations, $param_final_currency
-end
-
-datasource "ds_previous_six_month_costs" do
-  iterate $ds_filtered_user_organizations
-  request do
-    run_script $js_six_month_cost_request, $param_cost_metric, val(iter_item,"org_id"), rs_optima_host, $ds_billing_centers, $param_graph_dimension
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"rows[*]") do
-      field "dimensions", jmes_path(col_item,"dimensions")
-      field "metrics", jmes_path(col_item,"metrics")
-      field "timestamp", jmes_path(col_item,"timestamp")
-      field "org_id", val(iter_item,"org_id")
-    end
-  end
-end
-
-datasource "ds_generated_report" do
-  run_script $js_generate_report, $ds_previous_six_month_costs, $param_cost_metric, $ds_report, $param_graph_dimension, $ds_currency_code, $ds_currency_reference, $ds_currency_conversion, $ds_filtered_user_organizations, $param_final_currency
-end
-
-
-###############################################################################
-# Scripts
-###############################################################################
-script "js_current_user_organizations", type: "javascript" do
-  parameters "ds_session"
-  result "request"
-  code <<-EOF
-    var request = {
-      "auth": "auth_rs",
-      "verb": "GET",
-      "host": "governance.rightscale.com",
-      "path": ds_session["userid"],
-      "headers": {"X-Api-Version": "2.0" },
-      "query_params":{"view":"extended"}
-    }
-  EOF
-end
-
-script "js_filter_rejected_organizations", type: "javascript" do
-  parameters "ds_current_user_organizations", "param_exclude_organizations"
-  result "results"
-  code <<-EOF
-    var results = _.reject(ds_current_user_organizations, function(org){
-      return _.contains(param_exclude_organizations, org["name"])
-    })
-  EOF
-end
-
-script "js_filter_organizations", type: "javascript" do
-  parameters "ds_filtered_rejected_organizations","ds_currency_code","ds_currency_conversion"
-  result "results"
-  code <<-EOF
-    var results = [];
-    _.each(ds_filtered_rejected_organizations, function(org){
-      var org_id = org["org_id"]
-      var org_currency_code = _.pluck(_.where(ds_currency_code, {"org_id": org_id}), "value")
-      if( org_currency_code == undefined ) {
-        org_currency_code = "USD"
-      }
-
-      var conversion_rate = ds_currency_conversion["rates"][org_currency_code]
-
-      results.push({
-        href: org.href,
-        org_id: org_id,
-        name: org.name,
-        cluster: org.cluster,
-        currency: org_currency_code[0],
-        conversion_rate: conversion_rate
-      })
-    })
-  EOF
 end
 
 script "js_current_week_cost_request", type: "javascript" do
@@ -374,7 +305,7 @@ script "js_current_week_cost_request", type: "javascript" do
     }
 
     var request = {
-      auth:  'auth_rs',
+      auth:  'auth_flexera',
       host:  rs_optima_host,
       scheme: 'https',
       verb: 'POST',
@@ -386,6 +317,20 @@ script "js_current_week_cost_request", type: "javascript" do
       body: JSON.stringify(body)
     }
   EOS
+end
+
+datasource "ds_previous_week_costs" do
+  iterate $ds_filtered_user_organizations
+  request do
+    run_script $js_previous_week_cost_request, $param_cost_metric, val(iter_item, "org_id"), rs_optima_host, $ds_billing_centers
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "metrics", jmes_path(col_item, "metrics")
+      field "org_id", val(iter_item, "org_id")
+    end
+  end
 end
 
 script "js_previous_week_cost_request", type: "javascript" do
@@ -452,7 +397,7 @@ script "js_previous_week_cost_request", type: "javascript" do
     }
 
     var request = {
-      auth:  'auth_rs',
+      auth:  'auth_flexera',
       host:  rs_optima_host,
       scheme: 'https',
       verb: 'POST',
@@ -464,6 +409,20 @@ script "js_previous_week_cost_request", type: "javascript" do
       body: JSON.stringify(body)
     }
   EOS
+end
+
+datasource "ds_current_month_costs" do
+  iterate $ds_filtered_user_organizations
+  request do
+    run_script $js_current_month_cost_request, $param_cost_metric, val(iter_item, "org_id"), rs_optima_host, $ds_billing_centers
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "metrics", jmes_path(col_item, "metrics")
+      field "org_id", val(iter_item, "org_id")
+    end
+  end
 end
 
 script "js_current_month_cost_request", type: "javascript" do
@@ -530,7 +489,7 @@ script "js_current_month_cost_request", type: "javascript" do
     }
 
     var request = {
-      auth:  'auth_rs',
+      auth:  'auth_flexera',
       host:  rs_optima_host,
       scheme: 'https',
       verb: 'POST',
@@ -542,6 +501,20 @@ script "js_current_month_cost_request", type: "javascript" do
       body: JSON.stringify(body)
     }
   EOS
+end
+
+datasource "ds_previous_month_costs" do
+  iterate $ds_filtered_user_organizations
+  request do
+    run_script $js_previous_month_cost_request, $param_cost_metric, val(iter_item, "org_id"), rs_optima_host, $ds_billing_centers
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "metrics", jmes_path(col_item, "metrics")
+      field "org_id", val(iter_item, "org_id")
+    end
+  end
 end
 
 script "js_previous_month_cost_request", type: "javascript" do
@@ -607,7 +580,7 @@ script "js_previous_month_cost_request", type: "javascript" do
     }
 
     var request = {
-      auth:  'auth_rs',
+      auth:  'auth_flexera',
       host:  rs_optima_host,
       scheme: 'https',
       verb: 'POST',
@@ -619,6 +592,10 @@ script "js_previous_month_cost_request", type: "javascript" do
       body: JSON.stringify(body)
     }
   EOS
+end
+
+datasource "ds_report" do
+  run_script $js_report, $ds_current_week_costs, $ds_previous_week_costs, $ds_current_month_costs, $ds_previous_month_costs, $param_cost_metric, $ds_currency_code, $ds_currency_reference, $ds_currency_conversion, $ds_filtered_user_organizations, $param_final_currency
 end
 
 script "js_report", type: "javascript" do
@@ -755,6 +732,22 @@ script "js_report", type: "javascript" do
   EOS
 end
 
+datasource "ds_previous_six_month_costs" do
+  iterate $ds_filtered_user_organizations
+  request do
+    run_script $js_six_month_cost_request, $param_cost_metric, val(iter_item,"org_id"), rs_optima_host, $ds_billing_centers, $param_graph_dimension
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"rows[*]") do
+      field "dimensions", jmes_path(col_item,"dimensions")
+      field "metrics", jmes_path(col_item,"metrics")
+      field "timestamp", jmes_path(col_item,"timestamp")
+      field "org_id", val(iter_item,"org_id")
+    end
+  end
+end
+
 script "js_six_month_cost_request", type: "javascript" do
   parameters "param_cost_metric", "rs_org_id", "rs_optima_host", "ds_billing_centers", "param_graph_dimension"
   result "request"
@@ -817,7 +810,7 @@ script "js_six_month_cost_request", type: "javascript" do
     }
 
     var request = {
-      auth:  'auth_rs',
+      auth:  'auth_flexera',
       host:  rs_optima_host,
       scheme: 'https',
       verb: 'POST',
@@ -829,6 +822,10 @@ script "js_six_month_cost_request", type: "javascript" do
       body: JSON.stringify(body)
     }
   EOS
+end
+
+datasource "ds_generated_report" do
+  run_script $js_generate_report, $ds_previous_six_month_costs, $param_cost_metric, $ds_report, $param_graph_dimension, $ds_currency_code, $ds_currency_reference, $ds_currency_conversion, $ds_filtered_user_organizations, $param_final_currency
 end
 
 script "js_generate_report", type: "javascript" do
@@ -988,7 +985,7 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_scheduled_report" do
+policy "pol_scheduled_report" do
   validate $ds_generated_report do
     summary_template "Multi-Organization Full Cost Scheduled Report"
     detail_template <<-EOS
@@ -1004,8 +1001,8 @@ policy "policy_scheduled_report" do
       ___
       ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
     EOS
-    escalate $escalation_send_email
-    check eq(0,1)
+    check eq(0, 1)
+    escalate $esc_email
     export "reportData" do
       field "range" do
         label "Range"
@@ -1027,13 +1024,9 @@ end
 # Escalations
 ###############################################################################
 
-escalation "escalation_send_email" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
   email $param_email
 end
-
-###############################################################################
-# Cloud Workflow
-###############################################################################
