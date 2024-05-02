@@ -89,8 +89,8 @@ changed_files.each do |file|
   test = general_textlint?(file); warnings << test if test
 
   # Output final list of failures and warnings
-  fail "## **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
-  warn "## **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
+  fail "### **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
+  warn "### **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
 end
 
 ###############################################################################
@@ -112,8 +112,8 @@ changed_rb_files.each do |file|
   #test = code_rubocop_problems?(file); warn test if test
 
   # Output final list of failures and warnings
-  fail "## **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
-  warn "## **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
+  fail "### **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
+  warn "### **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
 end
 
 ###############################################################################
@@ -132,8 +132,8 @@ changed_py_files.each do |file|
   test = code_python_errors?(file); failures << test if test
 
   # Output final list of failures and warnings
-  fail "## **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
-  warn "## **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
+  fail "### **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
+  warn "### **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
 end
 
 ###############################################################################
@@ -154,8 +154,8 @@ changed_json_files.each do |file|
   test = code_json_errors?(file); failures << test if test
 
   # Output final list of failures and warnings
-  fail "## **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
-  warn "## **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
+  fail "### **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
+  warn "### **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
 end
 
 changed_yaml_files.each do |file|
@@ -172,8 +172,8 @@ changed_yaml_files.each do |file|
   test = code_yaml_errors?(file); failures << test if test
 
   # Output final list of failures and warnings
-  fail "## **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
-  warn "## **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
+  fail "### **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
+  warn "### **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
 end
 
 ###############################################################################
@@ -210,8 +210,8 @@ changed_readme_files.each do |file|
   end
 
   # Output final list of failures and warnings
-  fail "## **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
-  warn "## **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
+  fail "### **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
+  warn "### **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
 end
 
 ###############################################################################
@@ -236,8 +236,8 @@ changed_changelog_files.each do |file|
   end
 
   # Output final list of failures and warnings
-  fail "## **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
-  warn "## **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
+  fail "### **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
+  warn "### **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
 end
 
 ###############################################################################
@@ -262,8 +262,8 @@ changed_misc_md_files.each do |file|
   test = general_bad_markdown?(file); failures << test if test
 
   # Output final list of failures and warnings
-  fail "## **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
-  warn "## **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
+  fail "### **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
+  warn "### **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
 end
 
 ###############################################################################
@@ -440,8 +440,8 @@ changed_pt_files.each do |file|
   end
 
   # Output final list of failures and warnings
-  fail "## **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
-  warn "## **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
+  fail "### **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
+  warn "### **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
 end
 
 ###############################################################################
