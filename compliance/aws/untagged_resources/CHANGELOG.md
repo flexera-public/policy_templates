@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.1.2
+
+- Fixed issue with policy failing in EU/AU Flexera organizations due to invalid API host
+
 ## v5.1.1
 
 - Fix bug for `ReferenceError: 'tag_dimension_tag_keys' is not defined`
