@@ -2,6 +2,7 @@
 
 ## v2.0.0
 
+- Deprecated: This policy is no longer being updated.
 - Updated policy to use internal Flexera API for generating charts. Policy functionality is unchanged.
 - Code cleanup to bring it up to standard
 - Policy now requires a valid Flexera credential

@@ -1,5 +1,9 @@
 # Scheduled Report with Estimates
 
+## Deprecated
+
+This policy is no longer being updated.
+
 ## What It Does
 
 This policy allows you to set up scheduled reports that will provide summaries of cloud cost across all resources in the billing centers you specify as well as estimated costs for the next 3 months, delivered to any email addresses you specify. The policy will report the following:
