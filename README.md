@@ -79,6 +79,7 @@ These templates can generate savings estimates for your environment.
 - [Google Idle IP Address Recommender](./cost/google/idle_ip_address_recommendations)
 - [Google Idle Persistent Disk Recommender](./cost/google/idle_persistent_disk_recommendations)
 - [Google Old Snapshots](./cost/google/old_snapshots)
+- [Google Recommenders](./cost/google/recommender)
 - [Google Rightsize VM Recommender](./cost/google/rightsize_vm_recommendations)
 - [Turbonomic Allocate Virtual Machine Recommendations Google](./cost/turbonomics/allocate_virtual_machines_recommendations/google)
 - [Turbonomic Delete Unattached Volumes Recommendations Google](./cost/turbonomics/delete_unattached_volumes/google)
@@ -123,13 +124,13 @@ These templates can generate savings estimates for your environment.
   - [Azure Untagged Resources](./compliance/azure/azure_untagged_resources)
   - [Azure Untagged Virtual Machines](./compliance/azure/azure_untagged_vms)
 
+- IAM
+
+  - [Azure Policy Audit](./compliance/azure/azure_policy_audit)
+
 - Identity
 
   - [Azure Subscription Access](./compliance/azure/subscription_access)
-
-- Policy
-
-  - [Azure Policy Audit](./compliance/azure/azure_policy_audit)
 
 #### Flexera
 
@@ -335,6 +336,10 @@ These templates can generate savings estimates for your environment.
 
 #### Google
 
+- All
+
+  - [Google Recommenders](./cost/google/recommender)
+
 - Compute
 
   - [Google Committed Use Discount Recommender](./cost/google/cud_recommendations)
@@ -352,7 +357,6 @@ These templates can generate savings estimates for your environment.
 
   - [Google Idle Persistent Disk Recommender](./cost/google/idle_persistent_disk_recommendations)
   - [Google Old Snapshots](./cost/google/old_snapshots)
-  - [Google Recommender Policy](./cost/google/recommender)
   - [Turbonomic Delete Unattached Volumes Recommendations Google](./cost/turbonomics/delete_unattached_volumes/google)
 
 #### Kubecost
@@ -409,7 +413,10 @@ These templates can generate savings estimates for your environment.
   - [Azure Usage Report - Number of Instance Hours Used](./operational/azure/total_instance_hours)
   - [Azure Usage Report - Number of Instance vCPUs Used](./operational/azure/total_instance_vcpus)
   - [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks)
-  - [Expiring Azure Certificates](./operational/azure/azure_certificates)
+
+- PaaS
+
+  - [Azure Expiring Certificates](./operational/azure/azure_certificates)
 
 - Tags
 
@@ -617,9 +624,9 @@ These templates can generate savings estimates for your environment.
   Operational: 24
   SaaS Management: 12
   Security: 74
-:optimization_count: 49
+:optimization_count: 50
 :policy_sets:
-  '': 46
+  '': 43
   AWS Config: 1
   Allocate VMs: 3
   Automation: 1
@@ -632,10 +639,11 @@ These templates can generate savings estimates for your environment.
   Databricks: 1
   Deprecated Resources: 1
   Disallowed Regions: 2
+  Expiring Certificates: 1
   Forecasting: 4
   Hybrid Use Benefit: 5
   IT Asset Management: 5
-  Identity & Access Management: 1
+  Identity & Access Management: 3
   Inefficient Disk Usage: 1
   Instances not running FlexNet Inventory Agent: 2
   Lifecycle Management: 1
@@ -690,20 +698,20 @@ These templates can generate savings estimates for your environment.
 :services:
   '': 13
   AKS: 2
-  All: 2
+  All: 3
   App Service: 1
   Automation: 1
   Cloud Cost Optimization: 18
   CloudTrail: 7
   Common Bill Ingestion: 2
-  Compute: 62
+  Compute: 61
   Config: 1
   DBS: 1
   Databricks: 1
   EBS: 2
   ELB: 3
   FlexNet Manager: 1
-  IAM: 18
+  IAM: 19
   IT Asset Management: 6
   Identity: 1
   Identity & Access Management: 1
@@ -718,14 +726,14 @@ These templates can generate savings estimates for your environment.
   Network Security Group: 2
   Office 365: 1
   Org: 1
-  Policy: 1
+  PaaS: 1
   PostgreSQL: 4
   RDS: 4
   S3: 6
   SQL: 15
   SaaS Manager: 9
   Security: 3
-  Storage: 24
+  Storage: 23
   Storage Accounts: 2
   Tags: 2
   Usage Discount: 6

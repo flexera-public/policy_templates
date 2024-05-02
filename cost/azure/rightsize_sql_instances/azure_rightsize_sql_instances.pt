@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "5.1",
+  version: "5.1.1",
   provider: "Azure",
   service: "SQL",
   policy_set: "Rightsize Database Instances",
@@ -49,8 +49,8 @@ parameter "param_minimum_age" do
   category "Policy Settings"
   label "Minimum Age (Days)"
   description "The minimum age, in days, since a SQL database was created to produce recommendations for it. Set to 0 to ignore age entirely."
-  default 0
   min_value 0
+  default 0
 end
 
 parameter "param_subscriptions_allow_or_deny" do
@@ -128,9 +128,9 @@ parameter "param_stats_lookback" do
   category "Statistics"
   label "Statistic Lookback Period"
   description "How many days back to look at instance metrics to determine if an instance is underutilized or unused. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days."
-  default 30
   min_value 1
   max_value 90
+  default 30
 end
 
 parameter "param_automatic_action" do
@@ -194,7 +194,6 @@ datasource "ds_billing_centers" do
     path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
     ignore_status [403]
   end
   result do
@@ -349,12 +348,12 @@ datasource "ds_azure_sql_databases" do
       field "region", jmes_path(col_item, "location")
       field "type", jmes_path(col_item, "type")
       field "kind", jmes_path(col_item, "kind")
-      field "sku" , jmes_path(col_item, "sku")
+      field "sku", jmes_path(col_item, "sku")
       field "tags", jmes_path(col_item, "tags")
       field "createdTime", jmes_path(col_item, "createdTime")
-      field "resourceGroup", get(4, split(jmes_path(col_item,"id"), "/"))
-      field "subscriptionId",val(iter_item, "id")
-      field "subscriptionName",val(iter_item, "name")
+      field "resourceGroup", get(4, split(jmes_path(col_item, "id"), "/"))
+      field "subscriptionId", val(iter_item, "id")
+      field "subscriptionName", val(iter_item, "name")
     end
   end
 end
@@ -503,7 +502,7 @@ end
 datasource "ds_azure_sql_database_metrics" do
   iterate $ds_azure_sql_databases_region_filtered
   request do
-    run_script $js_azure_sql_database_metrics, val(iter_item,"id"), $param_azure_endpoint, $param_stats_lookback
+    run_script $js_azure_sql_database_metrics, val(iter_item, "id"), $param_azure_endpoint, $param_stats_lookback
   end
   result do
     encoding "json"
@@ -513,7 +512,7 @@ datasource "ds_azure_sql_database_metrics" do
     field "name", val(iter_item, "name")
     field "kind", val(iter_item, "kind")
     field "type", val(iter_item, "type")
-    field "sku" , val(iter_item, "sku")
+    field "sku", val(iter_item, "sku")
     field "tags", val(iter_item, "tags")
     field "resourceGroup", val(iter_item, "resourceGroup")
     field "subscriptionId", val(iter_item, "subscriptionId")
@@ -566,7 +565,7 @@ datasource "ds_azure_sql_resize_map" do
   request do
     verb "GET"
     host "raw.githubusercontent.com"
-    path "/flexera/policy_templates/master/data/azure/sql_service_tier_types.json"
+    path "/flexera-public/policy_templates/master/data/azure/sql_service_tier_types.json"
     header "User-Agent", "RS Policies"
   end
 end
@@ -889,7 +888,7 @@ script "js_downsize_sql_incident", type: "javascript" do
   if (total_underutilized_dbs > 1) { db_verb = "are" }
 
   findings = [
-    "Out of ", total_dbs , " Azure SQL ", db_message, " analyzed, ",
+    "Out of ", total_dbs, " Azure SQL ", db_message, " analyzed, ",
     total_underutilized_dbs, " (", underutilized_dbs_percentage,
     ") ", db_verb, " underutilized and recommended for downsizing. "
   ].join('')
@@ -927,14 +926,30 @@ script "js_downsize_sql_incident", type: "javascript" do
 
   // Dummy entry to ensure validation runs at least once
   result.push({
-    id: "",                 region: "",                resourceName: "",
-    resourceKind: "",       resourceType: "",          sku: "",
-    tags: "",               resourceGroup: "",         accountID: "",
-    accountName: "",        recommendationType: "",    recommendationDetails: "",
-    newResourceType: "",    cpuAverage: "",            lookbackPeriod: "",
-    threshold: "",          policy_name: "",           savings: "",
-    savingsCurrency: "",    service: "",               platform: "",
-    createdTime: "",        total_savings: "",         message: ""
+    id: "",
+    region: "",
+    resourceName: "",
+    resourceKind: "",
+    resourceType: "",
+    sku: "",
+    tags: "",
+    resourceGroup: "",
+    accountID: "",
+    accountName: "",
+    recommendationType: "",
+    recommendationDetails: "",
+    newResourceType: "",
+    cpuAverage: "",
+    lookbackPeriod: "",
+    threshold: "",
+    policy_name: "",
+    savings: "",
+    savingsCurrency: "",
+    service: "",
+    platform: "",
+    createdTime: "",
+    total_savings: "",
+    message: ""
   })
 
   result[0]['total_savings'] = savings_message
@@ -1007,6 +1022,7 @@ script "js_unused_sql_incident", type: "javascript" do
         policy_name: db['policy_name'],
         savings: parseFloat(savings.toFixed(3)),
         savingsCurrency: ds_currency['symbol'],
+        newResourceType: "Delete Instance",
         service: "Microsoft.Sql",
         platform: "Azure SQL Database",
         total_savings: "",
@@ -1029,7 +1045,7 @@ script "js_unused_sql_incident", type: "javascript" do
   if (total_unused_dbs > 1) { db_verb = "are" }
 
   findings = [
-    "Out of ", total_dbs , " Azure SQL ", db_message, " analyzed, ",
+    "Out of ", total_dbs, " Azure SQL ", db_message, " analyzed, ",
     total_unused_dbs, " (", unused_dbs_percentage,
     ") ", db_verb, " unused and recommended for deletion. "
   ].join('')
@@ -1058,13 +1074,27 @@ script "js_unused_sql_incident", type: "javascript" do
 
   // Dummy entry to ensure validation runs at least once
   result.push({
-    id: "",                region: "",                resourceName: "",
-    resourceKind: "",      resourceType: "",          sku: "",
-    tags: "",              resourceGroup: "",         accountID: "",
-    accountName: "",       recommendationType: "",    recommendationDetails: "",
-    lookbackPeriod: "",    threshold: "",             policy_name: "",
-    savings: "",           savingsCurrency: "",       service: "",
-    platform: "",          createdTime: "",           total_savings: "",
+    id: "",
+    region: "",
+    resourceName: "",
+    resourceKind: "",
+    resourceType: "",
+    sku: "",
+    tags: "",
+    resourceGroup: "",
+    accountID: "",
+    accountName: "",
+    recommendationType: "",
+    recommendationDetails: "",
+    lookbackPeriod: "",
+    threshold: "",
+    policy_name: "",
+    savings: "",
+    savingsCurrency: "",
+    service: "",
+    platform: "",
+    createdTime: "",
+    total_savings: "",
     message: ""
   })
 
@@ -1103,6 +1133,10 @@ policy "pol_azure_sql_utilization" do
       end
       field "resourceName" do
         label "Resource Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+        path "id"
       end
       field "tags" do
         label "Resource Tags"
@@ -1189,6 +1223,10 @@ policy "pol_azure_sql_utilization" do
       field "resourceName" do
         label "Resource Name"
       end
+      field "resourceID" do
+        label "Resource ID"
+        path "id"
+      end
       field "tags" do
         label "Resource Tags"
       end
@@ -1218,6 +1256,9 @@ policy "pol_azure_sql_utilization" do
       field "skuCapacity" do
         label "SKU - Capacity"
         path "sku.capacity"
+      end
+      field "newResourceType" do
+        label "Recommended Capacity"
       end
       field "savings" do
         label "Estimated Monthly Savings"
@@ -1274,13 +1315,15 @@ define downsize_instances($data, $param_azure_endpoint) return $all_responses do
   $$all_responses = []
 
   foreach $instance in $data do
-    sub on_error: handle_error() do
-      call downsize_instance($instance, $param_azure_endpoint) retrieve $downsize_response
+    if $instance["newResourceType"] != "Delete Instance"
+      sub on_error: handle_error() do
+        call downsize_instance($instance, $param_azure_endpoint) retrieve $downsize_response
+      end
     end
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -1331,7 +1374,7 @@ define delete_instances($data, $param_azure_endpoint) return $all_responses do
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -1387,7 +1430,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
     header "Api-Version", "1.0"
   end
   result do

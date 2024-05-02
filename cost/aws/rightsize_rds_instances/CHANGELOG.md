@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.3.1
+
+- Unused RDS Instances incident now includes a `Recommended Instance Size` field with a value of `Terminate RDS Instance` for ease of analyzing recommendations from the Flexera Optimization dashboard
+
 ## v5.3
 
 - Fixed issue with invalid API endpoint that caused policy to not work in Flexera APAC.
