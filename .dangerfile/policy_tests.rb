@@ -1225,7 +1225,7 @@ def policy_outdated_links?(file)
     end
   end
 
-  fail_message = "Invalid links found in datasources:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "Invalid links found:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
