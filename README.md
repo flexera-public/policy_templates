@@ -123,13 +123,13 @@ These templates can generate savings estimates for your environment.
   - [Azure Untagged Resources](./compliance/azure/azure_untagged_resources)
   - [Azure Untagged Virtual Machines](./compliance/azure/azure_untagged_vms)
 
+- IAM
+
+  - [Azure Policy Audit](./compliance/azure/azure_policy_audit)
+
 - Identity
 
   - [Azure Subscription Access](./compliance/azure/subscription_access)
-
-- Policy
-
-  - [Azure Policy Audit](./compliance/azure/azure_policy_audit)
 
 #### Flexera
 
@@ -409,7 +409,10 @@ These templates can generate savings estimates for your environment.
   - [Azure Usage Report - Number of Instance Hours Used](./operational/azure/total_instance_hours)
   - [Azure Usage Report - Number of Instance vCPUs Used](./operational/azure/total_instance_vcpus)
   - [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks)
-  - [Expiring Azure Certificates](./operational/azure/azure_certificates)
+
+- PaaS
+
+  - [Azure Expiring Certificates](./operational/azure/azure_certificates)
 
 - Tags
 
@@ -619,7 +622,7 @@ These templates can generate savings estimates for your environment.
   Security: 74
 :optimization_count: 49
 :policy_sets:
-  '': 46
+  '': 43
   AWS Config: 1
   Allocate VMs: 3
   Automation: 1
@@ -632,10 +635,11 @@ These templates can generate savings estimates for your environment.
   Databricks: 1
   Deprecated Resources: 1
   Disallowed Regions: 2
+  Expiring Certificates: 1
   Forecasting: 4
   Hybrid Use Benefit: 5
   IT Asset Management: 5
-  Identity & Access Management: 1
+  Identity & Access Management: 3
   Inefficient Disk Usage: 1
   Instances not running FlexNet Inventory Agent: 2
   Lifecycle Management: 1
@@ -696,14 +700,14 @@ These templates can generate savings estimates for your environment.
   Cloud Cost Optimization: 18
   CloudTrail: 7
   Common Bill Ingestion: 2
-  Compute: 62
+  Compute: 61
   Config: 1
   DBS: 1
   Databricks: 1
   EBS: 2
   ELB: 3
   FlexNet Manager: 1
-  IAM: 18
+  IAM: 19
   IT Asset Management: 6
   Identity: 1
   Identity & Access Management: 1
@@ -718,7 +722,7 @@ These templates can generate savings estimates for your environment.
   Network Security Group: 2
   Office 365: 1
   Org: 1
-  Policy: 1
+  PaaS: 1
   PostgreSQL: 4
   RDS: 4
   S3: 6
