@@ -36,6 +36,7 @@ default_child_policy_template_files = [
   "../../security/aws/ebs_unencrypted_volumes/aws_unencrypted_volumes.pt",
   "../../security/aws/rds_publicly_accessible/aws_publicly_accessible_rds_instances.pt",
   "../../security/aws/public_buckets/aws_public_buckets.pt",
+  "../../cost/aws/underutilized_iops_volumes/aws_underutilized_iops_volumes.pt",
   # Azure Policy Templates
   "../../compliance/azure/azure_disallowed_regions/azure_disallowed_regions.pt",
   "../../compliance/azure/azure_policy_audit/azure_policy_audit.pt",

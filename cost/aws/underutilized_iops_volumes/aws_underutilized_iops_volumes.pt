@@ -1,0 +1,482 @@
+name "AWS Underutilized Provisioned IOPS EBS Volumes"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks inefficient EBS disk utilization using provided IOPS Throughput thresholds. EBS volumes matching the criteria can be resized after user approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/instance_cloudwatch_utilization/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "low"
+category "Cost"
+default_frequency "weekly"
+info(
+  version: "0.1.0",
+  provider: "AWS",
+  service: "EC2",
+  policy_set: "Rightsize Storage"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_allowed_regions" do
+  type "list"
+  label "Allowed Regions"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  description "A list of allowed regions. See the README for more details"
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+parameter "param_aws_account_number" do
+  type "string"
+  label "Account Number"
+  description "The account number for AWS STS Cross Account Roles."
+  default ""
+end
+
+parameter "param_avg_iops" do
+  type "number"
+  label "Average IOPS utilization percentage"
+  description "Set percentage threshold of EBS IOPS Utilization. Set to -1 to ignore IOPS utilization"
+  default 40
+  min_value -1
+  max_value 100
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+#authenticate with AWS
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+  aws_account_number $param_aws_account_number
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "aws_pagination_xml" do
+  get_page_marker do
+    body_path "//DescribeInstancesResponse/nextToken"
+  end
+  set_page_marker do
+    query "NextToken"
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+#GET CALLER IDENTITY TO RETURN DETAILS ABOUT IAM ROLE USED TO CALL THE OPERATION (AWS STS)
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account",xpath(col_item, "Account")
+    end
+  end
+end
+
+#GET LIST OF REGIONS THAT ARE OPTED-IN OR OPTED-IN-NOT-REQUIRED
+datasource "ds_regions_list" do
+  # https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeRegions.html
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "ec2.amazonaws.com"
+    path "/"
+    query "Action", "DescribeRegions"
+    query "Version", "2016-11-15"
+    query "Filter.1.Name", "opt-in-status"
+    query "Filter.1.Value.1", "opt-in-not-required"
+    query "Filter.1.Value.2", "opted-in"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
+      field "region", xpath(col_item, "regionName")
+    end
+  end
+end
+
+#FILTER FOR ONLY SCP-ENABLED REGIONS (AS SPECIFIED BY ALLOWED REGIONS PARAMETER)
+datasource "ds_scp_regions" do
+  run_script $js_get_scp_regions, $param_allowed_regions, $ds_regions_list
+end
+
+script "js_get_scp_regions", type:"javascript" do
+  parameters "user_entered_regions", "all_regions"
+  result "regions"
+  code <<-EOS
+    if(_.isEmpty(user_entered_regions)){
+      regions = all_regions;
+    }else{
+      //Filter unique regions
+      var uniqueRegions = _.uniq(user_entered_regions);
+      var all_regions_list = [];
+      all_regions.forEach(function(all_region){
+        all_regions_list.push(all_region.region)
+      })
+
+      //Filter valid regions
+      var valid_regions = [];
+      _.map(uniqueRegions, function(uniqueRegion){
+        if(all_regions_list.indexOf(uniqueRegion) > -1){
+          valid_regions.push({"region": uniqueRegion})
+        }
+      })
+
+      //Throw an error if no valid regions found
+      if (_.isEmpty(valid_regions)) {
+        regions = all_regions;
+      }else{
+        regions = valid_regions
+      }
+    }
+  EOS
+end
+
+#GET LIST OF EBS VOLUMES ACROSS ALL FILTERED REGIONS
+#https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstances.html
+datasource "ds_aws_ebs_volumes" do
+  iterate $ds_scp_regions
+  request do
+    verb "GET"
+    auth $auth_aws
+    pagination $aws_pagination_xml
+    host join(["ec2.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/"
+    query "Action", "DescribeVolumes"
+    query "Version", "2016-11-15"
+    query "Filter.1.Name", "attachment.status"
+    query "Filter.1.Value.1", "attached"
+    query "Filter.2.Name", "status"
+    query "Filter.2.Value.1", "in-use"
+    query "Filter.3.Name", "volume-type" # Filter on Provisioned IOPS Volumes
+    query "Filter.3.Value.1", "io1"
+    query "Filter.3.Value.2", "io2"
+    header "User-Agent", "RS Policies"
+    header "Content-Type", "text/xml"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeVolumesResponse/volumeSet/item", "array") do
+      field "region",val(iter_item, "region")
+      field "volumeId", xpath(col_item, "volumeId")
+      field "iops", xpath(col_item, "iops")
+      field "size", xpath(col_item, "size")
+      field "status", xpath(col_item, "status")
+      field "attachmentSet" do
+        collect xpath(col_item, "attachmentSet/item", "array") do
+          field "instanceId", xpath(col_item, "instanceId")
+          field "attachmentStatus", xpath(col_item, "status")
+        end
+      end
+      field "volumeType", xpath(col_item, "volumeType")
+      field "tags" do
+        collect xpath(col_item,"tagSet/item","array") do
+          field "key", xpath(col_item, "key")
+          field "value", xpath(col_item, "value")
+        end
+      end
+      field "throughput", xpath(col_item, "throughput") #Unit: MiB/s
+    end
+  end
+end
+
+#GET EBS READ OPERATIONS (FOR IOPS) METRICS FROM CLOUDWATCH - (COULD REPLACE WITH BATCH CALL?)
+datasource "ds_cloudwatch_ebs_read_iops_usage" do
+  iterate $ds_aws_ebs_volumes
+  request do
+    run_script $js_get_cloudwatch_read_ops, val(iter_item, "region"), val(iter_item, "volumeId")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
+      field "region", val(iter_item, "region")
+      field "volumeId", val(iter_item, "volumeId")
+      field "size", val(iter_item, "size")
+      field "status", val(iter_item, "status")
+      field "volumeType", val(iter_item, "volumeType")
+      field "iops", val(iter_item, "iops")
+      field "throughput", val(iter_item, "throughput")
+      field "tags", val(iter_item, "tags")
+      field "attachmentSet", val(iter_item, "attachmentSet")
+      field "readOpsMaximum", jmes_path(col_item, "Maximum")
+      field "readOpsAverage", jmes_path(col_item, "Average")
+      field "readOpsSampleCount", jmes_path(col_item, "SampleCount")  #Sample Count in this case represents Metric Granularity (1 minute in this case)
+      field "readOpsSum", jmes_path(col_item, "Sum")                  #Sum is total read ops for this period
+      field "readOpsUnit", jmes_path(col_item, "Unit")
+    end
+  end
+end
+
+script "js_get_cloudwatch_read_ops", type: "javascript" do
+  result "results"
+  parameters "region", "volume_id"
+  code <<-EOS
+  var end_date = new Date().toISOString()
+  var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
+
+  results = {
+    "auth": "auth_aws",
+    "host": "monitoring." + region + ".amazonaws.com",
+    "verb": "GET",
+    "path": "/",
+    "headers": {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json",
+      "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
+      "Accept": "application/json",
+      "Content-Encoding": "amz-1.0"
+    },
+    "query_params": {
+      "Action": "GetMetricStatistics",
+      "Version": "2010-08-01",
+      "Namespace": "AWS/EBS"
+      "MetricName": "VolumeReadOps",
+      "Dimensions.member.1.Name": "VolumeId",
+      "Dimensions.member.1.Value": volume_id,
+      "StartTime": start_date,
+      "EndTime": end_date,
+      "Period": "2592000",
+      "Statistics.member.1": "Average",
+      "Statistics.member.2": "Maximum",
+      "Statistics.member.3": "SampleCount",
+      "Statistics.member.4": "Sum"
+    }
+  }
+  EOS
+end
+
+#GET EBS WRITE OPERATIONS (FOR IOPS) METRICS FROM CLOUDWATCH - (COULD REPLACE WITH BATCH CALL?)
+datasource "ds_cloudwatch_ebs_write_iops_usage" do
+  iterate $ds_aws_ebs_volumes
+  request do
+    run_script $js_get_cloudwatch_write_ops, val(iter_item, "region"), val(iter_item, "volumeId")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
+      field "region", val(iter_item, "region")
+      field "volumeId", val(iter_item, "volumeId")
+      field "size", val(iter_item, "size")
+      field "status", val(iter_item, "status")
+      field "volumeType", val(iter_item, "volumeType")
+      field "iops", val(iter_item, "iops")
+      field "throughput", val(iter_item, "throughput")
+      field "tags", val(iter_item, "tags")
+      field "attachmentSet", val(iter_item, "attachmentSet")
+      field "writeOpsMaximum", jmes_path(col_item, "Maximum")
+      field "writeOpsAverage", jmes_path(col_item, "Average")
+      field "writeOpsSampleCount", jmes_path(col_item, "SampleCount")
+      field "writeOpsSum", jmes_path(col_item, "Sum")
+      field "writeOpsUnit", jmes_path(col_item, "Unit")
+    end
+  end
+end
+
+script "js_get_cloudwatch_write_ops", type: "javascript" do
+  result "results"
+  parameters "region", "volume_id"
+  code <<-EOS
+  var end_date = new Date().toISOString()
+  var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
+
+  results = {
+    "auth": "auth_aws",
+    "host": "monitoring." + region + ".amazonaws.com",
+    "verb": "GET",
+    "path": "/",
+    "headers": {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json",
+      "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
+      "Accept": "application/json",
+      "Content-Encoding": "amz-1.0"
+    },
+    "query_params": {
+      "Action": "GetMetricStatistics",
+      "Version": "2010-08-01",
+      "Namespace": "AWS/EBS"
+      "MetricName": "VolumeWriteOps",
+      "Dimensions.member.1.Name": "VolumeId",
+      "Dimensions.member.1.Value": volume_id,
+      "StartTime": start_date,
+      "EndTime": end_date,
+      "Period": "2592000",
+      "Statistics.member.1": "Average",
+      "Statistics.member.2": "Maximum",
+      "Statistics.member.3": "SampleCount",
+      "Statistics.member.4": "Sum"
+    }
+  }
+  EOS
+end
+
+datasource "ds_combined_cloudwatch_data" do
+  run_script $js_combine_cloudwatch_data, $ds_cloudwatch_ebs_read_iops_usage, $ds_cloudwatch_ebs_write_iops_usage
+end
+
+script "js_combine_cloudwatch_data", type: "javascript" do
+  parameters "ds_cloudwatch_read_ops", "ds_cloudwatch_write_ops"
+  result "period"
+  code <<-EOS
+
+  //Group data by Volume ID
+  var read_ops_grouped_by_vol_id = _.groupBy(ds_cloudwatch_read_ops, "volumeId")
+  var write_ops_grouped_by_vol_id = _.groupBy(ds_cloudwatch_write_ops, "volumeId")
+  var volumes = _.keys( read_ops_grouped_by_vol_id, "volumeId" )
+
+  //Calculate Average Read Ops and Average Write Ops over period
+  period = []
+  _.each(volumes, function(volume){
+    var total_read_ops = 0, total_read_data_points = 0
+    var total_write_ops = 0, total_write_data_points = 0
+
+    _.each(read_ops_grouped_by_vol_id[volume], function(read_ops_data){
+      total_read_ops += read_ops_data.readOpsSum
+      total_read_data_points += read_ops_data.readOpsSampleCount
+    })
+
+    _.each(write_ops_grouped_by_vol_id[volume], function(write_ops_data){
+      total_write_ops += write_ops_data.writeOpsSum
+      total_write_data_points += write_ops_data.writeOpsSampleCount
+    })
+
+    var iops_average = (( total_read_ops / total_read_data_points ) / 60) + (( total_write_ops / total_write_data_points ) / 60)
+    //Could neaten this up (rather than using _.last)
+    var iops_utilization_percentage = ((iops_average / ( _.last(read_ops_grouped_by_vol_id[volume]).iops )) * 100).toFixed(2)
+
+    //Create string for Tags
+    var existing_tags = ""
+    _.each( _.last(read_ops_grouped_by_vol_id[volume]).tags, function(tag){
+      if (tag != null){
+        if( existing_tags == "" ){ existing_tags += tag.key + "=" + tag.value }
+        else{ existing_tags += ", " + tag.key + "=" + tag.value }
+      }
+    })
+
+    //Create string for Attachment Set Statuses
+    var attachment_statuses = ""
+    _.each( _.last(read_ops_grouped_by_vol_id[volume]).attachmentSet, function(attachment){
+      if (attachment != null){
+        if( attachment_statuses == "" ){ attachment_statuses += attachment.instanceId + "=" + attachment.attachmentStatus }
+        else{ attachment_statuses += ", " + attachment.InstanceId + "=" + attachment.attachmentStatus }
+      }
+    })
+
+    period.push({
+      "volumeId": volume,
+      "region": _.last(read_ops_grouped_by_vol_id[volume]).region,
+      "size": _.last(read_ops_grouped_by_vol_id[volume]).size,
+      "status": _.last(read_ops_grouped_by_vol_id[volume]).status,
+      "attachmentStatus": attachment_statuses,
+      "volumeType": _.last(read_ops_grouped_by_vol_id[volume]).volumeType,
+      "iops": _.last(read_ops_grouped_by_vol_id[volume]).iops,
+      "throughput": _.last(read_ops_grouped_by_vol_id[volume]).throughput,
+      "iopsAverage": iops_average,
+      "iopsUtilizationPercentage": iops_utilization_percentage,
+      "tags": existing_tags
+    })
+  })
+  EOS
+end
+
+#FILTER IOPS UTILIZATION PERCENTAGE AGAINST IOPS UTILIZATION PARAMETER ("param_avg_iops")
+datasource "ds_filtered_disk_utilization_data" do
+  run_script $js_filter_disk_utilization_data, $ds_combined_cloudwatch_data, $param_avg_iops
+end
+
+script "js_filter_disk_utilization_data", type: "javascript" do
+  parameters "ds_combined_cloudwatch_data", "param_avg_iops"
+  result "result"
+  code <<-EOS
+    var result = ds_combined_cloudwatch_data
+
+    if( param_avg_iops > -1 ){
+      result = _.filter(ds_combined_cloudwatch_data, function(util_data){ return util_data.iopsUtilizationPercentage <= param_avg_iops })
+    }
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_utilization" do
+  #validate $ds_aws_ebs_volumes do
+  validate $ds_filtered_disk_utilization_data do
+    summary_template "EBS Volumes"
+    check eq(size(data),0)
+    export do
+      resource_level true
+      field "id" do
+        label "Volume ID"
+        path "volumeId"
+      end
+      field "size" do
+        label "Volume Size (GB)"
+      end
+      field "status" do
+        label "Volume Status"
+      end
+      field "attachmentStatus" do
+        label "Volume Attachment Status"
+        path "attachmentStatus"
+      end
+      field "volumeType" do
+        label "Volume Type"
+      end
+      field "iops" do
+        label "I/O Operations per Second Support"
+      end
+      field "iopsAverage" do
+        label "Actual I/O Operations per Second Average Usage"
+      end
+      #field "throughput" do
+      #  label "Throughput Support (MiB/s)"
+      #end
+      field "iopsUtilizationPercentage" do
+        label "IOPS Utilization (%)"
+      end
+      field "tags" do
+        label "Tags"
+      end
+      #field "readOpsAverage" do
+      #  label "Read Operations Average (per minute)"
+      #end
+      #field "readOpsSampleCount" do
+      #  label "Read Operations Sample Count (Minute Granularity)"
+      #end
+      #field "readOpsSum" do
+      #  label "Read Operations Sum"
+      #end
+    end
+  end
+end
