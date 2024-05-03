@@ -386,9 +386,9 @@ These templates can generate savings estimates for your environment.
   - [AWS Usage Report - Number of Instance Hours Used](./operational/aws/total_instance_hours)
   - [AWS Usage Report - Number of Instance vCPUs Used](./operational/aws/total_instance_vcpus)
 
-- Lambda
+- PaaS
 
-  - [AWS Lambda Functions with high error rate](./operational/aws/lambda_functions_with_high_error_rate)
+  - [AWS Lambda Functions With High Error Rate](./operational/aws/lambda_functions_with_high_error_rate)
 
 - RDS
 
@@ -626,7 +626,7 @@ These templates can generate savings estimates for your environment.
   Security: 74
 :optimization_count: 50
 :policy_sets:
-  '': 43
+  '': 42
   AWS Config: 1
   Allocate VMs: 3
   Automation: 1
@@ -646,6 +646,7 @@ These templates can generate savings estimates for your environment.
   Identity & Access Management: 3
   Inefficient Disk Usage: 1
   Instances not running FlexNet Inventory Agent: 2
+  Lambda: 1
   Lifecycle Management: 1
   Long Running Instances: 2
   Long Stopped Instances: 3
@@ -717,7 +718,6 @@ These templates can generate savings estimates for your environment.
   Identity & Access Management: 1
   KMS: 1
   Kubernetes: 2
-  Lambda: 1
   Managed Disks: 1
   Marketplace: 2
   MySQL: 2
@@ -726,7 +726,7 @@ These templates can generate savings estimates for your environment.
   Network Security Group: 2
   Office 365: 1
   Org: 1
-  PaaS: 1
+  PaaS: 2
   PostgreSQL: 4
   RDS: 4
   S3: 6

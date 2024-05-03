@@ -1,14 +1,14 @@
-name "AWS Lambda Functions with high error rate Meta Parent"
+name "AWS Lambda Functions With High Error Rate Meta Parent"
 rs_pt_ver 20180301
 type "policy"
-short_description "Applies and manages \"child\" [AWS Lambda Functions with high error rate](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/lambda_functions_with_high_error_rate) Policies."
+short_description "Applies and manages \"child\" [AWS Lambda Functions With High Error Rate](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/lambda_functions_with_high_error_rate) Policies."
 severity "low"
 category "Cost"
 tenancy "single"
 default_frequency "15 minutes"
 info(
   provider: "AWS",
-  version: "4.2.1", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "5.0.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "false"
 )
 
@@ -62,44 +62,64 @@ end
 parameter "param_template_source" do
   type "string"
   label "Child Policy Template Source"
-  description "By default, will use the \"AWS Lambda Functions with high error rate\" Policy Template from Catalog.  Optionally, you can use the \"AWS Lambda Functions with high error rate\" Policy Template uploaded in the current Flexera Project."
+  description "By default, will use the \"AWS Lambda Functions With High Error Rate\" Policy Template from Catalog.  Optionally, you can use the \"AWS Lambda Functions With High Error Rate\" Policy Template uploaded in the current Flexera Project."
   default "Published Catalog Template"
   allowed_values "Published Catalog Template", "Uploaded Template"
 end
 
 ## Child Policy Parameters
-parameter "param_allowed_regions_allow_or_deny" do
+parameter "param_regions_allow_or_deny" do
   type "string"
-  category "Policy Settings"
+  category "Filters"
   label "Allow/Deny Regions"
-  description "Allow or Deny entered regions. See the README for more details"
+  description "Allow or Deny entered regions. See the README for more details."
   allowed_values "Allow", "Deny"
   default "Allow"
 end
 
-parameter "param_allowed_regions" do
+parameter "param_regions_list" do
   type "list"
-  category "Policy Settings"
-  label "Regions"
-  description "A list of allowed or denied regions. See the README for more details"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
   allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   default []
 end
 
-parameter "param_exclude_tags" do
+parameter "param_exclusion_tags" do
   type "list"
-  category "Policy Settings"
-  label "Ignore Tags"
-  description "List of one or more Tags that will exclude Classic Load Balancer from actions being taken. Format: Key=Value"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
   default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
 end
 
 parameter "param_error_rate" do
   type "number"
-  category "Policy Settings"
+  category "Statistics"
   label "Error Rate Percentage"
-  description "Error Rate Percentage To Trigger On"
+  description "Percentage of requests that result in an error to include a Lambda function in the results."
+  min_value 1
   default 10
+end
+
+parameter "param_stats_lookback" do
+  type "number"
+  category "Statistics"
+  label "Statistic Lookback Period (Hours)"
+  description "How many hours back to look at CloudWatch data for AWS Lambda. This value cannot be set higher than 2160 because AWS does not retain metrics for longer than 90 days."
+  min_value 1
+  max_value 2160
+  default 1
 end
 
 ###############################################################################
@@ -212,7 +232,7 @@ datasource "ds_published_child_policy_information" do
   result do
     encoding "json"
     # Select the published policy that is published by "support@flexera.com" and matches the name of the child policy template
-    collect jq(response, '.items[] | select(.name == "AWS Lambda Functions with high error rate" and .created_by.email == "support@flexera.com")' ) do
+    collect jq(response, '.items[] | select(.name == "AWS Lambda Functions With High Error Rate" and .created_by.email == "support@flexera.com")' ) do
       field "name", jmes_path(col_item, "name")
       field "href", jmes_path(col_item, "href")
       field "short_description", jmes_path(col_item, "short_description")
@@ -231,7 +251,7 @@ datasource "ds_project_child_policy_information" do
   result do
     encoding "json"
     # Select the uploaded policy that matches the name of the child policy template
-    collect jq(response, '.items[] | select(.name == "AWS Lambda Functions with high error rate")' ) do
+    collect jq(response, '.items[] | select(.name == "AWS Lambda Functions With High Error Rate")' ) do
       field "name", jmes_path(col_item, "name")
       field "href", jmes_path(col_item, "href")
       field "short_description", jmes_path(col_item, "short_description")
@@ -763,19 +783,19 @@ datasource "ds_child_incident_details" do
   end
 end
 
-datasource "ds_merged_results_combined_incidents" do
-  run_script $js_ds_merged_results_combined_incidents, $ds_child_incident_details
+datasource "ds_incident_combined_incidents" do
+  run_script $js_ds_incident_combined_incidents, $ds_child_incident_details
 end
 
-script "js_ds_merged_results_combined_incidents", type: "javascript" do
+script "js_ds_incident_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-EOS
   result = []
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
-    // If the incident summary contains "AWS Functions over error percentage" then include it in the filter result
-    if (s.indexOf("AWS Functions over error percentage") > -1) {
+    // If the incident summary contains "AWS Lambda Functions With High Error Rate Found" then include it in the filter result
+    if (s.indexOf("AWS Lambda Functions With High Error Rate Found") > -1) {
       _.each(incident["violation_data"], function(violation) {
         violation["incident_id"] = incident["id"];
         result.push(violation);
@@ -794,34 +814,55 @@ end
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
-    # Consolidated incident for AWS Functions over error percentage
-  validate $ds_merged_results_combined_incidents do
-    summary_template "Consolidated Incident: {{ len data }} AWS Functions over error percentage"
+    # Consolidated incident for AWS Lambda Functions With High Error Rate Found
+  validate $ds_incident_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} AWS Lambda Functions With High Error Rate Found"
     escalate $esc_email
     
     check eq(size(data), 0)
     export do
       resource_level true
-      field "accountId" do
-        label "AWS Account Id"
+      field "accountID" do
+        label "Account ID"
       end
-      field "id" do
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Function ARN"
+      end
+      field "resourceName" do
         label "Function Name"
+      end
+      field "description" do
+        label "Description"
       end
       field "region" do
         label "Region"
       end
+      field "tags" do
+        label "tags"
+      end
       field "invocations" do
         label "Invocations"
       end
-      field "error_count" do
+      field "errors" do
         label "Errors"
       end
-      field "error_percentage" do
-        label "Error Percentage"
+      field "error_rate" do
+        label "Error Rate (%)"
       end
-      field "tags" do
-        label "tags"
+      field "version" do
+        label "Version"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Hours)"
+      end
+      field "id" do
+        label "ID"
       end
       field "incident_id" do
         label "Child Incident ID"
