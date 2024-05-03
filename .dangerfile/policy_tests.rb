@@ -1177,9 +1177,9 @@ def policy_bad_comma_spacing?(file)
   return false
 end
 
-### Github Source File Test
-# Return false if all datasources pointed to assets at raw.githubusercontent.com are valid
-def policy_bad_github_datasources?(file)
+### Outdated Links
+# Return false if no outdated links are found
+def policy_outdated_links?(file)
   # Store contents of file for direct analysis
   policy_code = File.read(file)
 
@@ -1191,6 +1191,10 @@ def policy_bad_github_datasources?(file)
 
   policy_code.each_line.with_index do |line, index|
     line_number = index + 1
+
+    if line.include?("https://image-charts.com")
+      fail_message += "Line #{line_number.to_s}: Direct link to `image-charts.com` found. Please replace `https://image-charts.com/chart?` with `https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id={{ rs_org_id }}&rs_project_id={{ rs_project_id }}&`.\n\n"
+    end
 
     if line.start_with?("datasource ")
       within_datasource = true
@@ -1221,7 +1225,7 @@ def policy_bad_github_datasources?(file)
     end
   end
 
-  fail_message = "Invalid file paths found in datasources:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "Invalid links found:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
