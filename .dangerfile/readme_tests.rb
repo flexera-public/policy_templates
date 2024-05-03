@@ -42,7 +42,7 @@ def readme_missing_sections?(file)
     policy_actions_found = true if line.start_with?("## Policy Actions")
     prerequisites_found = true if line.start_with?("## Prerequisites")
     supported_clouds_found = true if line.start_with?("## Supported Clouds")
-    cost_found = true if line.start_with?("## Cost")
+    cost_found = true if line.strip == "## Cost"
   end
 
   fail_message += "```# Policy Name```\n" if !name_found
