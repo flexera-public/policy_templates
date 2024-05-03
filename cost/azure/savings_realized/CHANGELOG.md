@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.9
+
+- Added parameter to select between showing the currency code or the currency symbol in the incident report
+
 ## v3.8
 
 - Added support for organizations with Microsoft MCA accounts

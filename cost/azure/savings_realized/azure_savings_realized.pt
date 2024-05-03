@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "monthly"
 info(
-  version: "3.8",
+  version: "3.9",
   provider: "Azure",
   service: "Compute",
   policy_set: "Savings Realized"
@@ -56,6 +56,15 @@ parameter "param_chart_type" do
   description "The type of bar chart to view savings realized data by"
   allowed_values "Grouped Bar Chart", "Stacked Bar Chart"
   default "Grouped Bar Chart"
+end
+
+parameter "param_chart_currency" do
+  type "string"
+  category "Policy Settings"
+  label "Chart currency format"
+  description "The format to show the currency in the chart"
+  allowed_values "Symbol (e.g. $)", "Code (e.g. USD)"
+  default "Symbol (e.g. $)"
 end
 
 ###############################################################################
@@ -730,6 +739,14 @@ script "js_savings_realized", type: "javascript" do
 EOS
 end
 
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
 datasource "ds_currency_code" do
   request do
     auth $auth_flexera
@@ -747,13 +764,25 @@ datasource "ds_currency_code" do
 end
 
 datasource "ds_chart_data" do
-  run_script $js_chart_data, $ds_savings_realized, $ds_applied_policy, $ds_currency_code, $param_chart_type
+  run_script $js_chart_data, $ds_savings_realized, $ds_applied_policy, $ds_currency_reference, $ds_currency_code, $param_chart_type, $param_chart_currency
 end
 
 script "js_chart_data", type: "javascript" do
-  parameters "ds_savings_realized", "ds_applied_policy", "ds_currency_code", "param_chart_type"
+  parameters "ds_savings_realized", "ds_applied_policy", "ds_currency_reference", "ds_currency_code", "param_chart_type", "param_chart_currency"
   result "result"
   code <<-'EOS'
+  // Get currency code or symbol
+  currency_data = ds_currency_reference[ds_currency_code.value]
+  currency = currency_data.code
+  switch (param_chart_currency) {
+    case "Code (e.g. USD)":
+      currency = currency_data.code
+      break;
+    case "Symbol (e.g. $)":
+      currency = currency_data.symbol_native
+      break;
+  }
+
   // Create report data
   result = []
   savings_by_month = _.groupBy(ds_savings_realized, 'month')
@@ -831,7 +860,7 @@ script "js_chart_data", type: "javascript" do
       chart_image: encodeURI("chof=.png"),
       chart_y_axis: encodeURI("chxt=y,x"),
       chart_axis_label: encodeURI(chart_axis_labels),
-      chart_axis_format: encodeURI("chxs=0N*c" + ds_currency_code.value + "0sz*|1,min40"),
+      chart_axis_format: encodeURI("chxs=0N" + currency + " *0sz*|1,min40"),
       chart_line_style: encodeURI("chls=3|3|3|3|3|3|3|3|3|3|3"),
       chart_line_color: encodeURI("chco=1f5ab8,55b81f,198038,b28600,1192e8,009d9a,005d5d,007d79"),
       chart_data_scale: encodeURI("chds=a"),
