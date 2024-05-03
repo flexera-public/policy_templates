@@ -98,7 +98,7 @@ def readme_sections_out_of_order?(file)
     policy_actions_found = true if line.start_with?("## Policy Actions")
     prerequisites_found = true if line.start_with?("## Prerequisites")
     supported_clouds_found = true if line.start_with?("## Supported Clouds")
-    cost_found = true if line.start_with?("## Cost")
+    cost_found = true if line.strip == "## Cost"
 
     if !what_it_does_raised && what_it_does_found && !name_found
       fail_message += "Line #{line_number.to_s}: What It Does out of order.\n"
