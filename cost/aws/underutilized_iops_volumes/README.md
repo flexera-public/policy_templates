@@ -4,11 +4,15 @@
 
 Checks inefficient EBS disk utilization using provided IOPS Throughput thresholds.
 
-## Functional Details
+## How It Works
 
 - Retrieves all EBS volumes with Provisioned IOPS Volume Type (`io1`, `io2`)
 - Retrieves utilization metrics for each Provisioned IOPS volume from CloudWatch
 - Identifies Provisioned IOPS volumes that are underutilized by comparing the resource utilization to the parameter threshold
+
+## Policy Savings Details
+
+None
 
 ## Input Parameters
 
@@ -16,6 +20,9 @@ Checks inefficient EBS disk utilization using provided IOPS Throughput threshold
 - *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
 - *Allow Regions List* - A list of regions to allow. Please enter the regions code if SCP is enabled. See [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
 
+## Policy Actions
+
+- Sends an email notification
 
 ## Prerequisites
 

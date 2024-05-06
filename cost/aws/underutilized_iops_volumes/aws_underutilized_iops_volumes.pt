@@ -19,19 +19,24 @@ info(
 
 parameter "param_allowed_regions" do
   type "list"
+  category "Policy Settings"
   label "Allowed Regions"
-  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   description "A list of allowed regions. See the README for more details"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  default []
 end
 
 parameter "param_email" do
   type "list"
-  label "Email addresses to notify"
+  category "Policy Settings"
+  label "Email Addresses"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
+  default []
 end
 
 parameter "param_aws_account_number" do
   type "string"
+  category "Policy Settings"
   label "Account Number"
   description "The account number for AWS STS Cross Account Roles."
   default ""
@@ -39,11 +44,12 @@ end
 
 parameter "param_avg_iops" do
   type "number"
+  category "Policy Settings"
   label "Average IOPS utilization percentage"
-  description "Set percentage threshold of EBS IOPS Utilization. Set to -1 to ignore IOPS utilization"
-  default 40
-  min_value -1
+  description "Set percentage threshold of EBS IOPS Utilization"
+  min_value 1
   max_value 100
+  default 40
 end
 
 ###############################################################################
@@ -59,6 +65,9 @@ credentials "auth_aws" do
   aws_account_number $param_aws_account_number
 end
 
+# Not used today, but adding to child to prevent issues with the Meta Parent
+# We will need this when we add Savings Estimates to the PT
+# We can also improve meta parent compiler script to gracefully handle if the child PT does not require Flexera Credential
 credentials "auth_flexera" do
   schemes "oauth2"
   label "Flexera"
@@ -70,7 +79,7 @@ end
 # Pagination
 ###############################################################################
 
-pagination "aws_pagination_xml" do
+pagination "pagination_describeinstances_xml" do
   get_page_marker do
     body_path "//DescribeInstancesResponse/nextToken"
   end
@@ -126,20 +135,20 @@ end
 
 #FILTER FOR ONLY SCP-ENABLED REGIONS (AS SPECIFIED BY ALLOWED REGIONS PARAMETER)
 datasource "ds_scp_regions" do
-  run_script $js_get_scp_regions, $param_allowed_regions, $ds_regions_list
+  run_script $js_get_scp_regions, $ds_regions_list, $param_allowed_regions
 end
 
 script "js_get_scp_regions", type:"javascript" do
-  parameters "user_entered_regions", "all_regions"
+  parameters "ds_regions_list", "param_allowed_regions"
   result "regions"
   code <<-EOS
-    if(_.isEmpty(user_entered_regions)){
-      regions = all_regions;
+    if(_.isEmpty(param_allowed_regions)){
+      regions = ds_regions_list;
     }else{
       //Filter unique regions
-      var uniqueRegions = _.uniq(user_entered_regions);
+      var uniqueRegions = _.uniq(param_allowed_regions);
       var all_regions_list = [];
-      all_regions.forEach(function(all_region){
+      ds_regions_list.forEach(function(all_region){
         all_regions_list.push(all_region.region)
       })
 
@@ -153,7 +162,7 @@ script "js_get_scp_regions", type:"javascript" do
 
       //Throw an error if no valid regions found
       if (_.isEmpty(valid_regions)) {
-        regions = all_regions;
+        regions = ds_regions_list;
       }else{
         regions = valid_regions
       }
@@ -168,7 +177,7 @@ datasource "ds_aws_ebs_volumes" do
   request do
     verb "GET"
     auth $auth_aws
-    pagination $aws_pagination_xml
+    pagination $pagination_describeinstances_xml
     host join(["ec2.", val(iter_item, "region"), ".amazonaws.com"])
     path "/"
     query "Action", "DescribeVolumes"
@@ -186,6 +195,7 @@ datasource "ds_aws_ebs_volumes" do
   result do
     encoding "xml"
     collect xpath(response, "//DescribeVolumesResponse/volumeSet/item", "array") do
+      field "vendor_account", val($ds_get_caller_identity, "account")
       field "region",val(iter_item, "region")
       field "volumeId", xpath(col_item, "volumeId")
       field "iops", xpath(col_item, "iops")
@@ -218,6 +228,7 @@ datasource "ds_cloudwatch_ebs_read_iops_usage" do
   result do
     encoding "json"
     collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
+      field "vendor_account", val(iter_item, "vendor_account")
       field "region", val(iter_item, "region")
       field "volumeId", val(iter_item, "volumeId")
       field "size", val(iter_item, "size")
@@ -237,8 +248,8 @@ datasource "ds_cloudwatch_ebs_read_iops_usage" do
 end
 
 script "js_get_cloudwatch_read_ops", type: "javascript" do
-  result "results"
   parameters "region", "volume_id"
+  result "results"
   code <<-EOS
   var end_date = new Date().toISOString()
   var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
@@ -302,8 +313,8 @@ datasource "ds_cloudwatch_ebs_write_iops_usage" do
 end
 
 script "js_get_cloudwatch_write_ops", type: "javascript" do
-  result "results"
   parameters "region", "volume_id"
+  result "results"
   code <<-EOS
   var end_date = new Date().toISOString()
   var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
@@ -347,7 +358,6 @@ script "js_combine_cloudwatch_data", type: "javascript" do
   parameters "ds_cloudwatch_read_ops", "ds_cloudwatch_write_ops"
   result "period"
   code <<-EOS
-
   //Group data by Volume ID
   var read_ops_grouped_by_vol_id = _.groupBy(ds_cloudwatch_read_ops, "volumeId")
   var write_ops_grouped_by_vol_id = _.groupBy(ds_cloudwatch_write_ops, "volumeId")
@@ -417,11 +427,11 @@ script "js_filter_disk_utilization_data", type: "javascript" do
   parameters "ds_combined_cloudwatch_data", "param_avg_iops"
   result "result"
   code <<-EOS
-    var result = ds_combined_cloudwatch_data
+  var result = ds_combined_cloudwatch_data
 
-    if( param_avg_iops > -1 ){
-      result = _.filter(ds_combined_cloudwatch_data, function(util_data){ return util_data.iopsUtilizationPercentage <= param_avg_iops })
-    }
+  if( param_avg_iops > -1 ){
+    result = _.filter(ds_combined_cloudwatch_data, function(util_data){ return util_data.iopsUtilizationPercentage <= param_avg_iops })
+  }
   EOS
 end
 
@@ -434,6 +444,7 @@ policy "pol_utilization" do
   validate $ds_filtered_disk_utilization_data do
     summary_template "EBS Volumes"
     check eq(size(data),0)
+    escalate $esc_email
     export do
       resource_level true
       field "id" do
@@ -479,4 +490,15 @@ policy "pol_utilization" do
       #end
     end
   end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
 end
