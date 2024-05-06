@@ -326,18 +326,44 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
 EOS
 end
 
-datasource "ds_azure_sql_databases" do
+datasource "ds_azure_sql_servers" do
   iterate $ds_azure_subscriptions_filtered
   request do
     auth $auth_azure
     pagination $pagination_azure
     host $param_azure_endpoint
-    path join(["/subscriptions/", val(iter_item, "id"), "/resources"])
-    query "api-version", "2019-08-01"
-    query "$filter", "resourceType eq 'Microsoft.Sql/servers/databases'"
-    query "$expand", "createdTime"
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Sql/servers"])
+    query "api-version", "2022-02-01-preview"
     header "User-Agent", "RS Policies"
-    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value") do
+      field "id", jmes_path(col_item, "id")
+      field "kind", jmes_path(col_item, "kind")
+      field "region", jmes_path(col_item, "location")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+      field "fqdn", jmes_path(col_item, "properties.fullyQualifiedDomainName")
+      field "state", jmes_path(col_item, "properties.state")
+      field "version", jmes_path(col_item, "properties.version")
+      field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
+      field "subscriptionID", val(iter_item, "id")
+      field "subscriptionName", val(iter_item, "name")
+    end
+  end
+end
+
+datasource "ds_azure_sql_databases" do
+  iterate $ds_azure_sql_servers
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join([val(iter_item, "id"), "/databases"])
+    query "api-version", "2022-02-01-preview"
+    header "User-Agent", "RS Policies"
     ignore_status [400, 403, 404]
   end
   result do
@@ -345,15 +371,23 @@ datasource "ds_azure_sql_databases" do
     collect jmes_path(response, "value") do
       field "id", jmes_path(col_item, "id")
       field "name", jmes_path(col_item, "name")
-      field "region", jmes_path(col_item, "location")
       field "type", jmes_path(col_item, "type")
       field "kind", jmes_path(col_item, "kind")
       field "sku", jmes_path(col_item, "sku")
       field "tags", jmes_path(col_item, "tags")
-      field "createdTime", jmes_path(col_item, "createdTime")
-      field "resourceGroup", get(4, split(jmes_path(col_item, "id"), "/"))
-      field "subscriptionId", val(iter_item, "id")
-      field "subscriptionName", val(iter_item, "name")
+      field "createdTime", jmes_path(col_item, "properties.creationDate")
+      field "status", jmes_path(col_item, "properties.status")
+      field "region", val(iter_item, "region")
+      field "serverId", val(iter_item, "id")
+      field "serverKind", val(iter_item, "kind")
+      field "serverName", val(iter_item, "name")
+      field "serverTags", val(iter_item, "tags")
+      field "serverFQDN", val(iter_item, "fqdn")
+      field "serverState", val(iter_item, "state")
+      field "serverVersion", val(iter_item, "version")
+      field "resourceGroup", val(iter_item, "resourceGroup")
+      field "subscriptionID", val(iter_item, "subscriptionID")
+      field "subscriptionName", val(iter_item, "subscriptionName")
     end
   end
 end
@@ -508,14 +542,23 @@ datasource "ds_azure_sql_database_metrics" do
     encoding "json"
     field "value", jmes_path(response, "value")
     field "id", val(iter_item, "id")
-    field "region", val(iter_item, "region")
     field "name", val(iter_item, "name")
-    field "kind", val(iter_item, "kind")
     field "type", val(iter_item, "type")
+    field "kind", val(iter_item, "kind")
     field "sku", val(iter_item, "sku")
     field "tags", val(iter_item, "tags")
+    field "createdTime", val(iter_item, "createdTime")
+    field "status", val(iter_item, "status")
+    field "region", val(iter_item, "region")
+    field "serverId", val(iter_item, "serverId")
+    field "serverKind", val(iter_item, "serverKind")
+    field "serverName", val(iter_item, "serverName")
+    field "serverTags", val(iter_item, "serverTags")
+    field "serverFQDN", val(iter_item, "serverFQDN")
+    field "serverState", val(iter_item, "serverState")
+    field "serverVersion", val(iter_item, "serverVersion")
     field "resourceGroup", val(iter_item, "resourceGroup")
-    field "subscriptionId", val(iter_item, "subscriptionId")
+    field "subscriptionID", val(iter_item, "subscriptionID")
     field "subscriptionName", val(iter_item, "subscriptionName")
   end
 end
@@ -581,11 +624,11 @@ script "js_merged_metrics", type: "javascript" do
   result = []
 
   _.each(ds_azure_sql_database_metrics, function(db) {
-    db_tags = []
+    tags = []
 
     if (typeof(db['tags']) == 'object') {
       _.each(Object.keys(db['tags']), function(key) {
-        db_tags.push([key, "=", db['tags'][key]].join(''))
+        tags.push([key, "=", db['tags'][key]].join(''))
       })
     }
 
@@ -596,10 +639,12 @@ script "js_merged_metrics", type: "javascript" do
       kind: db['kind'],
       type: db['type'],
       sku: db['sku'],
-      tags: db_tags.join(', '),
-      createdTime: db['createdTime'],
+      tags: tags.join(', '),
+      createdTime: new Date(db['createdTime']).toISOString(),
+      lastAccessed: "> " + param_stats_lookback + " Days Ago",
+      status: db['status'],
       resourceGroup: db['resourceGroup'],
-      subscriptionId: db['subscriptionId'],
+      subscriptionID: db['subscriptionID'],
       subscriptionName: db['subscriptionName'],
       lookbackPeriod: param_stats_lookback,
       threshold: param_stats_underutil_threshold_cpu_value,
@@ -618,6 +663,13 @@ script "js_merged_metrics", type: "javascript" do
         cpu_metrics = metric['timeseries'][0]['data']
       }
     })
+
+    connections = _.filter(connection_metrics, function(metric) { return metric['count'] != 0 })
+    timeStamps = _.pluck(_.sortBy(connections, 'timeStamp').reverse(), 'timeStamp')
+
+    if (timeStamps.length > 0) {
+      instance['lastAccessed'] = new Date(timeStamps[0]).toISOString().split('T')[0]
+    }
 
     if (connection_metrics != null && param_unused_or_underutilized != "Underutilized") {
       total_connections = 0
@@ -854,8 +906,10 @@ script "js_downsize_sql_incident", type: "javascript" do
         sku: db['sku'],
         tags: db['tags'],
         createdTime: db['createdTime'],
+        status: db['status'],
+        lastAccessed: db['lastAccessed'],
         resourceGroup: db['resourceGroup'],
-        accountID: db['subscriptionId'],
+        accountID: db['subscriptionID'],
         accountName: db['subscriptionName'],
         recommendationType: db['recommendationType'],
         recommendationDetails: db['recommendationDetails'],
@@ -948,6 +1002,8 @@ script "js_downsize_sql_incident", type: "javascript" do
     service: "",
     platform: "",
     createdTime: "",
+    status: "",
+    lastAccessed: "",
     total_savings: "",
     message: ""
   })
@@ -1012,8 +1068,10 @@ script "js_unused_sql_incident", type: "javascript" do
         sku: db['sku'],
         tags: db['tags'],
         createdTime: db['createdTime'],
+        status: db['status'],
+        lastAccessed: db['lastAccessed'],
         resourceGroup: db['resourceGroup'],
-        accountID: db['subscriptionId'],
+        accountID: db['subscriptionID'],
         accountName: db['subscriptionName'],
         recommendationType: db['recommendationType'],
         recommendationDetails: db['recommendationDetails'],
@@ -1094,6 +1152,8 @@ script "js_unused_sql_incident", type: "javascript" do
     service: "",
     platform: "",
     createdTime: "",
+    status: "",
+    lastAccessed: "",
     total_savings: "",
     message: ""
   })
@@ -1144,6 +1204,9 @@ policy "pol_azure_sql_utilization" do
       field "createdTime" do
         label "Created At"
       end
+      field "lastAccessed" do
+        label "Last Accessed"
+      end
       field "recommendationDetails" do
         label "Recommendation"
       end
@@ -1170,6 +1233,9 @@ policy "pol_azure_sql_utilization" do
       end
       field "region" do
         label "Region"
+      end
+      field "status" do
+        label "Status"
       end
       field "savings" do
         label "Estimated Monthly Savings"
@@ -1233,6 +1299,9 @@ policy "pol_azure_sql_utilization" do
       field "createdTime" do
         label "Created At"
       end
+      field "lastAccessed" do
+        label "Last Accessed"
+      end
       field "recommendationDetails" do
         label "Recommendation"
       end
@@ -1244,6 +1313,9 @@ policy "pol_azure_sql_utilization" do
       end
       field "region" do
         label "Region"
+      end
+      field "status" do
+        label "Status"
       end
       field "skuName" do
         label "SKU - Name"
