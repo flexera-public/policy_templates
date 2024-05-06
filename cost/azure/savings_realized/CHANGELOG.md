@@ -1,6 +1,6 @@
 # Changelog
 
-## v3.9
+## v3.9.0
 
 - Added parameter to select between showing the currency code or the currency symbol in the incident report
 - Fixed a bug introduced at v3.8 that made the policy show greater savings: if there were no MCA bill connections the policy still pulled aggregated costs thus making the savings bigger.
