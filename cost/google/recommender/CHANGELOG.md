@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.0.1
+
+- Fixed issue with meta policy failing during execution due to order of fields in incident
+
 ## v3.0.0
 
 - Added support for new recommender: Idle Cloud SQL Instance

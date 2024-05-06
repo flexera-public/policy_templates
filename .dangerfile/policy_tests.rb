@@ -59,11 +59,19 @@ end
 
 ### Policy syntax error test
 # Return false if no syntax errors are found using fpt.
-def policy_fpt_syntax_error?(file)
+def policy_fpt_syntax_error?(file, meta_policy = "child")
+  fail_message = ""
   fpt = `[ -x ./fpt ] && ./fpt check #{file} | grep -v Checking`
 
-  # Return errors if any are found. Otherwise, return false
-  return "fpt has detected errors:\n\n#{fpt}" if !fpt.empty?
+  if !fpt.empty?
+    if meta_policy == "meta"
+      fail_message = "fpt has detected errors in meta policy. Please fix the issues in the child policy or in the meta policy generation tools that are causing these errors:\n\n#{fpt}"
+    else
+      fail_message = "fpt has detected errors in policy:\n\n#{fpt}"
+    end
+  end
+
+  return fail_message.strip if !fail_message.empty?
   return false
 end
 
