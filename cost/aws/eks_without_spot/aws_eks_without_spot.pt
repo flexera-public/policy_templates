@@ -295,7 +295,6 @@ datasource "ds_eks_clusters" do
     field "arn", jmes_path(response, "cluster.arn")
     field "createdAt", jmes_path(response, "cluster.createdAt")
     field "endpoint", jmes_path(response, "cluster.endpoint")
-    field "id", jmes_path(response, "cluster.id")
     field "name", jmes_path(response, "cluster.name")
     field "platformVersion", jmes_path(response, "cluster.platformVersion")
     field "roleArn", jmes_path(response, "cluster.roleArn")
@@ -483,7 +482,6 @@ script "js_eks_clusters_with_nodegroups", type:"javascript" do
       arn: resource["arn"],
       createdAt: resource["createdAt"],
       endpoint: resource["endpoint"],
-      id: resource["id"],
       name: resource["name"],
       platformVersion: resource["platformVersion"],
       roleArn: resource["roleArn"],
@@ -510,17 +508,54 @@ end
 script "js_eks_clusters_without_spot", type: "javascript" do
   parameters "ds_eks_clusters_with_nodegroups", "ds_aws_account", "ds_applied_policy"
   result "result"
-  code <<-EOS
-  result = [
-    {
-      resourceID: "",
-      tags: "",
+  code <<-'EOS'
+  bad_clusters = _.reject(ds_eks_clusters_with_nodegroups, function(resource) {
+    instance_types = _.pluck(resource['nodegroups'], 'capacityType')
+    return _.contains(instance_types, 'SPOT') || resource['nodegroups'].length == 0 || resource['status'] == 'DELETING' || resource['status'] == 'FAILED'
+  })
+
+  result = _.map(bad_clusters, function(resource) {
+    message = "The following AWS EKS clusters have no managed node groups configured to use spot instances. Having at least one node group configured to use spot instances can help with reducing cost."
+
+    return {
+      resourceID: resource["arn"],
+      endpoint: resource["endpoint"],
+      resourceName: resource["name"],
+      platformVersion: resource["platformVersion"],
+      roleArn: resource["roleArn"],
+      status: resource["status"],
+      tags: resource["tags"],
+      version: resource["version"],
+      region: resource["region"],
+      createdAt: new Date(resource["createdAt"]).toISOString(),
+      nodegroups: resource['nodegroups'].length,
+      accountID: ds_aws_account["id"],
+      accountName: ds_aws_account["name"],
+      policy_name: ds_applied_policy["name"],
       service: "AmazonEKS",
-      policy_name: "",
-      message: "",
-      total_savings: ""
+      message: message
     }
-  ]
+  })
+
+  // Dummy entry to ensure validation always executes at least once
+  result.push({
+    resourceID: "",
+    endpoint: "",
+    resourceName: "",
+    platformVersion: "",
+    roleArn: "",
+    status: "",
+    tags: "",
+    version: "",
+    region: "",
+    createdAt: "",
+    nodegroups: "",
+    accountID: "",
+    accountName: "",
+    policy_name: "",
+    service: "",
+    message: ""
+  })
 EOS
 end
 
@@ -531,14 +566,10 @@ end
 policy "pol_eks_clusters_without_spot" do
   validate_each $ds_eks_clusters_without_spot do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS EKS Clusters Without Spot Instances Found"
-    detail_template <<-'EOS'
-    **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
-
-    {{ with index data 0 }}{{ .message }}{{ end }}
-    EOS
+    detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
-    hash_exclude "message", "total_savings", "tags"
+    hash_exclude "tags", "message"
     export do
       resource_level true
       field "accountID" do
@@ -549,6 +580,30 @@ policy "pol_eks_clusters_without_spot" do
       end
       field "resourceID" do
         label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "tags" do
+        label "Tags"
+      end
+      field "createdAt" do
+        label "Created At"
+      end
+      field "nodegroups" do
+        label "Node Groups (#)"
+      end
+      field "status" do
+        label "Status"
+      end
+      field "version" do
+        label "Kubernetes Version"
+      end
+      field "service" do
+        label "Service"
       end
       field "id" do
         label "ID"
