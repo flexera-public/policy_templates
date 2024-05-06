@@ -1,4 +1,4 @@
-name "Synapse test for pools with usage"
+name "Mock - Synapse test for pools with usage"
 rs_pt_ver 20180301
 type "policy"
 short_description "Checks for Synapse Dedicated SQL Pools instances that have inefficient utilization for the last N days and downsizes or pauses them after approval. \n See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
@@ -179,6 +179,15 @@ script "js_top_level_bcs", type: "javascript" do
 EOS
 end
 
+datasource "ds_azure_synapse_size_map" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/FOPTS-3684_v2_azure_synapse/data/azure/azure_synapse_pricing.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
@@ -186,6 +195,7 @@ datasource "ds_currency_reference" do
     header "User-Agent", "RS Policies"
   end
 end
+
 
 datasource "ds_currency_code" do
   request do
@@ -435,14 +445,40 @@ end
 
 
 datasource "ds_underutil_and_idle_pools" do
-  run_script $js_underutil_and_idle_pools, $ds_sql_pool_metrics, $ds_sql_pools, $ds_instance_costs_grouped, $param_stats_lookback, $param_stats_threshold, $ds_applied_policy, $ds_currency, $param_min_savings
+  run_script $js_underutil_and_idle_pools, $ds_sql_pool_metrics, $ds_sql_pools, $ds_instance_costs_grouped, $param_stats_lookback, $param_stats_threshold, $ds_applied_policy, $ds_currency, $param_min_savings, $ds_azure_synapse_size_map
 end
 
 script "js_underutil_and_idle_pools", type: "javascript" do
-  parameters "ds_sql_pool_metrics", "ds_sql_pools", "ds_instance_costs_grouped","param_stats_lookback", "param_stats_threshold", "ds_applied_policy", "ds_currency","param_min_savings"
+  parameters "ds_sql_pool_metrics", "ds_sql_pools", "ds_instance_costs_grouped","param_stats_lookback", "param_stats_threshold", "ds_applied_policy", "ds_currency","param_min_savings", "ds_azure_synapse_size_map"
   result "result"
   code <<-EOS
 
+  mock_costs_grouped = [
+    {
+      "Mock ResourceID - 1": 45.32816944640043
+    },
+    {
+      "Mock ResourceID - 2": 45.32816944640043
+    },
+    {
+      "Mock ResourceID - 3": 45.32816944640043
+    },
+    {
+      "Mock ResourceID - 4": 45.32816944640043
+    },
+    {
+      "Mock ResourceID - 5": 45.32816944640043
+    },
+    {
+      "Mock ResourceID - 6": 45.32816944640043
+    },
+    {
+      "Mock ResourceID - 7": 45.32816944640043
+    },
+    {
+      "Mock ResourceID - 8": 45.32816944640043
+    },
+  ]
 
   mock_pools = [
     {
@@ -1628,7 +1664,7 @@ script "js_underutil_and_idle_pools", type: "javascript" do
     id = item['resourceId'].toLowerCase()
 
     total_cost = 0.0
-    if (ds_instance_costs_grouped[id] != undefined) { total_cost = ds_instance_costs_grouped[id] }
+    if (mock_costs_grouped[id] != undefined) { total_cost = mock_costs_grouped[id] }
 
     metrics = {}
     values = item['value']
@@ -1663,17 +1699,31 @@ script "js_underutil_and_idle_pools", type: "javascript" do
 
     } else if (isUnderutil) {
 
-      item["recommendationDetails"] = [
-        "Downsize Azure Synapse SQL pool ", item["resourceName"], " ",
-        "in Azure Subscription ", item["subscriptionName"], " ",
-        "(", item["subscriptionId"], ")"
-      ].join('')
+      var testResourceType = "DW100c"
+
+      var getRealSavings = testResourceType.substring(2, testResourceType.indexOf('c'))
+
+      console.log("Real savings: " + getRealSavings)
 
       item["savings"] = parseFloat(parseFloat(total_cost / 2).toFixed(3))
 
-      if (item["savings"] >= param_min_savings) {
-        underutil_list.push(item)
-        underutil_total_savings += total_cost / 2
+      if (ds_azure_synapse_size_map[instance['resourceType']]) {
+        instance["newResourceType"] = ds_azure_synapse_size_map[instance['resourceType']]['down']
+      }
+
+      item["recommendationDetails"] = [
+        "Downsize Azure Synapse SQL pool ", item["resourceName"], " ",
+        "in Azure Subscription ", item["subscriptionName"], " ",
+        "(", item["subscriptionId"], ")",
+        "from ", instance["resourceType"], " ",
+        "to ", instance["newResourceType"]
+      ].join('')
+
+      if (instance["newResourceType"] != null && instance["newResourceType"] != undefined) {
+        if (item["savings"] >= param_min_savings) {
+          underutil_list.push(item)
+          underutil_total_savings += total_cost / 2
+        }
       }
     }
     if (isIdle || isUnderutil) {
