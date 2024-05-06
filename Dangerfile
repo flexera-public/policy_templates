@@ -450,5 +450,17 @@ end
 
 # Check meta policies for issues for each file
 changed_meta_pt_files.each do |file|
-  # TBD
+  # Run meta policy through various methods that test for problems.
+  # These methods will return false if no problems are found.
+  # Otherwise, they return the warning or error message that should be raised.
+
+  warnings = []
+  failures = []
+
+  # Run policy through fpt testing. Only raise error if there is a syntax error.
+  test = policy_fpt_syntax_error?(file, "meta"); failures << test if test
+
+  # Output final list of failures and warnings
+  fail "### **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
+  warn "### **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
 end
