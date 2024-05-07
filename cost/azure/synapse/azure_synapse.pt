@@ -1,4 +1,4 @@
-name "Synapse test for pools with usage - Test Version"
+name "Synapse test for pools with usage"
 rs_pt_ver 20180301
 type "policy"
 short_description "Checks for Synapse Dedicated SQL Pools instances that have inefficient utilization for the last N days and downsizes or pauses them after approval. \n See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
@@ -44,30 +44,6 @@ parameter "param_min_savings" do
   default 0
 end
 
-# Additional parameters for DWU simulation
-parameter "param_simulate" do
-  type "string"
-  label "Enable Simulation"
-  description "Enable DWU scaling simulation"
-  allowed_values "Yes", "No"
-  default "No"
-end
-
-parameter "param_simulated_dwu_max" do
-  type "number"
-  label "Simulated DWU Maximum"
-  description "Simulated maximum DWU for testing scaling logic."
-  default 1000
-end
-
-parameter "param_simulated_dwu_usage_percent" do
-  type "number"
-  label "Simulated DWU Usage Percent"
-  description "Simulated DWU usage percentage for testing scaling logic."
-  default 10
-end
-
-# Existing parameters for policy
 parameter "param_subscriptions_allow_or_deny" do
   type "string"
   category "Filters"
@@ -120,38 +96,24 @@ parameter "param_stats_lookback" do
   max_value 90
 end
 
-##### BJ Defines whether automatic pausing should be enabled
 parameter "param_automatic_pause" do
-  type "list"
-  label "Enable Automatic Pausing"
-  description "When this value is set, this policy will automatically pause the selected underutilized Synapse SQL Pools."
-  allowed_values ["Yes", "No"]
-  default "No"
-end
-##### BJ 
-
-parameter "param_paused_lookback" do
-  type "number"
-  category "Statistics"
-  label "Paused Lookback Period"
-  description "How many days back to look at paused metrics. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days."
-  default 30
-  min_value 1
-  max_value 90
-end
+    type "list"
+    label "Enable Automatic Pausing"
+    description "When this value is set, this policy will automatically pause the selected underutilized Synapse SQL Pools."
+    allowed_values ["Yes", "No"]
+    default "No"
+  end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-######### BJV Defines the credentials needed to authenticate API calls
 credentials "auth_azure" do
-  schemes "oauth2" # Authentication method
+  schemes "oauth2"
   label "Azure"
   description "Select the Azure Resource Manager Credential from the list."
   tags "provider=azure_rm"
 end
-######### BJV
 
 credentials "auth_flexera" do
   schemes "oauth2"
@@ -225,6 +187,15 @@ script "js_top_level_bcs", type: "javascript" do
 EOS
 end
 
+datasource "ds_azure_synapse_size_map" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/FOPTS-3684_v2_azure_synapse/data/azure/azure_synapse_pricing.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
@@ -278,10 +249,10 @@ script "js_currency", type:"javascript" do
   }
 EOS
 end
-##### BJ Defines a datasource that retrieves Azure subscriptions
+
 datasource "ds_azure_subscriptions" do
   request do
-    auth $auth_azure # Uses previously defined credentials
+    auth $auth_azure
     pagination $pagination_azure
     host $param_azure_endpoint
     path "/subscriptions/"
@@ -300,7 +271,6 @@ datasource "ds_azure_subscriptions" do
     end
   end
 end
-##### BJ
 
 datasource "ds_azure_subscriptions_filtered" do
   run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
@@ -481,20 +451,43 @@ EOS
 end
 
 
-datasource "ds_underutil_and_paused_pools" do
-  run_script $js_underutil_and_paused_pools, $ds_sql_pool_metrics, $ds_sql_pools, $ds_instance_costs_grouped, $param_stats_lookback, $param_stats_threshold, $param_paused_lookback, $ds_applied_policy, $param_simulate, $param_simulated_dwu_max, $param_simulated_dwu_usage_percent
+datasource "ds_underutil_and_idle_pools" do
+  run_script $js_underutil_and_idle_pools, $ds_sql_pool_metrics, $ds_sql_pools, $ds_instance_costs_grouped, $param_stats_lookback, $param_stats_threshold, $ds_applied_policy, $ds_currency, $param_min_savings, $ds_azure_synapse_size_map
 end
 
-script "js_underutil_and_paused_pools", type: "javascript" do
-  parameters "ds_sql_pool_metrics", "ds_sql_pools", "ds_instance_costs_grouped","param_stats_lookback", "param_stats_threshold", "param_paused_lookback", "ds_applied_policy","param_simulate", "param_simulated_dwu_max", "param_simulated_dwu_usage_percent"
+script "js_underutil_and_idle_pools", type: "javascript" do
+  parameters "ds_sql_pool_metrics", "ds_sql_pools", "ds_instance_costs_grouped","param_stats_lookback", "param_stats_threshold", "ds_applied_policy", "ds_currency","param_min_savings", "ds_azure_synapse_size_map"
   result "result"
   code <<-EOS
+
+  function bytesToTerabytes(bytes) {
+    terabytes = bytes / Math.pow(10, 12)
+    return parseFloat(terabytes).toFixed(3)
+  }
+
+  // Used for formatting numbers to look pretty
+  function formatNumber(number, separator){
+    numString = number.toString()
+    values = numString.split(".")
+    formatted_number = ''
+
+    while (values[0].length > 3) {
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      formatted_number = separator + chunk + formatted_number
+    }
+
+    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
+    if (values[1] == undefined) { return formatted_number }
+
+    return formatted_number + "." + values[1]
+  }
   result = []
   pools = {}
 
-  var paused_total_savings = 0.0
+  var idle_total_savings = 0.0
   var underutil_total_savings = 0.0
-  var paused_list = []
+  var idle_list = []
   var underutil_list = []
 
   _.each(ds_sql_pools, function(item) {
@@ -503,39 +496,7 @@ script "js_underutil_and_paused_pools", type: "javascript" do
   })
 
   _.each(ds_sql_pool_metrics, function(item) {
-    id = item['resourceId'].toLowerCase();
-  
-    //DWU Simulation
-    var simulationResult = { originalDWU: 0, newDWU: 0, originalUsagePercent: 0 }
-    if (param_simulate === 'Yes') {
-        var currentDWU = param_simulated_dwu_max
-        var currentUsagePercent = param_simulated_dwu_usage_percent
-        var adjustedDWU = 1000
-    
-        var dwuThresholds = [
-            { limit: 85, dwu: 900 },
-            { limit: 75, dwu: 800 },
-            { limit: 65, dwu: 700 },
-            { limit: 55, dwu: 600 },
-            { limit: 45, dwu: 500 },
-            { limit: 35, dwu: 400 },
-            { limit: 25, dwu: 300 },
-            { limit: 15, dwu: 200 },
-            { limit: 5, dwu: 100 }
-        ]
-    
-        for (var i = 0; i < dwuThresholds.length; i++) {
-            if (currentUsagePercent <= dwuThresholds[i].limit) {
-                adjustedDWU = dwuThresholds[i].dwu;
-            } else {
-                break
-            }
-        }
-        // Assign the simulation results
-        simulationResult.originalDWU = currentDWU
-        simulationResult.newDWU = adjustedDWU
-        simulationResult.originalUsagePercent = currentUsagePercent
-    }
+    id = item['resourceId'].toLowerCase()
 
     total_cost = 0.0
     if (ds_instance_costs_grouped[id] != undefined) { total_cost = ds_instance_costs_grouped[id] }
@@ -550,55 +511,68 @@ script "js_underutil_and_paused_pools", type: "javascript" do
     var connections = parseInt(metrics['Connections'][0]['maximum'])
     var dwuUsedPercent = metrics['DWUUsedPercent'][0]['maximum']
 
-    var isPaused = false
+    var status = pools[id]['status']
+    var isIdle = false
     var isUnderutil = false
-    if (connections == 0) { isPaused = true }
-    if (dwuUsedPercent <= param_stats_threshold) { isUnderutil = true}
+    if (connections == 0 && status != "Paused") { isIdle = true }
+    if (connections > 0 && dwuUsedPercent <= param_stats_threshold) { isUnderutil = true}
 
-    if (isPaused) {
+    item["newResourceType"] = null
 
-      recommendationDetails = [
-        "Pause sql pool ", item['resourceId'], " ",
-        "in Azure Account ", item['subscriptionName'], " ",
-        "(", item['subscriptionId'], ")"
-      ]
-      
-      item["resourceType"] = pools[id]['sku']     
-      item["status"] = pools[id]['status'],
-      item["creationDate"] = pools[id]['creationDate'],
-      item["maxSizeBytes"] = pools[id]['maxSizeBytes'],
-      item["provisioningState"] = pools[id]['provisioningState'],
-      item["storageAccountType"] = pools[id]['storageAccountType'],
-      item["DWUUsed"] = metrics['DWUUsed'][0]['maximum'],
-      item["DWUUsedPercent"] = metrics['DWUUsedPercent'][0]['maximum'],
-      item["MemoryUsedPercent"] = metrics['MemoryUsedPercent'][0]['maximum'],
-      item["Connections"] = connections,
-      item["service"] = "Microsoft.Synapse",
-      item["lookbackPeriod"] = param_stats_lookback,
-      item["pausedLookbackPeriod"] = param_paused_lookback,
-      item["threshold"] = param_stats_threshold,
-      item["savings"] = parseFloat(parseFloat(total_cost).toFixed(3)),
-      item["recommendationDetails"] = recommendationDetails.join(''),
-      item["simulatedOriginalDWU"] = simulationResult.originalDWU,
-      item["simulatedNewDWU"] = simulationResult.newDWU,
-      item["simulatedUsagePercent"] = simulationResult.originalUsagePercent
-  
+    if (isIdle) {
 
-      paused_list.push(item)  ### BJ This list will be used later in the escalation logic to actually pause the instances
-      paused_total_savings += total_cost
+      item["recommendationDetails"] = [
+        "Pause Azure Synapse SQL pool ", item["resourceName"], " ",
+        "in Azure Subscription ", item["subscriptionName"], " ",
+        "(", item["subscriptionId"], ")"
+      ].join('')
+
+      item["savings"] = parseFloat(parseFloat(total_cost).toFixed(3))
+
+      item["resourceType"] = pools[id]['sku']
+      item["newResourceType"] = "Pause Azure Synapse SQL Pool"
+
+      if (item["savings"] >= param_min_savings) {
+        idle_list.push(item)
+        idle_total_savings += total_cost
+      } 
 
     } else if (isUnderutil) {
 
-      recommendationDetails = [
-        "Pause sql pool ", item['resourceId'], " ",
-        "in Azure Account ", item['subscriptionName'], " ",
-        "(", item['subscriptionId'], ")"
-      ]
+      item["resourceType"] = pools[id]['sku']  
 
-      item["resourceType"] = pools[id]['sku']     
+      if (ds_azure_synapse_size_map[item['resourceType']]) {
+        item["newResourceType"] = ds_azure_synapse_size_map[item['resourceType']]['down']
+      }
+
+      item["recommendationDetails"] = [
+        "Downsize Azure Synapse SQL pool ", item["resourceName"], " ",
+        "in Azure Subscription ", item["subscriptionName"], " ",
+        "(", item["subscriptionId"], ") ",
+        "from ", item["resourceType"], " ",
+        "to ", item["newResourceType"]
+      ].join('')
+
+      if (item["newResourceType"] != null && item["newResourceType"] != undefined) {
+
+        var currentResourceSize = item["resourceType"].substring(2, item["resourceType"].indexOf('c'))
+        var newResourceSize = item["newResourceType"].substring(2, item["newResourceType"].indexOf('c'))
+
+        var formula = parseFloat(newResourceSize) * 100 / parseFloat(currentResourceSize)
+
+        item["savings"] = parseFloat(total_cost * formula / 100).toFixed(3)
+
+        if (item["savings"] >= param_min_savings) {
+          underutil_list.push(item)
+          underutil_total_savings += total_cost * formula / 100
+        }
+      }
+    }
+    if (isIdle || isUnderutil) {
+ 
       item["status"] = pools[id]['status'],
       item["creationDate"] = pools[id]['creationDate'],
-      item["maxSizeBytes"] = pools[id]['maxSizeBytes'],
+      item["maxSizeBytes"] = bytesToTerabytes(pools[id]['maxSizeBytes']),
       item["provisioningState"] = pools[id]['provisioningState'],
       item["storageAccountType"] = pools[id]['storageAccountType'],
       item["DWUUsed"] = metrics['DWUUsed'][0]['maximum'],
@@ -607,53 +581,92 @@ script "js_underutil_and_paused_pools", type: "javascript" do
       item["Connections"] = connections,
       item["service"] = "Microsoft.Synapse",
       item["lookbackPeriod"] = param_stats_lookback,
-      item["pausedLookbackPeriod"] = param_paused_lookback,
-      item["threshold"] = param_stats_threshold,
-      item["savings"] = parseFloat(parseFloat(total_cost / 2).toFixed(3)),
-      item["recommendationDetails"] = recommendationDetails.join(''),
-      item["simulatedOriginalDWU"] = simulationResult.originalDWU,
-      item["simulatedNewDWU"] = simulationResult.newDWU,
-      item["simulatedUsagePercent"] = simulationResult.originalUsagePercent
-  
-      
-      underutil_list.push(item)
-      underutil_total_savings += total_cost / 2
+      item["threshold"] = param_stats_threshold  
+      item['savingsCurrency'] = ds_currency['symbol']
     }
   })
 
   if (underutil_list.length > 0) {
+    items_total = ds_sql_pools.length.toString()
+    underutil_items_total = underutil_list.length.toString()
+    underutil_items_percentage = (underutil_items_total / items_total * 100).toFixed(2).toString() + '%'
+    underutil_total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(underutil_total_savings).toFixed(2), ds_currency['separator'])
+    underutil_verb = "are"
+    if (underutil_items_total == 1) { underutil_verb = "is" }
+    underutil_findings = [
+      "Out of ", items_total, " Azure Synapse SQL pools analyzed, ",
+      underutil_items_total, " (", underutil_items_percentage,
+      ") ", underutil_verb, " underutilized and recommended for downsizing. "
+    ].join('')
+    day_message = "day"
+    if (param_stats_lookback > 1) { day_message += "s" }
+    underutil_analysis_message = [
+      "An Azure Synapse SQL pool is considered underutilized if it has had at least one connection to it ",
+      "in the last ", param_stats_lookback, " ", day_message, " but has an average DWU usage below ",
+      param_stats_threshold, "% for that same time period. "
+    ].join('')
+    disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+    underutil_message = underutil_findings + underutil_analysis_message + disclaimer
+
+    underutil_list[0]['underutil_message'] = underutil_message
     underutil_list[0]['underutil_total_savings'] = underutil_total_savings
     underutil_list[0]['policy_name'] = ds_applied_policy['name']
   }
 
-  if (paused_list.length > 0) {
-    paused_list[0]['paused_total_savings'] = paused_total_savings
-    paused_list[0]['policy_name'] = ds_applied_policy['name']
+  if (idle_list.length > 0) {
+    items_total = ds_sql_pools.length.toString()
+    idle_items_total = idle_list.length.toString()
+    idle_items_percentage = (idle_items_total / items_total * 100).toFixed(2).toString() + '%'
+    idle_total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(idle_total_savings).toFixed(2), ds_currency['separator'])
+    idle_verb = "are"
+    if (idle_items_total == 1) { idle_verb = "is" }
+    idle_findings = [
+      "Out of ", items_total, " Azure Synapse SQL pools analyzed, ",
+      idle_items_total, " (", idle_items_percentage,
+      ") ", idle_verb, " idle and recommended for pausing. "
+    ].join('')
+    day_message = "day"
+    if (param_stats_lookback > 1) { day_message += "s" }
+    idle_analysis_message = [
+      "An Azure Synapse SQL pool is considered unused if it has not had any connections ",
+      "for at least ", param_stats_lookback, " ", day_message, ". "
+    ].join('')
+    disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+    idle_message = idle_findings + idle_analysis_message + disclaimer
+
+    idle_list[0]['idle_message'] = idle_message
+    idle_list[0]['idle_total_savings'] = idle_total_savings
+    idle_list[0]['policy_name'] = ds_applied_policy['name']
   }
   
   result = {
-    paused_list: paused_list,
+    idle_list: idle_list,
     underutil_list: underutil_list
   }
 EOS
 end
 
-datasource "ds_paused_pools" do
-  run_script $js_paused_pools, $ds_underutil_and_paused_pools
+datasource "ds_idle_pools" do
+  run_script $js_idle_pools, $ds_underutil_and_idle_pools
 end
 
-script "js_paused_pools", type: "javascript" do
-  parameters "ds_underutil_and_paused_pools"
+script "js_idle_pools", type: "javascript" do
+  parameters "ds_underutil_and_idle_pools"
   result "result"
   code <<-EOS
   result = [{
-    "policy_name": ""
-    "paused_total_savings": "",
+    "policy_name": "",
+    "idle_message": "",
+    "underutil_message": "",
+    "underutil_message": "",
+    "underutil_total_savings": "",
+    "idle_total_savings": "",
     "resourceName": "",
     "resourceGroup": "",
     "resourceId": "",
     "region": "",
     "resourceType": "",
+    "newResourceType": "",
     "subscriptionId": "",
     "subscriptionName": "",
     "tags": "",
@@ -669,35 +682,36 @@ script "js_paused_pools", type: "javascript" do
     "Connections": "",
     "service": "",
     "lookbackPeriod": "",
-    "pausedLookbackPeriod": "",
     "threshold": "",
     "savings": "",
+    "savingsCurrency": "",
     "recommendationDetails": "",
-    "simulatedOriginalDWU":"",
-    "simulatedNewDWU":"",
-    "simulatedUsagePercent":"",
   }]
 
-  result = ds_underutil_and_paused_pools["paused_list"].concat(result)
+  result = ds_underutil_and_idle_pools["idle_list"].concat(result)
 EOS
 end
 
 datasource "ds_underutil_pools" do
-  run_script $js_underutil_pools, $ds_underutil_and_paused_pools
+  run_script $js_underutil_pools, $ds_underutil_and_idle_pools
 end
 
 script "js_underutil_pools", type: "javascript" do
-  parameters "ds_underutil_and_paused_pools"
+  parameters "ds_underutil_and_idle_pools"
   result "result"
   code <<-EOS
   result = [{
-    "policy_name": ""
+    "policy_name": "",
+    "idle_message": "",
+    "underutil_message":"",
+    "idle_total_savings": "",
     "underutil_total_savings": "",
     "resourceName": "",
     "resourceGroup": "",
     "resourceId": "",
     "region": "",
     "resourceType": "",
+    "newResourceType": "",
     "subscriptionId": "",
     "subscriptionName": "",
     "tags": "",
@@ -713,16 +727,13 @@ script "js_underutil_pools", type: "javascript" do
     "Connections": "",
     "service": "",
     "lookbackPeriod": "",
-    "pausedLookbackPeriod": "",
     "threshold": "",
     "savings": "",
+    "savingsCurrency": "",
     "recommendationDetails": "",
-    "simulatedOriginalDWU":"",
-    "simulatedNewDWU":"",
-    "simulatedUsagePercent":"",
   }]
 
-  result = ds_underutil_and_paused_pools["underutil_list"].concat(result)
+  result = ds_underutil_and_idle_pools["underutil_list"].concat(result)
 EOS
 end
 
@@ -839,9 +850,11 @@ end
 
 policy "pol_utilization" do
   validate_each $ds_underutil_pools do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Synapse SQL pools found"
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Underutilized Synapse SQL pools found"
     detail_template <<-'EOS'
     **Potential Monthly Savings:** {{ with index data 0 }}{{ .underutil_total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .underutil_message }}{{ end }}
     EOS
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
     check eq(val(item, "resourceId"), "")
@@ -870,8 +883,10 @@ policy "pol_utilization" do
         path "resourceId"
       end
       field "resourceType" do
-        label "Pool SKU"
-        path "sku"
+        label "Resource Type"
+      end
+      field "newResourceType" do
+        label "Recommended Resource Type"
       end
       field "resourceKind" do
         label "Resource Kind"
@@ -886,7 +901,7 @@ policy "pol_utilization" do
         label "Creation Date"
       end
       field "maxSizeBytes" do
-        label "Max Size Bytes"
+        label "Max Size (Terabytes)"
       end
       field "provisioningState" do
         label "Provisioning State"
@@ -901,16 +916,16 @@ policy "pol_utilization" do
         label "Savings Currency"
       end
       field "DWUUsed" do
-        label "DWU Used Max"
+        label "DWU Max Utilization"
       end
       field "DWUUsedPercent" do
-        label "DWU Used % Max"
+        label "DWU Max Utilization %"
       end
       field "Connections" do
         label "Connections Max"
       end
       field "MemoryUsedPercent" do
-        label "Memory Used % Max"
+        label "Memory Max Utilization %"
       end
       field "threshold" do
         label "Threshold"
@@ -925,31 +940,17 @@ policy "pol_utilization" do
         label "ID"
         path "resourceId"
       end
-      field "pausedLookbackPeriod" do
-        label "Paused Look Back Period (Days)"
-      end
       field "recommendationDetails" do
         label "Recommendation"
       end
-      field "simulatedOriginalDWU" do
-        label "Original DWU (Simulated)"
-        path "simulatedOriginalDWU"
-      end
-      field "simulatedNewDWU" do
-        label "Suggested New DWU (Simulated)"
-        path "simulatedNewDWU"
-      end
-      field "simulatedUsagePercent" do
-        label "Original Usage Percent (Simulated)"
-        path "simulatedUsagePercent"
-      end
     end
   end
-  validate_each $ds_paused_pools do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Synapse SQL pools found"
+  validate_each $ds_idle_pools do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Idle Synapse SQL pools found"
     detail_template <<-'EOS'
-    **Potential Monthly Savings:** {{ with index data 0 }}{{ .paused_total_savings }}{{ end }}
-    #**Simulated DWU Adjustment:** {{ with index data 0 }}{{ .simulated_dwu_adjustment }}{{ end }}
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .idle_total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .idle_message }}{{ end }}
     EOS
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
     check eq(val(item, "resourceId"), "")
@@ -978,8 +979,10 @@ policy "pol_utilization" do
         path "resourceId"
       end
       field "resourceType" do
-        label "Pool SKU"
-        path "sku"
+        label "Resource Type"
+      end
+      field "newResourceType" do
+        label "Recommended Resource Type"
       end
       field "resourceKind" do
         label "Resource Kind"
@@ -994,7 +997,7 @@ policy "pol_utilization" do
         label "Creation Date"
       end
       field "maxSizeBytes" do
-        label "Max Size Bytes"
+        label "Max Size (Terabytes)"
       end
       field "provisioningState" do
         label "Provisioning State"
@@ -1009,16 +1012,17 @@ policy "pol_utilization" do
         label "Savings Currency"
       end
       field "DWUUsed" do
-        label "DWU Used Max"
+        label "DWU Max Utilization"
       end
       field "DWUUsedPercent" do
-        label "DWU Used % Max"
+        label "DWU Max Utilization %"
       end
       field "Connections" do
         label "Connections Max"
       end
-      field "MemoryUsedPercent" do
-        label "Memory Used % Max"
+      field "memMaximum" do
+        label "Memory Max utilization %"
+        path "MemoryUsedPercent"
       end
       field "threshold" do
         label "Threshold"
@@ -1033,23 +1037,8 @@ policy "pol_utilization" do
         label "ID"
         path "resourceId"
       end
-      field "pausedLookbackPeriod" do
-        label "Paused Look Back Period (Days)"
-      end
       field "recommendationDetails" do
         label "Recommendation"
-      end
-      field "simulatedOriginalDWU" do
-        label "Original DWU (Simulated)"
-        path "simulatedOriginalDWU"
-      end
-      field "simulatedNewDWU" do
-        label "Suggested New DWU (Simulated)"
-        path "simulatedNewDWU"
-      end
-      field "simulatedUsagePercent" do
-        label "Original Usage Percent (Simulated)"
-        path "simulatedUsagePercent"
       end
     end
   end
@@ -1066,66 +1055,64 @@ escalation "esc_email" do
   email $param_email
 end
 
-##### BJ Escalation to automatically pause underutilized Synapse SQL Pools based on specific conditions
 escalation "esc_pause_instances" do
-  automatic contains($param_automatic_pause, "Yes") # This checks if the automatic pausing is enabled in the policy parameters
-  label "Pause Underutilized Instances"
-  description "Automatically pause underutilized Synapse SQL Pools that meet defined criteria"
-  run "pause_instances", $data, $param_azure_endpoint # This triggers the cloud workflow to pause the instances
-end
+    automatic contains($param_automatic_pause, "Yes")
+    label "Pause Underutilized Instances"
+    description "Automatically pause underutilized Synapse SQL Pools that meet defined criteria"
+    run "pause_instances", $idle_list, $param_azure_endpoint
+  end
+  
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-
-##### BJ Defines a cloud workflow to handle the pausing of underutilized Synapse SQL Pools
-define pause_instances($data, $param_azure_endpoint) return $all_responses do
-  $all_responses = [] # Initialize an array to collect responses from each pause operation
-
-  foreach $instance in $data do # Iterate through each instance that has been flagged for potential pausing
-    sub on_error: handle_error() do # Error handling subroutine to capture and manage errors during the pause process
-      call pause_instance($instance, $param_azure_endpoint) retrieve $pause_response # Call the function to pause an individual instance
+define pause_instances($idle_list, $param_azure_endpoint) return $all_responses do
+    $all_responses = [] # Initialize an array to collect responses from each pause operation
+  
+    foreach $instance in $idle_list do # Iterate through each instance that has been flagged for potential pausing
+      sub on_error: handle_error() do
+        call pause_instance($instance, $param_azure_endpoint) retrieve $pause_response # Call the function to pause an individual instance
+      end
+    end
+  
+    if inspect($$errors) != "null" # Check if there were any errors captured during the operations
+      raise join($$errors,"\n") # Raise a combined error message if there are errors
     end
   end
-
-  if inspect($$errors) != "null" # Check if there were any errors captured during the operations
-    raise join($$errors,"\n") # Raise a combined error message if there are errors
+  
+  ##### BJ Defines the specific HTTP request to pause an individual Synapse SQL Pool
+  define pause_instance($instance, $param_azure_endpoint) return $response do
+    $host = $param_azure_endpoint # Azure API endpoint
+    $href = $instance["resourceId"] + "/pause" # Specific API path to send the pause command
+    $params = "?api-version=2021-06-01" # API version parameter
+    $url = $host + $href + $params # Full URL for the API request
+  
+    task_label("POST " + $url) # Label for logging
+  
+    $response = http_request(
+      auth: $$auth_azure,
+      https: true,
+      verb: "post",
+      host: $host,
+      href: $href,
+      query_strings: { "api-version": "2021-06-01" },
+      headers: {
+        "cache-control": "no-cache",
+        "content-type": "application/json"
+      }
+    ) # Send the HTTP request to pause the instance
+  
+    task_label("Pause Azure Synapse SQL Pool response: " + $instance["resourceId"] + " " + to_json($response))
+    $$all_responses << to_json({"req": "POST " + $url, "resp": $response}) # Log the response
+  
+    if $response["code"] != 202 && $response["code"] != 200 # Check the response code to ensure the operation was successful
+      raise "Unexpected response pausing Azure Synapse SQL Pool: "+ $instance["resourceId"] + " " + to_json($response)
+    else
+      task_label("Pause Azure Synapse SQL Pool successful: " + $instance["resourceId"]) # Log a successful operation
+    end
   end
-end
-
-##### BJ Defines the specific HTTP request to pause an individual Synapse SQL Pool
-define pause_instance($instance, $param_azure_endpoint) return $response do
-  $host = $param_azure_endpoint # Azure API endpoint
-  $href = $instance["resourceId"] + "/pause" # Specific API path to send the pause command
-  $params = "?api-version=2021-06-01" # API version parameter
-  $url = $host + $href + $params # Full URL for the API request
-
-  task_label("POST " + $url) # Label for logging
-
-  $response = http_request(
-    auth: $$auth_azure,
-    https: true,
-    verb: "post",
-    host: $host,
-    href: $href,
-    query_strings: { "api-version": "2021-06-01" },
-    headers: {
-      "cache-control": "no-cache",
-      "content-type": "application/json"
-    }
-  ) # Send the HTTP request to pause the instance
-
-  task_label("Pause Azure Synapse SQL Pool response: " + $instance["resourceId"] + " " + to_json($response))
-  $$all_responses << to_json({"req": "POST " + $url, "resp": $response}) # Log the response
-
-  if $response["code"] != 202 && $response["code"] != 200 # Check the response code to ensure the operation was successful
-    raise "Unexpected response pausing Azure Synapse SQL Pool: "+ $instance["resourceId"] + " " + to_json($response)
-  else
-    task_label("Pause Azure Synapse SQL Pool successful: " + $instance["resourceId"]) # Log a successful operation
-  end
-end
-
+  
 
 ###############################################################################
 # Meta Policy [alpha]
