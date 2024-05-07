@@ -1,5 +1,12 @@
 # Changelog
 
+## v5.0.0
+
+- Added estimated savings based on Google's Cloud Billing API
+- Added `Minimum Savings Threshold` parameter to filter results
+- Added support for automatic currency conversion for savings
+- To facilitate the above, policy template now requires additional permissions
+
 ## v4.0
 
 - Added support for regex when filtering resources by label

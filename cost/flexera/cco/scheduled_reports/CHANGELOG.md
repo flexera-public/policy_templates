@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.4.1
+
+- Updated policy to use internal Flexera API for generating charts. Policy functionality is unchanged.
+
 ## v3.4
 
 - Fixed issue where filter would not work correctly if `Month` was selected for the `Billing Term` parameter.
