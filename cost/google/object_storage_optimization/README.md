@@ -44,6 +44,9 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 
   \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
 
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - `billing_center_viewer`
+
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 Additionally, this Policy Template requires that several APIs be enabled in your Google Cloud environment:
