@@ -444,11 +444,11 @@ end
 
 
 datasource "ds_underutil_and_idle_pools" do
-  run_script $js_underutil_and_idle_pools, $ds_sql_pool_metrics, $ds_sql_pools, $ds_instance_costs_grouped, $param_stats_lookback, $param_stats_threshold, $ds_applied_policy, $ds_currency, $param_min_savings
+  run_script $js_underutil_and_idle_pools, $ds_sql_pool_metrics, $ds_sql_pools, $ds_instance_costs_grouped, $param_stats_lookback, $param_stats_threshold, $ds_applied_policy, $ds_currency, $param_min_savings, $ds_azure_synapse_size_map
 end
 
 script "js_underutil_and_idle_pools", type: "javascript" do
-  parameters "ds_sql_pool_metrics", "ds_sql_pools", "ds_instance_costs_grouped","param_stats_lookback", "param_stats_threshold", "ds_applied_policy", "ds_currency","param_min_savings"
+  parameters "ds_sql_pool_metrics", "ds_sql_pools", "ds_instance_costs_grouped","param_stats_lookback", "param_stats_threshold", "ds_applied_policy", "ds_currency","param_min_savings", "ds_azure_synapse_size_map"
   result "result"
   code <<-EOS
 
@@ -509,6 +509,8 @@ script "js_underutil_and_idle_pools", type: "javascript" do
     if (connections == 0 && status != "Paused") { isIdle = true }
     if (connections > 0 && dwuUsedPercent <= param_stats_threshold) { isUnderutil = true}
 
+    item["newResourceType"] = null
+
     if (isIdle) {
 
       item["recommendationDetails"] = [
@@ -519,6 +521,9 @@ script "js_underutil_and_idle_pools", type: "javascript" do
 
       item["savings"] = parseFloat(parseFloat(total_cost).toFixed(3))
 
+      item["resourceType"] = pools[id]['sku']
+      item["newResourceType"] = "Pause Azure Synapse SQL Pool"
+
       if (item["savings"] >= param_min_savings) {
         idle_list.push(item)
         idle_total_savings += total_cost
@@ -526,22 +531,37 @@ script "js_underutil_and_idle_pools", type: "javascript" do
 
     } else if (isUnderutil) {
 
+      item["resourceType"] = pools[id]['sku']  
+
+      if (ds_azure_synapse_size_map[item['resourceType']]) {
+        item["newResourceType"] = ds_azure_synapse_size_map[item['resourceType']]['down']
+      }
+
       item["recommendationDetails"] = [
         "Downsize Azure Synapse SQL pool ", item["resourceName"], " ",
         "in Azure Subscription ", item["subscriptionName"], " ",
-        "(", item["subscriptionId"], ")"
+        "(", item["subscriptionId"], ")",
+        "from ", item["resourceType"], " ",
+        "to ", item["newResourceType"]
       ].join('')
 
-      item["savings"] = parseFloat(parseFloat(total_cost / 2).toFixed(3))
+      if (item["newResourceType"] != null && item["newResourceType"] != undefined) {
 
-      if (item["savings"] >= param_min_savings) {
-        underutil_list.push(item)
-        underutil_total_savings += total_cost / 2
+        var currentResourceSize = item["resourceType"].substring(2, item["resourceType"].indexOf('c'))
+        var newResourceSize = item["newResourceType"].substring(2, item["newResourceType"].indexOf('c'))
+
+        var formula = parseFloat(newResourceSize) * 100 / parseFloat(currentResourceSize)
+
+        item["savings"] = parseFloat(total_cost * formula / 100).toFixed(3)
+
+        if (item["savings"] >= param_min_savings) {
+          underutil_list.push(item)
+          underutil_total_savings += total_cost * formula / 100
+        }
       }
     }
     if (isIdle || isUnderutil) {
-
-      item["resourceType"] = pools[id]['sku']     
+ 
       item["status"] = pools[id]['status'],
       item["creationDate"] = pools[id]['creationDate'],
       item["maxSizeBytes"] = bytesToTerabytes(pools[id]['maxSizeBytes']),
@@ -638,6 +658,7 @@ script "js_idle_pools", type: "javascript" do
     "resourceId": "",
     "region": "",
     "resourceType": "",
+    "newResourceType": "",
     "subscriptionId": "",
     "subscriptionName": "",
     "tags": "",
@@ -682,6 +703,7 @@ script "js_underutil_pools", type: "javascript" do
     "resourceId": "",
     "region": "",
     "resourceType": "",
+    "newResourceType": "",
     "subscriptionId": "",
     "subscriptionName": "",
     "tags": "",
@@ -854,7 +876,9 @@ policy "pol_utilization" do
       end
       field "resourceType" do
         label "Resource Type"
-        path "sku"
+      end
+      field "newResourceType" do
+        label "Recommended Resource Type"
       end
       field "resourceKind" do
         label "Resource Kind"
@@ -948,7 +972,9 @@ policy "pol_utilization" do
       end
       field "resourceType" do
         label "Resource Type"
-        path "sku"
+      end
+      field "newResourceType" do
+        label "Recommended Resource Type"
       end
       field "resourceKind" do
         label "Resource Kind"
