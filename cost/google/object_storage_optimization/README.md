@@ -1,4 +1,3 @@
-
 # Google Object Storage Optimization
 
 ## What It Does
@@ -25,6 +24,12 @@ This policy template checks Google buckets for older objects and produces recomm
 
 Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
 For example if a user selects the "Update Objects Storage Class" action while applying the policy, all the identified objects will be moved to `nearline` or `coldline`.
+
+## Policy Actions
+
+- Send an email report
+- Change object storage class after approval
+- Delete object after approval
 
 ## Prerequisites
 
