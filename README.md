@@ -178,6 +178,7 @@ These templates can generate savings estimates for your environment.
 - Compute
 
   - [AWS Burstable EC2 Instances](./cost/aws/burstable_ec2_instances)
+  - [AWS EKS Clusters Without Spot Instances](./cost/aws/eks_without_spot)
   - [AWS Expiring Savings Plans](./cost/aws/savings_plan/expiration)
   - [AWS Reserved Instances Recommendations](./cost/aws/reserved_instances/recommendations)
   - [AWS Reserved Instances Utilization](./cost/aws/reserved_instances/utilization)
@@ -620,7 +621,7 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 33
-  Cost: 94
+  Cost: 95
   Operational: 24
   SaaS Management: 12
   Security: 74
@@ -630,6 +631,7 @@ These templates can generate savings estimates for your environment.
   AWS Config: 1
   Allocate VMs: 3
   Automation: 1
+  Autoscaling: 1
   Burstable Compute Instances: 1
   CIS: 61
   Cloud Cost Optimization: 14
@@ -683,7 +685,7 @@ These templates can generate savings estimates for your environment.
   Unused Volumes: 6
   Usage Report: 8
 :providers:
-  AWS: 82
+  AWS: 83
   Azure: 84
   Azure China: 1
   Flexera: 37
@@ -705,7 +707,7 @@ These templates can generate savings estimates for your environment.
   Cloud Cost Optimization: 18
   CloudTrail: 7
   Common Bill Ingestion: 2
-  Compute: 61
+  Compute: 62
   Config: 1
   DBS: 1
   Databricks: 1
@@ -739,7 +741,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 237
+:total_count: 238
 -->
 <!-- End Policy Template Stats -->
 
