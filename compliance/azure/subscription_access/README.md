@@ -1,5 +1,9 @@
 # Azure Subscription Access
 
+## Deprecated
+
+This policy is no longer being updated.
+
 ## What It Does
 
 This policy provides a report of all users with Owner or Contributor access to an Azure Subscription. Optionally, it emails this report.

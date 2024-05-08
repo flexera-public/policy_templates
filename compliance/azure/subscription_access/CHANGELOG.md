@@ -2,6 +2,7 @@
 
 ## v3.0.0
 
+- Deprecated policy. This is the final update.
 - Added support for Azure China
 - Subscription filter can now be used as an allow list or a deny list
 - Added additional fields and context to incident output
