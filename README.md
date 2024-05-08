@@ -128,10 +128,6 @@ These templates can generate savings estimates for your environment.
 
   - [Azure Policy Audit](./compliance/azure/azure_policy_audit)
 
-- Identity
-
-  - [Azure Subscription Access](./compliance/azure/subscription_access)
-
 #### Flexera
 
 - Cloud Cost Optimization
@@ -620,14 +616,14 @@ These templates can generate savings estimates for your environment.
 <!--
 ---
 :categories:
-  Compliance: 33
+  Compliance: 32
   Cost: 95
   Operational: 24
   SaaS Management: 12
   Security: 74
 :optimization_count: 50
 :policy_sets:
-  '': 42
+  '': 41
   AWS Config: 1
   Allocate VMs: 3
   Automation: 1
@@ -686,7 +682,7 @@ These templates can generate savings estimates for your environment.
   Usage Report: 8
 :providers:
   AWS: 83
-  Azure: 84
+  Azure: 83
   Azure China: 1
   Flexera: 37
   Flexera Optima: 2
@@ -716,7 +712,6 @@ These templates can generate savings estimates for your environment.
   FlexNet Manager: 1
   IAM: 19
   IT Asset Management: 6
-  Identity: 1
   Identity & Access Management: 1
   KMS: 1
   Kubernetes: 2
@@ -741,7 +736,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 238
+:total_count: 237
 -->
 <!-- End Policy Template Stats -->
 
