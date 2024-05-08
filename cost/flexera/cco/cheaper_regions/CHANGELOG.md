@@ -1,6 +1,6 @@
 # Changelog
 
-## v2.4
+## v2.4.0
 
 - Updated list of cheaper regions for Azure and AWS vendors.
 
