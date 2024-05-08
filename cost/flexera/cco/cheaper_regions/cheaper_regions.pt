@@ -24,12 +24,16 @@ info(
 
 parameter "param_email" do
   type "list"
+  category "Policy Settings"
   label "Email addresses of the recipients you wish to notify"
+  description "A list of email addresses to notify."
 end
 
 parameter "param_billing_centers" do
   type "list"
+  category "Filters"
   label "Billing Center Name"
+  description "List of billing centers to be filtered."
   min_length 1
 end
 
@@ -45,22 +49,8 @@ credentials "auth_flexera" do
 end
 
 ###############################################################################
-# Resources
+# Datasources & Scripts
 ###############################################################################
-
-###############################################################################
-# Datasources
-###############################################################################
-
-datasource "ds_dimensions" do
-  request do
-    auth $auth_flexera
-    host rs_optima_host
-    path join(["/bill-analysis/orgs/",rs_org_id,"/costs/dimensions"])
-    header "Api-Version", "1.0"
-    header "User-Agent", "RS Policies"
-  end
-end
 
 datasource "ds_billing_centers" do
   request do
@@ -105,7 +95,7 @@ end
 
 datasource "ds_new_bc_costs" do
   request do
-    run_script $js_new_costs_request,rs_optima_host,rs_org_id,$ds_billing_centers,$param_billing_centers
+    run_script $js_new_costs_request,$ds_billing_centers,$param_billing_centers,rs_optima_host,rs_org_id
   end
   result do
     encoding "json"
@@ -129,7 +119,7 @@ end
 # Scripts
 ###############################################################################
 script "js_new_costs_request", type: "javascript" do
-  parameters "rs_optima_host", "org_id","ds_billing_centers","param_billing_centers"
+  parameters "ds_billing_centers","param_billing_centers","rs_optima_host", "org_id"
   result "request"
   code <<-EOS
     var start_at = "";
@@ -334,7 +324,7 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_cheaper_regions" do
+policy "pol_cheaper_regions" do
   validate_each $ds_new_bc_cost_name do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows with cheaper data"
     check eq(0,1)
