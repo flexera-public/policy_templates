@@ -1,0 +1,720 @@
+name "AWS EKS Clusters Without Spot Instances"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks for EKS clusters without spot instances and reports them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/eks_without_spot) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+category "Cost"
+severity "low"
+default_frequency "weekly"
+info(
+  version: "0.1.0",
+  provider: "AWS",
+  service: "Compute",
+  policy_set: "Autoscaling"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_aws_account_number" do
+  type "string"
+  category "Policy Settings"
+  label "Account Number"
+  description "Leave blank; this is for automated use with Meta Policies. See README for more details."
+  default ""
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  default []
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws", "aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+  aws_account_number $param_aws_account_number
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_aws" do
+  get_page_marker do
+    body_path jmes_path(response, "NextToken")
+  end
+  set_page_marker do
+    body_field "NextToken"
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get AWS account info
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account", xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_get_caller_identity
+end
+
+script "js_aws_account", type:"javascript" do
+  parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+  result = _.find(ds_cloud_vendor_accounts, function(account) {
+    return account['id'] == ds_get_caller_identity[0]['account']
+  })
+
+  // This is in case the API does not return the relevant account info
+  if (result == undefined) {
+    result = {
+      id: ds_get_caller_identity[0]['account'],
+      name: "",
+      tags: {}
+    }
+  }
+EOS
+end
+
+datasource "ds_describe_regions" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "ec2.amazonaws.com"
+    path "/"
+    query "Action", "DescribeRegions"
+    query "Version", "2016-11-15"
+    query "Filter.1.Name", "opt-in-status"
+    query "Filter.1.Value.1", "opt-in-not-required"
+    query "Filter.1.Value.2", "opted-in"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
+      field "region", xpath(col_item, "regionName")
+    end
+  end
+end
+
+datasource "ds_regions" do
+  run_script $js_regions, $ds_describe_regions, $param_regions_list, $param_regions_allow_or_deny
+end
+
+script "js_regions", type:"javascript" do
+  parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
+  result "result"
+  code <<-EOS
+  allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_describe_regions, function(item) {
+      return _.contains(param_regions_list, item['region']) == allow_deny_test[param_regions_allow_or_deny]
+    })
+  } else {
+    result = ds_describe_regions
+  }
+EOS
+end
+
+datasource "ds_eks_cluster_list" do
+  iterate $ds_regions
+  request do
+    auth $auth_aws
+    pagination $pagination_aws
+    host join(["eks.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/clusters"
+    header "Accept", "application/json"
+  end
+  result do
+    encoding "json"
+    field "clusters", jmes_path(response, "clusters")
+    field "region", val(iter_item, "region")
+  end
+end
+
+datasource "ds_eks_cluster_list_flattened" do
+  run_script $js_eks_cluster_list_flattened, $ds_eks_cluster_list
+end
+
+script "js_eks_cluster_list_flattened", type:"javascript" do
+  parameters "ds_eks_cluster_list"
+  result "result"
+  code <<-EOS
+  result = []
+
+  _.each(ds_eks_cluster_list, function(item) {
+    _.each(item["clusters"], function(cluster) {
+      result.push({
+        region: item["region"],
+        name: cluster
+      })
+    })
+  })
+EOS
+end
+
+datasource "ds_eks_clusters" do
+  iterate $ds_eks_cluster_list_flattened
+  request do
+    auth $auth_aws
+    pagination $pagination_aws
+    host join(["eks.", val(iter_item, "region"), ".amazonaws.com"])
+    path join(["/clusters/", val(iter_item, "name")])
+    header "Accept", "application/json"
+  end
+  result do
+    encoding "json"
+    field "arn", jmes_path(response, "cluster.arn")
+    field "createdAt", jmes_path(response, "cluster.createdAt")
+    field "endpoint", jmes_path(response, "cluster.endpoint")
+    field "name", jmes_path(response, "cluster.name")
+    field "platformVersion", jmes_path(response, "cluster.platformVersion")
+    field "roleArn", jmes_path(response, "cluster.roleArn")
+    field "status", jmes_path(response, "cluster.status")
+    field "tags", jmes_path(response, "cluster.tags")
+    field "version", jmes_path(response, "cluster.version")
+    field "region", val(iter_item, "region")
+  end
+end
+
+datasource "ds_eks_clusters_tag_filtered" do
+  run_script $js_eks_clusters_tag_filtered, $ds_eks_clusters, $param_exclusion_tags, $param_exclusion_tags_boolean
+end
+
+script "js_eks_clusters_tag_filtered", type: "javascript" do
+  parameters "ds_eks_clusters", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  result "result"
+  code <<-EOS
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  if (param_exclusion_tags.length > 0) {
+    result = _.reject(ds_eks_clusters, function(resource) {
+      resource_tags = {}
+      if (typeof(resource['tags']) == 'object') { resource_tags = resource['tags'] }
+
+      // Store a list of found tags
+      found_tags = []
+
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_tag = resource_tags[comparator['key']]
+
+        if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+        if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+        if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_tag == undefined) { found_tags.push(string) }
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+      })
+
+      all_tags_found = found_tags.length == comparators.length
+      any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+      return all_tags_found || any_tags_found
+    })
+  } else {
+    result = ds_eks_clusters
+  }
+EOS
+end
+
+datasource "ds_eks_nodegroups_list" do
+  iterate $ds_eks_clusters_tag_filtered
+  request do
+    auth $auth_aws
+    pagination $pagination_aws
+    host join(["eks.", val(iter_item, "region"), ".amazonaws.com"])
+    path join(["/clusters/", val(iter_item, "name"), "/node-groups"])
+    header "Accept", "application/json"
+  end
+  result do
+    encoding "json"
+    field "cluster", val(iter_item, "name")
+    field "region", val(iter_item, "region")
+    field "nodegroups", jmes_path(response, "nodegroups")
+  end
+end
+
+datasource "ds_eks_nodegroups_list_flattened" do
+  run_script $js_eks_nodegroups_list_flattened, $ds_eks_nodegroups_list
+end
+
+script "js_eks_nodegroups_list_flattened", type:"javascript" do
+  parameters "ds_eks_nodegroups_list"
+  result "result"
+  code <<-EOS
+  result = []
+
+  _.each(ds_eks_nodegroups_list, function(item) {
+    _.each(item["nodegroups"], function(nodegroup) {
+      result.push({
+        region: item["region"],
+        cluster: item["cluster"],
+        name: nodegroup
+      })
+    })
+  })
+EOS
+end
+
+datasource "ds_eks_nodegroups" do
+  iterate $ds_eks_nodegroups_list_flattened
+  request do
+    auth $auth_aws
+    pagination $pagination_aws
+    host join(["eks.", val(iter_item, "region"), ".amazonaws.com"])
+    path join(["/clusters/", val(iter_item, "cluster"), "/node-groups/", val(iter_item, "name")])
+    header "Accept", "application/json"
+  end
+  result do
+    encoding "json"
+    field "amiType", jmes_path(response, "nodegroup.amiType")
+    field "capacityType", jmes_path(response, "nodegroup.capacityType")
+    field "clusterName", jmes_path(response, "nodegroup.clusterName")
+    field "createdAt", jmes_path(response, "nodegroup.createdAt")
+    field "diskSize", jmes_path(response, "nodegroup.diskSize")
+    field "instanceTypes", jmes_path(response, "nodegroup.instanceTypes")
+    field "modifiedAt", jmes_path(response, "nodegroup.modifiedAt")
+    field "arn", jmes_path(response, "nodegroup.nodegroupArn")
+    field "releaseVersion", jmes_path(response, "nodegroup.releaseVersion")
+    field "autoScalingGroups", jmes_path(response, "nodegroup.resources.autoScalingGroups")
+    field "scalingConfig", jmes_path(response, "nodegroup.scalingConfig")
+    field "status", jmes_path(response, "nodegroup.status")
+    field "subnets", jmes_path(response, "nodegroup.subnets")
+    field "tags", jmes_path(response, "nodegroup.tags")
+    field "version", jmes_path(response, "nodegroup.version")
+    field "cluster", val(iter_item, "cluster")
+    field "region", val(iter_item, "region")
+    field "name", val(iter_item, "name")
+  end
+end
+
+datasource "ds_eks_clusters_with_nodegroups" do
+  run_script $js_eks_clusters_with_nodegroups, $ds_eks_clusters_tag_filtered, $ds_eks_nodegroups
+end
+
+script "js_eks_clusters_with_nodegroups", type:"javascript" do
+  parameters "ds_eks_clusters_tag_filtered", "ds_eks_nodegroups"
+  result "result"
+  code <<-EOS
+  nodegroup_object = {}
+
+  _.each(ds_eks_nodegroups, function(nodegroup) {
+    cluster = nodegroup["cluster"]
+    if (nodegroup_object[cluster] == undefined) { nodegroup_object[cluster] = [] }
+    nodegroup_object[cluster].push(nodegroup)
+  })
+
+  clusters = _.map(ds_eks_clusters_tag_filtered, function(resource) {
+    tags = []
+
+    if (typeof(resource['tags']) == 'object') {
+      _.each(Object.keys(resource['tags']), function(key) {
+        tags.push([key, "=", resource['tags'][key]].join(''))
+      })
+    }
+
+    return {
+      arn: resource["arn"],
+      createdAt: resource["createdAt"],
+      endpoint: resource["endpoint"],
+      name: resource["name"],
+      platformVersion: resource["platformVersion"],
+      roleArn: resource["roleArn"],
+      status: resource["status"],
+      tags: resource["tags"],
+      version: resource["version"],
+      region: resource["region"],
+      nodegroups: nodegroup_object[resource["name"]],
+      tags: tags.join(', ')
+    }
+  })
+
+  // Remove any clusters that have no managed nodegroups.
+  // Can't do direct analysis of unmanaged nodegroups via AWS APIs.
+  result = _.reject(clusters, function(resource) { return resource["nodegroups"] == undefined })
+EOS
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_eks_clusters_without_spot" do
+  run_script $js_eks_clusters_without_spot, $ds_eks_clusters_with_nodegroups, $ds_aws_account, $ds_applied_policy
+end
+
+script "js_eks_clusters_without_spot", type: "javascript" do
+  parameters "ds_eks_clusters_with_nodegroups", "ds_aws_account", "ds_applied_policy"
+  result "result"
+  code <<-'EOS'
+  bad_clusters = _.reject(ds_eks_clusters_with_nodegroups, function(resource) {
+    instance_types = _.pluck(resource['nodegroups'], 'capacityType')
+    return _.contains(instance_types, 'SPOT') || resource['nodegroups'].length == 0 || resource['status'] == 'DELETING' || resource['status'] == 'FAILED'
+  })
+
+  result = _.map(bad_clusters, function(resource) {
+    message = "The following AWS EKS clusters have no managed node groups configured to use spot instances. Having at least one node group configured to use spot instances can help with reducing cost.\n\n"
+    message += "Please note that this policy is not able to assess any unmanaged node groups or instances attached to these clusters. Please review all clusters carefully before making changes."
+
+    createdAt = new Date(0)
+    createdAt.setUTCSeconds(resource["createdAt"])
+    createdAt = createdAt.toISOString()
+
+    return {
+      resourceID: resource["arn"],
+      endpoint: resource["endpoint"],
+      resourceName: resource["name"],
+      platformVersion: resource["platformVersion"],
+      roleArn: resource["roleArn"],
+      status: resource["status"],
+      tags: resource["tags"],
+      version: resource["version"],
+      region: resource["region"],
+      nodegroups: resource['nodegroups'].length,
+      accountID: ds_aws_account["id"],
+      accountName: ds_aws_account["name"],
+      policy_name: ds_applied_policy["name"],
+      createdAt: createdAt,
+      service: "AmazonEKS",
+      message: message
+    }
+  })
+
+  // Dummy entry to ensure validation always executes at least once
+  result.push({
+    resourceID: "",
+    endpoint: "",
+    resourceName: "",
+    platformVersion: "",
+    roleArn: "",
+    status: "",
+    tags: "",
+    version: "",
+    region: "",
+    nodegroups: "",
+    accountID: "",
+    accountName: "",
+    policy_name: "",
+    createdAt: "",
+    service: "",
+    message: ""
+  })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_eks_clusters_without_spot" do
+  validate_each $ds_eks_clusters_without_spot do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS EKS Clusters Without Spot Instances Found"
+    detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    hash_exclude "tags", "message"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Resource ARN"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "tags" do
+        label "Tags"
+      end
+      field "createdAt" do
+        label "Created At"
+      end
+      field "nodegroups" do
+        label "Node Groups (#)"
+      end
+      field "status" do
+        label "Status"
+      end
+      field "version" do
+        label "Kubernetes Version"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
+end

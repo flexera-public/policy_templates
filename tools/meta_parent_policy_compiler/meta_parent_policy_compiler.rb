@@ -14,6 +14,7 @@ default_child_policy_template_files = [
   "../../compliance/aws/long_stopped_instances/aws_long_stopped_instances.pt",
   "../../compliance/aws/untagged_resources/aws_untagged_resources.pt",
   "../../cost/aws/burstable_ec2_instances/aws_burstable_ec2_instances.pt",
+  "../../cost/aws/eks_without_spot/aws_eks_without_spot.pt",
   "../../cost/aws/gp3_volume_upgrade/aws_upgrade_to_gp3_volume.pt",
   "../../cost/aws/idle_compute_instances/idle_compute_instances.pt",
   "../../cost/aws/object_storage_optimization/aws_object_storage_optimization.pt",
