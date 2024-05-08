@@ -3,6 +3,7 @@
 ## v5.2.0
 
 - Added parameter `Include Savings` to optionally allow the user to not report savings
+- Improved logic for finding savings for reported resources
 - Added currency field to incident report
 - Minor code cleanup and optimization
 

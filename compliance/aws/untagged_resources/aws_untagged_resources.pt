@@ -284,6 +284,7 @@ datasource "ds_recommendations_all" do
     collect jmes_path(response, "[*]") do
       field "resourceID", jmes_path(col_item, "resourceID")
       field "savings", jmes_path(col_item, "savings")
+      field "details", jmes_path(col_item, "details")
     end
   end
 end
@@ -296,25 +297,29 @@ script "js_recommendation_resources_total_savings", type: "javascript" do
   parameters "ds_recommendations_all"
   result "result"
   code <<-EOS
-  // Placeholder for the results
-  result = {}
+  recs_with_resource = _.reject(ds_recommendations_all, function(rec) {
+    return rec['resourceID'] == "" || rec['resourceID'] == null || rec['resourceID'] == undefined
+  })
 
-  // Remove all recommendations without a resourceID
-  // These are generally rate recommendations with no associated resource
-  // The end result is incidene/actions at resource level for visibility and management of tags so no need to include recommendations without a resourceID
-  recs_with_resource = _.reject(ds_recommendations_all, function(rec) { return rec['resourceID'] == "" })
+  rec_object = {}
 
-  // Group recommendations by resourceID
-  recs_with_resource_grouped = _.groupBy(recs_with_resource, function(rec) { return rec['resourceID'] })
+  _.each(recs_with_resource, function(rec) {
+    id = rec['resourceID']
+    if (rec_object[id] == undefined) { rec_object[id] = []}
+    rec_object[id].push(rec)
+  })
 
-  // For each resourceID, calculate the total savings that has been identified
-  _.each(recs_with_resource_grouped, function(recommendations, resourceID) {
-    savings = _.reduce(recommendations, function(total, recommendation) {
-      return total + recommendation['savings']
-    }, 0)
+  result = []
 
-    // Store the total savings for the resourceID in the results object
-    result[resourceID] = savings
+  _.each(_.keys(rec_object), function(id) {
+    savings_numbers = _.compact(_.pluck(rec_object[id], 'savings'))
+    savings = _.reduce(savings_numbers, function(memo, num) { return memo + num }, 0)
+
+    result.push({
+      resourceID: id,
+      details: rec_object[id][0]["details"],
+      savings: savings
+    })
   })
 EOS
 end
@@ -582,11 +587,18 @@ script "js_missing_tags_incident", type:"javascript" do
       currency = ds_currency['symbol']
       savings = 0.0
 
-      savings_id = _.find(_.keys(ds_recommendation_resources_total_savings), function(resourceID) {
-        return resource['arn'].indexOf(resourceID) != -1
+      savings_resource = _.find(ds_recommendation_resources_total_savings, function(item) {
+        id_match = resource['arn'].indexOf(item['resourceID']) != -1
+        inc_id_match = resource['arn'].indexOf(item['details']['ID']) != -1
+        inc_resid_match = resource['arn'].indexOf(item['details']['Resource ID']) != -1
+        inc_arn_match = resource['arn'].indexOf(item['details']['Resource ARN']) != -1
+
+        return id_match || inc_id_match || inc_resid_match || inc_arn_match
       })
 
-      if (savings_id != undefined) { savings = ds_recommendation_resources_total_savings[savings_id] }
+      if (savings_resource != undefined) {
+        savings = savings_resource['savings']
+      }
     }
 
     return {
