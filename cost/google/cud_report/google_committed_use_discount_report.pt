@@ -1,0 +1,379 @@
+name "Google Committed Use Discount Report"
+rs_pt_ver 20180301
+type "policy"
+short_description "Produces a report of all Google Committed Use Discounts (CUDs). See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/google/cud_report) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+category "Cost"
+severity "low"
+default_frequency "weekly"
+info(
+  version: "3.0.0",
+  provider: "Google",
+  service: "Compute",
+  policy_set: "Committed Use Discount"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_projects_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Projects"
+  description "Allow or Deny entered Projects. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_projects_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Projects List"
+  description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+parameter "param_cud_status" do
+  type "string"
+  category "Filters"
+  label "Committed Use Discount Status"
+  description "Whether to report on all CUDs or report only CUDs that are active or expired."
+  allowed_values "All", "Active", "Expired"
+  default "All"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_google" do
+  schemes "oauth2"
+  label "Google"
+  description "Select the Google Cloud Credential from the list."
+  tags "provider=gce"
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_google" do
+  get_page_marker do
+    body_path "nextPageToken"
+  end
+  set_page_marker do
+    query "pageToken"
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_google_projects" do
+  request do
+    auth $auth_google
+    pagination $pagination_google
+    host "cloudresourcemanager.googleapis.com"
+    path "/v1/projects/"
+    query "filter", "(lifecycleState:ACTIVE)"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "projects[*]") do
+      field "number", jmes_path(col_item, "projectNumber")
+      field "id", jmes_path(col_item, "projectId")
+      field "name", jmes_path(col_item, "name")
+    end
+  end
+end
+
+datasource "ds_google_projects_filtered" do
+  run_script $js_google_projects_filtered, $ds_google_projects, $param_projects_allow_or_deny, $param_projects_list
+end
+
+script "js_google_projects_filtered", type: "javascript" do
+  parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list"
+  result "result"
+  code <<-EOS
+  if (param_projects_list.length > 0) {
+    result = _.filter(ds_google_projects, function(project) {
+      include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name']) || _.contains(param_projects_list, project['number'])
+      if (param_projects_allow_or_deny == "Deny") { include_project = !include_project }
+      return include_project
+    })
+  } else {
+    result = ds_google_projects
+  }
+EOS
+end
+
+datasource "ds_google_cuds" do
+  iterate $ds_google_projects_filtered
+  request do
+    auth $auth_google
+    host "www.googleapis.com"
+    path join(["/compute/v1/projects/", val(iter_item," id"), "/aggregated/commitments"])
+    query "accept" , "application/json"
+    header "Content-Type", "application/json"
+    ignore_status [403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items.*.commitments[]") do
+      field "id", jmes_path(col_item, 'id')
+      field "name", jmes_path(col_item, 'name')
+      field "region", jmes_path(col_item, 'region')
+      field "status", jmes_path(col_item, 'status')
+      field "plan", jmes_path(col_item, 'plan')
+      field "endTimestamp", jmes_path(col_item, 'endTimestamp')
+      field "startTimestamp", jmes_path(col_item, 'startTimestamp')
+      field "projectId", val(iter_item, "id")
+      field "projectName", val(iter_item, "name")
+      field "projectNumber", val(iter_item, "number")
+    end
+  end
+end
+
+datasource "ds_google_cuds_regions_filtered" do
+  run_script $js_google_cuds_regions_filtered, $ds_google_cuds, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_google_cuds_regions_filtered", type: "javascript" do
+  parameters "ds_google_cuds", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_google_cuds, function(cud) {
+      include_cud = _.contains(param_regions_list, cud['region'])
+      if (param_regions_allow_or_deny == "Deny") { include_cud = !include_cud }
+      return include_cud
+    })
+  } else {
+    result = ds_google_cuds
+  }
+EOS
+end
+
+datasource "ds_google_cuds_report" do
+  run_script $js_google_cuds_report, $ds_google_cuds_regions_filtered, $ds_applied_policy, $param_cud_status
+end
+
+script "js_google_cuds_report", type: "javascript" do
+  parameters "ds_google_cuds_regions_filtered", "ds_applied_policy", "param_cud_status"
+  result "result"
+  code <<-EOS
+  reported_cuds = _.filter(ds_google_cuds_regions_filtered, function(cud) {
+    return cud["status"] == param_cud_status.toUpperCase() || param_cud_status == "All"
+  })
+
+  result = _.map(reported_cuds, function(cud) {
+    return {
+      resourceID: cud["id"],
+      resourceName: cud["name"],
+      region: cud["region"],
+      status: cud["status"],
+      plan: cud["plan"],
+      endDate: new Date(cud["endTimestamp"]).toISOString().split("T")[0],
+      startDate: new Date(cud["startTimestamp"]).toISOString().split("T")[0],
+      projectId: cud["projectId"],
+      projectName: cud["projectName"],
+      projectNumber: cud["projectNumber"],
+      policy_name: ds_applied_policy["name"]
+    }
+  })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_google_cuds_report" do
+  validate_each $ds_google_cuds_report do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Google Committed Use Discounts"
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    export do
+      resource_level true
+      field "accountID" do
+        label "Project ID"
+      end
+      field "accountName" do
+        label "Project Name"
+      end
+      field "projectNumber" do
+        label "Project Number"
+      end
+      field "resourceName" do
+        label "Name"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "status" do
+        label "Status"
+      end
+      field "plan" do
+        label "Plan"
+      end
+      field "startDate" do
+        label "Start Date"
+      end
+      field "endDate" do
+        label "End Date"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
+end
