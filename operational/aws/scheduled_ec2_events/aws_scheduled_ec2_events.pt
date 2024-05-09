@@ -398,23 +398,37 @@ datasource "ds_scheduled_events" do
   end
 end
 
+datasource "ds_scheduled_events_filtered" do
+  run_script $js_scheduled_events_filtered, $ds_scheduled_events, $param_event_types
+end
+
+script "js_scheduled_events_filtered", type: "javascript" do
+  parameters "ds_scheduled_events", "param_event_types"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_scheduled_events, function(event) {
+    return _.contains(param_event_types, event['eventType']) && event['startTime'] != ""
+  })
+EOS
+end
+
 datasource "ds_instances_with_events" do
-  run_script $js_instances_with_events, $ds_instances, $ds_scheduled_events, $ds_aws_account, $ds_applied_policy, $param_event_types, $param_days_until_event
+  run_script $js_instances_with_events, $ds_instances, $ds_scheduled_events_filtered, $ds_aws_account, $ds_applied_policy, $param_days_until_event
 end
 
 script "js_instances_with_events", type: "javascript" do
-  parameters "ds_instances", "ds_scheduled_events", "ds_aws_account", "ds_applied_policy", "param_event_types", "param_days_until_event"
+  parameters "ds_instances", "ds_scheduled_events_filtered", "ds_aws_account", "ds_applied_policy", "param_days_until_event"
   result "result"
   code <<-EOS
+  result = []
+  today = new Date()
+
   events_object = {}
 
-  _.each(ds_scheduled_events, function(event) {
+  _.each(ds_scheduled_events_filtered, function(event) {
     if (events_object[event['instanceId']] == undefined) { events_object[event['instanceId']] = [] }
     events_object[event['instanceId']].push(event)
   })
-
-  result = []
-  today = new Date()
 
   _.each(ds_instances, function(instance) {
     if (events_object[instance['instanceId']] != undefined) {
@@ -432,13 +446,27 @@ script "js_instances_with_events", type: "javascript" do
       }
 
       _.each(events_object[instance['instanceId']], function(event) {
-        startTime = new Date(event['startTime']).toISOString()
-        endTime = new Date(event['endTime']).toISOString()
+        startTime = new Date(event['startTime'])
 
         daysUntilEvent = Math.round((startTime - today) / (1000 * 60 * 60 * 24))
         if (daysUntilEvent < 0) { daysUntilEvent = 0 }
 
-        if (_.contains(param_event_types, event['eventType']) && (param_days_until_event == -1 || daysUntilEvent <= param_days_until_event)) {
+        event_soon = param_days_until_event == -1 || daysUntilEvent <= param_days_until_event
+        startTime = startTime.toISOString()
+
+        if (event['endTime'] != "") {
+          endTime = new Date(event['endTime'])
+          event_happened = today > endTime
+          endTime = endTime.toISOString()
+        } else {
+          // If event has no end time, assume event will complete in 24 hours
+          endTime = ""
+          estimatedEndTime = startTime
+          estimatedEndTime.setDate(estimatedEndTime.getDate() + 1)
+          event_happened = today > estimatedEndTime
+        }
+
+        if (event_soon && !event_happened) {
           result.push({
             accountID: ds_aws_account['id'],
             accountName: ds_aws_account['name'],
