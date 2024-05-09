@@ -6,6 +6,7 @@
 - Added filter for excluding rows that are below a certain percent of total costs
 - Added Time Period and Filters to report output
 - Added `unallocated` (bool) and `unallocated_details` (string) columns to report output
+- Report column order will match the order user provided in parameter input
 
 ## v0.1.0
 

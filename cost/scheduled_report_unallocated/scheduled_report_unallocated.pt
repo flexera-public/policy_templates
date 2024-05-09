@@ -267,11 +267,11 @@ EOS
 end
 
 datasource "ds_costs_flattened" do
-  run_script $js_costs_flattened, $ds_currency, $ds_costs_aggregated, $ds_cost_request_params, $param_cost_metric
+  run_script $js_costs_flattened, $ds_currency, $ds_costs_aggregated, $ds_cost_request_params, $param_cost_metric, $param_cost_dimensions
 end
 
 script "js_costs_flattened", type: "javascript" do
-  parameters "ds_currency", "ds_costs_aggregated", "ds_cost_request_params", "param_cost_metric"
+  parameters "ds_currency", "ds_costs_aggregated", "ds_cost_request_params", "param_cost_metric", "param_cost_dimensions"
   result "result"
   code <<-EOS
   var cost_metric = {
@@ -377,10 +377,12 @@ script "js_costs_flattened", type: "javascript" do
   columns = []
   columns_unsorted = Object.keys(rows[0]) // Reverse the order so that when we push/append them they are in their original order
   // Add the required dimension columns from user input first
-  _.each(columns_unsorted, function(key) {
-    if (!key.match(/^cost_.*/) && !key.match(/^unallocated|unallocated_details/)) {
+  _.each(param_cost_dimensions, function(key) {
       columns.push(key)
-    }
+      // If billing_center_id dimension, also add billing_center_name dimension to columns output which we added as part of compiling results in previous step
+      if (key == "billing_center_id") {
+        columns.push("billing_center_name")
+      }
   })
   // Put unallocated column after the required dimension columns
   _.each(columns_unsorted, function(key) {
