@@ -63,7 +63,6 @@ end
 # Authentication
 ###############################################################################
 
-#AUTHENTICATE WITH FLEXERA
 credentials "auth_flexera" do
   schemes "oauth2"
   label "Flexera"
@@ -75,13 +74,21 @@ end
 # Datasources & Scripts
 ###############################################################################
 
-#GET BILLING CENTERS FOR ORG
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
 datasource "ds_billing_centers" do
   request do
     auth $auth_flexera
     host rs_optima_host
     path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
-    query "view", "allocation_table"
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
   end
@@ -92,71 +99,48 @@ datasource "ds_billing_centers" do
       field "id", jmes_path(col_item, "id")
       field "name", jmes_path(col_item, "name")
       field "parent_id", jmes_path(col_item, "parent_id")
-      field "ancestor_ids", jmes_path(col_item, "ancestor_ids")
-      field "allocation_table", jmes_path(col_item, "allocation_table")
     end
   end
 end
 
-#FILTER USING BILLING CENTERS PARAMETER IF APPLICABLE
-datasource "ds_filtered_billing_centers" do
-  run_script $js_filtered_billing_centers, $ds_billing_centers, $param_bc_allow_or_deny, $param_bc_list
+datasource "ds_billing_centers_filtered" do
+  run_script $js_billing_centers_filtered, $ds_billing_centers, $param_bc_allow_or_deny, $param_bc_list
 end
 
-script "js_filtered_billing_centers", type: "javascript" do
+script "js_billing_centers_filtered", type: "javascript" do
   parameters "ds_billing_centers", "param_bc_allow_or_deny", "param_bc_list"
   result "result"
   code <<-EOS
-
-  //Define Billing Center list if applicable
-  var allow_deny_test = { "Allow": true, "Deny": false }
+  allow_deny_test = { "Allow": true, "Deny": false }
 
   if (param_bc_list.length > 0) {
-
-    //Filter BC List based on BC List Parameter and whether to Allow/Deny
-    var billing_center_list = _.filter(ds_billing_centers, function(bc) {
-      if (param_bc_allow_or_deny == "Allow") {
-        return _.contains(param_bc_list, bc.id) == allow_deny_test[param_bc_allow_or_deny] || _.contains(param_bc_list, bc.name) == allow_deny_test[param_bc_allow_or_deny]
-      } else {
-        return _.contains(param_bc_list, bc.id) == allow_deny_test[param_bc_allow_or_deny] && _.contains(param_bc_list, bc.name) == allow_deny_test[param_bc_allow_or_deny]
-      }
+    billing_centers = _.filter(ds_billing_centers, function(item) {
+      id_found = _.contains(param_bc_list, item['id']) == allow_deny_test[param_regions_allow_or_deny]
+      name_found = _.contains(param_bc_list, item['name']) == allow_deny_test[param_regions_allow_or_deny]
+      return id_found || name_found
     })
 
-    //Check that there are no child billing centers specified that conflict with parent billing centers specified
-    var bc_ids = _.map(billing_center_list, function(bc) { return bc.id.toLowerCase() })
+    // Check for conflicting parents/children and remove children if present
+    bc_ids = _.compact(_.pluck(billing_centers, 'id'))
+    bad_children = _.filter(ds_billing_centers, function(bc) { return _.contains(bc_ids, bc['parent_id']) })
+    bad_children_ids = _.pluck(bad_children, 'id')
 
-    var conflicting_child_bcs = _.filter(billing_center_list, function(bc) {
-      if (!(bc.parent_id == null || bc.parent_id == undefined)) {
-        return _.contains(bc_ids, bc.parent_id.toLowerCase())
-      }
-    })
-
-    //If there are conflicting child/parent BCs then ignore the child BC and take the parent BC
-    if (conflicting_child_bcs != undefined) {
-      var conflicting_child_bc_ids = _.pluck(conflicting_child_bcs, "id")
-      
-      var filtered_bc_list = _.reject(billing_center_list, function(bc) {
-        return _.contains(conflicting_child_bc_ids, bc.id)
-      })
-      result = _.compact(_.pluck(filtered_bc_list, 'id'))
-    } else {
-      result = _.compact(_.pluck(billing_center_list, 'id'))
-    }
-    
+    // Create final result with the bad children removed
+    final_list = _.reject(billing_centers, function(bc) { return _.contains(bad_children_ids, bc['id']) })
   } else {
-    var billing_center_list = _.filter(ds_billing_centers, function(bc) {
+    // If we're not filtering at all, just grab all of the top level billing centers
+    final_list = _.filter(ds_billing_centers, function(bc) {
       return bc['parent_id'] == null || bc['parent_id'] == undefined
     })
-
-    result = _.compact(_.pluck(billing_center_list, 'id'))
   }
-  EOS
+
+  result = _.compact(_.pluck(final_list, 'id'))
+EOS
 end
 
-#GET USAGE DATA FOR INSTANCE TYPES
 datasource "ds_usage_data" do
   request do
-    run_script $js_usage_data, $ds_filtered_billing_centers, $param_regions_allow_or_deny, $param_regions_list, rs_org_id, rs_optima_host
+    run_script $js_usage_data, $ds_billing_centers_filtered, $param_regions_allow_or_deny, $param_regions_list, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -172,97 +156,73 @@ datasource "ds_usage_data" do
 end
 
 script "js_usage_data", type: "javascript" do
-  parameters "ds_filtered_billing_centers", "param_regions_allow_or_deny", "param_regions_list", "org_id", "optima_host"
+  parameters "ds_billing_centers_filtered", "param_regions_allow_or_deny", "param_regions_list", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
-  //Get Start and End dates
-  var start_date = new Date(), end_date = new Date()
+  // Get Start and End dates
+  start_date = new Date()
   start_date.setMonth(start_date.getMonth() - 12)
-  end_date.setMonth(end_date.getMonth())
+  start_date = start_date.toISOString().split('-')[0] + '-' + start_date.toISOString().split('-')[1]
 
-  //Define Billing Center list if applicable
-  var billing_center_ids = ds_filtered_billing_centers
-  var allow_deny_test = { "Allow": true, "Deny": false }
+  end_date = new Date()
+  end_date = end_date.toISOString().split('-')[0] + '-' + end_date.toISOString().split('-')[1]
 
-  //Define Expressions for API Filter 
-  var expressions = [
-    { "dimension": "category", "type": "equal", "value": "Compute" },
-    { "dimension": "resource_type", "type":"equal", "value":"Compute Instance" },
-    { "dimension": "vendor", "type":"equal", "value":"AWS" },
-    {
-      "type": "not",
-      "expression": { "dimension": "instance_type", "type": "equal", "value": "None" }
-    }
-  ]
+  // Generate region filters if applicable
+  region_filters = []
 
-  //Get Regions list if applicable
   if (param_regions_list.length > 0) {
-    
-    var regions_filter_list = []
-    _.each(param_regions_list, function(reg) {
-        var region_dimension = { "dimension": "region", "type": "equal", "value": reg }
-        regions_filter_list.push(region_dimension)
-    })
-
-    var region_filter_json = {}
     if (param_regions_allow_or_deny == "Deny") {
-      
-      region_filter_json = {
-        "type": "not",
-        "expression": {
-          "type": "or",
-          "expressions": regions_filter_list
+      region_filters = _.map(param_regions_list, function(region) {
+        return {
+          type: "not",
+          expression: { dimension: "region", type: "equal", value: region }
         }
-      }
-      expressions.push(region_filter_json)
-
+      })
     } else {
-      
-      region_filter_json = {
-        "type": "or",
-        "expressions": regions_filter_list
-      }
-      expressions.push(region_filter_json)
+      subfilters = _.map(param_regions_list, function(region) {
+        return { dimension: "region", type: "equal", value: region }
+      })
 
+      region_filters = [{ type: "or", expressions: subfilters }]
     }
   }
-  
-  //POST JSON payload
+
+  // Expressions for API Filter
+  expressions = region_filters.concat([
+    { dimension: "category", type: "equal", value: "Compute" },
+    { dimension: "resource_type", type: "equal", value: "Compute Instance" },
+    { dimension: "vendor", type: "equal", value: "AWS" },
+    {
+      type: "not",
+      expression: { dimension: "instance_type", type: "equal", value: "None" }
+    }
+  ])
+
+  // Payload to send to API
   payload = {
-    "billing_center_ids": billing_center_ids,
-    "filter": {
-      "type": "and",
-      "expressions": expressions
-    },
-    "dimensions": [
-      "billing_center_id",
-      "instance_type",
-      "usage_unit"
-    ],
-    "granularity": "month",
-    "metrics": [
-      "cost_nonamortized_unblended_adj",
-      "usage_amount"
-    ],
-    "end_at": end_date.toLocaleDateString("en-US").split("-")[0] + "-" + end_date.toLocaleDateString("en-US").split("-")[1]
-    "start_at": start_date.toLocaleDateString("en-US").split("-")[0] + "-" + start_date.toLocaleDateString("en-US").split("-")[1]
+    dimensions: [ "billing_center_id", "instance_type", "usage_unit" ],
+    billing_center_ids: ds_billing_centers_filtered,
+    filter: { type: "and", expressions: expressions },
+    metrics: [ "cost_nonamortized_unblended_adj", "usage_amount" ],
+    granularity: "month",
+    end_at: end_date
+    start_at: start_date
   }
 
-  //Request
-  request = {
+  // Request
+  var request = {
     auth: "auth_flexera",
     verb: "POST",
-    host: optima_host,
-    path: "/bill-analysis/orgs/" + org_id + "/costs/aggregated",
+    host: rs_optima_host,
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
     headers: {
       "User-Agent": "RS Policies",
     },
     body_fields: payload
   }
-  EOS
+EOS
 end
 
-#GET DATA WITH NORMALIZATION FACTOR UNITS FOR INSTANCE TYPES
 datasource "ds_aws_instance_size_map" do
   request do
     verb "GET"
@@ -272,160 +232,116 @@ datasource "ds_aws_instance_size_map" do
   end
 end
 
-#GROUP INSTANCE TYPES INTO INSTANCE FAMILIES AND CALCULATE INSTANCE HOURS
-datasource "ds_instance_hours_per_fam" do
-  run_script $js_instance_hours_per_fam, $ds_aws_instance_size_map, $ds_usage_data
+datasource "ds_instance_hours_per_family" do
+  run_script $js_instance_hours_per_family, $ds_aws_instance_size_map, $ds_usage_data
 end
 
-script "js_instance_hours_per_fam", type: "javascript" do
-  parameters "aws_instance_data", "usage_data"
+script "js_instance_hours_per_family", type: "javascript" do
+  parameters "ds_aws_instance_size_map", "ds_usage_data"
   result "result"
   code <<-'EOS'
-  temp_result = []
   result = []
 
-  //Get Normalization Factor units from Instance Data json
-  var instance_types = _.keys(aws_instance_data)
-  var nfu_ratios = []
-  _.each(instance_types, function(inst) {
-    var nfu = 1
-    if (aws_instance_data[inst].nfu) {
-      nfu = aws_instance_data[inst].nfu
+  // Get Normalization Factor units from Instance Data json
+  nfu_ratios = {}
+
+  _.each(_.keys(ds_aws_instance_size_map), function(instance_type) {
+    nfu = ds_aws_instance_size_map[instance_type]['nfu']
+    if (typeof(nfu) != 'number') { nfu = 1 }
+    nfu_ratios[instance_type] = nfu
+  })
+
+  // Enrich current data with Instance Family, and then calculate Normalized Instance Hours using NFU
+  enriched_usage_data = _.map(ds_usage_data, function(data) {
+    normalized_instance_hours = 0
+
+    if (typeof(nfu_ratios[data['instance_type']]) == 'number') {
+      normalized_instance_hours = data['usage_amount'] * nfu_ratios[data['instance_type']]
     }
-    nfu_ratios.push({
-      "instance_type": inst,
-      "nfu": nfu
-    })
-  })
 
-  //Enrich current data with Instance Family, and then calculate Normalized Instance Hours using NFU
-  _.each(usage_data, function(data) {
-    var matched_instance_data = _.find(nfu_ratios, function(ratio) {
-      return data.instance_type == ratio.instance_type
-    })
-    if (matched_instance_data) {
-      data["normalized_instance_hours"] = data.usage_amount * matched_instance_data.nfu
-      data["instance_family"] = data.instance_type.split(".")[0]
+    return {
+      billing_center_id: data['billing_center_id'],
+      instance_type: data['instance_type'],
+      usage_unit: data['usage_unit'],
+      cost: data['cost'],
+      usage_amount: data['usage_amount'],
+      month: data['month'],
+      instance_family: data['instance_type'].split(".")[0],
+      normalized_instance_hours: normalized_instance_hours
     }
   })
 
-  //For each month, sum Instance Hours for each Instance Family
-  var month = _.pluck(_.uniq(usage_data, function(data) { return data.month }), "month")
-  var inst_family = _.pluck(_.uniq(usage_data, function(data) { return data.instance_family }), "instance_family")
+  // For each month, sum Instance Hours for each Instance Family
+  full_list = []
+  family_list = []
+  months = _.uniq(_.pluck(enriched_usage_data, 'month'))
+  families = _.uniq(_.pluck(enriched_usage_data, 'instance_family'))
 
-  _.each(month, function(mo) {
-    _.each(inst_family, function(fam) {
-      var total_inst_hrs = 0
-      _.each(usage_data, function(data) {
-        if (data.month == mo && data.instance_family == fam) {
-          if (data.normalized_instance_hours == null) {
-            data.normalized_instance_hours = 0
-          }
-          total_inst_hrs += data.normalized_instance_hours
-        }
+  _.each(families, function(family) {
+    // Store family data separately so we can find the top 8 families
+    family_data = _.filter(enriched_usage_data, function(data) { return data['instance_family'] == family })
+    family_hours = _.pluck(family_data, 'normalized_instance_hours')
+    family_instance_hours = _.reduce(family_hours, function(memo, num) { return memo + num }, 0)
+    family_list.push({ family: family, hours: family_instance_hours })
+
+    _.each(months, function(month) {
+      matched_data = _.filter(enriched_usage_data, function(data) {
+        return data['month'] == month && data['instance_family'] == family
       })
-      temp_result.push({
-        "month": mo,
-        "instance_family": fam,
-        "total_instance_hours": total_inst_hrs
-      })
+
+      normalized_hours = _.pluck(matched_data, 'normalized_instance_hours')
+      total_instance_hours = _.reduce(normalized_hours, function(memo, num) { return memo + num }, 0)
+      full_list.push({ month: month, instance_family: family, total_instance_hours: total_instance_hours })
     })
   })
 
-  //Get highest 8 Instance Families for Instance Hours used
-  var inst_hr_totals_per_fam = []
-  _.each(inst_family, function(fam) {
-    total_inst_hrs_12_months = 0
-    _.each(temp_result, function(data) {
-      if (data.instance_family == fam) {
-        total_inst_hrs_12_months += data.total_instance_hours
-      }
-    })
-    inst_hr_totals_per_fam.push({
-      "total_inst_hrs_12_months": total_inst_hrs_12_months,
-      "instance_family": fam
-    })
+  // Split list out between top 8 and remaining items
+  family_list = _.sortBy(family_list, 'hours').reverse()
+  top_eight_families = _.pluck(family_list.slice(0, 8), 'family')
+
+  result = _.filter(full_list, function(item) {
+    return _.contains(top_eight_families, item['instance_family'])
   })
 
-  var top_8_inst_fams = _.last(_.pluck(_.sortBy(inst_hr_totals_per_fam, "total_inst_hrs_12_months"), "instance_family"), [8])
-
-  //If Instance Family is not in 8 highest Hours used, then put into "Other" category
-  _.each(month, function (mo) {
-    var total_inst_hrs_other = 0
-    _.each(temp_result, function (data) {
-      if (data.month == mo) {
-        var exists = _.find(top_8_inst_fams, function (inst_fam) { return inst_fam == data.instance_family })
-        if (exists == null) {
-          total_inst_hrs_other += data.total_instance_hours
-        } else {
-          result.push({
-            "month": data.month,
-            "instance_family": data.instance_family,
-            "total_instance_hours": data.total_instance_hours
-          })
-        }
-      }
-    })
-    result.push({
-      "month": mo,
-      "instance_family": "Other",
-      "total_instance_hours": total_inst_hrs_other
-    })
+  remaining_list = _.reject(full_list, function(item) {
+    return _.contains(top_eight_families, item['instance_family'])
   })
-  EOS
+
+  if (remaining_list.length > 0) {
+    _.each(months, function(month) {
+      monthly_remaining = _.filter(remaining_list, function(item) { return item['month'] == month })
+      hours = _.pluck(monthly_remaining, 'total_instance_hours')
+      total_instance_hours = _.reduce(hours, function(memo, num) { return memo + num }, 0)
+      result.push({ month: month, instance_family: "Other", total_instance_hours: total_instance_hours })
+    })
+  }
+EOS
 end
 
-#CHART CREATION
 datasource "ds_chart_creation" do
-  run_script $js_chart_creation, $ds_instance_hours_per_fam, $param_regions_allow_or_deny, $param_regions_list
+  run_script $js_chart_creation, $ds_instance_hours_per_family, $ds_applied_policy, $param_regions_allow_or_deny, $param_regions_list
 end
 
 script "js_chart_creation", type: "javascript" do
-  parameters "inst_hrs_data", "param_regions_allow_or_deny", "param_regions_list"
+  parameters "ds_instance_hours_per_family", "ds_applied_policy", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-EOS
+  months = _.uniq(_.pluck(ds_instance_hours_per_family, 'month'))
+  chart_axis_labels = "chxl=1:|" + _.map(months, function(name) { return name.substring(0, 7) }).join('|')
 
-  //Group data by Instance Family
-  var group_by_inst_fam =
-  _.groupBy(inst_hrs_data, function(data) { return data.instance_family })
-  result = inst_hrs_data
+  group_by_family = _.groupBy(ds_instance_hours_per_family, function(data) { return data['instance_family'] })
+  chart_legend = "chdl=" + _.keys(group_by_family).join('|')
 
-  //Create chart axis labels
-  var chart_axis_labels =
-  ("chxl=1:," +
-    _.uniq(inst_hrs_data, function(data) { return data.month })
-    .map(function(data) { return data.month.substring(0, 7) })
-  ).split(",").join("|")
-
-  //Create legend
-  var chart_legend = "chdl="
-  var i = 0
-  for (var key in group_by_inst_fam) {
-    chart_legend += key
-    i++
-    if (i < _.size(group_by_inst_fam)) { chart_legend += "|" }
-  }
-
-  //Create chart dataset
-  var chart_data = "chd=t:"
-  var count_1 = 0
-  _.each(group_by_inst_fam, function(o) {
-    var count_2 = 0
-    _.each(o, function(p) {
-      chart_data = chart_data + p.total_instance_hours
-      count_2++
-      if (count_2 < _.size(o)) { chart_data = chart_data + "," }
-    })
-    count_1++
-    if (count_1 < _.size(group_by_inst_fam)) { chart_data = chart_data + "|" }
+  data_parts = _.map(group_by_family, function(family_list) {
+    return _.pluck(family_list, 'total_instance_hours').join(',')
   })
 
-  //Create Chart Title
-  var policy_title = "Total Instance Hours Used Per Instance Family"
-  var chart_title = "chtt=" + policy_title
+  chart_data = "chd=t:" + data_parts.join('|')
 
-  //Whole Chart object
-  var chart = {
+  policy_title = "Total Instance Hours Used Per Instance Family"
+  chart_title = "chtt=" + policy_title
+
+  chart = {
     chart_type: encodeURI("cht=bvs"),
     chart_size: encodeURI("chs=900x500"),
     chart_data: encodeURI(chart_data),
@@ -443,8 +359,17 @@ script "js_chart_creation", type: "javascript" do
     policy_title: policy_title
   }
 
-  result[0]["chart_dimensions"] = chart
-  EOS
+  result = _.map(ds_instance_hours_per_family, function(item) {
+    return {
+      month: item['month'].split('T')[0],
+      instance_family: item['instance_family'],
+      total_instance_hours: Math.round(item['total_instance_hours'] * 100) / 100
+    }
+  })
+
+  result[0]['chart_dimensions'] = chart
+  result[0]['policy_name'] = ds_applied_policy['name']
+EOS
 end
 
 ###############################################################################
@@ -453,17 +378,14 @@ end
 
 policy "pol_inst_hrs_per_inst_fam" do
   validate_each $ds_chart_creation do
-    summary_template "AWS Usage Report - Number of Instance Hours Used (Normalized - past 12 months)"
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: (Normalized - Past 12 Months)"
     detail_template <<-EOS
 # AWS - {{ with index data 0 }}{{ .chart_dimensions.policy_title }}{{ end }} Report
 ![Instance Hours Used Per Instance Family Chart](https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id={{ rs_org_id }}&rs_project_id={{ rs_project_id }}&{{ with index data 0 }}{{ .chart_dimensions.chart_data }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_type }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_image }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_title }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_label_position }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_label }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_style }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_color }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_data_scale }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_format }}{{ end }})
-___
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 EOS
     check eq(0, 1)
     escalate $esc_email
     export do
-      # no actions so resource_level can be false
       resource_level false
       field "month" do
         label "Month"
