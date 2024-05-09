@@ -327,10 +327,6 @@ These templates can generate savings estimates for your environment.
 
   - [Google Rightsize CloudSQL Instances](./cost/google/cloudsql_rightsizing)
 
-- Storage
-
-  - [Google Object Storage Optimization](./cost/google/object_storage_optimization)
-
 #### Google
 
 - All
@@ -353,6 +349,7 @@ These templates can generate savings estimates for your environment.
 - Storage
 
   - [Google Idle Persistent Disk Recommender](./cost/google/idle_persistent_disk_recommendations)
+  - [Google Object Storage Optimization](./cost/google/object_storage_optimization)
   - [Google Old Snapshots](./cost/google/old_snapshots)
   - [Turbonomic Delete Unattached Volumes Recommendations Google](./cost/turbonomics/delete_unattached_volumes/google)
 
@@ -686,9 +683,9 @@ These templates can generate savings estimates for your environment.
   Azure China: 1
   Flexera: 37
   Flexera Optima: 2
-  GCE: 4
+  GCE: 3
   GitHub: 7
-  Google: 14
+  Google: 15
   Kubecost: 2
   Microsoft: 1
   Okta: 1
