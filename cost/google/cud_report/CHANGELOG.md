@@ -3,7 +3,7 @@
 ## v3.0.0
 
 - Added ability to filter report by project
-- Added ability to filter recommendations by region
+- Added ability to filter report by region
 - Normalized incident export to be consistent with other policies
 - Streamlined code for better readability and faster execution
 - Policy now requires a valid Flexera credential
