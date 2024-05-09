@@ -1,4 +1,4 @@
-# AWS Instance Scheduled Events
+# AWS Scheduled EC2 Events
 
 ## What it does
 
