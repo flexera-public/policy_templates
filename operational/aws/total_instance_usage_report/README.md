@@ -19,7 +19,7 @@ This Policy Template leverages Flexera CCO APIs to produce a stacked bar chart s
   - `Normalized Units (NFUs)` - Normalize the data against each [NFU](https://aws.amazon.com/about-aws/whats-new/2019/02/normalized-units-information-for-amazon-ec2-reservations-in-aws-cost-explorer/) of each instance.
   - `vCPUs` - Normalize the data against each vCPU of each instance.
   - `Memory (GiB)` - Normalize the data against each GiB of total memory of each instance.
-- *Time Unit* - Unit of time to use for results. vCPUs will be normalized to this time unit. Units are calculated as follows:
+- *Time Unit* - Unit of time to use for results. The `Instance Unit` will be normalized to this time unit. Units are calculated as follows:
   - `Hours` - 1 hour.
   - `Days` - 24 hours.
   - `Weeks` - 168 hours e.g. 7 days * 24 hours.
