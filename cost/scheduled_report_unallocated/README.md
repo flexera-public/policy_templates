@@ -11,6 +11,7 @@ This policy allows you to set up scheduled reports that will provide summaries o
 - *Cost Filters* - JSON object (as a string) of filters to apply to the report.  Example: `{\"dimension\": \"vendor\",\"type\": \"equal\",\"value\": \"aws\"}`
 - *Cost Metric* - The cost metric for the report
 - *Date Range" - Date Range for the Report
+- *Filter Report Percent Threshold* - Filter out rows where the cost metric is less than this percentage of the total spend in the report.  Enter 0 to show all rows
 
 ## Policy Actions
 

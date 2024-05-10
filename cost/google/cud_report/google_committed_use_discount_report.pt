@@ -1,7 +1,7 @@
-name "Google Expiring Committed Use Discounts (CUD)"
+name "Google Committed Use Discount Report"
 rs_pt_ver 20180301
 type "policy"
-short_description "Produces a report of Google Committed Use Discounts (CUDs) that have expired or are about to expire. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/google/cud_expiration) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Produces a report of all Google Committed Use Discounts (CUDs). See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/google/cud_report) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Cost"
 severity "low"
@@ -23,15 +23,6 @@ parameter "param_email" do
   label "Email Addresses"
   description "A list of email addresses to notify."
   default []
-end
-
-parameter "param_days_expiration" do
-  type "number"
-  category "Policy Settings"
-  label "Days Until Expiration"
-  description "The number of days until expiration to include a Committed Use Discount in the report. Set to '0' to only report expired Committed Use Discounts."
-  min_value 0
-  default 15
 end
 
 parameter "param_projects_allow_or_deny" do
@@ -66,6 +57,15 @@ parameter "param_regions_list" do
   label "Allow/Deny Regions List"
   description "A list of allowed or denied regions. See the README for more details."
   default []
+end
+
+parameter "param_cud_status" do
+  type "string"
+  category "Filters"
+  label "Committed Use Discount Status"
+  description "Whether to report on all CUDs or report only CUDs that are active or expired."
+  allowed_values "All", "Active", "Expired"
+  default "All"
 end
 
 ###############################################################################
@@ -201,38 +201,31 @@ script "js_google_cuds_regions_filtered", type: "javascript" do
 EOS
 end
 
-datasource "ds_expiring_google_cuds" do
-  run_script $js_expiring_google_cuds, $ds_google_cuds_regions_filtered, $ds_applied_policy, $param_days_expiration
+datasource "ds_google_cuds_report" do
+  run_script $js_google_cuds_report, $ds_google_cuds_regions_filtered, $ds_applied_policy, $param_cud_status
 end
 
-script "js_expiring_google_cuds", type: "javascript" do
-  parameters "ds_google_cuds_regions_filtered", "ds_applied_policy", "param_days_expiration"
+script "js_google_cuds_report", type: "javascript" do
+  parameters "ds_google_cuds_regions_filtered", "ds_applied_policy", "param_cud_status"
   result "result"
   code <<-EOS
-  today = new Date()
+  reported_cuds = _.filter(ds_google_cuds_regions_filtered, function(cud) {
+    return cud["status"] == param_cud_status.toUpperCase() || param_cud_status == "All"
+  })
 
-  result = []
-
-  _.each(ds_google_cuds_regions_filtered, function(cud) {
-    expiration_date = new Date(cud["endTimestamp"])
-    daysUntilExpiration = Math.round((expiration_date - today) / (1000 * 60 * 60 * 24))
-    if (daysUntilExpiration < 0) { daysUntilExpiration = 0 }
-
-    if (cud["status"] == "EXPIRED" || (cud["status"] == "ACTIVE" && daysUntilExpiration <= param_days_expiration)) {
-      result.push({
-        resourceID: cud["id"],
-        resourceName: cud["name"],
-        region: cud["region"],
-        status: cud["status"],
-        plan: cud["plan"],
-        endDate: new Date(cud["endTimestamp"]).toISOString().split("T")[0],
-        startDate: new Date(cud["startTimestamp"]).toISOString().split("T")[0],
-        accountID: cud["projectId"],
-        accountName: cud["projectName"],
-        projectNumber: cud["projectNumber"],
-        daysUntilExpiration: daysUntilExpiration,
-        policy_name: ds_applied_policy["name"]
-      })
+  result = _.map(reported_cuds, function(cud) {
+    return {
+      resourceID: cud["id"],
+      resourceName: cud["name"],
+      region: cud["region"],
+      status: cud["status"],
+      plan: cud["plan"],
+      endDate: new Date(cud["endTimestamp"]).toISOString().split("T")[0],
+      startDate: new Date(cud["startTimestamp"]).toISOString().split("T")[0],
+      accountID: cud["projectId"],
+      accountName: cud["projectName"],
+      projectNumber: cud["projectNumber"],
+      policy_name: ds_applied_policy["name"]
     }
   })
 
@@ -248,7 +241,6 @@ script "js_expiring_google_cuds", type: "javascript" do
     accountID: "",
     accountName: "",
     projectNumber: "",
-    daysUntilExpiration: "",
     policy_name: ""
   })
 EOS
@@ -258,9 +250,9 @@ end
 # Policy
 ###############################################################################
 
-policy "pol_expiring_google_cuds" do
-  validate_each $ds_expiring_google_cuds do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Expiring Google Committed Use Discounts Found"
+policy "pol_google_cuds_report" do
+  validate_each $ds_google_cuds_report do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Google Committed Use Discounts"
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     export do
@@ -282,9 +274,6 @@ policy "pol_expiring_google_cuds" do
       end
       field "status" do
         label "Status"
-      end
-      field "daysUntilExpiration" do
-        label "Days Until Expiration"
       end
       field "plan" do
         label "Plan"

@@ -8,7 +8,7 @@ category "Cost"
 default_frequency "monthly"
 tenancy "single"
 info(
-  version: "0.1.0",
+  version: "0.2.0",
   provider: "Flexera Optima",
   service: "",
   policy_set: ""
@@ -58,6 +58,16 @@ parameter "param_cost_time_period" do
   description "Select the date range for your report"
   allowed_values "Last 7 Days", "Last 30 Days", "Last 45 Days", "Last 90 Days", "Previous Month", "Previous 3 Months"
   default "Last 30 Days"
+end
+
+parameter "param_report_filter_percent_threshold" do
+  type "number"
+  category "Policy Settings"
+  label "Filter Report Percent Threshold"
+  description "Filter out rows where the cost metric is less than this percentage of the total spend in the report.  Enter 0 to show all rows."
+  min_value 0
+  max_value 99
+  default 0
 end
 
 ###############################################################################
@@ -151,31 +161,17 @@ datasource "ds_toplevel_billing_centers" do
   end
 end
 
-datasource "ds_costs_aggregated" do
-  iterate $ds_toplevel_billing_centers
-  request do
-    run_script $js_costs_aggregated, val(iter_item, "id"), $param_cost_dimensions, $param_cost_filters, $param_cost_metric, $param_cost_time_period, rs_optima_host, rs_org_id
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "rows[*]") do
-      field "bc_id", val(iter_item, "id")
-      field "bc_name", val(iter_item, "name")
-      field "dimensions", jmes_path(col_item, "dimensions")
-      field "metrics", jmes_path(col_item, "metrics")
-    end
-  end
+datasource "ds_cost_request_params" do
+  run_script $js_cost_request_params, $param_cost_time_period, $param_cost_filters
 end
 
-script "js_costs_aggregated", type: "javascript" do
-  parameters "bc_id", "param_cost_dimensions", "param_cost_filters", "param_cost_metric", "param_cost_time_period", "rs_optima_host", "rs_org_id"
-  result "request"
+script "js_cost_request_params", type:"javascript" do
+  parameters "param_cost_time_period", "param_cost_filters"
+  result "result"
   code <<-EOS
-  var cost_metric = {
-    "Unamortized Unblended": "cost_nonamortized_unblended_adj",
-    "Amortized Unblended": "cost_amortized_unblended_adj",
-    "Unamortized Blended": "cost_nonamortized_blended_adj",
-    "Amortized Blended": "cost_amortized_blended_adj"
+  filter = null
+  if (param_cost_filters.length > 0) {
+    filter = JSON.parse(param_cost_filters)
   }
 
   var now = new Date()
@@ -212,9 +208,40 @@ script "js_costs_aggregated", type: "javascript" do
   start_at_string = start_at.getFullYear() + "-" + ("0" + (start_at.getMonth() + 1)).slice(-2)
   end_at_string = end_at.getFullYear() + "-" + ("0" + (end_at.getMonth() + 1)).slice(-2)
 
-  filters = null
-  if (param_cost_filters.length > 0) {
-    filters = JSON.parse(param_cost_filters)
+  result = {
+    "filter": filter,
+    "start_at": start_at_string,
+    "end_at": end_at_string
+  }
+
+EOS
+end
+
+datasource "ds_costs_aggregated" do
+  iterate $ds_toplevel_billing_centers
+  request do
+    run_script $js_costs_aggregated, val(iter_item, "id"), $ds_cost_request_params, $param_cost_dimensions, $param_cost_metric, $param_cost_time_period, rs_optima_host, rs_org_id
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "bc_id", val(iter_item, "id")
+      field "bc_name", val(iter_item, "name")
+      field "dimensions", jmes_path(col_item, "dimensions")
+      field "metrics", jmes_path(col_item, "metrics")
+    end
+  end
+end
+
+script "js_costs_aggregated", type: "javascript" do
+  parameters "bc_id", "ds_cost_request_params", "param_cost_dimensions", "param_cost_metric", "param_cost_time_period", "rs_optima_host", "rs_org_id"
+  result "request"
+  code <<-EOS
+  var cost_metric = {
+    "Unamortized Unblended": "cost_nonamortized_unblended_adj",
+    "Amortized Unblended": "cost_amortized_unblended_adj",
+    "Unamortized Blended": "cost_nonamortized_blended_adj",
+    "Amortized Blended": "cost_amortized_blended_adj"
   }
 
   var request = {
@@ -223,11 +250,11 @@ script "js_costs_aggregated", type: "javascript" do
     verb: "POST",
     path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
     body_fields: {
-      "filter": filters,
+      "filter": ds_cost_request_params["filter"],
       "dimensions": param_cost_dimensions,
       "granularity": "month",
-      "start_at": start_at_string,
-      "end_at": end_at_string,
+      "start_at": ds_cost_request_params["start_at"],
+      "end_at": ds_cost_request_params["end_at"],
       "metrics": [cost_metric[param_cost_metric]],
       "billing_center_ids": [bc_id]
     },
@@ -240,11 +267,11 @@ EOS
 end
 
 datasource "ds_costs_flattened" do
-  run_script $js_costs_flattened, $ds_currency, $ds_costs_aggregated, $param_cost_metric
+  run_script $js_costs_flattened, $ds_currency, $ds_costs_aggregated, $ds_cost_request_params, $param_cost_metric, $param_cost_dimensions
 end
 
 script "js_costs_flattened", type: "javascript" do
-  parameters "ds_currency", "ds_costs_aggregated", "param_cost_metric"
+  parameters "ds_currency", "ds_costs_aggregated", "ds_cost_request_params", "param_cost_metric", "param_cost_dimensions"
   result "result"
   code <<-EOS
   var cost_metric = {
@@ -256,7 +283,11 @@ script "js_costs_flattened", type: "javascript" do
   var total_spend = 0
   var unallocated_spend = 0
   rows = ds_costs_aggregated.map(function(row) {
-    var flattened = {}
+    var flattened = {
+      "unallocated": false,
+      "unallocated_details": ""
+    }
+    unallocatedDetailsList = []
     _.each(row.metrics, function(value, key) {
       if (key == cost_metric[param_cost_metric]) {
         total_spend = total_spend + value
@@ -274,13 +305,26 @@ script "js_costs_flattened", type: "javascript" do
       if (key == "billing_center_id") {
         flattened["billing_center_name"] = row.bc_name
       }
-      // For billing_center_id dimension, unallocated costs are in "unallocated" billing_center_id
-      // For all other dimensions (tag, rbd), unallocated costs are in "None" or "" value for that dimension
-      if ((key != "billing_center_id" && (value == "None" || value == "")) || (key == "billing_center_id" && value == "undefined")) {
-        // flattened["unallocated"] = true
-        unallocated_spend = unallocated_spend + flattened[cost_metric[param_cost_metric]]
+      // Certain dimensions from bill dimensions we expect to be "None" or "" but that is a proper allocation
+      // resource_group only exists on Azure, and certain usage types don't have a resource_group (Microsoft.Capacity, Support)
+      // Check if the key is not one of these dimensions that have no value but are still considered properly allocated
+      skip_dimensions = ["resource_group"]
+      if (!_.contains(skip_dimensions, key)) {
+        // For billing_center_id dimension, unallocated costs are in "unallocated" billing_center_id
+        // For all other dimensions (tag, rbd), unallocated costs are in "None" or "" value for that dimension
+        if ((key != "billing_center_id" && (value == "None" || value == "")) || (key == "billing_center_id" && value == "undefined")) {
+          flattened["unallocated"] = true
+          unallocatedDetailsList.push("`"+key + "=" + value+"`")
+        }
       }
     })
+    // // If any of the values are unallocated, add the cost to the unallocated_spend
+    if (flattened.hasOwnProperty("unallocated") && flattened["unallocated"] == true) {
+      unallocated_spend = unallocated_spend + flattened[cost_metric[param_cost_metric]]
+    }
+    if (unallocatedDetailsList.length > 0) {
+      flattened["unallocated_details"] = unallocatedDetailsList.join(" ")
+    }
     return flattened
   })
   // Group by the dimensions
@@ -321,7 +365,7 @@ script "js_costs_flattened", type: "javascript" do
   // calculate the percent_of_total now that we have the total_spend
   rows_with_total = []
   _.each(rows, function(row) {
-    row[cost_metric[param_cost_metric]+"_percent_of_total"] = ((row[cost_metric[param_cost_metric]] / total_spend) * 100).toFixed(2)
+    row[cost_metric[param_cost_metric]+"_percent_of_total"] = +(((row[cost_metric[param_cost_metric]] / total_spend) * 100).toFixed(2))
     rows_with_total.push(row)
   })
   // sort the rows by cost_*_percent_of_total metric
@@ -332,26 +376,38 @@ script "js_costs_flattened", type: "javascript" do
   // Put any cost_* columns at the end
   columns = []
   columns_unsorted = Object.keys(rows[0]) // Reverse the order so that when we push/append them they are in their original order
+  // Add the required dimension columns from user input first
+  _.each(param_cost_dimensions, function(key) {
+      columns.push(key)
+      // If billing_center_id dimension, also add billing_center_name dimension to columns output which we added as part of compiling results in previous step
+      if (key == "billing_center_id") {
+        columns.push("billing_center_name")
+      }
+  })
+  // Put unallocated column after the required dimension columns
   _.each(columns_unsorted, function(key) {
-    // Add the non-cost_* columns first
-    if (!key.match(/^cost_.*/)) {
+    if (key.match(/^unallocated|unallocated_details/)) {
       columns.push(key)
     }
   })
+  // Add the cost_* columns, after all other dimensions
   _.each(columns_unsorted, function(key) {
-    // Add the cost_* columns, after all other dimensions
     if (key.match(/^cost_.*/)) {
       columns.push(key)
     }
   })
   result = {
     "columns": columns,
+    "percent_unallocated_column_name": cost_metric[param_cost_metric]+"_percent_of_total",
     "currency_code": ds_currency.symbol,
-    "total_spend": total_spend.toFixed(2),
-    "unallocated_spend": unallocated_spend.toFixed(2),
-    "percent_allocated": ((1 - (unallocated_spend / total_spend)) *100).toFixed(2),
-    "percent_unallocated": ((unallocated_spend / total_spend) *100).toFixed(2),
-    "rows": rows_with_total
+    "total_spend": +(total_spend.toFixed(2)),
+    "unallocated_spend": +(unallocated_spend.toFixed(2)),
+    "percent_allocated": +(((1 - (unallocated_spend / total_spend)) *100).toFixed(2)),
+    "percent_unallocated": +(((unallocated_spend / total_spend) *100).toFixed(2)),
+    "rows": rows_with_total,
+    "start_at": ds_cost_request_params["start_at"],
+    "end_at": ds_cost_request_params["end_at"],
+    "filter": ds_cost_request_params["filter"]
   }
   EOS
 end
@@ -362,31 +418,53 @@ end
 
 policy "pol_scheduled_report" do
   validate $ds_costs_flattened do
-    summary_template "{{ rs_org_name }} (Org ID: {{ rs_org_id }}): Full Cost Scheduled Report"
+    summary_template "{{ rs_org_name }} (Org ID: {{ rs_org_id }}): Unallocated Costs Scheduled Report"
     detail_template <<-EOS
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-
 ## Summary
 
 | Total Spend | Unallocated Spend | Percent Unallocated | Percent Allocated |
 | ----------- | ----------------- | ------------------- | ----------------- |
 | {{ data.currency_code }}{{ data.total_spend }} | {{ data.currency_code }}{{ data.unallocated_spend }} | {{ data.percent_unallocated}}% | {{ data.percent_allocated }}% |
 
+> **Note:** There may be slight discrepancies in the sum of detail amounts and total amounts above due to rounding values to 2 decimal in this report.
+
+### Date Range
+
+{{ data.start_at }} to {{ data.end_at }}
+
+### Filters
+{{ if data.filter }}
+  {{ data.filter }}
+{{- else }}
+  No filters applied
+{{- end }}
+
 ## Details
 
 |{{ range $c := data.columns }} {{ $c }} |{{ end }}
 |{{ range $c := data.columns }} --- |{{ end }}
 {{ range $i, $r := data.rows -}}
+{{- $percent_value := (index $r data.percent_unallocated_column_name) -}}
+{{ if gt (printf "%f" $percent_value) (printf "%f" parameters.param_report_filter_percent_threshold) -}}
 | {{ range $col := data.columns -}}
 {{- $value := (index $r $col) -}}
-{{- if eq (printf "%T" $value) "string" -}}
-{{- if or (eq $value "None") (eq $value "unallocated") (eq $value "Unallocated") (eq $value "") -}}**{{ end -}}
+{{- if and (eq (printf "%T" $value) "string") (not (eq $value "unallocated")) -}}
+{{- if or (eq $value "None") (eq $value "unallocated") (eq $value "Unallocated") -}}
+  **{{ end -}}
   {{- $value -}}
-{{- if or (eq $value "None") (eq $value "unallocated") (eq $value "Unallocated") (eq $value "") -}}**{{ end -}}
+{{- if or (eq $value "None") (eq $value "unallocated") (eq $value "Unallocated") -}}**{{ end -}}
 {{- else -}}
   {{- $value -}}
 {{- end }} | {{ end }}
 {{ end -}}
+{{ end }}
+
+{{ if gt (printf "%f" parameters.param_report_filter_percent_threshold) (printf "%f" 0)  -}}
+> **Note:** Policy Setting `Filter Report Percent Threshold` is enabled. Rows with less than {{ (printf "%.2f" parameters.param_report_filter_percent_threshold) }}% of the total spend are not shown in this report.
+{{- end }}
+
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+
     EOS
     check eq(1, 0) # Always trigger
     escalate $esc_send_email

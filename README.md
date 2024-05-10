@@ -318,11 +318,6 @@ These templates can generate savings estimates for your environment.
 
 #### GCE
 
-- Compute
-
-  - [Google Committed Use Discount (CUD)](./cost/google/cud_report)
-  - [Google Expiring Committed Use Discount (CUD)](./cost/google/cud_expiration)
-
 - SQL
 
   - [Google Rightsize CloudSQL Instances](./cost/google/cloudsql_rightsizing)
@@ -336,6 +331,8 @@ These templates can generate savings estimates for your environment.
 - Compute
 
   - [Google Committed Use Discount Recommender](./cost/google/cud_recommendations)
+  - [Google Committed Use Discount Report](./cost/google/cud_report)
+  - [Google Expiring Committed Use Discounts (CUD)](./cost/google/cud_expiration)
   - [Google Idle IP Address Recommender](./cost/google/idle_ip_address_recommendations)
   - [Google Rightsize VM Recommender](./cost/google/rightsize_vm_recommendations)
   - [Google Schedule Instance](./cost/google/schedule_instance)
@@ -620,7 +617,7 @@ These templates can generate savings estimates for your environment.
   Security: 74
 :optimization_count: 50
 :policy_sets:
-  '': 41
+  '': 40
   AWS Config: 1
   Allocate VMs: 3
   Automation: 1
@@ -628,7 +625,7 @@ These templates can generate savings estimates for your environment.
   Burstable Compute Instances: 1
   CIS: 61
   Cloud Cost Optimization: 14
-  Committed Use Discount: 1
+  Committed Use Discount: 2
   Common Bill Ingestion: 2
   Database Services: 1
   Databricks: 1
@@ -683,9 +680,9 @@ These templates can generate savings estimates for your environment.
   Azure China: 1
   Flexera: 37
   Flexera Optima: 2
-  GCE: 3
+  GCE: 1
   GitHub: 7
-  Google: 15
+  Google: 17
   Kubecost: 2
   Microsoft: 1
   Okta: 1
