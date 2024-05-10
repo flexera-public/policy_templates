@@ -14,6 +14,7 @@ This Policy Template leverages Flexera CCO APIs to produce a stacked bar chart s
 ## Input Parameters
 
 - *Email Addresses* - A list of email addresses to notify.
+- *Months Back* - How many months to go back in the chart/incident.
 - *Instance Unit* - Instance unit to normalize usage against. Supported units:
   - `Normalized Units (NFUs)` - Normalize the data against each [NFU](https://aws.amazon.com/about-aws/whats-new/2019/02/normalized-units-information-for-amazon-ec2-reservations-in-aws-cost-explorer/) of each instance.
   - `vCPUs` - Normalize the data against each vCPU of each instance.
