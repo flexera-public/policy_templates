@@ -5,19 +5,13 @@ short_description "Specify which regions have cheaper alternatives by specifying
 long_description ""
 severity "medium"
 category "Cost"
-tenancy "single"
 default_frequency "daily"
 info(
-  version: "2.3",
+  version: "2.4.0",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization"
 )
-
-###############################################################################
-# Permissions
-###############################################################################
-
 
 ###############################################################################
 # Parameters
@@ -25,13 +19,18 @@ info(
 
 parameter "param_email" do
   type "list"
-  label "Email addresses of the recipients you wish to notify"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
 end
 
 parameter "param_billing_centers" do
-  label "Billing Center Name"
   type "list"
-  min_length 1
+  category "Filters"
+  label "Billing Center Name"
+  description "List of billing centers to be filtered."
+  default []
 end
 
 ###############################################################################
@@ -46,19 +45,38 @@ credentials "auth_flexera" do
 end
 
 ###############################################################################
-# Resources
+# Datasources & Scripts
 ###############################################################################
 
-###############################################################################
-# Datasources
-###############################################################################
-
-datasource "ds_dimensions" do
+datasource "ds_applied_policy" do
   request do
     auth $auth_flexera
-    host rs_optima_host
-    path join(["/bill-analysis/orgs/",rs_org_id,"/costs/dimensions"])
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
     header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_aws_regions_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/aws/regions.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_azure_regions_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/azure/regions.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_google_regions_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/google/regions.json"
     header "User-Agent", "RS Policies"
   end
 end
@@ -67,20 +85,20 @@ datasource "ds_billing_centers" do
   request do
     auth $auth_flexera
     host rs_optima_host
-    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
   end
   result do
     encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "href", jmes_path(col_item,"href")
-      field "id", jmes_path(col_item,"id")
-      field "name", jmes_path(col_item,"name")
-      field "parent_id", jmes_path(col_item,"parent_id")
-      field "ancestor_ids", jmes_path(col_item,"ancestor_ids")
-      field "allocation_table", jmes_path(col_item,"allocation_table")
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+      field "ancestor_ids", jmes_path(col_item, "ancestor_ids")
+      field "allocation_table", jmes_path(col_item, "allocation_table")
     end
   end
 end
@@ -89,28 +107,28 @@ datasource "ds_cloud_vendor_accounts" do
   request do
     auth $auth_flexera
     host rs_optima_host
-    path join(["/bill-analysis/orgs/",rs_org_id,"/cloud_vendor_accounts"])
+    path join(["/bill-analysis/orgs/", rs_org_id, "/cloud_vendor_accounts"])
+    query "cloud_vendor", "aws"
     header "Api-Version", "0.1"
     header "User-Agent", "RS Policies"
-    query "cloud_vendor", "aws"
   end
   result do
     encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "id", jmes_path(col_item,"id")
-      field "name", jmes_path(col_item,"name")
-      field "vendor_name", jmes_path(col_item,"vendor_name")
+    collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "vendor_name", jmes_path(col_item, "vendor_name")
     end
   end
 end
 
 datasource "ds_new_bc_costs" do
   request do
-    run_script $js_new_costs_request,rs_optima_host,rs_org_id,$ds_billing_centers,$param_billing_centers
+    run_script $js_new_bc_costs, $ds_billing_centers, $param_billing_centers, rs_optima_host, rs_org_id
   end
   result do
     encoding "json"
-    collect jmes_path(response,"rows[*]") do
+    collect jmes_path(response, "rows[*]") do
       field "billing_center_id", jmes_path(col_item, "dimensions.billing_center_id")
       field "region", jmes_path(col_item, "dimensions.region")
       field "service", jmes_path(col_item, "dimensions.service")
@@ -122,15 +140,8 @@ datasource "ds_new_bc_costs" do
   end
 end
 
-datasource "ds_new_bc_cost_name" do
-  run_script $js_merge_bc_name, $ds_new_bc_costs, $ds_billing_centers, $ds_cloud_vendor_accounts
-end
-
-###############################################################################
-# Scripts
-###############################################################################
-script "js_new_costs_request", type: "javascript" do
-  parameters "rs_optima_host", "org_id","ds_billing_centers","param_billing_centers"
+script "js_new_bc_costs", type: "javascript" do
+  parameters "ds_billing_centers", "param_billing_centers", "rs_optima_host", "org_id"
   result "request"
   code <<-EOS
     var start_at = "";
@@ -204,34 +215,34 @@ script "js_new_costs_request", type: "javascript" do
         {"type": "or",
           "expressions": [
             {"type" : "and", "expressions" : [
-              {"dimension":"vendor","type":"equal","value":"Azure"},
-              {"dimension":"resource_type","type":"substring","substring":"Virtual Machines"}
+              {"dimension":"vendor", "type":"equal", "value":"Azure"},
+              {"dimension":"resource_type", "type":"substring", "substring":"Virtual Machines"}
             ]},
             {"type" : "and", "expressions" : [
-              {"dimension":"category","type":"equal","value":"Compute"},
-              {"dimension":"vendor","type":"equal","value":"AzureCSP"},
-              {"dimension":"resource_type","type":"substring","substring":"Virtual Machines"}
+              {"dimension":"category", "type":"equal", "value":"Compute"},
+              {"dimension":"vendor", "type":"equal", "value":"AzureCSP"},
+              {"dimension":"resource_type", "type":"substring", "substring":"Virtual Machines"}
             ]},
             {"type" : "and", "expressions" : [
-              {"dimension":"category","type":"equal","value":"Compute"},
-              {"dimension":"vendor","type":"equal","value":"AWS"}
+              {"dimension":"category", "type":"equal", "value":"Compute"},
+              {"dimension":"vendor", "type":"equal", "value":"AWS"}
             ]},
             {"type" : "and", "expressions" : [
-             {"dimension":"category","type":"equal","value":"Compute"},
-             {"dimension":"vendor","type":"equal","value":"AzureMCA-Enterprise"},
+             {"dimension":"category", "type":"equal", "value":"Compute"},
+             {"dimension":"vendor", "type":"equal", "value":"AzureMCA-Enterprise"},
              {"dimension":"service", "type":"equal", value:"Microsoft.Compute"},
-             {"dimension":"resource_type","type":"substring","substring":"Virtual Machines"}
+             {"dimension":"resource_type", "type":"substring", "substring":"Virtual Machines"}
             ]},
             {"type" : "and", "expressions" : [
-             {"dimension":"category","type":"equal","value":"Compute"},
-             {"dimension":"vendor","type":"equal","value":"AzureMCA-CSP"},
+             {"dimension":"category", "type":"equal", "value":"Compute"},
+             {"dimension":"vendor", "type":"equal", "value":"AzureMCA-CSP"},
              {"dimension":"service", "type":"equal", value:"Microsoft.Compute"},
-             {"dimension":"resource_type","type":"substring","substring":"Virtual Machines"}
+             {"dimension":"resource_type", "type":"substring", "substring":"Virtual Machines"}
             ]},
             {"type" : "and", "expressions" : [
-             {"dimension":"vendor","type":"equal","value":"GCP"},
+             {"dimension":"vendor", "type":"equal", "value":"GCP"},
              {"dimension":"service", "type":"equal", value:"Compute Engine"},
-             {"dimension":"resource_type","type":"substring","substring":"*running*"}
+             {"dimension":"resource_type", "type":"substring", "substring":"*running*"}
             ]}
           ]
         }
@@ -244,44 +255,64 @@ script "js_new_costs_request", type: "javascript" do
   EOS
 end
 
-script "js_merge_bc_name", type: "javascript" do
-  parameters "new_bc_costs", "billing_centers", "ds_cloud_vendor_accounts"
+datasource "ds_new_bc_cost_name" do
+  run_script $js_new_bc_cost_name, $ds_new_bc_costs, $ds_billing_centers, $ds_cloud_vendor_accounts, $ds_aws_regions_reference, $ds_azure_regions_reference, $ds_google_regions_reference, $ds_applied_policy
+end
+
+script "js_new_bc_cost_name", type: "javascript" do
+  parameters "new_bc_costs", "billing_centers", "ds_cloud_vendor_accounts", "ds_aws_regions_reference", "ds_azure_regions_reference", "ds_google_regions_reference", "ds_applied_policy"
   result "results"
   code <<-EOS
     var results = []
-    var azure_cheaper_regions = {
-      "regions": {
-        "US West":    "US West 2",
-        "US East":    "US East 2",
-        "KR Central": "KR South",
-        "US Central": "US West 2",
-        "CA Central": "CA East",
-        "EU West":    "UK South",
-        "EU North":   "UK West",
-        "JA East":    "KR South",
-        "JA West":    "KR South"
+    var azure_supported_regions = _.filter(ds_azure_regions_reference, function (item) {
+      return item.cheaper != null && item.cheaper != undefined;
+    });
+    
+    var azure_cheaper_regions = { "regions": {} }
+    
+    _.each(azure_supported_regions, function (supportedRegion) {
+        var region = _.findWhere(ds_azure_regions_reference, { region: supportedRegion.region })
+    
+        var cheaperRegion = _.findWhere(ds_azure_regions_reference, { region: supportedRegion.cheaper })
+    
+        if (region != undefined && cheaperRegion != undefined) {
+            azure_cheaper_regions["regions"][region.name] = cheaperRegion.name
         }
-    }
-    var ec2_cheaper_regions = {
-      "regions": {
-        "US West (N. California)":  "US West (Oregon)",
-        "Canada (Central)":         "US East (Ohio)",
-        "EU (London)":              "EU (Ireland)",
-        "EU (Frankfurt)":           "EU (Ireland)",
-        "Asia Pacific (Tokyo)":     "Asia Pacific (Seoul)",
-        "Asia Pacific (Singapore)": "Asia Pacific (Mumbai)"
-      }
-    }
-    var google_cheaper_regions = {
-      "regions" : {
-        "us-east4":     "us-east1",
-        "europe-west2": "europe-west1",
-        "europe-west3": "europe-west1"
-      }
-    }
+    })
+    
+    var ec2_supported_regions = _.filter(ds_aws_regions_reference, function (item) {
+        return item.cheaper != null && item.cheaper != undefined;
+    })
+    
+    var ec2_cheaper_regions = { "regions": {} }
+    
+    _.each(ec2_supported_regions, function (supportedRegion) {
+        var region = _.findWhere(ds_aws_regions_reference, { region: supportedRegion.region })
+    
+        var cheaperRegion = _.findWhere(ds_aws_regions_reference, { region: supportedRegion.cheaper })
+    
+        if (region != undefined && cheaperRegion != undefined) {
+            ec2_cheaper_regions["regions"][region.name] = cheaperRegion.name
+        }
+    })
+    
+    var google_supported_regions = _.filter(ds_google_regions_reference, function(item) {
+        return item.cheaper != null && item.cheaper != undefined;
+    });
+    
+    var google_cheaper_regions = { "regions": {} }
+    
+    _.each(google_supported_regions, function (supportedRegion) {
+        var region = _.findWhere(ds_google_regions_reference, { region: supportedRegion.region })
+    
+        var cheaperRegion = _.findWhere(ds_google_regions_reference, { region: supportedRegion.cheaper })
+    
+        if (region != undefined && cheaperRegion != undefined) {
+            google_cheaper_regions["regions"][region.region] = cheaperRegion.region
+        }
+    })
+
     for (var i = 0; i < new_bc_costs.length; i++) {
-      console.log(new_bc_costs[i])
-      console.log(new_bc_costs[i].billing_center_id)
       var arr_bc_name = _.reject(billing_centers, function(bc){ return bc.id != new_bc_costs[i].billing_center_id });
       var bc_name = arr_bc_name[0].name
       var vendor = new_bc_costs[i].vendor
@@ -293,7 +324,6 @@ script "js_merge_bc_name", type: "javascript" do
         if ( account && account.length ){
           var vendor_account_name = account[0].name
         } else {
-          console.log("aws account name is empty")
           var vendor_account_name = ""
         }
       } else if ( vendor == "AzureCSP" || vendor == "Azure" || vendor =="AzureMCA-CSP" ) {
@@ -303,8 +333,6 @@ script "js_merge_bc_name", type: "javascript" do
         var new_region = google_cheaper_regions["regions"][new_bc_costs[i].region]
         var vendor_account_name = new_bc_costs[i].vendor_account_name
       }
-      console.log(new_region)
-      console.log(bc_name)
       if (new_region != null && new_region !== undefined ) {
         results.push({
           billing_center_name: bc_name,
@@ -322,18 +350,22 @@ script "js_merge_bc_name", type: "javascript" do
       }
       }
     }
-EOS
+
+    if (results.length > 0) {
+      results[0]['policy_name'] = ds_applied_policy['name']
+    }
+  EOS
 end
 
 ###############################################################################
 # Policy
 ###############################################################################
 
-policy "policy_cheaper_regions" do
-  validate_each $ds_new_bc_cost_name do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows with cheaper data"
-    check eq(0,1)
-    escalate $email
+policy "pol_cheaper_regions" do
+  validate $ds_new_bc_cost_name do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Instances With Cheaper Regions Found"
+    check eq(size(data), 0)
+    escalate $esc_email
     export do
       resource_level true
       field "billing_center_name" do
@@ -368,7 +400,7 @@ end
 # Escalations
 ###############################################################################
 
-escalation "email" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"

@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.4.0
+
+- Updated list of cheaper regions for Azure and AWS vendors.
+
 ## v2.3
 
 - Updated policy metadata to make it more clear what Flexera service the policy is for
