@@ -1,4 +1,4 @@
-# AWS Usage Report - Number of Instance vCPUs Used
+# AWS Usage Report - Number of Instance Hours Used
 
 ## Deprecated
 
@@ -6,13 +6,13 @@ This policy is no longer being updated. The [AWS Usage Report - Instance Time Us
 
 ## What It Does
 
-This Policy Template leverages Flexera CCO APIs to produce a stacked bar chart showing Total Instance vCPUs for AWS Instance Families used per month for the last 12 months.
+This Policy Template leverages Flexera CCO APIs to produce a stacked bar chart showing Total Instance Hours for AWS Instance Families used per month for the last 12 months.
 This policy allows the user to specify a *Region* to filter results by, and will email the user specified in *Email addresses to notify*.
 
 ## How It Works
 
 - This policy supports a single AWS region or the entire Organization.
-- This policy produces a stacked-bar chart showing Total Instance vCPUs by Instance Family for the top 8 most used Instance Families. All other Instance Families will be aggregated and displayed as "Other". Values shown in the graph are for the past 12 months.
+- This policy produces a stacked-bar chart showing Total Instance Hours by Instance Family for the top 8 most used Instance Families. All other Instance Families will be aggregated and displayed as "Other". Values shown in the graph are for the past 12 months.
 
 ## Input Parameters
 
