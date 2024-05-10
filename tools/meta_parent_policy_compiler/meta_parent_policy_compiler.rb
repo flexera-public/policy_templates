@@ -82,6 +82,7 @@ default_child_policy_template_files = [
   "../../cost/google/rightsize_vm_recommendations/google_rightsize_vm_recommendations.pt",
   "../../cost/google/schedule_instance/google_schedule_instance.pt",
   "../../cost/google/cud_recommendations/google_committed_use_discount_recommendations.pt",
+  "../../cost/google/cud_report/google_committed_use_discount_report.pt",
   "../../cost/google/old_snapshots/google_delete_old_snapshots.pt",
   "../../security/google/public_buckets/google_public_buckets.pt"
 ]
