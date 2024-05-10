@@ -9,7 +9,7 @@ This Policy Template determines which regions have cheaper alternatives by speci
 This policy has the following input parameters required when launching the policy.
 
 - *Billing Center Name* - The list of Billing centers to check against
-- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
+- *Email Addresses* - A list of email addresses to notify
 
 ## Policy Actions
 
