@@ -1,5 +1,12 @@
 # Changelog
 
+## v5.0.0
+
+- Extended functionality to allow user to produce reports for various metrics instead of just NFUs
+- Added ability to provide results in various units of time
+- Modified incident to present cleaner data
+- Streamlined code for better readability and faster execution
+
 ## v4.1.0
 
 - Fixed issue where only top-level billing centers could be filtered on. Policy now additionally supports filtering on child billing centers.

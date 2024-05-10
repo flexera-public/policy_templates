@@ -15,7 +15,7 @@
 
 ## v3.1
 
-- Updated indentation for chart url so it renders corrrectly in the policy incident email
+- Updated indentation for chart url so it renders correctly in the policy incident email
 
 ## v3.0
 

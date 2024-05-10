@@ -1,24 +1,30 @@
-# AWS Usage Report - Number of Instance Hours Used
+# AWS Usage Report - Instance Time Used
 
 ## What It Does
 
-This Policy Template leverages Flexera CCO APIs to produce a stacked bar chart showing Total Instance Hours for AWS Instance Families used per month for the last 12 months.
-This policy allows the user to specify a *Region* to filter results by, and will email the user specified in *Email addresses to notify*.
+This Policy Template leverages Flexera CCO APIs to produce a stacked bar chart showing Total Instance Time for AWS Instance Families used per month for the last 12 months. The user can specify which unit of time and which instance spec to use to normalize time against; for example, a chart can be produced for total instance vCPU hours. The data feeding this chart can be filtered by AWS region or Flexera Billing Center if desired. Optionally, the result can be emailed.
 
 ## How It Works
 
 - This policy supports a single AWS region or the entire Organization.
-- This policy produces a stacked-bar chart showing Total Instance Hours by Instance Family for the top 8 most used Instance Families. All other Instance Families will be aggregated and displayed as "Other". Values shown in the graph are for the past 12 months.
+- This policy produces a stacked-bar chart showing Total Instance Units by Instance Family for the top 8 most used Instance Families. All other Instance Families will be aggregated and displayed as "Other". Values shown in the graph are for the past 12 months.
+- The unit used for normalizing instance usage depends on the value of the `Instance Unit` parameter.
+- The unit used for time depends on the value of the `Time Unit` parameter.
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
-
+- *Email Addresses* - A list of email addresses to notify.
+- *Instance Unit* - Instance unit to normalize usage against.
+- *Time Unit* - Unit of time to use for results. vCPUs will be normalized to this time unit. Units are calculated as follows:
+  - `Hours` - 1 hour.
+  - `Days` - 24 hours.
+  - `Weeks` - 168 hours e.g. 7 days * 24 hours.
+  - `Months` - 730 hours e.g. 365 days / 12 months * 24 hours.
+  - `Years` - 8760 hours e.g. 365 days * 24 hours.
 - *Allow/Deny Regions* - Whether to treat `Allow/Deny Regions List` parameter as allow or deny list. Has no effect if `Allow/Deny Regions List` is left empty.
 - *Allow/Deny Regions List* - A list of allowed or denied regions. Example: `US West (Oregon)`. Leave blank to check all regions.
 - *Allow/Deny Billing Centers* - Whether to treat `Allow/Deny Billing Center List` parameter as allow or deny list. Has no effect if `Allow/Deny Billing Center List` is left empty.
 - *Allow/Deny Billing Center List* - A list of allowed or denied Billing Center names/IDs. Leave blank to check all Billing Centers.
-- *Email addresses to notify* - A list of email addresses to notify.
 
 ## Policy Actions
 
