@@ -1,5 +1,10 @@
 # Changelog
 
+## v4.2.0
+
+- Modified incident to present cleaner data
+- Streamlined code for better readability and faster execution
+
 ## v4.1.0
 
 - Fixed issue where only top-level billing centers could be filtered on. Policy now additionally supports filtering on child billing centers.

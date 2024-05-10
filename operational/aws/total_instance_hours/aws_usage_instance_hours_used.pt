@@ -7,7 +7,7 @@ severity "low"
 category "Operational"
 default_frequency "monthly"
 info(
-  version: "4.1.0",
+  version: "4.2.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Usage Report"
@@ -20,7 +20,7 @@ info(
 parameter "param_email" do
   type "list"
   category "Policy Settings"
-  label "Email addresses to notify"
+  label "Email Addresses"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
   default []
 end
@@ -171,23 +171,22 @@ script "js_usage_data", type: "javascript" do
   region_filters = []
 
   if (param_regions_list.length > 0) {
+    subfilters = _.map(param_regions_list, function(region) {
+      return { dimension: "region", type: "equal", value: region }
+    })
+
+    // Create a collection of 'not' filters if deny list
     if (param_regions_allow_or_deny == "Deny") {
-      region_filters = _.map(param_regions_list, function(region) {
-        return {
-          type: "not",
-          expression: { dimension: "region", type: "equal", value: region }
-        }
+      region_filters = _.map(subfilters, function(subfilter) {
+        return { type: "not", expression: subfilter }
       })
     } else {
-      subfilters = _.map(param_regions_list, function(region) {
-        return { dimension: "region", type: "equal", value: region }
-      })
-
+      // Otherwise, create a single or filter if allow list
       region_filters = [{ type: "or", expressions: subfilters }]
     }
   }
 
-  // Expressions for API Filter
+  // Create full list of expressions for API Filter
   expressions = region_filters.concat([
     { dimension: "category", type: "equal", value: "Compute" },
     { dimension: "resource_type", type: "equal", value: "Compute Instance" },
@@ -247,8 +246,8 @@ script "js_instance_hours_per_family", type: "javascript" do
 
   _.each(_.keys(ds_aws_instance_size_map), function(instance_type) {
     nfu = ds_aws_instance_size_map[instance_type]['nfu']
-    if (typeof(nfu) != 'number') { nfu = 1 }
-    nfu_ratios[instance_type] = nfu
+    if (typeof(nfu) != 'number' && typeof(nfu) != 'string') { nfu = 1 }
+    nfu_ratios[instance_type] = Number(nfu)
   })
 
   // Enrich current data with Instance Family, and then calculate Normalized Instance Hours using NFU
@@ -271,9 +270,9 @@ script "js_instance_hours_per_family", type: "javascript" do
     }
   })
 
-  // For each month, sum Instance Hours for each Instance Family
-  full_list = []
-  family_list = []
+  // Sort data into two lists
+  full_list = []    // Data sorted by month, instance family, and total instance hours
+  family_list = []  // Data sorted by instance family and total instance hours
   months = _.uniq(_.pluck(enriched_usage_data, 'month'))
   families = _.uniq(_.pluck(enriched_usage_data, 'instance_family'))
 
@@ -295,7 +294,7 @@ script "js_instance_hours_per_family", type: "javascript" do
     })
   })
 
-  // Split list out between top 8 and remaining items
+  // Find top 8 families and store their data in the result
   family_list = _.sortBy(family_list, 'hours').reverse()
   top_eight_families = _.pluck(family_list.slice(0, 8), 'family')
 
@@ -303,6 +302,7 @@ script "js_instance_hours_per_family", type: "javascript" do
     return _.contains(top_eight_families, item['instance_family'])
   })
 
+  // Combine the data for the remaining families into "Other"
   remaining_list = _.reject(full_list, function(item) {
     return _.contains(top_eight_families, item['instance_family'])
   })
@@ -326,21 +326,29 @@ script "js_chart_creation", type: "javascript" do
   parameters "ds_instance_hours_per_family", "ds_applied_policy", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-EOS
+  // Get list of months from data and create chart X axis labels
   months = _.uniq(_.pluck(ds_instance_hours_per_family, 'month'))
   chart_axis_labels = "chxl=1:|" + _.map(months, function(name) { return name.substring(0, 7) }).join('|')
 
-  group_by_family = _.groupBy(ds_instance_hours_per_family, function(data) { return data['instance_family'] })
+  // Get list of families and create chart legend from it
+  group_by_family = _.groupBy(ds_instance_hours_per_family, function(data) {
+    return data['instance_family']
+  })
+
   chart_legend = "chdl=" + _.keys(group_by_family).join('|')
 
+  // Get data for each family and create chart data from it
   data_parts = _.map(group_by_family, function(family_list) {
     return _.pluck(family_list, 'total_instance_hours').join(',')
   })
 
   chart_data = "chd=t:" + data_parts.join('|')
 
+  // Create chart title
   policy_title = "Total Instance Hours Used Per Instance Family"
   chart_title = "chtt=" + policy_title
 
+  // Assemble chart
   chart = {
     chart_type: encodeURI("cht=bvs"),
     chart_size: encodeURI("chs=900x500"),
@@ -359,6 +367,7 @@ script "js_chart_creation", type: "javascript" do
     policy_title: policy_title
   }
 
+  // Create final incident table and store chart in first entry
   result = _.map(ds_instance_hours_per_family, function(item) {
     return {
       month: item['month'].split('T')[0],

@@ -2,8 +2,7 @@
 
 ## What It Does
 
-This Policy Template leverages Flexera CCO APIs to produce a stacked bar chart showing Total Instance Hours for AWS Instance Families used per month for the last 12 months.
-This policy allows the user to specify a *Region* to filter results by, and will email the user specified in *Email addresses to notify*.
+This Policy Template leverages Flexera CCO APIs to produce a stacked bar chart showing Total Instance Hours for AWS Instance Families used per month for the last 12 months. The data feeding this chart can be filtered by AWS region or Flexera Billing Center if desired. Optionally, the result can be emailed.
 
 ## How It Works
 
@@ -12,13 +11,11 @@ This policy allows the user to specify a *Region* to filter results by, and will
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
-
+- *Email Addresses* - A list of email addresses to notify.
 - *Allow/Deny Regions* - Whether to treat `Allow/Deny Regions List` parameter as allow or deny list. Has no effect if `Allow/Deny Regions List` is left empty.
 - *Allow/Deny Regions List* - A list of allowed or denied regions. Example: `US West (Oregon)`. Leave blank to check all regions.
 - *Allow/Deny Billing Centers* - Whether to treat `Allow/Deny Billing Center List` parameter as allow or deny list. Has no effect if `Allow/Deny Billing Center List` is left empty.
 - *Allow/Deny Billing Center List* - A list of allowed or denied Billing Center names/IDs. Leave blank to check all Billing Centers.
-- *Email addresses to notify* - A list of email addresses to notify.
 
 ## Policy Actions
 
