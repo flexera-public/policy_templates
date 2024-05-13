@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.3.1
+
+- Deprecated: This policy is no longer being updated. Please see policy README for more information.
+
 ## v3.3
 
 - Updated policy metadata to correctly identify it as an AWS policy
