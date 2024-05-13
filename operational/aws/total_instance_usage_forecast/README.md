@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This Policy Template leverages Flexera CCO APIs to produce a stacked bar chart showing projected Total Instance Time for AWS Instance Families. The policy uses the specified previous number of months, not including the current month, to to determine a straight-line forecast using a linear regression model. The user can specify which unit of time and which instance spec to use to normalize time against; for example, a chart can be produced for total instance vCPU hours. The data feeding this chart can be filtered by AWS region or Flexera Billing Center if desired. Optionally, the result can be emailed.
+This policy template leverages Flexera CCO APIs to produce a stacked bar chart showing forecasted Total Instance Time for AWS Instance Families. The policy uses the specified previous number of months, not including the current month, to to determine a straight-line forecast using a linear regression model. The user can specify which unit of time and which instance spec to use to normalize time against; for example, a chart can be produced for total instance vCPU hours. The data feeding this chart can be filtered by AWS region or Flexera Billing Center if desired. Optionally, the result can be emailed.
 
 ## How It Works
 
