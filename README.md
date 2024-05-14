@@ -314,7 +314,7 @@ These templates can generate savings estimates for your environment.
 #### Flexera Optima
 
 - [Reserved Instance Report by Billing Center](./cost/aws/reserved_instances/report_by_bc)
-- [Scheduled Report for Unallocated Costs](./cost/scheduled_report_unallocated)
+- [Scheduled Report for Unallocated Costs](./cost/flexera/cco/scheduled_report_unallocated)
 
 #### GCE
 
