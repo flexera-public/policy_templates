@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.7
+
+- TODO
+
 ## v3.6
 
 - Fixed bug where incident link was redirecting to wrong url
