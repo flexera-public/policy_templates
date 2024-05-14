@@ -1,5 +1,11 @@
 # Changelog
 
+## v4.0.0
+
+- Policy can now be run against an arbitrary number of days in the past
+- Policy can now filter for several Savings Plans at once
+- Streamlined code for better readability and faster execution
+
 ## v3.3
 
 - Updated policy metadata to align policy to other `Savings Plans` policies.
