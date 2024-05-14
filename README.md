@@ -313,7 +313,6 @@ These templates can generate savings estimates for your environment.
 
 #### Flexera Optima
 
-- [Reserved Instance Report by Billing Center](./cost/aws/reserved_instances/report_by_bc)
 - [Scheduled Report for Unallocated Costs](./cost/flexera/cco/scheduled_report_unallocated)
 
 #### GCE
@@ -608,13 +607,13 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 32
-  Cost: 95
+  Cost: 94
   Operational: 21
   SaaS Management: 12
   Security: 74
 :optimization_count: 50
 :policy_sets:
-  '': 40
+  '': 39
   AWS Config: 1
   Allocate VMs: 3
   Automation: 1
@@ -676,7 +675,7 @@ These templates can generate savings estimates for your environment.
   Azure: 83
   Azure China: 1
   Flexera: 37
-  Flexera Optima: 2
+  Flexera Optima: 1
   GCE: 1
   GitHub: 7
   Google: 17
@@ -686,7 +685,7 @@ These templates can generate savings estimates for your environment.
   Oracle: 1
   ServiceNow: 1
 :services:
-  '': 13
+  '': 12
   AKS: 2
   All: 3
   App Service: 1
@@ -727,7 +726,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 234
+:total_count: 233
 -->
 <!-- End Policy Template Stats -->
 
