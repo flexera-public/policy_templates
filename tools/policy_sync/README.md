@@ -1,14 +1,33 @@
-# Policy Template Synchronization - Publish
+# Policy Template Synchronization - Unpublish
 
 ## What It Does
 
-This Policy Template can be used to synchronize (upload, overwrite, or alert) RS built-in policy templates in your account. It uses a json file stored in the github directory to determine a set of RightScale's current policy templates and then compares them with your current account policies (using the version) to take appropriate action.
+This Policy Template can be used to remove policy templates in your account that are not present in GitHub. It uses a JSON file stored in the GitHub repository to determine a set of Flexera's current policy templates and then compares them with your current account policies to take appropriate action.
 
-![Policy Sync]("policy_sync_publish.png")
+## Input Parameters
+
+- *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
+- *GitHub Organization Name* - Name of the GitHub organization containing the policy repository.
+  - **Example highlighted in URL:** github.com/`flexera-public`/policy_templates/tree/master
+- *GitHub Repository Name* - Name of the policy repository on GitHub.
+  - **Example highlighted in URL:** github.com/flexera-public/`policy_templates`/tree/master
+- *GitHub Branch Name* - Name of the Github branch to pull the active policy JSON file from.
+  - **Example highlighted in URL:** github.com/flexera-public/policy_templates/tree/`master`
+- *Active Policy JSON* - Path to the active policy list JSON file.
+  - **Example:** data/active_policy_list/active_policy_list.json
+- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
+
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example if a user selects the "Unpublish Policy Templates" action while applying the policy, all published templates not present in the active policy JSON file will be unpublished.
+
+## Policy Actions
+
+- Sends an email notification.
+- Unpublish policy templates with user approval.
 
 ## Prerequisites
 
-This policy uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `policy_designer`
@@ -16,36 +35,10 @@ This policy uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/Ma
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
-## Usage
+## Supported Clouds
 
-- The Policy Template Synchronization Policy Template will need to be uploaded to your account and set active.
-- There are currently two actions: `Email` and `Email and Upload`.
-- When you choose `Email` you will get an alert on the the policy templates that can be updated, and no further action will be taken.
-- When you choose `Email and Upload`, you will get an alert on the policy templates that can be updated and we will upload those policies to your account.
+- Flexera
 
-### Scenarios
+## Cost
 
-1. No RightScale's built-in Policy Templates in the account
-    1. `Email` or `Email and Upload`
-1. RightScale's built-in Policy Templates exist in the account
-    1. Versions are the same: `No Action`
-    1. Versions are different: `Email` or `Email and Upload`
-    1. Versions are the same, Force Upgrade = 1: `Email` or `Email and Upload`
-
-## Parameters
-
-### Policy Template Synchronization Policy Template
-
-1. Email addresses of the recipients you wish to notify - Ex: noreply@example.com
-1. Actions: `Email` and `Email and Upload`
-1. Force Upgrade - Allowed Values: 0:False, 1:True - Setting this to 1 will force upgrade all policy templates in your account.
-1. Governance Host - "Governance Host, Hostname will match your shard: us-3.rightscale.com = governance-3.rightscale.com". Simply navigate to Cloud Management or open browser developer console to see the hostname of the API calls.
-
-## Required Roles
-
-1. For `Email` Escalation option, either: `policy_manager` or `policy_designer`
-1. For `Email and Upload` Escalation option: `policy_designer`
-
-### Cost
-
-This Policy Template does not launch any instances, and so does not incur any cloud costs.
+This Policy Template does not incur any cloud costs.
