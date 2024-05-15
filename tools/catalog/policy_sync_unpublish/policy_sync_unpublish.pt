@@ -1,0 +1,253 @@
+name "Policy Template Synchronization - Unpublish"
+rs_pt_ver 20180301
+type "policy"
+short_description "This Policy Template can be used to remove policy templates in your account that are not present in GitHub. See the [README](https://github.com/flexera-public/policy_templates/tree/master/tools/catalog/policy_sync_unpublish/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "low"
+category "Operational"
+default_frequency "15 minutes"
+info(
+  version: "1.0.0",
+  publish: "false",
+  provider: "Flexera",
+  service: "Policy Engine",
+  publish: "false",
+  policy_set: "N/A"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify"
+  default []
+end
+
+parameter "param_template_git_org" do
+  type "string"
+  category "Policy Settings"
+  label "GitHub Organization Name"
+  description "Name of the GitHub organization containing the policy repository"
+  default "flexera-public"
+end
+
+parameter "param_template_git_repo" do
+  type "string"
+  category "Policy Settings"
+  label "GitHub Repository Name"
+  description "Name of the policy repository on GitHub"
+  default "policy_templates"
+end
+
+parameter "param_github_active_list_path" do
+  type "string"
+  category "Policy Settings"
+  label "Active Policy JSON"
+  description "Path to the active policy list JSON file"
+  default "data/active_policy_list/active_policy_list.json"
+end
+
+parameter "param_branch" do
+  type "string"
+  category "Policy Settings"
+  label "GitHub Branch Name"
+  description "Name of the Github branch to pull the active policy JSON file from"
+  default "master"
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Unpublish Policy Templates"]
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_active_policy_list" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path join([$param_template_git_org, "/", $param_template_git_repo, "/", $param_branch, "/", $param_github_active_list_path])
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    collect jmes_path(response, "policies") do
+      field "name", jmes_path(col_item, "name")
+      field "file_name", jmes_path(col_item, "file_name")
+      field "version", jmes_path(col_item, "version")
+      field "change_log", jmes_path(col_item, "change_log")
+    end
+  end
+end
+
+datasource "ds_published_template_list" do
+  request do
+    auth $auth_flexera
+    verb "GET"
+    host rs_governance_host
+    path join(["/api/governance/orgs/", rs_org_id, "/published_templates"])
+    query "view", "extended"
+    header "Api-Version", "1.0"
+  end
+  result do
+    collect jmes_path(response, "items") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "href", jmes_path(col_item, "href")
+      field "short_description", jmes_path(col_item, "short_description")
+      field "info", jmes_path(col_item, "info")
+    end
+  end
+end
+
+datasource "ds_templates_to_unpublish" do
+  run_script $js_templates_to_unpublish, $ds_active_policy_list, $ds_published_template_list, $ds_applied_policy
+end
+
+script "js_templates_to_unpublish", type: "javascript" do
+  parameters "ds_active_policy_list", "ds_published_template_list"
+  result "result"
+  code <<-EOS
+  active_names = _.pluck(ds_active_policy_list, "name")
+
+  to_unpublish = _.reject(ds_published_template_list, function(template) {
+    return _.contains(active_names, template["name"])
+  })
+
+  result = _.map(to_unpublish, function(template) {
+    id: template['id'],
+    name: template['name'],
+    href: template['href'],
+    short_description: template['short_description'],
+    policy_name: ds_applied_policy['name']
+  })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_templates_to_unpublish" do
+  validate_each $ds_templates_to_unpublish do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Policy Templates To Unpublish"
+    check eq(val(item, "id"), "")
+    escalate $esc_email
+    escalate $esc_unpublish_templates
+    export do
+      resource_level true
+      field "name" do
+        label "Name"
+      end
+      field "short_description" do
+        label "Description"
+      end
+      field "id" do
+        label "ID"
+      end
+      field "href" do
+        label "HREF"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_unpublish_templates" do
+  automatic contains($param_automatic_action, "Unpublish Policy Templates")
+  label "Unpublish Policy Templates"
+  description "Approval to unpublish all selected policy templates"
+  run "unpublish_templates", data, rs_governance_host
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define unpublish_templates($data, $rs_governance_host) return $all_responses do
+  $$all_responses = []
+
+  foreach $template in $data do
+    sub on_error: handle_error() do
+      call unpublish_template($template, $rs_governance_host) retrieve $response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define unpublish_template($template, $rs_governance_host) return $response do
+  $host = $rs_governance_host
+  $href = $template["href"]
+  $url = $host + $href
+  task_label("DELETE " + $url)
+
+  $response = http_request(
+    auth: $$auth_flexera,
+    https: true,
+    verb: "delete",
+    host: $host,
+    href: $href,
+    headers: { "Api-Version": "1.0" }
+  )
+
+  task_label("DELETE Flexera Policy Template response: " + $template["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response from DELETE Flexera Policy Template: "+ $template["id"] + " " + to_json($response)
+  else
+    task_label("DELETE Flexera Policy Template successful: " + $template["id"])
+  end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
+end

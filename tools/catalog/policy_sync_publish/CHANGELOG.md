@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.0.1
+
+- Updated name to `Policy Template Synchronization - Publish`
+
 ## v2.0.0
 
 - Added parameters for the Policy Template Github Repo to enable this to be used for other repos without modifying Policy Template
