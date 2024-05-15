@@ -4,6 +4,7 @@
 
 - Policy can now be run against an arbitrary number of days in the past
 - Policy can now filter for several Savings Plans at once
+- Improved incident output for better readability
 - Streamlined code for better readability and faster execution
 
 ## v3.3
