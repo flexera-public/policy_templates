@@ -210,37 +210,17 @@ script "js_updated_templates", type: "javascript" do
 EOS
 end
 
-datasource "ds_published_template_list" do
-  request do
-    auth $auth_flexera
-    verb "GET"
-    host rs_governance_host
-    path join(["/api/governance/orgs/", rs_org_id, "/published_templates"])
-    query "view", "extended"
-    header "Api-Version", "1.0"
-  end
-  result do
-    collect jmes_path(response, "items") do
-      field "id", jmes_path(col_item, "id")
-      field "name", jmes_path(col_item, "name")
-      field "href", jmes_path(col_item, "href")
-      field "short_description", jmes_path(col_item, "short_description")
-      field "info", jmes_path(col_item, "info")
-    end
-  end
-end
-
 datasource "ds_defunct_templates" do
-  run_script $js_defunct_templates, $ds_active_policy_list, $ds_published_template_list, $ds_applied_policy
+  run_script $js_defunct_templates, $ds_active_policy_list, $ds_current_policy_template_list, $ds_applied_policy
 end
 
 script "js_defunct_templates", type: "javascript" do
-  parameters "ds_active_policy_list", "ds_published_template_list"
+  parameters "ds_active_policy_list", "ds_current_policy_template_list", "ds_applied_policy"
   result "result"
   code <<-EOS
   active_names = _.pluck(ds_active_policy_list, "name")
 
-  defunct_templates = _.reject(ds_published_template_list, function(template) {
+  defunct_templates = _.reject(ds_current_policy_template_list, function(template) {
     return _.contains(active_names, template["name"])
   })
 
@@ -331,7 +311,7 @@ policy "pol_templates_to_update" do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Policy Templates To Unpublish"
     check eq(val(item, "id"), "")
     escalate $esc_email
-    escalate $esc_unpublish_templates
+    escalate $esc_unpublish_defunct_templates
     export do
       resource_level true
       field "name" do
@@ -365,17 +345,17 @@ escalation "esc_publish_new_templates" do
   automatic contains($param_automatic_action, "Publish New Policy Templates")
   label "Publish New Policy Templates"
   description "Approval to publish all selected new policy templates"
-  run "publish_new_templates", data, rs_governance_host, rs_project_id
+  run "publish_new_templates", data, rs_governance_host, rs_org_id, rs_project_id
 end
 
-escalation "esc_update_templates" do
+escalation "esc_update_existing_templates" do
   automatic contains($param_automatic_action, "Update Outdated Policy Templates")
   label "Update Outdated Policy Templates"
   description "Approval to update all selected policy templates"
-  run "update_existing_templates", data, rs_governance_host, rs_project_id
+  run "update_existing_templates", data, rs_governance_host, rs_org_id, rs_project_id
 end
 
-escalation "esc_unpublish_templates" do
+escalation "esc_unpublish_defunct_templates" do
   automatic contains($param_automatic_action, "Unpublish Defunct Policy Templates")
   label "Unpublish Defunct Policy Templates"
   description "Approval to unpublish all selected policy templates"
@@ -386,14 +366,14 @@ end
 # Cloud Workflow
 ###############################################################################
 
-define publish_new_templates($data, $rs_governance_host, $rs_project_id) return $all_responses do
+define publish_new_templates($data, $rs_governance_host, $rs_org_id, $rs_project_id) return $all_responses do
   $$all_responses = []
 
   foreach $template in $data do
     sub on_error: handle_error() do
       call get_template_source($template) retrieve $response, $template_source
-      call upload_template($template, $template_source, $rs_governance_host, $rs_project_id, "post") retrieve $response, $template_href
-      call publish_template($template, $template_href, $rs_governance_host, $rs_project_id, "post") retrieve $response, $template_href
+      call upload_template($template, $template_source, $rs_governance_host, $rs_project_id) retrieve $response, $template_href
+      call publish_template($template, $template_href, $rs_governance_host, $rs_org_id) retrieve $response, $template_href
     end
   end
 
@@ -402,14 +382,14 @@ define publish_new_templates($data, $rs_governance_host, $rs_project_id) return 
   end
 end
 
-define update_existing_templates($data, $rs_governance_host) return $all_responses do
+define update_existing_templates($data, $rs_governance_host, $rs_org_id, $rs_project_id) return $all_responses do
   $$all_responses = []
 
   foreach $template in $data do
     sub on_error: handle_error() do
       call get_template_source($template) retrieve $response, $template_source
-      call upload_template($template, $template_source, $rs_governance_host, $rs_project_id, "put") retrieve $response, $template_href
-      call publish_template($template, $template_href, $rs_governance_host, $rs_project_id, "put") retrieve $response, $template_href
+      call upload_template($template, $template_source, $rs_governance_host, $rs_project_id) retrieve $response, $template_href
+      call publish_template($template, $template_href, $rs_governance_host, $rs_org_id) retrieve $response, $template_href
     end
   end
 
@@ -449,7 +429,9 @@ define get_template_source($template) return $response, $template_source do
   end
 end
 
-define upload_template($template, $template_source, $rs_governance_host, $rs_project_id, $verb) return $response, $template_href do
+define upload_template($template, $template_source, $rs_governance_host, $rs_project_id) return $response, $template_href do
+  $template_file_name = last(split($template["file_name"], '/'))
+  $verb = "post"
   $host = $rs_governance_host
   $href = join(["/api/governance/projects/", $rs_project_id, "/policy_templates"])
   $url = $host + $href
@@ -462,11 +444,29 @@ define upload_template($template, $template_source, $rs_governance_host, $rs_pro
     host: $host,
     href: $href,
     headers: { "Api-Version": "1.0" },
-    body: { "source": $template_source, filename: last(split($template["file_name"], '/')) }
+    body: { "source": $template_source, filename: $template_file_name }
   )
 
   task_label(upcase($verb) + " Flexera Policy Template response: " + $template_file_name + " " + to_json($response))
   $$all_responses << to_json({"req": upcase($verb) + " " + $url, "resp": $response})
+
+  if $response["code"] == 409
+    $verb = "put"
+    task_label(upcase($verb) + " " + $url)
+
+    $response = http_request(
+      auth: $$auth_flexera,
+      verb: $verb,
+      https: true,
+      host: $host,
+      href: $href,
+      headers: { "Api-Version": "1.0" },
+      body: { "source": $template_source, filename: $template_file_name }
+    )
+
+    task_label(upcase($verb) + " Flexera Policy Template response: " + $template_file_name + " " + to_json($response))
+    $$all_responses << to_json({"req": upcase($verb) + " " + $url, "resp": $response})
+  end
 
   if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
     raise "Unexpected response from " + upcase($verb) + " Flexera Policy Template: " + $template_file_name + " " + to_json($response)
@@ -476,7 +476,8 @@ define upload_template($template, $template_source, $rs_governance_host, $rs_pro
   end
 end
 
-define publish_template($template, $template_href, $rs_governance_host, $rs_project_id, $verb) return $response, $template_href do
+define publish_template($template, $template_href, $rs_governance_host, $rs_org_id) return $response, $template_href do
+  $verb = "post"
   $host = $rs_governance_host
   $href = join(["/api/governance/orgs/", $rs_org_id, "/published_templates"])
   $url = $host + $href
@@ -492,14 +493,32 @@ define publish_template($template, $template_href, $rs_governance_host, $rs_proj
     body: { "template_href": $template_href }
   )
 
-  task_label("POST Flexera Policy Template response: " + $template_href + " " + to_json($response))
+  task_label(upcase($verb) + " Flexera Policy Template response: " + $template_href + " " + to_json($response))
   $$all_responses << to_json({"req": upcase($verb) + " " + $url, "resp": $response})
+
+  if $response["code"] == 409
+    $corrected_href = $response["headers"]["Location"]
+    $verb = "put"
+    task_label(upcase($verb) + " " + $url)
+
+    $response = http_request(
+      auth: $$auth_flexera,
+      verb: $verb,
+      https: true,
+      host: $host,
+      href: $href,
+      headers: { "Api-Version": "1.0" },
+      body: { "template_href": $corrected_href }
+    )
+
+    task_label(upcase($verb) + " Flexera Policy Template response: " + $template_href + " " + to_json($response))
+    $$all_responses << to_json({"req": upcase($verb) + " " + $url, "resp": $response})
+  end
 
   if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
     raise "Unexpected response from " + upcase($verb) + " Flexera Policy Template: " + $template_href + " " + to_json($response)
   else
     task_label(upcase($verb) + " Flexera Policy Template successful: " + $template_href)
-    $template_href = $response["headers"]["Location"]
   end
 end
 
