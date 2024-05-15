@@ -1,5 +1,12 @@
 # Changelog
 
+## v3.0.0
+
+- Policy now raises three incidents: new policies, updated policies, and defunct policies
+- Added support for deleting defunct policies
+- Reworked policy parameters to be more clear and specific
+- Streamlined code for better readability and faster execution
+
 ## v2.0.0
 
 - Added parameters for the Policy Template Github Repo to enable this to be used for other repos without modifying Policy Template
