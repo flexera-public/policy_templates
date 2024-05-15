@@ -1,4 +1,4 @@
-name "Policy Template Synchronization - Publish"
+name "Policy Template Synchronization"
 rs_pt_ver 20180301
 type "policy"
 short_description "This Policy Template can be used to synchronize (upload, overwrite, or alert) policy templates in your account from GitHub. See the [README](https://github.com/flexera-public/policy_templates/tree/master/tools/catalog/policy_sync_publish/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
@@ -8,11 +8,10 @@ category "Operational"
 default_frequency "15 minutes"
 info(
   version: "3.0.0",
-  publish: "false",
   provider: "Flexera",
   service: "Policy Engine",
-  publish: "false",
-  policy_set: "N/A"
+  policy_set: "",
+  publish: "false"
 )
 
 ###############################################################################
@@ -27,7 +26,7 @@ parameter "param_email" do
   default []
 end
 
-parameter "param_template_git_org" do
+parameter "param_github_org" do
   type "string"
   category "Policy Settings"
   label "GitHub Organization Name"
@@ -35,20 +34,12 @@ parameter "param_template_git_org" do
   default "flexera-public"
 end
 
-parameter "param_template_git_repo" do
+parameter "param_github_repo" do
   type "string"
   category "Policy Settings"
   label "GitHub Repository Name"
   description "Name of the policy repository on GitHub"
   default "policy_templates"
-end
-
-parameter "param_github_active_list_path" do
-  type "string"
-  category "Policy Settings"
-  label "Active Policy JSON"
-  description "Path to the active policy list JSON file"
-  default "data/active_policy_list/active_policy_list.json"
 end
 
 parameter "param_github_branch" do
@@ -57,6 +48,14 @@ parameter "param_github_branch" do
   label "GitHub Branch Name"
   description "Name of the Github branch to pull the active policy JSON file from"
   default "master"
+end
+
+parameter "param_github_active_list_path" do
+  type "string"
+  category "Policy Settings"
+  label "Active Policy JSON"
+  description "Path to the active policy list JSON file"
+  default "data/active_policy_list/active_policy_list.json"
 end
 
 parameter "param_automatic_action" do
@@ -96,7 +95,7 @@ datasource "ds_active_policy_list" do
   request do
     verb "GET"
     host "raw.githubusercontent.com"
-    path join([$param_template_git_org, "/", $param_template_git_repo, "/", $param_github_branch, "/", $param_github_active_list_path])
+    path join([$param_github_org, "/", $param_github_repo, "/", $param_github_branch, "/", $param_github_active_list_path])
     header "User-Agent", "RS Policies"
   end
   result do
@@ -133,11 +132,11 @@ datasource "ds_current_policy_template_list" do
 end
 
 datasource "ds_new_templates" do
-  run_script $js_new_templates, $ds_active_policy_list, $ds_current_policy_template_list, $ds_applied_policy, $param_template_git_org, $param_template_git_repo, $param_github_branch
+  run_script $js_new_templates, $ds_active_policy_list, $ds_current_policy_template_list, $ds_applied_policy, $param_github_org, $param_github_repo, $param_github_branch
 end
 
 script "js_new_templates", type: "javascript" do
-  parameters "ds_active_policy_list", "ds_current_policy_template_list", "ds_applied_policy", "param_template_git_org", "param_template_git_repo", "param_github_branch"
+  parameters "ds_active_policy_list", "ds_current_policy_template_list", "ds_applied_policy", "param_github_org", "param_github_repo", "param_github_branch"
   result "result"
   code <<-EOS
   current_names = _.pluck(ds_current_policy_template_list, "name")
@@ -147,7 +146,7 @@ script "js_new_templates", type: "javascript" do
   })
 
   result = _.map(new_templates, function(template) {
-    file_path = ["", param_template_git_org, param_template_git_repo, param_github_branch, template["file_name"]].join("/")
+    file_path = ["", param_github_org, param_github_repo, param_github_branch, template["file_name"]].join("/")
 
     return {
       id: template['name'],
@@ -165,11 +164,11 @@ EOS
 end
 
 datasource "ds_updated_templates" do
-  run_script $js_updated_templates, $ds_active_policy_list, $ds_current_policy_template_list, $ds_applied_policy, $param_template_git_org, $param_template_git_repo, $param_github_branch
+  run_script $js_updated_templates, $ds_active_policy_list, $ds_current_policy_template_list, $ds_applied_policy, $param_github_org, $param_github_repo, $param_github_branch
 end
 
 script "js_updated_templates", type: "javascript" do
-  parameters "ds_active_policy_list", "ds_current_policy_template_list", "ds_applied_policy", "param_template_git_org", "param_template_git_repo", "param_github_branch"
+  parameters "ds_active_policy_list", "ds_current_policy_template_list", "ds_applied_policy", "param_github_org", "param_github_repo", "param_github_branch"
   result "result"
   code <<-EOS
   current_policy_object = {}
@@ -193,7 +192,7 @@ script "js_updated_templates", type: "javascript" do
 
   result = _.map(updated_templates, function(template) {
     catalog_template = current_policy_object[template['name']]
-    file_path = ["", param_template_git_org, param_template_git_repo, param_github_branch, template["file_name"]].join("/")
+    file_path = ["", param_github_org, param_github_repo, param_github_branch, template["file_name"]].join("/")
 
     return {
       id: template['name'],
@@ -231,21 +230,21 @@ datasource "ds_published_template_list" do
   end
 end
 
-datasource "ds_templates_to_unpublish" do
-  run_script $js_templates_to_unpublish, $ds_active_policy_list, $ds_published_template_list, $ds_applied_policy
+datasource "ds_defunct_templates" do
+  run_script $js_defunct_templates, $ds_active_policy_list, $ds_published_template_list, $ds_applied_policy
 end
 
-script "js_templates_to_unpublish", type: "javascript" do
+script "js_defunct_templates", type: "javascript" do
   parameters "ds_active_policy_list", "ds_published_template_list"
   result "result"
   code <<-EOS
   active_names = _.pluck(ds_active_policy_list, "name")
 
-  to_unpublish = _.reject(ds_published_template_list, function(template) {
+  defunct_templates = _.reject(ds_published_template_list, function(template) {
     return _.contains(active_names, template["name"])
   })
 
-  result = _.map(to_unpublish, function(template) {
+  result = _.map(defunct_templates, function(template) {
     return {
       id: template['id'],
       name: template['name'],
@@ -328,7 +327,7 @@ policy "pol_templates_to_update" do
       end
     end
   end
-  validate_each $ds_templates_to_unpublish do
+  validate_each $ds_defunct_templates do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Policy Templates To Unpublish"
     check eq(val(item, "id"), "")
     escalate $esc_email

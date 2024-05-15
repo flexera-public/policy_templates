@@ -1,8 +1,8 @@
-# Policy Template Synchronization - Unpublish
+# Policy Template Synchronization
 
 ## What It Does
 
-This Policy Template can be used to remove policy templates in your account that are not present in GitHub. It uses a JSON file stored in the GitHub repository to determine a set of Flexera's current policy templates and then compares them with your current account policies to take appropriate action.
+This Policy Template can be used to synchronize the policy templates in your account to a GitHub repository. It uses a JSON file stored in the GitHub repository to determine a set of current policy templates and then compares them with your current account policies to take appropriate action.
 
 ## Input Parameters
 
@@ -18,12 +18,14 @@ This Policy Template can be used to remove policy templates in your account that
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
 Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
-For example if a user selects the "Unpublish Policy Templates" action while applying the policy, all published templates not present in the active policy JSON file will be unpublished.
+For example if a user selects the "Unpublish Defunct Policy Templates" action while applying the policy, all published templates not present in the active policy JSON file will be unpublished.
 
 ## Policy Actions
 
 - Sends an email notification.
-- Unpublish policy templates with user approval.
+- Publish new policy templates with user approval.
+- Update existing published policy templates with user approval.
+- Unpublish defunct policy templates with user approval.
 
 ## Prerequisites
 
