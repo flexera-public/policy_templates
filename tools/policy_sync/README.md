@@ -2,7 +2,19 @@
 
 ## What It Does
 
-This Policy Template can be used to synchronize the policy templates in your account to a GitHub repository. It uses a JSON file stored in the GitHub repository to determine a set of current policy templates and then compares them with your current account policies to take appropriate action.
+This policy template synchronizes the policy templates in a Flexera organization to a GitHub repository. This includes publishing new templates, updating existing templates, and unpublishing defunct templates. It uses a JSON file stored in the GitHub repository to determine a set of current policy templates and then compares them with your current account policies to take appropriate action.
+
+## How It Works
+
+- The policy pulls a list of active policy templates from the GitHub repository specified in the user parameters.
+- The policy pulls a list of policies in the catalog using the [Flexera Automation Policy API](https://reference.rightscale.com/governance-policies/).
+- The above lists are compared.
+  - Anything currently in the catalog but not in the active policy template list is flagged to be unpublished.
+  - Anything missing from the catalog but present in the active policy template list is flagged to be published.
+  - Anything in both lists but whose "updated_at" field is more recent in the active policy template list than in the catalog list is flagged to be published.
+  - All other policy templates are ignored and not included in the results.
+- Two incidents are potentially raised; one incident contains a list of policy templates to be published, and the other contains a list of policy templates to be unpublished.
+- If automatic actions were selected via the `Automatic Actions` parameter, the listed policy templates will be published or unpublished respectively.
 
 ## Input Parameters
 
@@ -11,9 +23,9 @@ This Policy Template can be used to synchronize the policy templates in your acc
   - **Example highlighted in URL:** github.com/`flexera-public`/policy_templates/tree/master
 - *GitHub Repository Name* - Name of the policy repository on GitHub.
   - **Example highlighted in URL:** github.com/flexera-public/`policy_templates`/tree/master
-- *GitHub Branch Name* - Name of the Github branch to pull the active policy JSON file from.
+- *GitHub Branch Name* - Name of the GitHub branch to pull the active policy JSON file from.
   - **Example highlighted in URL:** github.com/flexera-public/policy_templates/tree/`master`
-- *Active Policy JSON* - Path to the active policy list JSON file.
+- *Active Policy JSON Path* - Path to the active policy list JSON file in the GitHub repository.
   - **Example:** data/active_policy_list/active_policy_list.json
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
@@ -23,8 +35,7 @@ For example if a user selects the "Unpublish Defunct Policy Templates" action wh
 ## Policy Actions
 
 - Sends an email notification.
-- Publish new policy templates with user approval.
-- Update existing published policy templates with user approval.
+- Publish new policy templates and update existing published policy templates with user approval.
 - Unpublish defunct policy templates with user approval.
 
 ## Prerequisites

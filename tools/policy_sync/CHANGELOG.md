@@ -2,7 +2,7 @@
 
 ## v3.0.0
 
-- Policy now raises three incidents: new policies, updated policies, and defunct policies
+- Policy now raises two incidents: new/updated policies and defunct policies
 - Added support for deleting defunct policies
 - Reworked policy parameters to be more clear and specific
 - Streamlined code for better readability and faster execution
