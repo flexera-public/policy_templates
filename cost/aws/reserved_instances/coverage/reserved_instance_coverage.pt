@@ -1,13 +1,13 @@
-name "Reserved Instances Coverage"
+name "AWS Reserved Instances Coverage"
 rs_pt_ver 20180301
 type "policy"
-short_description "A policy that sends email notifications on reserved instance coverage. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/reserved_instances/coverage) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Reports on AWS Reserved Instances coverage. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/reserved_instances/coverage) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
-severity "medium"
+severity "low"
 category "Cost"
-default_frequency "daily"
+default_frequency "weekly"
 info(
-  version: "2.12",
+  version: "3.0.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Reserved Instances"
@@ -21,7 +21,7 @@ parameter "param_email" do
   type "list"
   category "Policy Settings"
   label "Email Addresses"
-  description "Email addresses of the recipients you wish to notify when new incidents are created."
+  description "A list of email addresses to notify."
   default []
 end
 
@@ -33,20 +33,20 @@ parameter "param_aws_account_number" do
   default ""
 end
 
-parameter "param_historical_number_of_days_in_past" do
-  type "string"
+parameter "param_lookback" do
+  type "number"
   category "Policy Settings"
   label "Look Back Period (Days)"
-  description "Number of days in the past to view Reserved Instance Coverage"
-  allowed_values "7", "14", "30", "90", "180", "365"
-  default "7"
+  description "Number of days in the past to assess AWS Reserved Instances coverage."
+  min_value 7
+  max_value 365
+  default 7
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-#authenticate with AWS
 credentials "auth_aws" do
   schemes "aws", "aws_sts"
   label "AWS"
@@ -55,82 +55,88 @@ credentials "auth_aws" do
   aws_account_number $param_aws_account_number
 end
 
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
 
-# https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/cost-explorer-api.html
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
 datasource "ds_reservations_coverage" do
   request do
-    run_script $js_reservations_coverage, $param_historical_number_of_days_in_past
+    run_script $js_reservations_coverage, $param_lookback
   end
   result do
     encoding "json"
     field "total_coverage_hours_percentage", jmes_path(response, "Total.CoverageHours.CoverageHoursPercentage")
     field "total_on_demand_hours", jmes_path(response, "Total.CoverageHours.OnDemandHours")
     field "total_reserved_hours", jmes_path(response, "Total.CoverageHours.ReservedHours")
-    field "total_running_hours",  jmes_path(response, "Total.CoverageHours.TotalRunningHours")
-    field "timeperiod_start_time", jmes_path(response, "CoveragesByTime[0].TimePeriod.Start")
-    field "timeperiod_end_time", jmes_path(response, "CoveragesByTime[0].TimePeriod.End")
+    field "total_running_hours", jmes_path(response, "Total.CoverageHours.TotalRunningHours")
   end
 end
 
-# Creating the end_date generally setting it to right now
-# Expected Result: "2018-05-29"
-# Creating the start_date.
-# We are converting param_historical_number_of_days_in_past from string to a number.
-# daysToMove has to be negative
-# Expected result example: "2018-04-29"
 script "js_reservations_coverage", type: "javascript" do
-  parameters "param_number_of_days_in_past"
-  result "results"
+  parameters "param_lookback"
+  result "request"
   code <<-EOS
-  var end_date = new Date();
-  var start_date = new Date();
-  var daysToMove = parseInt(param_number_of_days_in_past, 10);
-  start_date.setDate(end_date.getDate() - daysToMove);
-  var end_dates = end_date.toISOString().slice(0, 10);
-  var start_dates = start_date.toISOString().slice(0, 10);
-  results = {
+  end_date = new Date().toISOString().split('T')[0]
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - param_lookback)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var request = {
     auth: "auth_aws",
-    host: 'ce.us-east-1.amazonaws.com',
-    path: '/',
-    verb: 'POST',
+    verb: "POST",
+    host: "ce.us-east-1.amazonaws.com",
+    path: "/",
     headers: {
       "X-Amz-Target": "AWSInsightsIndexService.GetReservationCoverage",
       "Content-Type": "application/x-amz-json-1.1",
     },
-    body_fields: {
-      "TimePeriod":
-      {
-        "Start": start_dates,
-        "End": end_dates,
-      }
-    },
-
+    body_fields: { "TimePeriod": { "Start": start_date, "End": end_date } }
   }
 EOS
 end
 
-datasource "ds_reservations_coverage_map" do
-  run_script $js_reservations_coverage_map, $ds_reservations_coverage
+datasource "ds_coverage_report" do
+  run_script $js_coverage_report, $ds_reservations_coverage, $ds_applied_policy, $param_lookback
 end
 
-#parse the json files
-script "js_reservations_coverage_map", type: "javascript" do
-  parameters "ds_reservations_coverage"
-  result "content"
+script "js_coverage_report", type: "javascript" do
+  parameters "ds_reservations_coverage", "ds_applied_policy", "param_lookback"
+  result "result"
   code <<-EOS
-  var content=[]
-  var coverage =  parseInt(ds_reservations_coverage['total_coverage_hours_percentage'], 10).toString() + "%"
+  end_date = new Date().toISOString().split('T')[0]
 
-  content={total_coverage_hours_percentage: coverage,
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - param_lookback)
+  start_date = start_date.toISOString().split('T')[0]
+
+  result = [{
+    total_coverage_hours_percentage: ds_reservations_coverage['total_coverage_hours_percentage'],
     total_on_demand_hours: ds_reservations_coverage['total_on_demand_hours'],
     total_reserved_hours: ds_reservations_coverage['total_reserved_hours'],
     total_running_hours: ds_reservations_coverage['total_running_hours'],
-    timeperiod_start_time: ds_reservations_coverage['timeperiod_start_time'],
-    timeperiod_end_timer: ds_reservations_coverage['timeperiod_end_time']
-  }
+    start_date: start_date,
+    end_date: end_date,
+    policy_name: ds_applied_policy['name'],
+    lookback_period: param_lookback
+  }]
 EOS
 end
 
@@ -138,40 +144,39 @@ end
 # Policy
 ###############################################################################
 
-policy "pol_ri_coverage" do
-  validate $ds_reservations_coverage_map do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Reserved Instances Coverage."
-    check gt(0, 0)
+policy "pol_coverage_report" do
+  validate_each $ds_coverage_report do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}"
+    detail_template <<-EOS
+# AWS Reserved Instances Coverage Report
+## Date Range: {{ with index data 0 }}{{ .start_date }}{{ end }} -> {{ with index data 0 }}{{ .end_date }}{{ end }}
+
+**Coverage:** {{ with index data 0 }}{{ .total_coverage_hours_percentage }}{{ end }}%\n
+**On Demand Hours:** {{ with index data 0 }}{{ .total_on_demand_hours }}{{ end }}\n
+**Reserved Hours:** {{ with index data 0 }}{{ .total_reserved_hours }}{{ end }}\n
+**Total Running Hours:** {{ with index data 0 }}{{ .total_running_hours }}{{ end }}\n
+EOS
+    check eq(0, 1)
     escalate $esc_email
     export do
-      resource_level true
-      field "id" do
-        label "Organization Name"
-        path "rs_org_name"
-      end
-      field "coverage_hours" do
-        label "CoverageHoursPercentage"
-        path "data.total_coverage_hours_percentage"
+      resource_level false
+      field "total_coverage_hours_percentage" do
+        label "Coverage (%)"
       end
       field "total_on_demand_hours" do
-        label "OnDemandHours"
-        path "data.total_on_demand_hours"
+        label "On Demand Hours"
       end
       field "total_reserved_hours" do
-        label "ReservedHours"
-        path "data.total_reserved_hours"
+        label "Reserved Hours"
       end
       field "total_running_hours" do
-        label "TotalRunningHours"
-        path "data.total_running_hours"
+        label "Total Running Hours"
       end
-      field "timeperiod_start_time" do
-        label "TimePeriod_StartDate"
-        path "data.timeperiod_start_time"
+      field "start_date" do
+        label "Start Date"
       end
-      field "timeperiod_end_time" do
-        label "TimePeriod_EndDate"
-        path "data.timeperiod_end_time"
+      field "end_date" do
+        label "End Date"
       end
     end
   end
