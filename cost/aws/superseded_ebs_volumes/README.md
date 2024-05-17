@@ -1,44 +1,20 @@
 # AWS Rightsize EBS Volumes
 
 ## What It Does
-<!-- Capacity not implemented for issues identified in README -->
-This policy checks all the EBS volumes in an AWS Account for Read and Write Operations<!--, Capacity Used, --> and Provisioned IOPS metrics over a user-specified number of days.  If the volume is unattached, or has zero read or write operations for the lookback period, then the Volume is considered "Idle" and recommended for deletion (with option to create snapshot before).  For the volumes not considered Idle, if volume is a Provisioned IOPS volume and usage less than the user provided threshold for Provisioned IOPS % <!-- or Capacity Used % --> then it is considered "Underutilized" and recommended for rightsizing.
 
-This policy does not currently support Capacity Used % for identified Underutilized volumes because of complexity involved with mapping the volume device mount(s) to the OS mount points for each disk, which is required to map the volume to the `disk_used_percent` metric provided by the CloudWatch Agent on the EC2 Instance.  This device to mount point information is typically retrieved from the OS/Application layer (i.e. `df -h`):
-
-```sh
-$ df -h
-Filesystem        Size  Used Avail Use% Mounted on
-devtmpfs          4.0M     0  4.0M   0% /dev
-tmpfs             453M     0  453M   0% /dev/shm
-tmpfs             182M  436K  181M   1% /run
-/dev/nvme0n1p1    8.0G  2.0G  6.1G  24% /
-tmpfs             453M     0  453M   0% /tmp
-/dev/nvme1n1      8.0G   90M  7.9G   2% /data-backup
-/dev/nvme2n1      8.0G   90M  7.9G   2% /data
-/dev/nvme0n1p128   10M  1.3M  8.7M  13% /boot/efi
-```
-
-In this example, we know an example volume (`vol-a1b2c3d4`) is mounted on `/dev/nvme1`.  This information is provided by the `ec2:DescribeVolumes` API response, but we don't have a way to get the the mount point (`/data-backup`) without information from the OS.  The policy template does not attempt to map this information, but we are exploring this topic and hope to add recommendations for Storage Capacity Used % future releases.  Added complexity for disks that have multiple partitions, or mount points that span multiple volumes (RAID, LVM, etc..)
+This policy checks all GP2 volumes on an AWS Account to see if the GP3 equivalent would be less expensive. An incident is raised with all volumes that would be less expensive if upgraded from GP2 to GP3.
 
 ## Functional Details
 
 - The policy leverages the AWS API to retrieve a list of all volumes in an AWS Account
-- The policy identifies all volumes
-- The policy gets read/write operations for all volumes
-- The policy evaluates read/write and identifies idle volumes based on volumes that have zero read and write ops
-<!-- Capacity not implemented for issues identified in README -->
-<!-- - The policy gets capacity utilization for volumes that it's available (requires CloudWatch agent on EC2 Instance) -->
-- The policy gets read/write operations utilization for Provisioned IOPS volumes
-- The policy evaluates utilization data for volumes and identifies underutilized based on user provided threshold
-- The policy estimates savings for idle volumes to be 100% of the monthly volume cost
-- The policy estimates savings for underutilzed volumes to be the difference based on recommended % change in Provisioned IOPS <!-- or Capacity -->
+- The policy identifies all GP2 volumes and uses the AWS Pricing API to retrieve the current cost, and the cost of the volume if it were a GP3 volume type.
+- If there is a cost savings associated with moving the volume type from GP2 to GP3, this will provide a recommendation.
 
 ### Policy savings details
 
-The policy estimates savings for idle volumes to be 100% of the monthly volume cost
+The policy includes the estimated savings. The estimated savings is recognized if the volume is upgraded from GP2 to GP3. The AWS Pricing API is used to retrieve and calculate the estimated savings which is the expected GP3 cost subtracted from the estimated current GP2 cost of the volume. The incident message detail includes the sum of each resource *Estimated Monthly Saving* as *Potential Monthly Savings*.
 
-The policy estimates savings for underutilzed volumes to be the difference based on recommended % change in Provisioned IOPS or Capacity.  For example, if downsize IOPS by 50%, then estimated savings is 50% of the cost of the original volume.
+If the Flexera organization is configured to use a currency other than USD, the savings values will be converted from USD using the exchange rate at the time that the policy executes.
 
 ### Policy Savings Details
 
