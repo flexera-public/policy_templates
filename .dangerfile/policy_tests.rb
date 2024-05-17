@@ -201,7 +201,8 @@ def policy_bad_indentation?(file)
   define_block = false
 
   policy_code.each_line.with_index do |line, index|
-    break if line.strip.start_with?('#') # Ignore comments
+    break if line.strip.start_with?('# Meta Policy [alpha]') # Break out of definition when enounter meta policy code at the bottom
+    next if line.strip.start_with?('#') # Skip comment lines
 
     line_number = index + 1
     indentation = line.match(/\A\s*/).to_s.length
@@ -962,7 +963,7 @@ def policy_run_script_incorrect_order?(file)
     line_number = index + 1
 
     # Stop doing the check if we've reached the meta policy section
-    break if line.strip.start_with?('# Meta Policy [alpha]')
+    break if line.strip.start_with?('# Meta Policy [alpha]') # Break out of definition when enounter meta policy code at the bottom
 
     if line.strip.start_with?("datasource ") && line.strip.end_with?('do')
       name_test = line.match(/"([^"]*)"/)
@@ -1059,7 +1060,7 @@ def policy_block_fields_incorrect_order?(file, block_type)
       policy_code.each_line.with_index do |line, index|
         line_number = index + 1
 
-        break if line.strip.start_with?('# Meta Policy [alpha]')
+        break if line.strip.start_with?('# Meta Policy [alpha]') # Break out of definition when enounter meta policy code at the bottom
 
         policy_id = line.split('"')[1] if line.start_with?("policy ")
 
