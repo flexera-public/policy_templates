@@ -30,13 +30,13 @@ In this example, we know an example volume (`vol-a1b2c3d4`) is mounted on `/dev/
 - The policy gets read/write operations utilization for Provisioned IOPS volumes
 - The policy evaluates utilization data for volumes and identifies underutilized based on user provided threshold
 - The policy estimates savings for idle volumes to be 100% of the monthly volume cost
-- The policy estimates savings for underutilzed volumes to be the difference based on recommended % change in Provisioned IOPS
+- The policy estimates savings for underutilized volumes to be the difference based on recommended % change in Provisioned IOPS
 
 ### Policy savings details
 
 The policy estimates savings for idle volumes to be 100% of the monthly volume cost
 
-The policy estimates savings for underutilzed volumes to be the difference based on recommended % change in Provisioned IOPS or Capacity.  For example, if downsize IOPS by 50%, then estimated savings is 50% of the cost of the original volume.
+The policy estimates savings for underutilized volumes to be the difference based on recommended % change in Provisioned IOPS or Capacity.  For example, if downsize IOPS by 50%, then estimated savings is 50% of the cost of the original volume.
 
 ### Policy Savings Details
 
