@@ -1,8 +1,8 @@
 # AWS Rightsize EBS Volumes
 
 ## What It Does
-<!-- Capacity not implemented for issues identified in README -->
-This policy checks all the EBS volumes in an AWS Account for Read and Write Operations<!--, Capacity Used, --> and Provisioned IOPS metrics over a user-specified number of days.  If the volume is unattached, or has zero read or write operations for the lookback period, then the Volume is considered "Idle" and recommended for deletion (with option to create snapshot before).  For the volumes not considered Idle, if volume is a Provisioned IOPS volume and usage less than the user provided threshold for Provisioned IOPS % <!-- or Capacity Used % --> then it is considered "Underutilized" and recommended for rightsizing.
+
+This policy checks all the EBS volumes in an AWS Account for Read and Write Operations and Provisioned IOPS metrics over a user-specified number of days.  If the volume is unattached, or has zero read or write operations for the lookback period, then the Volume is considered "Idle" and recommended for deletion (with option to create snapshot before).  For the volumes not considered Idle, if volume is a Provisioned IOPS volume and usage less than the user provided threshold for Provisioned IOPS % then it is considered "Underutilized" and recommended for rightsizing.
 
 This policy does not currently support Capacity Used % for identified Underutilized volumes because of complexity involved with mapping the volume device mount(s) to the OS mount points for each disk, which is required to map the volume to the `disk_used_percent` metric provided by the CloudWatch Agent on the EC2 Instance.  This device to mount point information is typically retrieved from the OS/Application layer (i.e. `df -h`):
 
@@ -27,12 +27,10 @@ In this example, we know an example volume (`vol-a1b2c3d4`) is mounted on `/dev/
 - The policy identifies all volumes
 - The policy gets read/write operations for all volumes
 - The policy evaluates read/write and identifies idle volumes based on volumes that have zero read and write ops
-<!-- Capacity not implemented for issues identified in README -->
-<!-- - The policy gets capacity utilization for volumes that it's available (requires CloudWatch agent on EC2 Instance) -->
 - The policy gets read/write operations utilization for Provisioned IOPS volumes
 - The policy evaluates utilization data for volumes and identifies underutilized based on user provided threshold
 - The policy estimates savings for idle volumes to be 100% of the monthly volume cost
-- The policy estimates savings for underutilzed volumes to be the difference based on recommended % change in Provisioned IOPS <!-- or Capacity -->
+- The policy estimates savings for underutilzed volumes to be the difference based on recommended % change in Provisioned IOPS
 
 ### Policy savings details
 
