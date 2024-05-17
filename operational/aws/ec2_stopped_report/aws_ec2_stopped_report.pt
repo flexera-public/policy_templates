@@ -1,7 +1,7 @@
-name "AWS EC2 Instances Time Powered Off Report"
+name "AWS EC2 Instances Time Stopped Report"
 rs_pt_ver 20180301
 type "policy"
-short_description "Reports AWS EC2 instances that are powered off more or less than a specified percentage thresholds. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/ec2_idle_time/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Reports AWS EC2 instances that are stopped more or less than specified percentage thresholds. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/ec2_powered_off_report/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "low"
 category "Cost"
@@ -21,7 +21,7 @@ info(
 parameter "param_email" do
   type "list"
   category "Policy Settings"
-  label "Email addresses to notify"
+  label "Email Addresses"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
   default []
 end
@@ -73,7 +73,7 @@ parameter "param_lookback" do
   type "number"
   category "Policy Settings"
   label "Lookback Period"
-  description "How many days back to look when assessing the percentage of idle time of an instance."
+  description "How many days back to look when assessing the amount of time an instance is stopped for."
   min_value 1
   max_value 30
   default 7
@@ -83,7 +83,7 @@ parameter "param_max_threshold" do
   type "number"
   category "Policy Settings"
   label "Maximum Time Powered Off (%)"
-  description "Instances that are powered off for more than the specified percentage will be included in the report."
+  description "Instances that are stopped for more than the specified percentage will be included in the report. Set to '100' to not perform this assessment."
   min_value 0
   max_value 100
   default 25
@@ -93,7 +93,7 @@ parameter "param_min_threshold" do
   type "number"
   category "Policy Settings"
   label "Minimum Time Powered Off (%)"
-  description "Instances that are powered off for less than the specified percentage will be included in the report."
+  description "Instances that are stopped for less than the specified percentage will be included in the report. Set to '0' to not perform this assessment."
   min_value 0
   max_value 100
   default 0
@@ -538,11 +538,11 @@ script "js_instance_bill_data_grouped", type: "javascript" do
 EOS
 end
 
-datasource "ds_instances_with_idle_time" do
-  run_script $js_instances_with_idle_time, $ds_instances, $ds_instance_bill_data_grouped, $ds_aws_account, $ds_applied_policy, $param_lookback, $param_max_threshold, $param_min_threshold
+datasource "ds_instances_stopped_report" do
+  run_script $js_instances_stopped_report, $ds_instances, $ds_instance_bill_data_grouped, $ds_aws_account, $ds_applied_policy, $param_lookback, $param_max_threshold, $param_min_threshold
 end
 
-script "js_instances_with_idle_time", type: "javascript" do
+script "js_instances_stopped_report", type: "javascript" do
   parameters "ds_instances", "ds_instance_bill_data_grouped", "ds_aws_account", "ds_applied_policy", "param_lookback", "param_max_threshold", "param_min_threshold"
   result "result"
   code <<-'EOS'
@@ -553,9 +553,10 @@ script "js_instances_with_idle_time", type: "javascript" do
     instance_bill_data = ds_instance_bill_data_grouped[instance['instanceId'].toLowerCase()]
 
     if (instance_bill_data != undefined) {
-      percentage_powered_off = 100 - ((instance_bill_data['usage'] / timespan_hours) * 100)
+      hours_stopped = timespan_hours - instance_bill_data['usage']
+      percentage_stopped = 100 - ((instance_bill_data['usage'] / timespan_hours) * 100)
 
-      if (percentage_powered_off > param_max_threshold || percentage_powered_off < param_min_threshold) {
+      if (percentage_stopped > param_max_threshold || percentage_stopped < param_min_threshold) {
         // Tidy up tags so they display nicely in the incident
         tags = []
         resourceName = ""
@@ -581,7 +582,8 @@ script "js_instances_with_idle_time", type: "javascript" do
           accountName: ds_aws_account['name'],
           policy_name: ds_applied_policy['name'],
           usage_hours: instance_bill_data['usage'],
-          percentage_powered_off: percentage_powered_off,
+          hours_stopped: hours_stopped,
+          percentage_stopped: percentage_stopped,
           lookbackPeriod: param_lookback,
           threshold: param_max_threshold,
           min_threshold: param_min_threshold,
@@ -598,14 +600,14 @@ end
 # Policy
 ###############################################################################
 
-policy "pol_instances_with_idle_time" do
-  validate_each $ds_instances_with_idle_time do
+policy "pol_instances_stopped_report" do
+  validate_each $ds_instances_stopped_report do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} EC2 Instances Found"
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     escalate $esc_stop_instances
     escalate $esc_terminate_instances
-    hash_exclude "tags"
+    hash_exclude "resourceName", "tags", "usage_hours", "hours_stopped", "percentage_stopped"
     export do
       resource_level true
       field "accountID" do
@@ -641,14 +643,17 @@ policy "pol_instances_with_idle_time" do
       field "usage_hours" do
         label "Usage Hours"
       end
-      field "percentage_powered_off" do
-        label "Time Powered Off (%)"
+      field "hours_stopped" do
+        label "Time Stopped (Hours)"
+      end
+      field "percentage_stopped" do
+        label "Time Stopped (%)"
       end
       field "min_threshold" do
-        label "Minimum Time Powered Off (%)"
+        label "Minimum Time Stopped (%)"
       end
       field "threshold" do
-        label "Maximum Time Powered Off (%)"
+        label "Maximum Time Stopped (%)"
       end
       field "lookbackPeriod" do
         label "Look Back Period (Days)"
