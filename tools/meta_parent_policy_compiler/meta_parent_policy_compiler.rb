@@ -291,7 +291,7 @@ end
     # Remove any strings matching {{.*}} from summary template
     # These can cause mismatch in identifying the real summary template string
     summary_template_from_pt.gsub!(/{{.*?}}/, "")
-    summary_template_search_string = summary_template[0][0].scan(/[a-zA-Z0-9 \s]+/).max_by(&:length).strip
+    summary_template_search_string = summary_template_from_pt.scan(/[a-zA-Z0-9 \s]+/).max_by(&:length).strip
     # print("Summary Template Search String:\n")
     # print(summary_template_search_string)
     # print("\n------------------\n")
