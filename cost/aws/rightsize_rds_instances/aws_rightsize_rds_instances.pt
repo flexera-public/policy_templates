@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "5.3.1",
+  version: "5.4.0",
   provider: "AWS",
   service: "RDS",
   policy_set: "Rightsize Database Instances",
@@ -863,11 +863,11 @@ EOS
 end
 
 datasource "ds_rds_idle_instances" do
-  run_script $js_rds_idle_instances, $ds_rds_instances_to_check, $ds_cloudwatch_idle_data, $ds_instance_costs_grouped
+  run_script $js_rds_idle_instances, $ds_rds_instances_to_check, $ds_cloudwatch_idle_data, $ds_instance_costs_grouped, $ds_aws_instance_size_map
 end
 
 script "js_rds_idle_instances", type: "javascript" do
-  parameters "ds_rds_instances_to_check", "ds_cloudwatch_idle_data", "ds_instance_costs_grouped"
+  parameters "ds_rds_instances_to_check", "ds_cloudwatch_idle_data", "ds_instance_costs_grouped", "ds_aws_instance_size_map"
   result "result"
   code <<-EOS
   result = []
@@ -898,10 +898,15 @@ script "js_rds_idle_instances", type: "javascript" do
     }
 
     if (instance_activity == undefined || instance_activity == 0) {
+      newResourceType = null
+      if (typeof(ds_aws_instance_size_map[resourceType])) {
+        newResourceType = ds_aws_instance_size_map[resourceType]["down"]
+      }
       result.push({
         instanceId: instance['instanceId'],
         instanceArn: instance['instanceArn'],
         resourceType: instance['resourceType'],
+        newResourceType: newResourceType,
         name: instance['name'],
         status: instance['status'],
         databaseEngine: instance['databaseEngine'],
@@ -1113,7 +1118,7 @@ script "js_rds_nonidle_instances_with_metrics", type: "javascript" do
     resourceType = instance['resourceType']
     newResourceType = null
 
-    if (typeof(ds_aws_instance_size_map[resourceType]) == 'object') {
+    if (typeof(ds_aws_instance_size_map[resourceType])) {
       newResourceType = ds_aws_instance_size_map[resourceType]["down"]
     }
 
@@ -1371,7 +1376,7 @@ script "js_rds_idle_incident", type: "javascript" do
         savings: parseFloat(savings.toFixed(3)),
         savingsCurrency: ds_currency['symbol'],
         lookbackPeriod: param_stats_lookback,
-        newResourceType: "Terminate RDS Instance",
+        newResourceType: instance['newResourceType'],
         service: "AmazonRDS",
         policy_name: ds_applied_policy['name'],
         // Dummy values to ensure hash_exclude works properly
@@ -1687,6 +1692,7 @@ policy "pol_rightsize_rds" do
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     escalate $esc_terminate_rds_instances
+    escalate $esc_downsize_rds_instances
     hash_exclude "tags", "total_savings", "message", "savings", "savingsCurrency"
     export do
       resource_level true
@@ -1776,16 +1782,16 @@ escalation "esc_email" do
 end
 
 escalation "esc_downsize_rds_instances" do
-  automatic contains($param_automatic_action, "Downsize Underutilized RDS Instances")
-  label "Downsize Underutilized RDS Instances"
-  description "Approval to downsize all selected underutilized RDS instances"
+  automatic contains($param_automatic_action, "Downsize RDS Instances")
+  label "Downsize RDS Instances"
+  description "Approval to downsize all selected RDS instances"
   run "downsize_rds_instances", data, $param_downsize_timeframe
 end
 
 escalation "esc_terminate_rds_instances" do
-  automatic contains($param_automatic_action, "Terminate Unused RDS Instances")
-  label "Terminate Unused RDS Instances"
-  description "Approval to terminate all selected unused RDS instances"
+  automatic contains($param_automatic_action, "Terminate RDS Instances")
+  label "Terminate RDS Instances"
+  description "Approval to terminate all selected RDS instances"
   run "terminate_rds_instances", data
 end
 
@@ -1797,10 +1803,8 @@ define downsize_rds_instances($data, $param_downsize_timeframe) return $all_resp
   $$all_responses = []
 
   foreach $instance in $data do
-    if $instance["newResourceType"] != "Terminate RDS Instance"
-      sub on_error: handle_error() do
-        call downsize_instance($instance, $param_downsize_timeframe) retrieve $downsize_response
-      end
+    sub on_error: handle_error() do
+      call downsize_instance($instance, $param_downsize_timeframe) retrieve $downsize_response
     end
   end
 

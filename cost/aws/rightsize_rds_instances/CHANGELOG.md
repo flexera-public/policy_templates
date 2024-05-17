@@ -1,5 +1,10 @@
 # Changelog
 
+## v5.4.0
+
+- Revert behavior from v5.3.1 -- Value for `newResourceType` will always be the downsize instance type. Previously idle instances would show "Terminate EC2 Instance". This provides the needed context for downsizing the resource even though the recommended action for the resource may be to Terminate.
+- Add Downsize Instance action to AWS Unused RDS Instances Found Incident
+
 ## v5.3.1
 
 - Unused RDS Instances incident now includes a `Recommended Instance Size` field with a value of `Terminate RDS Instance` for ease of analyzing recommendations from the Flexera Optimization dashboard
