@@ -381,3 +381,73 @@ script "js_instance_units_per_family", type: "javascript" do
   EOS
 end
 
+datasource "ds_chart_creation" do
+  run_script $js_chart_creation, $ds_instance_units_per_family, $ds_applied_policy, $param_regions_allow_or_deny, $param_regions_list, $param_unit_time, $param_unit_instance, $param_months_back
+end
+
+script "js_chart_creation", type: "javascript" do
+  parameters "ds_instance_units_per_family", "ds_applied_policy", "param_regions_allow_or_deny", "param_regions_list", "param_unit_time", "param_unit_instance", "param_months_back"
+  result "result"
+  code <<-EOS
+  instance_unit = { "Normalized Units (NFUs)": "NFU", "vCPUs": "vCPU", "Memory (GiB)": "Memory (GiB)" }
+
+  // Get list of months from data and create chart X axis labels
+  months = _.uniq(_.pluck(ds_instance_units_per_family, 'month'))
+  chart_axis_labels = "chxl=1:|" + _.map(months, function(name) { return name.substring(0, 7) }).join('|')
+
+  // Get list of families and create chart legend from it
+  group_by_family = _.groupBy(ds_instance_units_per_family, function(data) {
+    return data['instance_family']
+  })
+
+  chart_legend = "chdl=" + _.keys(group_by_family).join('|')
+
+  // Get data for each family and create chart data from it
+  data_parts = _.map(group_by_family, function(family_list) {
+    return _.pluck(family_list, 'total_instance_units').join(',')
+  })
+
+  chart_data = "chd=t:" + data_parts.join('|')
+
+  // Create chart axis format
+  chart_axis_format = "chxs=0N*f" + "0sz* " + param_unit_time + "|1,min40"
+
+  // Create chart title
+  policy_title = "Total Instance " + instance_unit[param_unit_instance] + " " + param_unit_time + " Used Per Instance Family"
+  chart_title = "chtt=" + policy_title
+
+  // Assemble chart
+  chart = {
+    chart_type: encodeURI("cht=bvs"),
+    chart_size: encodeURI("chs=900x500"),
+    chart_data: encodeURI(chart_data),
+    chart_title: encodeURI(chart_title),
+    chart_image: encodeURI("chof=.png"),
+    chart_label_position: encodeURI("chdlp=b"),
+    chart_axis: encodeURI("chxt=y,x"),
+    chart_axis_label: encodeURI(chart_axis_labels),
+    chart_axis_format: encodeURI(chart_axis_format),
+    chart_line_style: encodeURI("chls=3|3|3|3|3|3|3|3|3|3|3"),
+    chart_line_color: encodeURI("chco=6929c4,9f1853,198038,b28600,1192e8,009d9a,005d5d,007d79"),
+    chart_data_scale: encodeURI("chds=a"),
+    chart_legend: encodeURI(chart_legend),
+    chart_legend_size: encodeURI("chdls=000000,10"),
+    policy_title: policy_title
+  }
+
+  // Create final incident table and store chart in first entry
+  result = _.map(ds_instance_units_per_family, function(item) {
+    return {
+      month: item['month'].split('-')[0] + '-' + item['month'].split('-')[1],
+      instance_family: item['instance_family'],
+      total_instance_units: Math.round(item['total_instance_units'] * 100) / 100,
+      time_unit: param_unit_time,
+      instance_unit: instance_unit[param_unit_instance],
+      months_back: param_months_back
+    }
+  })
+
+  result[0]['chart_dimensions'] = chart
+  result[0]['policy_name'] = ds_applied_policy['name']
+  EOS
+end
