@@ -808,11 +808,11 @@ EOS
 end
 
 datasource "ds_underutilized_volumes" do
-  run_script $js_underutilized_volumes, val($ds_idle_volumes, "nonidle"), $ds_cloudwatch_getmetricdata_iops_utilization, $param_utilization_threshold, $param_stats_threshold
+  run_script $js_underutilized_volumes, $ds_idle_volumes, $ds_cloudwatch_getmetricdata_iops_utilization, $param_utilization_threshold, $param_stats_threshold
 end
 
 script "js_underutilized_volumes", type: "javascript" do
-  parameters "nonidle_volumes", "ds_cloudwatch_getmetricdata_iops_utilization", "param_utilization_threshold", "param_stats_threshold"
+  parameters "ds_idle_volumes", "ds_cloudwatch_getmetricdata_iops_utilization", "param_utilization_threshold", "param_stats_threshold"
   result "result"
   code <<-EOS
   result = {
@@ -822,6 +822,7 @@ script "js_underutilized_volumes", type: "javascript" do
     "active": []
   }
 
+  nonidle_volumes = ds_idle_volumes["nonidle"]
   _.each(nonidle_volumes, function(volume) {
     read_label  = [volume['volume_id'], "VolumeReadOps", param_stats_threshold].join(' ')
     write_label = [volume['volume_id'], "VolumeWriteOps", param_stats_threshold].join(' ')
@@ -1032,7 +1033,7 @@ EOS
 end
 
 datasource "ds_volume_cost_mapping" do
-  run_script $js_volume_cost_mapping, val($ds_idle_volumes, "idle"), val($ds_underutilized_volumes, "underutilized"), $ds_volumes_tag_filtered, $ds_volume_costs_grouped, $ds_currency, $ds_aws_account, $ds_applied_policy, $param_unused_days, $param_include_status, $param_min_savings
+  run_script $js_volume_cost_mapping, $ds_idle_volumes, $ds_underutilized_volumes, $ds_volumes_tag_filtered, $ds_volume_costs_grouped, $ds_currency, $ds_aws_account, $ds_applied_policy, $param_unused_days, $param_include_status, $param_min_savings
 end
 
 script "js_volume_cost_mapping", type:"javascript" do
@@ -1056,6 +1057,10 @@ script "js_volume_cost_mapping", type:"javascript" do
 
     return formatted_number + "." + values[1]
   }
+
+  // Grab just the lists of volumes we need from the datasource results
+  ds_underutilized_volumes = ds_underutilized_volumes["underutilized"]
+  ds_idle_volumes = ds_idle_volumes["idle"]
 
   result = {
     "idle": [],
