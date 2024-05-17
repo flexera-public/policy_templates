@@ -132,10 +132,13 @@ escalation "__PLACEHOLDER_FOR_CHILD_POLICY_ESC_ID__" do
   automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
   label "__PLACEHOLDER_FOR_CHILD_POLICY_ESC_LABEL__"
   description "__PLACEHOLDER_FOR_CHILD_POLICY_ESC_DESCRIPTION__"
-  run "__PLACEHOLDER_FOR_CHILD_POLICY_ESC_ID__", data, rs_governance_host, rs_project_id
+__PLACEHOLDER_FOR_CHILD_POLICY_ESC_PARAMETERS__
+  # Run declaration should go at end, after any parameters that may exist
+  run "__PLACEHOLDER_FOR_CHILD_POLICY_ESC_ID__", data, rs_governance_host, rs_project_id__PLACEHOLDER_FOR_CHILD_POLICY_ESC_PARAMETER_VALUES__
 end
-define __PLACEHOLDER_FOR_CHILD_POLICY_ESC_ID__($data, $governance_host, $rs_project_id) do
-  call child_run_action($data, $governance_host, $rs_project_id, "__PLACEHOLDER_FOR_CHILD_POLICY_ESC_LABEL__")
+define __PLACEHOLDER_FOR_CHILD_POLICY_ESC_ID__($data, $governance_host, $rs_project_id__PLACEHOLDER_FOR_CHILD_POLICY_ESC_PARAMETER_VALUES__) do
+  __PLACEHOLDER_FOR_CHILD_POLICY_ESC_PARAMETER_ACTION_OPTIONS__
+  call child_run_action($data, $governance_host, $rs_project_id, "__PLACEHOLDER_FOR_CHILD_POLICY_ESC_LABEL__", $action_options)
 end
     EOL
     # Drop any escalations related to email action
@@ -146,15 +149,49 @@ end
     esc_label = escalation.scan(/label "(.*?)"/)[0][0]
     # Get Escalation Description
     esc_description = escalation.scan(/description "(.*?)"/)[0][0]
+    # Get Escalation Parameters
+    esc_parameters = escalation.scan(/^\s+parameter ".*?" do.*?end/m)
+    esc_parameters = esc_parameters.join("\n")
+    # Get Escalation Parameter Names
+    esc_parameter_names = esc_parameters.scan(/parameter "(.*?)" do/)
+    # Flatten the array of arrays to a single array
+    esc_parameter_names = esc_parameter_names.flatten
+    esc_parameter_values_string = ""
+    esc_parameter_values_options_list = []
+    if esc_parameter_names.length > 0
+      esc_parameter_names.each do |param_name|
+        esc_parameter_values_string += ", $" + param_name
+        esc_parameter_values_options_list.push("{ \"name\": \""+param_name+"\", \"value\": $"+param_name+" }")
+      end
+    end
     # Replace the placeholders with the values from the child policy template
     esc = consolidated_incident_escalation_template.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_ESC_ID__", esc_id)
     esc = esc.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_ESC_LABEL__", esc_label)
     esc = esc.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_ESC_DESCRIPTION__", esc_description)
+    esc = esc.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_ESC_PARAMETERS__", esc_parameters)
+    esc = esc.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_ESC_PARAMETER_VALUES__", esc_parameter_values_string)
+    if esc_parameter_values_options_list.length > 0
+      esc = esc.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_ESC_PARAMETER_ACTION_OPTIONS__", "$actions_options = [" + esc_parameter_values_options_list.join(", ")+"]")
+    else
+      esc = esc.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_ESC_PARAMETER_ACTION_OPTIONS__", "$actions_options = []")
+    end
     escalation_blocks_parent.push(esc)
+    # Print the compiled escalation and parameters strings if exist
+    # Helpful for debugging
+    # if !esc_parameters.empty?
+    #   print("\n###########################\n")
+    #   print("Escalation Parameters:\n")
+    #   print(esc_parameters)
+    #   print("\n###########################\n")
+    #   print ("Escalation Names:\n")
+    #   print(esc_parameter_names)
+    #   print("\n###########################\n")
+    #   print("Compiled Escalation:\n")
+    #   print(esc)
+    #   sleep(10)
+    # end
   end
-  # print("Escalation Blocks:\n")
-  # print(escalation_blocks_parent.join("\n---------\n"))
-  # print("\n")
+
 
   consolidated_incident_datasource_template = <<~EOL
   datasource "__PLACEHOLDER_FOR_CHILD_POLICY_CONSOLIDATED_INCIDENT_DATASOURCE___combined_incidents" do
