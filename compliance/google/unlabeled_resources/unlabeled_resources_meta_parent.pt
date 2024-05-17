@@ -792,10 +792,20 @@ escalation "esc_label_resources" do
   automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
   label "Label Resources"
   description "Label the selected unlabeled resources"
-  run "esc_label_resources", data, rs_governance_host, rs_project_id
+  parameter "param_labels_to_add" do
+    type "list"
+    category "Actions"
+    label "Add Labels (Key=Value)"
+    description "Cloud native labels to add to instances with missing labels. Use Key=Value format. Example: env=production"
+    allowed_pattern /^[^=]+=[^=]+$/
+    # No default value, user input required
+  end
+  # Run declaration should go at end, after any parameters that may exist
+  run "esc_label_resources", data, rs_governance_host, rs_project_id, $param_labels_to_add
 end
-define esc_label_resources($data, $governance_host, $rs_project_id) do
-  call child_run_action($data, $governance_host, $rs_project_id, "Label Resources")
+define esc_label_resources($data, $governance_host, $rs_project_id, $param_labels_to_add) do
+  $actions_options = [{ "name": "param_labels_to_add", "value": $param_labels_to_add }]
+  call child_run_action($data, $governance_host, $rs_project_id, "Label Resources", $action_options)
 end
 
 
@@ -982,7 +992,7 @@ define groupByIncidentID($data) return $incidents do
   end
 end
 
-define child_run_action($data, $governance_host, $rs_project_id, $action_label) do
+define child_run_action($data, $governance_host, $rs_project_id, $action_label, $action_options) do
   # Empty global array for log strings, helpful for debugging
   $$debug = []
 
@@ -991,7 +1001,7 @@ define child_run_action($data, $governance_host, $rs_project_id, $action_label) 
   call groupByIncidentID($data) retrieve $incidents
   $$debug_incidents = to_json($incidents)
 
-  call runActions($incidents, $action_label, $governance_host, $rs_project_id)
+  call runActions($incidents, $action_label, $governance_host, $rs_project_id, $action_options)
 
   # If we encountered any errors, use `raise` to mark the CWF process as errored
   if inspect($$errors) != "null"
@@ -1003,7 +1013,7 @@ define child_run_action($data, $governance_host, $rs_project_id, $action_label) 
   task_label("All \""+$action_label+"\" actions completed successfully!")
 end
 
-define runActions($incidents, $action_label, $governance_host, $rs_project_id) do
+define runActions($incidents, $action_label, $governance_host, $rs_project_id, $action_options) do
   foreach $id in keys($incidents) do
     sub on_error: handle_error() do
       $incident = $incidents[$id]
@@ -1043,6 +1053,10 @@ define runActions($incidents, $action_label, $governance_host, $rs_project_id) d
         headers: { "Api-Version": "1.0" },
         body: { "options":[{ "name": "ids",  "value": $incident["resource_ids"] }] }
       }
+      # If the action has parameters, add them to the request body
+      if size($action_options) > 0
+        $request["body"]["options"] = $request["body"]["options"] + $action_options
+      end
       $response = http_request($request)
       $$debug << to_json({
         "request": $request,
