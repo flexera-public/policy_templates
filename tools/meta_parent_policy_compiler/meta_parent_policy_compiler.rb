@@ -178,18 +178,18 @@ end
     escalation_blocks_parent.push(esc)
     # Print the compiled escalation and parameters strings if exist
     # Helpful for debugging
-    if !esc_parameters.empty?
-      print("\n###########################\n")
-      print("Escalation Parameters:\n")
-      print(esc_parameters)
-      print("\n###########################\n")
-      print ("Escalation Names:\n")
-      print(esc_parameter_names)
-      print("\n###########################\n")
-      print("Compiled Escalation:\n")
-      print(esc)
-      sleep(10)
-    end
+    # if !esc_parameters.empty?
+    #   print("\n###########################\n")
+    #   print("Escalation Parameters:\n")
+    #   print(esc_parameters)
+    #   print("\n###########################\n")
+    #   print ("Escalation Names:\n")
+    #   print(esc_parameter_names)
+    #   print("\n###########################\n")
+    #   print("Compiled Escalation:\n")
+    #   print(esc)
+    #   sleep(10)
+    # end
   end
 
 
