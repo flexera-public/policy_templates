@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "5.1.1",
+  version: "5.2.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -1053,6 +1053,9 @@ script "js_idle_and_underutil_instances", type:"javascript" do
       }
 
       instance["newResourceType"] = null
+      if (ds_aws_instance_size_map[instance['resourceType']]) {
+        instance["newResourceType"] = ds_aws_instance_size_map[instance['resourceType']]['down']
+      }
 
       // Set appropriate values based on whether instance is idle or underutilized
       // and then add it to the appropriate list
@@ -1069,7 +1072,6 @@ script "js_idle_and_underutil_instances", type:"javascript" do
         ]
 
         instance["recommendationDetails"] = recommendationDetails.join('')
-        instance["newResourceType"] = "Terminate EC2 Instance"
 
         if (instance['savings'] >= param_min_savings) {
           idle_total_savings += total_cost
@@ -1080,10 +1082,6 @@ script "js_idle_and_underutil_instances", type:"javascript" do
         instance["recommendationType"] = "Downsize"
         instance["threshold"] = param_stats_underutil_threshold_cpu_value
         instance["memoryThreshold"] = param_stats_underutil_threshold_mem_value
-
-        if (ds_aws_instance_size_map[instance['resourceType']]) {
-          instance["newResourceType"] = ds_aws_instance_size_map[instance['resourceType']]['down']
-        }
 
         recommendationDetails = [
           "Change instance type of EC2 instance ", instance["resourceID"], " ",
@@ -1413,6 +1411,7 @@ policy "pol_utilization" do
     check logic_or($ds_parent_policy_terminated, ne(val(item, "recommendationType"), "Terminate"))
     escalate $esc_email
     escalate $esc_stop_instances
+    escalate $esc_downsize_instances
     escalate $esc_terminate_instances
     hash_exclude "underutil_message", "idle_message", "underutil_total_savings", "idle_total_savings", "tags", "savings", "savingsCurrency", "cpu_maximum", "cpu_minimum", "cpu_average", "cpu_p99", "cpu_p95", "cpu_p90", "mem_maximum", "mem_minimum", "mem_average", "mem_p99", "mem_p95", "mem_p90"
     export do
@@ -1590,21 +1589,19 @@ end
 define downsize_instances($data) do
   foreach $instance in $data do
     sub on_error: handle_error() do
-      if $instance["newResourceType"] != "Terminate EC2 Instance"
-        # Get the initial state of the instance before we take any action
-        call get_instance_state($instance) retrieve $initial_state
-        # Check to see if the instance is in a state that we can actual change instance type
-        if $initial_state != "terminated" && $initial_state != "pending"
-          # Stop the instance if it's not already stopped
-          if $initial_state != "stopped"
-            call stop_instance($instance)
-          end
-          # Resize the instance
-          call resize_instance($instance)
-          # Start the instance if it was running before we stopped it
-          if $initial_state == "running"
-            call start_instance($instance)
-          end
+      # Get the initial state of the instance before we take any action
+      call get_instance_state($instance) retrieve $initial_state
+      # Check to see if the instance is in a state that we can actual change instance type
+      if $initial_state != "terminated" && $initial_state != "pending"
+        # Stop the instance if it's not already stopped
+        if $initial_state != "stopped"
+          call stop_instance($instance)
+        end
+        # Resize the instance
+        call resize_instance($instance)
+        # Start the instance if it was running before we stopped it
+        if $initial_state == "running"
+          call start_instance($instance)
         end
       end
     end
