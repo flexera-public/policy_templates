@@ -201,7 +201,7 @@ def policy_bad_indentation?(file)
   define_block = false
 
   policy_code.each_line.with_index do |line, index|
-    break if line.strip.start_with?('# Meta Policy [alpha]')
+    break if line.strip.start_with?('#') # Ignore comments
 
     line_number = index + 1
     indentation = line.match(/\A\s*/).to_s.length
