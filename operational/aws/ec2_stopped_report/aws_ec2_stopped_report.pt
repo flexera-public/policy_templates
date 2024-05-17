@@ -72,7 +72,7 @@ end
 parameter "param_lookback" do
   type "number"
   category "Policy Settings"
-  label "Lookback Period"
+  label "Look Back Period (Days)"
   description "How many days back to look when assessing the amount of time an instance is stopped for."
   min_value 1
   max_value 30
@@ -279,8 +279,6 @@ datasource "ds_instance_sets" do
     path '/'
     query 'Action', 'DescribeInstances'
     query 'Version', '2016-11-15'
-    query 'Filter.1.Name', 'instance-state-name'
-    query 'Filter.1.Value.1', 'running'
     header 'User-Agent', 'RS Policies'
     header 'Content-Type', 'text/xml'
   end
@@ -554,7 +552,7 @@ script "js_instances_stopped_report", type: "javascript" do
 
     if (instance_bill_data != undefined) {
       hours_stopped = timespan_hours - instance_bill_data['usage']
-      percentage_stopped = 100 - ((instance_bill_data['usage'] / timespan_hours) * 100)
+      percentage_stopped = (hours_stopped / timespan_hours) * 100
 
       if (percentage_stopped > param_max_threshold || percentage_stopped < param_min_threshold) {
         // Tidy up tags so they display nicely in the incident
@@ -581,17 +579,67 @@ script "js_instances_stopped_report", type: "javascript" do
           accountID: ds_aws_account['id'],
           accountName: ds_aws_account['name'],
           policy_name: ds_applied_policy['name'],
-          usage_hours: instance_bill_data['usage'],
-          hours_stopped: hours_stopped,
-          percentage_stopped: percentage_stopped,
+          usage_hours: Math.round(instance_bill_data['usage'] * 100) / 100,
+          hours_stopped: Math.round(hours_stopped * 100) / 100,
+          percentage_stopped: Math.round(percentage_stopped * 100) / 100,
           lookbackPeriod: param_lookback,
           threshold: param_max_threshold,
           min_threshold: param_min_threshold,
-          service: "EC2"
+          service: "EC2",
+          message: ""
         })
       }
     }
   })
+
+  // Message for incident output
+  total_instances = ds_instances.length.toString()
+  total_stopped_instances = result.length.toString()
+  stopped_instances_percentage = (total_stopped_instances / total_instances * 100).toFixed(2).toString() + '%'
+
+  instance_verb = "were"
+  if (total_stopped_instances == 1) { instance_verb = "was" }
+
+  days_noun = "days"
+  if (param_lookback == 1) { days_noun = "day" }
+
+  message = [
+    "Out of ", total_instances, " AWS EC2 instances analyzed, ",
+    total_stopped_instances, " (", stopped_instances_percentage,
+    ") ", instance_verb, " outside of the specified thresholds. ",
+    "EC2 instances were included in the results if they were ",
+    "stopped for less than ", param_min_threshold, "% or ",
+    "stopped for more than ", param_max_threshold, "% of ",
+    "the last " + param_lookback + " ", days_noun, ".\n\n",
+    "The above settings can be modified by editing the applied policy ",
+    "and changing the appropriate parameters."
+  ].join('')
+
+  // Dummy entry to ensure validation runs at least once
+  result.push({
+    resourceID: "",
+    resourceType: "",
+    region: "",
+    platform: "",
+    privateDnsName: "",
+    launchTime: "",
+    hostname: "",
+    resourceName: "",
+    tags: "",
+    accountID: "",
+    accountName: "",
+    policy_name: "",
+    usage_hours: "",
+    hours_stopped: "",
+    percentage_stopped: "",
+    lookbackPeriod: "",
+    threshold: "",
+    min_threshold: "",
+    service: "",
+    message: ""
+  })
+
+  result[0]['message'] = message
 EOS
 end
 
@@ -603,6 +651,7 @@ end
 policy "pol_instances_stopped_report" do
   validate_each $ds_instances_stopped_report do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} EC2 Instances Found"
+    detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     escalate $esc_stop_instances
