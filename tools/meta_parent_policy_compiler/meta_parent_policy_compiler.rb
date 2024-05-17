@@ -22,7 +22,6 @@ default_child_policy_template_files = [
   "../../cost/aws/rightsize_rds_instances/aws_rightsize_rds_instances.pt",
   "../../cost/aws/rds_instance_license_info/rds_instance_license_info.pt",
   "../../cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt",
-  "../../cost/aws/rightsize_ebs_volumes/aws_volumes_rightsizing.pt",
   "../../cost/aws/s3_bucket_size/aws_bucket_size.pt",
   "../../cost/aws/s3_storage_policy/aws_s3_bucket_policy_check.pt",
   "../../cost/aws/schedule_instance/aws_schedule_instance.pt",
@@ -37,6 +36,8 @@ default_child_policy_template_files = [
   "../../security/aws/ebs_unencrypted_volumes/aws_unencrypted_volumes.pt",
   "../../security/aws/rds_publicly_accessible/aws_publicly_accessible_rds_instances.pt",
   "../../security/aws/public_buckets/aws_public_buckets.pt",
+  "../../cost/aws/superseded_ebs_volumes/aws_superseded_ebs_volumes.pt",
+  "../../cost/aws/rightsize_ebs_volumes/aws_rightsize_ebs_volumes.pt",
   # Azure Policy Templates
   "../../compliance/azure/azure_disallowed_regions/azure_disallowed_regions.pt",
   "../../compliance/azure/azure_policy_audit/azure_policy_audit.pt",
