@@ -17,6 +17,31 @@ def policy_deprecated?(file)
   return false
 end
 
+### Nested directory test
+# Return false if policy is correctly sorted within the directory structure
+def policy_bad_directory?(file)
+  fail_message = ""
+  parts = file.split('/')
+
+  valid_base_dirs = ["automation", "compliance", "cost", "operational", "saas", "security", "tools"]
+
+  if !valid_base_dirs.include?(parts[0])
+    fail_message += "Policy is not located in a valid base directory. All policies should be in one of the following directories: " + valid_base_dirs.join(', ') + "\n\n"
+  end
+
+  if (parts[1].include?('.pt') || parts[2].include?('.pt')) && parts[0] != "tools"
+    fail_message += "Policy is not located within a subdirectory specific to the cloud provider or service it is applicable for. For example, AWS cost policies should be in the `/cost/aws` subdirectory, Azure operational policies in the `/operational/azure` subdirectory, etc.\n\n"
+  end
+
+  if (parts[1] == 'flexera' && parts[3].include?('.pt')) && parts[0] != "tools"
+    fail_message += "Flexera policy is not contained in a subdirectory specific to the Flexera service it is for. For example, Flexera CCO cost policies should be in the `/cost/flexera/cco` subdirectory.\n\n"
+  end
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+
 ### Unmodified README test
 # Verify that .pt file also has an updated README
 def policy_unmodified_readme?(file, changed_readme_files)
