@@ -1,0 +1,729 @@
+name "Azure Compute Instances Time Powered Off Report"
+rs_pt_ver 20180301
+type "policy"
+short_description "Reports Azure virtual machines that are powered off more or less than specified percentage thresholds. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/compute_poweredoff_report/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "low"
+category "Cost"
+default_frequency "weekly"
+info(
+  version: "0.1.0",
+  provider: "Azure",
+  service: "Compute",
+  policy_set: ""
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  category "Policy Settings"
+  label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
+parameter "param_subscriptions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Subscriptions"
+  description "Allow or Deny entered Subscriptions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_subscriptions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Subscriptions List"
+  description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+parameter "param_exclude_stopped" do
+  type "string"
+  category "Filters"
+  label "Exclude Stopped Virtual Machines"
+  description "Whether or not to filter stopped virtual machines from the results. If set to \"Yes\", only running virtual machines will be included in the results."
+  allowed_values "Yes", "No"
+  default "No"
+end
+
+parameter "param_exclude_databricks" do
+  type "string"
+  category "Filters"
+  label "Exclude Databricks"
+  description "Whether or not to filter virtual machines used for Azure Databricks from the results. If set to \"Yes\", virtual machines for Azure Databricks will not be included in the results."
+  allowed_values "Yes", "No"
+  default "No"
+end
+
+parameter "param_lookback" do
+  type "number"
+  category "Policy Settings"
+  label "Look Back Period (Days)"
+  description "How many days back to look when assessing the amount of time a virtual machine is powered off for."
+  min_value 1
+  max_value 30
+  default 7
+end
+
+parameter "param_max_threshold" do
+  type "number"
+  category "Policy Settings"
+  label "Maximum Time Powered Off (%)"
+  description "Virtual machines that are powered off for more than the specified percentage will be included in the report. Set to '100' to not perform this assessment."
+  min_value 0
+  max_value 100
+  default 25
+end
+
+parameter "param_min_threshold" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Time Powered Off (%)"
+  description "Virtual machines that are powered off for less than the specified percentage will be included in the report. Set to '0' to not perform this assessment."
+  min_value 0
+  max_value 100
+  default 0
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Power Off Instances", "Delete Instances"]
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_azure" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_azure" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_azure_subscriptions" do
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path "/subscriptions/"
+    query "api-version", "2020-01-01"
+    header "User-Agent", "RS Policies"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "subscriptionId")
+      field "name", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
+    end
+  end
+end
+
+datasource "ds_azure_subscriptions_filtered" do
+  run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
+end
+
+script "js_azure_subscriptions_filtered", type: "javascript" do
+  parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
+  result "result"
+  code <<-EOS
+  if (param_subscriptions_list.length > 0) {
+    result = _.filter(ds_azure_subscriptions, function(subscription) {
+      include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
+
+      if (param_subscriptions_allow_or_deny == "Deny") {
+        include_subscription = !include_subscription
+      }
+
+      return include_subscription
+    })
+  } else {
+    result = ds_azure_subscriptions
+  }
+EOS
+end
+
+datasource "ds_azure_instances" do
+  iterate $ds_azure_subscriptions_filtered
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Compute/virtualMachines"])
+    query "api-version", "2024-03-01"
+    header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "resourceID", jmes_path(col_item, "id")
+      field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
+      field "resourceKind", jmes_path(col_item, "type")
+      field "name", jmes_path(col_item, "name")
+      field "region", jmes_path(col_item, "location")
+      field "imagePublisher", jmes_path(col_item, "properties.storageProfile.imageReference.publisher")
+      field "imageOffer", jmes_path(col_item, "properties.storageProfile.imageReference.offer")
+      field "imageSKU", jmes_path(col_item, "properties.storageProfile.imageReference.sku")
+      field "osType", jmes_path(col_item, "properties.storageProfile.osDisk.osType")
+      field "resourceType", jmes_path(col_item, "properties.hardwareProfile.vmSize")
+      field "tags", jmes_path(col_item, "tags")
+      field "subscriptionId", val(iter_item, "id")
+      field "subscriptionName", val(iter_item, "name")
+    end
+  end
+end
+
+datasource "ds_azure_instance_statuses" do
+  iterate $ds_azure_subscriptions_filtered
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Compute/virtualMachines"])
+    query "api-version", "2024-03-01"
+    query "statusOnly", "true"
+    header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "resourceID", jmes_path(col_item, "id")
+      field "statuses", jmes_path(col_item, "properties.instanceView.statuses")
+    end
+  end
+end
+
+datasource "ds_azure_instances_with_status" do
+  run_script $js_azure_instances_with_status, $ds_azure_instances, $ds_azure_instance_statuses
+end
+
+script "js_azure_instances_with_status", type: "javascript" do
+  parameters "ds_azure_instances", "ds_azure_instance_statuses"
+  result "result"
+  code <<-EOS
+  status_object = {}
+
+  _.each(ds_azure_instance_statuses, function(item) {
+    status_object[item['resourceID']] = item['statuses']
+  })
+
+  result = _.map(ds_azure_instances, function(vm) {
+    return {
+      resourceID: vm["resourceID"],
+      resourceGroup: vm["resourceGroup"],
+      resourceKind: vm["resourceKind"],
+      name: vm["name"],
+      region: vm["region"],
+      imagePublisher: vm["imagePublisher"],
+      imageOffer: vm["imageOffer"],
+      imageSKU: vm["imageSKU"],
+      osType: vm["osType"],
+      resourceType: vm["resourceType"],
+      tags: vm["tags"],
+      subscriptionId: vm["subscriptionId"],
+      subscriptionName: vm["subscriptionName"],
+      statuses: status_object[vm["resourceID"]]
+    }
+  })
+EOS
+end
+
+datasource "ds_azure_instances_tag_filtered" do
+  run_script $js_azure_instances_tag_filtered, $ds_azure_instances_with_status, $param_exclusion_tags, $param_exclusion_tags_boolean
+end
+
+script "js_azure_instances_tag_filtered", type: "javascript" do
+  parameters "ds_azure_instances_with_status", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  result "result"
+  code <<-EOS
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  if (param_exclusion_tags.length > 0) {
+    result = _.reject(ds_azure_instances_with_status, function(resource) {
+      resource_tags = {}
+      if (typeof(resource['tags']) == 'object') { resource_tags = resource['tags'] }
+
+      // Store a list of found tags
+      found_tags = []
+
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_tag = resource_tags[comparator['key']]
+
+        if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+        if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+        if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_tag == undefined) { found_tags.push(string) }
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+      })
+
+      all_tags_found = found_tags.length == comparators.length
+      any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+      return all_tags_found || any_tags_found
+    })
+  } else {
+    result = ds_azure_instances_with_status
+  }
+EOS
+end
+
+datasource "ds_azure_instances_region_filtered" do
+  run_script $js_azure_instances_region_filtered, $ds_azure_instances_tag_filtered, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_azure_instances_region_filtered", type: "javascript" do
+  parameters "ds_azure_instances_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_azure_instances_tag_filtered, function(vm) {
+      include_vm = _.contains(param_regions_list, vm['region'])
+
+      if (param_regions_allow_or_deny == "Deny") {
+        include_vm = !include_vm
+      }
+
+      return include_vm
+    })
+  } else {
+    result = ds_azure_instances_tag_filtered
+  }
+EOS
+end
+
+datasource "ds_azure_instances_databricks_filtered" do
+  run_script $js_azure_instances_databricks_filtered, $ds_azure_instances_region_filtered, $param_exclude_databricks
+end
+
+script "js_azure_instances_databricks_filtered", type: "javascript" do
+  parameters "ds_azure_instances_region_filtered", "param_exclude_databricks"
+  result "result"
+  code <<-EOS
+  if (param_exclude_databricks == "Yes") {
+    result = _.filter(ds_azure_instances_region_filtered, function(vm) {
+      imageOffer = ""
+      if (typeof(vm['imageOffer']) == 'string') { imageOffer = vm['imageOffer'] }
+
+      imagePublisher = ""
+      if (typeof(vm['imagePublisher']) == 'string') { imagePublisher = vm['imagePublisher'] }
+
+      return imageOffer.toLowerCase().indexOf('databricks') == -1 && imagePublisher.toLowerCase().indexOf('databricks') == -1
+    })
+  } else {
+    result = ds_azure_instances_region_filtered
+  }
+EOS
+end
+
+datasource "ds_azure_instances_status_filtered" do
+  run_script $js_azure_instances_status_filtered, $ds_azure_instances_databricks_filtered, $param_exclude_stopped
+end
+
+script "js_azure_instances_status_filtered", type: "javascript" do
+  parameters "ds_azure_instances_databricks_filtered", "param_exclude_stopped"
+  result "result"
+  code <<-EOS
+  if (param_exclude_stopped == "Yes") {
+    result = _.filter(ds_azure_instances_databricks_filtered, function(vm) {
+      status_codes = _.pluck(vm['statuses'], 'code')
+      return _.contains(status_codes, 'PowerState/running')
+    })
+  } else {
+    result = ds_azure_instances_databricks_filtered
+  }
+EOS
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
+end
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-EOS
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_instance_bill_data" do
+  iterate $ds_azure_subscriptions_filtered
+  request do
+    run_script $js_instance_bill_data, val(iter_item, 'id'), $ds_top_level_bcs, $param_lookback, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "resourceId", jmes_path(col_item, "dimensions.resource_id")
+      field "unit", jmes_path(col_item, "dimensions.usage_unit")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+      field "usage", jmes_path(col_item, "metrics.usage_amount")
+    end
+  end
+end
+
+script "js_instance_bill_data", type: "javascript" do
+  parameters "subscription_id", "ds_top_level_bcs", "param_lookback", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 2 - param_lookback)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
+    body_fields: {
+      dimensions: ["resource_id", "usage_unit"],
+      granularity: "day",
+      start_at: start_date,
+      end_at: end_date,
+      metrics: ["cost_amortized_unblended_adj", "usage_amount"],
+      billing_center_ids: ds_top_level_bcs,
+      limit: 100000,
+      filter: {
+        type: "and",
+        expressions: [
+          {
+            "type": "or",
+            "expressions": [
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "Microsoft.Compute"
+              },
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "microsoft.compute"
+              }
+            ]
+          },
+          {
+            dimension: "vendor_account",
+            type: "equal",
+            value: subscription_id
+          },
+          {
+            type: "not",
+            expression: {
+              dimension: "adjustment_name",
+              type: "substring",
+              substring: "Shared"
+            }
+          }
+        ]
+      }
+    },
+    headers: {
+      "User-Agent": "RS Policies",
+      "Api-Version": "1.0"
+    }
+  }
+EOS
+end
+
+datasource "ds_instance_bill_data_grouped" do
+  run_script $js_instance_bill_data_grouped, $ds_instance_bill_data
+end
+
+script "js_instance_bill_data_grouped", type: "javascript" do
+  parameters "ds_instance_bill_data"
+  result "result"
+  code <<-EOS
+  // Group cost data by resourceId for later use
+  result = {}
+
+  _.each(ds_instance_bill_data, function(item) {
+    id = item['resourceId'].toLowerCase()
+
+    if (typeof(id) == "string" && id != "" && item['unit'] == "Hrs") {
+      if (result[id] == undefined) { result[id] = {} }
+      if (result[id]['cost'] == undefined) { result[id]['cost'] = 0 }
+      if (result[id]['usage'] == undefined) { result[id]['usage'] = 0 }
+
+      result[id]['cost'] += item['cost']
+      result[id]['usage'] += item['usage']
+    }
+  })
+EOS
+end
+
+datasource "ds_instances_stopped_report" do
+  run_script $js_instances_stopped_report, $ds_azure_instances_status_filtered, $ds_instance_bill_data_grouped, $ds_applied_policy, $param_lookback, $param_max_threshold, $param_min_threshold
+end
+
+script "js_instances_stopped_report", type: "javascript" do
+  parameters "ds_azure_instances_status_filtered", "ds_instance_bill_data_grouped", "ds_applied_policy", "param_lookback", "param_max_threshold", "param_min_threshold"
+  result "result"
+  code <<-'EOS'
+  timespan_hours = param_lookback * 24
+  result = []
+
+  _.each(ds_azure_instances_status_filtered, function(instance) {
+    instance_bill_data = ds_instance_bill_data_grouped[instance['resourceID'].toLowerCase()]
+
+    if (instance_bill_data != undefined) {
+      hours_stopped = timespan_hours - instance_bill_data['usage']
+      percentage_stopped = (hours_stopped / timespan_hours) * 100
+
+      if (percentage_stopped > param_max_threshold || percentage_stopped < param_min_threshold) {
+        // Tidy up tags so they display nicely in the incident
+        tags = []
+
+        if (typeof(instance['tags']) == 'object') {
+          _.each(Object.keys(instance['tags']), function(key) {
+            tags.push(key + '=' + instance['tags'][key])
+          })
+        }
+
+        status_codes = _.pluck(vm['statuses'], 'code')
+        powerstate = _.find(status_codes, function(code) { return code.indexOf('PowerState') == 0 })
+        state = powerstate.split('/')[1]
+
+        result.push({
+          resourceName: vm['resourceName'],
+          resourceGroup: vm['resourceGroup'],
+          resourceID: vm['resourceID'],
+          resourceKind: vm['resourceKind'],
+          region: vm['region'],
+          imagePublisher: vm['imagePublisher'],
+          imageOffer: vm['imageOffer'],
+          imageSKU: vm['imageSKU'],
+          osType: vm['osType'],
+          resourceType: vm['resourceType'],
+          accountID: vm['subscriptionId'],
+          accountName: vm['subscriptionName'],
+          tags: tags.join(', '),
+          state: state,
+          service: "Microsoft.Compute",
+          policy_name: ds_applied_policy['name'],
+          usage_hours: Math.round(instance_bill_data['usage'] * 100) / 100,
+          hours_stopped: Math.round(hours_stopped * 100) / 100,
+          percentage_stopped: Math.round(percentage_stopped * 100) / 100,
+          lookbackPeriod: param_lookback,
+          threshold: param_max_threshold,
+          min_threshold: param_min_threshold,
+          message: ""
+        })
+      }
+    }
+  })
+
+  // Message for incident output
+  total_instances = ds_azure_instances_status_filtered.length.toString()
+  total_stopped_instances = result.length.toString()
+  stopped_instances_percentage = (total_stopped_instances / total_instances * 100).toFixed(2).toString() + '%'
+
+  instance_verb = "were"
+  if (total_stopped_instances == 1) { instance_verb = "was" }
+
+  days_noun = "days"
+  if (param_lookback == 1) { days_noun = "day" }
+
+  message = [
+    "Out of ", total_instances, " AWS EC2 instances analyzed, ",
+    total_stopped_instances, " (", stopped_instances_percentage,
+    ") ", instance_verb, " outside of the specified thresholds. ",
+    "EC2 instances were included in the results if they were ",
+    "stopped for less than ", param_min_threshold, "% or ",
+    "stopped for more than ", param_max_threshold, "% of ",
+    "the last " + param_lookback + " ", days_noun, ". ",
+    "Instances with no usage data in the Flexera platform are omitted ",
+    "from the results.\n\n",
+    "The above settings can be modified by editing the applied policy ",
+    "and changing the appropriate parameters."
+  ].join('')
+
+  // Dummy entry to ensure validation runs at least once
+  result.push({
+    resourceID: "",
+    resourceType: "",
+    region: "",
+    platform: "",
+    privateDnsName: "",
+    launchTime: "",
+    hostname: "",
+    resourceName: "",
+    tags: "",
+    accountID: "",
+    accountName: "",
+    policy_name: "",
+    usage_hours: "",
+    hours_stopped: "",
+    percentage_stopped: "",
+    lookbackPeriod: "",
+    threshold: "",
+    min_threshold: "",
+    service: "",
+    message: ""
+  })
+
+  result[0]['message'] = message
+EOS
+end
