@@ -849,10 +849,13 @@ escalation "esc_downsize_instances" do
   automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
   label "Downsize VM Instances"
   description "Approval to downsize all selected VM instances"
+
+  # Run declaration should go at end, after any parameters that may exist
   run "esc_downsize_instances", data, rs_governance_host, rs_project_id
 end
 define esc_downsize_instances($data, $governance_host, $rs_project_id) do
-  call child_run_action($data, $governance_host, $rs_project_id, "Downsize VM Instances")
+  $actions_options = []
+  call child_run_action($data, $governance_host, $rs_project_id, "Downsize VM Instances", $action_options)
 end
 
 # Escalation for Stop VM Instances
@@ -860,10 +863,13 @@ escalation "esc_stop_instances" do
   automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
   label "Stop VM Instances"
   description "Approval to stop all selected VM instances"
+
+  # Run declaration should go at end, after any parameters that may exist
   run "esc_stop_instances", data, rs_governance_host, rs_project_id
 end
 define esc_stop_instances($data, $governance_host, $rs_project_id) do
-  call child_run_action($data, $governance_host, $rs_project_id, "Stop VM Instances")
+  $actions_options = []
+  call child_run_action($data, $governance_host, $rs_project_id, "Stop VM Instances", $action_options)
 end
 
 # Escalation for Delete VM Instances
@@ -871,10 +877,13 @@ escalation "esc_delete_instances" do
   automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
   label "Delete VM Instances"
   description "Approval to delete all selected VM instances"
+
+  # Run declaration should go at end, after any parameters that may exist
   run "esc_delete_instances", data, rs_governance_host, rs_project_id
 end
 define esc_delete_instances($data, $governance_host, $rs_project_id) do
-  call child_run_action($data, $governance_host, $rs_project_id, "Delete VM Instances")
+  $actions_options = []
+  call child_run_action($data, $governance_host, $rs_project_id, "Delete VM Instances", $action_options)
 end
 
 
@@ -1190,7 +1199,7 @@ define groupByIncidentID($data) return $incidents do
   end
 end
 
-define child_run_action($data, $governance_host, $rs_project_id, $action_label) do
+define child_run_action($data, $governance_host, $rs_project_id, $action_label, $action_options) do
   # Empty global array for log strings, helpful for debugging
   $$debug = []
 
@@ -1199,7 +1208,7 @@ define child_run_action($data, $governance_host, $rs_project_id, $action_label) 
   call groupByIncidentID($data) retrieve $incidents
   $$debug_incidents = to_json($incidents)
 
-  call runActions($incidents, $action_label, $governance_host, $rs_project_id)
+  call runActions($incidents, $action_label, $governance_host, $rs_project_id, $action_options)
 
   # If we encountered any errors, use `raise` to mark the CWF process as errored
   if inspect($$errors) != "null"
@@ -1211,7 +1220,7 @@ define child_run_action($data, $governance_host, $rs_project_id, $action_label) 
   task_label("All \""+$action_label+"\" actions completed successfully!")
 end
 
-define runActions($incidents, $action_label, $governance_host, $rs_project_id) do
+define runActions($incidents, $action_label, $governance_host, $rs_project_id, $action_options) do
   foreach $id in keys($incidents) do
     sub on_error: handle_error() do
       $incident = $incidents[$id]
@@ -1251,6 +1260,10 @@ define runActions($incidents, $action_label, $governance_host, $rs_project_id) d
         headers: { "Api-Version": "1.0" },
         body: { "options":[{ "name": "ids",  "value": $incident["resource_ids"] }] }
       }
+      # If the action has parameters, add them to the request body
+      if size($action_options) > 0
+        $request["body"]["options"] = $request["body"]["options"] + $action_options
+      end
       $response = http_request($request)
       $$debug << to_json({
         "request": $request,
