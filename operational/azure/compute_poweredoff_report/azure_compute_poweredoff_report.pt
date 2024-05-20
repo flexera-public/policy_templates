@@ -85,11 +85,11 @@ parameter "param_regions_list" do
   default []
 end
 
-parameter "param_exclude_stopped" do
+parameter "param_exclude_poweredoff" do
   type "string"
   category "Filters"
   label "Exclude Stopped Virtual Machines"
-  description "Whether or not to filter stopped virtual machines from the results. If set to \"Yes\", only running virtual machines will be included in the results."
+  description "Whether or not to filter poweredoff virtual machines from the results. If set to \"Yes\", only running virtual machines will be included in the results."
   allowed_values "Yes", "No"
   default "No"
 end
@@ -140,6 +140,15 @@ parameter "param_automatic_action" do
   description "When this value is set, this policy will automatically take the selected action(s)"
   allowed_values ["Power Off Instances", "Delete Instances"]
   default []
+end
+
+parameter "param_skipshutdown" do
+  type "string"
+  category "Actions"
+  label "Power Off Type"
+  description "Whether to perform a graceful shutdown or a forced shutdown when powering off idle instances. Only applicable when taking action against instances."
+  allowed_values "Graceful", "Forced"
+  default "Graceful"
 end
 
 ###############################################################################
@@ -450,14 +459,14 @@ EOS
 end
 
 datasource "ds_azure_instances_status_filtered" do
-  run_script $js_azure_instances_status_filtered, $ds_azure_instances_databricks_filtered, $param_exclude_stopped
+  run_script $js_azure_instances_status_filtered, $ds_azure_instances_databricks_filtered, $param_exclude_poweredoff
 end
 
 script "js_azure_instances_status_filtered", type: "javascript" do
-  parameters "ds_azure_instances_databricks_filtered", "param_exclude_stopped"
+  parameters "ds_azure_instances_databricks_filtered", "param_exclude_poweredoff"
   result "result"
   code <<-EOS
-  if (param_exclude_stopped == "Yes") {
+  if (param_exclude_poweredoff == "Yes") {
     result = _.filter(ds_azure_instances_databricks_filtered, function(vm) {
       status_codes = _.pluck(vm['statuses'], 'code')
       return _.contains(status_codes, 'PowerState/running')
@@ -614,11 +623,11 @@ script "js_instance_bill_data_grouped", type: "javascript" do
 EOS
 end
 
-datasource "ds_instances_stopped_report" do
-  run_script $js_instances_stopped_report, $ds_azure_instances_status_filtered, $ds_instance_bill_data_grouped, $ds_applied_policy, $param_lookback, $param_max_threshold, $param_min_threshold
+datasource "ds_instances_poweredoff_report" do
+  run_script $js_instances_poweredoff_report, $ds_azure_instances_status_filtered, $ds_instance_bill_data_grouped, $ds_applied_policy, $param_lookback, $param_max_threshold, $param_min_threshold
 end
 
-script "js_instances_stopped_report", type: "javascript" do
+script "js_instances_poweredoff_report", type: "javascript" do
   parameters "ds_azure_instances_status_filtered", "ds_instance_bill_data_grouped", "ds_applied_policy", "param_lookback", "param_max_threshold", "param_min_threshold"
   result "result"
   code <<-'EOS'
@@ -629,10 +638,10 @@ script "js_instances_stopped_report", type: "javascript" do
     instance_bill_data = ds_instance_bill_data_grouped[instance['resourceID'].toLowerCase()]
 
     if (instance_bill_data != undefined) {
-      hours_stopped = timespan_hours - instance_bill_data['usage']
-      percentage_stopped = (hours_stopped / timespan_hours) * 100
+      hours_poweredoff = timespan_hours - instance_bill_data['usage']
+      percentage_poweredoff = (hours_poweredoff / timespan_hours) * 100
 
-      if (percentage_stopped > param_max_threshold || percentage_stopped < param_min_threshold) {
+      if (percentage_poweredoff > param_max_threshold || percentage_poweredoff < param_min_threshold) {
         // Tidy up tags so they display nicely in the incident
         tags = []
 
@@ -664,8 +673,8 @@ script "js_instances_stopped_report", type: "javascript" do
           service: "Microsoft.Compute",
           policy_name: ds_applied_policy['name'],
           usage_hours: Math.round(instance_bill_data['usage'] * 100) / 100,
-          hours_stopped: Math.round(hours_stopped * 100) / 100,
-          percentage_stopped: Math.round(percentage_stopped * 100) / 100,
+          hours_poweredoff: Math.round(hours_poweredoff * 100) / 100,
+          percentage_poweredoff: Math.round(percentage_poweredoff * 100) / 100,
           lookbackPeriod: param_lookback,
           threshold: param_max_threshold,
           min_threshold: param_min_threshold,
@@ -677,24 +686,24 @@ script "js_instances_stopped_report", type: "javascript" do
 
   // Message for incident output
   total_instances = ds_azure_instances_status_filtered.length.toString()
-  total_stopped_instances = result.length.toString()
-  stopped_instances_percentage = (total_stopped_instances / total_instances * 100).toFixed(2).toString() + '%'
+  total_poweredoff_instances = result.length.toString()
+  poweredoff_instances_percentage = (total_poweredoff_instances / total_instances * 100).toFixed(2).toString() + '%'
 
   instance_verb = "were"
-  if (total_stopped_instances == 1) { instance_verb = "was" }
+  if (total_poweredoff_instances == 1) { instance_verb = "was" }
 
   days_noun = "days"
   if (param_lookback == 1) { days_noun = "day" }
 
   message = [
-    "Out of ", total_instances, " AWS EC2 instances analyzed, ",
-    total_stopped_instances, " (", stopped_instances_percentage,
+    "Out of ", total_instances, " Azure virtual machines analyzed, ",
+    total_poweredoff_instances, " (", poweredoff_instances_percentage,
     ") ", instance_verb, " outside of the specified thresholds. ",
-    "EC2 instances were included in the results if they were ",
-    "stopped for less than ", param_min_threshold, "% or ",
-    "stopped for more than ", param_max_threshold, "% of ",
+    "Virtual machines were included in the results if they were ",
+    "powered off for less than ", param_min_threshold, "% or ",
+    "powered off for more than ", param_max_threshold, "% of ",
     "the last " + param_lookback + " ", days_noun, ". ",
-    "Instances with no usage data in the Flexera platform are omitted ",
+    "Virtual machines with no usage data in the Flexera platform are omitted ",
     "from the results.\n\n",
     "The above settings can be modified by editing the applied policy ",
     "and changing the appropriate parameters."
@@ -702,28 +711,335 @@ script "js_instances_stopped_report", type: "javascript" do
 
   // Dummy entry to ensure validation runs at least once
   result.push({
-    resourceID: "",
-    resourceType: "",
-    region: "",
-    platform: "",
-    privateDnsName: "",
-    launchTime: "",
-    hostname: "",
     resourceName: "",
-    tags: "",
+    resourceGroup: "",
+    resourceID: "",
+    resourceKind: "",
+    region: "",
+    imagePublisher: "",
+    imageOffer: "",
+    imageSKU: "",
+    osType: "",
+    resourceType: "",
     accountID: "",
     accountName: "",
+    tags: "",
+    state: "",
+    service: "",
     policy_name: "",
     usage_hours: "",
-    hours_stopped: "",
-    percentage_stopped: "",
+    hours_poweredoff: "",
+    percentage_poweredoff: "",
     lookbackPeriod: "",
     threshold: "",
     min_threshold: "",
-    service: "",
     message: ""
   })
 
   result[0]['message'] = message
 EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_instances_poweredoff_report" do
+  validate_each $ds_instances_poweredoff_report do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Virtual Machines Found"
+    detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    escalate $esc_poweroff_instances
+    escalate $esc_delete_instances
+    hash_exclude "message", "tags", "usage_hours", "hours_stopped", "percentage_stopped"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Subscription ID"
+      end
+      field "accountName" do
+        label "Subscription Name"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "resourceType" do
+        label "Instance Size"
+      end
+      field "resourceKind" do
+        label "Resource Kind"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "osType" do
+        label "Operating System"
+      end
+      field "imagePublisher" do
+        label "Image Publisher"
+      end
+      field "imageOffer" do
+        label "Image Offer"
+      end
+      field "imageSKU" do
+        label "Image SKU"
+      end
+      field "state" do
+        label "Power State"
+      end
+      field "usage_hours" do
+        label "Usage Hours"
+      end
+      field "hours_poweredoff" do
+        label "Time Powered Off (Hours)"
+      end
+      field "percentage_poweredoff" do
+        label "Time Powered Off (%)"
+      end
+      field "min_threshold" do
+        label "Minimum Time Powered Off (%)"
+      end
+      field "threshold" do
+        label "Maximum Time Powered Off (%)"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_poweroff_instances" do
+  automatic contains($param_automatic_action, "Power Off Instances")
+  label "Power Off Instances"
+  description "Approval to power off all selected instances"
+  run "poweroff_instances", data, $param_azure_endpoint, $param_skipshutdown
+end
+
+escalation "esc_delete_instances" do
+  automatic contains($param_automatic_action, "Delete Instances")
+  label "Delete Instances"
+  description "Approval to delete all selected instances"
+  run "delete_instances", data, $param_azure_endpoint
+end
+
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define poweroff_instances($data, $param_azure_endpoint, $param_skipshutdown) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call poweroff_instance($instance, $param_azure_endpoint, $param_skipshutdown) retrieve $poweroff_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define poweroff_instance($instance, $param_azure_endpoint, $param_skipshutdown) return $response do
+  $host = $param_azure_endpoint
+  $href = $instance["id"] + "/powerOff"
+  $params = "?api-version=2023-07-01"
+  $url = $host + $href + $params
+  task_label("POST " + $url)
+
+  $query_strings = { "api-version": "2023-07-01" }
+
+  if $param_skipshutdown == "Forced"
+    $query_strings["skipShutdown"] = "true"
+    $params = $params + "&skipShutdown=true"
+  end
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "post",
+    host: $host,
+    href: $href,
+    query_strings: $query_strings
+  )
+
+  task_label("Power off Azure VM instance response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response powering off Azure VM instance: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Power off Azure VM instance successful: " + $instance["id"])
+  end
+end
+
+define delete_instances($data, $param_azure_endpoint) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call delete_instance($instance, $param_azure_endpoint) retrieve $delete_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define delete_instance($instance, $param_azure_endpoint) return $response do
+  $host = $param_azure_endpoint
+  $href = $instance["id"]
+  $params = "?api-version=2023-07-01"
+  $url = $host + $href + $params
+  task_label("DELETE " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "delete",
+    host: $host,
+    href: $href,
+    query_strings: { "api-version": "2023-07-01" }
+  )
+
+  task_label("Delete Azure VM instance response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response deleting Azure VM instance: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Delete Azure VM instance successful: " + $instance["id"])
+  end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
 end
