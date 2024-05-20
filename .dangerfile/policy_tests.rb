@@ -17,6 +17,31 @@ def policy_deprecated?(file)
   return false
 end
 
+### Nested directory test
+# Return false if policy is correctly sorted within the directory structure
+def policy_bad_directory?(file)
+  fail_message = ""
+  parts = file.split('/')
+
+  valid_base_dirs = ["automation", "compliance", "cost", "operational", "saas", "security", "tools"]
+
+  if !valid_base_dirs.include?(parts[0])
+    fail_message += "Policy is not located in a valid base directory. All policies should be in one of the following directories: " + valid_base_dirs.join(', ') + "\n\n"
+  end
+
+  if (parts[1].include?('.pt') || parts[2].include?('.pt')) && parts[0] != "tools"
+    fail_message += "Policy is not located within a subdirectory specific to the cloud provider or service it is applicable for. For example, AWS cost policies should be in the `/cost/aws` subdirectory, Azure operational policies in the `/operational/azure` subdirectory, etc.\n\n"
+  end
+
+  if (parts[1] == 'flexera' && parts[3].include?('.pt')) && parts[0] != "tools"
+    fail_message += "Flexera policy is not contained in a subdirectory specific to the Flexera service it is for. For example, Flexera CCO cost policies should be in the `/cost/flexera/cco` subdirectory.\n\n"
+  end
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+
 ### Unmodified README test
 # Verify that .pt file also has an updated README
 def policy_unmodified_readme?(file, changed_readme_files)
@@ -59,11 +84,19 @@ end
 
 ### Policy syntax error test
 # Return false if no syntax errors are found using fpt.
-def policy_fpt_syntax_error?(file)
+def policy_fpt_syntax_error?(file, meta_policy = "child")
+  fail_message = ""
   fpt = `[ -x ./fpt ] && ./fpt check #{file} | grep -v Checking`
 
-  # Return errors if any are found. Otherwise, return false
-  return "fpt has detected errors:\n\n#{fpt}" if !fpt.empty?
+  if !fpt.empty?
+    if meta_policy == "meta"
+      fail_message = "fpt has detected errors in meta policy. Please fix the issues in the child policy or in the meta policy generation tools that are causing these errors:\n\n#{fpt}"
+    else
+      fail_message = "fpt has detected errors in policy:\n\n#{fpt}"
+    end
+  end
+
+  return fail_message.strip if !fail_message.empty?
   return false
 end
 
@@ -450,7 +483,7 @@ def policy_readme_missing_credentials?(file)
   end
 
   # Check for mismatches between policy and README.md
-  if pol_flexera_credential && !readme_flexera_credential && !file.start_with("saas/fsm/")
+  if pol_flexera_credential && !readme_flexera_credential && !file.start_with?("saas/fsm/")
     fail_message += "Policy contains Flexera credential but this credential either missing from or incorrectly formatted in the associated `README.md` file.\n\n"
   end
 
@@ -862,6 +895,7 @@ def policy_ds_js_name_mismatch?(file)
   ds_name = nil
   js_name = nil
   line_number = nil
+  found_mismatches = []
 
   policy_code.each_line.with_index do |line, index|
     # Stop doing the check once we hit the Meta Policy section
@@ -879,7 +913,13 @@ def policy_ds_js_name_mismatch?(file)
 
       if ds_name != nil && js_name != nil
         if ds_name[3..-1] != js_name[3..-1]
-          fail_message += "Line #{line_number.to_s}: #{ds_name} / #{js_name}\n"
+          found_mismatches << {
+            line_number: line_number,
+            ds_name: ds_name[3..-1],
+            js_name: js_name[3..-1]
+          }
+
+          #fail_message += "Line #{line_number.to_s}: #{ds_name} / #{js_name}\n"
         end
       end
 
@@ -888,6 +928,19 @@ def policy_ds_js_name_mismatch?(file)
       js_name = nil
       line_number = nil
     end
+  end
+
+  # Filter out mismatches where the javascript block is referenced by multiple datasources
+  js_name_counts = found_mismatches.each_with_object(Hash.new(0)) do |item, counts|
+    counts[item[:js_name]] += 1
+  end
+
+  filtered_mismatches = found_mismatches.reject do |item|
+    js_name_counts[item[:js_name]] > 1
+  end
+
+  filtered_mismatches.each do |mismatch|
+    fail_message += "Line #{mismatch[:line_number]}: ds_#{mismatch[:ds_name]} / js_#{mismatch[:js_name]}\n"
   end
 
   fail_message = "Datasources and scripts with mismatched names found. These names should match; for example, a datasource named ds_currency should be paired with a script named js_currency. This convention should only be ignored when the same script is called by multiple datasources. The following datasource/script pairs have mismatched names:\n\n" + fail_message if !fail_message.empty?
@@ -926,14 +979,14 @@ def policy_run_script_incorrect_order?(file)
       # Remove the first item because it's just the name of the script itself
       script_name = parameters.shift
 
-      iter_found = false      # Whether we've found a val(iter_item, "") parameter
+      iter_found = false      # Whether we've found a iter_item or val(iter_item, "") parameter
       ds_found = false        # Whether we've found a datasource parameter
       param_found = false     # Whether we've found a parameter parameter
       constant_found = false  # Whether we've found a constant, like rs_org_id
       value_found = false     # Whether we've found a raw value, like a number or string
 
       parameters.each_with_index do |parameter, index|
-        if parameter.start_with?("val(") && parameter.include?("iter_item")
+        if parameter.include?("iter_item")
           iter_found = true
           iter_index = index
           disordered = true if ds_found || param_found || constant_found || value_found
@@ -1144,7 +1197,7 @@ def policy_bad_comma_spacing?(file)
   policy_code.each_line.with_index do |line, index|
     line_number = index + 1
 
-    if line.include?(",") && !line.include?("allowed_pattern") && !line.include?('= ","') && !line.include?("(',')") && !line.include?('(",")')
+    if line.include?(",") && !line.include?("allowed_pattern") && !line.include?('= ","') && !line.include?("(',')") && !line.include?('(",")') && !line.include?("jq(")
       if line.strip.match(/,\s{2,}/) || line.strip.match(/\s,/) || line.strip.match(/,[^\s]/)
         fail_message += "Line #{line_number.to_s}: Possible invalid spacing between comma-separated items found.\nComma separated items should be organized as follows, with a single space following each comma: apple, banana, pear\n\n"
       end
@@ -1157,9 +1210,9 @@ def policy_bad_comma_spacing?(file)
   return false
 end
 
-### Github Source File Test
-# Return false if all datasources pointed to assets at raw.githubusercontent.com are valid
-def policy_bad_github_datasources?(file)
+### Outdated Links
+# Return false if no outdated links are found
+def policy_outdated_links?(file)
   # Store contents of file for direct analysis
   policy_code = File.read(file)
 
@@ -1171,6 +1224,10 @@ def policy_bad_github_datasources?(file)
 
   policy_code.each_line.with_index do |line, index|
     line_number = index + 1
+
+    if line.include?("https://image-charts.com")
+      fail_message += "Line #{line_number.to_s}: Direct link to `image-charts.com` found. Please replace `https://image-charts.com/chart?` with `https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id={{ rs_org_id }}&rs_project_id={{ rs_project_id }}&`.\n\n"
+    end
 
     if line.start_with?("datasource ")
       within_datasource = true
@@ -1201,7 +1258,7 @@ def policy_bad_github_datasources?(file)
     end
   end
 
-  fail_message = "Invalid file paths found in datasources:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "Invalid links found:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false

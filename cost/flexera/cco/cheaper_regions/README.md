@@ -1,12 +1,27 @@
 # Cheaper Regions Policy
 
-## What it does
+## What It Does
 
 This Policy Template determines which regions have cheaper alternatives by specifying the expensive region name and the cheaper region name for analysis
+
+## Input Parameters
+
+This policy has the following input parameters required when launching the policy.
+
+- *Billing Center Name* - The list of Billing centers to check against
+- *Email Addresses* - A list of email addresses to notify
+
+## Policy Actions
+
+The following policy actions are taken on any resources found to be out of compliance.
+
+- Send an email report
 
 ## Prerequisites
 
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+
+### Credential Configuration
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
@@ -19,13 +34,6 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 ## Functional Details
 
 - This policy uses a hash to determine existing regions and newer compatible cheaper regions. It checks the billing center and reports on cheaper regions.
-
-### Input Parameters
-
-This policy has the following input parameters required when launching the policy.
-
-- *Billing Center Name* - The list of Billing centers to check against
-- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 
 ## Supported Clouds
 

@@ -7,15 +7,15 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "0.4",
+  version: "0.5.0",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization"
 )
 
-##############################################################################
+###############################################################################
 # Parameters
-##############################################################################
+###############################################################################
 
 parameter "param_email" do
   type "list"
@@ -23,6 +23,15 @@ parameter "param_email" do
   label "Email Addresses"
   description "The email addresses to send recommendations to."
   default []
+end
+
+parameter "param_always_send_incident" do
+  type "string"
+  category "Policy Settings"
+  label "Always Email Incident"
+  description "Whether or not to always email the incident even if no new items were added to the recommendations since the policy's last execution."
+  allowed_values "Yes", "No"
+  default "No"
 end
 
 parameter "param_vendor_list" do
@@ -64,8 +73,8 @@ parameter "param_recommendation_list" do
   category "Filters"
   label "Recommendation List"
   description "The types of recommendations to include in the email."
-  allowed_values ["Compute", "Snapshot", "Database", "IP Address", "Disk", "Reservation", "Savings Plan"]
-  default ["Compute", "Snapshot", "Database", "IP Address", "Disk", "Reservation", "Savings Plan"]
+  allowed_values ["Compute", "Snapshot", "Database", "IP Address", "Disk", "Network", "Reservation", "Savings Plan"]
+  default ["Compute", "Snapshot", "Database", "IP Address", "Disk", "Network", "Reservation", "Savings Plan"]
 end
 
 parameter "param_policy_list" do
@@ -103,6 +112,8 @@ script "js_recommendation_types", type:"javascript" do
     "AWS Old Snapshots": "Snapshot",
     "AWS Rightsize EC2 Instances": "Compute",
     "AWS Rightsize RDS Instances": "Database",
+    "AWS Rightsize EBS Volumes": "Disk",
+    "AWS Unused Classic Load Balancers": "Network",
     "AWS Unused IP Addresses": "IP Address",
     "AWS Unused RDS Instances": "Database",
     "AWS Unused Volumes": "Disk",
@@ -115,6 +126,8 @@ script "js_recommendation_types", type:"javascript" do
     "Azure Idle Compute Instances": "Compute",
     "Azure Old Snapshots": "Snapshot",
     "Azure Rightsize Compute Instances": "Compute",
+    "Azure Rightsize Managed Disks": "Disk",
+    "Azure Rightsize NetApp Files": "Disk",
     "Azure Rightsize SQL Databases": "Database",
     "Azure Superseded Compute Instances": "Compute",
     "Azure Unused IP Addresses": "IP Address",
@@ -126,6 +139,7 @@ script "js_recommendation_types", type:"javascript" do
     "Google Idle IP Address Recommender": "IP Address",
     "Google Idle Persistent Disk Recommender": "Disk",
     "Google Idle VM Recommender": "Compute",
+    "Google Old Snapshots": "Snapshot",
     "Google Rightsize VM Recommender": "Compute",
     "Google Committed Use Discount Recommender": "Reservation"
   }
@@ -191,8 +205,8 @@ datasource "ds_recommendations" do
     auth $auth_flexera
     host rs_optima_host
     path join(["/recommendations/orgs/", rs_org_id, "/recommendations"])
-    header "Api-Version", "1.0"
     query "view", "extended"
+    header "Api-Version", "1.0"
   end
 end
 
@@ -250,11 +264,11 @@ EOS
 end
 
 datasource "ds_recommendations_organized" do
-  run_script $js_recommendations_organized, $ds_recommendations_filtered, $ds_currency
+  run_script $js_recommendations_organized, $ds_recommendations_filtered, $ds_currency, $param_always_send_incident
 end
 
 script "js_recommendations_organized", type: "javascript" do
-  parameters "ds_recommendations_filtered", "ds_currency"
+  parameters "ds_recommendations_filtered", "ds_currency", "param_always_send_incident"
   result "result"
   code <<-'EOS'
   result = []
@@ -375,6 +389,9 @@ script "js_recommendations_organized", type: "javascript" do
       }
     }
 
+    send_incident = ""
+    if (param_always_send_incident == "Yes") { send_incident = new Date().toISOString() }
+
     result.push({
       recommendationID: recommendation['id'],
       billingCenter: recommendation['billingCenterName'],
@@ -395,6 +412,7 @@ script "js_recommendations_organized", type: "javascript" do
       offeringId: offeringId,
       recommendationDetails: recommendationDetails,
       tags: tags,
+      send_incident: send_incident,
       message: ""
     })
   })
@@ -475,6 +493,9 @@ policy "pol_recommendations" do
       field "id" do
         label "ID"
         path "resourceID"
+      end
+      field "send_incident" do
+        label "Send Incident"
       end
     end
   end

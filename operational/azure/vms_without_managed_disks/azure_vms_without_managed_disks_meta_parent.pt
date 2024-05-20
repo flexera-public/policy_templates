@@ -8,7 +8,7 @@ tenancy "single"
 default_frequency "15 minutes"
 info(
   provider: "Azure",
-  version: "3.1.1", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "4.0.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "false"
 )
 
@@ -77,12 +77,38 @@ parameter "param_azure_endpoint" do
   default "management.azure.com"
 end
 
-parameter "param_exclusion_tag_key" do
+parameter "param_regions_allow_or_deny" do
   type "string"
-  category "Policy Settings"
-  label "Exclusion Tag Key"
-  description "Azure-native instance tag to ignore instances that match the disallowed instance type. Only supply the tag key. The policy assumes that the tag value is irrelevant."
-  default ""
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
 end
 
 ###############################################################################
@@ -97,7 +123,7 @@ end
 
 credentials "auth_flexera" do
   schemes "oauth2"
-  label "flexera"
+  label "Flexera"
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
@@ -400,6 +426,7 @@ datasource "ds_get_existing_policies_incidents" do
     path join(["/api/governance/projects/", rs_project_id, "/incidents"])
     header "Api-Version", "1.0"
     query "meta_parent_policy_id", policy_id
+    query "state", "triggered"
   end
   result do
     collect jq(response, '.items[]?') do
@@ -751,23 +778,22 @@ datasource "ds_child_incident_details" do
     header "User-Agent", "RS Policies"
     header "Api-Version", "1.0"
     query "view", "extended"
-    query "state", "triggered"
   end
 end
 
-datasource "ds_filtered_virtual_machines_combined_incidents" do
-  run_script $js_ds_filtered_virtual_machines_combined_incidents, $ds_child_incident_details
+datasource "ds_azure_instances_unmanaged_disk_combined_incidents" do
+  run_script $js_ds_azure_instances_unmanaged_disk_combined_incidents, $ds_child_incident_details
 end
 
-script "js_ds_filtered_virtual_machines_combined_incidents", type: "javascript" do
+script "js_ds_azure_instances_unmanaged_disk_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-EOS
   result = []
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
-    // If the incident summary contains "Azure VMs without managed disks" then include it in the filter result
-    if (s.indexOf("Azure VMs without managed disks") > -1) {
+    // If the incident summary contains "Azure Virtual Machines Without Managed Disks Found" then include it in the filter result
+    if (s.indexOf("Azure Virtual Machines Without Managed Disks Found") > -1) {
       _.each(incident["violation_data"], function(violation) {
         violation["incident_id"] = incident["id"];
         result.push(violation);
@@ -786,9 +812,9 @@ end
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
-    # Consolidated incident for Azure VMs without managed disks
-  validate $ds_filtered_virtual_machines_combined_incidents do
-    summary_template "Consolidated Incident: {{ len data }} Azure VMs without managed disks"
+    # Consolidated incident for Azure Virtual Machines Without Managed Disks Found
+  validate $ds_azure_instances_unmanaged_disk_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} Azure Virtual Machines Without Managed Disks Found"
     escalate $esc_email
     
     check eq(size(data), 0)
@@ -800,26 +826,38 @@ policy "policy_scheduled_report" do
       field "accountName" do
         label "Subscription Name"
       end
-      field "location" do
-        label "Location"
-      end
-      field "name" do
-        label "Resource Name"
-      end
-      field "id" do
-        label "Resource ID"
-      end
       field "resourceGroup" do
         label "Resource Group"
       end
-      field "storageAccount" do
-        label "Storage Account"
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "resourceKind" do
+        label "Resource Kind"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "osType" do
+        label "Operating System"
       end
       field "osDisk" do
         label "osDisk VHD"
       end
-      field "tags" do
-        label "Tags"
+      field "storageAccount" do
+        label "Storage Account"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "ID"
       end
       field "incident_id" do
         label "Child Incident ID"
@@ -948,7 +986,7 @@ define groupByIncidentID($data) return $incidents do
   end
 end
 
-define child_run_action($data, $governance_host, $rs_project_id, $action_label) do
+define child_run_action($data, $governance_host, $rs_project_id, $action_label, $action_options) do
   # Empty global array for log strings, helpful for debugging
   $$debug = []
 
@@ -957,7 +995,7 @@ define child_run_action($data, $governance_host, $rs_project_id, $action_label) 
   call groupByIncidentID($data) retrieve $incidents
   $$debug_incidents = to_json($incidents)
 
-  call runActions($incidents, $action_label, $governance_host, $rs_project_id)
+  call runActions($incidents, $action_label, $governance_host, $rs_project_id, $action_options)
 
   # If we encountered any errors, use `raise` to mark the CWF process as errored
   if inspect($$errors) != "null"
@@ -969,7 +1007,7 @@ define child_run_action($data, $governance_host, $rs_project_id, $action_label) 
   task_label("All \""+$action_label+"\" actions completed successfully!")
 end
 
-define runActions($incidents, $action_label, $governance_host, $rs_project_id) do
+define runActions($incidents, $action_label, $governance_host, $rs_project_id, $action_options) do
   foreach $id in keys($incidents) do
     sub on_error: handle_error() do
       $incident = $incidents[$id]
@@ -1009,6 +1047,10 @@ define runActions($incidents, $action_label, $governance_host, $rs_project_id) d
         headers: { "Api-Version": "1.0" },
         body: { "options":[{ "name": "ids",  "value": $incident["resource_ids"] }] }
       }
+      # If the action has parameters, add them to the request body
+      if size($action_options) > 0
+        $request["body"]["options"] = $request["body"]["options"] + $action_options
+      end
       $response = http_request($request)
       $$debug << to_json({
         "request": $request,

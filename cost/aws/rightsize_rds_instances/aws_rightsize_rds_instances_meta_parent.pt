@@ -8,7 +8,7 @@ tenancy "single"
 default_frequency "15 minutes"
 info(
   provider: "AWS",
-  version: "5.3", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "5.3.1", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "false"
 )
 
@@ -472,6 +472,7 @@ datasource "ds_get_existing_policies_incidents" do
     path join(["/api/governance/projects/", rs_project_id, "/incidents"])
     header "Api-Version", "1.0"
     query "meta_parent_policy_id", policy_id
+    query "state", "triggered"
   end
   result do
     collect jq(response, '.items[]?') do
@@ -825,7 +826,6 @@ datasource "ds_child_incident_details" do
     header "User-Agent", "RS Policies"
     header "Api-Version", "1.0"
     query "view", "extended"
-    query "state", "triggered"
   end
 end
 
@@ -879,10 +879,13 @@ escalation "esc_downsize_rds_instances" do
   automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
   label "Downsize Underutilized RDS Instances"
   description "Approval to downsize all selected underutilized RDS instances"
+
+  # Run declaration should go at end, after any parameters that may exist
   run "esc_downsize_rds_instances", data, rs_governance_host, rs_project_id
 end
 define esc_downsize_rds_instances($data, $governance_host, $rs_project_id) do
-  call child_run_action($data, $governance_host, $rs_project_id, "Downsize Underutilized RDS Instances")
+  $actions_options = []
+  call child_run_action($data, $governance_host, $rs_project_id, "Downsize Underutilized RDS Instances", $action_options)
 end
 
 # Escalation for Terminate Unused RDS Instances
@@ -890,10 +893,13 @@ escalation "esc_terminate_rds_instances" do
   automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
   label "Terminate Unused RDS Instances"
   description "Approval to terminate all selected unused RDS instances"
+
+  # Run declaration should go at end, after any parameters that may exist
   run "esc_terminate_rds_instances", data, rs_governance_host, rs_project_id
 end
 define esc_terminate_rds_instances($data, $governance_host, $rs_project_id) do
-  call child_run_action($data, $governance_host, $rs_project_id, "Terminate Unused RDS Instances")
+  $actions_options = []
+  call child_run_action($data, $governance_host, $rs_project_id, "Terminate Unused RDS Instances", $action_options)
 end
 
 
@@ -1051,6 +1057,9 @@ policy "policy_scheduled_report" do
       field "resourceType" do
         label "Resource Type"
       end
+      field "newResourceType" do
+        label "Recommended Resource Type"
+      end
       field "databaseEngine" do
         label "Database Engine"
       end
@@ -1205,7 +1214,7 @@ define groupByIncidentID($data) return $incidents do
   end
 end
 
-define child_run_action($data, $governance_host, $rs_project_id, $action_label) do
+define child_run_action($data, $governance_host, $rs_project_id, $action_label, $action_options) do
   # Empty global array for log strings, helpful for debugging
   $$debug = []
 
@@ -1214,7 +1223,7 @@ define child_run_action($data, $governance_host, $rs_project_id, $action_label) 
   call groupByIncidentID($data) retrieve $incidents
   $$debug_incidents = to_json($incidents)
 
-  call runActions($incidents, $action_label, $governance_host, $rs_project_id)
+  call runActions($incidents, $action_label, $governance_host, $rs_project_id, $action_options)
 
   # If we encountered any errors, use `raise` to mark the CWF process as errored
   if inspect($$errors) != "null"
@@ -1226,7 +1235,7 @@ define child_run_action($data, $governance_host, $rs_project_id, $action_label) 
   task_label("All \""+$action_label+"\" actions completed successfully!")
 end
 
-define runActions($incidents, $action_label, $governance_host, $rs_project_id) do
+define runActions($incidents, $action_label, $governance_host, $rs_project_id, $action_options) do
   foreach $id in keys($incidents) do
     sub on_error: handle_error() do
       $incident = $incidents[$id]
@@ -1266,6 +1275,10 @@ define runActions($incidents, $action_label, $governance_host, $rs_project_id) d
         headers: { "Api-Version": "1.0" },
         body: { "options":[{ "name": "ids",  "value": $incident["resource_ids"] }] }
       }
+      # If the action has parameters, add them to the request body
+      if size($action_options) > 0
+        $request["body"]["options"] = $request["body"]["options"] + $action_options
+      end
       $response = http_request($request)
       $$debug << to_json({
         "request": $request,

@@ -1,13 +1,13 @@
 name "AWS Usage Report - Number of Instance Hours Used"
 rs_pt_ver 20180301
 type "policy"
-short_description "This policy produces a usage report showing the number of Hours used for each AWS Instance Family. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/total_instance_hours) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "**Deprecated: This policy is no longer being updated. Please see [README](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/total_instance_hours/) for more details.**  This policy produces a usage report showing the number of Hours used for each AWS Instance Family. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/total_instance_hours) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "low"
 category "Operational"
 default_frequency "monthly"
 info(
-  version: "4.0",
+  version: "4.1.1",
   provider: "AWS",
   service: "Compute",
   policy_set: "Usage Report"
@@ -98,27 +98,65 @@ datasource "ds_billing_centers" do
   end
 end
 
-#GET TOP-LEVEL BILLING CENTERS
-datasource "ds_top_level_bcs" do
-  run_script $js_top_level_bcs, $ds_billing_centers
+#FILTER USING BILLING CENTERS PARAMETER IF APPLICABLE
+datasource "ds_filtered_billing_centers" do
+  run_script $js_filtered_billing_centers, $ds_billing_centers, $param_bc_allow_or_deny, $param_bc_list
 end
 
-script "js_top_level_bcs", type: "javascript" do
-  parameters "ds_billing_centers"
+script "js_filtered_billing_centers", type: "javascript" do
+  parameters "ds_billing_centers", "param_bc_allow_or_deny", "param_bc_list"
   result "result"
   code <<-EOS
-  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
-    return bc['parent_id'] == null || bc['parent_id'] == undefined
-  })
 
-  result = _.compact(_.pluck(filtered_bcs, 'id'))
+  //Define Billing Center list if applicable
+  var allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_bc_list.length > 0) {
+
+    //Filter BC List based on BC List Parameter and whether to Allow/Deny
+    var billing_center_list = _.filter(ds_billing_centers, function(bc) {
+      if (param_bc_allow_or_deny == "Allow") {
+        return _.contains(param_bc_list, bc.id) == allow_deny_test[param_bc_allow_or_deny] || _.contains(param_bc_list, bc.name) == allow_deny_test[param_bc_allow_or_deny]
+      } else {
+        return _.contains(param_bc_list, bc.id) == allow_deny_test[param_bc_allow_or_deny] && _.contains(param_bc_list, bc.name) == allow_deny_test[param_bc_allow_or_deny]
+      }
+    })
+
+    //Check that there are no child billing centers specified that conflict with parent billing centers specified
+    var bc_ids = _.map(billing_center_list, function(bc) { return bc.id.toLowerCase() })
+
+    var conflicting_child_bcs = _.filter(billing_center_list, function(bc) {
+      if (!(bc.parent_id == null || bc.parent_id == undefined)) {
+        return _.contains(bc_ids, bc.parent_id.toLowerCase())
+      }
+    })
+
+    //If there are conflicting child/parent BCs then ignore the child BC and take the parent BC
+    if (conflicting_child_bcs != undefined) {
+      var conflicting_child_bc_ids = _.pluck(conflicting_child_bcs, "id")
+
+      var filtered_bc_list = _.reject(billing_center_list, function(bc) {
+        return _.contains(conflicting_child_bc_ids, bc.id)
+      })
+      result = _.compact(_.pluck(filtered_bc_list, 'id'))
+    } else {
+      result = _.compact(_.pluck(billing_center_list, 'id'))
+    }
+
+  } else {
+    var billing_center_list = _.filter(ds_billing_centers, function(bc) {
+      return bc['parent_id'] == null || bc['parent_id'] == undefined
+    })
+
+    result = _.compact(_.pluck(billing_center_list, 'id'))
+  }
   EOS
 end
 
 #GET USAGE DATA FOR INSTANCE TYPES
 datasource "ds_usage_data" do
   request do
-    run_script $js_usage_data, $ds_top_level_bcs, $ds_billing_centers, $param_regions_allow_or_deny, $param_regions_list, $param_bc_allow_or_deny, $param_bc_list, rs_org_id, rs_optima_host
+    run_script $js_usage_data, $ds_filtered_billing_centers, $param_regions_allow_or_deny, $param_regions_list, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -134,38 +172,19 @@ datasource "ds_usage_data" do
 end
 
 script "js_usage_data", type: "javascript" do
-  parameters "ds_top_level_bcs", "ds_billing_centers", "param_regions_allow_or_deny", "param_regions_list", "param_bc_allow_or_deny", "param_bc_list", "org_id", "optima_host"
+  parameters "ds_filtered_billing_centers", "param_regions_allow_or_deny", "param_regions_list", "org_id", "optima_host"
   result "request"
   code <<-EOS
   //Get Start and End dates
-  start_date = new Date(), end_date = new Date()
+  var start_date = new Date(), end_date = new Date()
   start_date.setMonth(start_date.getMonth() - 12)
   end_date.setMonth(end_date.getMonth())
 
   //Define Billing Center list if applicable
-  var billing_center_ids = []
+  var billing_center_ids = ds_filtered_billing_centers
   var allow_deny_test = { "Allow": true, "Deny": false }
 
-  if (param_bc_list.length > 0) {
-    billing_center_ids = _.filter(ds_top_level_bcs, function(bc) {
-      var bc_name = ""
-      var matched_bc = _.find(ds_billing_centers, function(data) { return bc == data.id })
-
-      if (matched_bc != undefined) {
-        bc_name = matched_bc.name
-
-        if (param_bc_allow_or_deny == "Allow") {
-          return _.contains(param_bc_list, bc) == allow_deny_test[param_bc_allow_or_deny] || _.contains(param_bc_list, bc_name) == allow_deny_test[param_bc_allow_or_deny]
-        } else {
-          return _.contains(param_bc_list, bc) == allow_deny_test[param_bc_allow_or_deny] && _.contains(param_bc_list, bc_name) == allow_deny_test[param_bc_allow_or_deny]
-        }
-      }
-    })
-  } else {
-    billing_center_ids = ds_top_level_bcs
-  }
-
-  //Define Expressions for API Filter 
+  //Define Expressions for API Filter
   var expressions = [
     { "dimension": "category", "type": "equal", "value": "Compute" },
     { "dimension": "resource_type", "type":"equal", "value":"Compute Instance" },
@@ -178,7 +197,7 @@ script "js_usage_data", type: "javascript" do
 
   //Get Regions list if applicable
   if (param_regions_list.length > 0) {
-    
+
     var regions_filter_list = []
     _.each(param_regions_list, function(reg) {
         var region_dimension = { "dimension": "region", "type": "equal", "value": reg }
@@ -187,7 +206,7 @@ script "js_usage_data", type: "javascript" do
 
     var region_filter_json = {}
     if (param_regions_allow_or_deny == "Deny") {
-      
+
       region_filter_json = {
         "type": "not",
         "expression": {
@@ -198,7 +217,7 @@ script "js_usage_data", type: "javascript" do
       expressions.push(region_filter_json)
 
     } else {
-      
+
       region_filter_json = {
         "type": "or",
         "expressions": regions_filter_list
@@ -207,7 +226,7 @@ script "js_usage_data", type: "javascript" do
 
     }
   }
-  
+
   //POST JSON payload
   payload = {
     "billing_center_ids": billing_center_ids,

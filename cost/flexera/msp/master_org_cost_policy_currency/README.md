@@ -1,8 +1,10 @@
 # Master Org Cost Policy with Currency Conversion
 
+## What It Does
+
 This policy allows you to set up cross organization scheduled reports that will provide summaries of cloud cost across all organizations you have access to, delivered to any email addresses you specify with all currencies converted to a single currency. The policy will report the following:
 
-Chart of the previous 6 months of utilization based on whichever [Reporting Dimension](https://docs.rightscale.com/optima/reference/rightscale_dimensions.html) you select (only bill data and RightScale-generated dimensions are supported).
+Chart of the previous 6 months of utilization based on whichever [Cost Dimension](https://docs.flexera.com/flexera/EN/Optima/costdim.htm#optimabilling_3819625383_1151399) you select (only bill data and Flexera-generated dimensions are supported).
 Daily Average - Weekly: Daily average costs calculated from Monday of the previous week through today.
 Daily Average - Monthly: Daily average costs calculated from the 1st of the previous month through today.
 Previous - Weekly: Total costs during previous full week (Monday-Sunday).
@@ -13,7 +15,7 @@ Current - Monthly: Total costs during current (incomplete) month.
 We recommend running this policy on a weekly cadence and applying it to your master account.
 
 _Note 1: The last 3 days of data in the current week or month will contain incomplete data._
-_Note 2: The account you apply the policy to is unimportant as Optima metrics are scoped to the Org._
+_Note 2: The account you apply the policy to is unimportant as Flexera CCO metrics are scoped to the Org._
 _Note 3: Exchange rates are calculated at execution time using [https://exchangeratesapi.io/](https://exchangeratesapi.io/)._
 
 ## Cost Metrics
@@ -27,8 +29,6 @@ There are four cost metrics to choose from.
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
-
 - *Email list* - Email addresses of the recipients you wish to notify
 - *Excluded Organizations* - Names of organizations to exclude
 - *Cost Metric* -  See Cost Metrics above for details on selection.
@@ -37,22 +37,25 @@ This policy has the following input parameters required when launching the polic
 
 ## Policy Actions
 
-The following policy actions are taken on any resources found to be out of compliance.
+- Sends an email notification
 
-- Send an email report
+## Prerequisites
 
-## Required Permissions
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
-This policy requires permissions to access RightScale resources (Optima).  Before applying this policy add the following roles to the user applying the policy.  The roles should be applied to all Accounts where the policy will run or the Organization. For more information on modifying roles visit the [Governance Docs](https://docs.rightscale.com/cm/ref/user_roles.html).
+### Credential configuration
 
-- Optima - billing_center_viewer
+For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
+
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - `billing_center_viewer`
+
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ## Supported Clouds
 
-- AWS
-- Azure
-- Google
+- All
 
 ## Cost
 
-This Policy Template does not launch any instances, and so does not incur any cloud costs.
+This Policy Template does not incur any cloud costs

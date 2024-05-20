@@ -8,7 +8,7 @@ tenancy "single"
 default_frequency "15 minutes"
 info(
   provider: "Google",
-  version: "4.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "5.0.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "false"
 )
 
@@ -68,13 +68,22 @@ parameter "param_template_source" do
 end
 
 ## Child Policy Parameters
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation"
+  min_value 0
+  default 0
+end
+
 parameter "param_snapshot_age" do
   type "number"
   category "Policy Settings"
   label "Snapshot Age Threshold"
-  default 30
   description "The number of days since the snapshot was created to consider a snapshot old."
   min_value 1
+  default 30
 end
 
 parameter "param_exclusion_labels" do
@@ -418,6 +427,7 @@ datasource "ds_get_existing_policies_incidents" do
     path join(["/api/governance/projects/", rs_project_id, "/incidents"])
     header "Api-Version", "1.0"
     query "meta_parent_policy_id", policy_id
+    query "state", "triggered"
   end
   result do
     collect jq(response, '.items[]?') do
@@ -769,15 +779,14 @@ datasource "ds_child_incident_details" do
     header "User-Agent", "RS Policies"
     header "Api-Version", "1.0"
     query "view", "extended"
-    query "state", "triggered"
   end
 end
 
-datasource "ds_google_old_snapshots_combined_incidents" do
-  run_script $js_ds_google_old_snapshots_combined_incidents, $ds_child_incident_details
+datasource "ds_google_old_snapshots_incident_combined_incidents" do
+  run_script $js_ds_google_old_snapshots_incident_combined_incidents, $ds_child_incident_details
 end
 
-script "js_ds_google_old_snapshots_combined_incidents", type: "javascript" do
+script "js_ds_google_old_snapshots_incident_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-EOS
@@ -801,10 +810,13 @@ escalation "esc_delete_snapshots" do
   automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
   label "Delete Snapshots"
   description "Approval to delete all selected snapshots"
+
+  # Run declaration should go at end, after any parameters that may exist
   run "esc_delete_snapshots", data, rs_governance_host, rs_project_id
 end
 define esc_delete_snapshots($data, $governance_host, $rs_project_id) do
-  call child_run_action($data, $governance_host, $rs_project_id, "Delete Snapshots")
+  $actions_options = []
+  call child_run_action($data, $governance_host, $rs_project_id, "Delete Snapshots", $action_options)
 end
 
 
@@ -815,7 +827,7 @@ end
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
     # Consolidated incident for Google Old Snapshots Found
-  validate $ds_google_old_snapshots_combined_incidents do
+  validate $ds_google_old_snapshots_incident_combined_incidents do
     summary_template "Consolidated Incident: {{ len data }} Google Old Snapshots Found"
     escalate $esc_email
     escalate $esc_delete_snapshots
@@ -837,7 +849,7 @@ policy "policy_scheduled_report" do
       field "resourceName" do
         label "Resource Name"
       end
-      field "labels" do
+      field "tags" do
         label "Resource Labels"
       end
       field "createdAt" do
@@ -854,6 +866,18 @@ policy "policy_scheduled_report" do
       end
       field "status" do
         label "Status"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "region" do
+        label "Region"
       end
       field "service" do
         label "Service"
@@ -994,7 +1018,7 @@ define groupByIncidentID($data) return $incidents do
   end
 end
 
-define child_run_action($data, $governance_host, $rs_project_id, $action_label) do
+define child_run_action($data, $governance_host, $rs_project_id, $action_label, $action_options) do
   # Empty global array for log strings, helpful for debugging
   $$debug = []
 
@@ -1003,7 +1027,7 @@ define child_run_action($data, $governance_host, $rs_project_id, $action_label) 
   call groupByIncidentID($data) retrieve $incidents
   $$debug_incidents = to_json($incidents)
 
-  call runActions($incidents, $action_label, $governance_host, $rs_project_id)
+  call runActions($incidents, $action_label, $governance_host, $rs_project_id, $action_options)
 
   # If we encountered any errors, use `raise` to mark the CWF process as errored
   if inspect($$errors) != "null"
@@ -1015,7 +1039,7 @@ define child_run_action($data, $governance_host, $rs_project_id, $action_label) 
   task_label("All \""+$action_label+"\" actions completed successfully!")
 end
 
-define runActions($incidents, $action_label, $governance_host, $rs_project_id) do
+define runActions($incidents, $action_label, $governance_host, $rs_project_id, $action_options) do
   foreach $id in keys($incidents) do
     sub on_error: handle_error() do
       $incident = $incidents[$id]
@@ -1055,6 +1079,10 @@ define runActions($incidents, $action_label, $governance_host, $rs_project_id) d
         headers: { "Api-Version": "1.0" },
         body: { "options":[{ "name": "ids",  "value": $incident["resource_ids"] }] }
       }
+      # If the action has parameters, add them to the request body
+      if size($action_options) > 0
+        $request["body"]["options"] = $request["body"]["options"] + $action_options
+      end
       $response = http_request($request)
       $$debug << to_json({
         "request": $request,

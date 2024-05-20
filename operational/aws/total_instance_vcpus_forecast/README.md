@@ -1,5 +1,9 @@
 # AWS Usage Forecast - Number of Instance vCPUs Used
 
+## Deprecated
+
+This policy is no longer being updated. The [AWS Usage Forecast - Instance Time Used](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/total_instance_usage_forecast/) policy now includes this functionality and should be used instead.
+
 ## What It Does
 
 This Policy leverages Flexera CCO APIs to determine a usage forecast for a view of AWS instance vCPUs used within the entire Organization. The policy uses the specified previous number of months, not including the current month to to determine a straight-line forecast using a linear regression model.

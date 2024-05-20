@@ -1,5 +1,13 @@
 # Changelog
 
+## v4.1.1
+
+- Deprecated: This policy is no longer being updated. Please see policy README for more information.
+
+## v4.1.0
+
+- Fixed issue where only top-level billing centers could be filtered on. Policy now additionally supports filtering on child billing centers.
+
 ## v4.0
 
 - Added ability to filter the report for a list of Billing Centers that can either be allowed or denied.

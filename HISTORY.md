@@ -6,6 +6,725 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#2226](https://github.com/flexera-public/policy_templates/pull/2226): POL-1241 - Meta Parent PTs - Add Support Actions with Parameters
+
+#### Description
+
+> Adds support for parameters on actions that have them
+>
+> ### Issues Resolved
+>
+> https://flexera.atlassian.net/browse/POL-1241
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2226) for these details.
+- **Merged At**: 2024-05-17 21:27:53 UTC
+
+---
+
+### PR [#2219](https://github.com/flexera-public/policy_templates/pull/2219): POL-1079 AWS Savings Plan Utilization Revamp
+
+#### Description
+
+> This is a revamp of the AWS Savings Plan Utilization policy. From the CHANGELOG:
+>
+> - Policy can now be run against an arbitrary number of days in the past
+> - Policy can now filter for several Savings Plans at once
+> - Improved incident output for better readability
+> - Streamlined code for better readability and faster execution
+>
+
+#### Metadata
+
+- **Policies**: [AWS Savings Plan Utilization](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/savings_plan/utilization/README.md)
+- **Merged At**: 2024-05-16 12:42:59 UTC
+
+---
+
+### PR [#2215](https://github.com/flexera-public/policy_templates/pull/2215): POL-1073 AWS Reserved Instances Coverage
+
+#### Description
+
+> This is a revamp of the AWS Reserved Instances Coverage policy. From the CHANGELOG:
+>
+> - Policy can now be run against an arbitrary number of days in the past
+> - Policy incident now presented in a more human-readable fashion
+> - Streamlined code for better readability and faster execution
+> - Policy now requires valid Flexera credential
+>
+
+#### Metadata
+
+- **Policies**: [AWS Reserved Instances Coverage](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/reserved_instances/coverage/README.md)
+- **Merged At**: 2024-05-16 12:42:45 UTC
+
+---
+
+### PR [#2216](https://github.com/flexera-public/policy_templates/pull/2216): POL-1074 Deprecate Policy: AWS Reserved Instance Report by Billing Center
+
+#### Description
+
+> This is a very old policy that would only work if someone isn't using RBDs for cost allocation and is likely superseded by basic functionality in our platform. For this reason, the policy is being deprecated.
+
+#### Metadata
+
+- **Policies**: [Reserved Instance Report by Billing Center](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/reserved_instances/report_by_bc/README.md)
+- **Merged At**: 2024-05-14 20:02:26 UTC
+
+---
+
+### PR [#2207](https://github.com/flexera-public/policy_templates/pull/2207): POL-1096 New Policy: AWS Usage Forecast - Instance Time Used
+
+#### Description
+
+> This is a new policy, `AWS Usage Forecast - Instance Time Used`, that replaces the following policies that are being deprecated as part of this same change:
+>
+> - `AWS Usage Forecast - Number of Instance Hours Used`
+> - `AWS Usage Forecast - Number of Instance vCPUs Used`
+>
+> This was done because these policies were almost identical; as a consequence, it really didn't make sense to maintain 2 separate policies for something that could be a simple user parameter. The READMEs of these policies have been updated to direct users to this policy.
+>
+> The new policy contains all of the functionality of the above, allowing the user to simply select which unit they want to forecast against. Additionally, the following improvements have been made:
+>
+> - The user can choose which unit of time to normalize the unit against. Default is `Hours`. Ambiguous units, such as `Months`,  are defined explicitly in the README.
+> - The incident output has been cleaned up. Months no longer have unnecessary hours/minutes/seconds attached to them, and the normalized numbers are rounded to the 100th.
+> - Code in general has been rewritten and optimized to be more readable, more efficient, and have good comments explaining what is happening within the policy.
+>
+> Note: Ignore the warnings about the dead URL. That's just because this policy does not exist in the master branch yet. That URL will be valid once this is merged.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2207) for these details.
+- **Merged At**: 2024-05-14 14:37:09 UTC
+
+---
+
+### PR [#2202](https://github.com/flexera-public/policy_templates/pull/2202): POL-1097 New Policy: AWS Usage Report - Instance Time Used
+
+#### Description
+
+> This is a new policy, `AWS Usage Report - Instance Time Used`, that replaces the following policies that are being deprecated as part of this same change:
+>
+> - `AWS Usage Report - Number of Instance Hours Used`
+> - `AWS Usage Report - Number of Instance vCPUs Used`
+> - `AWS Usage Report - Amount of Instance Memory Used`
+>
+> This was done because these policies were almost identical; as a consequence, it really didn't make sense to maintain 3 separate policies for something that could be a simple user parameter. The READMEs of these policies have been updated to direct users to this policy.
+>
+> The new policy contains all of the functionality of the above, allowing the user to simply select which unit they want to report against. Additionally, the following improvements have been made:
+>
+> - The user can choose which unit of time to normalize the unit against. Default is `Hours`. Ambiguous units, such as `Months`,  are defined explicitly in the README.
+> - The user can decide how many months back to generate the report for. Still limited to 12 but can be less than 12 if desired.
+> - The incident output has been cleaned up. Months no longer have unnecessary hours/minutes/seconds attached to them, and the normalized numbers are rounded to the 100th.
+> - Code in general has been rewritten and optimized to be more readable, more efficient, and have good comments explaining what is happening within the policy.
+>
+> Note: Ignore the warnings about the dead URL. That's just because this policy does not exist in the master branch yet. That URL will be valid once this is merged.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2202) for these details.
+- **Merged At**: 2024-05-14 14:12:53 UTC
+
+---
+
+### PR [#2208](https://github.com/flexera-public/policy_templates/pull/2208): POL-1229 Dangerfile Update: Enforce Directory Structure
+
+#### Description
+
+> This PR adds a Dangerfile test to ensure policies are placed in the correct location within the repository's directory structure. This also moves the `Scheduled Report for Unallocated Costs` policy to conform with this test.
+
+#### Metadata
+
+- **Policies**: [Scheduled Report for Unallocated Costs](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/scheduled_report_unallocated/README.md)
+- **Merged At**: 2024-05-14 13:06:01 UTC
+
+---
+
+### PR [#2187](https://github.com/flexera-public/policy_templates/pull/2187): FOPTS-3939 Update: List of cheaper regions for Azure and AWS vendors
+
+#### Description
+
+> Issue reported in this support question: https://flexera.atlassian.net/browse/SQ-7976 by Albertsons.
+> Policy is returning empty results, checking the code it's because some regions for Azure and AWS are outdated, previously we had for example: `US West`, `US West 2`, etc. But now those are named `West US`, `West US 2`, etc. Also few `console.log` statements were removed.
+>
+> ### Issues Resolved
+>
+> Policy is returning empty results because of outdated regions for Azure and AWS vendors.
+>
+
+#### Metadata
+
+- **Policies**: [Cheaper Regions](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/cheaper_regions/README.md)
+- **Merged At**: 2024-05-10 17:12:38 UTC
+
+---
+
+### PR [#2194](https://github.com/flexera-public/policy_templates/pull/2194): POL-1224 Azure RightsizeSQL bug fix
+
+#### Description
+
+> Bug was present causing all recommendations to return 0$
+>
+> ### Issues Resolved
+>
+> Line 743 changed subscriptionId to subscriptionID
+>
+
+#### Metadata
+
+- **Policies**: [Azure Rightsize SQL Databases](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_sql_instances/README.md)
+- **Merged At**: 2024-05-10 15:54:23 UTC
+
+---
+
+### PR [#2195](https://github.com/flexera-public/policy_templates/pull/2195): POL-1228 feat: Unallocated Cost Report enhancements
+
+#### Description
+
+> - Fixed bug that related to Summarized Unallocated amount and Unallocated Percent of Total in report
+> - Added filter for excluding rows that are below a certain percent of total costs
+> - Added Time Period and Filters to report output
+> - Added `unallocated` (bool) and `unallocated_details` (string) columns to report output
+> - Report column order will match the order user provided in parameter input
+>
+>
+
+#### Metadata
+
+- **Policies**: [Scheduled Report for Unallocated Costs](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/scheduled_report_unallocated/README.md)
+- **Merged At**: 2024-05-10 12:36:55 UTC
+
+---
+
+### PR [#2189](https://github.com/flexera-public/policy_templates/pull/2189): POL-1108 Google Expiring Committed Use Discounts (CUD) Revamp
+
+#### Description
+
+> This is a revamp of the Google Expiring Committed Use Discounts (CUD). From the CHANGELOG:
+>
+> - Added ability to filter recommendations by project
+> - Added ability to filter recommendations by region
+> - Normalized incident export to be consistent with other policies
+> - Streamlined code for better readability and faster execution
+> - Policy now requires a valid Flexera credential
+>
+
+#### Metadata
+
+- **Policies**: [Google Expiring Committed Use Discounts (CUD)](https://github.com/flexera-public/policy_templates/tree/master/cost/google/cud_expiration/README.md)
+- **Merged At**: 2024-05-10 12:28:06 UTC
+
+---
+
+### PR [#2188](https://github.com/flexera-public/policy_templates/pull/2188): POL-1109 Google Committed Use Discount Report Revamp
+
+#### Description
+
+> This is a revamp of the Google Committed Use Discount Report. From the CHANGELOG:
+>
+> - Added ability to filter report by project
+> - Added ability to filter recommendations by region
+> - Normalized incident export to be consistent with other policies
+> - Streamlined code for better readability and faster execution
+> - Policy now requires a valid Flexera credential
+>
+
+#### Metadata
+
+- **Policies**: [Google Committed Use Discount Report](https://github.com/flexera-public/policy_templates/tree/master/cost/google/cud_report/README.md)
+- **Merged At**: 2024-05-10 12:27:47 UTC
+
+---
+
+### PR [#2184](https://github.com/flexera-public/policy_templates/pull/2184): POL-1226 AWS Untagged Resources Improvements
+
+#### Description
+
+> From the CHANGELOG:
+>
+> - Added parameter `Include Savings` to optionally allow the user to not report savings
+> - Improved logic for finding savings for reported resources
+> - Added currency field to incident report
+> - Minor code cleanup and optimization
+>
+
+#### Metadata
+
+- **Policies**: [AWS Untagged Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/untagged_resources/README.md)
+- **Merged At**: 2024-05-10 12:27:27 UTC
+
+---
+
+### PR [#2175](https://github.com/flexera-public/policy_templates/pull/2175): POL-1112 Google Object Storage Optimization Revamp
+
+#### Description
+
+> This is a revamp of the `Google Object Storage Optimization` policy. From the CHANGELOG:
+>
+> - Several parameters altered to be more descriptive and human-readable
+> - Added ability to filter resources by project
+> - Added ability to use wildcards and regex when filtering resources by label
+> - Added additional context to incident description
+> - Normalized incident export to be consistent with other policies
+> - Added human-readable recommendation to incident export
+> - Added additional fields to incident export
+> - Streamlined code for better readability and faster execution
+> - Policy now requires a valid Flexera One credential
+>
+
+#### Metadata
+
+- **Policies**: [Google Object Storage Optimization](https://github.com/flexera-public/policy_templates/tree/master/cost/google/object_storage_optimization/README.md)
+- **Merged At**: 2024-05-09 14:10:32 UTC
+
+---
+
+### PR [#2176](https://github.com/flexera-public/policy_templates/pull/2176): POL-1111 Deprecate Google Inefficient Instance Utilization using StackDriver Policy
+
+#### Description
+
+> This deprecates the already-unpublished `Google Inefficient Instance Utilization using StackDriver` policy. The README directs users to the more modern `Google Rightsize VM Recommender` policy instead.
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2176) for details about unpublished policies.
+- **Merged At**: 2024-05-08 16:32:50 UTC
+
+---
+
+### PR [#2183](https://github.com/flexera-public/policy_templates/pull/2183): POL-1092 Update/Deprecate Azure Subscription Access
+
+#### Description
+
+> This is a final update and deprecation of the Azure Subscription Access policy. This policy is not used by our customers and does not provide functionality that dovetails with our product suite.
+
+#### Metadata
+
+- **Policies**: [Azure Subscription Access](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/subscription_access/README.md)
+- **Merged At**: 2024-05-08 16:32:27 UTC
+
+---
+
+### PR [#2164](https://github.com/flexera-public/policy_templates/pull/2164): SQ-7228 Incorrect currency code and inflated savings bug
+
+#### Description
+
+> - Adds a new parameter that lets the user decide on the format for the currency shown in the incident's chart: code (e.g. USD) or symbol (e.g. $).
+> - Fixes a bug that showed inflated savings on the instances.
+>
+> ### Issues Resolved
+>
+> https://flexera.atlassian.net/browse/SQ-7228
+>
+
+#### Metadata
+
+- **Policies**: [Azure Savings Realized from Reservations](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/savings_realized/README.md)
+- **Merged At**: 2024-05-08 12:18:14 UTC
+
+---
+
+### PR [#2169](https://github.com/flexera-public/policy_templates/pull/2169): POL-1223 New Policy: AWS EKS Clusters Without Spot Instances
+
+#### Description
+
+> *New Policy: AWS EKS Clusters Without Spot Instances*
+>
+> This Policy finds AWS Elastic Kubernetes Service (EKS) clusters without any node groups that use spot instances and reports them. Optionally, it emails the report to a user-specified set of email addresses.
+>
+> Note: This policy is only capable of assessing managed node groups within a cluster. Unmanaged node groups will not be considered when determining whether or not the cluster is configured to make use of spot instances.
+>
+
+#### Metadata
+
+- **Policies**: [AWS EKS Clusters Without Spot Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/eks_without_spot/README.md)
+- **Merged At**: 2024-05-08 12:12:52 UTC
+
+---
+
+### PR [#2173](https://github.com/flexera-public/policy_templates/pull/2173): POL-1225 Azure Rightsize SQL Databases: New Incident Fields
+
+#### Description
+
+> New fields added to incident output: `Last Accessed` and `Status`
+>
+> Note that this required modifying the policy to list SQL servers and then list SQL databases for each server instead of pulling the latter directly from a more general resource API. This means the policy may take longer to execute than it used to.
+>
+
+#### Metadata
+
+- **Policies**: [Azure Rightsize SQL Databases](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_sql_instances/README.md)
+- **Merged At**: 2024-05-07 12:15:23 UTC
+
+---
+
+### PR [#2163](https://github.com/flexera-public/policy_templates/pull/2163): POL-1224 Fix Google Recommender/Policy List Generation
+
+#### Description
+
+> Due to how the incident was constructed Google Recommenders policy, the generated meta policy had syntax errors, which in turn were causing the active policy list generation to fail. Multiple changes were made to resolve this:
+>
+> - The order of fields in the Google Recommenders policy was modified slightly. This enables the meta policy to be correctly generated without syntax errors.
+>
+> - Dangerfile test was added to test meta policies for syntax errors. If such an error is found, a meta policy-specific error is raised indicating that either the policy or the meta policy automation needs to be fixed. This should hopefully catch such problems before they are merged into the catalog and subsequently break other automation.
+>
+> Changes to Dangerfile have been tested.
+
+#### Metadata
+
+- **Policies**: [Google Recommenders](https://github.com/flexera-public/policy_templates/tree/master/cost/google/recommender/README.md)
+- **Merged At**: 2024-05-06 17:48:38 UTC
+
+---
+
+### PR [#2161](https://github.com/flexera-public/policy_templates/pull/2161): POL-1204 Fix Outdated image-charts.com Links
+
+#### Description
+
+> This updates several policies to use our internal image charts link `api.image-charts-auth.flexeraeng.com` instead of `image-charts.com`. The former uses our paid licensed version which does not include a watermark. Minor changes were also made to the policies to comply with Dangerfile tests.
+>
+> It also updates Dangerfile to test for this and raise an error if anyone attempts to use this old link in the future, and fixes a bug with the README tests that would sometimes cause false positives for out of order sections.
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2161) for these details.
+- **Merged At**: 2024-05-03 15:07:40 UTC
+
+---
+
+### PR [#2147](https://github.com/flexera-public/policy_templates/pull/2147): POL-1094 AWS Lambda Functions With High Error Rate Revamp
+
+#### Description
+
+> This is a revamp of the AWS Lambda Functions With High Error Rate policy. From the CHANGELOG:
+>
+> - Several parameters altered to be more descriptive and human-readable
+> - Added ability to filter resources by multiple tag key:value pairs and using regex
+> - Added ability to specify how many hours back to gather error data for
+> - Policy now uses more efficient and modern method for gathering error data
+> - Added additional context to incident description
+> - Normalized incident export to be consistent with other policies
+> - Added additional fields to incident export for added context
+> - Policy no longer raises new escalations if inconsequential metadata has changed
+> - Streamlined code for better readability and faster execution
+>
+
+#### Metadata
+
+- **Policies**: [AWS Lambda Functions With High Error Rate](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/lambda_functions_with_high_error_rate/README.md)
+- **Merged At**: 2024-05-02 15:53:13 UTC
+
+---
+
+### PR [#2127](https://github.com/flexera-public/policy_templates/pull/2127): POL-1113 Google Recommenders Revamp
+
+#### Description
+
+> This is a revamp of the Google Recommenders policy. From the CHANGELOG:
+>
+> - Added support for new recommender: Idle Cloud SQL Instance
+> - Added support for new recommender: Overprovisioned Cloud SQL Instance
+> - Added support for new recommender: Idle GKE Cluster
+> - Added ability to only report recommendations that meet a minimum savings threshold
+> - Added ability to filter results by project and by region via an allow list or a deny list
+> - Added additional context to incident description
+> - Added ability to report on several recommenders at once
+> - Policy now reports savings and converts it to local currency when appropriate
+> - Several parameters altered to be more descriptive and human-readable
+> - Normalized incident export to be consistent with other policies
+> - Added additional fields to incident export for additional context
+> - Policy no longer raises new escalations if savings data changed but nothing else has
+> - Streamlined code for better readability and faster execution
+> - Policy now requires a Flexera credential
+> - Added logic required for "Meta Policy" use-cases
+>
+> Additionally, the README has been overhauled and now recommends using other policies for recommenders where supported.
+>
+
+#### Metadata
+
+- **Policies**: [Google Recommenders](https://github.com/flexera-public/policy_templates/tree/master/cost/google/recommender/README.md)
+- **Merged At**: 2024-05-02 13:14:04 UTC
+
+---
+
+### PR [#2153](https://github.com/flexera-public/policy_templates/pull/2153): POL-1221 Usage Report Policies - Update BC Filter to support Child Billing Centers
+
+#### Description
+
+> <!-- Describe what this change achieves below -->
+> Usage Reports for AWS and Azure (e.g., Amount of Instance Memory Used, Number of Instance vCPUs Used, etc.) currently allow the user to define a list of Billing Centers to report on which can either be allowed/filtered in or denied/filtered out.
+>
+> The current logic only supports filtering on top-level billing centers, which means that child billing centers cannot be specifically reported on.
+>
+> This is a change to add support for filtering on child billing centers when applying the policy to generate a report.
+>
+> ### Issues Resolved
+>
+> <!-- List any existing issues this PR resolves below -->
+> Fixes issue where only top-level billing centers could be filtered on. Policy now additionally supports filtering on child billing centers.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2153) for these details.
+- **Merged At**: 2024-05-02 12:29:40 UTC
+
+---
+
+### PR [#2152](https://github.com/flexera-public/policy_templates/pull/2152): POL-1220 Fix AWS Untagged Resources in EU/AU
+
+#### Description
+
+> This policy had an API request with a hardcoded string pointing specifically to the Optima API host. This host varies based on region, so the policy was failing in EU/AU.
+>
+> This hardcoded string has been replaced with the `rs_optima_host` keyword that automatically substitutes in the appropriate region-specific host.
+>
+
+#### Metadata
+
+- **Policies**: [AWS Untagged Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/untagged_resources/README.md)
+- **Merged At**: 2024-05-02 12:04:34 UTC
+
+---
+
+### PR [#2146](https://github.com/flexera-public/policy_templates/pull/2146): POL-1099 Azure Expiring Certificates Revamp
+
+#### Description
+
+> This is a revamp of the Azure Expiring Certificates policy. From the CHANGELOG:
+>
+> - Added ability to delete Azure certificates automatically or manually
+> - Several parameters altered to be more descriptive and human-readable
+> - Added ability to use Subscription filter as an allow or a deny list
+> - Added ability to filter resources by multiple tag key:value pairs
+> - Added ability to filter resources by region
+> - Added additional context to incident description
+> - Normalized incident export to be consistent with other policies
+> - Added human-readable recommendation to incident export
+> - Policy no longer raises new escalations if inconsequential metadata like tag values change
+> - Streamlined code for better readability and faster execution
+>
+
+#### Metadata
+
+- **Policies**: [Azure Expiring Certificates](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/azure_certificates/README.md)
+- **Merged At**: 2024-05-02 12:04:20 UTC
+
+---
+
+### PR [#2117](https://github.com/flexera-public/policy_templates/pull/2117): POL-1105 Azure VMs Not Using Managed Disks Revamp
+
+#### Description
+
+> This is a revamp of the Azure VMs Not Using Managed Disks policy. From the CHANGELOG:
+>
+> - Several parameters altered to be more descriptive and human-readable
+> - Improved ability to filter resources by subscription
+> - Added ability to filter resources by region
+> - Added ability to filter resources by multiple tag key:value pairs
+> - Added several fields to incident export to provide additional context
+> - Normalized incident export to be consistent with other policies
+> - Policy no longer raises new escalations for the same resource if incidental metadata has changed
+> - Streamlined code for better readability and faster execution
+>
+
+#### Metadata
+
+- **Policies**: [Azure VMs Not Using Managed Disks](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/vms_without_managed_disks/README.md)
+- **Merged At**: 2024-05-02 12:04:06 UTC
+
+---
+
+### PR [#2112](https://github.com/flexera-public/policy_templates/pull/2112): POL-1090 Azure Regulatory Compliance Revamp
+
+#### Description
+
+> This is a revamp of the AWS IAM Role Audit policy. From the CHANGELOG:
+>
+> - Several parameters altered to be more descriptive and human-readable
+> - Normalized incident export to be consistent with other policies
+> - Added additional fields to incident export
+> - Streamlined code for better readability and faster execution
+> - Policy now requires a valid Flexera credential
+>
+> Additionally, the policy now has meta policy support.
+>
+
+#### Metadata
+
+- **Policies**: [Azure Regulatory Compliance](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/compliance_score/README.md)
+- **Merged At**: 2024-05-02 12:03:30 UTC
+
+---
+
+### PR [#2111](https://github.com/flexera-public/policy_templates/pull/2111): POL-1089 Azure Policy Audit Revamp
+
+#### Description
+
+> This is a revamp of the AWS IAM Role Audit policy. From the CHANGELOG:
+>
+> - Several parameters altered to be more descriptive and human-readable
+> - Normalized incident export to be consistent with other policies
+> - Added additional fields to incident export
+> - Streamlined code for better readability and faster execution
+> - Policy now requires a valid Flexera credential
+>
+> Additionally, the policy now has meta policy support.
+>
+
+#### Metadata
+
+- **Policies**: [Azure Policy Audit](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/azure_policy_audit/README.md)
+- **Merged At**: 2024-05-02 12:03:17 UTC
+
+---
+
+### PR [#2099](https://github.com/flexera-public/policy_templates/pull/2099): POL-1209 Add "newResourceType" field to idle/unused incidents for multi-incident Recommendation policies
+
+#### Description
+
+> Updates to several Recommendations policies with multiple incidents to add a "newResourceType" field to the incident reporting idle/unused resources. This is because, when data is exported from the Optimization dashboard, there is no field indicating which incident (underutilized or idle/unused) a recommendation came from. To make distinguishing recommendations easier, we can simply add a "newResourceType" field with a value like "Delete Instance".
+>
+> The policies were also updated to pass current linting and adhere to current standards. Additionally, the following updates were made to Dangerfile to address false positives raised by this PR:
+> - `policy_run_script_incorrect_order?` test now correctly parses `iter_item` as though it were the same as `val(iter_item, "field")`
+> - `policy_ds_js_name_mismatch?` test no longer raises warnings for datasources and scripts with mismatched names when the script is called by multiple datasources.
+> - File name in Dangerfile output reduced in size to avoid UI issues with scrolling left/right
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2099) for these details.
+- **Merged At**: 2024-05-02 12:02:41 UTC
+
+---
+
+### PR [#2108](https://github.com/flexera-public/policy_templates/pull/2108): POL-1087 AWS IAM Role Audit Revamp
+
+#### Description
+
+> This is a revamp of the AWS IAM Role Audit policy. From the CHANGELOG:
+>
+> - Several parameters altered to be more descriptive and human-readable
+> - `IAM Role Name` parameter renamed to `IAM Role Names/IDs/ARNs` and now accepts role IDs and ARNs
+> - Normalized incident export to be consistent with other policies
+> - Added additional fields to incident export
+> - Streamlined code for better readability and faster execution
+> - Policy now requires a valid Flexera credential
+>
+> Additionally, the policy now has meta policy support.
+>
+
+#### Metadata
+
+- **Policies**: [AWS IAM Role Audit](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/iam_role_audit/README.md)
+- **Merged At**: 2024-05-02 12:02:22 UTC
+
+---
+
+### PR [#2118](https://github.com/flexera-public/policy_templates/pull/2118): POL-1106 Google Unlabeled Resources Revamp
+
+#### Description
+
+> This is a revamp of the Google Unlabeled Resources policy. From the CHANGELOG:
+>
+> - Added ability to filter resources by Google Project
+> - Added ability to filter resources by Google resource type
+> - Added additional context to incident description
+> - Streamlined code for better readability and faster execution
+> - Policy now requires a valid Flexera One credential
+>
+> Additionally, some minor tweaks to Dangerfile testing to avoid false positives
+>
+
+#### Metadata
+
+- **Policies**: [Google Unlabeled Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/google/unlabeled_resources/README.md)
+- **Merged At**: 2024-05-01 15:43:31 UTC
+
+---
+
+### PR [#2123](https://github.com/flexera-public/policy_templates/pull/2123): POL-1213 Google Old Snapshots: Add Savings
+
+#### Description
+
+> This adds savings information to the Google Old Snapshots policy using list prices from the Google Cloud Billing API. From the CHANGELOG:
+>
+> - Added estimated savings based on Google's Cloud Billing API
+> - Added `Minimum Savings Threshold` parameter to filter results
+> - Added support for automatic currency conversion for savings
+> - To facilitate the above, policy template now requires additional permissions
+>
+
+#### Metadata
+
+- **Policies**: [Google Old Snapshots](https://github.com/flexera-public/policy_templates/tree/master/cost/google/old_snapshots/README.md)
+- **Merged At**: 2024-04-30 16:26:22 UTC
+
+---
+
+### PR [#2138](https://github.com/flexera-public/policy_templates/pull/2138): POL-1219 Update policies referencing Microsoft ISF Ratio CSV
+
+#### Description
+
+> <!-- Describe what this change achieves below -->
+> Microsoft provides a CSV file which has a mapping of instance types, their respective Instance Families, and their respective normalization factor unit.
+>
+> The CSV is available via a URL, however the current URL (https://isfratio.blob.core.windows.net/isfratio/ISFRatio.csv) no longer works and has been replaced with a new URL (https://aka.ms/isf)
+>
+> This is causing several policies to fail.
+>
+> ### Issues Resolved
+>
+> <!-- List any existing issues this PR resolves below -->
+> This is a change to update the URL for all policies referencing this CSV file, thereby fixing the policies.
+>
+
+#### Metadata
+
+- **Policies**: [Azure Reserved Instances Utilization](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/reserved_instances/utilization/README.md), [Azure Usage Report - Number of Instance Hours Used](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/total_instance_hours/README.md), [Azure Usage Report - Amount of Instance Memory Used](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/total_instance_memory/README.md), [Azure Usage Report - Number of Instance vCPUs Used](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/total_instance_vcpus/README.md)
+- **Merged At**: 2024-04-30 15:38:57 UTC
+
+---
+
+### PR [#2137](https://github.com/flexera-public/policy_templates/pull/2137): POL-1217 Email Cost Optimization Recommendations: Always Send Incident
+
+#### Description
+
+> Added the following parameter to the `Email Cost Optimization Recommendations` policy:
+>
+> - *Always Email Incident* - Whether or not to always email the incident even if no new items were added to the recommendations since the policy's last execution.
+>
+> This works by adding a new incident field that is set to an empty string if this parameter is set to "No" and is set to the current date and time if the parameter is set to "Yes". Since the current date and time of policy execution will always be a unique value, this should have the desired effect.
+>
+> Also added support for some newer recommendations policies that didn't exist when this policy was last updated.
+>
+
+#### Metadata
+
+- **Policies**: [Email Cost Optimization Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/email_recommendations/README.md)
+- **Merged At**: 2024-04-30 14:09:25 UTC
+
+---
+
+### PR [#2132](https://github.com/flexera-public/policy_templates/pull/2132): POL-1216 New Policy: Azure Unused Firewalls
+
+#### Description
+
+> This is a new recommendation policy that reports on any unused Azure Firewalls. An Azure Firewall is considered unused if it has received no incoming connections for a user-specified number of days. More details are in the README.
+>
+
+#### Metadata
+
+- **Policies**: [Azure Unused Firewalls](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/unused_firewalls/README.md)
+- **Merged At**: 2024-04-30 14:09:12 UTC
+
+---
+
 ### PR [#2128](https://github.com/flexera-public/policy_templates/pull/2128): POL-1214 - fix: error for tag_dimension_tag_keys not defined
 
 #### Description
@@ -46,7 +765,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 #### Metadata
 
-- **Policies**: [Scheduled Report for Unallocated Costs](https://github.com/flexera-public/policy_templates/tree/master/cost/scheduled_report_unallocated/README.md)
+- **Policies**: [Scheduled Report for Unallocated Costs](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/scheduled_report_unallocated/README.md)
 - **Merged At**: 2024-04-24 13:55:38 UTC
 
 ---
@@ -1187,708 +1906,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [Azure Bring-Your-Own-License (BYOL) Report](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/byol_report/README.md)
 - **Merged At**: 2024-02-21 13:06:33 UTC
-
----
-
-### PR [#1829](https://github.com/flexera-public/policy_templates/pull/1829): FOPTS-3031 Update parameters of Azure Rightsize Managed Disk policy
-
-#### Description
-
-> - Updated the descriptions and labels of the IOPS and throughput parameters in the README and policy template files.
-> - Updated the short description of the policy.
-> - Changed the functionality of `param_min_savings`: Before this version, the `param_min_savings` parameter was used to consider the total savings (the sum of all the savings per resource) and not the savings per resource to decide whether to recommend or not. In this new version, this parameter is used to recommend or not based on the savings of each resource, just as other policies do.
->
-> ### Issues Resolved
->
-> - https://flexera.atlassian.net/browse/FOPTS-3170
->
-
-#### Metadata
-
-- **Policies**: [Azure Rightsize Managed Disks](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_disks/README.md)
-- **Merged At**: 2024-02-16 17:46:03 UTC
-
----
-
-### PR [#1830](https://github.com/flexera-public/policy_templates/pull/1830): POL-1061 New Policy: Flexera Automation Outdated Applied Policies
-
-#### Description
-
-> This new policy checks all applied policies against the same policy in the catalog to determine if the applied policy is using an outdated version of the catalog policy. An email is sent and an incident is raised with all outdated policies. Optionally, outdated policies can automatically be updated.
->
-
-#### Metadata
-
-- **Policies**: [Flexera Automation Outdated Applied Policies](https://github.com/flexera-public/policy_templates/tree/master/automation/flexera/outdated_applied_policies/README.md)
-- **Merged At**: 2024-02-16 13:18:04 UTC
-
----
-
-### PR [#1817](https://github.com/flexera-public/policy_templates/pull/1817): POL-1004 Azure Schedule Instance Revamp
-
-#### Description
-
-> This is a full revamp of the Azure Schedule Instance policy, including CWF actions. From the CHANGELOG:
->
-> - Several parameters altered to be more descriptive and human-readable
-> - Added ability to specify custom tag keys for tracking instance schedules
-> - Added ability to use subscription filter as an allow list or a deny list
-> - Added ability to filter resources by multiple tag key:value pairs
-> - Added ability to filter resources by region
-> - Added ability for user to start and stop instances directly
-> - Normalized incident export to be consistent with other policies
-> - Added additional fields to incident export for additional context
-> - Streamlined code for better readability and faster execution
-> - Policy action error logging modernized and now works as expected in EU/APAC
->
-
-#### Metadata
-
-- **Policies**: [Azure Schedule Instance](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/schedule_instance/README.md)
-- **Merged At**: 2024-02-13 16:19:13 UTC
-
----
-
-### PR [#1808](https://github.com/flexera-public/policy_templates/pull/1808): POL-998 AWS Schedule Instance Revamp
-
-#### Description
-
-> This is a full revamp of the AWS Schedule Instance policy, including CWF actions. From the CHANGELOG:
->
-> - Several parameters altered to be more descriptive and human-readable
-> - Added ability to specify custom tag keys for tracking instance schedules
-> - Added ability to filter resources by multiple tag key:value pairs
-> - Added ability for user to start and stop instances directly
-> - Normalized incident export to be consistent with other policies
-> - Added additional fields to incident export for additional context
-> - Streamlined code for better readability and faster execution
-> - Policy action error logging modernized and now works as expected in EU/APAC
->
-
-#### Metadata
-
-- **Policies**: [AWS Schedule Instance](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/schedule_instance/README.md)
-- **Merged At**: 2024-02-13 13:44:18 UTC
-
----
-
-### PR [#1819](https://github.com/flexera-public/policy_templates/pull/1819): POL-1005 Google Schedule Instance Revamp
-
-#### Description
-
-> This is a full revamp of the Google Schedule Instance policy, including CWF actions. From the CHANGELOG:
->
-> - Several parameters altered to be more descriptive and human-readable
-> - Added ability to specify custom tag keys for tracking instance schedules
-> - Added ability to filter resources by project
-> - Added ability to filter resources by region
-> - Added ability to filter resources by multiple tag key:value pairs
-> - Added ability for user to start and stop instances directly
-> - Normalized incident export to be consistent with other policies
-> - Added additional fields to incident export for additional context
-> - Streamlined code for better readability and faster execution
-> - Policy action error logging modernized and now works as expected in EU/APAC
-> - Added logic required for "Meta Policy" use-cases
-> - To facilitate "Meta Policy" use-cases, policy now requires a Flexera credential
->
-
-#### Metadata
-
-- **Policies**: [Google Schedule Instance](https://github.com/flexera-public/policy_templates/tree/master/cost/google/schedule_instance/README.md)
-- **Merged At**: 2024-02-13 13:09:17 UTC
-
----
-
-### PR [#1805](https://github.com/flexera-public/policy_templates/pull/1805): POL-1056 New Policy: Azure Missing Subscriptions
-
-#### Description
-
-> This is a net new policy for finding missing subscriptions. For now, this policy is unpublished since the primary user is internal rather than clients directly.
->
-> From the README:
->
-> This policy checks the stored Flexera CCO billing data for Azure from 3 days ago to obtain a list of Azure Subscriptions that we have billing data for and compares that to the list of Azure Subscriptions returned by the Azure Resource Manager API. An incident is raised and email sent containing any subscriptions present in Flexera CCO but not returned by the Azure Resource Manager API, as well as subscriptions returned by the Azure Resource Manager API but not present in Flexera CCO. The user can select which of those two reports they'd like to produce.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1805) for details about unpublished policies.
-- **Merged At**: 2024-02-08 16:13:44 UTC
-
----
-
-### PR [#1804](https://github.com/flexera-public/policy_templates/pull/1804): POL-1007 Azure Policies - Add ignore 400 error status
-
-#### Description
-
-> Fixed error in several Azure policies where policy would fail completely when trying to access resources credential does not have access to. Policies will now simply skip these resources.
->
-> In many cases, these were regressions caused by copying and pasting from policies that did not have this update done previously. To prevent future regressions, I have gone through all Azure policies to ensure that only the correct datasources with the proper ignore_status functionality will exist in the catalog after this update.
->
-> I also did the same with a couple of minor, non-material changes to spacing to ensure consistency. In cases where this was the only change made, I did not bother iterating the version number or updating the changelog because these changes do not affect policy execution whatsoever. These changes are:
->
-> query "api-version"," -> query "api-version", " (Added space after comma)
-> ignore_status [400,403,404] -> ignore_status [400, 403, 404] (Added space between numbers)
-> changelog.md -> CHANGELOG.md (Renamed this file in a couple of places where it was incorrectly in lowercase)
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1804) for these details.
-- **Merged At**: 2024-02-08 15:32:23 UTC
-
----
-
-### PR [#1799](https://github.com/flexera-public/policy_templates/pull/1799): POL-1055 Correct Path for Azure Blob Storage Optimization Policy
-
-#### Description
-
-> The path for this policy is incorrect and, as a result, does not match the link in the policy's description. The path to this policy should be blob_storage_optimization, not object_storage_optimization, to keep it in line with the name of the policy itself as well as Azure’s own terminology.
->
-> ### Issues Resolved
->
-> Path to this policy is now correct and matches the link within the policy itself as well as the policy name.
->
-
-#### Metadata
-
-- **Policies**: [Azure Blob Storage Optimization](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/blob_storage_optimization/README.md)
-- **Merged At**: 2024-02-07 15:04:03 UTC
-
----
-
-### PR [#1786](https://github.com/flexera-public/policy_templates/pull/1786): POL-1053 Custom Dimension Names in RBD Policies
-
-#### Description
-
-> This adds the ability for the user to specify the names of the created dimensions via a parameter in the unpublished RBD creation policies. The new parameter is a list, and if this parameter is left blank, the existing functionality will occur instead.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1786) for these details.
-- **Merged At**: 2024-02-05 21:09:40 UTC
-
----
-
-### PR [#1793](https://github.com/flexera-public/policy_templates/pull/1793): POL-999 Azure Blob Storage Optimization Revamp
-
-#### Description
-
-> This is a revamp of the Azure Blob Storage Optimization that brings its functionality more in line with the equivalent AWS policy while also ensuring that policy actions have been revamped for better error reporting outside of NAM. From the CHANGELOG:
->
-> - Several parameters altered to be more descriptive and human-readable
-> - Added ability to assess blobs in multiple storage accounts
-> - Added ability to filter storage accounts by subscription
-> - Added ability to filter storage accounts by region
-> - Added ability to filter storage accounts by multiple tag key:value pairs
-> - Added ability to delete blobs
-> - Added additional context to incident description
-> - Normalized incident export to be consistent with other policies
-> - Added human-readable recommendation to incident export
-> - Policy no longer raises new escalations if tag data changed but nothing else has
-> - Streamlined code for better readability and faster execution
-> - Policy now correctly requires both Azure Resource Manager and Azure Storage credentials
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1793) for details about unpublished policies.
-- **Merged At**: 2024-02-05 21:09:22 UTC
-
----
-
-### PR [#1750](https://github.com/flexera-public/policy_templates/pull/1750): POL-997 AWS Object Storage Optimization Revamp
-
-#### Description
-
-> This is a revamp of the AWS Object Storage Optimization policy, similar to other similar revamps. Both the core policy and the CWF actions have been revamped. From the CHANGELOG:
->
-> - Several parameters altered to be more descriptive and human-readable
-> - Added ability to filter objects by multiple tag key:value pairs
-> - Added ability to filter objects/buckets by region
-> - Added option to automatically delete offending S3 objects
-> - Added additional context to incident description
-> - Normalized incident export to be consistent with other policies
-> - Added human-readable recommendation to incident export
-> - Added additional fields to incident export
-> - Policy no longer raises new escalations if object tags changed but nothing else has
-> - Streamlined code for better readability and faster execution
->
-
-#### Metadata
-
-- **Policies**: [AWS Object Storage Optimization](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/object_storage_optimization/README.md)
-- **Merged At**: 2024-02-05 18:54:59 UTC
-
----
-
-### PR [#1747](https://github.com/flexera-public/policy_templates/pull/1747): POL-1003 Azure Long Running Instances Action Revamp
-
-#### Description
-
-> This revamps the policy actions to properly log errors in EU/APAC and also normalizes action names. The CWF code was lifted directly from other, already-updated Azure policies. General policy functionality is unchanged.
->
-> From the CHANGELOG:
->
-> - Added option to either gracefully or forcefully power off instances
-> - Renamed policy actions to conform with Azure's own terminology and documentation
-> - Policy action error logging modernized and now works as expected in EU/APAC
->
-
-#### Metadata
-
-- **Policies**: [Azure Long Running Instances](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/azure_long_running_instances/README.md)
-- **Merged At**: 2024-02-05 13:06:34 UTC
-
----
-
-### PR [#1677](https://github.com/flexera-public/policy_templates/pull/1677): FOPTS-2607 Deployment of rightsize azure managed disks policy
-
-#### Description
-
-> Deploy first version of Rightsize Azure Managed Disks policy.
->
-> ### Issues Resolved
->
-> - https://flexera.atlassian.net/browse/FOPTS-2607
->
-
-#### Metadata
-
-- **Policies**: [Azure Rightsize Managed Disks](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_disks/README.md)
-- **Merged At**: 2024-02-02 22:31:32 UTC
-
----
-
-### PR [#1746](https://github.com/flexera-public/policy_templates/pull/1746): POL-1000 AWS Long Running Instances Action Revamp
-
-#### Description
-
-> This revamps the policy actions to properly log errors in EU/APAC. The CWF code was lifted directly from other, already-updated AWS policies. General policy functionality is unchanged.
->
-
-#### Metadata
-
-- **Policies**: [AWS Long Running Instances](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/long_running_instances/README.md)
-- **Merged At**: 2024-02-02 15:11:07 UTC
-
----
-
-### PR [#1737](https://github.com/flexera-public/policy_templates/pull/1737): POL-994 Azure Disallowed Regions Revamp
-
-#### Description
-
-> This is a revamp similar to other revamps we've done. This revamps both the policy itself and the policy actions. It also changes the name of the policy to better conform to standards established elsewhere in the catalog.
->
-> From the CHANGELOG:
->
-> - Several parameters altered to be more descriptive and human-readable
-> - Added more robust ability to filter resources by subscription
-> - Added ability to filter resources by tag key:value pairs
-> - Added ability to power off instances instead of deleting them
-> - Added additional context to incident description
-> - Normalized incident export to be consistent with other policies
-> - Added human-readable recommendation to incident export
-> - Streamlined code for better readability and faster execution
->
-
-#### Metadata
-
-- **Policies**: [Azure Disallowed Regions](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/azure_disallowed_regions/README.md)
-- **Merged At**: 2024-02-02 13:11:31 UTC
-
----
-
-### PR [#1743](https://github.com/flexera-public/policy_templates/pull/1743): POL-995 Google Long Stopped Instances Revamp
-
-#### Description
-
-> This is a revamp similar to other revamps we've done. This revamps both the policy itself and the policy actions. It also changes the name of the policy to better conform to standards established elsewhere in the catalog and adds meta policy support.
->
-> From the CHANGELOG:
->
-> - Several parameters altered to be more descriptive and human-readable
-> - Added more robust ability to filter resources by project
-> - Added ability to filter resources by region
-> - Added ability to filter resources by multiple tag key:value pairs
-> - Added additional context to incident description
-> - Normalized incident export to be consistent with other policies
-> - Added human-readable recommendation to incident export
-> - Streamlined code for better readability and faster execution
-> - Meta policy support added
-> - Policy now requires a valid Flexera credential
->
-
-#### Metadata
-
-- **Policies**: [Google Long Stopped VM Instances](https://github.com/flexera-public/policy_templates/tree/master/compliance/google/long_stopped_instances/README.md)
-- **Merged At**: 2024-02-02 13:11:19 UTC
-
----
-
-### PR [#1751](https://github.com/flexera-public/policy_templates/pull/1751): POL-1042 AWS Untagged Resources Revamp
-
-#### Description
-
-> This is a complete revamp and overhaul of the AWS Untagged Resources policy. Both the policy code and actions have been revamped. From the CHANGELOG:
->
-> - Added ability to filter resources by tag key, tag key==value, or using regex
-> - Added ability to use all filters as an allow list or a deny list
-> - Added additional context to incident description
-> - Streamlined code for better readability and faster execution
-> - Meta policy support added
->
-
-#### Metadata
-
-- **Policies**: [AWS Untagged Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/untagged_resources/README.md)
-- **Merged At**: 2024-02-01 11:34:07 UTC
-
----
-
-### PR [#1748](https://github.com/flexera-public/policy_templates/pull/1748): POL-1047 Azure Reserved Instances Recommendations Scaling Fixes
-
-#### Description
-
-> We were receiving reports of 429 rate limiting errors from the Azure APIs when attempting to use this policy. The following has been done to try to alleviate this issue:
-> - A forced 5 second delay between requests to the Microsoft.Consumption/reservationRecommendations API endpoint has been added.
-> - Information has been added to the README recommending that the policy be applied once for each resource type for large cloud estates.
-> - Meta policy support has been added.
->
-
-#### Metadata
-
-- **Policies**: [Azure Reserved Instances Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/reserved_instances/recommendations/README.md)
-- **Merged At**: 2024-01-17 19:46:17 UTC
-
----
-
-### PR [#1735](https://github.com/flexera-public/policy_templates/pull/1735): POL-993 Azure Long Stopped Instances Revamp
-
-#### Description
-
-> This is a revamp similar to other revamps we've done. This revamps both the policy itself and the policy actions. It also changes the name of the policy to better conform to standards established elsewhere in the catalog.
->
-> From the CHANGELOG:
->
-> - Several parameters altered to be more descriptive and human-readable
-> - Added more robust ability to filter resources by subscription
-> - Added ability to filter resources by region
-> - Added ability to filter resources by multiple tag key:value pairs
-> - Added additional context to incident description
-> - Normalized incident export to be consistent with other policies
-> - Added human-readable recommendation to incident export
-> - Streamlined code for better readability and faster execution
->
-
-#### Metadata
-
-- **Policies**: [Azure Long Stopped Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/azure_long_stopped_instances/README.md)
-- **Merged At**: 2024-01-16 13:37:44 UTC
-
----
-
-### PR [#1730](https://github.com/flexera-public/policy_templates/pull/1730): POL-992 AWS Long Stopped Instances Revamp
-
-#### Description
-
-> This is a revamp similar to other revamps we've done. This revamps both the policy itself and the policy actions. It also changes the name of the policy to better conform to standards established elsewhere in the catalog.
->
-> From the CHANGELOG:
->
-> - Several parameters altered to be more descriptive and human-readable
-> - Added ability to filter resources by multiple tag key:value pairs
-> - Added additional context to incident description
-> - Normalized incident export to be consistent with other policies
-> - Added human-readable recommendation to incident export
-> - Added additional fields to incident export for additional context
-> - Streamlined code for better readability and faster execution
->
-
-#### Metadata
-
-- **Policies**: [AWS Long Stopped EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/long_stopped_instances/README.md)
-- **Merged At**: 2024-01-16 13:24:26 UTC
-
----
-
-### PR [#1738](https://github.com/flexera-public/policy_templates/pull/1738): POL-1045 Azure Reserved Instances Recommendations: Term Parameter Fix
-
-#### Description
-
-> This fixes an issue where the policy was returning all reservation recommendations instead of either 1 year or 3 year based on the parameter.
->
-
-#### Metadata
-
-- **Policies**: [Azure Reserved Instances Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/reserved_instances/recommendations/README.md)
-- **Merged At**: 2024-01-16 10:25:36 UTC
-
----
-
-### PR [#1736](https://github.com/flexera-public/policy_templates/pull/1736): POL-1043 Update Meta Policies
-
-#### Description
-
-> The script for generating meta policies has been updated. This is just a PR to regenerate some of the meta policies using this script.
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1736) for details about unpublished policies.
-- **Merged At**: 2024-01-12 14:28:44 UTC
-
----
-
-### PR [#1732](https://github.com/flexera-public/policy_templates/pull/1732): POL-1043 Meta Policy Substring Support
-
-#### Description
-
-> This adds support for substrings when filtering dimensions in the parent policies.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1732) for these details.
-- **Merged At**: 2024-01-12 13:12:37 UTC
-
----
-
-### PR [#1731](https://github.com/flexera-public/policy_templates/pull/1731): POL-1015 Meta Policy Escalation Name Fixes
-
-#### Description
-
-> This changes the name of escalation blocks so that the meta policy generator can properly generate meta policies for these policies. I also removed some strange whitespace characters that were in one of the policies for some reason and replaced them with standard spaces.
->
-> Meta policies themselves are unchanged since separate work is being done to update the meta policy templates for new functionality, which will in turn automatically update the meta policies.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1731) for these details.
-- **Merged At**: 2024-01-11 19:13:28 UTC
-
----
-
-### PR [#1718](https://github.com/flexera-public/policy_templates/pull/1718): POL-991 AWS Disallowed Regions Revamp
-
-#### Description
-
-> This is a revamp of the AWS Disallowed Regions policy. Both the policy itself and CWF code for actions have been updated. Most of the code was adapted from similar policies that have received similar improvements. From the CHANGELOG:
->
-> - Several parameters altered to be more descriptive and human-readable
-> - Added ability to filter resources by multiple tag key:value pairs
-> - Added additional context to incident description
-> - Normalized incident export to be consistent with other policies
-> - Added human-readable recommendation to incident export
-> - Policy no longer raises new escalations if tag data has changed for an instance
-> - Policy action error logging modernized and now works as expected in EU/APAC
-> - Streamlined code for better readability and faster execution
->
-
-#### Metadata
-
-- **Policies**: [AWS Disallowed Regions](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/disallowed_regions/README.md)
-- **Merged At**: 2024-01-10 14:40:43 UTC
-
----
-
-### PR [#1719](https://github.com/flexera-public/policy_templates/pull/1719): FOPTS-2229 Added a way to url decode the skiptoken
-
-#### Description
-
-> Replaced the jq function used from rt
->
-> ### Issues Resolved
->
-> [FOPTS-2229](https://flexera.atlassian.net/browse/FOPTS-2229)
->
-
-#### Metadata
-
-- **Policies**: [Schedule ITAM Report](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/itam/schedule_itam_report/README.md)
-- **Merged At**: 2024-01-09 13:36:56 UTC
-
----
-
-### PR [#1727](https://github.com/flexera-public/policy_templates/pull/1727): POL-958 Add 'Minimum Age' to Azure Rightsize SQL
-
-#### Description
-
-> Added optional `Minimum Age (Days)` parameter to filter results by age. This is for users that want to avoid reporting on freshly created databases that, as a result of their newness, have not had any connections and would therefore be seen as "unused" by the policy.
->
-> This is not a breaking change since the default value of this parameter is 0 and this functions just like the policy did without the parameter.
->
-> From the README:
->
-> - *Minimum Age (Days)* - The minimum age, in days, since a SQL database was created to produce recommendations for it. Set to 0 to ignore age entirely.
->
-
-#### Metadata
-
-- **Policies**: [Azure Rightsize SQL Databases](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_sql_instances/README.md)
-- **Merged At**: 2024-01-08 18:05:59 UTC
-
----
-
-### PR [#1725](https://github.com/flexera-public/policy_templates/pull/1725): feat: add cluster id filtering for databricks PT
-
-#### Description
-
-> - Add `param_databricks_cluster_list` for filtering to a specific Databricks Cluster within a Databricks Workspace
-> - Add `p90`,`p95`,`p99` Threshold Statistic choices
-> - Fixed subscription ID and Name output in recommendation
->
-
-#### Metadata
-
-- **Policies**: [Azure Databricks Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/databricks/rightsize_compute/README.md)
-- **Merged At**: 2024-01-08 13:17:33 UTC
-
----
-
-### PR [#1716](https://github.com/flexera-public/policy_templates/pull/1716): POL-989 Azure Old Snapshots Policy Action Revamp
-
-#### Description
-
-> This updates the policy actions to follow current conventions and have better error logging outside of NAM. Functionality is unchanged.
->
-
-#### Metadata
-
-- **Policies**: [Azure Old Snapshots](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/old_snapshots/README.md)
-- **Merged At**: 2024-01-04 13:10:00 UTC
-
----
-
-### PR [#1717](https://github.com/flexera-public/policy_templates/pull/1717): POL-990 Azure Rightsize SQL Policy Action Revamp
-
-#### Description
-
-> This updates the policy actions to follow current conventions and have better error logging outside of NAM. Functionality is unchanged.
->
-
-#### Metadata
-
-- **Policies**: [Azure Rightsize SQL Databases](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_sql_instances/README.md)
-- **Merged At**: 2024-01-04 13:09:53 UTC
-
----
-
-### PR [#1720](https://github.com/flexera-public/policy_templates/pull/1720): POL-988 AWS Unused Volumes Policy Action Revamp
-
-#### Description
-
-> This updates the policy actions to follow current conventions and have better error logging outside of NAM. Functionality is unchanged.
->
-
-#### Metadata
-
-- **Policies**: [AWS Unused Volumes](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/unused_volumes/README.md)
-- **Merged At**: 2024-01-04 13:09:41 UTC
-
----
-
-### PR [#1678](https://github.com/flexera-public/policy_templates/pull/1678): POL-981 Azure Untagged Resources Revamp / Untagged Virtual Machines
-
-#### Description
-
-> This PR is for several related things:
->
-> - `/data/azure/tag-support.csv` has been replaced with `/data/azure/resource_types.json` due to JSON being natively supported by the policy engine. It also contains information unrelated to tag support, so this new naming is more accurate and will allow for the file to be extended with more resource type related metadata if ever needed. The below `Azure Untagged Resources` policy is the only policy currently making use of this file, so this change should have no impact on other policies.
->
-> - `Azure Untagged Resources` policy has been completely rebuilt from the ground up. Core functionality is the same, but new filtering features were added. From the CHANGELOG:
->   - Added ability to filter resources by tag key, tag key==value, or using regex
->   - Added ability to filter resources by region
->   - Added ability to filter resources by Azure resource type
->   - Added ability to use all filters as an allow list or a deny list
->   - Added additional context to incident description
->   - Streamlined code for better readability and faster execution
->   - Policy now requires a valid Flexera One credential
->
-> - `Azure Untagged Virtual Machines`: This is a new policy that only checks tags for virtual machines, but due to this narrowed focus, has more functionality than the `Azure Untagged Resources` policy. The incident reports on additional VM-specific metadata, and the policy allows for powering off or deleting instances in addition to tagging them.
->
-> - The above policies now support a variety of conditionals as well as regex. Note that, while I have intentionally not documented this since it is not "to spec", using a single = will also work in order to account for user error when entering in values. From the READMEs:
->   - *Tags* - The policy will report resources missing the specified tags. The following formats are supported:
->     - `Key` - Find all resources missing the specified tag key.
->     - `Key==Value` - Find all resources missing the specified tag key:value pair and all resources missing the specified tag key.
->     - `Key!=Value` - Find all resources that have the specified tag key:value pair.
->     - `Key=~/Regex/` - Find all resources where the value for the specified key does not match the specified regex string and all resources missing the specified tag key.
->     - `Key!~/Regex/` - Find all resources where the value for the specified key matches the specified regex string.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1678) for these details.
-- **Merged At**: 2024-01-03 20:48:02 UTC
-
----
-
-### PR [#1713](https://github.com/flexera-public/policy_templates/pull/1713): POL-986 AWS Old Snapshots Policy Action Revamp
-
-#### Description
-
-> This non-breaking change updates the policy actions for the AWS Old Snapshots policy. Functionality is identical, but now the error logging is modernized and should work as expected in EU and APAC.
->
-
-#### Metadata
-
-- **Policies**: [AWS Old Snapshots](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/old_snapshots/README.md)
-- **Merged At**: 2024-01-02 13:09:45 UTC
-
----
-
-### PR [#1714](https://github.com/flexera-public/policy_templates/pull/1714): POL-987 AWS Unused IP Policy Action Revamp
-
-#### Description
-
-> This non-breaking change updates the policy actions for the AWS Unused IP policy. Functionality is identical, but now the error logging is modernized and should work as expected in EU and APAC.
->
-> The verbiage for a parameter was also updated to be more clear and the parameter in question was added to the README
->
-
-#### Metadata
-
-- **Policies**: [AWS Unused IP Addresses](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/unused_ip_addresses/README.md)
-- **Merged At**: 2024-01-02 13:09:34 UTC
-
----
-
-### PR [#1704](https://github.com/flexera-public/policy_templates/pull/1704): POL-1010 Scheduled Report Policy Revamp
-
-#### Description
-
-> This is a revamp of the Scheduled Report policy that streamlines it and extends functionality. From the CHANGELOG:
->
-> - Added ability to specify custom dimensions for the graph in the report
-> - Added ability to filter costs in report by any user-specified dimension
-> - Improved incident output for readability and removed references to Optima
-> - Incident table now shows the raw data used to create the graph in the report
-> - Streamlined code for better readability and faster execution
->
-
-#### Metadata
-
-- **Policies**: [Scheduled Report](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/scheduled_reports/README.md)
-- **Merged At**: 2023-12-29 14:11:13 UTC
-
----
-
-### PR [#1706](https://github.com/flexera-public/policy_templates/pull/1706): POL-982 Hybrid Use Benefit Policy - currency separator symbol shown as undefined
-
-#### Description
-
-> n the incident of Hybrid Use Benefit Policy, currency separator is shown as undefined:
->
-> ### Issues Resolved
->
-> [POL-982](https://flexera.atlassian.net/browse/POL-982)
->
-
-#### Metadata
-
-- **Policies**: [Azure Hybrid Use Benefit for Windows Server](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/hybrid_use_benefit/README.md)
-- **Merged At**: 2023-12-27 13:30:57 UTC
 
 ---
 

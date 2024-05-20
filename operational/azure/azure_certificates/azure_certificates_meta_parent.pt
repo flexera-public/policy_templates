@@ -1,14 +1,14 @@
-name "Expiring Azure Certificates Meta Parent"
+name "Azure Expiring Certificates Meta Parent"
 rs_pt_ver 20180301
 type "policy"
-short_description "Applies and manages \"child\" [Expiring Azure Certificates](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/azure_certificates) Policies."
+short_description "Applies and manages \"child\" [Azure Expiring Certificates](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/azure_certificates) Policies."
 severity "low"
 category "Cost"
 tenancy "single"
 default_frequency "15 minutes"
 info(
   provider: "Azure",
-  version: "3.2.1", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "4.0.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "false"
 )
 
@@ -62,7 +62,7 @@ end
 parameter "param_template_source" do
   type "string"
   label "Child Policy Template Source"
-  description "By default, will use the \"Expiring Azure Certificates\" Policy Template from Catalog.  Optionally, you can use the \"Expiring Azure Certificates\" Policy Template uploaded in the current Flexera Project."
+  description "By default, will use the \"Azure Expiring Certificates\" Policy Template from Catalog.  Optionally, you can use the \"Azure Expiring Certificates\" Policy Template uploaded in the current Flexera Project."
   default "Published Catalog Template"
   allowed_values "Published Catalog Template", "Uploaded Template"
 end
@@ -77,20 +77,56 @@ parameter "param_azure_endpoint" do
   default "management.azure.com"
 end
 
-parameter "param_numberofdays" do
-  type "string"
+parameter "param_expiration_days" do
+  type "number"
   category "Policy Settings"
-  label "Days"
-  description "Number of days from expiration to raise an incident."
-  default ""
+  label "Days Until Expiration"
+  description "Number of days from expiration to include a certificate in the results. Set to \"0\" to only report certificates that have already expired."
+  min_value 0
+  default 30
 end
 
-parameter "param_exclusion_tag_key" do
+parameter "param_regions_allow_or_deny" do
   type "string"
-  category "Policy Settings"
-  label "Exclusion Tag Key"
-  description "Azure-native instance tag to ignore instances that match the disallowed instance type. Only supply the tag key. The policy assumes that the tag value is irrelevant."
-  default ""
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Delete Expiring Azure Certificates"]
+  default []
 end
 
 ###############################################################################
@@ -105,7 +141,7 @@ end
 
 credentials "auth_flexera" do
   schemes "oauth2"
-  label "flexera"
+  label "Flexera"
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
@@ -214,7 +250,7 @@ datasource "ds_published_child_policy_information" do
   result do
     encoding "json"
     # Select the published policy that is published by "support@flexera.com" and matches the name of the child policy template
-    collect jq(response, '.items[] | select(.name == "Expiring Azure Certificates" and .created_by.email == "support@flexera.com")' ) do
+    collect jq(response, '.items[] | select(.name == "Azure Expiring Certificates" and .created_by.email == "support@flexera.com")' ) do
       field "name", jmes_path(col_item, "name")
       field "href", jmes_path(col_item, "href")
       field "short_description", jmes_path(col_item, "short_description")
@@ -233,7 +269,7 @@ datasource "ds_project_child_policy_information" do
   result do
     encoding "json"
     # Select the uploaded policy that matches the name of the child policy template
-    collect jq(response, '.items[] | select(.name == "Expiring Azure Certificates")' ) do
+    collect jq(response, '.items[] | select(.name == "Azure Expiring Certificates")' ) do
       field "name", jmes_path(col_item, "name")
       field "href", jmes_path(col_item, "href")
       field "short_description", jmes_path(col_item, "short_description")
@@ -408,6 +444,7 @@ datasource "ds_get_existing_policies_incidents" do
     path join(["/api/governance/projects/", rs_project_id, "/incidents"])
     header "Api-Version", "1.0"
     query "meta_parent_policy_id", policy_id
+    query "state", "triggered"
   end
   result do
     collect jq(response, '.items[]?') do
@@ -759,15 +796,14 @@ datasource "ds_child_incident_details" do
     header "User-Agent", "RS Policies"
     header "Api-Version", "1.0"
     query "view", "extended"
-    query "state", "triggered"
   end
 end
 
-datasource "ds_filtered_certificates_combined_incidents" do
-  run_script $js_ds_filtered_certificates_combined_incidents, $ds_child_incident_details
+datasource "ds_azure_certificates_expiring_combined_incidents" do
+  run_script $js_ds_azure_certificates_expiring_combined_incidents, $ds_child_incident_details
 end
 
-script "js_ds_filtered_certificates_combined_incidents", type: "javascript" do
+script "js_ds_azure_certificates_expiring_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-EOS
@@ -786,6 +822,19 @@ EOS
 end
 
 
+# Escalation for Delete Expiring Azure Certificates
+escalation "esc_delete_certificate" do
+  automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
+  label "Delete Expiring Azure Certificates"
+  description "Approval to delete all selected Azure Certificates"
+
+  # Run declaration should go at end, after any parameters that may exist
+  run "esc_delete_certificate", data, rs_governance_host, rs_project_id
+end
+define esc_delete_certificate($data, $governance_host, $rs_project_id) do
+  $actions_options = []
+  call child_run_action($data, $governance_host, $rs_project_id, "Delete Expiring Azure Certificates", $action_options)
+end
 
 
 # Summary and a conditional incident which will show up if any policy is being applied, updated or deleted.
@@ -795,33 +844,48 @@ end
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
     # Consolidated incident for Expired Certificates Found
-  validate $ds_filtered_certificates_combined_incidents do
+  validate $ds_azure_certificates_expiring_combined_incidents do
     summary_template "Consolidated Incident: {{ len data }} Expired Certificates Found"
     escalate $esc_email
-    
+    escalate $esc_delete_certificate
     check eq(size(data), 0)
     export do
       resource_level true
-      field "id" do
-        label "id"
+      field "accountID" do
+        label "Subscription ID"
       end
-      field "subscriptionName" do
+      field "accountName" do
         label "Subscription Name"
       end
-      field "rgName" do
+      field "resourceGroup" do
         label "Resource Group"
       end
-      field "location" do
-        label "Location"
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "subjectName" do
+        label "Subject"
+      end
+      field "status" do
+        label "Status"
       end
       field "expirationDate" do
         label "Expiration Date"
       end
-      field "name" do
-        label "Subject"
-      end
-      field "subjectName" do
-        label "Certificate Name"
+      field "days_until_expiration" do
+        label "Days Until Expiration"
       end
       field "issuer" do
         label "Issuer"
@@ -844,8 +908,14 @@ policy "policy_scheduled_report" do
       field "keyVaultSecretStatus" do
         label "Key Vault Secret Status"
       end
-      field "certStatus" do
-        label "Certificate Status"
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "ID"
       end
       field "incident_id" do
         label "Child Incident ID"
@@ -974,7 +1044,7 @@ define groupByIncidentID($data) return $incidents do
   end
 end
 
-define child_run_action($data, $governance_host, $rs_project_id, $action_label) do
+define child_run_action($data, $governance_host, $rs_project_id, $action_label, $action_options) do
   # Empty global array for log strings, helpful for debugging
   $$debug = []
 
@@ -983,7 +1053,7 @@ define child_run_action($data, $governance_host, $rs_project_id, $action_label) 
   call groupByIncidentID($data) retrieve $incidents
   $$debug_incidents = to_json($incidents)
 
-  call runActions($incidents, $action_label, $governance_host, $rs_project_id)
+  call runActions($incidents, $action_label, $governance_host, $rs_project_id, $action_options)
 
   # If we encountered any errors, use `raise` to mark the CWF process as errored
   if inspect($$errors) != "null"
@@ -995,7 +1065,7 @@ define child_run_action($data, $governance_host, $rs_project_id, $action_label) 
   task_label("All \""+$action_label+"\" actions completed successfully!")
 end
 
-define runActions($incidents, $action_label, $governance_host, $rs_project_id) do
+define runActions($incidents, $action_label, $governance_host, $rs_project_id, $action_options) do
   foreach $id in keys($incidents) do
     sub on_error: handle_error() do
       $incident = $incidents[$id]
@@ -1035,6 +1105,10 @@ define runActions($incidents, $action_label, $governance_host, $rs_project_id) d
         headers: { "Api-Version": "1.0" },
         body: { "options":[{ "name": "ids",  "value": $incident["resource_ids"] }] }
       }
+      # If the action has parameters, add them to the request body
+      if size($action_options) > 0
+        $request["body"]["options"] = $request["body"]["options"] + $action_options
+      end
       $response = http_request($request)
       $$debug << to_json({
         "request": $request,
