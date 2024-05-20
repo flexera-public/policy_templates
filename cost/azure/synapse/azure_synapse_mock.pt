@@ -520,7 +520,7 @@ script "js_underutil_and_idle_pools", type: "javascript" do
       "resourceGroup": "synapseworkspace-managedrg-a2cf8ed3-78ab-4c89-95cc-ad9f3e30cda1",
       "resourceId": "Mock ResourceID - 3",
       "resourceKind": "Microsoft.Synapse/workspaces/sqlPools",
-      "sku": "DW300c",
+      "sku": "DW30000c",
       "status": "Paused",
       "storageAccountType": "GRS",
       "subscriptionId": "be553bff-7933-4db4-96ca-d4e1a307a982",
@@ -881,7 +881,7 @@ script "js_underutil_and_idle_pools", type: "javascript" do
             "data": [
               {
                 "average": 0,
-                "maximum": 0,
+                "maximum": 200,
                 "minimum": 0,
                 "timeStamp": "2024-03-31T00:00:00Z"
               }
@@ -1388,7 +1388,7 @@ script "js_underutil_and_idle_pools", type: "javascript" do
             "data": [
               {
                 "average": 0,
-                "maximum": 0,
+                "maximum": 100,
                 "minimum": 0,
                 "timeStamp": "2024-03-31T00:00:00Z"
               }
@@ -1660,12 +1660,9 @@ script "js_underutil_and_idle_pools", type: "javascript" do
 
     total_cost = 0.0
 
-    //Mock
     _.each(mock_costs_grouped, function(grouped) {
       if (grouped[id] != undefined) { total_cost = grouped[id] }
     })
-
-    //if (mock_costs_grouped[id] != undefined) { total_cost = mock_costs_grouped[id] }
 
     metrics = {}
     values = item['value']
@@ -1675,15 +1672,33 @@ script "js_underutil_and_idle_pools", type: "javascript" do
     })
 
     var connections = parseInt(metrics['Connections'][0]['maximum'])
-    var dwuUsedPercent = metrics['DWUUsedPercent'][0]['maximum']
+    var dwuUsedPercent = parseFloat(metrics['DWUUsedPercent'][0]['maximum'])
+    var dwuUsed = parseInt(metrics['DWUUsed'][0]['maximum'])
 
     var status = pools[id]['status']
     var isIdle = false
     var isUnderutil = false
     if (connections == 0 && status != "Paused") { isIdle = true }
-    if (connections > 0 && dwuUsedPercent <= param_stats_threshold) { isUnderutil = true}
+    //if (connections > 0 && dwuUsedPercent <= param_stats_threshold) { isUnderutil = true}
+    if (dwuUsedPercent <= param_stats_threshold) { isUnderutil = true}
 
-    item["newResourceType"] = null
+    if (isIdle || isUnderutil) {
+      item["newResourceType"] = null
+      item["status"] = pools[id]['status'],
+      item["creationDate"] = pools[id]['creationDate'],
+      item["maxSizeBytes"] = bytesToTerabytes(pools[id]['maxSizeBytes']),
+      item["provisioningState"] = pools[id]['provisioningState'],
+      item["storageAccountType"] = pools[id]['storageAccountType'],
+      item["DWUUsed"] = metrics['DWUUsed'][0]['maximum'],
+      item["DWUUsedPercent"] = metrics['DWUUsedPercent'][0]['maximum'],
+      item["MemoryUsedPercent"] = metrics['MemoryUsedPercent'][0]['maximum'],
+      item["Connections"] = connections,
+      item["service"] = "Microsoft.Synapse",
+      item["lookbackPeriod"] = param_stats_lookback,
+      item["threshold"] = param_stats_threshold  
+      item['savingsCurrency'] = ds_currency['symbol']
+    }
+
 
     if (isIdle) {
 
@@ -1707,6 +1722,73 @@ script "js_underutil_and_idle_pools", type: "javascript" do
 
       item["resourceType"] = pools[id]['sku']  
 
+      var currentResourceSize = item["resourceType"].substring(2, item["resourceType"].indexOf('c'))
+
+      var tempNewSize = dwuUsed * 100 / param_stats_threshold
+      var newResourceType = null
+      var recommendationType = ""
+
+      if (ds_azure_synapse_size_map[item['resourceType']]) {
+
+        item["newResourceType"] = item['resourceType']
+
+        if (tempNewSize < currentResourceSize) {
+
+          recommendationType = "Downsize"
+
+          while (ds_azure_synapse_size_map[item['newResourceType']]['down'] != null) {
+
+            newResourceType  = ds_azure_synapse_size_map[item['newResourceType']]['down']
+            newResourceSize = newResourceType.substring(2, newResourceType.indexOf('c'))
+
+            if (newResourceSize >= tempNewSize) {
+              item["newResourceType"] = newResourceType
+            } else {
+              break
+            }
+          }
+        }
+
+        if (tempNewSize > currentResourceSize) {
+
+          recommendationType = "Upsize"
+
+          while (ds_azure_synapse_size_map[item['newResourceType']]['up'] != null) {
+
+            newResourceType  = ds_azure_synapse_size_map[item['newResourceType']]['up']
+            newResourceSize = newResourceType.substring(2, newResourceType.indexOf('c'))
+
+            if (item["newResourceType"] <= tempNewSize) {
+              item["newResourceType"] = newResourceType
+            } else {
+              break
+            }
+          }
+        }
+        
+      }
+
+      if (item["newResourceType"] != null && item["newResourceType"] != undefined && item["newResourceType"] != item["resourceType"]) {
+        item["recommendationDetails"] = [
+          recommendationType, " Azure Synapse SQL pool ", item["resourceName"], " ",
+          "in Azure Subscription ", item["subscriptionName"], " ",
+          "(", item["subscriptionId"], ") ",
+          "from ", item["resourceType"], " ",
+          "to ", item["newResourceType"]
+        ].join('')
+
+        newResourceSize = item["newResourceType"].substring(2, item["newResourceType"].indexOf('c'))
+
+        item["savings"] = parseFloat(total_cost - parseFloat(newResourceSize) * total_cost / parseFloat(currentResourceSize)).toFixed(3)
+        var savings = parseFloat(item["savings"])
+        
+        if (item["savings"] >= param_min_savings) {
+          underutil_list.push(item)
+          underutil_total_savings += savings
+        }
+      }
+
+      /*
       if (ds_azure_synapse_size_map[item['resourceType']]) {
         item["newResourceType"] = ds_azure_synapse_size_map[item['resourceType']]['down']
       }
@@ -1733,23 +1815,9 @@ script "js_underutil_and_idle_pools", type: "javascript" do
           underutil_total_savings += total_cost * formula / 100
         }
       }
+      */
     }
-    if (isIdle || isUnderutil) {
- 
-      item["status"] = pools[id]['status'],
-      item["creationDate"] = pools[id]['creationDate'],
-      item["maxSizeBytes"] = bytesToTerabytes(pools[id]['maxSizeBytes']),
-      item["provisioningState"] = pools[id]['provisioningState'],
-      item["storageAccountType"] = pools[id]['storageAccountType'],
-      item["DWUUsed"] = metrics['DWUUsed'][0]['maximum'],
-      item["DWUUsedPercent"] = metrics['DWUUsedPercent'][0]['maximum'],
-      item["MemoryUsedPercent"] = metrics['MemoryUsedPercent'][0]['maximum'],
-      item["Connections"] = connections,
-      item["service"] = "Microsoft.Synapse",
-      item["lookbackPeriod"] = param_stats_lookback,
-      item["threshold"] = param_stats_threshold  
-      item['savingsCurrency'] = ds_currency['symbol']
-    }
+
   })
 
   if (underutil_list.length > 0) {
