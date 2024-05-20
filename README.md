@@ -174,6 +174,7 @@ These templates can generate savings estimates for your environment.
 - Compute
 
   - [AWS Burstable EC2 Instances](./cost/aws/burstable_ec2_instances)
+  - [AWS EC2 Instances Time Stopped Report](./operational/aws/ec2_stopped_report)
   - [AWS EKS Clusters Without Spot Instances](./cost/aws/eks_without_spot)
   - [AWS Expiring Savings Plans](./cost/aws/savings_plan/expiration)
   - [AWS Reserved Instances Coverage](./cost/aws/reserved_instances/coverage)
@@ -261,7 +262,7 @@ These templates can generate savings estimates for your environment.
 
   - [Azure Hybrid Use Benefit for SQL](./cost/azure/hybrid_use_benefit_sql)
   - [Azure Rightsize SQL Databases](./cost/azure/rightsize_sql_instances)
-  - [Azure SQL Databases without Elastic Pools](./operational/azure/azure_sql_using_elastic_pool)
+  - [Azure SQL Servers Without Elastic Pools](./cost/azure/sql_servers_without_elastic_pool)
 
 - Storage
 
@@ -368,8 +369,8 @@ These templates can generate savings estimates for your environment.
 
 - Compute
 
-  - [AWS Instance Scheduled Events](./operational/aws/instance_scheduled_events)
   - [AWS Long Running Instances](./operational/aws/long_running_instances)
+  - [AWS Scheduled EC2 Events](./operational/aws/scheduled_ec2_events)
   - [AWS Usage Forecast - Instance Time Used](./operational/aws/total_instance_usage_forecast)
   - [AWS Usage Report - Instance Time Used](./operational/aws/total_instance_usage_report)
 
@@ -607,13 +608,13 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 32
-  Cost: 94
+  Cost: 95
   Operational: 21
   SaaS Management: 12
   Security: 74
 :optimization_count: 50
 :policy_sets:
-  '': 39
+  '': 40
   AWS Config: 1
   Allocate VMs: 3
   Automation: 1
@@ -671,7 +672,7 @@ These templates can generate savings estimates for your environment.
   Unused Volumes: 6
   Usage Report: 5
 :providers:
-  AWS: 80
+  AWS: 81
   Azure: 83
   Azure China: 1
   Flexera: 37
@@ -693,7 +694,7 @@ These templates can generate savings estimates for your environment.
   Cloud Cost Optimization: 18
   CloudTrail: 7
   Common Bill Ingestion: 2
-  Compute: 59
+  Compute: 60
   Config: 1
   DBS: 1
   Databricks: 1
@@ -726,7 +727,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 233
+:total_count: 234
 -->
 <!-- End Policy Template Stats -->
 
