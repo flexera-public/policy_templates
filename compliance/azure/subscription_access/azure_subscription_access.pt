@@ -1,17 +1,17 @@
 name "Azure Subscription Access"
 rs_pt_ver 20180301
 type "policy"
-short_description "Lists anyone who has been granted Owner or Contributor access to an Azure subscription. \n See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/subscription_access) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "**Deprecated: This policy is no longer being updated.** Provides a report of all users with Owner or Contributor access to an Azure Subscription. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/subscription_access) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Compliance"
-default_frequency "monthly"
 severity "low"
+default_frequency "weekly"
 info(
-  version: "2.10",
+  version: "3.0.0",
   provider: "Azure",
-  service: "Identity",
+  service: "IAM",
   policy_set: ""
-  )
+)
 
 ###############################################################################
 # Parameters
@@ -19,54 +19,86 @@ info(
 
 parameter "param_email" do
   type "list"
-  label "Email addresses of the recipients you wish to notify"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
 end
 
 parameter "param_azure_endpoint" do
   type "string"
+  category "Policy Settings"
   label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure Resource Manager API. Use default value of 'management.azure.com' unless using Azure China."
   allowed_values "management.azure.com", "management.chinacloudapi.cn"
   default "management.azure.com"
 end
 
-parameter "param_subscription_allowed_list" do
-  label "Subscription Allowed List"
-  type "list"
-  description "Allowed Subscriptions, if empty, all subscriptions will be checked"
+parameter "param_ms_graph_endpoint" do
+  type "string"
+  category "Policy Settings"
+  label "Microsoft Graph Endpoint"
+  description "Select the API endpoint to use for the Microsoft Graph API. Use default value of 'graph.microsoft.com' unless using Azure China."
+  allowed_values "graph.microsoft.com", "microsoftgraph.chinacloudapi.cn"
+  default "graph.microsoft.com"
 end
 
-parameter "param_azure_roles" do
+parameter "param_roles" do
+  type "string"
+  category "Policy Settings"
+  label "Roles"
+  description "Whether to report on users that are subscription Owners, Contributors, or both."
+  allowed_values "Owner", "Contributor", "Both"
+  default "Both"
+end
+
+parameter "param_subscriptions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Subscriptions"
+  description "Allow or Deny entered Subscriptions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_subscriptions_list" do
   type "list"
-  label "Roles to report on"
-  category "Azure"
-  description "Can choose to report on Owner, Contributor, or Both"
-  allowed_values "Owner", "Contributor"
+  category "Filters"
+  label "Allow/Deny Subscriptions List"
+  description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-#authenticate with Azure
-credentials "azure_auth" do
+credentials "auth_azure" do
   schemes "oauth2"
   label "Azure"
   description "Select the Azure Resource Manager Credential from the list."
   tags "provider=azure_rm"
 end
 
-credentials "azure_graph_auth" do
+credentials "auth_azure_graph" do
   schemes "oauth2"
   label "Azure"
   description "Select the Azure Resource Manager Credential for Azure Active Directory API from the list."
   tags "provider=azure_graph"
 end
 
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
 ###############################################################################
 # Pagination
 ###############################################################################
 
-pagination "azure_pagination" do
+pagination "pagination_azure" do
   get_page_marker do
     body_path "nextLink"
   end
@@ -75,7 +107,7 @@ pagination "azure_pagination" do
   end
 end
 
-pagination "azure_graph_pagination" do
+pagination "pagination_azure_graph" do
   get_page_marker do
     body_path '"@odata.nextLink"'
   end
@@ -85,41 +117,23 @@ pagination "azure_graph_pagination" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
-datasource "ds_azure_users" do
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
   request do
-    auth $azure_graph_auth
-    pagination $azure_graph_pagination
-    host "graph.microsoft.com"
-    path join(["/v1.0/users"])
-    header "User-Agent", "RS Policies"
-    ignore_status [400, 403, 404]
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "value[*]") do
-      field "id", jmes_path(col_item,"id")
-      field "businessPhones", jmes_path(col_item,"businessPhones")
-      field "displayName", jmes_path(col_item,"displayName")
-      field "givenName", jmes_path(col_item,"givenName")
-      field "id", jmes_path(col_item,"id")
-      field "jobTitle", jmes_path(col_item,"jobTitle")
-      field "mail", jmes_path(col_item,"mail")
-      field "mobilePhone", jmes_path(col_item, "mobilePhone")
-      field "officeLocation", jmes_path(col_item, "officeLocation")
-      field "preferredLanguage", jmes_path(col_item, "preferredLanguage")
-      field "surname", jmes_path(col_item,"surname")
-      field "userPrincipalName", jmes_path(col_item,"userPrincipalName")
-    end
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
   end
 end
 
-datasource "ds_subscriptions" do
+datasource "ds_azure_subscriptions" do
   request do
-    auth $azure_auth
-    pagination $azure_pagination
+    auth $auth_azure
+    pagination $pagination_azure
     host $param_azure_endpoint
     path "/subscriptions/"
     query "api-version", "2020-01-01"
@@ -130,136 +144,194 @@ datasource "ds_subscriptions" do
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "subscriptionId", jmes_path(col_item,"subscriptionId")
-      field "displayName", jmes_path(col_item,"displayName")
-      field "state", jmes_path(col_item,"state")
-      field "tags", jmes_path(col_item,"tags")
+      field "id", jmes_path(col_item, "subscriptionId")
+      field "name", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
     end
   end
 end
 
-datasource "ds_filtered_subscriptions" do
-  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_allowed_list
+datasource "ds_azure_subscriptions_filtered" do
+  run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
 end
 
-datasource "ds_azure_role_definitions" do
-  iterate $ds_filtered_subscriptions
-  request do
-    auth $azure_auth
-    pagination $azure_pagination
-    host $param_azure_endpoint
-    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Authorization/roleDefinitions"])
-    query "api-version", "2015-07-01"
-    header "User-Agent", "RS Policies"
-    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-    ignore_status [400, 403, 404]
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "value[*]") do
-      field "id", jmes_path(col_item,"id")
-      field "type", jmes_path(col_item,"type")
-      field "name", jmes_path(col_item,"name")
-      field "properties", jmes_path(col_item,"properties")
-      field "subscriptionName",val(iter_item,"displayName")
-    end
-  end
-end
-
-datasource "ds_filtered_azure_role_definitions" do
-  run_script $js_filtered_azure_role_definitions, $ds_azure_role_definitions, $param_azure_roles
-end
-
-datasource "ds_azure_role_assignments" do
-  iterate $ds_filtered_subscriptions
-  request do
-    auth $azure_auth
-    pagination $azure_pagination
-    host $param_azure_endpoint
-    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Authorization/roleAssignments"])
-    query "api-version", "2015-07-01"
-    query "$filter","atScope()"
-    header "User-Agent", "RS Policies"
-    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-    ignore_status [400, 403, 404]
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "value[*]") do
-      field "id", jmes_path(col_item,"id")
-      field "type", jmes_path(col_item,"type")
-      field "name", jmes_path(col_item,"name")
-      field "properties", jmes_path(col_item,"properties")
-    end
-  end
-end
-
-datasource "filtered_resources" do
-  run_script $js_filter_resources, $ds_azure_role_assignments, $ds_filtered_azure_role_definitions, $ds_azure_users
-end
-
-###############################################################################
-# Scripts
-###############################################################################
-
-script "js_filtered_subscriptions", type: "javascript" do
-  parameters "ds_subscriptions", "param_subscription_allowed_list"
-  result "results"
+script "js_azure_subscriptions_filtered", type: "javascript" do
+  parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
+  result "result"
   code <<-EOS
-  var results = []
-  if ( param_subscription_allowed_list.length != 0){
-    results = []
-    _.each(param_subscription_allowed_list, function(sub){
-      var found = _.find(ds_subscriptions, function(item){
-        return item.subscriptionId == sub || item.displayName.toLowerCase() == sub.toLowerCase();
-      })
-      results.push(found)
+  if (param_subscriptions_list.length > 0) {
+    result = _.filter(ds_azure_subscriptions, function(subscription) {
+      include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
+
+      if (param_subscriptions_allow_or_deny == "Deny") {
+        include_subscription = !include_subscription
+      }
+
+      return include_subscription
     })
   } else {
-    results = ds_subscriptions
+    result = ds_azure_subscriptions
   }
 EOS
 end
 
-script "js_filtered_azure_role_definitions", type: "javascript" do
-  parameters "ds_azure_role_definitions", "param_azure_roles"
-  result "results"
+datasource "ds_azure_role_definitions" do
+  iterate $ds_azure_subscriptions
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Authorization/roleDefinitions"])
+    query "api-version", "2015-07-01"
+    header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "type", jmes_path(col_item, "type")
+      field "name", jmes_path(col_item, "name")
+      field "properties", jmes_path(col_item, "properties")
+      field "roleName", jmes_path(col_item, "properties.roleName")
+      field "subscriptionId", val(iter_item, "id")
+      field "subscriptionName", val(iter_item, "name")
+    end
+  end
+end
+
+datasource "ds_azure_role_definitions_filtered" do
+  run_script $js_azure_role_definitions_filtered, $ds_azure_role_definitions, $param_roles
+end
+
+script "js_azure_role_definitions_filtered", type: "javascript" do
+  parameters "ds_azure_role_definitions", "param_roles"
+  result "result"
   code <<-EOS
-    var results = [];
-    _.each(param_azure_roles,function(role) {
-      var result = _.filter(ds_azure_role_definitions, function(definition){ return definition.properties.roleName == role})
-      results.push(result)
-    })
+  role_types = [param_roles]
+  if (param_roles == "Both") { role_types = ["Owner", "Contributor"] }
+
+  result = _.filter(ds_azure_role_definitions, function(definition) {
+    return _.contains(role_types, definition['roleName'])
+  })
 EOS
 end
 
-script "js_filter_resources", type: "javascript" do
-  parameters "ds_azure_role_assignments", "ds_filtered_azure_role_definitions", "ds_azure_users"
-  result "results"
-  code <<-EOS
-    var results = [];
-    // Iterate through all resources for each array in the array
-    for(var i = 0; i< ds_filtered_azure_role_definitions.length; i++) {
-    _.each(ds_filtered_azure_role_definitions[i], function(definition){
-      var result = _.filter(ds_azure_role_assignments, function(ra) { return ra.properties.roleDefinitionId == definition.id})
-      _.each(result, function(r) {
-        var user = _.find(ds_azure_users, function(user){ return user.id == r.properties.principalId })
-        if (user != null){
-          results.push({
-            name: user.displayName,
-            username: user.mail,
-            principalname: user.userPrincipalName,
-            role: definition.properties.roleName,
-            subscriptionName: definition.subscriptionName,
-            id:r.name
+datasource "ds_azure_role_assignments" do
+  iterate $ds_azure_subscriptions_filtered
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Authorization/roleAssignments"])
+    query "api-version", "2015-07-01"
+    query "$filter", "atScope()"
+    header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "type", jmes_path(col_item, "type")
+      field "name", jmes_path(col_item, "name")
+      field "properties", jmes_path(col_item, "properties")
+      field "roleDefinitionId", jmes_path(col_item, "properties.roleDefinitionId")
+      field "principalId", jmes_path(col_item, "properties.principalId")
+      field "subscriptionId", val(iter_item, "id")
+      field "subscriptionName", val(iter_item, "name")
+    end
+  end
+end
+
+datasource "ds_azure_users" do
+  request do
+    auth $auth_azure_graph
+    pagination $pagination_azure_graph
+    host $param_ms_graph_endpoint
+    path join(["/v1.0/users"])
+    header "User-Agent", "RS Policies"
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "businessPhones", jmes_path(col_item, "businessPhones")
+      field "displayName", jmes_path(col_item, "displayName")
+      field "givenName", jmes_path(col_item, "givenName")
+      field "id", jmes_path(col_item, "id")
+      field "jobTitle", jmes_path(col_item, "jobTitle")
+      field "mail", jmes_path(col_item, "mail")
+      field "mobilePhone", jmes_path(col_item, "mobilePhone")
+      field "officeLocation", jmes_path(col_item, "officeLocation")
+      field "preferredLanguage", jmes_path(col_item, "preferredLanguage")
+      field "surname", jmes_path(col_item, "surname")
+      field "userPrincipalName", jmes_path(col_item, "userPrincipalName")
+    end
+  end
+end
+
+datasource "ds_access_report" do
+  run_script $js_access_report, $ds_azure_role_assignments, $ds_azure_role_definitions_filtered, $ds_azure_users, $ds_applied_policy
+end
+
+script "js_access_report", type: "javascript" do
+  parameters "ds_azure_role_assignments", "ds_azure_role_definitions_filtered", "ds_azure_users", "ds_applied_policy"
+  result "result"
+  code <<-'EOS'
+  assignment_object = {}
+
+  _.each(ds_azure_role_assignments, function(item) {
+    definition_id = item['roleDefinitionId']
+    if (assignment_object[definition_id] == undefined) { assignment_object[definition_id] = [] }
+    assignment_object[definition_id].push(item)
+  })
+
+  user_object = {}
+
+  _.each(ds_azure_users, function(item) {
+    user_object[user['id']] = item
+  })
+
+  result = []
+
+  _.each(ds_azure_role_definitions_filtered, function(definition) {
+    assignments = assignment_object[definition['id']]
+
+    if (assignments != undefined) {
+      _.each(assignments, function(assignment) {
+        user = user_object[assignment['principalId']]
+
+        if (user != undefined) {
+          result.push({
+            accountID: definition['subscriptionId'],
+            accountName: definition['subscriptionName'],
+            resourceName: user['displayName'],
+            username: user['mail'],
+            principalname: user['userPrincipalName'],
+            role: definition['roleName'],
+            id: assignment['name'],
+            policy_name: ds_applied_policy['name'],
+            message: ""
           })
         }
       })
-    })
     }
-    results=_.sortBy(results, 'subscriptionName');
-    results=_.sortBy(results, 'name');
-    results=_.sortBy(results, 'username');
+  })
+
+  result = _.sortBy(result, 'accountName')
+  result = _.sortBy(result, 'name')
+  result = _.sortBy(result, 'username')
+
+  if (result.length > 0) {
+    result[0]["message"] = [
+      result.length.toString(), " Azure users found with the following roles: ",
+      _.compact(_.uniq(_.pluck(result, 'role'))).join(', ')
+    ].join('')
+  }
 EOS
 end
 
@@ -267,30 +339,34 @@ end
 # Policy
 ###############################################################################
 
-policy "azure_resource_policy" do
-  validate_each $filtered_resources do
-    summary_template "{{ len data }} Azure Users who are {{parameters.param_azure_roles}}"
-    escalate $email
-    check eq(0,1)
+policy "pol_subscription_access" do
+  validate_each $ds_access_report do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Users Found"
+    detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
+    check eq(val(item, "resourceName"), "")
+    escalate $esc_email
     export do
       resource_level true
-      field "subscriptionName" do
+      field "accountID" do
+        label "Subscription ID"
+      end
+      field "accountName" do
         label "Subscription Name"
       end
-      field "name" do
-        label "Resource Name"
+      field "resourceName" do
+        label "Display Name"
       end
       field "username" do
-        label "Azure Username"
+        label "User Name"
       end
       field "principalname" do
-        label "Azure User Principal Name"
+        label "Principal Name"
       end
       field "role" do
         label "Role"
       end
       field "id" do
-        label "Role Assignment Id"
+        label "Role Assignment ID"
       end
     end
   end
@@ -300,9 +376,9 @@ end
 # Escalations
 ###############################################################################
 
-escalation "email" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
-  description "Sends incident email"
+  description "Send incident email"
   email $param_email
 end

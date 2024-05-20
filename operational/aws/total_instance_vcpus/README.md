@@ -1,5 +1,9 @@
 # AWS Usage Report - Number of Instance vCPUs Used
 
+## Deprecated
+
+This policy is no longer being updated. The [AWS Usage Report - Instance Time Used](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/total_instance_usage_report/) policy now includes this functionality and should be used instead.
+
 ## What It Does
 
 This Policy Template leverages Flexera CCO APIs to produce a stacked bar chart showing Total Instance vCPUs for AWS Instance Families used per month for the last 12 months.

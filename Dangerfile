@@ -284,6 +284,9 @@ changed_pt_files.each do |file|
 
   # Don't run tests against deprecated policies
   unless policy_deprecated?(file)
+    # Raise error if policy is not in a valid directory within the repo directory structure
+    test = policy_bad_directory?(file); failures << test if test
+
     # Raise error if policy changed but changelog has not been
     test = policy_unmodified_changelog?(file, changed_changelog_files); failures << test if test
 

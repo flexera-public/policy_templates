@@ -440,6 +440,7 @@ datasource "ds_get_existing_policies_incidents" do
     path join(["/api/governance/projects/", rs_project_id, "/incidents"])
     header "Api-Version", "1.0"
     query "meta_parent_policy_id", policy_id
+    query "state", "triggered"
   end
   result do
     collect jq(response, '.items[]?') do
@@ -793,7 +794,6 @@ datasource "ds_child_incident_details" do
     header "User-Agent", "RS Policies"
     header "Api-Version", "1.0"
     query "view", "extended"
-    query "state", "triggered"
   end
 end
 
@@ -825,10 +825,13 @@ escalation "esc_execute_schedules" do
   automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
   label "Execute Schedules"
   description "Approval to start or stop all selected instances based on schedule"
+
+  # Run declaration should go at end, after any parameters that may exist
   run "esc_execute_schedules", data, rs_governance_host, rs_project_id
 end
 define esc_execute_schedules($data, $governance_host, $rs_project_id) do
-  call child_run_action($data, $governance_host, $rs_project_id, "Execute Schedules")
+  $actions_options = []
+  call child_run_action($data, $governance_host, $rs_project_id, "Execute Schedules", $action_options)
 end
 
 # Escalation for Update Schedules
@@ -836,10 +839,18 @@ escalation "esc_update_schedules" do
   automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
   label "Update Schedules"
   description "Approval to update the schedule tags on all selected instances"
-  run "esc_update_schedules", data, rs_governance_host, rs_project_id
+  parameter "param_schedule" do
+    type "string"
+    category "Policy Actions"
+    label "New Schedule"
+    description "Enter a new value for the schedule tag. See README for more details"
+  end
+  # Run declaration should go at end, after any parameters that may exist
+  run "esc_update_schedules", data, rs_governance_host, rs_project_id, $param_schedule
 end
-define esc_update_schedules($data, $governance_host, $rs_project_id) do
-  call child_run_action($data, $governance_host, $rs_project_id, "Update Schedules")
+define esc_update_schedules($data, $governance_host, $rs_project_id, $param_schedule) do
+  $actions_options = [{ "name": "param_schedule", "value": $param_schedule }]
+  call child_run_action($data, $governance_host, $rs_project_id, "Update Schedules", $action_options)
 end
 
 # Escalation for Delete Schedules
@@ -847,10 +858,13 @@ escalation "esc_delete_schedules" do
   automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
   label "Delete Schedules"
   description "Approval to delete the schedule tags on all selected instances"
+
+  # Run declaration should go at end, after any parameters that may exist
   run "esc_delete_schedules", data, rs_governance_host, rs_project_id
 end
 define esc_delete_schedules($data, $governance_host, $rs_project_id) do
-  call child_run_action($data, $governance_host, $rs_project_id, "Delete Schedules")
+  $actions_options = []
+  call child_run_action($data, $governance_host, $rs_project_id, "Delete Schedules", $action_options)
 end
 
 # Escalation for Start Instances
@@ -858,10 +872,13 @@ escalation "esc_start_instances" do
   automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
   label "Start Instances"
   description "Approval to start all selected instances"
+
+  # Run declaration should go at end, after any parameters that may exist
   run "esc_start_instances", data, rs_governance_host, rs_project_id
 end
 define esc_start_instances($data, $governance_host, $rs_project_id) do
-  call child_run_action($data, $governance_host, $rs_project_id, "Start Instances")
+  $actions_options = []
+  call child_run_action($data, $governance_host, $rs_project_id, "Start Instances", $action_options)
 end
 
 # Escalation for Stop Instances
@@ -869,10 +886,13 @@ escalation "esc_stop_instances" do
   automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
   label "Stop Instances"
   description "Approval to stop all selected instances"
+
+  # Run declaration should go at end, after any parameters that may exist
   run "esc_stop_instances", data, rs_governance_host, rs_project_id
 end
 define esc_stop_instances($data, $governance_host, $rs_project_id) do
-  call child_run_action($data, $governance_host, $rs_project_id, "Stop Instances")
+  $actions_options = []
+  call child_run_action($data, $governance_host, $rs_project_id, "Stop Instances", $action_options)
 end
 
 # Escalation for Terminate Instances
@@ -880,10 +900,13 @@ escalation "esc_terminate_instances" do
   automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
   label "Terminate Instances"
   description "Approval to terminate all selected instances"
+
+  # Run declaration should go at end, after any parameters that may exist
   run "esc_terminate_instances", data, rs_governance_host, rs_project_id
 end
 define esc_terminate_instances($data, $governance_host, $rs_project_id) do
-  call child_run_action($data, $governance_host, $rs_project_id, "Terminate Instances")
+  $actions_options = []
+  call child_run_action($data, $governance_host, $rs_project_id, "Terminate Instances", $action_options)
 end
 
 
@@ -1075,7 +1098,7 @@ define groupByIncidentID($data) return $incidents do
   end
 end
 
-define child_run_action($data, $governance_host, $rs_project_id, $action_label) do
+define child_run_action($data, $governance_host, $rs_project_id, $action_label, $action_options) do
   # Empty global array for log strings, helpful for debugging
   $$debug = []
 
@@ -1084,7 +1107,7 @@ define child_run_action($data, $governance_host, $rs_project_id, $action_label) 
   call groupByIncidentID($data) retrieve $incidents
   $$debug_incidents = to_json($incidents)
 
-  call runActions($incidents, $action_label, $governance_host, $rs_project_id)
+  call runActions($incidents, $action_label, $governance_host, $rs_project_id, $action_options)
 
   # If we encountered any errors, use `raise` to mark the CWF process as errored
   if inspect($$errors) != "null"
@@ -1096,7 +1119,7 @@ define child_run_action($data, $governance_host, $rs_project_id, $action_label) 
   task_label("All \""+$action_label+"\" actions completed successfully!")
 end
 
-define runActions($incidents, $action_label, $governance_host, $rs_project_id) do
+define runActions($incidents, $action_label, $governance_host, $rs_project_id, $action_options) do
   foreach $id in keys($incidents) do
     sub on_error: handle_error() do
       $incident = $incidents[$id]
@@ -1136,6 +1159,10 @@ define runActions($incidents, $action_label, $governance_host, $rs_project_id) d
         headers: { "Api-Version": "1.0" },
         body: { "options":[{ "name": "ids",  "value": $incident["resource_ids"] }] }
       }
+      # If the action has parameters, add them to the request body
+      if size($action_options) > 0
+        $request["body"]["options"] = $request["body"]["options"] + $action_options
+      end
       $response = http_request($request)
       $$debug << to_json({
         "request": $request,

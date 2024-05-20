@@ -1,5 +1,16 @@
 # Changelog
 
+## v4.0.0
+
+- Several parameters altered to be more descriptive and human-readable
+- Added ability to only report specific event types
+- Added ability to filter events by how soon they are scheduled to occur
+- Added more robust tag filtering
+- Normalized incident export to be consistent with other policies
+- Added additional fields to incident export
+- Policy no longer raises new escalations if incidental metadata about a resource or event has changed
+- Streamlined code for better readability and faster execution
+
 ## v3.2
 
 - Updated description of `Account Number` parameter

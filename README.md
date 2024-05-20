@@ -128,10 +128,6 @@ These templates can generate savings estimates for your environment.
 
   - [Azure Policy Audit](./compliance/azure/azure_policy_audit)
 
-- Identity
-
-  - [Azure Subscription Access](./compliance/azure/subscription_access)
-
 #### Flexera
 
 - Cloud Cost Optimization
@@ -178,7 +174,10 @@ These templates can generate savings estimates for your environment.
 - Compute
 
   - [AWS Burstable EC2 Instances](./cost/aws/burstable_ec2_instances)
+  - [AWS EC2 Instances Time Stopped Report](./operational/aws/ec2_stopped_report)
+  - [AWS EKS Clusters Without Spot Instances](./cost/aws/eks_without_spot)
   - [AWS Expiring Savings Plans](./cost/aws/savings_plan/expiration)
+  - [AWS Reserved Instances Coverage](./cost/aws/reserved_instances/coverage)
   - [AWS Reserved Instances Recommendations](./cost/aws/reserved_instances/recommendations)
   - [AWS Reserved Instances Utilization](./cost/aws/reserved_instances/utilization)
   - [AWS Rightsize EBS Volumes](./cost/aws/rightsize_ebs_volumes)
@@ -188,7 +187,6 @@ These templates can generate savings estimates for your environment.
   - [AWS Schedule Instance](./cost/aws/schedule_instance)
   - [AWS Superseded EC2 Instances](./cost/aws/superseded_instances)
   - [AWS Unused IP Addresses](./cost/aws/unused_ip_addresses)
-  - [Reserved Instances Coverage](./cost/aws/reserved_instances/coverage)
   - [Turbonomic Allocate Virtual Machine Recommendations AWS](./cost/turbonomics/allocate_virtual_machines_recommendations/aws)
   - [Turbonomic Rightsize Virtual Machines Recommendations AWS](./cost/turbonomics/scale_virtual_machines_recommendations/aws)
 
@@ -264,7 +262,7 @@ These templates can generate savings estimates for your environment.
 
   - [Azure Hybrid Use Benefit for SQL](./cost/azure/hybrid_use_benefit_sql)
   - [Azure Rightsize SQL Databases](./cost/azure/rightsize_sql_instances)
-  - [Azure SQL Databases without Elastic Pools](./operational/azure/azure_sql_using_elastic_pool)
+  - [Azure SQL Servers Without Elastic Pools](./cost/azure/sql_servers_without_elastic_pool)
 
 - Storage
 
@@ -316,23 +314,13 @@ These templates can generate savings estimates for your environment.
 
 #### Flexera Optima
 
-- [Reserved Instance Report by Billing Center](./cost/aws/reserved_instances/report_by_bc)
-- [Scheduled Report for Unallocated Costs](./cost/scheduled_report_unallocated)
+- [Scheduled Report for Unallocated Costs](./cost/flexera/cco/scheduled_report_unallocated)
 
 #### GCE
-
-- Compute
-
-  - [Google Committed Use Discount (CUD)](./cost/google/cud_report)
-  - [Google Expiring Committed Use Discount (CUD)](./cost/google/cud_expiration)
 
 - SQL
 
   - [Google Rightsize CloudSQL Instances](./cost/google/cloudsql_rightsizing)
-
-- Storage
-
-  - [Google Object Storage Optimization](./cost/google/object_storage_optimization)
 
 #### Google
 
@@ -343,6 +331,8 @@ These templates can generate savings estimates for your environment.
 - Compute
 
   - [Google Committed Use Discount Recommender](./cost/google/cud_recommendations)
+  - [Google Committed Use Discount Report](./cost/google/cud_report)
+  - [Google Expiring Committed Use Discounts (CUD)](./cost/google/cud_expiration)
   - [Google Idle IP Address Recommender](./cost/google/idle_ip_address_recommendations)
   - [Google Rightsize VM Recommender](./cost/google/rightsize_vm_recommendations)
   - [Google Schedule Instance](./cost/google/schedule_instance)
@@ -356,6 +346,7 @@ These templates can generate savings estimates for your environment.
 - Storage
 
   - [Google Idle Persistent Disk Recommender](./cost/google/idle_persistent_disk_recommendations)
+  - [Google Object Storage Optimization](./cost/google/object_storage_optimization)
   - [Google Old Snapshots](./cost/google/old_snapshots)
   - [Turbonomic Delete Unattached Volumes Recommendations Google](./cost/turbonomics/delete_unattached_volumes/google)
 
@@ -378,13 +369,10 @@ These templates can generate savings estimates for your environment.
 
 - Compute
 
-  - [AWS Instance Scheduled Events](./operational/aws/instance_scheduled_events)
   - [AWS Long Running Instances](./operational/aws/long_running_instances)
-  - [AWS Usage Forecast - Number of Instance Hours Used](./operational/aws/total_instance_hours_forecast)
-  - [AWS Usage Forecast - Number of Instance vCPUs Used](./operational/aws/total_instance_vcpus_forecast)
-  - [AWS Usage Report - Amount of Instance Memory Used](./operational/aws/total_instance_memory)
-  - [AWS Usage Report - Number of Instance Hours Used](./operational/aws/total_instance_hours)
-  - [AWS Usage Report - Number of Instance vCPUs Used](./operational/aws/total_instance_vcpus)
+  - [AWS Scheduled EC2 Events](./operational/aws/scheduled_ec2_events)
+  - [AWS Usage Forecast - Instance Time Used](./operational/aws/total_instance_usage_forecast)
+  - [AWS Usage Report - Instance Time Used](./operational/aws/total_instance_usage_report)
 
 - PaaS
 
@@ -619,21 +607,22 @@ These templates can generate savings estimates for your environment.
 <!--
 ---
 :categories:
-  Compliance: 33
-  Cost: 94
-  Operational: 24
+  Compliance: 32
+  Cost: 95
+  Operational: 21
   SaaS Management: 12
   Security: 74
 :optimization_count: 50
 :policy_sets:
-  '': 42
+  '': 40
   AWS Config: 1
   Allocate VMs: 3
   Automation: 1
+  Autoscaling: 1
   Burstable Compute Instances: 1
   CIS: 61
   Cloud Cost Optimization: 14
-  Committed Use Discount: 1
+  Committed Use Discount: 2
   Common Bill Ingestion: 2
   Database Services: 1
   Databricks: 1
@@ -681,23 +670,23 @@ These templates can generate savings estimates for your environment.
   Unused IP Addresses: 3
   Unused Load Balancers: 1
   Unused Volumes: 6
-  Usage Report: 8
+  Usage Report: 5
 :providers:
-  AWS: 82
-  Azure: 84
+  AWS: 81
+  Azure: 83
   Azure China: 1
   Flexera: 37
-  Flexera Optima: 2
-  GCE: 4
+  Flexera Optima: 1
+  GCE: 1
   GitHub: 7
-  Google: 14
+  Google: 17
   Kubecost: 2
   Microsoft: 1
   Okta: 1
   Oracle: 1
   ServiceNow: 1
 :services:
-  '': 13
+  '': 12
   AKS: 2
   All: 3
   App Service: 1
@@ -705,7 +694,7 @@ These templates can generate savings estimates for your environment.
   Cloud Cost Optimization: 18
   CloudTrail: 7
   Common Bill Ingestion: 2
-  Compute: 61
+  Compute: 60
   Config: 1
   DBS: 1
   Databricks: 1
@@ -714,7 +703,6 @@ These templates can generate savings estimates for your environment.
   FlexNet Manager: 1
   IAM: 19
   IT Asset Management: 6
-  Identity: 1
   Identity & Access Management: 1
   KMS: 1
   Kubernetes: 2
@@ -739,7 +727,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 237
+:total_count: 234
 -->
 <!-- End Policy Template Stats -->
 

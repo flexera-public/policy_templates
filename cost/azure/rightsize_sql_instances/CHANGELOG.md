@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.2.1
+
+- Fixed a bug causing $0 recommendations
+
 ## v5.2.0
 
 - New fields added to incident output: `Last Accessed` and `Status`
