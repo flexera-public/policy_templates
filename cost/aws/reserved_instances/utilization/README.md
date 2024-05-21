@@ -2,21 +2,16 @@
 
 ## What It Does
 
-This policy template generates a report of all AWS Reservations whose utilization is below a user-specified threshold.
-
-This Policy Template leverages the AWS Reserved Instances (RI) report. It will notify only if utilization of an RI falls below the value specified in the `Show Reservations with utilization below this value` field. It will email the user specified in `Email addresses of the recipients you wish to notify`
+This policy template generates a report of all AWS Reservations whose utilization is below a user-specified threshold. Optionally, this report can be emailed.
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
-
-- *Billing Center Name* - Filter reservations for a specific Billing Center/s by entering Billing Center names
-- *Show Reservations with utilization below this value (%)* - Number between 1 and 100
-- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
+- *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
+- *Utilization Threshold (%)* - Reservations with utilization below this percentage will be included in the results.
+- *Allow/Deny Billing Centers* - Allow or Deny entered Billing Centers.
+- *Allow/Deny Billing Center List* - A list of allowed or denied Billing Center names/IDs. Leave blank to report on reservations in all Billing Centers.
 
 ## Policy Actions
-
-The following policy actions are taken on any resources found to be out of compliance.
 
 - Send an email report
 

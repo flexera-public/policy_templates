@@ -4,7 +4,7 @@
 
 - Billing Center list can now be used as an allow list or a deny list
 - Added logic to prevent duplicate results due to overlapping child/parent billing centers
-- Added additional context to incident output
+- Added additional fields and context to incident output
 - Normalized incident output for parity with other policy templates
 - Streamlined code for better readability and faster execution
 
