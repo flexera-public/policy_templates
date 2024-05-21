@@ -16,7 +16,7 @@ This Policy Template leverages Flexera CCO APIs to produce a stacked bar chart s
 - *Email Addresses* - A list of email addresses to notify.
 - *Months Back* - How many months to go back in the chart/incident.
 - *Instance Unit* - Instance (Virtual Machine) unit to normalize usage against. Supported units:
-  - `Normalized Units (NFUs)` - Normalize the data against each [Instance Size Flexibility (ISF) Ratio](https://learn.microsoft.com/en-us/azure/virtual-machines/reserved-vm-instance-size-flexibility) of each Virtual Machine instance.
+  - `Normalized Instance Count` - Normalize the data against each [Instance Size Flexibility (ISF) Ratio](https://learn.microsoft.com/en-us/azure/virtual-machines/reserved-vm-instance-size-flexibility) of each Virtual Machine instance.
   - `vCPUs` - Normalize the data against each vCPU of each Virtual Machine instance.
   - `Memory (GiB)` - Normalize the data against each GiB of total memory of each Virtual Machine instance.
 - *Time Unit* - Unit of time to use for results. The `Instance Unit` will be normalized to this time unit. Units are calculated as follows:
