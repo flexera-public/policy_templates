@@ -397,9 +397,7 @@ These templates can generate savings estimates for your environment.
 
   - [Azure Bring-Your-Own-License (BYOL) Report](./operational/azure/byol_report)
   - [Azure Long Running Instances](./operational/azure/azure_long_running_instances)
-  - [Azure Usage Report - Amount of Instance Memory Used](./operational/azure/total_instance_memory)
-  - [Azure Usage Report - Number of Instance Hours Used](./operational/azure/total_instance_hours)
-  - [Azure Usage Report - Number of Instance vCPUs Used](./operational/azure/total_instance_vcpus)
+  - [Azure Usage Report - Instance Time Used](./operational/azure/total_instance_usage_report)
   - [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks)
 
 - PaaS
@@ -609,7 +607,7 @@ These templates can generate savings estimates for your environment.
 :categories:
   Compliance: 32
   Cost: 95
-  Operational: 21
+  Operational: 19
   SaaS Management: 12
   Security: 74
 :optimization_count: 50
@@ -670,10 +668,10 @@ These templates can generate savings estimates for your environment.
   Unused IP Addresses: 3
   Unused Load Balancers: 1
   Unused Volumes: 6
-  Usage Report: 5
+  Usage Report: 3
 :providers:
   AWS: 81
-  Azure: 83
+  Azure: 81
   Azure China: 1
   Flexera: 37
   Flexera Optima: 1
@@ -694,7 +692,7 @@ These templates can generate savings estimates for your environment.
   Cloud Cost Optimization: 18
   CloudTrail: 7
   Common Bill Ingestion: 2
-  Compute: 60
+  Compute: 58
   Config: 1
   DBS: 1
   Databricks: 1
@@ -727,7 +725,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 234
+:total_count: 232
 -->
 <!-- End Policy Template Stats -->
 
