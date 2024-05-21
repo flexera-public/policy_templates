@@ -1,6 +1,8 @@
 # AWS Reserved Instances Utilization
 
-## What it does
+## What It Does
+
+This policy template generates a report of all AWS Reservations whose utilization is below a user-specified threshold.
 
 This Policy Template leverages the AWS Reserved Instances (RI) report. It will notify only if utilization of an RI falls below the value specified in the `Show Reservations with utilization below this value` field. It will email the user specified in `Email addresses of the recipients you wish to notify`
 
