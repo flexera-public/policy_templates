@@ -1127,7 +1127,7 @@ def policy_missing_recommendation_fields?(file, field_type)
   end
 
   if field_type == "recommended"
-    required_fields = [ "resourceType", "resourceName", "region", "tags" ]
+    required_fields = [ "resourceName", "region", "tags" ]
   end
 
   if !info[:recommendation_type].nil?
