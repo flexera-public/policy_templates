@@ -258,6 +258,10 @@ These templates can generate savings estimates for your environment.
 
   - [Azure Unused Firewalls](./cost/azure/unused_firewalls)
 
+- PaaS
+
+  - [Azure Web Apps With Unoptimized Scaling](./cost/azure/unoptimized_web_app_scaling)
+
 - SQL
 
   - [Azure Hybrid Use Benefit for SQL](./cost/azure/hybrid_use_benefit_sql)
@@ -606,7 +610,7 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 32
-  Cost: 95
+  Cost: 96
   Operational: 19
   SaaS Management: 12
   Security: 74
@@ -644,6 +648,7 @@ These templates can generate savings estimates for your environment.
   Old Snapshots: 3
   Open Buckets: 1
   Open S3 Buckets: 1
+  PaaS Optimization: 1
   Public Database Access: 2
   Reserved Instance: 2
   Reserved Instances: 5
@@ -671,7 +676,7 @@ These templates can generate savings estimates for your environment.
   Usage Report: 3
 :providers:
   AWS: 81
-  Azure: 81
+  Azure: 82
   Azure China: 1
   Flexera: 37
   Flexera Optima: 1
@@ -712,7 +717,7 @@ These templates can generate savings estimates for your environment.
   Network Security Group: 2
   Office 365: 1
   Org: 1
-  PaaS: 2
+  PaaS: 3
   PostgreSQL: 4
   RDS: 4
   S3: 6
@@ -725,7 +730,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 232
+:total_count: 233
 -->
 <!-- End Policy Template Stats -->
 
