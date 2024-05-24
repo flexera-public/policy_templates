@@ -8,7 +8,7 @@ category "Cost"
 tenancy "single"
 default_frequency "daily"
 info(
-  version: "2.5.1",
+  version: "2.5.2",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization"
@@ -280,11 +280,11 @@ script "js_reports", type: "javascript" do
 end
 
 datasource "ds_aggregated_report" do
-  run_script $js_aggregated_report, $ds_reports, $ds_currency_code, $ds_currency_reference, $ds_dimensions, $ds_filters, $param_budget_name_id, f1_app_host
+  run_script $js_aggregated_report, $ds_reports, $ds_currency_code, $ds_currency_reference, $ds_dimensions, $ds_filters, $param_budget_name_id, f1_app_host, $param_report_type
 end
 
 script "js_aggregated_report", type: "javascript" do
-  parameters "reports", "currency_code", "currency_reference", "ds_dimensions", "filters", "budget_name_id", "f1_app_host"
+  parameters "reports", "currency_code", "currency_reference", "ds_dimensions", "filters", "budget_name_id", "f1_app_host" , "report_type"
   result "results"
   code <<-EOS
   var invalid = [];
@@ -354,8 +354,9 @@ script "js_aggregated_report", type: "javascript" do
   var yearMonthsArr = [];
   var chartMap = {};
   var currentYearMonth = fmtDate(currentDate);
+  var cumulativeAmount = {};
 
-  _.each(reports, function (item, idx) {
+  _.each(_.sortBy(_.sortBy(reports, function (item) {return item.group;}), function (item) {return item.monthYear;}), function (item, idx) {
     item.currency = currency_code.value;
     if (idx == 0) {
       yearMonthsArr = item.yearMonths.filter(function (ym) {
@@ -368,6 +369,12 @@ script "js_aggregated_report", type: "javascript" do
         };
       });
     }
+    if (!cumulativeAmount[item.group]) {
+      cumulativeAmount[item.group] = { 
+        budget: 0,
+        spend: 0,
+        };
+    }
 
     item.budgetAmount = item.budgetAmount || 0;
     item.spendAmount = item.spendAmount || 0;
@@ -378,11 +385,22 @@ script "js_aggregated_report", type: "javascript" do
 
     item.budgetAmount = Math.round(item.budgetAmount * 100) / 100;
     item.spendAmount = Math.round(item.spendAmount * 100) / 100;
-    item.overBudgetAmount = Math.max(0, Math.round((item.spendAmount - item.budgetAmount) * 100) / 100);
+
+    if (report_type == "Cumulative") {
+      cumulativeAmount[item.group].budget += item.budgetAmount;
+      cumulativeAmount[item.group].spend += item.spendAmount;
+      item.reportSpecificBudget =  cumulativeAmount[item.group].budget;
+      item.reportSpecificSpend = cumulativeAmount[item.group].spend;
+    }else{
+      item.reportSpecificBudget =  item.budgetAmount;
+      item.reportSpecificSpend = item.spendAmount;
+    }
+
+    item.overBudgetAmount = Math.max(0, Math.round((item.reportSpecificSpend - item.reportSpecificBudget) * 100) / 100);
 
     // values for export
-    item.budget = item.budgetAmount;
-    item.spend = item.spendAmount;
+    item.budget = item.reportSpecificBudget;
+    item.spend = item.reportSpecificSpend;
     item.overBudget = item.overBudgetAmount;
     item.group = "";
     item.is_budgeted = true;
@@ -410,14 +428,23 @@ script "js_aggregated_report", type: "javascript" do
 
   var chartBudget = [];
   var chartSpend = [];
+  cumulativeBudget = 0;
+  cumulativeSpend = 0;
   _.each(yearMonthsArr, function (ym) {
-    chartBudget.push(Math.round(chartMap[ym].budget));
-    chartSpend.push(Math.round(chartMap[ym].spend));
+    if (report_type == "Cumulative") {
+      cumulativeBudget += chartMap[ym].budget
+      cumulativeSpend += chartMap[ym].spend
+      chartBudget.push(Math.round(cumulativeBudget));
+      chartSpend.push(Math.round(cumulativeSpend));
+    }else{
+      chartBudget.push(Math.round(chartMap[ym].budget));
+      chartSpend.push(Math.round(chartMap[ym].spend));
+    }
   });
 
   var results = {
     invalid: invalid,
-    reportData: _.sortBy(reportData, function (item) {return item.group;}),
+    reportData: reportData,
     chartType: encodeURI('cht=lc'),
     chartScaling: encodeURI('chds=a'),
     chartFormat: encodeURI('chxs=1N*c'+ currency_code.value +'0zsx*'),
@@ -488,10 +515,10 @@ EOS
       field "group" do
         label "Group"
       end
-      field "budgetAmount" do
+      field "budget" do
         label "Budget"
       end
-      field "spendAmount" do
+      field "spend" do
         label "Actual Spend"
       end
       field "overBudget" do
