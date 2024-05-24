@@ -6,7 +6,6 @@ This policy generates an email report comparing actual spending to budgeted valu
 
 ## Input Parameters
 
-
 - _Report Type_: Allows selection between cumulative and monthly reporting options.
 - _Budget Name or ID_: The name or ID of the target Budget.
 - _Filter Group By Dimensions_: Filter by dimension=value pairs (e.g., 'Cloud Vendor=AWS'). Multiple values for the same dimension can be supplied as coma-separated list.
