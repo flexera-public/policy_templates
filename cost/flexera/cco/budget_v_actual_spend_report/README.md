@@ -22,6 +22,8 @@ Refer to the [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN
 
 ## Input Parameters
 
+
+- _Report Type_: Allows selection between cumulative and monthly reporting options.
 - _Budget Name or ID_: The name or ID of the target Budget.
 - _Filter Group By Dimensions_: Filter by dimension=value pairs (e.g., 'Cloud Vendor=AWS'). Multiple values for the same dimension can be supplied as coma-separated list.
 - _Unbudgeted Spend_: Parameter to include or exclude unbudgeted funds in the calculation.
