@@ -36,6 +36,15 @@ parameter "param_filter" do
   default []
 end
 
+parameter "param_report_type" do
+  type "string"
+  category "Policy Settings"
+  label "Report type (cumulative or monthly)"
+  description "Select the type of report to generate: Cumulative or Monthly(non-cumulative)."
+  allowed_values "Monthly", "Cumulative"
+  default "Monthly"
+end
+
 parameter "param_unbudgeted" do
   type "string"
   category "Policy Settings"
@@ -271,15 +280,16 @@ script "js_reports", type: "javascript" do
 end
 
 datasource "ds_aggregated_report" do
-  run_script $js_aggregated_report, $ds_reports, $ds_currency_code, $ds_currency_reference, $ds_dimensions, $ds_filters, $param_budget_name_id, f1_app_host
+  run_script $js_aggregated_report, $ds_reports, $ds_currency_code, $ds_currency_reference, $ds_dimensions, $ds_filters, $param_budget_name_id, $param_report_type, f1_app_host
 end
 
 script "js_aggregated_report", type: "javascript" do
-  parameters "reports", "currency_code", "currency_reference", "ds_dimensions", "filters", "budget_name_id", "f1_app_host"
+  parameters "reports", "currency_code", "currency_reference", "ds_dimensions", "filters", "budget_name_id", "report_type", "f1_app_host"
   result "results"
   code <<-EOS
   var invalid = [];
   var reportData = [];
+  var currentDate = new Date();
 
   if (!reports || !reports.length) {
     invalid.push(budget_name_id);
@@ -343,17 +353,27 @@ script "js_aggregated_report", type: "javascript" do
 
   var yearMonthsArr = [];
   var chartMap = {};
+  var currentYearMonth = fmtDate(currentDate);
+  var cumulativeAmount = {};
 
-  _.each(reports, function (item, idx) {
+  _.each(_.sortBy(_.sortBy(reports, function (item) {return item.group;}), function (item) {return item.monthYear;}), function (item, idx) {
     item.currency = currency_code.value;
     if (idx == 0) {
-      yearMonthsArr = item.yearMonths;
+      yearMonthsArr = item.yearMonths.filter(function (ym) {
+        return ym <= currentYearMonth;
+      });
       _.each(item.yearMonths, function (ym) {
         chartMap[ym] = {
           budget: 0,
           spend: 0,
         };
       });
+    }
+    if (!cumulativeAmount[item.group]) {
+      cumulativeAmount[item.group] = { 
+        budget: 0,
+        spend: 0,
+        };
     }
 
     item.budgetAmount = item.budgetAmount || 0;
@@ -365,11 +385,22 @@ script "js_aggregated_report", type: "javascript" do
 
     item.budgetAmount = Math.round(item.budgetAmount * 100) / 100;
     item.spendAmount = Math.round(item.spendAmount * 100) / 100;
-    item.overBudgetAmount = Math.max(0, Math.round((item.spendAmount - item.budgetAmount) * 100) / 100);
+
+    if (report_type == "Cumulative") {
+      cumulativeAmount[item.group].budget += item.budgetAmount;
+      cumulativeAmount[item.group].spend += item.spendAmount;
+      item.reportSpecificBudget =  cumulativeAmount[item.group].budget;
+      item.reportSpecificSpend = cumulativeAmount[item.group].spend;
+    }else{
+      item.reportSpecificBudget =  item.budgetAmount;
+      item.reportSpecificSpend = item.spendAmount;
+    }
+
+    item.overBudgetAmount = Math.max(0, Math.round((item.reportSpecificSpend - item.reportSpecificBudget) * 100) / 100);
 
     // values for export
-    item.budget = item.budgetAmount;
-    item.spend = item.spendAmount;
+    item.budget = item.reportSpecificBudget;
+    item.spend = item.reportSpecificSpend;
     item.overBudget = item.overBudgetAmount;
     item.group = "";
     item.is_budgeted = true;
@@ -386,16 +417,6 @@ script "js_aggregated_report", type: "javascript" do
     }
     item.metric = cost_metric[item.metric || ''] || item.metric;
 
-    if (item.budget > 0) {
-      item.budget = currency + item.budget;
-    }
-    if (item.spend > 0) {
-      item.spend = currency + item.spend;
-    }
-    if (item.overBudget <= 0) {
-      item.overBudget = 0;
-    }
-
     item.host = f1_app_host;
     item.dimm = get_dimm_names(item.dimensionsIDs);
 
@@ -406,17 +427,26 @@ script "js_aggregated_report", type: "javascript" do
 
   var chartBudget = [];
   var chartSpend = [];
+  cumulativeBudget = 0;
+  cumulativeSpend = 0;
   _.each(yearMonthsArr, function (ym) {
-    chartBudget.push(Math.round(chartMap[ym].budget));
-    chartSpend.push(Math.round(chartMap[ym].spend));
+    if (report_type == "Cumulative") {
+      cumulativeBudget += chartMap[ym].budget
+      cumulativeSpend += chartMap[ym].spend
+      chartBudget.push(Math.round(cumulativeBudget));
+      chartSpend.push(Math.round(cumulativeSpend));
+    }else{
+      chartBudget.push(Math.round(chartMap[ym].budget));
+      chartSpend.push(Math.round(chartMap[ym].spend));
+    }
   });
 
   var results = {
     invalid: invalid,
-    reportData: _.sortBy(reportData, function (item) {return item.group;}),
+    reportData: reportData,
     chartType: encodeURI('cht=lc'),
     chartScaling: encodeURI('chds=a'),
-    chartFormat: encodeURI('chxs=1N*cUSD0zsx*'),
+    chartFormat: encodeURI('chxs=1N*c'+ currency_code.value +'0zsx*'),
     chartTitle: encodeURI('chtt=Spending+Overview'),
     chartAxVis: encodeURI('chxt=x,y'),
     chartSize: encodeURI('chs=700x250'),
@@ -447,15 +477,20 @@ EOS
   end
 
   validate $ds_aggregated_report do
-    summary_template "{{with index data.reportData 0}}{{ .name }}{{end}}: Monthly Budget vs Actual Spend Report"
+    summary_template "{{with index data.reportData 0}}{{ .name }}{{end}}: {{parameters.param_report_type}} Budget vs Actual Spend Report"
     detail_template <<-EOS
-  # {{with index data.reportData 0}}{{ .name }}{{end}}: Monthly Budget vs Actual Spend Report
+  # {{with index data.reportData 0}}{{ .name }}{{end}}: {{parameters.param_report_type}} Budget vs Actual Spend Report
 
   Currency: **{{with index data.reportData 0}}{{ .currency }}{{end}}**
 
   Cost Metric: **{{with index data.reportData 0}}{{ .metric }}{{end}}**
 
   Dimensions: **{{with index data.reportData 0}}{{ .dimm }}{{end}}**
+
+  {{ if eq parameters.param_report_type  "Cumulative"  }}
+  Target Groups: \n
+    Note : Budget, Actual Spend, and Overspend columns throughout this report reflect cumulative totals.
+  {{end}}
 
   {{ if parameters.param_filter }}
   Target Groups: \n
@@ -479,10 +514,10 @@ EOS
       field "group" do
         label "Group"
       end
-      field "budgetAmount" do
+      field "budget" do
         label "Budget"
       end
-      field "spendAmount" do
+      field "spend" do
         label "Actual Spend"
       end
       field "overBudget" do
