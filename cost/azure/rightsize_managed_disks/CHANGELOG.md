@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.0.1
+
+- Fixed error related to the calculation of unitOfMeasure for the method findUltraPrice for ultra sized disk
+
 ## v2.0
 
 - Added support for regex when filtering resources by tag
