@@ -1,6 +1,6 @@
 # Budget vs Actual Spend Report
 
-## What it does
+## What It Does
 
 This policy generates an email report comparing actual spending to budgeted values. It utilizes the Flexera Budget API to gather details and sends the report via email, eliminating the need for stakeholders to log in to Flexera One for report access.
 
