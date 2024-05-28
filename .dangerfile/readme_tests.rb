@@ -406,7 +406,7 @@ def readme_invalid_credentials?(file)
       fail_message += "```- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:```\n\n"
     end
 
-    flexera_perm_tester = /^`[a-zA-Z0-9\-_\.]+`(?:\*)?$/
+    flexera_perm_tester = /^`[a-zA-Z0-9\-_\.:]+`(?:\*)?$/
     asterix_found = 0
     permission_list_found = 0
 
