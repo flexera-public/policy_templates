@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "6.1",
+  version: "6.2.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Inefficient Disk Usage",
@@ -65,8 +65,8 @@ parameter "param_regions_list" do
   type "list"
   category "Filters"
   label "Allow/Deny Regions List"
-  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   description "A list of allowed or denied regions. See the README for more details"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   default []
 end
 
@@ -119,21 +119,12 @@ end
 # Pagination
 ###############################################################################
 
-pagination "pagination_aws_volumes" do
+pagination "pagination_aws" do
   get_page_marker do
     body_path "//DescribeVolumesResponse/nextToken"
   end
   set_page_marker do
     query "NextToken"
-  end
-end
-
-pagination "pagination_aws_pricing" do
-  get_page_marker do
-    body_path "NextToken"
-  end
-  set_page_marker do
-    body_field "NextToken"
   end
 end
 
@@ -222,9 +213,9 @@ datasource "ds_get_caller_identity" do
     verb "GET"
     host "sts.amazonaws.com"
     path "/"
-    header "User-Agent", "RS Policies"
     query "Action", "GetCallerIdentity"
     query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
   end
   result do
     encoding "xml"
@@ -262,9 +253,9 @@ datasource "ds_billing_centers" do
     auth $auth_flexera
     host rs_optima_host
     path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
     ignore_status [403]
   end
   result do
@@ -449,9 +440,9 @@ end
 datasource "ds_volumes" do
   iterate $ds_regions
   request do
-    verb "GET"
     auth $auth_aws
-    pagination $pagination_aws_volumes
+    pagination $pagination_aws
+    verb "GET"
     host join(["ec2.", val(iter_item, "region"), ".amazonaws.com"])
     path "/"
     query "Action", "DescribeVolumes"
@@ -477,7 +468,7 @@ datasource "ds_volumes" do
         end
       end
       field "tags" do
-        collect xpath(col_item,"tagSet/item", "array") do
+        collect xpath(col_item, "tagSet/item", "array") do
           field "key", xpath(col_item, "key")
           field "value", xpath(col_item, "value")
         end
@@ -635,7 +626,7 @@ script "js_volumes_with_prices", type: "javascript" do
     convertedPriceList = {}
 
     _.each(priceList, function(price) {
-      entry = JSON.parse(price.replace(/\\"/g,'"'))
+      entry = JSON.parse(price.replace(/\\"/g, '"'))
       region = entry['product']['attributes']['regionCode']
 
       if (convertedPriceList[region] == undefined) {
@@ -788,7 +779,7 @@ datasource "ds_volume_costs" do
   end
   result do
     encoding "json"
-    collect jmes_path(response,"rows[*]") do
+    collect jmes_path(response, "rows[*]") do
       field "resourceId", jmes_path(col_item, "dimensions.resource_id")
       field "resourceType", jmes_path(col_item, "dimensions.resource_type")
       field "vendorAccountName", jmes_path(col_item, "dimensions.vendor_account_name")
@@ -936,7 +927,7 @@ script "js_underutil_volumes", type: "javascript" do
       result.push({
         resourceID: volume['volumeId'],
         resourceName: volume['volumeName'],
-        resourceType: volume['volumeType'],
+        type: volume['volumeType'],
         encrypted: volume['encrypted'],
         createTime: startDate.toISOString(),
         iops: volume['iops'],
@@ -994,14 +985,30 @@ script "js_underutil_volumes", type: "javascript" do
 
   // Dummy item to ensure the policy's check statement always executes at least once
   result.push({
-    resourceID: "",          resourceName: "",    resourceType: "",
-    encrypted: "",           createTime: "",      iops: "",
-    size: "",                state: "",           throughput: "",
-    attachmentStatus: "",    tags: "",            region: "",
-    gp2_price: "",           gp3_price: "",       savings: "",
-    savingsCurrency: "",     cost: "",            age: "",
-    accountID: "",           accountName: "",     recommendationDetails: "",
-    policy_name: "",         service: "",         total_savings: "",
+    resourceID: "",
+    resourceName: "",
+    type: "",
+    encrypted: "",
+    createTime: "",
+    iops: "",
+    size: "",
+    state: "",
+    throughput: "",
+    attachmentStatus: "",
+    tags: "",
+    region: "",
+    gp2_price: "",
+    gp3_price: "",
+    savings: "",
+    savingsCurrency: "",
+    cost: "",
+    age: "",
+    accountID: "",
+    accountName: "",
+    recommendationDetails: "",
+    policy_name: "",
+    service: "",
+    total_savings: "",
     message: ""
   })
 
@@ -1049,8 +1056,8 @@ policy "pol_underutil_volumes" do
       field "recommendationDetails" do
         label "Recommendation"
       end
-      field "resourceType" do
-        label "Resource Type"
+      field "type" do
+        label "Type"
       end
       field "region" do
         label "Region"
@@ -1126,7 +1133,7 @@ define upgrade_volumes($data) return $all_responses do
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -1181,7 +1188,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
     header "Api-Version", "1.0"
   end
   result do

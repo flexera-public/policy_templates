@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.3.0
+
+- Modified internal names for incident fields for more accurate scraping into Optimization dashboard
+
 ## v5.2.1
 
 - Fixed a bug causing $0 recommendations

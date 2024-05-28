@@ -1,5 +1,9 @@
 # Changelog
 
+## v8.3.0
+
+- Modified internal names for incident fields for more accurate scraping into Optimization dashboard
+
 ## v8.2
 
 - Fixed issue where duplicate results would sometimes occur for RDS DB snapshots.
