@@ -2,7 +2,7 @@
 
 ## v2.0.1
 
-- Fixed error related to the calculation of unitOfMeasure for the method findUltraPrice for ultra sized disk
+- Fixed bug that caused wrong calculations for ultra tier disks
 
 ## v2.0
 
