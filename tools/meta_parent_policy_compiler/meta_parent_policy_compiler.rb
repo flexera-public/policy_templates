@@ -73,6 +73,7 @@ default_child_policy_template_files = [
   "../../operational/azure/aks_nodepools_without_zero_autoscaling/aks_nodepools_without_zero_autoscaling.pt",
   "../../operational/azure/azure_certificates/azure_certificates.pt",
   "../../operational/azure/azure_long_running_instances/azure_long_running_instances.pt",
+  "../../operational/azure/compute_poweredoff_report/azure_compute_poweredoff_report.pt",
   "../../operational/azure/tag_cardinality/azure_tag_cardinality.pt",
   "../../operational/azure/vms_without_managed_disks/azure_vms_without_managed_disks.pt",
   # Google Policy Templates
