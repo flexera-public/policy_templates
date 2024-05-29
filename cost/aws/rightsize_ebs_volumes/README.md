@@ -32,29 +32,22 @@ In this example, we know an example volume (`vol-a1b2c3d4`) is mounted on `/dev/
 - The policy estimates savings for idle volumes to be 100% of the monthly volume cost
 - The policy estimates savings for underutilized volumes to be the difference based on recommended % change in Provisioned IOPS
 
-### Policy savings details
+### Policy Savings Details
 
 The policy estimates savings for idle volumes to be 100% of the monthly volume cost
 
 The policy estimates savings for underutilized volumes to be the difference based on recommended % change in Provisioned IOPS or Capacity.  For example, if downsize IOPS by 50%, then estimated savings is 50% of the cost of the original volume.
 
-### Policy Savings Details
-
-The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the volume is upgraded from GP2 to GP3.
-
-- The `Estimated Monthly Cost` is calculated by multiplying the amortized cost of the resource for 1 day, as found within Flexera CCO, by 30.44, which is the average number of days in a month. This value is not used for calculating savings but is provided as a reference.
-- Since the `Estimated Monthly Cost` of individual resources is obtained from Flexera CCO, it will take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
-- The AWS Pricing API is used to retrieve the list price of the current volume type and the recommended volume type. The `Estimated Monthly Savings` is calculated by subtracting the estimated price of the recommended GP3 volume type from the price of the current GP2 volume type.
-- Since `Estimated Monthly Savings` is calculated based on list prices obtained from the AWS Pricing API, they will *not* take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
-- The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
-- If the Flexera organization is configured to use a currency other than USD, the savings values will be converted from USD using the exchange rate at the time that the policy executes.
-
 ## Input Parameters
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
+- *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation.
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
 - *Allow/Deny Regions List* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled. See [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
+- *Threshold Statistic* - Statistic to use for the metric threshold
+- *Utilization Threshold* - The threshold (in percent) for the volume to be considered underutilized. For Provisioned IOPS volumes, this is the percentage of IOPS used.
+- *Volume Status* - Whether to include attached volumes, unattached, or both in the results.
 - *Exclusion Tags* - The policy will filter resources containing the specified tags from the results. The following formats are supported:
   - `Key` - Filter all resources with the specified tag key.
   - `Key==Value` - Filter all resources with the specified tag key:value pair.
@@ -62,8 +55,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
   - `Key=~/Regex/` - Filter all resources where the value for the specified key matches the specified regex string.
   - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified tag key.
 - *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
-- *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation.
-- *AWS Regional Pricing API* - The regional AWS Pricing API to use when retrieving pricing data. Pricing may vary based on region. More details on these endpoints and how functionality differs between them can be found in the [AWS Price List Query API documentation](https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/using-price-list-query-api.html#price-list-query-api-endpoints).
+- *Create Final Snapshot* - Whether or not to take a final snapshot before deleting a volume.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
 Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave this parameter blank for *manual* action.
@@ -72,7 +64,8 @@ For example if a user selects the "Upgrade Volumes to GP3" action while applying
 ## Policy Actions
 
 - Sends an email notification
-- Upgrade GP2 volumes to GP3 after approval
+- Delete Volume
+- Modify Volume (IOPS, Volume Type)
 
 ## Prerequisites
 
