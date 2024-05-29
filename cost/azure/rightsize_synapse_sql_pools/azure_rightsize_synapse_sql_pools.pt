@@ -315,7 +315,7 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
 EOS
 end
 
-datasource "ds_synapse_workspaces" do
+datasource "ds_azure_synapse_workspaces" do
   iterate $ds_azure_subscriptions_filtered
   request do
     auth $auth_azure
@@ -342,36 +342,45 @@ datasource "ds_synapse_workspaces" do
   end
 end
 
-datasource "ds_azure_synapse_region_filtered" do
-  run_script $js_azure_synapse_region_filtered, $ds_synapse_workspaces, $param_regions_allow_or_deny, $param_regions_list
+datasource "ds_azure_synapse_sql_pools" do
+  iterate $ds_azure_synapse_workspaces
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+#    path join(["/subscriptions/", val(iter_item, "subscriptionId"), "/resourceGroups/", val(iter_item, "resourceGroup"), "/providers/Microsoft.Synapse/workspaces/", val(iter_item, "workspaceName"), "/sqlPools"])
+    path join([val(iter_item, "workspaceId"), "/sqlPools"])
+    query "api-version", "2021-06-01"
+    header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "resourceId", jmes_path(col_item, "id")
+      field "resourceGroup", val(iter_item, "resourceGroup")
+      field "resourceKind", jmes_path(col_item, "type")
+      field "name", jmes_path(col_item, "name")
+      field "region", jmes_path(col_item, "location")
+      field "sku", jmes_path(col_item, "sku.name")
+      field "status", jmes_path(col_item, "properties.status")
+      field "creationDate", jmes_path(col_item, "properties.creationDate")
+      field "maxSizeBytes", jmes_path(col_item, "properties.maxSizeBytes")
+      field "provisioningState", jmes_path(col_item, "properties.provisioningState")
+      field "storageAccountType", jmes_path(col_item, "properties.storageAccountType")
+      field "subscriptionId",val(iter_item, "subscriptionId")
+      field "subscriptionName",val(iter_item, "subscriptionName")
+    end
+  end
 end
 
-script "js_azure_synapse_region_filtered", type: "javascript" do
-  parameters "ds_synapse_workspaces", "param_regions_allow_or_deny", "param_regions_list"
-  result "result"
-  code <<-EOS
-  if (param_regions_list.length > 0) {
-    result = _.filter(ds_synapse_workspaces, function(workspace) {
-      include_workspace = _.contains(param_regions_list, workspace['region'])
-
-      if (param_regions_allow_or_deny == "Deny") {
-        include_workspace = !include_workspace
-      }
-
-      return include_workspace
-    })
-  } else {
-    result = ds_synapse_workspaces
-  }
-EOS
+datasource "ds_azure_synapse_sql_pools_tag_filtered" do
+  run_script $js_azure_synapse_sql_pools_tag_filtered, $ds_azure_synapse_sql_pools, $param_exclusion_tags, $param_exclusion_tags_boolean
 end
 
-datasource "ds_azure_synapse_tag_filtered" do
-  run_script $js_azure_synapse_tag_filtered, $ds_azure_synapse_region_filtered, $param_exclusion_tags, $param_exclusion_tags_boolean
-end
-
-script "js_azure_synapse_tag_filtered", type: "javascript" do
-  parameters "ds_azure_synapse_region_filtered", "param_exclusion_tags", "param_exclusion_tags_boolean"
+script "js_azure_synapse_sql_pools_tag_filtered", type: "javascript" do
+  parameters "ds_azure_synapse_sql_pools", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-EOS
   comparators = _.map(param_exclusion_tags, function(item) {
@@ -405,7 +414,7 @@ script "js_azure_synapse_tag_filtered", type: "javascript" do
   })
 
   if (param_exclusion_tags.length > 0) {
-    result = _.reject(ds_azure_synapse_region_filtered, function(resource) {
+    result = _.reject(ds_azure_synapse_sql_pools, function(resource) {
       resource_tags = {}
       if (typeof(resource['tags']) == 'object') { resource_tags = resource['tags'] }
 
@@ -438,48 +447,39 @@ script "js_azure_synapse_tag_filtered", type: "javascript" do
       return all_tags_found || any_tags_found
     })
   } else {
-    result = ds_azure_synapse_region_filtered
+    result = ds_azure_synapse_sql_pools
   }
 EOS
 end
 
-datasource "ds_sql_pools" do
-  iterate $ds_synapse_workspaces
-  request do
-    auth $auth_azure
-    pagination $pagination_azure
-    host $param_azure_endpoint
-#    path join(["/subscriptions/", val(iter_item, "subscriptionId"), "/resourceGroups/", val(iter_item, "resourceGroup"), "/providers/Microsoft.Synapse/workspaces/", val(iter_item, "workspaceName"), "/sqlPools"])
-    path join([val(iter_item, "workspaceId"), "/sqlPools"])
-    query "api-version", "2021-06-01"
-    header "User-Agent", "RS Policies"
-    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-    ignore_status [400, 403, 404]
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "value[*]") do
-      field "resourceId", jmes_path(col_item, "id")
-      field "resourceGroup", val(iter_item, "resourceGroup")
-      field "resourceKind", jmes_path(col_item, "type")
-      field "name", jmes_path(col_item, "name")
-      field "region", jmes_path(col_item, "location")
-      field "sku", jmes_path(col_item, "sku.name")
-      field "status", jmes_path(col_item, "properties.status")
-      field "creationDate", jmes_path(col_item, "properties.creationDate")
-      field "maxSizeBytes", jmes_path(col_item, "properties.maxSizeBytes")
-      field "provisioningState", jmes_path(col_item, "properties.provisioningState")
-      field "storageAccountType", jmes_path(col_item, "properties.storageAccountType")
-      field "subscriptionId",val(iter_item, "subscriptionId")
-      field "subscriptionName",val(iter_item, "subscriptionName")
-    end
-  end
+datasource "ds_azure_synapse_sql_pools_region_filtered" do
+  run_script $js_azure_synapse_sql_pools_region_filtered, $ds_azure_synapse_sql_pools_tag_filtered, $param_regions_allow_or_deny, $param_regions_list
 end
 
-datasource "ds_sql_pool_metrics" do
-  iterate $ds_sql_pools
+script "js_azure_synapse_sql_pools_region_filtered", type: "javascript" do
+  parameters "ds_azure_synapse_sql_pools_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_azure_synapse_sql_pools_tag_filtered, function(ip) {
+      include_db = _.contains(param_regions_list, db['region'])
+
+      if (param_regions_allow_or_deny == "Deny") {
+        include_db = !include_db
+      }
+
+      return include_db
+    })
+  } else {
+    result = ds_azure_synapse_sql_pools_tag_filtered
+  }
+EOS
+end
+
+datasource "ds_azure_synapse_sql_pool_metrics" do
+  iterate $ds_azure_synapse_sql_pools_region_filtered
   request do
-    run_script $js_azure_metrics, val(iter_item, "resourceId"), $param_azure_endpoint, $param_stats_lookback, val(iter_item, "creationDate")
+    run_script $js_azure_synapse_sql_pool_metrics, val(iter_item, "resourceId"), $param_azure_endpoint, $param_stats_lookback, val(iter_item, "creationDate")
   end
   result do
     encoding "json"
@@ -496,7 +496,7 @@ datasource "ds_sql_pool_metrics" do
   end
 end
 
-script "js_azure_metrics", type: "javascript" do
+script "js_azure_synapse_sql_pool_metrics", type: "javascript" do
   parameters "resourceId", "param_azure_endpoint", "param_stats_lookback", "creationDate"
   result "request"
   code <<-EOS
@@ -544,10 +544,10 @@ script "js_azure_metrics", type: "javascript" do
 EOS
 end
 
-datasource "ds_sql_pool_dwuused" do
-  iterate $ds_sql_pools
+datasource "ds_azure_synapse_sql_pool_dwuused" do
+  iterate $ds_azure_synapse_sql_pools_region_filtered
   request do
-    run_script $js_sql_pool_dwuused, val(iter_item, "resourceId"), $param_azure_endpoint, $param_stats_lookback, val(iter_item, "creationDate")
+    run_script $js_azure_synapse_sql_pool_dwuused, val(iter_item, "resourceId"), $param_azure_endpoint, $param_stats_lookback, val(iter_item, "creationDate")
   end
   result do
     encoding "json"
@@ -556,7 +556,7 @@ datasource "ds_sql_pool_dwuused" do
   end
 end
 
-script "js_sql_pool_dwuused", type: "javascript" do
+script "js_azure_synapse_sql_pool_dwuused", type: "javascript" do
   parameters "resourceId", "param_azure_endpoint", "param_stats_lookback", "creationDate"
   result "request"
   code <<-EOS
@@ -604,13 +604,118 @@ script "js_sql_pool_dwuused", type: "javascript" do
 EOS
 end
 
-
-datasource "ds_underutil_and_idle_pools" do
-  run_script $js_underutil_and_idle_pools, $ds_sql_pool_metrics, $ds_sql_pools, $ds_instance_costs_grouped, $param_stats_lookback, $param_stats_threshold, $ds_applied_policy, $ds_currency, $param_min_savings, $ds_azure_synapse_size_map, $ds_sql_pool_dwuused, $param_stats_downsize
+datasource "ds_azure_synapse_sql_pool_costs" do
+  iterate $ds_azure_subscriptions_filtered
+  request do
+    run_script $js_azure_synapse_sql_pool_costs, val(iter_item, 'id'), $ds_top_level_bcs, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "resourceId", jmes_path(col_item, "dimensions.resource_id")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+    end
+  end
 end
 
-script "js_underutil_and_idle_pools", type: "javascript" do
-  parameters "ds_sql_pool_metrics", "ds_sql_pools", "ds_instance_costs_grouped","param_stats_lookback", "param_stats_threshold", "ds_applied_policy", "ds_currency","param_min_savings", "ds_azure_synapse_size_map", "ds_sql_pool_dwuused", "param_stats_downsize"
+script "js_azure_synapse_sql_pool_costs", type: "javascript" do
+  parameters "subscription_id", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
+    body_fields: {
+      dimensions: ["resource_id"],
+      granularity: "day",
+      start_at: start_date,
+      end_at: end_date,
+      metrics: ["cost_amortized_unblended_adj"],
+      billing_center_ids: ds_top_level_bcs,
+      limit: 100000,
+      filter: {
+        "type": "and",
+        "expressions": [
+          {
+            "type": "or",
+            "expressions": [
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "Microsoft.Synapse"
+              },
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "microsoft.synapse"
+              }
+            ]
+          },
+          {
+            "dimension": "vendor_account",
+            "type": "equal",
+            "value": subscription_id
+          },
+          {
+            "type": "not",
+            "expression": {
+              "dimension": "adjustment_name",
+              "type": "substring",
+              "substring": "Shared"
+            }
+          }
+        ]
+      }
+    },
+    headers: {
+      'User-Agent': "RS Policies",
+      'Api-Version': "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
+datasource "ds_azure_synapse_sql_pool_costs_grouped" do
+  run_script $js_azure_synapse_sql_pool_costs_grouped, $ds_azure_synapse_sql_pool_costs
+end
+
+script "js_azure_synapse_sql_pool_costs_grouped", type: "javascript" do
+  parameters "ds_azure_synapse_sql_pool_costs"
+  result "result"
+  code <<-EOS
+  // Multiple a single day's cost by the average number of days in a month.
+  // The 0.25 is to account for leap years for extra precision.
+  cost_multiplier = 365.25 / 12
+
+  // Group cost data by resourceId for later use
+  result = {}
+
+  _.each(ds_azure_synapse_sql_pool_costs, function(item) {
+    id = item['resourceId'].toLowerCase()
+
+    if (result[id] == undefined) { result[id] = 0.0 }
+    result[id] += item['cost'] * cost_multiplier
+  })
+EOS
+end
+
+datasource "ds_azure_synapse_underutil_and_idle_pools" do
+  run_script $js_azure_synapse_sql_underutil_and_idle_pools, $ds_azure_synapse_sql_pool_metrics, $ds_azure_synapse_sql_pools_region_filtered, $ds_azure_synapse_sql_pool_costs_grouped, $param_stats_lookback, $param_stats_threshold, $ds_applied_policy, $ds_currency, $param_min_savings, $ds_azure_synapse_size_map, $ds_azure_synapse_sql_pool_dwuused, $param_stats_downsize
+end
+
+script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
+  parameters "ds_azure_synapse_sql_pool_metrics", "ds_azure_synapse_sql_pools_region_filtered", "ds_azure_synapse_sql_pool_costs_grouped","param_stats_lookback", "param_stats_threshold", "ds_applied_policy", "ds_currency","param_min_savings", "ds_azure_synapse_size_map", "ds_azure_synapse_sql_pool_dwuused", "param_stats_downsize"
   result "result"
   code <<-EOS
 
@@ -646,12 +751,12 @@ script "js_underutil_and_idle_pools", type: "javascript" do
   var idle_list = []
   var underutil_list = []
 
-  _.each(ds_sql_pools, function(item) {
+  _.each(ds_azure_synapse_sql_pools_region_filtered, function(item) {
     id = item['resourceId'].toLowerCase()
     pools[id] = item
   })
   
-  _.each(ds_sql_pool_dwuused, function(item) {
+  _.each(ds_azure_synapse_sql_pool_dwuused, function(item) {
     id = item['resourceId'].toLowerCase()
     days = 0
 
@@ -667,11 +772,11 @@ script "js_underutil_and_idle_pools", type: "javascript" do
 
   })
 
-  _.each(ds_sql_pool_metrics, function(item) {
+  _.each(ds_azure_synapse_sql_pool_metrics, function(item) {
     id = item['resourceId'].toLowerCase()
 
     total_cost = 0.0
-    if (ds_instance_costs_grouped[id] != undefined) { total_cost = ds_instance_costs_grouped[id] }
+    if (ds_azure_synapse_sql_pool_costs_grouped[id] != undefined) { total_cost = ds_azure_synapse_sql_pool_costs_grouped[id] }
 
     metrics = {}
     values = item['value']
@@ -800,7 +905,7 @@ script "js_underutil_and_idle_pools", type: "javascript" do
   })
 
   if (underutil_list.length > 0) {
-    items_total = ds_sql_pools.length.toString()
+    items_total = ds_azure_synapse_sql_pools_region_filtered.length.toString()
     underutil_items_total = underutil_list.length.toString()
     underutil_items_percentage = (underutil_items_total / items_total * 100).toFixed(2).toString() + '%'
     underutil_total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(underutil_total_savings).toFixed(2), ds_currency['separator'])
@@ -827,7 +932,7 @@ script "js_underutil_and_idle_pools", type: "javascript" do
   }
 
   if (idle_list.length > 0) {
-    items_total = ds_sql_pools.length.toString()
+    items_total = ds_azure_synapse_sql_pools_region_filtered.length.toString()
     idle_items_total = idle_list.length.toString()
     idle_items_percentage = (idle_items_total / items_total * 100).toFixed(2).toString() + '%'
     idle_total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(idle_total_savings).toFixed(2), ds_currency['separator'])
@@ -859,12 +964,12 @@ script "js_underutil_and_idle_pools", type: "javascript" do
 EOS
 end
 
-datasource "ds_idle_pools" do
-  run_script $js_idle_pools, $ds_underutil_and_idle_pools
+datasource "ds_azure_synapse_idle_pools" do
+  run_script $js_azure_synapse_idle_pools, $ds_azure_synapse_underutil_and_idle_pools
 end
 
-script "js_idle_pools", type: "javascript" do
-  parameters "ds_underutil_and_idle_pools"
+script "js_azure_synapse_idle_pools", type: "javascript" do
+  parameters "ds_azure_synapse_underutil_and_idle_pools"
   result "result"
   code <<-EOS
   result = [{
@@ -901,16 +1006,16 @@ script "js_idle_pools", type: "javascript" do
     "recommendationDetails": "",
   }]
 
-  result = ds_underutil_and_idle_pools["idle_list"].concat(result)
+  result = ds_azure_synapse_underutil_and_idle_pools["idle_list"].concat(result)
 EOS
 end
 
-datasource "ds_underutil_pools" do
-  run_script $js_underutil_pools, $ds_underutil_and_idle_pools
+datasource "ds_azure_synapse_underutil_pools" do
+  run_script $js_azure_synapse_underutil_pools, $ds_azure_synapse_underutil_and_idle_pools
 end
 
-script "js_underutil_pools", type: "javascript" do
-  parameters "ds_underutil_and_idle_pools"
+script "js_azure_synapse_underutil_pools", type: "javascript" do
+  parameters "ds_azure_synapse_underutil_and_idle_pools"
   result "result"
   code <<-EOS
   result = [{
@@ -946,114 +1051,7 @@ script "js_underutil_pools", type: "javascript" do
     "recommendationDetails": "",
   }]
 
-  result = ds_underutil_and_idle_pools["underutil_list"].concat(result)
-EOS
-end
-
-
-datasource "ds_instance_costs" do
-  iterate $ds_azure_subscriptions_filtered
-  request do
-    run_script $js_instance_costs, val(iter_item, 'id'), $ds_top_level_bcs, rs_org_id, rs_optima_host
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "rows[*]") do
-      field "resourceId", jmes_path(col_item, "dimensions.resource_id")
-      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
-    end
-  end
-end
-
-script "js_instance_costs", type: "javascript" do
-  parameters "subscription_id", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
-  result "request"
-  code <<-EOS
-  end_date = new Date()
-  end_date.setDate(end_date.getDate() - 2)
-  end_date = end_date.toISOString().split('T')[0]
-
-  start_date = new Date()
-  start_date.setDate(start_date.getDate() - 3)
-  start_date = start_date.toISOString().split('T')[0]
-
-  var request = {
-    auth: "auth_flexera",
-    host: rs_optima_host,
-    verb: "POST",
-    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
-    body_fields: {
-      dimensions: ["resource_id"],
-      granularity: "day",
-      start_at: start_date,
-      end_at: end_date,
-      metrics: ["cost_amortized_unblended_adj"],
-      billing_center_ids: ds_top_level_bcs,
-      limit: 100000,
-      filter: {
-        "type": "and",
-        "expressions": [
-          {
-            "type": "or",
-            "expressions": [
-              {
-                "dimension": "service",
-                "type": "equal",
-                "value": "Microsoft.Synapse"
-              },
-              {
-                "dimension": "service",
-                "type": "equal",
-                "value": "microsoft.synapse"
-              }
-            ]
-          },
-          {
-            "dimension": "vendor_account",
-            "type": "equal",
-            "value": subscription_id
-          },
-          {
-            "type": "not",
-            "expression": {
-              "dimension": "adjustment_name",
-              "type": "substring",
-              "substring": "Shared"
-            }
-          }
-        ]
-      }
-    },
-    headers: {
-      'User-Agent': "RS Policies",
-      'Api-Version': "1.0"
-    },
-    ignore_status: [400]
-  }
-EOS
-end
-
-datasource "ds_instance_costs_grouped" do
-  run_script $js_instance_costs_grouped, $ds_instance_costs
-end
-
-script "js_instance_costs_grouped", type: "javascript" do
-  parameters "ds_instance_costs"
-  result "result"
-  code <<-EOS
-  // Multiple a single day's cost by the average number of days in a month.
-  // The 0.25 is to account for leap years for extra precision.
-  cost_multiplier = 365.25 / 12
-
-  // Group cost data by resourceId for later use
-  result = {}
-
-  _.each(ds_instance_costs, function(item) {
-    id = item['resourceId'].toLowerCase()
-
-    if (result[id] == undefined) { result[id] = 0.0 }
-    result[id] += item['cost'] * cost_multiplier
-  })
+  result = ds_azure_synapse_underutil_and_idle_pools["underutil_list"].concat(result)
 EOS
 end
 
@@ -1061,8 +1059,8 @@ end
 # Policy
 ###############################################################################
 
-policy "pol_utilization" do
-  validate_each $ds_underutil_pools do
+policy "pol_azure_synapse_sql_pool_utilization" do
+  validate_each $ds_azure_synapse_underutil_pools do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Underutilized Synapse SQL pools found"
     detail_template <<-'EOS'
     **Potential Monthly Savings:** {{ with index data 0 }}{{ .underutil_total_savings }}{{ end }}
@@ -1157,7 +1155,7 @@ policy "pol_utilization" do
       end
     end
   end
-  validate_each $ds_idle_pools do
+  validate_each $ds_azure_synapse_idle_pools do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Idle Synapse SQL pools found"
     detail_template <<-'EOS'
     **Potential Monthly Savings:** {{ with index data 0 }}{{ .idle_total_savings }}{{ end }}
@@ -1291,7 +1289,6 @@ datasource "ds_get_policy" do
     field "id", jmes_path(response, "id")
   end
 end
-
 
 datasource "ds_parent_policy_terminated" do
   run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
