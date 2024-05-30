@@ -123,6 +123,14 @@ parameter "param_min_savings" do
   default 0
 end
 
+parameter "param_automatic_pause" do
+    type "list"
+    label "Enable Automatic Pausing"
+    description "When this value is set, this policy will automatically pause the selected underutilized Synapse SQL Pools."
+    allowed_values ["Yes", "No"]
+    default ["No"] 
+  end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -810,6 +818,7 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
       item["lookbackPeriod"] = param_stats_lookback,
       item["threshold"] = param_stats_threshold  
       item['savingsCurrency'] = ds_currency['symbol']
+      item['isIdle'] = isIdle
     }
 
     if (isIdle) {
@@ -1070,6 +1079,7 @@ policy "pol_azure_synapse_sql_pool_utilization" do
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
     check eq(val(item, "resourceId"), "")
     escalate $esc_email
+    escalate $esc_pause_instances
     hash_exclude "underutil_message", "underutil_total_savings", "savings", "savingsCurrency", "policy_name"
     export do
       resource_level true
@@ -1165,6 +1175,7 @@ policy "pol_azure_synapse_sql_pool_utilization" do
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
     check eq(val(item, "resourceId"), "")
     escalate $esc_email
+    escalate $esc_pause_instances
     hash_exclude "idle_message", "idle_total_savings", "savings", "savingsCurrency", "policy_name"
     export do
       resource_level true
@@ -1258,17 +1269,85 @@ end
 ###############################################################################
 
 escalation "esc_email" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
-end
-
-
-###############################################################################
-# Cloud Workflow
-###############################################################################
-
+    automatic true
+    label "Send Email"
+    description "Send incident email"
+    email $param_email
+  end
+  
+  escalation "esc_pause_instances" do
+    automatic contains($param_automatic_pause, "Yes")
+    label "Pause Underutilized Instances"
+    description "Automatically pause the dedicated Synapse SQL Pool in the Test MCA subscription"
+    run "pause_instances", data, $param_azure_endpoint
+  end
+  
+  ###############################################################################
+  # Cloud Workflow
+  ###############################################################################
+  define pause_instances($data, $param_azure_endpoint) return $all_responses do
+    $$all_responses = []
+    
+    sub on_error: handle_error() do
+      $idle_data = []
+      foreach $instance in $data do
+        if $instance["Connections"] == 0 && $instance["status"] != "Paused"
+          $idle_data << $instance
+        end
+      end
+      
+      foreach $instance in $idle_data do
+        sub on_error: handle_error() do
+          call pause_instance($instance, $param_azure_endpoint) retrieve $pause_response
+          $$all_responses << $pause_response
+        end
+      end
+    end
+    
+    if inspect($$errors) != "null"
+      raise join($$errors,"\n")
+    end
+  end
+  
+  define pause_instance($instance, $param_azure_endpoint) return $response do
+    $host = $param_azure_endpoint
+    $href = $instance["id"] + "/pause"
+    $params = "?api-version=2021-06-01"
+    $url = $host + $href + $params
+    task_label("POST " + $url)
+  
+    $response = http_request(
+      auth: $$auth_azure,
+      https: true,
+      verb: "post",
+      host: $host,
+      href: $href,
+      query_strings: { "api-version": "2021-06-01" },
+      headers: {
+        "cache-control": "no-cache",
+        "content-type": "application/json"
+      }
+    )
+  
+    task_label("Pause Azure SQL instance response: " + $instance["id"] + " " + to_json($response))
+  
+    if $response["code"] != 204 && $response["code"] != 202
+      raise "Unexpected response pausing Azure SQL instance: " + $instance["id"] + " " + to_json($response)
+    else
+      task_label("Pause Azure SQL instance successful: " + $instance["id"])
+    end
+  end
+  
+  define handle_error() do
+    $error_message = "Error encountered while processing: " + $_error["message"]
+    task_label($error_message)
+    if !$$errors
+      $$errors = []
+    end
+    $$errors << $error_message
+    $_error_behavior = "skip"
+  end
+  
 ###############################################################################
 # Meta Policy [alpha]
 # Not intended to be modified or used by policy developers
