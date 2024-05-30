@@ -4,6 +4,8 @@
 
 This policy template synchronizes the policy templates in a Flexera organization to a GitHub repository. This includes publishing new templates, updating existing templates, and unpublishing defunct templates. It uses a JSON file stored in the GitHub repository to determine a set of current policy templates and then compares them with your current account policies to take appropriate action.
 
+__NOTE: It is recommended that this policy template be used alongside the [Hidden Policy Templates](https://github.com/flexera-public/policy_templates/tree/master/tools/catalog_management/hidden_policies) policy template to ensure that updated policy templates do not go unpublished due to being hidden in the catalog. Automatic actions for `Hidden Policy Templates` should be enabled to either unhide or delete hidden catalog policy templates.__
+
 ## How It Works
 
 - The policy pulls a list of active policy templates from the GitHub repository specified in the user parameters.
