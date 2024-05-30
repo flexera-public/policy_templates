@@ -224,6 +224,7 @@ These templates can generate savings estimates for your environment.
 
 - Compute
 
+  - [Azure Compute Instances Time Powered Off Report](./operational/azure/compute_poweredoff_report)
   - [Azure Hybrid Use Benefit for Linux Server](./cost/azure/hybrid_use_benefit_linux)
   - [Azure Hybrid Use Benefit for Windows Server](./cost/azure/hybrid_use_benefit)
   - [Azure Reserved Instances Recommendations](./cost/azure/reserved_instances/recommendations)
@@ -610,13 +611,13 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 32
-  Cost: 96
+  Cost: 97
   Operational: 19
   SaaS Management: 12
   Security: 74
 :optimization_count: 50
 :policy_sets:
-  '': 40
+  '': 41
   AWS Config: 1
   Allocate VMs: 3
   Automation: 1
@@ -676,7 +677,7 @@ These templates can generate savings estimates for your environment.
   Usage Report: 3
 :providers:
   AWS: 81
-  Azure: 82
+  Azure: 83
   Azure China: 1
   Flexera: 37
   Flexera Optima: 1
@@ -697,7 +698,7 @@ These templates can generate savings estimates for your environment.
   Cloud Cost Optimization: 18
   CloudTrail: 7
   Common Bill Ingestion: 2
-  Compute: 58
+  Compute: 59
   Config: 1
   DBS: 1
   Databricks: 1
@@ -730,7 +731,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 233
+:total_count: 234
 -->
 <!-- End Policy Template Stats -->
 

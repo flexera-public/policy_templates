@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.0.1
+
+- Fixed bug that caused wrong calculations for ultra tier disks
+
 ## v2.0
 
 - Added support for regex when filtering resources by tag

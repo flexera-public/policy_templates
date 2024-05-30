@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.2.0
+
+- Modified internal names for incident fields for more accurate scraping into Optimization dashboard
+
 ## v6.1
 
 - Updated policy to use new source for currency information. Policy functionality is unchanged.
