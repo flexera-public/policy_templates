@@ -174,8 +174,10 @@ These templates can generate savings estimates for your environment.
 - Compute
 
   - [AWS Burstable EC2 Instances](./cost/aws/burstable_ec2_instances)
+  - [AWS EC2 Instances Time Stopped Report](./operational/aws/ec2_stopped_report)
   - [AWS EKS Clusters Without Spot Instances](./cost/aws/eks_without_spot)
   - [AWS Expiring Savings Plans](./cost/aws/savings_plan/expiration)
+  - [AWS Reserved Instances Coverage](./cost/aws/reserved_instances/coverage)
   - [AWS Reserved Instances Recommendations](./cost/aws/reserved_instances/recommendations)
   - [AWS Reserved Instances Utilization](./cost/aws/reserved_instances/utilization)
   - [AWS Rightsize EBS Volumes](./cost/aws/rightsize_ebs_volumes)
@@ -185,7 +187,6 @@ These templates can generate savings estimates for your environment.
   - [AWS Schedule Instance](./cost/aws/schedule_instance)
   - [AWS Superseded EC2 Instances](./cost/aws/superseded_instances)
   - [AWS Unused IP Addresses](./cost/aws/unused_ip_addresses)
-  - [Reserved Instances Coverage](./cost/aws/reserved_instances/coverage)
   - [Turbonomic Allocate Virtual Machine Recommendations AWS](./cost/turbonomics/allocate_virtual_machines_recommendations/aws)
   - [Turbonomic Rightsize Virtual Machines Recommendations AWS](./cost/turbonomics/scale_virtual_machines_recommendations/aws)
 
@@ -223,6 +224,7 @@ These templates can generate savings estimates for your environment.
 
 - Compute
 
+  - [Azure Compute Instances Time Powered Off Report](./operational/azure/compute_poweredoff_report)
   - [Azure Hybrid Use Benefit for Linux Server](./cost/azure/hybrid_use_benefit_linux)
   - [Azure Hybrid Use Benefit for Windows Server](./cost/azure/hybrid_use_benefit)
   - [Azure Reserved Instances Recommendations](./cost/azure/reserved_instances/recommendations)
@@ -257,11 +259,15 @@ These templates can generate savings estimates for your environment.
 
   - [Azure Unused Firewalls](./cost/azure/unused_firewalls)
 
+- PaaS
+
+  - [Azure Web Apps With Unoptimized Scaling](./cost/azure/unoptimized_web_app_scaling)
+
 - SQL
 
   - [Azure Hybrid Use Benefit for SQL](./cost/azure/hybrid_use_benefit_sql)
   - [Azure Rightsize SQL Databases](./cost/azure/rightsize_sql_instances)
-  - [Azure SQL Databases without Elastic Pools](./operational/azure/azure_sql_using_elastic_pool)
+  - [Azure SQL Servers Without Elastic Pools](./cost/azure/sql_servers_without_elastic_pool)
 
 - Storage
 
@@ -368,8 +374,8 @@ These templates can generate savings estimates for your environment.
 
 - Compute
 
-  - [AWS Instance Scheduled Events](./operational/aws/instance_scheduled_events)
   - [AWS Long Running Instances](./operational/aws/long_running_instances)
+  - [AWS Scheduled EC2 Events](./operational/aws/scheduled_ec2_events)
   - [AWS Usage Forecast - Instance Time Used](./operational/aws/total_instance_usage_forecast)
   - [AWS Usage Report - Instance Time Used](./operational/aws/total_instance_usage_report)
 
@@ -396,9 +402,7 @@ These templates can generate savings estimates for your environment.
 
   - [Azure Bring-Your-Own-License (BYOL) Report](./operational/azure/byol_report)
   - [Azure Long Running Instances](./operational/azure/azure_long_running_instances)
-  - [Azure Usage Report - Amount of Instance Memory Used](./operational/azure/total_instance_memory)
-  - [Azure Usage Report - Number of Instance Hours Used](./operational/azure/total_instance_hours)
-  - [Azure Usage Report - Number of Instance vCPUs Used](./operational/azure/total_instance_vcpus)
+  - [Azure Usage Report - Instance Time Used](./operational/azure/total_instance_usage_report)
   - [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks)
 
 - PaaS
@@ -607,13 +611,13 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 32
-  Cost: 94
-  Operational: 21
+  Cost: 97
+  Operational: 19
   SaaS Management: 12
   Security: 74
 :optimization_count: 50
 :policy_sets:
-  '': 39
+  '': 41
   AWS Config: 1
   Allocate VMs: 3
   Automation: 1
@@ -645,6 +649,7 @@ These templates can generate savings estimates for your environment.
   Old Snapshots: 3
   Open Buckets: 1
   Open S3 Buckets: 1
+  PaaS Optimization: 1
   Public Database Access: 2
   Reserved Instance: 2
   Reserved Instances: 5
@@ -669,9 +674,9 @@ These templates can generate savings estimates for your environment.
   Unused IP Addresses: 3
   Unused Load Balancers: 1
   Unused Volumes: 6
-  Usage Report: 5
+  Usage Report: 3
 :providers:
-  AWS: 80
+  AWS: 81
   Azure: 83
   Azure China: 1
   Flexera: 37
@@ -713,7 +718,7 @@ These templates can generate savings estimates for your environment.
   Network Security Group: 2
   Office 365: 1
   Org: 1
-  PaaS: 2
+  PaaS: 3
   PostgreSQL: 4
   RDS: 4
   S3: 6
@@ -726,7 +731,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 233
+:total_count: 234
 -->
 <!-- End Policy Template Stats -->
 

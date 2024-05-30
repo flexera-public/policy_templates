@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.1.0
+
+- Modified internal names for incident fields for more accurate scraping into Optimization dashboard
+
 ## v5.0.0
 
 - Added estimated savings based on Google's Cloud Billing API

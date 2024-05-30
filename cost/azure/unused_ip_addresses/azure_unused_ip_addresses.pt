@@ -2,11 +2,12 @@ name "Azure Unused IP Addresses"
 rs_pt_ver 20180301
 type "policy"
 short_description "Checks for unused IP addresses in the given account and, optionally, deletes them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/unused_ip_addresses) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more"
+long_description ""
 severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "7.2",
+  version: "7.3.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Unused IP Addresses",
@@ -48,9 +49,9 @@ parameter "param_days_unattached" do
   category "Policy Settings"
   label "Days Unattached"
   description "The number of days an IP address needs to be detached to be considered unused. This value cannot be set above 90 due to Azure only storing 90 days of log data. If this value is set to 0, all unattached IP addresses will be considered unused."
-  default 30
   min_value 0
   max_value 90
+  default 30
 end
 
 parameter "param_allocation_type" do
@@ -172,9 +173,9 @@ datasource "ds_billing_centers" do
     auth $auth_flexera
     host rs_optima_host
     path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
     ignore_status [403]
   end
   result do
@@ -320,9 +321,9 @@ datasource "ds_ip_addresses" do
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "resourceGroup", get(4, split(jmes_path(col_item,"id"), "/"))
+      field "resourceGroup", get(4, split(jmes_path(col_item, "id"), "/"))
       field "resourceName", jmes_path(col_item, "name")
-      field "resourceType", jmes_path(col_item, "type")
+      field "type", jmes_path(col_item, "type")
       field "region", jmes_path(col_item, "location")
       field "resourceID", jmes_path(col_item, "id")
       field "properties", jmes_path(col_item, "properties")
@@ -506,7 +507,7 @@ script "js_event_logs", type:"javascript" do
     },
     query_params: {
       "api-version": "2015-04-01",
-      "$filter": "eventTimestamp ge '" + start_time + "' and eventTimestamp le '" + end_time + "' and resourceType eq 'Microsoft.Network/publicIPAddresses'",
+      "$filter": "eventTimestamp ge '" + start_time + "' and eventTimestamp le '" + end_time + "' and type eq 'Microsoft.Network/publicIPAddresses'",
     },
     ignore_status: [400, 403, 404]
   }
@@ -562,7 +563,7 @@ script "js_unused_ip_addresses", type: "javascript" do
       result.push({
         resourceGroup: ip['resourceGroup'],
         resourceName: ip['resourceName'],
-        resourceType: ip['resourceType'],
+        type: ip['type'],
         region: ip['region'],
         resourceID: ip['resourceID'],
         properties: ip['properties'],
@@ -583,7 +584,7 @@ datasource "ds_ip_costs" do
   end
   result do
     encoding "json"
-    collect jmes_path(response,"rows[*]") do
+    collect jmes_path(response, "rows[*]") do
       field "resourceID", jmes_path(col_item, "dimensions.resource_id")
       field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
     end
@@ -765,7 +766,7 @@ script "js_ip_cost_mapping", type:"javascript" do
         resourceID: ip['resourceID'],
         resourceName: ip['resourceName'],
         resourceGroup: ip['resourceGroup'],
-        resourceType: ip['resourceType'],
+        type: ip['type'],
         ipAddress: ip['properties']['ipAddress'],
         allocation: ip['properties']['publicIPAllocationMethod'],
         region: ip['region'],
@@ -791,7 +792,7 @@ script "js_ip_cost_mapping", type:"javascript" do
   unused_ips_percentage = (total_unused_ips / total_ips * 100).toFixed(2).toString() + '%'
 
   findings = [
-    "Out of ", total_ips , " IP addresses analyzed, ",
+    "Out of ", total_ips, " IP addresses analyzed, ",
     total_unused_ips, " (", unused_ips_percentage,
     ") are unused and recommended for deletion. "
   ].join('')
@@ -868,14 +869,14 @@ policy "pol_unused_ip_addresses" do
       field "resourceGroup" do
         label "Resource Group"
       end
-      field "ipAddress"do
+      field "ipAddress" do
         label "IP Address"
       end
       field "resourceName" do
         label "Resource Name"
       end
-      field "resourceType" do
-        label "Resource Type"
+      field "type" do
+        label "Type"
       end
       field "recommendationDetails" do
         label "Recommendation"
@@ -951,7 +952,7 @@ define delete_ip_addresses($data, $param_azure_endpoint) do
 
   # If we encountered any errors, use `raise` to mark the CWF process as errored
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -964,7 +965,7 @@ define delete_ip_address($azure_endpoint, $resourceID) return $response do
     url: $delete_url
   )
   task_label("Delete Azure IP Address response: "+$resourceID+" "+to_json($response))
-  $$all_responses << to_json({"req":"DELETE "+$azure_endpoint + $resourceID,"resp": $response})
+  $$all_responses << to_json({"req": "DELETE " + $azure_endpoint + $resourceID, "resp": $response})
   if $response["code"] != 202 && $response["code"] != 200
     raise "Unexpected response deleting Azure IP Address: "+$resourceID+" "+to_json($response)
   else
@@ -989,7 +990,7 @@ define get_resource($resource) return $response do
       "api-version": "2019-07-01"
     }
   )
-  $$all_responses << to_json({"req":"GET management.azure.com" + $resource,"resp": $response})
+  $$all_responses << to_json({"req": "GET management.azure.com" + $resource, "resp": $response})
 end
 
 define handle_error() do
@@ -1014,7 +1015,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
     header "Api-Version", "1.0"
   end
   result do

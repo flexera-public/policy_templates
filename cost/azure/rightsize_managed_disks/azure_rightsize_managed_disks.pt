@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "monthly"
 info(
-  version: "2.0",
+  version: "2.0.1",
   provider: "Azure",
   service: "Managed Disks",
   policy_set: "Rightsize Storage",
@@ -138,9 +138,9 @@ parameter "param_stats_lookback" do
   category "Statistics"
   label "Lookback period"
   description "How many days back to look at disk IOPS and throughput data. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days."
-  default 30
   min_value 1
   max_value 90
+  default 30
 end
 
 ###############################################################################
@@ -498,7 +498,7 @@ script "js_azure_virtual_machines_with_metrics", type: "javascript" do
       "metricnames": "OS Disk IOPS Consumed Percentage,OS Disk Bandwidth Consumed Percentage,Data Disk IOPS Consumed Percentage,Data Disk Bandwidth Consumed Percentage",
       "timespan": timespan,
       "$filter": "LUN eq '*'",
-      "aggregation": "Average,Maximum",
+      "aggregation": "Average, Maximum",
       "interval": "FULL",
     },
     headers: {
@@ -686,11 +686,11 @@ datasource "ds_azure_md_pricing" do
 end
 
 datasource "ds_disk_rightsizing_recommendations" do
-  run_script $js_disk_rightsizing_recommendations, $ds_azure_disks_with_metrics_thresholds_filtered, $ds_azure_md_tier_types, $ds_azure_md_pricing, $param_stats_lookback, $param_min_savings, $param_min_used_disk_iops_pct, $param_min_used_disk_throughput_pct, $ds_min_used_disk_space_pct, $param_stats_aggregation_for_disk_iops, $param_stats_aggregation_for_disk_throughput, $ds_applied_policy
+  run_script $js_disk_rightsizing_recommendations, $ds_azure_disks_with_metrics_thresholds_filtered, $ds_azure_md_tier_types, $ds_azure_md_pricing, $ds_applied_policy, $ds_min_used_disk_space_pct, $param_stats_lookback, $param_min_savings, $param_min_used_disk_iops_pct, $param_min_used_disk_throughput_pct, $param_stats_aggregation_for_disk_iops, $param_stats_aggregation_for_disk_throughput
 end
 
 script "js_disk_rightsizing_recommendations", type: "javascript" do
-  parameters "ds_azure_disks_with_metrics_thresholds_filtered", "ds_azure_md_tier_types", "ds_azure_md_pricing", "param_stats_lookback", "param_min_savings", "param_min_used_disk_iops_pct", "param_min_used_disk_throughput_pct", "ds_min_used_disk_space_pct", "param_stats_aggregation_for_disk_iops", "param_stats_aggregation_for_disk_throughput", "ds_applied_policy"
+  parameters "ds_azure_disks_with_metrics_thresholds_filtered", "ds_azure_md_tier_types", "ds_azure_md_pricing", "ds_applied_policy", "ds_min_used_disk_space_pct", "param_stats_lookback", "param_min_savings", "param_min_used_disk_iops_pct", "param_min_used_disk_throughput_pct", "param_stats_aggregation_for_disk_iops", "param_stats_aggregation_for_disk_throughput"
   result "result"
   code <<-'EOS'
   var hddDiskSizes = [32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32767]
@@ -800,7 +800,7 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
       sizeGB: diskSize,
       IOPS: currentUsedIops,
       throughput: currentUsedThroughput,
-      unitOfMeasure: ultraPricing.PREMIUM_LRS_PROVISIONED_CAPACITY.unitOfMeasure,
+      unitOfMeasure: ultraPricing.ULTRA_LRS_PROVISIONED_CAPACITY.unitOfMeasure,
     }
   }
 
@@ -980,7 +980,6 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
 EOS
 end
 
-
 ###############################################################################
 # Policy
 ###############################################################################
@@ -1132,7 +1131,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
     header "Api-Version", "1.0"
   end
   result do
