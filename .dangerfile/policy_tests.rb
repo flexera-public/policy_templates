@@ -11,9 +11,39 @@ def policy_deprecated?(file)
   pp = PolicyParser.new
   pp.parse(file)
 
+  info = pp.parsed_info
+
+  deprecated = false
+
+  if !info[:deprecated].nil?
+    deprecated = true if info[:deprecated].downcase == "true"
+  end
+
+  return true if deprecated
+  return false
+end
+
+### Deprecated without info flag test
+# Returns true if policy is described as deprecated in short_description
+# but lacks deprecated field in info() block
+def policy_missing_deprecated_field?(file)
+  pp = PolicyParser.new
+  pp.parse(file)
+
+  info = pp.parsed_info
   short_description = pp.parsed_short_description
 
-  return true if short_description.downcase.include?("deprecated")
+  fail_message = ""
+
+  if short_description.downcase.include?("deprecated")
+    if info[:deprecated].nil?
+      fail_message = "Policy is deprecated but has no 'deprecated' field in the info() block. Please add the following line to the info() block: deprecated: \"true\""
+    elsif info[:deprecated].downcase != "true"
+      fail_message = "Policy is deprecated but 'deprecated' field in the info() block is not set to 'true'. Please set this field to 'true'."
+    end
+  end
+
+  return fail_message.strip if !fail_message.empty?
   return false
 end
 
@@ -40,7 +70,6 @@ def policy_bad_directory?(file)
   return fail_message.strip if !fail_message.empty?
   return false
 end
-
 
 ### Unmodified README test
 # Verify that .pt file also has an updated README
