@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy template finds and reports on AWS NAT Gateways in the given account which have hourly costs but no network costs; in such cases, it is presumed that the NAT Gateway is idle and not on actual use. Optionally, this report can be emailed and the user can delete the reported NAT Gateways.
+This policy template finds and reports on AWS NAT Gateways in the given account which have hourly costs but no network costs; in such cases, it is presumed that the NAT Gateway is idle and not in actual use. Optionally, this report can be emailed and the user can delete the reported NAT Gateways.
 
 ### Policy Savings Details
 
