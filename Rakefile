@@ -42,7 +42,7 @@ task :generate_policy_list do
 
       # Set publish/deprecated to false unless publish/deprecated is missing
       # or set to true in policy metadata
-      publish = publish == 'true' || publish == true
+      publish = !(publish == 'false' || publish == false)
       deprecated = deprecated == 'true' || deprecated == true
     end
 
