@@ -40,8 +40,8 @@ task :generate_policy_list do
       publish = pp.parsed_info[:publish]
       deprecated = pp.parsed_info[:deprecated]
 
-      # Set publish/deprecated to false unless publish/deprecated is missing
-      # or set to true in policy metadata
+      # 'publish' defaults to true unless explicitly set to false
+      # 'deprecated' defaults to false unless explicitly set to true
       publish = !(publish == 'false' || publish == false)
       deprecated = deprecated == 'true' || deprecated == true
     end
