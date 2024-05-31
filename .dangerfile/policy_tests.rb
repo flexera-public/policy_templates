@@ -37,9 +37,15 @@ def policy_missing_deprecated_field?(file)
 
   if short_description.downcase.include?("deprecated")
     if info[:deprecated].nil?
-      fail_message = "Policy is deprecated but has no 'deprecated' field in the info() block. Please add the following line to the info() block: deprecated: \"true\""
+      fail_message = "Policy is deprecated but has no `deprecated` field in the info() block. Please add the following line to the info() block: deprecated: \"true\""
     elsif info[:deprecated].downcase != "true"
-      fail_message = "Policy is deprecated but 'deprecated' field in the info() block is not set to 'true'. Please set this field to 'true'."
+      fail_message = "Policy is deprecated but `deprecated` field in the info() block is not set to `true`. Please set this field to `true`."
+    end
+  else
+    if !info[:deprecated].nil?
+      if info[:deprecated].downcase == "true"
+        fail_message = "Policy is deprecated does not mention this in the `short_description`. Please add the following to the `short_description`:\n\n`**Deprecated: This policy is no longer being updated.**`"
+      end
     end
   end
 
