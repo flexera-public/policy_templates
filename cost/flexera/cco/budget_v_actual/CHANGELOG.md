@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.4.2
+
+- Added `deprecated` field to policy metadata. Functionality is unchanged.
+
 ## v2.4.1
 
 - Updated policy to use internal Flexera API for generating charts. Policy functionality is unchanged.
