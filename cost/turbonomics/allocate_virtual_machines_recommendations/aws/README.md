@@ -6,13 +6,13 @@ The Turbonomic Allocate Virtual Machines Recommendations AWS policy utilizes Tur
 
 ## Functional Details
 
-- The policy queries the /api/v3/markets/{market_uuid}/actions endpoint for the Turbonomic API and based on action will return action details and savings for on-boarded cloud instances
+- The policy queries the `/api/v3/markets/{market_uuid}/actions` endpoint for the Turbonomic API and based on action will return action details and savings for on-boarded cloud instances
 - The policy will error after a day, the authorization cookie parameter will need to be refreshed and re-run manually
-- There is a need to run the login credentials against the (`https://xxxx.turbonomic.com/api/v3/login`) endpoint to manually recieve cookie authorization
+- There is a need to run the login credentials against the (`https://xxxx.turbonomic.com/api/v3/login`) endpoint to manually receive cookie authorization
 
 ## Input Parameters
 
-- *Turbonomic_audience* - Audience configured on the Turbonomic instance
+- *Turbonomic Audience* - Audience configured on the Turbonomic instance
 - *Turbonomic Host* - Host of the Turbonomic endpoint.
 - *Email addresses* - A list of email addresses to notify
 
@@ -23,10 +23,6 @@ The Turbonomic Allocate Virtual Machines Recommendations AWS policy utilizes Tur
 ## Prerequisites
 
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
-
-- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
-  - `policy_manager`
-  - `billing_center_viewer`
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
