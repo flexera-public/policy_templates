@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.20.1
+
+- Added `deprecated` field to policy metadata. Functionality is unchanged.
+
 ## v2.20
 
 - Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.

@@ -38,13 +38,12 @@ task :generate_policy_list do
       policy_set = pp.parsed_info[:policy_set]
       recommendation_type = pp.parsed_info[:recommendation_type]
       publish = pp.parsed_info[:publish]
+      deprecated = pp.parsed_info[:deprecated]
 
-      # Set publish to false unless publish is missing or set to true in policy metadata
-      if !publish.nil? && publish != 'true' && publish != true
-        publish = false
-      else
-        publish = true
-      end
+      # 'publish' defaults to true unless explicitly set to false
+      # 'deprecated' defaults to false unless explicitly set to true
+      publish = !(publish == 'false' || publish == false)
+      deprecated = deprecated == 'true' || deprecated == true
     end
 
     # Get version from long description
@@ -75,7 +74,8 @@ task :generate_policy_list do
         "service": service,
         "policy_set": policy_set,
         "recommendation_type": recommendation_type,
-        "updated_at": updated_at
+        "updated_at": updated_at,
+        "deprecated": deprecated
       }
     end
   end

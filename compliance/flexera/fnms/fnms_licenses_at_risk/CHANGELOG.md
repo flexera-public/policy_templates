@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.7.1
+
+- Added `deprecated` field to policy metadata. Functionality is unchanged.
+
 ## v2.7
 
 - Updated description to account for new file path in Github repository

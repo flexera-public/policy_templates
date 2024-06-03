@@ -6,6 +6,124 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#2248](https://github.com/flexera-public/policy_templates/pull/2248): POL-1247 fix: Add default value for `IAM Role Names/IDs/ARNs` param
+
+#### Description
+
+> Add default value for `IAM Role Names/IDs/ARNs` param
+>
+> This is helpful so we can deploy using the Meta Parent Policy Template and no required user input parameters.
+>
+> Value is the name of the role created by the recommended Cloud Formation Template
+>
+
+#### Metadata
+
+- **Policies**: [AWS IAM Role Audit](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/iam_role_audit/README.md)
+- **Merged At**: 2024-05-30 18:26:29 UTC
+
+---
+
+### PR [#2258](https://github.com/flexera-public/policy_templates/pull/2258): POL-1246 AWS/Azure Usage Reports - fix BC Allow/Deny Filter
+
+#### Description
+
+> <!-- Describe what this change achieves below -->
+> Current AWS and Azure Usage Report - Instance Time Used policies will fail when a user specifies a list of Billing Centers to Allow or Deny. This is a change to fix this issue.
+>
+> ### Issues Resolved
+>
+> <!-- List any existing issues this PR resolves below -->
+> - Fixed issue with Billing Center filter so users can now successfully allow/deny Billing Centers from the Usage Report.
+>
+
+#### Metadata
+
+- **Policies**: [AWS Usage Report - Instance Time Used](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/total_instance_usage_report/README.md), [Azure Usage Report - Instance Time Used](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/total_instance_usage_report/README.md)
+- **Merged At**: 2024-05-30 08:13:31 UTC
+
+---
+
+### PR [#2253](https://github.com/flexera-public/policy_templates/pull/2253): FOPTS-4039 Bug fix for unitofMeasure for ultra sized disk
+
+#### Description
+
+> Updated /corrected for Ultra pricing
+>
+> There is a bug in calculation of the Ultra Price as logic errors out at the unitOfMeasure calculation. This PR fixes the bug
+>
+> <!-- Describe what this change achieves below -->
+>
+> ### Issues Resolved
+> Issue with unitOfMeasure calculation and errors indicator by the static checks
+> <!-- List any existing issues this PR resolves below -->
+>
+
+#### Metadata
+
+- **Policies**: [Azure Rightsize Managed Disks](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_disks/README.md)
+- **Merged At**: 2024-05-29 20:31:07 UTC
+
+---
+
+### PR [#2237](https://github.com/flexera-public/policy_templates/pull/2237): POL-1243 New Policy: Azure Compute Instances Time Powered Off Report
+
+#### Description
+
+> This is a new policy that reports on all Azure VMs that are powered off for a user-specified percentage of time. The policy can report instances powered off for less than a certain percentage of time, more than a certain percentage, or both.
+>
+> This PR also includes a couple of very small fixes for the equivalent AWS policy that I spotted while building out the Azure equivalent.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2237) for these details.
+- **Merged At**: 2024-05-29 12:26:53 UTC
+
+---
+
+### PR [#2246](https://github.com/flexera-public/policy_templates/pull/2246): POL-1244 Update 'resourceType' Incident Fields
+
+#### Description
+
+> This removes the `resourceType` field from policies where this field does not indicate a discrete instance size/capacity/etc. In most cases, it was renamed to the `type` field. This is to prevent issues with how scaped data is presented in the Optimization dashboard.
+>
+> Additionally, other minor changes were made to bring affected files into compliance with Dangerfile tests.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2246) for these details.
+- **Merged At**: 2024-05-28 13:30:34 UTC
+
+---
+
+### PR [#2249](https://github.com/flexera-public/policy_templates/pull/2249): FOPTS-4009 add cumulative report option
+
+#### Description
+
+> This change address the request at [SQ-8125](https://flexera.atlassian.net/browse/SQ-8125)
+>
+> ### Issues Resolved
+>
+> - Added Cumulative report option
+> - Cumulative chart should show cumulative monthly data
+> - Cumulative table should show cumulative based on groups
+> - For cumulative report shows a note to indicate that budget, Spend, OverSpend columns shows cumulative data
+> - Exclude future data in charts
+> - Not include currency sign in the table
+> - Chart axis shows accurate currency sign
+>
+> The history of request changes and also proof of test could be found in the task : [FOPTS-4009](https://flexera.atlassian.net/jira/software/c/projects/FOPTS/boards/398?assignee=712020%3A90605881-06e4-4701-9150-efda16878a29&selectedIssue=FOPTS-4009)
+>
+
+#### Metadata
+
+- **Policies**: [Budget vs Actual Spend Report](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/budget_v_actual_spend_report/README.md)
+- **Merged At**: 2024-05-27 17:23:34 UTC
+
+---
+
 ### PR [#2247](https://github.com/flexera-public/policy_templates/pull/2247): fix: Meta Parent template `$action_options` check type is array
 
 #### Description
@@ -1826,95 +1944,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [Azure Unused IP Addresses](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/unused_ip_addresses/README.md)
 - **Merged At**: 2024-02-29 10:28:28 UTC
-
----
-
-### PR [#1870](https://github.com/flexera-public/policy_templates/pull/1870): FOPTS-3238 Update `short_description` of the policy Azure Rightsize NetApp Files
-
-#### Description
-
-> The short description of the policy Azure Rightsize NetApp Files was in sync with the Flexera documentation, this change updated the `short_description` of the policy so both descriptions match.
->
-> ### Issues Resolved
->
-> - https://flexera.atlassian.net/browse/FOPTS-3238
->
-
-#### Metadata
-
-- **Policies**: [Azure Rightsize NetApp Files](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_netapp_files/README.md)
-- **Merged At**: 2024-02-27 21:44:12 UTC
-
----
-
-### PR [#1874](https://github.com/flexera-public/policy_templates/pull/1874): POL-1070 Deprecate AWS Inefficient Instance Utilization using CloudWatch
-
-#### Description
-
-> The AWS Inefficient Instance Utilization using CloudWatch policy does basically the same thing as the existing Rightsize EC2 policy, so it is being deprecated.
-
-#### Metadata
-
-- **Policies**: [AWS Inefficient Instance Utilization using CloudWatch](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/instance_cloudwatch_utilization/README.md)
-- **Merged At**: 2024-02-27 21:41:58 UTC
-
----
-
-### PR [#1833](https://github.com/flexera-public/policy_templates/pull/1833): POL-1062 Deprecate CMP Policies
-
-#### Description
-
-> This pull request deprecates the 4 remaining CMP policies that have not yet been deprecated.
->
-> No testing was done since no changes were made to anything that would impact policy execution.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1833) for these details.
-- **Merged At**: 2024-02-27 16:43:33 UTC
-
----
-
-### PR [#1846](https://github.com/flexera-public/policy_templates/pull/1846): POL-1035 Google Policy Regex Support
-
-#### Description
-
-> This adds support for regex tag filtering to several Google policies.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1846) for these details.
-- **Merged At**: 2024-02-27 13:35:39 UTC
-
----
-
-### PR [#1845](https://github.com/flexera-public/policy_templates/pull/1845): POL-1025 Azure Policy Regex Support
-
-#### Description
-
-> This adds support for regex tag filtering to several Azure policies. Additionally, it includes revamps of the two AKS Node Pools policies to help facilitate this update.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1845) for these details.
-- **Merged At**: 2024-02-27 13:04:09 UTC
-
----
-
-### PR [#1864](https://github.com/flexera-public/policy_templates/pull/1864): POL-1068 Cloud Cost Anomaly Alerts Link Fix
-
-#### Description
-
-> This fixes a bug where the link would render incorrectly if spaces were present. Spaces are now appropriately replaced with %20 in the link.
->
-
-#### Metadata
-
-- **Policies**: [Cloud Cost Anomaly Alerts](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/cloud_cost_anomaly_alerts/README.md)
-- **Merged At**: 2024-02-26 20:25:42 UTC
 
 ---
 
