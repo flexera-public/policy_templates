@@ -7,7 +7,6 @@ The Turbonomic Allocate Virtual Machines Recommendations AWS policy utilizes Tur
 ## Functional Details
 
 - The policy queries the `/api/v3/markets/{market_uuid}/actions` endpoint for the Turbonomic API and based on action will return action details and savings for on-boarded cloud instances
-- The policy will error after a day, the authorization cookie parameter will need to be refreshed and re-run manually
 
 ## Input Parameters
 
