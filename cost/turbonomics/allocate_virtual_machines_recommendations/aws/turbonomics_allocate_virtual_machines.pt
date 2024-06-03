@@ -2,11 +2,12 @@ name "Turbonomic Allocate Virtual Machine Recommendations AWS"
 rs_pt_ver 20180301
 type "policy"
 short_description "Turbonomic policy for allocating RI coverage for virtual machines [README](https://github.com/flexera-public/policy_templates/tree/master/cost/turbonomics/allocate_virtual_machines_recommendations/aws) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
 severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.3",
+  version: "2.3.0",
   provider: "AWS",
   source: "Turbonomic",
   service: "Compute",
@@ -14,18 +15,20 @@ info(
   recommendation_type: "Rate Reduction"
 )
 
-##################
-# Parameters   #
-##################
+###############################################################################
+# Parameters
+###############################################################################
 
 parameter "param_turbonomic_host" do
   type "string"
+  category "Policy Settings"
   label "Turbonomic Host"
   description "Your Turbonomic host or IP."
 end
 
 parameter "param_turbonomic_audience" do
   type "string"
+  category "Policy Settings"
   label "Turbonomic instance audience"
   description "Audience configured on the Turbonomic instance"
   default "flexera"
@@ -33,6 +36,7 @@ end
 
 parameter "param_email" do
   type "list"
+  category "Policy Settings"
   label "Email addresses to notify"
   description "Email addresses of the recipients you wish to notify when new incidents are created."
 end
@@ -45,13 +49,14 @@ credentials "auth_turbonomic" do
   schemes "basic"
   label "Turbonomic"
   description "Select the Turbonomic Basic Auth Credential from the list."
+  tags "provider=turbonomic"
 end
 
 ###############################################################################
 # Pagination
 ###############################################################################
 
-pagination "turbonomics_vm_pagination_header" do
+pagination "pagination_turbonomic" do
   get_page_marker do
     header "x-next-cursor"
   end
@@ -61,11 +66,11 @@ pagination "turbonomics_vm_pagination_header" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
 #get turbonomic token
-datasource "ds_turbonomic_token" do
+datasource "ds_get_turbonomic_token" do
   request do
     run_script $js_get_turbonomic_token, $param_turbonomic_host, $param_turbonomic_audience
   end
@@ -78,7 +83,7 @@ end
 #get turbonomic recommendation data
 datasource "ds_get_turbonomics_recommendations" do
   request do
-    run_script $js_get_turbonomics_recommendations, $param_turbonomic_host, val($ds_turbonomic_token, "access_token")
+    run_script $js_get_turbonomics_recommendations, $param_turbonomic_host, val($ds_get_turbonomic_token, "access_token")
   end
   result do
     encoding "json"
@@ -104,7 +109,7 @@ end
 ##this will potentially be a lot of calls. how to make this more performant
 datasource "ds_get_business_units" do
   request do
-    run_script $js_get_business_units, $param_turbonomic_host, val($ds_turbonomic_token, "access_token")
+    run_script $js_get_business_units, $param_turbonomic_host, val($ds_get_turbonomic_token, "access_token")
   end
   result do
     encoding "json"
@@ -119,7 +124,7 @@ end
 ##this will potentially be a lot of calls. how to make this more performant
 datasource "ds_get_action_details" do
   request do
-    run_script $js_get_action_details, $ds_get_turbonomics_recommendations, $param_turbonomic_host, val($ds_turbonomic_token, "access_token")
+    run_script $js_get_action_details, $ds_get_turbonomics_recommendations, $param_turbonomic_host, val($ds_get_turbonomic_token, "access_token")
   end
   result do
     encoding "json"
@@ -130,10 +135,6 @@ end
 datasource "ds_filtered_turbonomics_recommendations" do
   run_script $js_filtered_turbonomics_recommendations, $ds_get_turbonomics_recommendations, $ds_get_business_units, $ds_get_action_details
 end
-
-###############################################################################
-# Scripts
-###############################################################################
 
 ##script retrieves an OAuth2 token from the Turbonomic API
 script "js_get_turbonomic_token", type: "javascript" do
@@ -161,7 +162,7 @@ script "js_get_turbonomics_recommendations", type: "javascript" do
   code <<-EOS
     var request = {
       verb: "POST",
-      pagination: "turbonomics_vm_pagination_header",
+      pagination: "pagination_turbonomic",
       host: param_turbonomic_host,
       path: "/api/v3/markets/Market/actions",
       body_fields: {
