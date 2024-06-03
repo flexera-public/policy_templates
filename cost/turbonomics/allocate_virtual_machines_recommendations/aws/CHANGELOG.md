@@ -1,6 +1,6 @@
 # Changelog
 
-## v2.3
+## v2.3.0
 
 - Switched from cookie-based authentication to token-based authentication
 
