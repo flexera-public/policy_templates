@@ -12,8 +12,8 @@ The Turbonomic Allocate Virtual Machines Recommendations AWS policy utilizes Tur
 
 ### Input Parameters
 
-- *Authorization Cookie"* - authorization cookie pulled from turbonomic login endpoint: (POST `https://xxxx.turbonomic.com/api/v3/login`)
-  - no_echo: true
+- *Turbonomic_audience* - Audience configured on the Turbonomic instance
+- *Turbonomic Host* - Host of the Turbonomic endpoint.
 - *Email addresses* - A list of email addresses to notify
 
 ### Required Flexera Roles
