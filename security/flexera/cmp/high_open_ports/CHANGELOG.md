@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.10.1
+
+- Added `deprecated` field to policy metadata. Functionality is unchanged.
+
 ## v1.10
 
 - Updated policy metadata to ensure that it does not publish to the catalog

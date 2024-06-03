@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.22.1
+
+- Added `deprecated` field to policy metadata. Functionality is unchanged.
+
 ## v1.22
 
 - Updated policy metadata to ensure that it does not publish to the catalog
@@ -42,7 +46,7 @@
 
 ## v1.12
 
-- Separate the Utilization from the downsize actions.  The Utilization policy is now [RightLink Utilization](https://github.com/flexera-public/policy_templates/blob/master/cost/rightlink_rightsize/README.md)
+- Separate the Utilization from the downsize actions.  The Utilization policy is now [RightLink Utilization](https://github.com/flexera-public/policy_templates/blob/master/cost/flexera/cmp/rightlink_rightsize/README.md)
 
 ## v1.11
 

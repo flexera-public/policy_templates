@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.13.1
+
+- Added `deprecated` field to policy metadata. Functionality is unchanged.
+
 ## v2.13
 
 - Updated policy to use new source for currency information. Policy functionality is unchanged.

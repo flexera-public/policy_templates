@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.8.1
+
+- Added `deprecated` field to policy metadata. Functionality is unchanged.
+
 ## v2.8
 
 - Policy updated so that policy is correctly identified as a Flexera policy

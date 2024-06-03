@@ -282,13 +282,22 @@ changed_pt_files.each do |file|
   warnings = []
   failures = []
 
-  # Don't run tests against deprecated policies
+  # Raise error if policy is deprecated but missing deprecated field in info() block
+  test = policy_missing_deprecated_field?(file); failures << test if test
+
+  # Raise error if policy changed but changelog has not been
+  test = policy_unmodified_changelog?(file, changed_changelog_files); failures << test if test
+
+  # Raise error if policy and changelog do not have matching version numbers
+  test = policy_changelog_mismatch?(file); failures << test if test
+
+  # Run policy through fpt testing. Only raise error if there is a syntax error.
+  test = policy_fpt_syntax_error?(file); failures << test if test
+
+  # Don't run remaining tests against deprecated policies
   unless policy_deprecated?(file)
     # Raise error if policy is not in a valid directory within the repo directory structure
     test = policy_bad_directory?(file); failures << test if test
-
-    # Raise error if policy changed but changelog has not been
-    test = policy_unmodified_changelog?(file, changed_changelog_files); failures << test if test
 
     # Raise warning if policy changed but readme has not been
     rd_test = policy_unmodified_readme?(file, changed_readme_files); warnings << rd_test if rd_test
@@ -317,9 +326,6 @@ changed_pt_files.each do |file|
     # Raise error if the file contains any bad urls
     test = general_bad_urls?(file); failures << test if test
 
-    # Run policy through fpt testing. Only raise error if there is a syntax error.
-    test = policy_fpt_syntax_error?(file); failures << test if test
-
     # Raise warning if policy contains invalid indentation
     test = policy_bad_indentation?(file); warnings << test if test
 
@@ -345,9 +351,6 @@ changed_pt_files.each do |file|
 
     # Raise error if policy version number does not use semantic versioning
     test = policy_nonsemantic_version?(file); failures << test if test
-
-    # Raise error if policy and changelog do not have matching version numbers
-    test = policy_changelog_mismatch?(file); failures << test if test
 
     # Raise error if there is a mismatch between the policy's credentials and the README
     test = policy_readme_missing_credentials?(file); failures << test if test

@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.10.2
+
+- Added `deprecated` field to policy metadata. Functionality is unchanged.
+
 ## v2.10.1
 
 - Deprecated: This policy is no longer being updated. Please see policy README for more information.
