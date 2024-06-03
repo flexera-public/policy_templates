@@ -477,11 +477,15 @@ script "js_format_existing_policies_incidents", type: "javascript" do
   result "formatted"
   code <<-EOS
   formatted={}
-  for (x=0;x<unformatted.length; x++) {
-    current = unformatted[x]
-    formatted[current.applied_policy_id] = {incident_id: current.incident_id, state: current.state, violation_data_count: current.violation_data_count, updated_at: current.updated_at}
-  }
-  EOS
+
+  _.each(unformatted, function(incident) {
+    if (formatted[incident['applied_policy_id']] == undefined) {
+      formatted[incident['applied_policy_id']] = []
+    }
+
+    formatted[incident['applied_policy_id']].push(incident)
+  })
+EOS
 end
 
 datasource "ds_format_existing_policies" do
@@ -520,7 +524,8 @@ script "js_format_existing_policies", type: "javascript" do
         "applied_policy_name":ds_get_existing_policies[x]["name"],
         "status":ds_get_existing_policies[x]["status"],
         "updated_at":ds_get_existing_policies[x]["updated_at"],
-        "incident": ds_format_incidents[ds_get_existing_policies[x]["applied_policy_id"]],
+        "incident": ds_format_incidents[ds_get_existing_policies[x]["applied_policy_id"]][0],
+        "incident2": ds_format_incidents[ds_get_existing_policies[x]["applied_policy_id"]][1],
         "options": options
       }
       tracking[subscriptionID] = false
@@ -536,7 +541,8 @@ script "js_format_existing_policies", type: "javascript" do
           "applied_policy_name":ds_get_existing_policies[x]["name"],
           "status":ds_get_existing_policies[x]["status"],
           "updated_at":ds_get_existing_policies[x]["updated_at"],
-          "incident": ds_format_incidents[ds_get_existing_policies[x]["applied_policy_id"]]
+          "incident": ds_format_incidents[ds_get_existing_policies[x]["applied_policy_id"]][0],
+          "incident2": ds_format_incidents[ds_get_existing_policies[x]["applied_policy_id"]][1],
         })
       } else {
         duplicates.push({
@@ -544,14 +550,16 @@ script "js_format_existing_policies", type: "javascript" do
           "applied_policy_name":current["applied_policy_name"],
           "status":current["status"],
           "updated_at":current["updated_at"],
-          "incident": current["incident"]
+          "incident": current["incident"],
+          "incident2": current["incident2"]
         })
         formatted[subscriptionID] = {
           "applied_policy_id":ds_get_existing_policies[x]["applied_policy_id"],
           "applied_policy_name":ds_get_existing_policies[x]["name"],
           "status":ds_get_existing_policies[x]["status"],
           "updated_at":ds_get_existing_policies[x]["updated_at"],
-          "incident": ds_format_incidents[ds_get_existing_policies[x]["applied_policy_id"]],
+          "incident": ds_format_incidents[ds_get_existing_policies[x]["applied_policy_id"]][0],
+          "incident2": ds_format_incidents[ds_get_existing_policies[x]["applied_policy_id"]][1],
           "options": options
         }
 
@@ -609,11 +617,19 @@ script "js_take_in_parameters", type: "javascript" do
       "policy_status": ep["status"],
       "policy_last_update": ep["updated_at"],
     };
-    if (ep.incident != null) {
+
+    if (ep.incident != null && ep.incident != undefined) {
       policy_status["incident_state"] = ep.incident.state + '||' + incident_url_prefix + ep.incident.incident_id;
       policy_status["incident_violation_data_count"] = ep.incident.violation_data_count;
       policy_status["incident_last_update"] = ep.incident.updated_at;
     }
+
+    if (ep.incident2 != null && ep.incident2 != undefined) {
+      policy_status["incident2_state"] = ep.incident2.state + '||' + incident_url_prefix + ep.incident2.incident_id;
+      policy_status["incident2_violation_data_count"] = ep.incident2.violation_data_count;
+      policy_status["incident2_last_update"] = ep.incident2.updated_at;
+    }
+
     grid_and_cwf.grid.push(policy_status);
   }
 
@@ -944,6 +960,16 @@ EOS
       end
       field "incident_last_update" do
         label "Incident Last Update"
+      end
+      field "incident2_state" do
+        label "Incident 2 State"
+        format "link-external"
+      end
+      field "incident2_violation_data_count" do
+        label "Incident 2 Violation Count"
+      end
+      field "incident2_last_update" do
+        label "Incident 2 Last Update"
       end
     end
   end
