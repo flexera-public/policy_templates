@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.0.2
+
+- Fixed bug related to disk name calculation
+
 ## v2.0.1
 
 - Fixed bug that caused wrong calculations for ultra tier disks
