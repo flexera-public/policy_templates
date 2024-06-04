@@ -1,0 +1,255 @@
+name "Hidden Policy Templates"
+rs_pt_ver 20180301
+type "policy"
+short_description "Reports any policy templates in the catalog that are hidden and optionally unhides or deletes them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/tools/catalog_management/hidden_policies) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "low"
+category "Operational"
+default_frequency "15 minutes"
+info(
+  version: "0.1.0",
+  provider: "Flexera",
+  service: "Policy Engine",
+  policy_set: "",
+  publish: "false"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify"
+  default []
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Unhide Hidden Policy Templates", "Delete Hidden Policy Templates"]
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_current_published_list" do
+  request do
+    auth $auth_flexera
+    verb "GET"
+    host rs_governance_host
+    path join(["/api/governance/orgs/", rs_org_id, "/published_templates"])
+    query "view", "extended"
+    query "show_hidden", "true"
+    header "Api-Version", "1.0"
+  end
+  result do
+    collect jmes_path(response, "items") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "href", jmes_path(col_item, "href")
+      field "description", jmes_path(col_item, "short_description")
+      field "info", jmes_path(col_item, "info")
+      field "updated_at", jmes_path(col_item, "updated_at")
+      field "hidden", jmes_path(col_item, "hidden")
+    end
+  end
+end
+
+datasource "ds_hidden_templates" do
+  run_script $js_hidden_templates, $ds_current_published_list, $ds_applied_policy
+end
+
+script "js_hidden_templates", type: "javascript" do
+  parameters "ds_current_published_list", "ds_applied_policy"
+  result "result"
+  code <<-EOS
+  hidden_templates = _.filter(ds_current_published_list, function(template) { return template["hidden"] })
+
+  result = _.map(hidden_templates, function(template) {
+    return {
+      id: template['id'],
+      name: template['name'],
+      href: template['href'],
+      description: template['description'],
+      info: template['info'],
+      updated_at: template['updated_at'],
+      hidden: template['hidden'],
+      policy_name: ds_applied_policy['name']
+    }
+  })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_hidden_templates" do
+  validate_each $ds_hidden_templates do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Hidden Policy Templates To Delete"
+    check eq(val(item, "id"), "")
+    escalate $esc_email
+    escalate $esc_unhide_templates
+    escalate $esc_delete_templates
+    export do
+      resource_level true
+      field "id" do
+        label "ID"
+      end
+      field "name" do
+        label "Name"
+      end
+      field "description" do
+        label "Description"
+      end
+      field "href" do
+        label "HREF"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_unhide_templates" do
+  automatic contains($param_automatic_action, "Unhide Hidden Policy Templates")
+  label "Unhide Hidden Policy Templates"
+  description "Approval to unhide (show) all selected policy templates"
+  run "unhide_templates", data, rs_governance_host
+end
+
+escalation "esc_delete_templates" do
+  automatic contains($param_automatic_action, "Delete Hidden Policy Templates")
+  label "Delete Hidden Policy Templates"
+  description "Approval to delete all selected policy templates"
+  run "delete_templates", data, rs_governance_host
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define unhide_templates($data, $rs_governance_host) return $all_responses do
+  $$all_responses = []
+
+  foreach $template in $data do
+    sub on_error: handle_error() do
+      call unhide_template($template, $rs_governance_host) retrieve $response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define unhide_template($template, $rs_governance_host) return $response do
+  $host = $rs_governance_host
+  $href = $template["href"] + "/unhide"
+  $url = $host + $href
+  task_label("POST " + $url)
+
+  $response = http_request(
+    auth: $$auth_flexera,
+    https: true,
+    verb: "post",
+    host: $host,
+    href: $href,
+    headers: { "Api-Version": "1.0" }
+  )
+
+  task_label("POST Flexera Policy Template response: " + $template["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response from POST Flexera Policy Template: "+ $template["id"] + " " + to_json($response)
+  else
+    task_label("POST Flexera Policy Template successful: " + $template["id"])
+  end
+end
+
+define delete_templates($data, $rs_governance_host) return $all_responses do
+  $$all_responses = []
+
+  foreach $template in $data do
+    sub on_error: handle_error() do
+      call delete_template($template, $rs_governance_host) retrieve $response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define delete_template($template, $rs_governance_host) return $response do
+  $host = $rs_governance_host
+  $href = $template["href"]
+  $url = $host + $href
+  task_label("DELETE " + $url)
+
+  $response = http_request(
+    auth: $$auth_flexera,
+    https: true,
+    verb: "delete",
+    host: $host,
+    href: $href,
+    headers: { "Api-Version": "1.0" }
+  )
+
+  task_label("DELETE Flexera Policy Template response: " + $template["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response from DELETE Flexera Policy Template: "+ $template["id"] + " " + to_json($response)
+  else
+    task_label("DELETE Flexera Policy Template successful: " + $template["id"])
+  end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
+end

@@ -17,6 +17,7 @@ default_child_policy_template_files = [
   "../../cost/aws/eks_without_spot/aws_eks_without_spot.pt",
   "../../cost/aws/gp3_volume_upgrade/aws_upgrade_to_gp3_volume.pt",
   "../../cost/aws/idle_compute_instances/idle_compute_instances.pt",
+  "../../cost/aws/idle_nat_gateways/aws_idle_nat_gateways.pt",
   "../../cost/aws/object_storage_optimization/aws_object_storage_optimization.pt",
   "../../cost/aws/old_snapshots/aws_delete_old_snapshots.pt",
   "../../cost/aws/rightsize_rds_instances/aws_rightsize_rds_instances.pt",
