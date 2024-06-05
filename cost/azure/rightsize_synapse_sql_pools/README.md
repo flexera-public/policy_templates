@@ -1,4 +1,4 @@
-# Azure Rightsize Synapse SQL Pools CloudTest
+# Azure Rightsize Synapse SQL Pools
 
 ## What It Does
 
