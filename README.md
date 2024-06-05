@@ -35,11 +35,11 @@ These templates can generate savings estimates for your environment.
 - [AWS Rightsize EC2 Instances](./cost/aws/rightsize_ec2_instances)
 - [AWS Rightsize RDS Instances](./cost/aws/rightsize_rds_instances)
 - [AWS Savings Plan Recommendations](./cost/aws/savings_plan/recommendations)
+- [AWS Superseded EBS Volumes](./cost/aws/superseded_ebs_volumes)
 - [AWS Superseded EC2 Instances](./cost/aws/superseded_instances)
 - [AWS Untagged Resources](./compliance/aws/untagged_resources)
 - [AWS Unused Classic Load Balancers](./cost/aws/unused_clbs)
 - [AWS Unused IP Addresses](./cost/aws/unused_ip_addresses)
-- [AWS Unused Volumes](./cost/aws/unused_volumes)
 - [Turbonomic Allocate Virtual Machine Recommendations AWS](./cost/turbonomics/allocate_virtual_machines_recommendations/aws)
 - [Turbonomic Buy Reserved Instances Recommendations AWS](./cost/turbonomics/buy_reserved_instances_recommendations/aws)
 - [Turbonomic Delete Unattached Volumes Recommendations AWS](./cost/turbonomics/delete_unattached_volumes/aws)
@@ -181,11 +181,11 @@ These templates can generate savings estimates for your environment.
   - [AWS Reserved Instances Coverage](./cost/aws/reserved_instances/coverage)
   - [AWS Reserved Instances Recommendations](./cost/aws/reserved_instances/recommendations)
   - [AWS Reserved Instances Utilization](./cost/aws/reserved_instances/utilization)
-  - [AWS Rightsize EBS Volumes](./cost/aws/rightsize_ebs_volumes)
   - [AWS Rightsize EC2 Instances](./cost/aws/rightsize_ec2_instances)
   - [AWS Savings Plan Recommendations](./cost/aws/savings_plan/recommendations)
   - [AWS Savings Plan Utilization](./cost/aws/savings_plan/utilization)
   - [AWS Schedule Instance](./cost/aws/schedule_instance)
+  - [AWS Superseded EBS Volumes](./cost/aws/superseded_ebs_volumes)
   - [AWS Superseded EC2 Instances](./cost/aws/superseded_instances)
   - [AWS Unused IP Addresses](./cost/aws/unused_ip_addresses)
   - [Turbonomic Allocate Virtual Machine Recommendations AWS](./cost/turbonomics/allocate_virtual_machines_recommendations/aws)
@@ -193,7 +193,7 @@ These templates can generate savings estimates for your environment.
 
 - EBS
 
-  - [AWS Unused Volumes](./cost/aws/unused_volumes)
+  - [AWS Rightsize EBS Volumes](./cost/aws/rightsize_ebs_volumes)
 
 - Marketplace
 
