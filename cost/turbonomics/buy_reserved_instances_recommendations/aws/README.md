@@ -1,27 +1,36 @@
 # Turbonomic Buy Reserved Instances Recommendations AWS
 
-## What it does
+## What It Does
 
 The Turbonomic Buy Reserved Instances Recommendations AWS policy utilizes Turbonomic Actions API endpoint (POST `https://turbonomic.com/api/v3/markets/{market_uuid}/actions`)  to provide AWS RI purchase recommendations.
 
 ## Functional Details
 
 - The policy queries the /api/v3/markets/{market_uuid}/actions endpoint for the Turbonomic api and based on action will return action details and savings for on-boarded cloud instances
-- The policy will error after a day, the authorization cookie parameter will need to be refreshed and re-run manually
-- There is a need to run the login credentials against the (`https://xxxx.turbonomic.com/api/v3/login`) endpoint to manually receive cookie authorization
 
-### Input Parameters
+## Input Parameters
 
-- *Authorization Cookie"* - authorization cookie pulled from Turbonomic login endpoint: (POST `https://xxxx.turbonomic.com/api/v3/login`)
-- no_echo: true
-- *Email addresses* - A list of email addresses to notify.
-- *Turbonomic Endpoint* -Host of the Turbonomic endpoint.
+- *Turbonomic Audience* - Audience configured on the Turbonomic instance
+- *Turbonomic Host* - Host of the Turbonomic endpoint.
+- *Email addresses* - A list of email addresses to notify
 
-### Required Flexera Roles
+## Policy Actions
 
-- policy_manager
-- billing_center_viewer
+- Send an email report
 
-### Cost
+## Prerequisites
+
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+
+- [**Turbonomic Credential**] which has the following roles:
+  - `OBSERVER`
+
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+
+## Supported Clouds
+
+- AWS
+
+## Cost
 
 This Policy Template does not incur any cloud costs.
