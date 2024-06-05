@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.1.3
+
+- Policy is no longer published to the Flexera catalog.
+
 ## v2.1.2
 
 - Added `deprecated` field to policy metadata. Functionality is unchanged.
