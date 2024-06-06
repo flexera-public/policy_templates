@@ -2,11 +2,12 @@ name "Turbonomic Rightsize Databases Recommendations Google"
 rs_pt_ver 20180301
 type "policy"
 short_description "Turbonomic policy that gives recommendations to rightsize Databases/DatabaseServers [README](https://github.com/flexera-public/policy_templates/tree/master/cost/turbonomics/rightsize_databases_recommendations/google) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
 severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "0.5",
+  version: "0.5.1",
   source: "Turbonomic",
   service: "Usage Discount",
   provider: "Google",
@@ -21,11 +22,15 @@ info(
 
 parameter "param_turbonomic_endpoint" do
   type "string"
-  label "Turbonomic endpoint"
+  category "Policy Settings"
+  label "Turbonomic Host"
+  description "Your Turbonomic host or IP."
+  # No default value, user input required
 end
 
 parameter "param_provider" do
   type "string"
+  category "Policy Settings"
   label "Provider"
   description "Specifies provider where you want to get recommendations"
   # Once we can add multiple providers, allow: "All", "AWS", "Azure Subscription", "GCP Project"
@@ -34,24 +39,38 @@ parameter "param_provider" do
   default "GCP Project"
 end
 
-parameter "param_auth_cookie" do
+parameter "param_turbonomic_audience" do
   type "string"
-  label "Authorization Cookie"
-  no_echo true
-  description "Valid authorization cookie."
+  category "Policy Settings"
+  label "Turbonomic instance audience"
+  description "Audience configured on the Turbonomic instance"
+  default "flexera"
 end
 
 parameter "param_email" do
   type "list"
+  category "Policy Settings"
   label "Email addresses to notify"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
+  # No default value, user input required
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_turbonomic" do
+  schemes "basic"
+  label "Turbonomic"
+  description "Select the Turbonomic Basic Auth Credential from the list."
+  tags "provider=turbonomic"
 end
 
 ###############################################################################
 # Pagination
 ###############################################################################
 
-pagination "turbonomic_databases_pagination_header" do
+pagination "pagination_turbonomic" do
   get_page_marker do
     header "x-next-cursor"
   end
@@ -64,9 +83,39 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+#get turbonomic token
+datasource "ds_get_turbonomic_token" do
+  request do
+    run_script $js_get_turbonomic_token, $param_turbonomic_host, $param_turbonomic_audience
+  end
+  result do
+    encoding "json"
+    field "access_token", jmes_path(response, "access_token")
+  end
+end
+
+##script retrieves an OAuth2 token from the Turbonomic API
+script "js_get_turbonomic_token", type: "javascript" do
+  parameters "turbonomic_endpoint", "audience"
+  result "request"
+  code <<-EOS
+    var request = {
+      verb: "POST",
+      auth: "auth_turbonomic"
+      host: turbonomic_endpoint,
+      path: "/oauth2/token",
+      headers: {
+      "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: "grant_type=client_credentials" + "&audience=" + audience + "&scope=role:OBSERVER"
+
+    }
+EOS
+end
+
 datasource "ds_get_turbonomic_recommendations" do
   request do
-    run_script $js_get_turbonomic_recommendations, $param_turbonomic_endpoint, $param_auth_cookie
+    run_script $js_get_turbonomic_recommendations, $param_turbonomic_endpoint, val($ds_get_turbonomic_token, "access_token")
   end
   result do
     encoding "json"
@@ -92,13 +141,13 @@ datasource "ds_get_turbonomic_recommendations" do
 end
 
 script "js_get_turbonomic_recommendations", type: "javascript" do
+  parameters "turbonomic_endpoint", "access_token"
   result "request"
-  parameters "turbonomic_endpoint", "auth_cookie"
   code <<-EOS
     request = {
       verb: "POST",
       host: turbonomic_endpoint,
-      pagination: "turbonomic_databases_pagination_header",
+      pagination: "pagination_turbonomic",
       path: "/api/v3/markets/Market/actions"
       body_fields: {
         "actionStateList": ["READY", "ACCEPTED", "QUEUED", "IN_PROGRESS"],
@@ -113,7 +162,7 @@ script "js_get_turbonomic_recommendations", type: "javascript" do
       },
       headers: {
         "Content-Type": "application/json"
-        "Cookie": auth_cookie
+         "Authorization": "Bearer " + access_token
       }
     }
   EOS
@@ -121,7 +170,7 @@ end
 
 datasource "ds_get_business_units" do
   request do
-    run_script $js_get_business_units, $param_turbonomic_endpoint, $param_auth_cookie, $param_provider
+    run_script $js_get_business_units, $param_turbonomic_endpoint, val($ds_get_turbonomic_token, "access_token"), $param_provider
   end
   result do
     encoding "json"
@@ -134,8 +183,8 @@ datasource "ds_get_business_units" do
 end
 
 script "js_get_business_units", type: "javascript" do
+  parameters "turbonomic_endpoint", "access_token", "provider"
   result "request"
-  parameters "turbonomic_endpoint", "auth_cookie", "provider"
   code <<-EOS
     query_params = {"type": "DISCOVERED"}
 
@@ -158,7 +207,7 @@ script "js_get_business_units", type: "javascript" do
       query_params: query_params,
       headers: {
         "Content-Type": "application/json"
-        "Cookie": auth_cookie
+         "Authorization": "Bearer " + access_token
       }
     }
   EOS
@@ -169,8 +218,8 @@ datasource "ds_filtered_turbonomic_recommendations" do
 end
 
 script "js_filtered_turbonomic_recommendations", type: "javascript" do
-  result "result"
   parameters "ds_get_turbonomic_recommendations", "ds_get_business_units", "param_provider", "turbonomic_endpoint"
+  result "result"
   code <<-EOS
     instances = []
     monthlySavings = 0.0
@@ -271,7 +320,7 @@ end
 datasource "ds_get_projected_statistics" do
   iterate $ds_filtered_recommendations
   request do
-    run_script $js_get_projected_statistics, iter_item, $param_turbonomic_endpoint, $param_auth_cookie
+    run_script $js_get_projected_statistics, iter_item, $param_turbonomic_endpoint, val($ds_get_turbonomic_token, "access_token")
   end
   result do
     encoding "json"
@@ -291,7 +340,7 @@ end
 datasource "ds_get_current_statistics" do
   iterate $ds_filtered_recommendations
   request do
-    run_script $js_get_projected_statistics, iter_item, $param_turbonomic_endpoint, $param_auth_cookie
+    run_script $js_get_projected_statistics, iter_item, $param_turbonomic_endpoint, val($ds_get_turbonomic_token, "access_token")
   end
   result do
     encoding "json"
@@ -309,7 +358,7 @@ datasource "ds_get_current_statistics" do
 end
 
 script "js_get_projected_statistics", type: "javascript" do
-  parameters "instance", "turbonomic_endpoint", "auth_cookie"
+  parameters "instance", "turbonomic_endpoint", "access_token"
   result "request"
   code <<-EOS
     nineHours = 1000 * 60 * 60 * 9
@@ -332,7 +381,7 @@ script "js_get_projected_statistics", type: "javascript" do
       body_fields: body_fields
       headers: {
         "Content-Type": "application/json"
-        "Cookie": auth_cookie
+         "Authorization": "Bearer " + access_token
       }
     }
   EOS
@@ -343,8 +392,8 @@ datasource "ds_combined_data" do
 end
 
 script "js_combined_data", type: "javascript" do
-  result "result"
   parameters "ds_get_turbonomic_recommendations", "ds_get_projected_statistics", "ds_get_current_statistics"
+  result "result"
   code <<-EOS
     _.each(ds_get_projected_statistics, function (projectedStatistic, ii) {
       _.each(ds_get_turbonomic_recommendations.instances, function (db, index) {
