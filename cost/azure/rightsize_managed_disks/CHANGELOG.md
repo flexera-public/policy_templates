@@ -2,7 +2,7 @@
 
 ## v2.0.3
 
-- Fixed bug related to the Premium SSD price calculation
+- Fixed an issue related to the Premium SSD price calculation with low throughput
   
 ## v2.0.2
 
