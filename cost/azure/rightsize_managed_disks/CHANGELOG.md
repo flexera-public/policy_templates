@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.0.3
+
+- Fixed bug related to the Premium SSD price calculation
+  
 ## v2.0.2
 
 - Fixed bug related to disk name calculation
