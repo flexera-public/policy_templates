@@ -2,16 +2,16 @@
 
 ## What It Does
 
-This policy checks the storage usage for all the Azure SQL database instances purchased using the vCore purchasing model and determines if a smaller storage size would be viable. A report is created with these recommendations that can optionally be emailed.
+This policy checks the storage usage for all the Azure SQL database instances purchased using the vCore purchasing model and determines if a smaller maximum storage space would be viable. A report is created with these recommendations that can optionally be emailed.
 
-Only vCore purchases are supported because DTU-purchased databases cannot have their storage size changed without changing the entire SKU, including CPU and memory usage. Automatic actions are not supported because a SQL database cannot have its storage size reduced; a new smaller database would need to be provisioned and data would need to be migrated to it.
+Only vCore purchases are supported because DTU-purchased databases cannot have their maximum storage space changed independently without changing the entire SKU, including CPU and memory usage. Automatic actions are not supported because a SQL database cannot have its maximum storage space reduced; a new smaller database would need to be provisioned and data would need to be migrated to it.
 
 ### Policy Savings Details
 
-The policy includes the estimated monthly savings. The estimated monthly savings is recognized for unused resources if the resource is terminated, and for underutilized resources if the resource is downsized.
+The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the SQL database is replaced with a new one using the recommended maximum storage space.
 
-- The `Estimated Monthly Savings` is calculated by subtracting the monthly cost of the recommended storage size from the current storage size.
-- Azure list price is used to determine the cost of the current and recommended storage sizes. Pricing is converted from USD to local currency based on current exchange rates when applicable.
+- The `Estimated Monthly Savings` is calculated by subtracting the monthly cost of the recommended maximum storage space from the current maximum storage space.
+- Azure list price is used to determine the cost of the current and recommended maximum storage spaces. Pricing is converted from USD to local currency based on current exchange rates when applicable.
 - The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
 - Both `Estimated Monthly Savings` and `Potential Monthly Savings` will be reported in the currency of the Flexera organization the policy is applied in.
 
