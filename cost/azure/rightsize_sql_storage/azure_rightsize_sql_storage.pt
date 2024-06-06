@@ -1,0 +1,1061 @@
+name "Azure Rightsize SQL Database Storage"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks for SQL Database instances that have excessive provisioned disk space. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_sql_storage/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+category "Cost"
+severity "low"
+default_frequency "weekly"
+info(
+  version: "0.1.0",
+  provider: "Azure",
+  service: "SQL",
+  policy_set: "Rightsize Database Instances",
+  recommendation_type: "Usage Reduction"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  category "Policy Settings"
+  label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation"
+  min_value 0
+  default 0
+end
+
+parameter "param_minimum_age" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Age (Days)"
+  description "The minimum age, in days, since a SQL database was created to produce recommendations for it. Set to 0 to ignore age entirely."
+  min_value 0
+  default 0
+end
+
+parameter "param_subscriptions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Subscriptions"
+  description "Allow or Deny entered Subscriptions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_subscriptions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Subscriptions List"
+  description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
+parameter "param_threshold" do
+  type "number"
+  category "Filters"
+  label "Disk Usage Threshold (%)"
+  description "Report instances whose used disk space is below the specified percentage, indicating that they may be overprovisioned."
+  min_value 1
+  max_value 100
+  default 60
+end
+
+parameter "param_recommendation_threshold" do
+  type "number"
+  category "Filters"
+  label "Disk Downgrade Threshold (%)"
+  description "The percentage of free disk space that recommendations should always include. Recommendations will always be for a disk size that would result in at least this percentage of free space based on current usage."
+  min_value 0
+  max_value 99
+  default 20
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_azure" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_azure" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
+end
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-EOS
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
+end
+
+datasource "ds_azure_subscriptions" do
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path "/subscriptions/"
+    query "api-version", "2020-01-01"
+    header "User-Agent", "RS Policies"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "subscriptionId")
+      field "name", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
+    end
+  end
+end
+
+datasource "ds_azure_subscriptions_filtered" do
+  run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
+end
+
+script "js_azure_subscriptions_filtered", type: "javascript" do
+  parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
+  result "result"
+  code <<-EOS
+  if (param_subscriptions_list.length > 0) {
+    result = _.filter(ds_azure_subscriptions, function(subscription) {
+      include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
+
+      if (param_subscriptions_allow_or_deny == "Deny") {
+        include_subscription = !include_subscription
+      }
+
+      return include_subscription
+    })
+  } else {
+    result = ds_azure_subscriptions
+  }
+EOS
+end
+
+datasource "ds_azure_sql_servers" do
+  iterate $ds_azure_subscriptions_filtered
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Sql/servers"])
+    query "api-version", "2022-02-01-preview"
+    header "User-Agent", "RS Policies"
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value") do
+      field "id", jmes_path(col_item, "id")
+      field "region", jmes_path(col_item, "location")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+      field "fqdn", jmes_path(col_item, "properties.fullyQualifiedDomainName")
+      field "state", jmes_path(col_item, "properties.state")
+      field "version", jmes_path(col_item, "properties.version")
+      field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
+      field "subscriptionID", val(iter_item, "id")
+      field "subscriptionName", val(iter_item, "name")
+    end
+  end
+end
+
+datasource "ds_azure_sql_databases" do
+  iterate $ds_azure_sql_servers
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join([val(iter_item, "id"), "/databases"])
+    query "api-version", "2022-02-01-preview"
+    header "User-Agent", "RS Policies"
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "type", jmes_path(col_item, "type")
+      field "sku", jmes_path(col_item, "sku")
+      field "tags", jmes_path(col_item, "tags")
+      field "createdTime", jmes_path(col_item, "properties.creationDate")
+      field "status", jmes_path(col_item, "properties.status")
+      field "maxSizeBytes", jmes_path(col_item, "properties.maxSizeBytes")
+      field "maxLogSizeBytes", jmes_path(col_item, "properties.maxLogSizeBytes")
+      field "region", val(iter_item, "region")
+      field "serverId", val(iter_item, "id")
+      field "serverKind", val(iter_item, "kind")
+      field "serverName", val(iter_item, "name")
+      field "serverTags", val(iter_item, "tags")
+      field "serverFQDN", val(iter_item, "fqdn")
+      field "serverState", val(iter_item, "state")
+      field "serverVersion", val(iter_item, "version")
+      field "resourceGroup", val(iter_item, "resourceGroup")
+      field "subscriptionID", val(iter_item, "subscriptionID")
+      field "subscriptionName", val(iter_item, "subscriptionName")
+    end
+  end
+end
+
+datasource "ds_azure_sql_databases_vcpu_filtered" do
+  run_script $js_azure_sql_databases_vcpu_filtered, $ds_azure_sql_databases
+end
+
+script "js_azure_sql_databases_vcpu_filtered", type: "javascript" do
+  parameters "ds_azure_sql_databases"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_azure_sql_databases, function(db) {
+    return db['sku']['tier'] == "GeneralPurpose" || db['sku']['tier'] == "BusinessCritical" || db['sku']['tier'] == "Hyperscale"
+  })
+EOS
+end
+
+datasource "ds_azure_sql_databases_age_filtered" do
+  run_script $js_azure_sql_databases_age_filtered, $ds_azure_sql_databases_vcpu_filtered, $param_minimum_age
+end
+
+script "js_azure_sql_databases_age_filtered", type: "javascript" do
+  parameters "ds_azure_sql_databases_vcpu_filtered", "param_minimum_age"
+  result "result"
+  code <<-EOS
+  if (param_minimum_age > 0) {
+    today = new Date()
+
+    result = _.filter(ds_azure_sql_databases_vcpu_filtered, function(db) {
+      created = new Date(db['createdTime'])
+      age = Math.round((today - created) / 1000 / 60 / 60 / 24)
+
+      return age >= param_minimum_age
+    })
+  } else {
+    result = ds_azure_sql_databases_vcpu_filtered
+  }
+EOS
+end
+
+datasource "ds_azure_sql_databases_system_filtered" do
+  run_script $js_azure_sql_databases_system_filtered, $ds_azure_sql_databases_age_filtered
+end
+
+script "js_azure_sql_databases_system_filtered", type: "javascript" do
+  parameters "ds_azure_sql_databases_age_filtered"
+  result "result"
+  code <<-EOS
+  result = _.reject(ds_azure_sql_databases_age_filtered, function(db) {
+    sku_name = null
+    if (typeof(db['sku']) == 'object') { sku_name = db['sku']['name'] }
+
+    return sku_name == 'System' || sku_name == null || sku_name == undefined
+  })
+EOS
+end
+
+datasource "ds_azure_sql_databases_tag_filtered" do
+  run_script $js_azure_sql_databases_tag_filtered, $ds_azure_sql_databases_system_filtered, $param_exclusion_tags, $param_exclusion_tags_boolean
+end
+
+script "js_azure_sql_databases_tag_filtered", type: "javascript" do
+  parameters "ds_azure_sql_databases_system_filtered", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  result "result"
+  code <<-EOS
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  if (param_exclusion_tags.length > 0) {
+    result = _.reject(ds_azure_sql_databases_system_filtered, function(resource) {
+      resource_tags = {}
+      if (typeof(resource['tags']) == 'object') { resource_tags = resource['tags'] }
+
+      // Store a list of found tags
+      found_tags = []
+
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_tag = resource_tags[comparator['key']]
+
+        if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+        if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+        if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_tag == undefined) { found_tags.push(string) }
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+      })
+
+      all_tags_found = found_tags.length == comparators.length
+      any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+      return all_tags_found || any_tags_found
+    })
+  } else {
+    result = ds_azure_sql_databases_system_filtered
+  }
+EOS
+end
+
+datasource "ds_azure_sql_databases_region_filtered" do
+  run_script $js_azure_sql_databases_region_filtered, $ds_azure_sql_databases_tag_filtered, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_azure_sql_databases_region_filtered", type: "javascript" do
+  parameters "ds_azure_sql_databases_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_azure_sql_databases_tag_filtered, function(ip) {
+      include_db = _.contains(param_regions_list, db['region'])
+
+      if (param_regions_allow_or_deny == "Deny") {
+        include_db = !include_db
+      }
+
+      return include_db
+    })
+  } else {
+    result = ds_azure_sql_databases_tag_filtered
+  }
+EOS
+end
+
+datasource "ds_azure_sql_database_metrics" do
+  iterate $ds_azure_sql_databases_region_filtered
+  request do
+    run_script $js_azure_sql_database_metrics, val(iter_item, "id"), $param_azure_endpoint
+  end
+  result do
+    encoding "json"
+    field "value", jmes_path(response, "value")
+    field "id", val(iter_item, "id")
+    field "name", val(iter_item, "name")
+    field "type", val(iter_item, "type")
+    field "sku", val(iter_item, "sku")
+    field "tags", val(iter_item, "tags")
+    field "createdTime", val(iter_item, "createdTime")
+    field "status", val(iter_item, "status")
+    field "maxSizeBytes", val(iter_item, "maxSizeBytes")
+    field "maxLogSizeBytes", val(iter_item, "maxLogSizeBytes")
+    field "region", val(iter_item, "region")
+    field "serverId", val(iter_item, "serverId")
+    field "serverName", val(iter_item, "serverName")
+    field "serverTags", val(iter_item, "serverTags")
+    field "serverFQDN", val(iter_item, "serverFQDN")
+    field "serverState", val(iter_item, "serverState")
+    field "serverVersion", val(iter_item, "serverVersion")
+    field "resourceGroup", val(iter_item, "resourceGroup")
+    field "subscriptionID", val(iter_item, "subscriptionID")
+    field "subscriptionName", val(iter_item, "subscriptionName")
+  end
+end
+
+script "js_azure_sql_database_metrics", type: "javascript" do
+  parameters "resource_id", "param_azure_endpoint"
+  result "request"
+  code <<-EOS
+  end_date = new Date()
+  end_date.setSeconds(0)
+  end_date.setMilliseconds(0)
+
+  start_date = new Date()
+  start_date.setSeconds(0)
+  start_date.setMilliseconds(0)
+  start_date.setMinutes(start_date.getMinutes() - 5)
+
+  timespan = start_date.toISOString() + "/" + end_date.toISOString()
+
+  var request = {
+    auth: "auth_azure",
+    pagination: "pagination_azure",
+    host: param_azure_endpoint,
+    verb: "GET",
+    path: resource_id + "/providers/microsoft.insights/metrics",
+    query_params: {
+      "api-version": "2018-01-01",
+      "timespan": timespan,
+      "metricnames": "storage",
+      "aggregation": "total",
+      "interval": "PT1M"
+    },
+    headers: {
+      "User-Agent": "RS Policies"
+    },
+    // Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status: [400, 403, 404]
+  }
+EOS
+end
+
+datasource "ds_azure_sql_databases_with_used_space" do
+  run_script $js_azure_sql_databases_with_used_space, $ds_azure_sql_database_metrics, $ds_applied_policy, $param_threshold
+end
+
+script "js_azure_sql_databases_with_used_space", type: "javascript" do
+  parameters "ds_azure_sql_database_metrics", "ds_applied_policy", "param_threshold"
+  result "result"
+  code <<-EOS
+  result = []
+
+  _.each(ds_azure_sql_database_metrics, function(db) {
+    metrics = _.sortBy(db["value"][0]["timeseries"][0]["data"], "timeStamp").reverse()
+    usedSpace = metrics[0]["total"]
+    usedPercentage = usedSpace / db["maxSizeBytes"] * 100
+
+    if (usedPercentage < param_threshold) {
+      tags = []
+
+      if (typeof(db['tags']) == 'object') {
+        _.each(Object.keys(db['tags']), function(key) {
+          tags.push([key, "=", db['tags'][key]].join(''))
+        })
+      }
+
+      result.push({
+        id: db["id"],
+        resourceName: db["name"],
+        type: db["type"],
+        sku: db["sku"],
+        skuName: db["sku"]["name"],
+        skuTier: db["sku"]["tier"],
+        skuCapacity: db["sku"]["capacity"],
+        createdTime: new Date(db["createdTime"]).toISOString(),
+        status: db["status"],
+        maxSizeBytes: db["maxSizeBytes"],
+        maxLogSizeBytes: db["maxLogSizeBytes"],
+        region: db["region"],
+        serverId: db["serverId"],
+        serverName: db["serverName"],
+        serverTags: db["serverTags"],
+        serverFQDN: db["serverFQDN"],
+        serverState: db["serverState"],
+        serverVersion: db["serverVersion"],
+        resourceGroup: db["resourceGroup"],
+        accountID: db["subscriptionID"],
+        accountName: db["subscriptionName"],
+        tags: tags.join(", "),
+        usedSpace: usedSpace,
+        usedPercentage: Math.round(usedPercentage * 100) / 100,
+        service: "Microsoft.Sql",
+        platform: "Azure SQL Database",
+        policy_name: ds_applied_policy["name"],
+        threshold: param_threshold,
+        message: "",
+        total_savings: ""
+      })
+    }
+  })
+EOS
+end
+
+datasource "ds_azure_sql_capabilities_queries" do
+  run_script $js_azure_sql_capabilities_queries, $ds_azure_sql_databases_with_used_space
+end
+
+script "js_azure_sql_capabilities_queries", type: "javascript" do
+  parameters "ds_azure_sql_databases_with_used_space"
+  result "result"
+  code <<-EOS
+  result = []
+
+  _.each(ds_azure_sql_databases_with_used_space, function(db) {
+    existing_entry = _.find(result, function(item) {
+      return item['accountID'] == db['accountID'] && item['region'] == db['region']
+    })
+
+    if (existing_entry == undefined) {
+      result.push({ accountID: db['accountID'], region: db['region'] })
+    }
+  })
+EOS
+end
+
+datasource "ds_azure_sql_capabilities" do
+  iterate $ds_azure_sql_capabilities_queries
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "accountID"), "/providers/Microsoft.Sql/locations/", val(iter_item, "region"), "/capabilities"])
+    query "api-version", "2023-08-01-preview"
+    header "User-Agent", "RS Policies"
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    field "supportedServerVersions", jmes_path(response, "supportedServerVersions")
+    field "supportedManagedInstanceVersions", jmes_path(response, "supportedManagedInstanceVersions")
+    field "supportedJobAgentVersions", jmes_path(response, "supportedJobAgentVersions")
+    field "accountID", val(iter_item, "accountID")
+    field "region", val(iter_item, "region")
+  end
+end
+
+datasource "ds_azure_sql_capabilities_table" do
+  run_script $js_azure_sql_capabilities_table, $ds_azure_sql_capabilities
+end
+
+script "js_azure_sql_capabilities_table", type: "javascript" do
+  parameters "ds_azure_sql_capabilities"
+  result "result"
+  code <<-EOS
+  // Build a table with several layers of keys to quickly find size tables for specific DB instances
+  result = {}
+
+  _.each(ds_azure_sql_capabilities, function(list) {
+    accountID = list['accountID']
+    region = list['region']
+    if (result[accountID] == undefined) { result[accountID] = {} }
+    if (result[accountID][region] == undefined) { result[accountID][region] = {} }
+
+    all_lists = list["supportedManagedInstanceVersions"].concat(list["supportedServerVersions"])
+
+    _.each(all_lists, function(item) {
+      version = item["name"]
+
+      if (result[accountID][region][version] == undefined) {
+        result[accountID][region][version] = {}
+      }
+
+      if (item["supportedEditions"] != undefined) {
+        _.each(item["supportedEditions"], function(edition) {
+          edition_name = edition["name"]
+
+          if (result[accountID][region][version][edition_name] == undefined) {
+            result[accountID][region][version][edition_name] = {}
+          }
+
+          if (edition["supportedFamilies"] != undefined) {
+            _.each(edition["supportedFamilies"], function(family) {
+              sku = family["sku"]
+
+              if (result[accountID][region][version][edition_name][sku] == undefined) {
+                result[accountID][region][version][edition_name][sku] = {}
+              }
+
+              if (family["supportedVcoresValues"] != undefined) {
+                _.each(family["supportedVcoresValues"], function(vcore) {
+                  vcores = vcore["value"]
+
+                  if (vcore["supportedStorageSizes"] != undefined) {
+                    if (result[accountID][region][version][edition_name][sku][vcores] == undefined) {
+                      sizes = _.filter(vcore["supportedStorageSizes"], function(size) {
+                        return size["status"] == "Available"
+                      })
+
+                      result[accountID][region][version][edition_name][sku][vcores] = sizes
+                    }
+                  }
+                })
+              }
+            })
+          }
+        })
+      }
+    })
+  })
+EOS
+end
+
+datasource "ds_azure_sql_storage_incident" do
+  run_script $js_azure_sql_storage_incident, $ds_azure_sql_databases_with_used_space, $ds_azure_sql_capabilities_table, $param_recommendation_threshold
+end
+
+script "js_azure_sql_storage_incident", type: "javascript" do
+  parameters "ds_azure_sql_databases_with_used_space", "ds_azure_sql_capabilities_table", "param_recommendation_threshold"
+  result "result"
+  code <<-EOS
+  result = []
+
+  _.each(ds_azure_sql_databases_with_used_space, function(db) {
+    // Calculate hypothetical optimal size based on free space requirements
+    optimalSize = db["usedSpace"] / (100 - param_recommendation_threshold) * 100
+    recommendedSize = db["maxSizeBytes"]
+
+    if (optimalSize < db["maxSizeBytes"]) {
+      // Iterate through all lists, since there can be multiple schemas for choosing sizes for a DB instance
+      _.each(ds_azure_sql_capabilities_table[db['accountID']][db['region']][db['serverVersion']][db['skuTier']][db['skuName']][db['skuCapacity'].toString()], function(size_table) {
+        // Convert all values to bytes
+        minValue = size_table["minValue"]["limit"]
+        if (size_table["minValue"]["unit"] == "Petabytes") { minValue = minValue * 1024 * 1024 * 1024 * 1024 * 1024 }
+        if (size_table["minValue"]["unit"] == "Terabytes") { minValue = minValue * 1024 * 1024 * 1024 * 1024 }
+        if (size_table["minValue"]["unit"] == "Gigabytes") { minValue = minValue * 1024 * 1024 * 1024 }
+        if (size_table["minValue"]["unit"] == "Megabytes") { minValue = minValue * 1024 * 1024 }
+        if (size_table["minValue"]["unit"] == "Kilobytes") { minValue = minValue * 1024 }
+
+        maxValue = size_table["maxValue"]["limit"]
+        if (size_table["maxValue"]["unit"] == "Petabytes") { maxValue = maxValue * 1024 * 1024 * 1024 * 1024 * 1024 }
+        if (size_table["maxValue"]["unit"] == "Terabytes") { maxValue = maxValue * 1024 * 1024 * 1024 * 1024 }
+        if (size_table["maxValue"]["unit"] == "Gigabytes") { maxValue = maxValue * 1024 * 1024 * 1024 }
+        if (size_table["maxValue"]["unit"] == "Megabytes") { maxValue = maxValue * 1024 * 1024 }
+        if (size_table["maxValue"]["unit"] == "Kilobytes") { maxValue = maxValue * 1024 }
+
+        scaleSize = size_table["scaleSize"]["limit"]
+        if (size_table["scaleSize"]["unit"] == "Petabytes") { scaleSize = scaleSize * 1024 * 1024 * 1024 * 1024 * 1024 }
+        if (size_table["scaleSize"]["unit"] == "Terabytes") { scaleSize = scaleSize * 1024 * 1024 * 1024 * 1024 }
+        if (size_table["scaleSize"]["unit"] == "Gigabytes") { scaleSize = scaleSize * 1024 * 1024 * 1024 }
+        if (size_table["scaleSize"]["unit"] == "Megabytes") { scaleSize = scaleSize * 1024 * 1024 }
+        if (size_table["scaleSize"]["unit"] == "Kilobytes") { scaleSize = scaleSize * 1024 }
+
+        // Increment from the lowest possible size by the smallest incremental unit until we find
+        // the smallest size that is larger than our optimized size
+        tempSize = null
+
+        if (recommendedSize > minValue) {
+          tempSize = minValue
+          while (tempSize < optimalSize) { tempSize += scaleSize }
+        }
+
+        // If what we found is smaller than the previous recommendedSize, replace it
+        if (tempSize != null && tempSize < recommendedSize) { recommendedSize = tempSize }
+      })
+    }
+
+    if (recommendedSize < db["maxSizeBytes"]) {
+      // Convert everything to GiB and round to two digits
+      maxSize = Math.round(db["maxSizeBytes"] / 1024  / 1024 / 1024 * 100) / 100
+      usedSpace = Math.round(db["usedSpace"] / 1024  / 1024 / 1024 * 100) / 100
+      recommendedSize = Math.round(recommendedSize / 1024  / 1024 / 1024 * 100) / 100
+
+      recommendationDetails = [
+        "Downsize storage for Azure SQL database ", db["resourceName"], " ",
+        "in Azure Subscription ", db["accountName"], " ",
+        "(", db["accountID"], ") ",
+        "from ", maxSize, " GiB ",
+        "to ", recommendedSize, " GiB"
+      ].join('')
+
+      result.push({
+        id: db["id"],
+        resourceName: db["resourceName"],
+        type: db["type"],
+        sku: db["sku"],
+        skuName: db["skuName"],
+        skuTier: db["skuTier"],
+        skuCapacity: db["skuCapacity"],
+        createdTime: db["createdTime"],
+        status: db["status"],
+        maxLogSizeBytes: db["maxLogSizeBytes"],
+        region: db["region"],
+        serverId: db["serverId"],
+        serverName: db["serverName"],
+        serverTags: db["serverTags"],
+        serverFQDN: db["serverFQDN"],
+        serverState: db["serverState"],
+        serverVersion: db["serverVersion"],
+        resourceGroup: db["resourceGroup"],
+        accountID: db["accountID"],
+        accountName: db["accountName"],
+        tags: db["tags"],
+        usedPercentage: db["usedPercentage"],
+        service: db["service"],
+        platform: db["platform"],
+        policy_name: db["policy_name"],
+        threshold: db["threshold"],
+        message: db["message"],
+        total_savings: db["total_savings"],
+        usedSpace: usedSpace,
+        resourceType: maxSize,
+        newResourceType: recommendedSize,
+        recommendationDetails: recommendationDetails
+      })
+    }
+  })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_azure_sql_utilization" do
+  validate_each $ds_azure_sql_storage_incident do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure SQL Databases With Excessive Disk Space Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
+    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "id"), ""))
+    escalate $esc_email
+    hash_exclude "tags", "usedSpace", "usedPercentage", "policy_name", "total_savings", "message"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Subscription ID"
+      end
+      field "accountName" do
+        label "Subscription Name"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+        path "id"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "createdTime" do
+        label "Created At"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "skuName" do
+        label "SKU - Name"
+      end
+      field "skuTier" do
+        label "SKU - Tier"
+      end
+      field "skuCapacity" do
+        label "SKU - Capacity"
+      end
+      field "type" do
+        label "Type"
+      end
+      field "usedSpace" do
+        label "Used Disk Space (GiB)"
+      end
+      field "usedPercentage" do
+        label "Used Disk Space (%)"
+      end
+      field "resourceType" do
+        label "Allocated Disk Space (GiB)"
+      end
+      field "newResourceType" do
+        label "Recommended Disk Space (GiB)"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "status" do
+        label "Status"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "platform" do
+        label "Platform"
+      end
+      field "id" do
+        label "ID"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
+end
