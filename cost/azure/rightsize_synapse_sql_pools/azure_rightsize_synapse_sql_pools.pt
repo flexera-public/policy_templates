@@ -104,13 +104,13 @@ parameter "param_stats_lookback" do
   max_value 90
 end
 
-parameter "param_stats_downsize" do
+parameter "param_min_active" do
   type "number"
   category "Statistics"
-  label "Downsize Minimum Used Days"
-  description "How many days the pool has been used to consider it for downsizing. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days."
-  default 30
-  min_value 1
+  label "Minimum Time Active (Days)"
+  description "Only include pools in the results if they have not been paused for at least the number of specified days. Set to '0' to disable this filter and not consider minimum time active in the results."
+  default 15
+  min_value 0
   max_value 90
 end
 
@@ -218,7 +218,7 @@ datasource "ds_azure_synapse_size_map" do
   request do
     verb "GET"
     host "raw.githubusercontent.com"
-    path "/flexera-public/policy_templates/FOPTS-3684_v2_azure_synapse/data/azure/azure_synapse_pricing.json"
+    path "/flexera-public/policy_templates/master/data/azure/azure_synapse_tier_types.json"
     header "User-Agent", "RS Policies"
   end
 end
@@ -718,11 +718,11 @@ EOS
 end
 
 datasource "ds_azure_synapse_underutil_and_idle_pools" do
-  run_script $js_azure_synapse_sql_underutil_and_idle_pools, $ds_azure_synapse_sql_pool_metrics, $ds_azure_synapse_sql_pools_region_filtered, $ds_azure_synapse_sql_pool_costs_grouped, $param_stats_lookback, $param_stats_threshold, $ds_applied_policy, $ds_currency, $param_min_savings, $ds_azure_synapse_size_map, $ds_azure_synapse_sql_pool_dwuused, $param_stats_downsize
+  run_script $js_azure_synapse_sql_underutil_and_idle_pools, $ds_azure_synapse_sql_pool_metrics, $ds_azure_synapse_sql_pools_region_filtered, $ds_azure_synapse_sql_pool_costs_grouped, $param_stats_lookback, $param_stats_threshold, $ds_applied_policy, $ds_currency, $param_min_savings, $ds_azure_synapse_size_map, $ds_azure_synapse_sql_pool_dwuused, $param_min_active
 end
 
 script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
-  parameters "ds_azure_synapse_sql_pool_metrics", "ds_azure_synapse_sql_pools_region_filtered", "ds_azure_synapse_sql_pool_costs_grouped","param_stats_lookback", "param_stats_threshold", "ds_applied_policy", "ds_currency","param_min_savings", "ds_azure_synapse_size_map", "ds_azure_synapse_sql_pool_dwuused", "param_stats_downsize"
+  parameters "ds_azure_synapse_sql_pool_metrics", "ds_azure_synapse_sql_pools_region_filtered", "ds_azure_synapse_sql_pool_costs_grouped","param_stats_lookback", "param_stats_threshold", "ds_applied_policy", "ds_currency","param_min_savings", "ds_azure_synapse_size_map", "ds_azure_synapse_sql_pool_dwuused", "param_min_active"
   result "result"
   code <<-EOS
 
@@ -795,7 +795,7 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
     var isIdle = false
     var isUnderutil = false
     if (connections == 0 && status != "Paused") { isIdle = true }
-    if (dwuUsedPercent <= param_stats_threshold && daysUsed[id] >= param_stats_downsize) { isUnderutil = true}
+    if (dwuUsedPercent <= param_stats_threshold && daysUsed[id] >= param_min_active) { isUnderutil = true}
 
     if (isIdle || isUnderutil) {
       item["newResourceType"] = null
@@ -923,7 +923,7 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
     if (param_stats_lookback > 1) { day_message += "s" }
     underutil_analysis_message = [
       "An Azure Synapse SQL pool is considered underutilized if it has been used ",
-      "in the last ", param_stats_downsize, " ", day_message, " but has an average DWU usage below ",
+      "in the last ", param_min_active, " ", day_message, " but has an average DWU usage below ",
       param_stats_threshold, "% for that same time period. "
     ].join('')
     disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
