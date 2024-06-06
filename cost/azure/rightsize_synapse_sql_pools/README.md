@@ -31,7 +31,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Allow/Deny Regions List* - Filter results by region, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all regions.
 - *Threshold* - Threshold to use when determining if a pool is underutilized.
 - *Statistic Lookback Period* - How many days back to look at metrics. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days.
-- *Downsize Minimum Used Days* - How many days the pool has been used to consider it for downsizing. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days.
+- *Minimum Time Active (Days)* - Only include pools in the results if they have not been paused for at least the number of specified days. Set to '0' to disable this filter and not consider minimum time active in the results.
 - *Exclusion Tags* - Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported.
 - *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
 - *Enable Automatic Pausing* - When this value is set, this policy will automatically pause the selected underutilized Synapse SQL Pools.
