@@ -4,13 +4,12 @@
 
 The Turbonomic Rightsize Virtual Machines Recommendations Azure policy utilizes Turbonomic Actions endpoint (POST xxxx.turbonomic.com/api/v3/markets/Market/actions), Business Units endpoint (GET xxxx.turbonomic.com/api/v3/businessunits) and Actions Details endpoint (POST xxxx.turbonomic.com/api/v3/actions/details) to provide Scale Virtual Machines Recommendations. From these recommendations we provide monthly savings estimates based on Turbonomic per hour costs.
 
-### Input Parameters
+## Input Parameters
 
 - *Provider* - Cloud provider. Allows Azure subscriptions.
 - *Turbonomic Audience* - Audience configured on the Turbonomic instance
 - *Email addresses* - A list of email addresses to notify.
 - *Turbonomic Endpoint* - Host of the Turbonomic endpoint.
-
 
 ## Policy Actions
 
@@ -32,4 +31,3 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 ## Cost
 
 This Policy Template does not incur any cloud costs.
-
