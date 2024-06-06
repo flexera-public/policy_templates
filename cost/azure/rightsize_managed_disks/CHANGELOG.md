@@ -2,8 +2,8 @@
 
 ## v2.0.3
 
-- Fixed an issue related to the Premium SSD price calculation with low throughput
-  
+- Fixed a bug related to the Premium ssd price calculation with low throughput
+
 ## v2.0.2
 
 - Fixed bug related to disk name calculation
