@@ -25,22 +25,14 @@ parameter "param_email" do
   default []
 end
 
-parameter "param_period_start" do
-  type "string"
+parameter "param_months_back" do
+  type "number"
   category "Policy Settings"
-  label "Start Date (YYYY-MM)"
-  description "The starting month of the historical data to analyze in YYYY-MM format. Example: 2023-02"
-  allowed_pattern /20[2-9][0-9]-[0-1][0-9]/
-  # No default value, user input required
-end
-
-parameter "param_period_end" do
-  type "string"
-  category "Policy Settings"
-  label "End Date (YYYY-MM)"
-  description "The ending month of the historical data to analyze in YYYY-MM format. Example: 2023-07"
-  allowed_pattern /20[2-9][0-9]-[0-1][0-9]/
-  # No default value, user input required
+  label "Months Back"
+  description "How many months to go back in the report. For example, set this to '6' to report on the previous 6 months."
+  min_value 1
+  max_value 12
+  default 12
 end
 
 parameter "param_chart_type" do
@@ -150,7 +142,7 @@ end
 
 datasource "ds_aggregated_costs" do
   request do
-    run_script $js_aggregated_costs, $ds_billing_centers_filtered, $param_period_start, $param_period_end, rs_org_id, rs_optima_host
+    run_script $js_aggregated_costs, $ds_billing_centers_filtered, $param_months_back, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -164,9 +156,17 @@ datasource "ds_aggregated_costs" do
 end
 
 script "js_aggregated_costs", type: "javascript" do
-  parameters "ds_billing_centers_filtered", "param_period_start", "param_period_end", "rs_org_id", "rs_optima_host"
+  parameters "ds_billing_centers_filtered", "param_months_back", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
+  // Get Start and End dates
+  start_date = new Date()
+  start_date.setMonth(start_date.getMonth() - param_months_back)
+  start_date = start_date.toISOString().split('-')[0] + '-' + start_date.toISOString().split('-')[1]
+
+  end_date = new Date()
+  end_date = end_date.toISOString().split('-')[0] + '-' + end_date.toISOString().split('-')[1]
+
   var request = {
     auth: "auth_flexera",
     host: rs_optima_host,
@@ -178,8 +178,8 @@ script "js_aggregated_costs", type: "javascript" do
       "dimensions": [ "purchase_option" ],
       "granularity": "month",
       "metrics": [ "cost_amortized_unblended_adj", "savings_rate_reduction_amortized_adj" ],
-      "start_at": param_period_start,
-      "end_at": param_period_end,
+      "start_at": start_date,
+      "end_at": end_date,
       "filter": {
         "type": "and",
         "expressions": [
@@ -196,7 +196,7 @@ script "js_aggregated_costs", type: "javascript" do
       }
     }
   }
-  EOS
+EOS
 end
 
 datasource "ds_savings_realized" do

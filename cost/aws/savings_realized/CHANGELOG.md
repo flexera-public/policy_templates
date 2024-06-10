@@ -4,6 +4,7 @@
 
 - Policy template renamed to `AWS Savings Realized From Rate Reduction Purchases` to better indicate that it is not specific to reservations
 - Several parameters altered to be more descriptive and human-readable
+- Policy now builds report based on a user-specified number of months back rather than the user specifying a specific start and end date
 - Fixed issue with invalid results if user specifies both a parent and child billing center for the `Allow/Deny Billing Center List` parameter
 - Streamlined code for better readability and faster execution
 

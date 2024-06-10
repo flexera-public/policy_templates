@@ -12,8 +12,7 @@ This policy template produces a report with chart showing the total savings real
 ## Input Parameters
 
 - *Email Addresses* - A list of email addresses to send the report to.
-- *Start Date (YYYY-MM)* - The starting month of the historical data to analyze in YYYY-MM format. Example: 2023-02
-- *End Date (YYYY-MM)* - The ending month of the historical data to analyze in YYYY-MM format. Example: 2023-07
+- *Months Back* - How many months to go back in the report. For example, set this to `6` to report on the previous 6 months.
 - *Chart Type* - The type of bar chart to use in the report.
 - *Allow/Deny Billing Centers* - Allow or Deny entered Billing Centers.
 - *Allow/Deny Billing Center List* - A list of allowed or denied Billing Center names/IDs. Leave blank to report on the entire Flexera organization.
