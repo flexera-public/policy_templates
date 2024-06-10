@@ -212,7 +212,7 @@ def policy_name_changed?(file)
 
   diff.patch.each_line do |line|
     if line.start_with?('-name "')
-      fail_message = "Policy's name has been changed. Please ensure that this is intentional and that the README has been updated accordingly. Once this change is merged, the old version of the policy may need to be manually removed from the public catalog."
+      fail_message = "Policy's name has been changed. Please ensure that this is intentional and that the README has been updated accordingly."
       break
     end
   end

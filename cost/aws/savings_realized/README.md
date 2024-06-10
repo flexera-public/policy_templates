@@ -9,7 +9,7 @@ This policy template produces a report with chart showing the total savings real
 - Data is obtained from Flexera's stored cloud cost data via the [Flexera Bill Analysis API](https://reference.rightscale.com/bill_analysis/)
 - This policy uses [savings metric](https://docs.flexera.com/flexera/EN/Optima/TabularView.htm#tabularview_3352643092_1192596) calculated as difference between list price and cost.
 
-### Input Parameters
+## Input Parameters
 
 - *Email Addresses* - A list of email addresses to send the report to.
 - *Start Date (YYYY-MM)* - The starting month of the historical data to analyze in YYYY-MM format. Example: 2023-02
