@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "1.1",
+  version: "2.0.0",
   provider: "Azure China",
   service: "Common Bill Ingestion",
   policy_set: "Common Bill Ingestion"
@@ -19,97 +19,92 @@ info(
 
 parameter "param_billing_period" do
   type "string"
+  category "Policy Settings"
   label "Month To Ingest"
   description "Month to process bills for."
   default "Current Month"
-  allowed_values "Current Month", "Specific Month"
+  allowed_values "Current Month", "Previous Month", "Specific Month"
 end
 
 parameter "param_specific_period" do
   type "string"
+  category "Policy Settings"
   label "Billing Period"
   description "Billing period to process bills for in YYYY-MM format. Only relevant if Specific Month is selected for Month To Ingest."
   default "2020-01"
   allowed_pattern /^(19|20)\d\d-(0[1-9]|1[0-2])$/
 end
 
-# Could maybe get this from the EA key, but for now just ask for it
 parameter "param_enrollment" do
   type "string"
+  category "Policy Settings"
   label "Azure Enrollment ID"
   description "Your Azure EA Enrollment ID from Azure China Billing Portal"
   allowed_pattern /V[0-9]{7}S[0-9]{4}/
 end
 
-parameter "param_bill_connect_id" do
+parameter "param_cbi_endpoint" do
   type "string"
-  label "Bill Connect ID"
-  description "Bill Connect ID created in CBI API. Example: cbi-oi-azure-china-*"
+  category "Policy Settings"
+  label "Flexera CBI Endpoint"
+  description "Name of the Flexera CBI endpoint to use. Ex: cbi-oi-azure-china-myaccount"
   allowed_pattern /cbi-oi-azure-china-[a-zA-Z0-9]*/
-end
-
-parameter "param_email" do
-  type "list"
-  label "Email addresses"
-  description "A list of email addresses to notify"
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-#AUTHENTICATE WITH AZURE CHINA
-credentials "azure_ea_auth" do
+credentials "auth_azure_ea" do
   schemes "api_key"
   label "Azure"
   description "Select the Azure China EA Credential from the list"
   tags "provider=azure_ea_china"
 end
 
-#AUTHENTICATE WITH FLEXERA
 credentials "auth_flexera" do
   schemes "oauth2"
-  label "flexera"
+  label "Flexera"
   description "Select FlexeraOne OAuth2 credentials"
-  tags "provider=Flexera"
+  tags "provider=flexera"
 end
 
 ###############################################################################
 # Datasources and Scripts
 ###############################################################################
 
-#GET BILLING PERIOD FOR RETRIEVING BILLING DATA FROM AZURE CHINA API
-datasource "ds_billing_period" do
-  run_script $js_get_billing_period, $param_billing_period, $param_specific_period
+datasource "ds_dates" do
+  run_script $js_dates, $param_billing_period, $param_specific_period
 end
 
-script "js_get_billing_period", type: "javascript" do
+script "js_dates", type: "javascript" do
   parameters "param_billing_period", "param_specific_period"
   result "result"
   code <<-EOS
-  //Get Billing Period
-  var billing_period = ""
-  if (param_billing_period == "Specific Month" && param_specific_period != "") {
-    billing_period = param_specific_period
-  } else {
-    var current_bill_date = new Date()
-    current_bill_date.setDate(current_bill_date.getDate() - 2)
-    billing_period = current_bill_date.toISOString().split("-")[0] + "-" + current_bill_date.toISOString().split("-")[1]
-  }
+  result = { period: param_specific_period }
 
-  var result = { 
-    "billing_period": billing_period
+  if (param_billing_period != 'Specific Month') {
+    date = new Date()
+    date.setDate(date.getDate() - 1)
+
+    if (param_billing_period == 'Previous Month') {
+      date.setMonth(date.getMonth() - 1)
+    }
+
+    year = date.toISOString().split('-')[0]
+    month = date.toISOString().split('-')[1]
+
+    result = { period: year + '-' + month }
   }
-  EOS
+EOS
 end
 
-#GET USAGE REPORT FOR AZURE CHINA
 datasource "ds_usage_data" do
   request do
-    auth $azure_ea_auth
+    auth $auth_azure_ea
     host "ea.azure.cn"
     path join(["/rest/", $param_enrollment, "/usage-report"])
-    query "month", val($ds_billing_period, "billing_period")
+    query "month", val($ds_dates, "period")
     query "type", "detail"
     query "fmt", "csv"
     header "User-Agent", "RS Policies"
@@ -120,93 +115,69 @@ datasource "ds_usage_data" do
   end
 end
 
-#CREATE BILL UPLOAD
-datasource "ds_bill_upload" do
+datasource "ds_create_bill_upload" do
   request do
     auth $auth_flexera
     verb "POST"
     host rs_optima_host
     path join(["/optima/orgs/", rs_org_id, "/billUploads"])
-    header "User-Agent", "RS-Policies"
+    header "User-Agent", "RS Policies"
     header "allow_redirects", "False"
-    body_field "billConnectId", $param_bill_connect_id
-    body_field "billingPeriod", val($ds_billing_period, "billing_period")
+    body_field "billConnectId", $param_cbi_endpoint
+    body_field "billingPeriod", val($ds_dates, 'period')
   end
 end
 
-#PROCESS COST AND USAGE DATA INTO CSV FORMAT
-#CREATE BILL UPLOAD FILE
 datasource "ds_bill_upload_file" do
   request do
-    run_script $create_bill_upload_file, $ds_usage_data, val($ds_bill_upload, "id"), $ds_billing_period, rs_org_id, rs_optima_host
+    run_script $js_bill_upload_file, val($ds_create_bill_upload, "id"), $ds_usage_data, $ds_dates, rs_org_id, rs_optima_host
   end
 end
 
-script "create_bill_upload_file", type: "javascript" do
-  parameters "ds_usage_data", "bill_upload_id", "ds_billing_period_data", "org_id", "optima_host"
+script "js_bill_upload_file", type: "javascript" do
+  parameters "bill_upload_id", "ds_usage_data", "ds_dates", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
-    var request = {
-      auth: "auth_flexera",
-      verb: "POST",
-      host: optima_host,
-      path: "/optima/orgs/" + org_id + "/billUploads/" + bill_upload_id + '/files/azure-china' + ds_billing_period_data.billing_period + '.csv',
-      headers: {
-        "User-Agent": "RS Policies",
-      },
-      body: ds_usage_data
-    }
-  EOS
+  var request = {
+    auth: "auth_flexera",
+    verb: "POST",
+    host: rs_optima_host,
+    path: "/optima/orgs/" + rs_org_id + "/billUploads/" + bill_upload_id + "/files/azure-china-" + ds_dates['period'] + ".csv",
+    headers: { "User-Agent": "RS Policies" },
+    body: ds_usage_data
+  }
+EOS
 end
 
-#COMMIT UPLOAD
-datasource "ds_bill_commit" do
+datasource "ds_commit_bill_upload" do
   request do
-    run_script $js_cbi_commit, $ds_bill_upload_file, val($ds_bill_upload, "id"), rs_org_id, rs_optima_host
+    run_script $js_commit_bill_upload, val($ds_create_bill_upload, "id"), $ds_bill_upload_file, rs_org_id, rs_optima_host
   end
 end
 
-script "js_cbi_commit", type: "javascript" do
-  parameters "bill_upload_file", "bill_upload_id", "org_id", "optima_host"
+script "js_commit_bill_upload", type: "javascript" do
+  parameters "bill_upload_id", "ds_bill_upload_file", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
-    var request = {
-      auth: "auth_flexera",
-      verb: "POST",
-      host: optima_host,
-      path: "/optima/orgs/" + org_id + "/billUploads/" + bill_upload_id + '/operations',
-      headers: {
-        "User-Agent": "RS Policies",
-      },
-      body_fields: { "operation": "commit" }
-    }
-  EOS
+  var request = {
+    auth: "auth_flexera",
+    verb: "POST",
+    host: rs_optima_host,
+    path: "/optima/orgs/" + rs_org_id + "/billUploads/" + bill_upload_id + "/operations",
+    headers: { "User-Agent": "RS Policies" },
+    body_fields: { "operation": "commit" }
+  }
+EOS
 end
 
 ###############################################################################
 # Policy
 ###############################################################################
 
-policy "policy_azure_china_cbi_upload" do
-  validate $ds_bill_commit do
+policy "pol_azure_china_bill_ingestion" do
+  validate $ds_commit_bill_upload do
     summary_template "Azure China CBI Bill Ingest"
-    detail_template <<-EOS
-Bill Uploaded
-EOS
-    escalate $email
-    resolve $res_close_incident
-    check eq(0,1)
+    detail_template "Bill Uploaded"
+    check eq(0, 1)
   end
-end
-
-###############################################################################
-# Escalations
-###############################################################################
-
-escalation "email" do
-  email $param_email
-end
-
-resolution "res_close_incident" do
-  email $param_email
 end
