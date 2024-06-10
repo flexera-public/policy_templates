@@ -217,7 +217,7 @@ def readme_invalid_credentials?(file)
 
     azure_permission_scanning = false if line.start_with?("- [") && (!line.include?("Azure") && !line.include?("azure"))
     azure_permission_scanning = false if aws_permission_scanning || google_permission_scanning || flexera_permission_scanning
-    azure_permission_scanning = true if !line.start_with?("This Policy Template uses [Credentials]") && !azure_permission_stop_scanning && !azure_permission_scanning && prereq_line_number > 0 && (line.include?("[**Azure") || line.include?("[**azure"))
+    azure_permission_scanning = true if !line.start_with?("This Policy Template uses [Credentials]") && !azure_permission_stop_scanning && !azure_permission_scanning && prereq_line_number > 0 && (line.include?("[**Azure") || line.include?("[**azure")) && !line.include?("Azure China")
     azure_permission_line = line_number if !azure_permission_line && azure_permission_scanning
     azure_permission_text << line if azure_permission_scanning
 
