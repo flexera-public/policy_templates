@@ -1,4 +1,4 @@
-# Azure China Cloud Common Bill Ingestion
+# Azure China Common Bill Ingestion
 
 ## What It Does
 
