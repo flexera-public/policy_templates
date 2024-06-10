@@ -2,20 +2,17 @@
 
 ## What It Does
 
-This Policy Template leverages the Azure Cost Management APIs ([Reservation Transactions](https://learn.microsoft.com/en-us/rest/api/consumption/reservation-transactions/list?view=rest-consumption-2023-05-01&tabs=HTTP) and [Reservation Summaries](https://learn.microsoft.com/en-us/rest/api/consumption/reservations-summaries/list?view=rest-consumption-2023-05-01&tabs=HTTP#reservationsummariesdailywithbillingaccountid)). It will notify only if utilization of a Reserved Instance (RI) falls below the value specified in the `Maximum Reservation Utilization Threshold` field. It examines the RI utilization for the prior 7 days or 30 days (starting from 2 days ago) in making this determination.
+This policy template generates a report of all Azure Reservations whose utilization is below a user-specified threshold. Optionally, this report can be emailed.
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
-
-- *Azure Endpoint* - Azure Endpoint to access resources
-- *Look Back Period* - Number of days of prior Azure Reservation usage to analyze.
-- *Maximum Reservation Utilization Threshold* - Show Reservations with utilization below this value (%).
-- *Email addresses to notify* - A list of email addresses to notify.
+- *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
+- *Utilization Threshold (%)* - Reservations with utilization below this percentage will be included in the results.
+- *Utilization Metric* - Whether to use maximum or average utilization when assessing whether a reservation is underutilized.
+- *Allow/Deny Billing Centers* - Allow or Deny entered Billing Centers.
+- *Allow/Deny Billing Center List* - A list of allowed or denied Billing Center names/IDs. Leave blank to report on reservations in all Billing Centers.
 
 ## Policy Actions
-
-The following policy actions are taken on any resources found to be out of compliance.
 
 - Send an email report
 
@@ -23,14 +20,8 @@ The following policy actions are taken on any resources found to be out of compl
 
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
-### Credential configuration
-
-For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
-
-- [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:
-  - `Microsoft.Billing/billingAccounts/read`
-  - `Microsoft.Consumption/reservationTransactions/read`
-  - `Microsoft.Consumption/reservationSummaries/read`
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - `billing_center_viewer`
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
