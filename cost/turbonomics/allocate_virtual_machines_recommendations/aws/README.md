@@ -24,9 +24,9 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 
 - [**Turbonomic Credential**] The policy requires basic Turbonomic authentication credentials, ensure your Turbonomic credentials meet the following OAuth 2.0 authentication criteria:
   - Ensure OAuth 2.0 authentication is enabled for your Turbonomic instance by adding `spec.oauth2.enabled: true` to your custom resource (CR) file.
-  - Specify a unique audience value (`spec.properties.global.oauth2.audience`) in the CR file. This policy template use defualt value of `flexera` for audience parameter, but you can customize it with any unique string value and use that value.
+  - Specify a unique audience value (`spec.properties.global.oauth2.audience`) in the custom resource (CR) file. This policy template use defualt value of `flexera` for audience parameter, but you can customize it with any unique string value and use that value.
   - Utilize the Turbonomic API to create an OAuth 2.0 client, configuring it with `role:OBSERVER` and using `client_secret_basic` for `clientAuthenticationMethods`.
-  - Keep the provided client id and client secret by the API for adding the Turbonomic credentials and ensure the audience value aligns with the Turbonomic Audience parameter in the policy template.
+  - On the Flexera side, add Turbonomic credentials using the provided `clientId` and `clientSecret`, and ensure the Turbonomic Audience parameter value matches the setting in the custom resource (CR) file.
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
