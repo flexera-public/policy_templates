@@ -237,8 +237,7 @@ script "js_savings_realized", type: "javascript" do
   temp_result = _.reject(temp_result, function(item) { return item['purchase_option'] == undefined })
 
   // Aggregate SAVINGS REALIZED costs for same purchase option for same month
-  unique_results = _.uniq(temp_result, function(data) { return data['purchase_option'] })
-  purchase_options = _.pluck(unique_results, "purchase_option").sort()
+  purchase_options = _.compact(_.uniq(_.pluck(temp_result, "purchase_option"))).sort()
 
   _.each(purchase_options, function(purchase_option) {
     _.each(months, function(month) {
@@ -307,50 +306,31 @@ script "js_chart_data", type: "javascript" do
   })
 
   // Group data by Cost Dimension
-  group_by_dimension = _.groupBy(ds_savings_realized, function(data) { return data.dimension })
+  group_by_dimension = _.groupBy(ds_savings_realized, 'dimension')
 
   // Determine chart type
   chart_type = "cht=bvs"
   if (param_chart_type == "Grouped Bar Chart") { chart_type = "cht=bvg" }
 
-  //Create chart axis labels
-  chart_axis_labels =
-  ("chxl=1:," +
-    _.uniq(ds_savings_realized, function(sr) { return sr.month })
-    .map(function(sr){ return sr.month.substring(0,7) })
-  ).split(",").join("|")
+  // Create chart axis labels
+  chart_axis_labels = "chxl=1:|" + _.map(months, function(name) { return name.substring(0, 7) }).join('|')
 
-  //Create legend
-  chart_legend = "chdl="
-  var i = 0
-  for (var key in group_by_dimension) {
-    chart_legend += key
-    i++
-    if (i < _.size(group_by_dimension)) { chart_legend += "|" }
-  }
-  //chart_legend = "chdl=Savings%20Realized%20For%20Organization"
+  // Create legend
+  chart_legend = "chdl=" + _.keys(group_by_dimension).join('|')
 
-  //calculate scale
-  //chart_range = ("chxr=0," +
-  max = (Math.max.apply(Math, ds_savings_realized.map(function(sr){ return sr.savings_realized }))*1.1).toFixed(2)
-  min = (Math.min.apply(Math, ds_savings_realized.map(function(sr){ return sr.savings_realized }))*0.9).toFixed(2)
-  chart_range = "chxr=0," + min + "," + max
+  // Calculate scale
+  max = (_.pluck(ds_savings_realized, 'savings_realized').sort().reverse()[0] * 1.1).toFixed(2)
+  min = (_.pluck(ds_savings_realized, 'savings_realized').sort()[0] * 0.9).toFixed(2)
+  chart_range = ["chxr=0", min, max].join(',')
 
-  //Create chart dataset
-  chart_data = "chd=t:"
-  var count_1 = 0
-  _.each(group_by_dimension, function(o){
-    var count_2 = 0
-    _.each(o, function(p){
-      chart_data = chart_data + p.cost
-      count_2++
-      if (count_2 < _.size(o)){ chart_data = chart_data + "," }
-    })
-    count_1++
-    if (count_1 < _.size(group_by_dimension)){ chart_data = chart_data + "|" }
+  // Create chart dataset
+  data_parts = _.map(group_by_dimension, function(dimension_list) {
+    return _.pluck(dimension_list, 'cost').join(',')
   })
 
-  //Whole Chart object
+  chart_data = "chd=t:" + data_parts.join('|')
+
+  // Whole Chart object
   chart = {
     chart_type: encodeURI(chart_type),
     chart_size: encodeURI("chs=999x500"),
@@ -373,31 +353,19 @@ EOS
 end
 
 ###############################################################################
-# Escalations
-###############################################################################
-
-escalation "esc_savings_realized_report" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
-end
-
-###############################################################################
 # Policy
 ###############################################################################
 
-policy "policy_purchase_option_by_inst_type_and_region" do
+policy "pol_savings_realized" do
   validate_each $ds_chart_data do
     summary_template "AWS Savings Realized from Reservations"
     detail_template <<-EOS
 # Rate Reduction Savings Report
 ![Rate Reduction Savings Chart](https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id={{ rs_org_id }}&rs_project_id={{ rs_project_id }}&{{ with index data 0 }}{{ .chart_dimensions.chart_data }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_type }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_image }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_title }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_y_axis }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_label }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_style }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_color }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_data_scale }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_format }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend_position }}{{ end }})
 EOS
-    escalate $esc_savings_realized_report
-    check eq(0,1)
+    escalate $esc_email
+    check eq(0, 1)
     export do
-      # no actions so resource_level can be false
       resource_level false
       field "month" do
         label "Month"
@@ -425,4 +393,15 @@ EOS
       end
     end
   end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
 end
