@@ -1,4 +1,4 @@
-name "AWS Savings Realized from Rate Reduction Purchases"
+name "AWS Savings Realized From Rate Reduction Purchases"
 rs_pt_ver 20180301
 type "policy"
 short_description "Reports savings realized from AWS rate reduction purchases, such as Reserved Instances, Savings Plan, and Spot Instance purchases. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/savings_realized/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
@@ -21,7 +21,7 @@ parameter "param_email" do
   type "list"
   category "Policy Settings"
   label "Email Addresses"
-  description "A list of email addresses to notify."
+  description "A list of email addresses to send the report to."
   default []
 end
 
@@ -45,7 +45,7 @@ parameter "param_chart_type" do
   type "string"
   category "Policy Settings"
   label "Chart Type"
-  description "The type of bar chart to view savings realized data by"
+  description "The type of bar chart to use in the report."
   allowed_values "Grouped Bar Chart", "Stacked Bar Chart"
   default "Grouped Bar Chart"
 end
@@ -63,7 +63,7 @@ parameter "param_bc_list" do
   type "list"
   category "Filters"
   label "Allow/Deny Billing Center List"
-  description "A list of allowed or denied Billing Center names/IDs. Leave blank to check all Billing Centers."
+  description "A list of allowed or denied Billing Center names/IDs. Leave blank to report on the entire Flexera organization."
   default []
 end
 
@@ -148,7 +148,7 @@ end
 
 datasource "ds_aggregated_costs" do
   request do
-    run_script $js_aggregated_costs, $ds_billing_centers_filtered, $param_period_start, $param_period_end, $param_billing_centers, rs_org_id, rs_optima_host
+    run_script $js_aggregated_costs, $ds_billing_centers_filtered, $param_period_start, $param_period_end, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -162,7 +162,7 @@ datasource "ds_aggregated_costs" do
 end
 
 script "js_aggregated_costs", type: "javascript" do
-  parameters "ds_billing_centers_filtered", "param_period_start", "param_period_end", "param_billing_centers", "rs_org_id", "rs_optima_host"
+  parameters "ds_billing_centers_filtered", "param_period_start", "param_period_end", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
   var request = {
@@ -216,7 +216,7 @@ script "js_savings_realized", type: "javascript" do
     total_month_cost = _.reduce(_.pluck(month_costs, 'cost'), function(memo, num){ return memo + num }, 0)
 
     result.push({
-      month: month,
+      month: month.substring(0, 7),
       cost: total_month_cost,
       dimension: "Total Actual Spend On Discountable Compute"
     })
@@ -249,7 +249,7 @@ script "js_savings_realized", type: "javascript" do
       savings_realized = _.reduce(relevant_costs, function(memo, num){ return memo + num }, 0)
 
       result.push({
-        "month": month,
+        "month": month.substring(0, 7),
         "cost": savings_realized,
         "dimension": "Savings Realized On Compute " + purchase_option
       })
@@ -262,11 +262,11 @@ EOS
 end
 
 datasource "ds_chart_data" do
-  run_script $js_chart_data, $ds_savings_realized, $param_chart_type
+  run_script $js_chart_data, $ds_savings_realized, $ds_applied_policy, $param_chart_type
 end
 
 script "js_chart_data", type: "javascript" do
-  parameters "ds_savings_realized", "param_chart_type"
+  parameters "ds_savings_realized", "ds_applied_policy", "param_chart_type"
   result "result"
   code <<-EOS
   result = []
@@ -279,19 +279,19 @@ script "js_chart_data", type: "javascript" do
   _.each(months, function(month) {
     savings_realized_ri = _.find(ds_savings_realized[month], function(item) {
       return item['dimension'] == "Savings Realized On Compute Reservations" && item['month'] == month
-    }['cost']
+    })['cost']
 
     savings_realized_sp = _.find(ds_savings_realized[month], function(item) {
       return item['dimension'] == "Savings Realized On Compute Savings Plans" && item['month'] == month
-    }['cost']
+    })['cost']
 
     savings_realized_spot = _.find(ds_savings_realized[month], function(item) {
       return item['dimension'] == "Savings Realized On Compute Spot Instances" && item['month'] == month
-    }['cost']
+    })['cost']
 
     total_spend = _.find(ds_savings_realized[month], function(item) {
       return item['dimension'] == "Total Actual Spend On Discountable Compute" && item['month'] == month
-    }['cost']
+    })['cost']
 
     result.push({
       "month": month,
@@ -313,7 +313,7 @@ script "js_chart_data", type: "javascript" do
   if (param_chart_type == "Grouped Bar Chart") { chart_type = "cht=bvg" }
 
   // Create chart axis labels
-  chart_axis_labels = "chxl=1:|" + _.map(months, function(name) { return name.substring(0, 7) }).join('|')
+  chart_axis_labels = "chxl=1:|" + months.join('|')
 
   // Create legend
   chart_legend = "chdl=" + _.keys(group_by_dimension).join('|')
@@ -349,6 +349,7 @@ script "js_chart_data", type: "javascript" do
   }
 
   result[0]["chart_dimensions"] = chart
+  result[0]["policy_name"] = ds_applied_policy['name']
 EOS
 end
 
@@ -358,7 +359,7 @@ end
 
 policy "pol_savings_realized" do
   validate_each $ds_chart_data do
-    summary_template "AWS Savings Realized from Reservations"
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}"
     detail_template <<-EOS
 # Rate Reduction Savings Report
 ![Rate Reduction Savings Chart](https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id={{ rs_org_id }}&rs_project_id={{ rs_project_id }}&{{ with index data 0 }}{{ .chart_dimensions.chart_data }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_type }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_image }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_title }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_y_axis }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_label }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_style }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_color }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_data_scale }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_format }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend_position }}{{ end }})
