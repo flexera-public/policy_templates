@@ -6,6 +6,193 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#2227](https://github.com/flexera-public/policy_templates/pull/2227): POL-1240 - Rename `AWS Superseded EBS Volumes` and Introduce new `AWS Rightsize EBS Volumes` Policy Templates
+
+#### Description
+
+> A request from customer – provided AWS EBS Provisioned IOPS Rightsizing Recommendations.. after talking with Shawn and looking at what we currently have in the Catalog this snowballed into a larger story to provide this capability:
+>
+> Included in this PR:
+>  - Currently implemented "EBS Rightsize" PT is renamed to AWS Superseded EBS Volumes
+>  - Unused Volumes PT is deprecated
+>  - New PT with "EBS Rightsize" name that identifies both "idle" (unattached, or attached and zero read/write ops) and "underutilized" (~low used capacity~, low used provisioned iops)
+>
+> Underutilized Storage Capacity was not implemented due to reasons that will be outlined in the README
+>
+> ### Issues Resolved
+>
+> https://flexera.atlassian.net/browse/POL-1240
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2227) for these details.
+- **Merged At**: 2024-06-05 18:39:34 UTC
+
+---
+
+### PR [#2292](https://github.com/flexera-public/policy_templates/pull/2292): POL-1251 Unpublish Unused Deprecated Policies
+
+#### Description
+
+> The following deprecated policies are not in use in any customer environment across all 3 shards. As such, they are being unpublished:
+>
+> AWS Usage Report - Amount of Instance Memory Used
+> Application Migration Recommendations
+> Azure Migrate Integration
+> NetFlow Top Talkers
+> SaaS Manager - User Status Change
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2292) for details about unpublished policies.
+- **Merged At**: 2024-06-05 15:29:07 UTC
+
+---
+
+### PR [#2295](https://github.com/flexera-public/policy_templates/pull/2295): Fixing issue with disk name calculation
+
+#### Description
+
+> This PR fixes an issue with the disk name calculation. In case of error, we'd want to log the disk details and continue processing
+>
+> ### Issues Resolved
+>
+>
+
+#### Metadata
+
+- **Policies**: [Azure Rightsize Managed Disks](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_disks/README.md)
+- **Merged At**: 2024-06-04 21:36:34 UTC
+
+---
+
+### PR [#2291](https://github.com/flexera-public/policy_templates/pull/2291): POL-1250 Meta Policy Incident Table
+
+#### Description
+
+> When meta policies were originally created, we did not have the ability to put hyperlinks within the incident table. For this reason, the incident that showed a full list of child policies rendered this table via markdown in the detail_template. This causes major issues with slowdown, sometimes causing the incident page to not load at all, when there are a large number of child poliices.
+>
+> Hyperlink support now exists for incident tables, so this updates the meta policies to use the actual incident table instead. Additionally, this table includes fields for a 2nd incident for policies that raise multiple incidents; these fields are simply blank unless a child policy has raised 2 distinct incidents.
+>
+> The hyperlinks are in the `Applied Policy Name` and `Incident Summary` fields, linking to the applied child policy and child policy incident respectively.
+>
+> These changes are non-breaking for existing policies. That said, anyone that wants this new functionality will need to upload and apply the updated meta policy template after this change is merged.
+>
+> NOTE: The meta policies were all generated with the script. When reviewing this PR, the focus should be on the 3 files in the `tools/meta_parent_policy_compiler/` directory.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2291) for these details.
+- **Merged At**: 2024-06-04 16:22:17 UTC
+
+---
+
+### PR [#2221](https://github.com/flexera-public/policy_templates/pull/2221): POL-1230 Policy Template Synchronization Revamp
+
+#### Description
+
+> This is a revamp of the `Policy Template Synchronization` policy. All code was rewritten from scratch to follow current best practices. From the CHANGELOG:
+>
+> - Policy now raises two incidents: new/updated policies and defunct policies
+> - Added support for deleting defunct policies
+> - Reworked policy parameters to be more clear and specific
+> - Improved logic for determining if a policy needs to be added/updated in the catalog
+>   - Policy now checks the catalog directly, rather than just whether a template exists in the org, and uses the newly added "updated_at" field in the active policy JSON to determine if a policy has been updated or not.
+> - Streamlined code for better readability and faster execution
+>
+> __Note:__ Automatically publishing and automatically deleting policies are separate automatic actions. We can have a conversation around whether to actually use the automatic deletion or just have someone look through that incident and manually trigger actions. Either way, the functionality of the old version of the policy is achievable simply by only selecting the "Publish Policy Templates" value for the Automatic Actions parameter.
+>
+> Additionally, this adds a new policy named `Hidden Policy Templates` whose purpose is to unhide or delete hidden policies in the catalog. This is to resolve the issue of policy publication failing if a policy already exists in the catalog but has its status set to "hidden". The intent is that both policies would be applied in the catalog organizations.
+>
+> **NOTE:** Dangerfile errors are false positives caused by files being moved around and the README's containing URIs that will be valid once this change is merged.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2221) for these details.
+- **Merged At**: 2024-06-04 13:33:46 UTC
+
+---
+
+### PR [#2279](https://github.com/flexera-public/policy_templates/pull/2279): POL-1234 New Policy: AWS Idle NAT Gateways
+
+#### Description
+
+> This new policy template finds and reports on AWS NAT Gateways in the given account which have hourly costs but no network costs; in such cases, it is presumed that the NAT Gateway is idle and not in actual use. Optionally, this report can be emailed and the user can delete the reported NAT Gateways.
+>
+
+#### Metadata
+
+- **Policies**: [AWS Idle NAT Gateways](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/idle_nat_gateways/README.md)
+- **Merged At**: 2024-06-04 13:33:11 UTC
+
+---
+
+### PR [#2288](https://github.com/flexera-public/policy_templates/pull/2288): POL-1249 fix: AWS/Azure Usage Reports - fix chart not rendering in email for Memory Used
+
+#### Description
+
+> <!-- Describe what this change achieves below -->
+> When creating a report for Instance Time Used it should render in emails. It works for Normalized Units/Instances and vCPUs, however it does not render correctly for Memory Used.
+>
+> This is likely being caused by the Chart Title, which in the case of Memory Used, contains parentheses. These parentheses are not being URL encoded.
+>
+> This is a change to implement a fix.
+>
+> ### Issues Resolved
+>
+> <!-- List any existing issues this PR resolves below -->
+> - Fixes issue where parentheses are not encoded correctly in the image-charts URL
+>
+
+#### Metadata
+
+- **Policies**: [AWS Usage Forecast - Instance Time Used](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/total_instance_usage_forecast/README.md), [AWS Usage Report - Instance Time Used](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/total_instance_usage_report/README.md), [Azure Usage Report - Instance Time Used](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/total_instance_usage_report/README.md)
+- **Merged At**: 2024-06-03 14:20:03 UTC
+
+---
+
+### PR [#2278](https://github.com/flexera-public/policy_templates/pull/2278): POL-1248 Deprecation Info Field
+
+#### Description
+
+> This adds the following field to the info() block of all deprecated policies: `deprecated: "true"`
+>
+> Additionally, this adds Dangerfile tests to report errors if this field is missing when the short_description contains the word "deprecated", and when this field is set to true but the short_description does *not* contain the word "deprecated"
+>
+> Also, a small number of Dangerfile tests will now run even if a policy is deprecated. These tests focus on things that should be checked even for deprecated policies, such as version numbers matching between the policy and the CHANGELOG.
+>
+> Finally, the active policy automation has been modified to add a "deprecated" field to the active policy list. This field is set to true if the policy is deprecated, and false if it is not.
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2278) for these details.
+- **Merged At**: 2024-06-03 13:05:27 UTC
+
+---
+
+### PR [#2243](https://github.com/flexera-public/policy_templates/pull/2243): POL-1075 AWS Reserved Instances Utilization Revamp
+
+#### Description
+
+> This is a revamp of the AWS Reserved Instances Utilization policy. From the CHANGELOG:
+>
+> - Billing Center list can now be used as an allow list or a deny list
+> - Added logic to prevent duplicate results due to overlapping child/parent billing centers
+> - Added additional fields and context to incident output
+> - Normalized incident output for parity with other policy templates
+> - Streamlined code for better readability and faster execution
+>
+
+#### Metadata
+
+- **Policies**: [AWS Reserved Instances Utilization](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/reserved_instances/utilization/README.md)
+- **Merged At**: 2024-06-03 12:05:10 UTC
+
+---
+
 ### PR [#2248](https://github.com/flexera-public/policy_templates/pull/2248): POL-1247 fix: Add default value for `IAM Role Names/IDs/ARNs` param
 
 #### Description
@@ -1174,7 +1361,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 #### Metadata
 
-- **Policies**: [AWS Usage Report - Number of Instance Hours Used](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/total_instance_hours/README.md), [AWS Usage Report - Amount of Instance Memory Used](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/total_instance_memory/README.md), [AWS Usage Report - Number of Instance vCPUs Used](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/total_instance_vcpus/README.md)
+- **Policies**: [AWS Usage Report - Number of Instance Hours Used](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/total_instance_hours/README.md), [AWS Usage Report - Number of Instance vCPUs Used](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/total_instance_vcpus/README.md)
 - **Merged At**: 2024-04-18 14:25:49 UTC
 
 ---
@@ -1793,157 +1980,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1818) for details about unpublished policies.
 - **Merged At**: 2024-03-06 13:18:15 UTC
-
----
-
-### PR [#1909](https://github.com/flexera-public/policy_templates/pull/1909): Add links to documentation in the policy short description
-
-#### Description
-
-> Add links to documentation in the "Budget vs Actual Spend Report" policy short description
->
-
-#### Metadata
-
-- **Policies**: [Budget vs Actual Spend Report](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/budget_v_actual_spend_report/README.md)
-- **Merged At**: 2024-03-04 19:58:45 UTC
-
----
-
-### PR [#1882](https://github.com/flexera-public/policy_templates/pull/1882): POL-1118 Flexera CCO Delete All Billing Centers Policy
-
-#### Description
-
-> This policy deletes all Billing Centers in the Flexera organization it is executed within. The policy will automatically self-terminate the second time it runs to avoid accidental future deletion of Billing Centers.
->
-> This policy is unpublished and primarily intended for internal use.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1882) for details about unpublished policies.
-- **Merged At**: 2024-03-04 13:41:58 UTC
-
----
-
-### PR [#1881](https://github.com/flexera-public/policy_templates/pull/1881): POL-1117 Azure Bring-Your-Own-License (BYOL) Report Improvements
-
-#### Description
-
-> - Refactored to no longer require Azure credential
-> - Removed parameter for Azure API endpoint since it is no longer needed
->
-
-#### Metadata
-
-- **Policies**: [Azure Bring-Your-Own-License (BYOL) Report](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/byol_report/README.md)
-- **Merged At**: 2024-03-04 13:38:49 UTC
-
----
-
-### PR [#1893](https://github.com/flexera-public/policy_templates/pull/1893): POL-979 AWS Policies: Improve Pricing API Endpoint Parameter
-
-#### Description
-
-> This updates the Pricing API parameter in the `AWS Unused IP Addresses` and `AWS Rightsize EBS Volumes` policies to be more user friendly, and provides better README documentation for the parameter and what it does.
->
-
-#### Metadata
-
-- **Policies**: [AWS Rightsize EBS Volumes](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ebs_volumes/README.md), [AWS Unused IP Addresses](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/unused_ip_addresses/README.md)
-- **Merged At**: 2024-03-04 13:17:47 UTC
-
----
-
-### PR [#1778](https://github.com/flexera-public/policy_templates/pull/1778): FOPTS-3024 - New Budget vs Actual Spend report policy
-
-#### Description
-
-> Email a report of budget vs actual spend so the customer doesn't need to login to Flexera One
->
-> ### Issues Resolved
->
-> https://flexera.atlassian.net/browse/FLEX-204
->
-
-#### Metadata
-
-- **Policies**: [Budget vs Actual Spend Report](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/budget_v_actual_spend_report/README.md)
-- **Merged At**: 2024-03-01 21:36:24 UTC
-
----
-
-### PR [#1892](https://github.com/flexera-public/policy_templates/pull/1892): POL-1127 Meta Policy Duplicate Incidents Fix
-
-#### Description
-
-> Meta policies were sometimes returning duplicate results in the consolidated incident if they terminated a child policy and then replaced it with a new one, because both the old and new incident were being scraped.
->
-> This changes the meta policy template (and meta policies) to filter the child incidents so that only active incidents are considered.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1892) for these details.
-- **Merged At**: 2024-02-29 20:01:42 UTC
-
----
-
-### PR [#1867](https://github.com/flexera-public/policy_templates/pull/1867): POL-1046 Google Open Buckets Revamp
-
-#### Description
-
-> This is a revamp of the Google Open Buckets policy that also fixes a known bug with the policy. From the CHANGELOG:
->
-> - Fixed issue where some open buckets were not being reported on
-> - Added ability to filter resources by project
-> - Added ability to filter resources by region
-> - Added ability to filter resources by label
-> - Normalized incident export to be consistent with other policies
-> - Added additional fields to incident export
-> - Streamlined code for better readability and faster execution
-> - Added logic required for "Meta Policy" use-cases
-> - Flexera credential now required to facilitate meta policy use cases.
->
-
-#### Metadata
-
-- **Policies**: [Google Open Buckets](https://github.com/flexera-public/policy_templates/tree/master/security/google/public_buckets/README.md)
-- **Merged At**: 2024-02-29 13:45:21 UTC
-
----
-
-### PR [#1875](https://github.com/flexera-public/policy_templates/pull/1875): POL-1071 Merge 'AWS RDS Instances' policy into 'AWS Rightsize RDS Instances'
-
-#### Description
-
-> This modifies the AWS Rightsize RDS Instances policy to include Availability Zone, License Model, and vCPUs in the incident output, rendering the AWS RDS Instances policy obsolete.
->
-> Additionally, the AWS RDS Instances policy is flagged as deprecated, and users are directed to the AWS Rightsize RDS Instances policy in the README.
->
-
-#### Metadata
-
-- **Policies**: [AWS RDS Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rds_instance_license_info/README.md), [AWS Rightsize RDS Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_rds_instances/README.md)
-- **Merged At**: 2024-02-29 13:04:22 UTC
-
----
-
-### PR [#1873](https://github.com/flexera-public/policy_templates/pull/1873): POL-973 Azure Unused IPs Better Filtering
-
-#### Description
-
-> This adds more filtering options to the policy:
->
-> - Added IP allocation type (Dynamic or Static) to incident output
-> - Added ability to filter results by allocation type via parameter
-> - Added ability to filter results by minimum savings via parameter
->
-
-#### Metadata
-
-- **Policies**: [Azure Unused IP Addresses](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/unused_ip_addresses/README.md)
-- **Merged At**: 2024-02-29 10:28:28 UTC
 
 ---
 
