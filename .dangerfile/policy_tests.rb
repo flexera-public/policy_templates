@@ -1006,7 +1006,7 @@ def policy_run_script_incorrect_order?(file)
     end
 
     disordered = false
-    iter_index = -5
+    val_index = -5
 
     if line.strip.start_with?("run_script")
       # Store a list of all of the parameters for the run_script
