@@ -33,6 +33,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
 
 - [**Azure China Enterprise Agreement Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_ea_china*). The API Key can be retrieved from the 'Usage + charges' blade under 'Billing' in the Azure Portal.
+  - `Enterprise Agreement`
 
 ![image](https://user-images.githubusercontent.com/92175447/203563225-e816dd01-de3c-4f2e-ac46-65d284ec9a3e.png)
 
