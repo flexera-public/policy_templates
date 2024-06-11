@@ -1015,18 +1015,18 @@ def policy_run_script_incorrect_order?(file)
       # Remove the first item because it's just the name of the script itself
       script_name = parameters.shift
 
-      iter_found = false      # Whether we've found a iter_item or val(iter_item, "") parameter
+      val_found = false       # Whether we've found a iter_item or val() parameter
       ds_found = false        # Whether we've found a datasource parameter
       param_found = false     # Whether we've found a parameter parameter
       constant_found = false  # Whether we've found a constant, like rs_org_id
       value_found = false     # Whether we've found a raw value, like a number or string
 
       parameters.each_with_index do |parameter, index|
-        if parameter.include?("iter_item")
-          iter_found = true
-          iter_index = index
+        if parameter.include?("iter_item") || parameter.include?("val(")
+          val_found = true
+          val_index = index
           disordered = true if ds_found || param_found || constant_found || value_found
-        elsif index == iter_index + 1
+        elsif index == val_index + 1
           # Do nothing, since splitting by , is going to split functions like val() into two entries
         elsif parameter.start_with?('$ds')
           ds_found = true
@@ -1039,7 +1039,7 @@ def policy_run_script_incorrect_order?(file)
           disordered = true if value_found
         else # Assume a raw value, like a number or string, if none of the above
           value_found = true
-          iter_index = index if parameter.start_with?("val(")
+          val_index = index if parameter.start_with?("val(")
         end
       end
     end
