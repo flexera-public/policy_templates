@@ -2,11 +2,12 @@ name "Turbonomic Allocate Virtual Machine Recommendations Google"
 rs_pt_ver 20180301
 type "policy"
 short_description "Turbonomic policy for allocating RI coverage for virtual machines [README](https://github.com/flexera-public/policy_templates/tree/master/cost/turbonomics/allocate_virtual_machines_recommendations/google) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
 severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.3",
+  version: "2.3.1",
   provider: "Google",
   source: "Turbonomic",
   service: "Compute",
@@ -14,38 +15,50 @@ info(
   recommendation_type: "Rate Reduction"
 )
 
-##################
-# Parameters   #
-##################
-
-parameter "auth_cookie" do
-  type "string"
-  label "Authorization Cookie"
-  no_echo true
-  description "Valid authorization cookie (pulled from Turbonomic)."
-end
+###############################################################################
+# Parameters
+###############################################################################
 
 parameter "param_turbonomic_host" do
   type "string"
+  category "Policy Settings"
   label "Turbonomic Host"
   description "Your Turbonomic host or IP."
+  # No default value, user input required
+end
+
+parameter "param_turbonomic_audience" do
+  type "string"
+  category "Policy Settings"
+  label "Turbonomic instance audience"
+  description "Audience configured on the Turbonomic instance"
+  default "flexera"
 end
 
 parameter "param_email" do
   type "list"
+  category "Policy Settings"
   label "Email addresses to notify"
   description "Email addresses of the recipients you wish to notify when new incidents are created."
+  # No default value, user input required
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
+credentials "auth_turbonomic" do
+  schemes "basic"
+  label "Turbonomic"
+  description "Select the Turbonomic Basic Auth Credential from the list."
+  tags "provider=turbonomic"
+end
+
 ###############################################################################
 # Pagination
 ###############################################################################
 
-pagination "turbonomics_vm_pagination_header" do
+pagination "pagination_turbonomic" do
   get_page_marker do
     header "x-next-cursor"
   end
@@ -55,13 +68,24 @@ pagination "turbonomics_vm_pagination_header" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
+
+#get turbonomic token
+datasource "ds_get_turbonomic_token" do
+  request do
+    run_script $js_get_turbonomic_token, $param_turbonomic_host, $param_turbonomic_audience
+  end
+  result do
+    encoding "json"
+    field "access_token", jmes_path(response, "access_token")
+  end
+end
 
 #get turbonomic recommendation data
 datasource "ds_get_turbonomics_recommendations" do
   request do
-    run_script $js_get_turbonomics_recommendations, $auth_cookie, $param_turbonomic_host
+    run_script $js_get_turbonomics_recommendations, $param_turbonomic_host, val($ds_get_turbonomic_token, "access_token")
   end
   result do
     encoding "json"
@@ -87,7 +111,7 @@ end
 ##this will potentially be a lot of calls. how to make this more performant
 datasource "ds_get_business_units" do
   request do
-    run_script $js_get_business_units, $auth_cookie, $param_turbonomic_host
+    run_script $js_get_business_units, $param_turbonomic_host, val($ds_get_turbonomic_token, "access_token")
   end
   result do
     encoding "json"
@@ -102,7 +126,7 @@ end
 ##this will potentially be a lot of calls. how to make this more performant
 datasource "ds_get_action_details" do
   request do
-    run_script $js_get_action_details, $auth_cookie, $ds_get_turbonomics_recommendations, $param_turbonomic_host
+    run_script $js_get_action_details, $ds_get_turbonomics_recommendations, $param_turbonomic_host, val($ds_get_turbonomic_token, "access_token")
   end
   result do
     encoding "json"
@@ -114,19 +138,34 @@ datasource "ds_filtered_turbonomics_recommendations" do
   run_script $js_filtered_turbonomics_recommendations, $ds_get_turbonomics_recommendations, $ds_get_business_units, $ds_get_action_details
 end
 
-###############################################################################
-# Scripts
-###############################################################################
+##script retrieves an OAuth2 token from the Turbonomic API
+script "js_get_turbonomic_token", type: "javascript" do
+  parameters "turbonomic_endpoint", "audience"
+  result "request"
+  code <<-EOS
+    var request = {
+      verb: "POST",
+      auth: "auth_turbonomic"
+      host: turbonomic_endpoint,
+      path: "/oauth2/token",
+      headers: {
+      "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: "grant_type=client_credentials" + "&audience=" + audience + "&scope=role:OBSERVER"
+
+    }
+EOS
+end
 
 ##script using a manually acquired turbonomic cookie and pulls hard coded scalable vm data
 script "js_get_turbonomics_recommendations", type: "javascript" do
+  parameters "param_turbonomic_host", "access_token"
   result "request"
-  parameters "auth_cookie", "param_turbonomic_host"
   code <<-EOS
   //replace cookie every day this is run
     var request = {
       verb: "POST",
-      pagination: "turbonomics_vm_pagination_header",
+      pagination: "pagination_turbonomic",
       host: param_turbonomic_host,
       path: "/api/v3/markets/Market/actions",
       body_fields: {
@@ -142,7 +181,7 @@ script "js_get_turbonomics_recommendations", type: "javascript" do
       },
       headers: {
         "Content-Type": "application/json"
-        "Cookie": auth_cookie
+        "Authorization": "Bearer " + access_token
       }
     }
 EOS
@@ -150,8 +189,8 @@ end
 
 ## verified that discovered is the only one we need
 script "js_get_business_units", type: "javascript" do
+  parameters "param_turbonomic_host", "access_token"
   result "request"
-  parameters "auth_cookie", "param_turbonomic_host"
   code <<-EOS
   //replace cookie every day this is run
     var request = {
@@ -164,15 +203,15 @@ script "js_get_business_units", type: "javascript" do
       },
       headers: {
         "Content-Type": "application/json"
-        "Cookie": auth_cookie
+        "Authorization": "Bearer " + access_token
       }
     }
 EOS
 end
 
 script "js_get_action_details", type: "javascript" do
+  parameters "ds_get_turbonomics_recommendations", "param_turbonomic_host", "access_token"
   result "request"
-  parameters "auth_cookie", "ds_get_turbonomics_recommendations", "param_turbonomic_host"
   code <<-EOS
   //replace cookie every day this is run
     var uuids = []
@@ -188,15 +227,15 @@ script "js_get_action_details", type: "javascript" do
       },
       headers: {
         "Content-Type": "application/json"
-        "Cookie": auth_cookie
+        "Authorization": "Bearer " + access_token
       }
     }
 EOS
 end
 
 script "js_filtered_turbonomics_recommendations", type: "javascript" do
-  result "result"
   parameters "ds_get_turbonomics_recommendations", "ds_get_business_units", "ds_get_action_details"
+  result "result"
   code <<-EOS
     instances = []
     monthlySavings = 0.0

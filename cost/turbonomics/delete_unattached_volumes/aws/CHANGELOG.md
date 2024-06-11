@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.6.1
+
+- Switched from cookie-based authentication to token-based authentication
+
 ## v0.6
 
 - Added Hyperlinks for `System Details URL` incident field.

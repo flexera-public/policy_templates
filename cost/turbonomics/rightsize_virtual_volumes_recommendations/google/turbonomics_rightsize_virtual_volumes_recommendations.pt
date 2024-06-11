@@ -2,11 +2,12 @@ name "Turbonomic Rightsize Virtual Volumes Recommendations Google"
 rs_pt_ver 20180301
 type "policy"
 short_description "Turbonomic policy that gives recommendations to rightsize Virtual Volumes [README](https://github.com/flexera-public/policy_templates/tree/master/cost/turbonomics/rightsize_virtual_volumes_recommendations/google) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
 severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "0.4",
+  version: "0.4.1",
   source: "Turbonomic",
   service: "Usage Discount",
   provider: "Google",
@@ -15,17 +16,21 @@ info(
   publish: "false"
 )
 
-##################
-# Parameters   #
-##################
+###############################################################################
+# Parameters
+###############################################################################
 
 parameter "param_turbonomic_endpoint" do
   type "string"
-  label "Turbonomic endpoint"
+  category "Policy Settings"
+  label "Turbonomic Host"
+  description "Your Turbonomic host or IP."
+  # No default value, user input required
 end
 
 parameter "param_provider" do
   type "string"
+  category "Policy Settings"
   label "Provider"
   description "Specifies provider where you want to get recommendations"
   # Once we can add multiple providers, allow: "All", "AWS", "Azure Subscription", "GCP Project"
@@ -34,24 +39,38 @@ parameter "param_provider" do
   default "GCP Project"
 end
 
-parameter "param_auth_cookie" do
+parameter "param_turbonomic_audience" do
   type "string"
-  label "Authorization Cookie"
-  no_echo true
-  description "Valid authorization cookie."
+  category "Policy Settings"
+  label "Turbonomic instance audience"
+  description "Audience configured on the Turbonomic instance"
+  default "flexera"
 end
 
 parameter "param_email" do
   type "list"
+  category "Policy Settings"
   label "Email addresses to notify"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
+  # No default value, user input required
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_turbonomic" do
+  schemes "basic"
+  label "Turbonomic"
+  description "Select the Turbonomic Basic Auth Credential from the list."
+  tags "provider=turbonomic"
 end
 
 ###############################################################################
 # Pagination
 ###############################################################################
 
-pagination "turbonomic_volumes_pagination_header" do
+pagination "pagination_turbonomic" do
   get_page_marker do
     header "x-next-cursor"
   end
@@ -61,12 +80,23 @@ pagination "turbonomic_volumes_pagination_header" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
+
+#get turbonomic token
+datasource "ds_get_turbonomic_token" do
+  request do
+    run_script $js_get_turbonomic_token, $param_turbonomic_endpoint, $param_turbonomic_audience
+  end
+  result do
+    encoding "json"
+    field "access_token", jmes_path(response, "access_token")
+  end
+end
 
 datasource "ds_get_turbonomic_recommendations" do
   request do
-    run_script $js_get_turbonomic_recommendations, $param_turbonomic_endpoint, $param_auth_cookie
+    run_script $js_get_turbonomic_recommendations, $param_turbonomic_endpoint, val($ds_get_turbonomic_token, "access_token")
   end
   result do
     encoding "json"
@@ -90,7 +120,7 @@ end
 
 datasource "ds_get_business_units" do
   request do
-    run_script $js_get_business_units, $param_turbonomic_endpoint, $param_auth_cookie, $param_provider
+    run_script $js_get_business_units, $param_turbonomic_endpoint, $param_provider, val($ds_get_turbonomic_token, "access_token")
   end
   result do
     encoding "json"
@@ -106,18 +136,33 @@ datasource "ds_filtered_turbonomic_recommendations" do
   run_script $js_filtered_turbonomic_recommendations, $ds_get_turbonomic_recommendations, $ds_get_business_units, $param_provider
 end
 
-###############################################################################
-# Scripts
-###############################################################################
+##script retrieves an OAuth2 token from the Turbonomic API
+script "js_get_turbonomic_token", type: "javascript" do
+  parameters "turbonomic_endpoint", "audience"
+  result "request"
+  code <<-EOS
+    var request = {
+      verb: "POST",
+      auth: "auth_turbonomic"
+      host: turbonomic_endpoint,
+      path: "/oauth2/token",
+      headers: {
+      "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: "grant_type=client_credentials" + "&audience=" + audience + "&scope=role:OBSERVER"
+
+    }
+EOS
+end
 
 script "js_get_turbonomic_recommendations", type: "javascript" do
+  parameters "turbonomic_endpoint", "access_token"
   result "request"
-  parameters "turbonomic_endpoint", "auth_cookie"
   code <<-EOS
     request = {
       verb: "POST",
       host: turbonomic_endpoint,
-      pagination: "turbonomic_volumes_pagination_header",
+      pagination: "pagination_turbonomic",
       path: "/api/v3/markets/Market/actions"
       body_fields: {
         "actionStateList": ["READY", "ACCEPTED", "QUEUED", "IN_PROGRESS"],
@@ -132,15 +177,15 @@ script "js_get_turbonomic_recommendations", type: "javascript" do
       },
       headers: {
         "Content-Type": "application/json"
-        "Cookie": auth_cookie
+        "Authorization": "Bearer " + access_token
       }
     }
   EOS
 end
 
 script "js_get_business_units", type: "javascript" do
+  parameters "turbonomic_endpoint", "provider", "access_token"
   result "request"
-  parameters "turbonomic_endpoint", "auth_cookie", "provider"
   code <<-EOS
     query_params = {"type": "DISCOVERED"}
 
@@ -163,15 +208,15 @@ script "js_get_business_units", type: "javascript" do
       query_params: query_params,
       headers: {
         "Content-Type": "application/json"
-        "Cookie": auth_cookie
+        "Authorization": "Bearer " + access_token
       }
     }
   EOS
 end
 
 script "js_filtered_turbonomic_recommendations", type: "javascript" do
-  result "result"
   parameters "ds_get_turbonomic_recommendations", "ds_get_business_units", "param_provider"
+  result "result"
   code <<-EOS
     instances = []
     monthlySavings = 0.0

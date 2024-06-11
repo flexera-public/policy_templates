@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.4.1
+
+- Switched from cookie-based authentication to token-based authentication
+
 ## v0.4
 
 - Unpublished policy from catalog since Turbonomic Rightsize Volumes does not support Google provider yet.
