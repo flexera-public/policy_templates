@@ -2,11 +2,12 @@ name "Turbonomic Buy Reserved Instances Recommendations Azure"
 rs_pt_ver 20180301
 type "policy"
 short_description "Turbonomic policy for recommending purchaseable reserved instances [README](https://github.com/flexera-public/policy_templates/tree/master/cost/turbonomics/buy_reserved_instances_recommendations/azure) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
 severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "0.3",
+  version: "0.3.1",
   provider: "Azure",
   source: "Turbonomic",
   service: "Usage Discount",
@@ -14,33 +15,50 @@ info(
   recommendation_type: "Rate Reduction"
 )
 
-##################
-# Parameters #
-##################
+###############################################################################
+# Parameters
+###############################################################################
 
 parameter "param_turbonomic_host" do
   type "string"
+  category "Policy Settings"
   label "Turbonomic Host"
+  description "Host from your Turbonomic service"
+  # No default value, user input required
 end
 
-parameter "auth_cookie" do
+parameter "param_turbonomic_audience" do
   type "string"
-  label "Authorization Cookie"
-  no_echo true
-  description "Valid authorization cookie"
+  category "Policy Settings"
+  label "Turbonomic instance audience"
+  description "Audience configured on the Turbonomic instance"
+  default "flexera"
 end
 
 parameter "param_email" do
   type "list"
+  category "Policy Settings"
   label "Email addresses to notify"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
+  # No default value, user input required
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_turbonomic" do
+  schemes "basic"
+  label "Turbonomic"
+  description "Select the Turbonomic Basic Auth Credential from the list."
+  tags "provider=turbonomic"
 end
 
 ###############################################################################
 # Pagination
 ###############################################################################
 
-pagination "turbonomic_buy_ris_pagination_header" do
+pagination "pagination_turbonomic" do
   get_page_marker do
     header "x-next-cursor"
   end
@@ -53,10 +71,21 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+#get turbonomic token
+datasource "ds_get_turbonomic_token" do
+  request do
+    run_script $js_get_turbonomic_token, $param_turbonomic_host, $param_turbonomic_audience
+  end
+  result do
+    encoding "json"
+    field "access_token", jmes_path(response, "access_token")
+  end
+end
+
 #get turbonomic recommendation data
 datasource "ds_get_turbonomic_recommendations" do
   request do
-    run_script $js_get_turbonomic_recommendations, $param_turbonomic_host, $auth_cookie
+    run_script $js_get_turbonomic_recommendations, $param_turbonomic_host, val($ds_get_turbonomic_token, "access_token")
   end
   result do
     encoding "json"
@@ -83,15 +112,48 @@ datasource "ds_get_turbonomic_recommendations" do
   end
 end
 
-##script using a manually acquired turbonomic cookie and pulls hard coded purchasable ri data
-script "js_get_turbonomic_recommendations", type: "javascript" do
+##this will potentially be a lot of calls. how to make this more performant
+datasource "ds_get_business_units" do
+  request do
+    run_script $js_get_business_units, $param_turbonomic_host, val($ds_get_turbonomic_token, "access_token")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "uuid", jmes_path(col_item, "uuid")
+      field "accountID", jmes_path(col_item, "accountId")
+      field "displayName", jmes_path(col_item, "displayName")
+    end
+  end
+end
+
+##script retrieves an OAuth2 token from the Turbonomic API
+script "js_get_turbonomic_token", type: "javascript" do
+  parameters "turbonomic_endpoint", "audience"
   result "request"
-  parameters "param_turbonomic_host","auth_cookie"
   code <<-EOS
-  //replace cookie every day this is run
+    var request = {
+      verb: "POST",
+      auth: "auth_turbonomic"
+      host: turbonomic_endpoint,
+      path: "/oauth2/token",
+      headers: {
+      "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: "grant_type=client_credentials" + "&audience=" + audience + "&scope=role:OBSERVER"
+
+    }
+EOS
+end
+
+##script using a acquired turbonomic token and pulls hard coded purchasable ri data
+script "js_get_turbonomic_recommendations", type: "javascript" do
+  parameters "param_turbonomic_host", "access_token"
+  result "request"
+  code <<-EOS
   var request = {
       verb: "POST",
-      pagination: "turbonomic_buy_ris_pagination_header",
+      pagination: "pagination_turbonomic",
       host: param_turbonomic_host,
       path: "/api/v3/markets/Market/actions",
       body_fields: {
@@ -107,33 +169,17 @@ script "js_get_turbonomic_recommendations", type: "javascript" do
       },
       headers: {
           "Content-Type": "application/json"
-          "Cookie": auth_cookie
+          "Authorization": "Bearer " + access_token
       }
   }
 EOS
 end
 
-##this will potentially be a lot of calls. how to make this more performant
-datasource "ds_get_business_units" do
-  request do
-    run_script $js_get_business_units, $param_turbonomic_host, $auth_cookie
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "[*]") do
-      field "uuid", jmes_path(col_item, "uuid")
-      field "accountID", jmes_path(col_item, "accountId")
-      field "displayName", jmes_path(col_item, "displayName")
-    end
-  end
-end
-
 ## verified that discovered is the only one we need
 script "js_get_business_units", type: "javascript" do
+  parameters "param_turbonomic_host", "access_token"
   result "request"
-  parameters "param_turbonomic_host","auth_cookie"
   code <<-EOS
-  //replace cookie every day this is run
   var request = {
       verb: "GET",
       host: param_turbonomic_host,
@@ -144,7 +190,7 @@ script "js_get_business_units", type: "javascript" do
       },
       headers: {
           "Content-Type": "application/json"
-          "Cookie": auth_cookie
+          "Authorization": "Bearer " + access_token
       }
   }
 EOS
@@ -153,7 +199,7 @@ end
 ##this will potentially be a lot of calls. how to make this more performant
 datasource "ds_get_action_details" do
   request do
-    run_script $js_get_action_details, $param_turbonomic_host, $auth_cookie, $ds_get_turbonomic_recommendations
+    run_script $js_get_action_details, $ds_get_turbonomic_recommendations, $param_turbonomic_host, val($ds_get_turbonomic_token, "access_token")
   end
   result do
     encoding "json"
@@ -163,10 +209,9 @@ end
 
 ##
 script "js_get_action_details", type: "javascript" do
+  parameters "ds_get_turbonomic_recommendations", "turbonomic_endpoint", "access_token"
   result "request"
-  parameters "turbonomic_endpoint", "auth_cookie", "ds_get_turbonomic_recommendations"
   code <<-EOS
-  //replace cookie every day this is run
     var uuids = []
     _.each(ds_get_turbonomic_recommendations, function(instance){
       if (instance.provider === "Azure Subscription"){
@@ -182,19 +227,19 @@ script "js_get_action_details", type: "javascript" do
       },
       headers: {
         "Content-Type": "application/json"
-        "Cookie": auth_cookie
+        "Authorization": "Bearer " + access_token
       }
     }
   EOS
 end
 
 datasource "ds_filtered_turbonomic_recommendations" do
-  run_script $js_filtered_turbonomic_recommendations, $ds_get_turbonomic_recommendations, $ds_get_business_units, $param_turbonomic_host, $ds_get_action_details
+  run_script $js_filtered_turbonomic_recommendations, $ds_get_turbonomic_recommendations, $ds_get_business_units, $ds_get_action_details, $param_turbonomic_host
 end
 
 script "js_filtered_turbonomic_recommendations", type: "javascript" do
+  parameters "ds_get_turbonomic_recommendations", "ds_get_business_units", "ds_get_action_details", "turbonomic_endpoint"
   result "result"
-  parameters "ds_get_turbonomic_recommendations", "ds_get_business_units", "turbonomic_endpoint", "ds_get_action_details"
   code <<-EOS
     instances = []
     monthlySavings = 0.0
