@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.3.0
+
+- Changed name to `Cloud Bill Processing Error Notification` to better indicate that it is specific to Cloud Cost Optimization
+- Parameters altered to be more descriptive and human-readable
+- Streamlined code for better readability and faster execution
+
 ## v2.2
 
 - Updated policy metadata to make it more clear what Flexera service the policy is for
