@@ -1,13 +1,13 @@
 name "Budget Alerts"
 rs_pt_ver 20180301
 type "policy"
-short_description "This policy utilizes the Flexera Budget API to detect if budget threshold has been exceeded for a selected budget. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/budget_report_alerts/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Reports if budget threshold has been exceeded for a selected budget. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/budget_alerts/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
 severity "medium"
 category "Cost"
-tenancy "single"
 default_frequency "daily"
 info(
-  version: "3.3",
+  version: "4.0.0",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization"
@@ -17,55 +17,63 @@ info(
 # Parameters
 ###############################################################################
 
-parameter "param_budget_name_id" do
-  label "Budget Name or ID"
-  description "Provide the name or id of a Budget"
-  min_length 1
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_budget" do
   type "string"
-  constraint_description "Budget Name or ID is a required field"
+  category "Policy Settings"
+  label "Budget Name/ID"
+  description "Enter the name or ID of the budget to alert on."
+  min_length 1
 end
 
 parameter "param_threshold_percentage" do
-  label "Threshold Percentage"
   type "number"
-  description "Percentage of budget amount to alert on"
-  default 90
+  category "Policy Settings"
+  label "Threshold Percentage"
+  description "Percentage of budget amount to alert on."
   min_value 1
+  default 90
 end
 
 parameter "param_type" do
-  label "Budget Alert Type"
   type "string"
-  allowed_values "Actual Spend","Forecasted Spend"
-  description "Actual Spend alerts are based off incurred costs. Forecasted Spend alerts are based off monthly runrates."
+  category "Policy Settings"
+  label "Alert Type"
+  description "Whether to alert based on incurred costs (Actual Spend) or based on monthly run rates (Forecasted Spend)"
+  allowed_values "Actual Spend", "Forecasted Spend"
   default "Actual Spend"
 end
 
 parameter "param_use_groups" do
   type "string"
-  label "Degree of Summarization"
-  allowed_values "Summarized","By dimensions"
+  category "Policy Settings"
+  label "Summarization"
+  description "Whether to summarize the data or group it by dimension"
+  allowed_values "Summarized", "By Dimensions"
   default "Summarized"
-  description "Use this parameter to specify how to group the data"
 end
 
 parameter "param_filter" do
   type "list"
+  category "Policy Settings"
   label "Filter Group By Dimension(s)"
   description "Enable budget tracking for specific dimensions and values. Only supports dimensions provided in the group previously defined in the budget"
 end
 
 parameter "param_unbudgeted" do
-  label "Unbudgeted spend"
   type "string"
-  allowed_values "Exclude unbudgeted spend","Include unbudgeted spend"
-  default "Exclude unbudgeted spend"
-end
-
-parameter "param_email" do
-  label "Email addresses"
-  type "list"
-  description "A list of email addresses to notify"
+  category "Policy Settings"
+  label "Unbudgeted spend"
+  description "Wheter or not to include or exclude unbudgeted spend"
+  allowed_values "Exclude Unbudgeted Spend", "Include Unbudgeted Spend"
+  default "Exclude Unbudgeted Spend"
 end
 
 ###############################################################################
@@ -74,7 +82,7 @@ end
 
 credentials "auth_flexera" do
   schemes "oauth2"
-  label "flexera"
+  label "Flexera"
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
@@ -82,6 +90,16 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
 
 datasource "ds_currency_reference" do
   request do
@@ -95,22 +113,53 @@ datasource "ds_currency_code" do
   request do
     auth $auth_flexera
     host rs_optima_host
-    path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
     header "Api-Version", "0.1"
     header "User-Agent", "RS Policies"
+    ignore_status [403]
   end
   result do
     encoding "json"
-    field "id", jmes_path(response,"id")
-    field "value", jmes_path(response,"value")
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
   end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-'EOS'
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
 end
 
 datasource "ds_get_dimensions" do
   request do
     auth $auth_flexera
     host rs_optima_host
-    path join(["/bill-analysis/orgs/",rs_org_id,"/costs/dimensions"])
+    path join(["/bill-analysis/orgs/", rs_org_id, "/costs/dimensions"])
     header "Api-Version", "0.1"
     header "User-Agent", "RS Policies"
   end
@@ -125,179 +174,171 @@ datasource "ds_get_dimensions" do
 end
 
 datasource "ds_dimensions" do
-  run_script $js_filter_dimensions, $ds_get_dimensions
+  run_script $js_dimensions, $ds_get_dimensions
 end
 
-script "js_filter_dimensions", type: "javascript" do
+script "js_dimensions", type: "javascript" do
   parameters "ds_get_dimensions"
   result "result"
   code <<-EOS
-    var result = {};
-    _.each(ds_get_dimensions, function(dimension) {
-      result[dimension.id] = dimension.name;
-    });
-  EOS
+  result = {}
+  _.each(ds_get_dimensions, function(dimension) { result[dimension['id']] = dimension['name'] })
+EOS
 end
 
 datasource "ds_budgets" do
   request do
     auth $auth_flexera
     host rs_optima_host
-    path join(["/bill-analysis/orgs/",rs_org_id,"/budgets"])
+    path join(["/bill-analysis/orgs/", rs_org_id, "/budgets"])
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
   end
   result do
     encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "id", jmes_path(col_item,"id")
-      field "name", jmes_path(col_item,"name")
-      field "metric", jmes_path(col_item,"metric")
-      field "dimensions", jmes_path(col_item,"dimensions")
-      field "budgetYearMonths", jmes_path(col_item,"yearMonths")
+    collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "metric", jmes_path(col_item, "metric")
+      field "dimensions", jmes_path(col_item, "dimensions")
+      field "yearMonths", jmes_path(col_item, "yearMonths")
     end
   end
 end
 
-datasource "ds_filtered_budgets" do
-  run_script $js_filter_budgets, $ds_budgets, $param_budget_name_id
+datasource "ds_budgets_filtered" do
+  run_script $js_budgets_filtered, $ds_budgets, $param_budget
 end
 
-script "js_filter_budgets", type: "javascript" do
-  parameters "budgets", "budget_name_id"
-  result "results"
+script "js_budgets_filtered", type: "javascript" do
+  parameters "ds_budgets", "param_budget"
+  result "result"
   code <<-EOS
-  var currDate = new Date();
-  budget_name_id = budget_name_id.trim();
-  var results =
-    _.filter(budgets, function(b){
-      b.start_date = Date.now();
-      b.end_date = 0;
-      var has_curr_month = false;
-      _.each(b.budgetYearMonths, function (yearMonth) {
-        var curr = currDate.getFullYear() + '-' + ('0' + (currDate.getMonth()+1)).slice(-2);
-        b.start_date = Math.min(b.start_date, Date.parse(yearMonth))
-        b.end_date = Math.max(b.end_date, Date.parse(yearMonth))
-        if (yearMonth == curr) {
-          has_curr_month = true;
-        }
-      })
-      return (b.name == budget_name_id || b.id == budget_name_id) && has_curr_month;
-    });
+  current_month = new Date().toISOString().substring(0, 7)
+
+  result = _.filter(ds_budgets, function(budget) {
+    budget_current_month = _.find(budget['yearMonths'], function(item) {
+      return new Date(item).toISOString().substring(0, 7) == current_month
+    })
+
+    return budget_current_month != undefined && (budget["name"] == param_budget || budget["id"] == param_budget)
+  })
 EOS
 end
 
 datasource "ds_reports" do
-  iterate $ds_filtered_budgets
+  iterate $ds_budgets_filtered
   request do
-    run_script $js_report_request, rs_optima_host, rs_org_id, $param_use_groups, $param_unbudgeted, iter_item
+    run_script $js_reports, iter_item, $param_use_groups, $param_unbudgeted, rs_optima_host, rs_org_id
   end
   result do
     encoding "json"
     collect jmes_path(response,"[*]") do
       field "b_id", val(iter_item, "id")
       field "name", val(iter_item, "name")
-      field "dimensionsIDs", val(iter_item, "dimensions")
+      field "dimension_ids", val(iter_item, "dimensions")
       field "metric", val(iter_item, "metric")
       field "timestamp", jmes_path(col_item,"timestamp")
-      field "dimensions", jmes_path(col_item,"dimensions")
+      field "dimensions", jmes_path(col_item, "dimensions")
       field "budgetAmount", jmes_path(col_item,"metrics.budgetAmount")
       field "spendAmount", jmes_path(col_item,"metrics.spendAmount")
     end
   end
 end
 
-script "js_report_request", type: "javascript" do
-  parameters "rs_optima_host", "org", "use_groups", "unbudgeted", "budget"
+script "js_reports", type: "javascript" do
+  parameters "budget", "param_use_groups", "param_unbudgeted", "rs_optima_host", "rs_org_id"
   result "request"
   code <<-EOS
-  var current = new Date();
-  var start_date = current.getFullYear() + '-' + ('0' + (current.getMonth()+1)).slice(-2);
-  current.setMonth(current.getMonth()+1);
-  var end_date = current.getFullYear() + '-' + ('0' + (current.getMonth()+1)).slice(-2);
+  start_date = new Date().toISOString().substring(0, 7)
+  end_year = Number(start_date.split('-')[0])
+  end_month = Number(start_date.split('-')[1]) + 1
+  if (end_month == 13) { end_year += 1; end_month = 1 }
+  if (end_month < 10) { end_month = '0' + end_month.toString() }
+  end_date = end_year.toString() + '-' + end_month.toString()
+
+  dimensions = param_use_groups == "Summarized" ? [] : budget['dimensions']
 
   var request = {
     auth: "auth_flexera",
     host: rs_optima_host,
     verb: "POST",
-    path: "/bill-analysis/orgs/" + org + "/budgets/" + budget.id + "/report",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/budgets/" + budget['id'] + "/report",
+    headers: { "User-Agent": "RS Policies", "Api-Version": "1.0" },
     body_fields: {
-      "dimensions": use_groups == "Summarized" ? [] : budget.dimensions,
+      "dimensions": dimensions,
       "endAt": end_date,
       "startAt": start_date,
-      "includeUnbudgeted": unbudgeted == "Include unbudgeted spend",
-    },
-    headers: {
-      "User-Agent": "RS Policies",
-      "Api-Version": "1.0"
+      "includeUnbudgeted": param_unbudgeted == "Include Unbudgeted Spend",
     }
   }
-  EOS
+EOS
 end
 
 datasource "ds_aggregated" do
-  run_script $js_aggregated, $ds_reports, $ds_currency_code, $ds_currency_reference, $param_threshold_percentage, $param_type, f1_app_host, $param_budget_name_id, $ds_dimensions, $param_filter
+  run_script $js_aggregated, $ds_reports, $ds_currency, $ds_dimensions, $param_threshold_percentage, $param_type, $param_budget, $param_filter, f1_app_host
 end
 
 script "js_aggregated", type: "javascript" do
-  parameters "reports", "currency_code", "currency_reference", "threshold_percent", "param_type", "f1_app_host", "budget_name_id", "ds_dimensions", "param_filter"
-  result "results"
+  parameters "ds_reports", "ds_currency", "ds_dimensions", "param_threshold_percentage", "param_type", "param_budget", "param_filter", "f1_app_host"
+  result "result"
   code <<-EOS
-  var results = {
-    invalid: [],
-    exceeded: [],
-    forecasted: [],
-  }
-  var ds_dimensions_inverted = _.invert(ds_dimensions);
-  var filters = {};
-  _.each(param_filter, function (filter_item) {
-    filter_item = filter_item.split("=");
-    if (filter_item.length > 1) {
-      filter_item[0] = filter_item[0].trim();
-      filters[ds_dimensions_inverted[filter_item[0]]||filter_item[0]] =
-        _.map(filter_item[1].split(","), function(val){ return val.trim() });
-    }
-  });
+  // Function to return forecast for current month based on spend so far
+  function forecasted(amount) {
+    now = new Date()
+    day = now.getUTCDate() - 1
 
-  if (!reports || !reports.length) {
-    results.invalid.push(budget_name_id);
-  }
-  var currency = currency_code.value || '';
-  var ref = currency ? currency_reference[currency] : undefined;
-  if (ref) {
-    currency = ref.symbol || "";
+    // Return 0 value if we're at 1st of the month to avoid dividing by 0
+    if (day < 1) { return 0 }
+
+    // Otherwise, divide the amount by number of days in the month so far
+    // and then multiply it by the number of total days in the month
+    days = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
+    return amount / day * days
   }
 
-  function forecasted(curr) {
-    var now = new Date();
-    var day = now.getUTCDate()-1;
-    if (day < 1) {
-      return 0;
-    }
-    var days = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
-    return curr / day * days
-  }
+  function get_group(dimensions, dimension_ids) {
+    vals = []
 
-  function get_group(dimensions, dimensionsIDs) {
-    var vals = [];
-    _.each(dimensionsIDs, function (k) {
-      if (dimensions[k] && (k != "is_budgeted" || dimensionsIDs.length == 1)){
-        vals.push(dimensions[k]);
+    _.each(dimension_ids, function(id) {
+      if (dimensions[id] && (id != "is_budgeted" || dimension_ids.length == 1)) {
+        vals.push(dimensions[id])
       }
     })
-    if (!vals.length && dimensions["is_budgeted"]) {
-      return dimensions["is_budgeted"];
-    }
-    return vals.join("|");
+
+    if (!vals.length && dimensions["is_budgeted"]) { return dimensions["is_budgeted"] }
+    return vals.join("|")
   }
 
-  function get_dimm_names(dimensionsIDs) {
-    var vals = [];
-    _.each(dimensionsIDs, function (k) {
-      vals.push(ds_dimensions[k]||k);
-    })
-    return vals.join(", ");
+  function dimension_names(dimension_ids) {
+    return _.map(dimension_ids, function(id) {
+      if (ds_dimensions[id]) { return ds_dimensions[id] }
+      return id
+    }).join(", ")
   }
+
+  result = {
+    invalid: [],
+    exceeded: [],
+    forecasted: []
+  }
+
+  // Store invalid budgets in the appropriate incident
+  if (!ds_reports || !ds_reports.length) { result['invalid'].push(param_budget) }
+
+  filters = {}
+
+  _.each(param_filter, function(filter_item) {
+    key = filter_item.split("=")[0]
+    value = filter_item.split("=")[1]
+
+    dimension_id = _.invert(ds_dimensions)[key.trim()]
+    if (dimension_id == undefined) { dimension_id = key.trim() }
+
+    if (value != undefined) {
+      filters[dimension_id] = _.map(value.split(','), function(val) { return val.trim() })
+    }
+  })
 
   var current = new Date();
   var monthYear = current.getFullYear() + '-' + ('0' + (current.getMonth()+1)).slice(-2);
@@ -308,12 +349,12 @@ script "js_aggregated", type: "javascript" do
     "cost_amortized_blended_adj": "Amortized"
   }
 
-  _.each(reports, function (item) {
+  _.each(ds_reports, function (item) {
     item.budgetAmount = item.budgetAmount || 0;
     if (item.spendAmount) {
       item.monthYear = monthYear;
       item.forecasted = "";
-      item.currency = currency_code.value;
+      item.currency = ds_currency_code.value;
       item.forecastedAmount = item.spendAmount;
       var date = new Date(item.timestamp);
       item.date = date.toLocaleDateString();
@@ -348,25 +389,25 @@ script "js_aggregated", type: "javascript" do
           return;
         }
 
-        item.group = get_group(item.dimensions, item.dimensionsIDs);
+        item.group = get_group(item.dimensions, item.dimension_ids);
         item.is_budgeted = !item.dimensions.is_budgeted || item.dimensions.is_budgeted === "Budgeted";
       }
       item.metric = cost_metric[item.metric || ''] || item.metric;
 
       if (item.budget > 0) {
-        item.budget = currency + item.budget;
+        item.budget = ds_currency['symbol'] + item.budget;
       }
       if (item.spend > 0) {
-        item.spend = currency + item.spend;
+        item.spend = ds_currency['symbol'] + item.spend;
       }
       if (item.overBudget > 0) {
-        item.overBudget = currency + item.overBudget;
+        item.overBudget = ds_currency['symbol'] + item.overBudget;
       }
       if (item.overBudgetForec > 0) {
-        item.overBudgetForec = currency + item.overBudgetForec;
+        item.overBudgetForec = ds_currency['symbol'] + item.overBudgetForec;
       }
       if (item.forecasted) {
-        item.forecasted = currency + item.forecasted;
+        item.forecasted = ds_currency['symbol'] + item.forecasted;
       }
 
       if (item.spentPercent !== undefined) {
@@ -376,38 +417,38 @@ script "js_aggregated", type: "javascript" do
         item.spentPercentForec += "%";
       }
       item.host = f1_app_host;
-      item.dimm = get_dimm_names(item.dimensionsIDs);
+      item.dimm = dimension_names(item.dimension_ids);
 
       if ((!item.is_budgeted && item.spendAmount > 0) || item.budgetAmount) {
         if (param_type == "Actual Spend") {
           if (!item.is_budgeted) {
             item.details = "Spend is unbudgeted"
-            results.exceeded.push(item);
+            result.exceeded.push(item);
           } else if (item.spendAmount > item.budgetAmount) {
             item.details = "Actual spend exceeded budget"
-            results.exceeded.push(item);
-          } else if (threshold_percent < budget_percent) {
+            result.exceeded.push(item);
+          } else if (param_threshold_percentage < budget_percent) {
             item.details = "Actual spend exceeded budget threshold"
-            results.exceeded.push(item);
+            result.exceeded.push(item);
           }
         } else {
           if (!item.is_budgeted) {
             item.details = "Spend is unbudgeted"
-            results.forecasted.push(item);
+            result.forecasted.push(item);
           } else if  (item.forecastedAmount > item.budgetAmount) {
             item.details = "Projected spend exceeded budget"
-            results.forecasted.push(item);
-          } else if (threshold_percent < budget_percent_forec) {
+            result.forecasted.push(item);
+          } else if (param_threshold_percentage < budget_percent_forec) {
             item.details = "Projected spend exceeded budget threshold"
-            results.forecasted.push(item);
+            result.forecasted.push(item);
           }
         }
       }
     }
   });
 
-  results.exceeded = _.sortBy(results.exceeded, function (item) {return item.group;})
-  results.forecasted = _.sortBy(results.forecasted, function (item) {return item.group;})
+  result.exceeded = _.sortBy(result.exceeded, function (item) {return item.group;})
+  result.forecasted = _.sortBy(result.forecasted, function (item) {return item.group;})
 EOS
 end
 
@@ -417,9 +458,9 @@ end
 
 script "js_only_forecasted", type: "javascript" do
   parameters "arg"
-  result "results"
+  result "result"
   code <<-EOS
-    results = arg.forecasted
+    result = arg.forecasted
   EOS
 end
 
@@ -429,9 +470,9 @@ end
 
 script "js_only_exceeded", type: "javascript" do
   parameters "arg"
-  result "results"
+  result "result"
   code <<-EOS
-    results = arg.exceeded
+    result = arg.exceeded
   EOS
 end
 
@@ -441,14 +482,14 @@ end
 
 policy "pol_budget_alert" do
   validate $ds_aggregated do
-    summary_template "Budget Alerts: Invalid Budget Name or ID: {{parameters.param_budget_name_id}}"
+    summary_template "Budget Alerts: Invalid Budget Name or ID: {{parameters.param_budget}}"
     detail_template <<-EOS
   The following provided budget Name or ID is invalid or the budget refers to prior periods:
   \n
-  - {{parameters.param_budget_name_id}}
+  - {{parameters.param_budget}}
   \n
 EOS
-    escalate $esc_budget_alert
+    escalate $esc_email
     check eq(size(val(data, "invalid")),0)
   end
 
@@ -475,7 +516,7 @@ Target Groups: \n
 
 [Link to budget report in Flexera One](https://{{with index data 0}}{{ .host }}{{end}}/orgs/{{ rs_org_id }}/optima/budgets/{{with index data 0}}{{ .b_id }}{{end}})
 EOS
-    escalate $esc_budget_alert
+    escalate $esc_email
     check eq(size(data),0)
     export do
       field "group" do
@@ -525,7 +566,7 @@ Target Groups: \n
 
 [Link to budget report in Flexera One](https://{{with index data 0}}{{ .host }}{{end}}/orgs/{{ rs_org_id }}/optima/budgets/{{with index data 0}}{{ .b_id }}{{end}})
 EOS
-    escalate $esc_budget_alert
+    escalate $esc_email
     check eq(size(data),0)
     export do
       field "group" do
@@ -557,7 +598,7 @@ end
 # Escalations
 ###############################################################################
 
-escalation "esc_budget_alert" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
