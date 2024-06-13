@@ -184,7 +184,7 @@ def readme_invalid_credentials?(file)
     credential_footnote = true if line.start_with?("The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.")
 
     aws_policy = true if (line.include?("AWS") || line.include?("aws")) && (line.include?("Credential") || line.include?("credential"))
-    azure_policy = true if (line.include?("Azure") || line.include?("azure")) && (line.include?("Credential") || line.include?("credential"))
+    azure_policy = true if (line.include?("Azure") || line.include?("azure")) && (line.include?("Credential") || line.include?("credential")) && !line.include?("China") && !line.include?("china")
     google_policy = true if (line.include?("Google") || line.include?("google") || line.include?("GCP") || line.include?("gcp")) && (line.include?("Credential") || line.include?("credential"))
 
     # Description check
@@ -217,7 +217,7 @@ def readme_invalid_credentials?(file)
 
     azure_permission_scanning = false if line.start_with?("- [") && (!line.include?("Azure") && !line.include?("azure"))
     azure_permission_scanning = false if aws_permission_scanning || google_permission_scanning || flexera_permission_scanning
-    azure_permission_scanning = true if !line.start_with?("This Policy Template uses [Credentials]") && !azure_permission_stop_scanning && !azure_permission_scanning && prereq_line_number > 0 && (line.include?("[**Azure") || line.include?("[**azure"))
+    azure_permission_scanning = true if !line.start_with?("This Policy Template uses [Credentials]") && !azure_permission_stop_scanning && !azure_permission_scanning && prereq_line_number > 0 && (line.include?("[**Azure") || line.include?("[**azure")) && !line.include?("Azure China")
     azure_permission_line = line_number if !azure_permission_line && azure_permission_scanning
     azure_permission_text << line if azure_permission_scanning
 

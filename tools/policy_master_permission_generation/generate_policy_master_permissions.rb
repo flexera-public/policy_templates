@@ -58,6 +58,7 @@ def extract_permissions_from_readme(readme_content)
     "[**AWS Credential**]",
     "[**Azure Resource Manager Credential**]",
     "[**Azure Storage Credential**]",
+    "[**Azure China Enterprise Agreement Credential**]",
     "[**Google Cloud Credential**]",
     "[**Flexera Credential**]",
     "[**Turbonomic Credential**]",
@@ -71,6 +72,8 @@ def extract_permissions_from_readme(readme_content)
       provider = "azure_rm"
     when "[**Azure Storage Credential**]"
       provider = "azure_storage"
+    when "[**Azure China Enterprise Agreement Credential**]"
+      provider = "azure_ea_china"
     when "[**Google Cloud Credential**]"
       provider = "gce"
     when "[**Flexera Credential**]"
