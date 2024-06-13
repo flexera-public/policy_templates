@@ -56,6 +56,7 @@ These templates can generate savings estimates for your environment.
 - [Azure Rightsize Compute Instances](./cost/azure/rightsize_compute_instances)
 - [Azure Rightsize Managed Disks](./cost/azure/rightsize_managed_disks)
 - [Azure Rightsize NetApp Files](./cost/azure/rightsize_netapp_files)
+- [Azure Rightsize SQL Database Storage](./cost/azure/rightsize_sql_storage)
 - [Azure Rightsize SQL Databases](./cost/azure/rightsize_sql_instances)
 - [Azure Savings Plan Recommendations](./cost/azure/savings_plan/recommendations)
 - [Azure Superseded Compute Instances](./cost/azure/superseded_instances)
@@ -268,6 +269,7 @@ These templates can generate savings estimates for your environment.
 - SQL
 
   - [Azure Hybrid Use Benefit for SQL](./cost/azure/hybrid_use_benefit_sql)
+  - [Azure Rightsize SQL Database Storage](./cost/azure/rightsize_sql_storage)
   - [Azure Rightsize SQL Databases](./cost/azure/rightsize_sql_instances)
   - [Azure SQL Servers Without Elastic Pools](./cost/azure/sql_servers_without_elastic_pool)
 
@@ -613,11 +615,11 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 32
-  Cost: 98
+  Cost: 99
   Operational: 19
   SaaS Management: 12
   Security: 74
-:optimization_count: 51
+:optimization_count: 52
 :policy_sets:
   '': 41
   AWS Config: 1
@@ -659,7 +661,7 @@ These templates can generate savings estimates for your environment.
   Rightsize Clusters: 1
   Rightsize Compute Instances: 6
   Rightsize Containers: 1
-  Rightsize Database Instances: 4
+  Rightsize Database Instances: 5
   Rightsize Database Services: 1
   Rightsize Storage: 2
   Rightsize Volumes: 2
@@ -680,7 +682,7 @@ These templates can generate savings estimates for your environment.
   Usage Report: 3
 :providers:
   AWS: 82
-  Azure: 83
+  Azure: 84
   Azure China: 1
   Flexera: 37
   Flexera Optima: 1
@@ -725,7 +727,7 @@ These templates can generate savings estimates for your environment.
   PostgreSQL: 4
   RDS: 4
   S3: 6
-  SQL: 15
+  SQL: 16
   SaaS Manager: 9
   Security: 3
   Storage: 23
@@ -734,7 +736,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 235
+:total_count: 236
 -->
 <!-- End Policy Template Stats -->
 
