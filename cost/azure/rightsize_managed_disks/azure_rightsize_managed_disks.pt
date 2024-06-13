@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "monthly"
 info(
-  version: "2.0.2",
+  version: "2.0.3",
   provider: "Azure",
   service: "Managed Disks",
   policy_set: "Rightsize Storage",
@@ -759,7 +759,14 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
     var premSsdV2Pricing = ds_azure_md_pricing[diskRegion]
     if (premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY === undefined) { return }
     if (currentUsedIops <= 3000 && currentUsedThroughput <= 3000) {
-      return premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY.pricePerUnit * 720 * currentUsedGB
+      return {
+        pricePerUnit: Math.round( premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY.pricePerUnit * 720 * currentUsedGB ),
+        currencyCode: premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY.currencyCode,
+        sizeGiB: currentUsedGB,
+        IOPS: currentUsedIops,
+        throughput: currentUsedThroughput,
+        unitOfMeasure: premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY.unitOfMeasure
+      }
     }
     var diskIopsAndThroughputDontFitInDiskSize = true
     var suggestedDiskSize = currentUsedGB
@@ -780,7 +787,7 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
         + (premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_THROUGHPUT_MBPS.pricePerUnit * 720 * currentUsedThroughput)
       ),
       currencyCode: premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY.currencyCode,
-      sizeGB: suggestedDiskSize,
+      sizeGiB: suggestedDiskSize,
       IOPS: maxIops,
       throughput: maxThroughput,
       unitOfMeasure: premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY.unitOfMeasure,
@@ -836,8 +843,7 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
     var disk = ds_azure_disks_with_metrics_thresholds_filtered[i]
     var currentDiskName = findDiskName(disk.tier, disk.diskSizeGB)
     if (currentDiskName === undefined) {
-     console.log("Current disk name is undefined ", disk);
-     console.log(JSON.stringify(disk));
+     console.log("Current disk name is undefined ", JSON.stringify(disk));
      continue;
     }
     var currentDiskData = ds_azure_md_tier_types[currentDiskName]
@@ -853,6 +859,7 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
       var currentDiskPrice = findDiskPrice(currentDiskName, currentDiskRedundancy, disk.region)
       var fittingDiskPrice = findDiskPrice(fittingDiskName, currentDiskRedundancy, disk.region)
     } catch (err) {
+      console.log("Error while calculating the currentDiskPrice or fittingDiskPrice ", JSON.stringify(disk), JSON.stringify(currentDiskData));
       if (currentDiskData.tier != "Ultra") {
         continue
       }
@@ -874,7 +881,7 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
 
     }
     // Righsizing from Premium SSD to Premium SSD v2
-    else if (currentDiskData.tier === "StandardSSD" && premSsdV2Price != undefined && premSsdV2Price.pricePerUnit < fittingDiskPrice.pricePerUnit) {
+    else if ((currentDiskData.tier === "StandardSSD" || currentDiskData.tier === "Premium") && premSsdV2Price != undefined && premSsdV2Price.pricePerUnit < fittingDiskPrice.pricePerUnit) {
       monthlySavings = currentDiskPrice.pricePerUnit - premSsdV2Price.pricePerUnit
       newResourceType = "Premium SSD v2"
       newResourceTypeRedundancy = "LRS"
@@ -902,10 +909,12 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
     }
 
     tags = []
-    if (typeof(disk.tags) == 'object') {
-      _.each(Object.keys(disk.tags), function(key) {
-        tags.push([key, "=", disk.tags[key]].join(''))
-      })
+    if(disk.tags){
+      if (typeof(disk.tags) == 'object') {
+        _.each(Object.keys(disk.tags), function(key) {
+          tags.push([key, "=", disk.tags[key]].join(''))
+        })
+      }
     }
 
     recommendations.push({
@@ -950,7 +959,6 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
   }
 
   if (recommendations.length > 0) {
-    monthlySavings = monthlySavings.toFixed(2)
 
     recommendations[0].message = "Oversized disks are those that meet the following conditions within the last " + param_stats_lookback + " day(s):\n\n"
     if (param_min_used_disk_iops_pct != -1) {

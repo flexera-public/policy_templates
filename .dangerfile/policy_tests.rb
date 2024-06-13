@@ -236,7 +236,8 @@ def policy_bad_indentation?(file)
   define_block = false
 
   policy_code.each_line.with_index do |line, index|
-    break if line.strip.start_with?('# Meta Policy [alpha]')
+    break if line.strip.start_with?('# Meta Policy [alpha]') # Break out of definition when enounter meta policy code at the bottom
+    next if line.strip.start_with?('#') # Skip comment lines
 
     line_number = index + 1
     indentation = line.match(/\A\s*/).to_s.length
@@ -485,7 +486,7 @@ def policy_readme_missing_credentials?(file)
       pol_flexera_credential = true if line.include?("flexera")
       pol_aws_credential = true if line.include?("aws")
       pol_aws_credential = true if line.include?("amazon")
-      pol_azure_credential = true if line.include?("azure")
+      pol_azure_credential = true if line.include?("azure") && !line.include?("china")
       pol_google_credential = true if line.include?("google")
       pol_google_credential = true if line.include?("gcp")
       pol_google_credential = true if line.include?("gce")
@@ -512,7 +513,7 @@ def policy_readme_missing_credentials?(file)
 
     readme_flexera_credential = true if line.strip.match?(flexera_regex)
     readme_aws_credential = true if line.strip.match?(aws_regex)
-    readme_azure_credential = true if line.strip.match?(azure_regex)
+    readme_azure_credential = true if line.strip.match?(azure_regex) && !line.include?("Azure China")
     readme_google_credential = true if line.strip.match?(google_regex)
     readme_oracle_credential = true if line.strip.match?(oracle_regex)
   end
@@ -997,7 +998,7 @@ def policy_run_script_incorrect_order?(file)
     line_number = index + 1
 
     # Stop doing the check if we've reached the meta policy section
-    break if line.strip.start_with?('# Meta Policy [alpha]')
+    break if line.strip.start_with?('# Meta Policy [alpha]') # Break out of definition when enounter meta policy code at the bottom
 
     if line.strip.start_with?("datasource ") && line.strip.end_with?('do')
       name_test = line.match(/"([^"]*)"/)
@@ -1005,7 +1006,7 @@ def policy_run_script_incorrect_order?(file)
     end
 
     disordered = false
-    iter_index = -5
+    val_index = -5
 
     if line.strip.start_with?("run_script")
       # Store a list of all of the parameters for the run_script
@@ -1014,18 +1015,18 @@ def policy_run_script_incorrect_order?(file)
       # Remove the first item because it's just the name of the script itself
       script_name = parameters.shift
 
-      iter_found = false      # Whether we've found a iter_item or val(iter_item, "") parameter
+      val_found = false       # Whether we've found a iter_item or val() parameter
       ds_found = false        # Whether we've found a datasource parameter
       param_found = false     # Whether we've found a parameter parameter
       constant_found = false  # Whether we've found a constant, like rs_org_id
       value_found = false     # Whether we've found a raw value, like a number or string
 
       parameters.each_with_index do |parameter, index|
-        if parameter.include?("iter_item")
-          iter_found = true
-          iter_index = index
+        if parameter.include?("iter_item") || parameter.include?("val(")
+          val_found = true
+          val_index = index
           disordered = true if ds_found || param_found || constant_found || value_found
-        elsif index == iter_index + 1
+        elsif index == val_index + 1
           # Do nothing, since splitting by , is going to split functions like val() into two entries
         elsif parameter.start_with?('$ds')
           ds_found = true
@@ -1038,7 +1039,7 @@ def policy_run_script_incorrect_order?(file)
           disordered = true if value_found
         else # Assume a raw value, like a number or string, if none of the above
           value_found = true
-          iter_index = index if parameter.start_with?("val(")
+          val_index = index if parameter.start_with?("val(")
         end
       end
     end
@@ -1094,7 +1095,7 @@ def policy_block_fields_incorrect_order?(file, block_type)
       policy_code.each_line.with_index do |line, index|
         line_number = index + 1
 
-        break if line.strip.start_with?('# Meta Policy [alpha]')
+        break if line.strip.start_with?('# Meta Policy [alpha]') # Break out of definition when enounter meta policy code at the bottom
 
         policy_id = line.split('"')[1] if line.start_with?("policy ")
 
