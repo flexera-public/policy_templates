@@ -6,11 +6,13 @@ import boto3
 from botocore.auth import SigV4Auth
 from botocore.awsrequest import AWSRequest
 
-region_filename = f'data/aws/regions.json'
+# File names for reading/writing
+types_filename = f'data/aws/instance_types.json'
 output_filename = f'data/aws/aws_ec2_instance_types.json'
 
-with open(region_filename, 'r') as file:
-  region_list = json.load(file)
+# Store instance_types.json data for getting NFUs later
+with open(types_filename, 'r') as file:
+  type_dict = json.load(file)
 
 print("Gathering data from AWS API...")
 
@@ -39,10 +41,15 @@ if response.status_code == 200:
     cpu = {
       "cores": item["vCpuInfo"]["defaultCores"],
       "vcpus": item["vCpuInfo"]["defaultVCpus"],
+      "nfus": None,
       "manufacturer": item["processorInfo"]["manufacturer"],
       "architecture": None,
       "clockSpeedInGhz": None
     }
+
+    if item["instanceType"] in type_dict:
+      if "nfu" in type_dict[item["instanceType"]]:
+        cpu["nfus"] = type_dict[item["instanceType"]]["nfu"]
 
     if "processorInfo" in item:
       if "supportedArchitectures" in item["processorInfo"]:
