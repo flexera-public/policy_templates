@@ -1,7 +1,7 @@
 name "Azure Rightsize Synapse SQL Pools"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks for Synapse Dedicated SQL Pools instances that have inefficient utilization for the last N days and downsizes or pauses them after approval. \n See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Checks for Synapse Dedicated SQL Pools instances that have inefficient utilization for the last N days and downsizes or pauses them after approval. \n See the [README](https://github.com/flexera-public/policy_templates/tree/FOPTS-3684_v2_azure_synapse/cost/azure/rightsize_synapse_sql_pools/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Cost"
 severity "low"
@@ -99,9 +99,9 @@ parameter "param_stats_lookback" do
   category "Statistics"
   label "Statistic Lookback Period"
   description "How many days back to look at metrics. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days."
-  default 30
   min_value 1
   max_value 90
+  default 30
 end
 
 parameter "param_min_active" do
@@ -109,9 +109,9 @@ parameter "param_min_active" do
   category "Statistics"
   label "Minimum Time Active (Days)"
   description "Only include pools in the results if they have not been paused for at least the number of specified days. Set to '0' to disable this filter and not consider minimum time active in the results."
-  default 15
   min_value 0
   max_value 90
+  default 15
 end
 
 parameter "param_min_savings" do
@@ -124,11 +124,12 @@ parameter "param_min_savings" do
 end
 
 parameter "param_automatic_pause" do
-    type "list"
-    label "Enable Automatic Pausing"
-    description "When this value is set, this policy will automatically pause the selected underutilized Synapse SQL Pools."
-    allowed_values ["Yes", "No"]
-    default ["No"] 
+  type "list"
+  category "Actions"
+  label "Enable Automatic Pausing"
+  description "When this value is set, this policy will automatically pause the selected underutilized Synapse SQL Pools."
+  allowed_values ["Yes", "No"]
+  default ["No"] 
   end
 
 ###############################################################################
@@ -181,9 +182,9 @@ datasource "ds_billing_centers" do
     auth $auth_flexera
     host rs_optima_host
     path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
     ignore_status [403]
   end
   result do
@@ -218,7 +219,7 @@ datasource "ds_azure_synapse_size_map" do
   request do
     verb "GET"
     host "raw.githubusercontent.com"
-    path "/flexera-public/policy_templates/master/data/azure/azure_synapse_tier_types.json"
+    path "/flexera-public/policy_templates/FOPTS-3684_v2_azure_synapse/data/azure/azure_synapse_tier_types.json"
     header "User-Agent", "RS Policies"
   end
 end
@@ -486,7 +487,7 @@ end
 datasource "ds_azure_synapse_sql_pool_metrics" do
   iterate $ds_azure_synapse_sql_pools_region_filtered
   request do
-    run_script $js_azure_synapse_sql_pool_metrics, val(iter_item, "resourceId"), $param_azure_endpoint, $param_stats_lookback, val(iter_item, "creationDate")
+    run_script $js_azure_synapse_sql_pool_metrics, val(iter_item, "resourceId"), val(iter_item, "creationDate"), $param_azure_endpoint, $param_stats_lookback
   end
   result do
     encoding "json"
@@ -504,7 +505,7 @@ datasource "ds_azure_synapse_sql_pool_metrics" do
 end
 
 script "js_azure_synapse_sql_pool_metrics", type: "javascript" do
-  parameters "resourceId", "param_azure_endpoint", "param_stats_lookback", "creationDate"
+  parameters "resourceId", "creationDate", "param_azure_endpoint", "param_stats_lookback"
   result "request"
   code <<-EOS
   end_date = new Date()
@@ -554,7 +555,7 @@ end
 datasource "ds_azure_synapse_sql_pool_dwuused" do
   iterate $ds_azure_synapse_sql_pools_region_filtered
   request do
-    run_script $js_azure_synapse_sql_pool_dwuused, val(iter_item, "resourceId"), $param_azure_endpoint, $param_stats_lookback, val(iter_item, "creationDate")
+    run_script $js_azure_synapse_sql_pool_dwuused, val(iter_item, "resourceId"), val(iter_item, "creationDate"), $param_azure_endpoint, $param_stats_lookback
   end
   result do
     encoding "json"
@@ -564,7 +565,7 @@ datasource "ds_azure_synapse_sql_pool_dwuused" do
 end
 
 script "js_azure_synapse_sql_pool_dwuused", type: "javascript" do
-  parameters "resourceId", "param_azure_endpoint", "param_stats_lookback", "creationDate"
+  parameters "resourceId", "creationDate", "param_azure_endpoint", "param_stats_lookback"
   result "request"
   code <<-EOS
   end_date = new Date()
@@ -718,11 +719,11 @@ EOS
 end
 
 datasource "ds_azure_synapse_underutil_and_idle_pools" do
-  run_script $js_azure_synapse_sql_underutil_and_idle_pools, $ds_azure_synapse_sql_pool_metrics, $ds_azure_synapse_sql_pools_region_filtered, $ds_azure_synapse_sql_pool_costs_grouped, $param_stats_lookback, $param_stats_threshold, $ds_applied_policy, $ds_currency, $param_min_savings, $ds_azure_synapse_size_map, $ds_azure_synapse_sql_pool_dwuused, $param_min_active
+  run_script $js_azure_synapse_sql_underutil_and_idle_pools, $ds_azure_synapse_sql_pool_metrics, $ds_azure_synapse_sql_pools_region_filtered, $ds_azure_synapse_sql_pool_costs_grouped, $ds_applied_policy, $ds_currency, $ds_azure_synapse_size_map, $ds_azure_synapse_sql_pool_dwuused, $param_stats_lookback, $param_stats_threshold, $param_min_savings, $param_min_active
 end
 
 script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
-  parameters "ds_azure_synapse_sql_pool_metrics", "ds_azure_synapse_sql_pools_region_filtered", "ds_azure_synapse_sql_pool_costs_grouped","param_stats_lookback", "param_stats_threshold", "ds_applied_policy", "ds_currency","param_min_savings", "ds_azure_synapse_size_map", "ds_azure_synapse_sql_pool_dwuused", "param_min_active"
+  parameters "ds_azure_synapse_sql_pool_metrics", "ds_azure_synapse_sql_pools_region_filtered", "ds_azure_synapse_sql_pool_costs_grouped", "ds_applied_policy", "ds_currency", "ds_azure_synapse_size_map", "ds_azure_synapse_sql_pool_dwuused", "param_stats_lookback", "param_stats_threshold", "param_min_savings", "param_min_active"
   result "result"
   code <<-EOS
 
@@ -765,8 +766,6 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
     _.each(item['value'][0]['timeseries'][0]['data'], function(day) {
       if (day['average'] > 0) {
         days++
-      } else {
-        days = 0
       }
     })
 
@@ -803,10 +802,15 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
       item["creationDate"] = pools[id]['creationDate'],
       item["provisioningState"] = pools[id]['provisioningState'],
       item["storageAccountType"] = pools[id]['storageAccountType'],
+      item["DWUavgUsed"] = metrics['DWUUsed'][0]['average'],
+      item["DWUavgUsedPercent"] = metrics['DWUUsedPercent'][0]['average'],
       item["DWUUsed"] = metrics['DWUUsed'][0]['maximum'],
       item["DWUUsedPercent"] = metrics['DWUUsedPercent'][0]['maximum'],
-      item["CPUPercent"] = metrics['MemoryUsedPercent'][0]['maximum'],
+      item["CPUavgPercent"] = metrics['CPUPercent'][0]['average'],
+      item["CPUPercent"] = metrics['CPUPercent'][0]['maximum'],
+      item["MemoryAvgUsedPercent"] = metrics['MemoryUsedPercent'][0]['average'],
       item["MemoryUsedPercent"] = metrics['MemoryUsedPercent'][0]['maximum'],
+      item["ConnectionsAverage"] = metrics['Connections'][0]['average'],
       item["Connections"] = connections,
       item["service"] = "Microsoft.Synapse",
       item["lookbackPeriod"] = param_stats_lookback,
@@ -996,10 +1000,15 @@ script "js_azure_synapse_idle_pools", type: "javascript" do
     "creationDate": "",
     "provisioningState": "",
     "storageAccountType": "",
+    "DWUavgUsed": "",
+    "DWUavgUsedPercent": "",
     "DWUUsed": "",
     "DWUUsedPercent": "",
+    "CPUavgPercent": "",
     "CPUPercent": "",
+    "MemoryAvgUsedPercent": "",
     "MemoryUsedPercent": "",
+    "ConnectionsAverage": "",
     "Connections": "",
     "service": "",
     "lookbackPeriod": "",
@@ -1040,10 +1049,15 @@ script "js_azure_synapse_underutil_pools", type: "javascript" do
     "creationDate": "",
     "provisioningState": "",
     "storageAccountType": "",
+    "DWUavgUsed": "",
+    "DWUavgUsedPercent": "",
     "DWUUsed": "",
     "DWUUsedPercent": "",
+    "CPUavgPercent": "",
     "CPUPercent": "",
+    "MemoryAvgUsedPercent": "",
     "MemoryUsedPercent": "",
+    "ConnectionsAverage": "",
     "Connections": "",
     "service": "",
     "lookbackPeriod": "",
@@ -1124,18 +1138,35 @@ policy "pol_azure_synapse_sql_pool_utilization" do
       field "savingsCurrency" do
         label "Savings Currency"
       end
+      field "DWUavgUsed" do
+        label "DWU AVG Utilization"
+      end
+      field "DWUavgUsedPercent" do
+        label "DWU AVG Utilization %"
+      end
       field "DWUUsed" do
         label "DWU Max Utilization"
       end
       field "DWUUsedPercent" do
         label "DWU Max Utilization %"
       end
+      field "ConnectionsAverage" do
+        label "Connections AVG Utilization"
+      end
       field "Connections" do
         label "Connections Max Utilization"
+      end
+      field "cpuAverage" do
+        label "CPU AVG utilization %"
+        path "CPUavgPercent"
       end
       field "cpuMaximum" do
         label "CPU Max utilization %"
         path "CPUPercent"
+      end
+      field "memAverage" do
+        label "Memory AVG utilization %"
+        path "MemoryAvgUsedPercent"
       end
       field "memMaximum" do
         label "Memory Max utilization %"
@@ -1218,6 +1249,12 @@ policy "pol_azure_synapse_sql_pool_utilization" do
       field "savingsCurrency" do
         label "Savings Currency"
       end
+      field "DWUavgUsed" do
+        label "DWU AVG Utilization"
+      end
+      field "DWUavgUsedPercent" do
+        label "DWU AVG Utilization %"
+      end
       field "DWUUsed" do
         label "DWU Max Utilization"
       end
@@ -1227,15 +1264,27 @@ policy "pol_azure_synapse_sql_pool_utilization" do
       field "threshold" do
         label "Threshold"
       end
+      field "ConnectionsAverage" do
+        label "Connections AVG Utilization"
+      end
       field "Connections" do
         label "Connections Max Utilization"
+      end
+      field "cpuAverage" do
+        label "CPU AVG utilization %"
+        path "CPUavgPercent"
       end
       field "cpuMaximum" do
         label "CPU Max utilization %"
         path "CPUPercent"
       end
-      field "MemoryUsedPercent" do
-        label "Memory Max Utilization %"
+      field "memAverage" do
+        label "Memory AVG utilization %"
+        path "MemoryAvgUsedPercent"
+      end
+      field "memMaximum" do
+        label "Memory Max utilization %"
+        path "MemoryUsedPercent"
       end
       field "lookbackPeriod" do
         label "Look Back Period (Days)"
