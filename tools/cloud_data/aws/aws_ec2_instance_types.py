@@ -132,7 +132,7 @@ if response.status_code == 200:
 print("Writing final output to file...")
 
 type_file = open(output_filename, "w")
-type_file.write(json.dumps(data, sort_keys=False, indent=2).replace(': "none",', ': null,').replace(': "true",', ': true,').replace(': "false",', ': false,'))
+type_file.write(json.dumps(data, sort_keys=True, indent=2).replace(': "none",', ': null,').replace(': "true",', ': true,').replace(': "false",', ': false,'))
 type_file.close()
 
 print("DONE!")
