@@ -7,12 +7,32 @@ from botocore.auth import SigV4Auth
 from botocore.awsrequest import AWSRequest
 
 # File names for reading/writing
-types_filename = f'data/aws/instance_types.json'
 output_filename = f'data/aws/aws_ec2_instance_types.json'
 
-# Store instance_types.json data for getting NFUs later
-with open(types_filename, 'r') as file:
-  type_dict = json.load(file)
+# NFU table for calculating NFUs
+# https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/apply_ri.html
+nfu_table = {
+  "nano": 0.25,
+  "micro": 0.5,
+  "small": 1,
+  "medium": 2,
+  "large": 4,
+  "xlarge": 8,
+  "2xlarge": 16,
+  "3xlarge": 24,
+  "4xlarge": 32,
+  "6xlarge": 48,
+  "8xlarge": 64,
+  "9xlarge": 72,
+  "10xlarge": 80,
+  "12xlarge": 96,
+  "16xlarge": 128,
+  "18xlarge": 144,
+  "24xlarge": 192,
+  "32xlarge": 256,
+  "56xlarge": 448,
+  "112xlarge": 896
+}
 
 print("Gathering data from AWS API...")
 
@@ -39,27 +59,31 @@ if response.status_code == 200:
 
   for item in instance_list:
     cpu = {
-      "cores": item["vCpuInfo"]["defaultCores"],
-      "vcpus": item["vCpuInfo"]["defaultVCpus"],
+      "cores": int(item["vCpuInfo"]["defaultCores"]),
+      "vcpus": int(item["vCpuInfo"]["defaultVCpus"]),
       "nfus": None,
       "manufacturer": item["processorInfo"]["manufacturer"],
-      "architecture": None,
+      "architectures": None,
       "clockSpeedInGhz": None
     }
 
-    if item["instanceType"] in type_dict:
-      if "nfu" in type_dict[item["instanceType"]]:
-        cpu["nfus"] = type_dict[item["instanceType"]]["nfu"]
+    size = item["instanceType"].split('.')[1]
+
+    if size in nfu_table:
+      cpu["nfus"] = nfu_table[size]
 
     if "processorInfo" in item:
       if "supportedArchitectures" in item["processorInfo"]:
-        cpu["architecture"] = item["processorInfo"]["supportedArchitectures"]["item"]
+        if isinstance(item["processorInfo"]["supportedArchitectures"]["item"], str):
+          cpu["architectures"] = [ item["processorInfo"]["supportedArchitectures"]["item"] ]
+        else:
+          cpu["architectures"] = item["processorInfo"]["supportedArchitectures"]["item"]
 
       if "sustainedClockSpeedInGhz" in item["processorInfo"]:
-        cpu["clockSpeedInGhz"] = item["processorInfo"]["sustainedClockSpeedInGhz"]
+        cpu["clockSpeedInGhz"] = float(item["processorInfo"]["sustainedClockSpeedInGhz"])
 
     memory = {
-      "sizeInMiB": item["memoryInfo"]["sizeInMiB"]
+      "sizeInMiB": int(item["memoryInfo"]["sizeInMiB"])
     }
 
     network = {
@@ -73,18 +97,18 @@ if response.status_code == 200:
         networkCards = item["networkInfo"]["networkCards"]["item"]
 
         if isinstance(networkCards, dict):
-          network["baselineBandwidthInGbps"] = networkCards["baselineBandwidthInGbps"]
-          network["peakBandwidthInGbps"] = networkCards["peakBandwidthInGbps"]
+          network["baselineBandwidthInGbps"] = float(networkCards["baselineBandwidthInGbps"])
+          network["peakBandwidthInGbps"] = float(networkCards["peakBandwidthInGbps"])
 
           if "maximumNetworkInterfaces" in networkCards:
-            network["maximumNetworkInterfaces"] = networkCards["maximumNetworkInterfaces"]
+            network["maximumNetworkInterfaces"] = int(networkCards["maximumNetworkInterfaces"])
 
         if isinstance(networkCards, list):
-          network["baselineBandwidthInGbps"] = networkCards[0]["baselineBandwidthInGbps"]
-          network["peakBandwidthInGbps"] = networkCards[0]["peakBandwidthInGbps"]
+          network["baselineBandwidthInGbps"] = float(networkCards[0]["baselineBandwidthInGbps"])
+          network["peakBandwidthInGbps"] = float(networkCards[0]["peakBandwidthInGbps"])
 
           if "maximumNetworkInterfaces" in networkCards[0]:
-            network["maximumNetworkInterfaces"] = networkCards[0]["maximumNetworkInterfaces"]
+            network["maximumNetworkInterfaces"] = int(networkCards[0]["maximumNetworkInterfaces"])
 
     storage = {
       "baseline": {
@@ -97,17 +121,17 @@ if response.status_code == 200:
         "iops": None,
         "throughputInMBps": None
       },
-      "maximumEbsAttachments": item["ebsInfo"]["maximumEbsAttachments"]
+      "maximumEbsAttachments": int(item["ebsInfo"]["maximumEbsAttachments"])
     }
 
     if "ebsInfo" in item:
       if "ebsOptimizedInfo" in item["ebsInfo"]:
-        storage["baseline"]["bandwidthInMbps"] = item["ebsInfo"]["ebsOptimizedInfo"]["baselineBandwidthInMbps"]
-        storage["baseline"]["iops"] = item["ebsInfo"]["ebsOptimizedInfo"]["baselineIops"]
-        storage["baseline"]["throughputInMBps"] = item["ebsInfo"]["ebsOptimizedInfo"]["baselineThroughputInMBps"]
-        storage["maximum"]["bandwidthInMbps"] = item["ebsInfo"]["ebsOptimizedInfo"]["maximumBandwidthInMbps"]
-        storage["maximum"]["iops"] = item["ebsInfo"]["ebsOptimizedInfo"]["maximumIops"]
-        storage["maximum"]["throughputInMBps"] = item["ebsInfo"]["ebsOptimizedInfo"]["maximumThroughputInMBps"]
+        storage["baseline"]["bandwidthInMbps"] = float(item["ebsInfo"]["ebsOptimizedInfo"]["baselineBandwidthInMbps"])
+        storage["baseline"]["iops"] = int(item["ebsInfo"]["ebsOptimizedInfo"]["baselineIops"])
+        storage["baseline"]["throughputInMBps"] = float(item["ebsInfo"]["ebsOptimizedInfo"]["baselineThroughputInMBps"])
+        storage["maximum"]["bandwidthInMbps"] = float(item["ebsInfo"]["ebsOptimizedInfo"]["maximumBandwidthInMbps"])
+        storage["maximum"]["iops"] = int(item["ebsInfo"]["ebsOptimizedInfo"]["maximumIops"])
+        storage["maximum"]["throughputInMBps"] = float(item["ebsInfo"]["ebsOptimizedInfo"]["maximumThroughputInMBps"])
 
     properties = {
       "autoRecoverySupported": item["autoRecoverySupported"],
@@ -140,7 +164,7 @@ if response.status_code == 200:
 print("Writing final output to file...")
 
 type_file = open(output_filename, "w")
-type_file.write(json.dumps(data, sort_keys=False, indent=2).replace(': "none",', ': null,').replace(': "true",', ': true,').replace(': "false",', ': false,'))
+type_file.write(json.dumps(data, sort_keys=True, indent=2).replace(': "none",', ': null,').replace(': "true",', ': true,').replace(': "false",', ': false,'))
 type_file.close()
 
 print("DONE!")
