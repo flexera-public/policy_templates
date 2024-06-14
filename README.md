@@ -185,6 +185,7 @@ These templates can generate savings estimates for your environment.
   - [AWS Rightsize EC2 Instances](./cost/aws/rightsize_ec2_instances)
   - [AWS Savings Plan Recommendations](./cost/aws/savings_plan/recommendations)
   - [AWS Savings Plan Utilization](./cost/aws/savings_plan/utilization)
+  - [AWS Savings Realized From Rate Reduction Purchases](./cost/aws/savings_realized)
   - [AWS Schedule Instance](./cost/aws/schedule_instance)
   - [AWS Superseded EBS Volumes](./cost/aws/superseded_ebs_volumes)
   - [AWS Superseded EC2 Instances](./cost/aws/superseded_instances)
@@ -297,10 +298,6 @@ These templates can generate savings estimates for your environment.
   - [Azure China Common Bill Ingestion](./cost/azure/azure_china_cbi)
 
 #### Flexera
-
-- All
-
-  - [AWS Savings Realized from Reservations](./cost/aws/savings_realized)
 
 - Cloud Cost Optimization
 
@@ -647,7 +644,6 @@ These templates can generate savings estimates for your environment.
   Lifecycle Management: 1
   Long Running Instances: 2
   Long Stopped Instances: 3
-  N/A: 1
   Native Recommendations: 1
   New Marketplace Products: 2
   Object Store Optimization: 3
@@ -656,7 +652,7 @@ These templates can generate savings estimates for your environment.
   Open S3 Buckets: 1
   PaaS Optimization: 1
   Public Database Access: 2
-  Reserved Instance: 2
+  Reserved Instance: 3
   Reserved Instances: 5
   Rightsize Clusters: 1
   Rightsize Compute Instances: 6
@@ -681,10 +677,10 @@ These templates can generate savings estimates for your environment.
   Unused Volumes: 6
   Usage Report: 3
 :providers:
-  AWS: 82
+  AWS: 83
   Azure: 84
   Azure China: 1
-  Flexera: 37
+  Flexera: 36
   Flexera Optima: 1
   GCE: 1
   GitHub: 7
@@ -697,13 +693,13 @@ These templates can generate savings estimates for your environment.
 :services:
   '': 12
   AKS: 2
-  All: 3
+  All: 2
   App Service: 1
   Automation: 1
   Cloud Cost Optimization: 18
   CloudTrail: 7
   Common Bill Ingestion: 2
-  Compute: 59
+  Compute: 60
   Config: 1
   DBS: 1
   Databricks: 1
