@@ -1,14 +1,13 @@
 name "AWS Expiring Savings Plans"
 rs_pt_ver 20180301
 type "policy"
-short_description "A policy that sends email notifications before AWS Savings Plan expire. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/savings_plan/expiration) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Reports on AWS Savings Plans that have or will soon expire. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/savings_plan/expiration) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
-severity "medium"
 category "Cost"
-tenancy "single"
+severity "medium"
 default_frequency "daily"
 info(
-  version: "2.2",
+  version: "3.0.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Savings Plans"
@@ -22,37 +21,69 @@ parameter "param_email" do
   type "list"
   category "Policy Settings"
   label "Email Addresses"
-  description "Email addresses of the recipients you wish to notify when new incidents are created."
+  description "A list of email addresses to notify."
   default []
 end
 
-parameter "param_heads_up_days" do
+parameter "param_days_expiration" do
   type "number"
   category "Policy Settings"
-  label "Days Prior To Expiration"
-  description "Number of days to prior to expiration date to trigger incident"
-  default 7
+  label "Days Until Expiration"
+  description "The number of days until expiration to include a Savings Plan in the report. Set to '0' to only report expired Savings Plans."
+  min_value 0
+  default 15
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-#AUTHENTICATE WITH AWS
 credentials "auth_aws" do
   schemes "aws", "aws_sts"
   label "AWS"
   description "Select the AWS Credential from the list"
   tags "provider=aws"
+  aws_account_number $param_aws_account_number
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_aws" do
+  get_page_marker do
+    body_path jmes_path(response, "NextToken")
+  end
+  set_page_marker do
+    body_field "NextToken"
+  end
 end
 
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
 
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
 datasource "ds_savings_plans" do
   request do
     auth $auth_aws
+    pagination $pagination_aws
     verb "POST"
     host "savingsplans.us-east-1.amazonaws.com"
     path "/DescribeSavingsPlans"
@@ -64,74 +95,97 @@ datasource "ds_savings_plans" do
     collect jmes_path(response, "savingsPlans[*]") do
       field "savingsPlanID", jmes_path(col_item, "savingsPlanId")
       field "savingsPlanArn", jmes_path(col_item, "savingsPlanArn")
+      field "savingsPlanType", jmes_path(col_item, "savingsPlanType")
+      field "startDate", jmes_path(col_item, "start")
+      field "endDate", jmes_path(col_item, "end")
+      field "commitment", jmes_path(col_item, "commitment")
+      field "currency", jmes_path(col_item, "currency")
+      field "description", jmes_path(col_item, "description")
+      field "ec2InstanceFamily", jmes_path(col_item, "ec2InstanceFamily")
+      field "offeringID", jmes_path(col_item, "offeringId")
       field "state", jmes_path(col_item, "state")
       field "tags", jmes_path(col_item, "tags")
       field "termDurationInSeconds", jmes_path(col_item, "termDurationInSeconds")
-      field "end", jmes_path(col_item, "end")
-      field "start", jmes_path(col_item, "start")
-      field "commitment", jmes_path(col_item, "commitment")
-      field "offeringID", jmes_path(col_item, "offeringId")
+      field "upfrontPaymentAmount", jmes_path(col_item, "upfrontPaymentAmount")
     end
   end
 end
 
-datasource "ds_filter_savings_plans" do
-  run_script $js_filter_savings_plans, $ds_savings_plans, $param_heads_up_days
+datasource "ds_expiring_savings_plans" do
+  run_script $js_expiring_savings_plans, $ds_savings_plans, $ds_applied_policy, $param_days_expiration
 end
 
-script "js_filter_savings_plans", type: "javascript" do
-  parameters "ds_savings_plans", "param_heads_up_days"
-  result "results"
+script "js_expiring_savings_plans", type: "javascript" do
+  parameters "ds_savings_plans", "ds_applied_policy", "param_days_expiration"
+  result "result"
   code <<-EOS
-  var results = [];
-  var currentDate = new Date()
-  currentDate = Date.parse(currentDate)
-  for(var i=0; i < ds_savings_plans.length; i++){
-    var plan = ds_savings_plans[i];
-    var endDate = new Date(plan.end)
-    var millisecondsDays = param_heads_up_days * 86400000
-    var endParse = Date.parse(plan.end)
-    var notifyDate = endParse - millisecondsDays
-    if (currentDate > notifyDate && endParse > currentDate && plan.status != "retired") {
-      var tags = []
-      _.each(plan.tags, function(plan){
-        tags.push(plan.tagKey+'='+plan.tagValue)
+  result = []
+  today = new Date()
+
+  _.each(ds_savings_plans, function(plan) {
+    expiration_date = new Date(plan['endDate'])
+    days_until_expiry = (expiration_date - today) / 1000 / 60 / 60 / 24
+    if (days_until_expiry < 0) { days_until_expiry = 0 }
+
+    if (days_until_expiry < param_days_expiration || days_until_expiry == 0) {
+      tags = []
+
+      if (typeof(plan['tags']) == 'object') {
+        _.each(Object.keys(plan['tags']), function(key) {
+          tags.push([key, "=", plan['tags'][key]].join(''))
+        })
+      }
+
+      result.push({
+        resourceID: plan["savingsPlanID"],
+        savingsPlanArn: plan["savingsPlanArn"],
+        savingsPlanType: plan["savingsPlanType"],
+        startDate: new Date(plan['startDate']).toISOString().split("T")[0],
+        endDate: new Date(plan['endDate']).toISOString().split("T")[0],
+        commitment: plan["commitment"],
+        currency: plan["currency"],
+        description: plan["description"],
+        ec2InstanceFamily: plan["ec2InstanceFamily"],
+        offeringID: plan["offeringID"],
+        state: plan["state"],
+        termDurationInSeconds: plan["termDurationInSeconds"],
+        upfrontPaymentAmount: plan["upfrontPaymentAmount"],
+        term: Math.round(plan["termDurationInSeconds"] / 31536000 * 100) / 100,
+        days_until_expiry: Math.round(days_until_expiry),
+        tags: tags.join(", "),
+        policy_name: ds_applied_policy["name"]
       })
-      plan.term = Math.round((plan.termDurationInSeconds/31536000) * 100) / 100
-      plan.tags = tags
-      results.push(plan)
     }
-  }
-  EOS
+  })
+EOS
 end
 
 ###############################################################################
 # Policy
 ###############################################################################
 
-policy "pol_savings_plan_expiration" do
-  validate $ds_filter_savings_plans do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Savings Plans are nearing expiration."
-    check eq(size(data), 0)
+policy "pol_expiring_savings_plans" do
+  validate_each $ds_expiring_savings_plans do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Expiring AWS Savings Plans Found"
+    check eq(val(item, "resourceID"), "")
     escalate $esc_email
+    hash_exclude "tags", "days_until_expiry"
     export do
-      field "savingsPlanID" do
+      resource_level true
+      field "resourceID" do
         label "Savings Plan ID"
       end
       field "savingsPlanArn" do
-        label "Savings Plan Arn"
+        label "Savings Plan ARN"
       end
-      field "state" do
-        label "State"
+      field "savingsPlanType" do
+        label "Savings Plan Type"
       end
       field "term" do
-        label "Term (Rounded to Year)"
+        label "Term Duration (Years)"
       end
       field "termDurationInSeconds" do
-        label "Term Duration"
-      end
-      field "offeringID" do
-        label "Offering ID"
+        label "Term Duration (Seconds)"
       end
       field "start" do
         label "Start Date"
@@ -139,11 +193,30 @@ policy "pol_savings_plan_expiration" do
       field "end" do
         label "End Date"
       end
+      field "days_until_expiry" do
+        label "Days Until Expiration"
+      end
+      field "state" do
+        label "State"
+      end
       field "commitment" do
         label "Commitment"
       end
       field "offeringID" do
         label "Offering ID"
+      end
+      field "ec2InstanceFamily" do
+        label "EC2 Instance Family"
+      end
+      field "description" do
+        label "Description"
+      end
+      field "tags" do
+        label "Tags"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
       end
     end
   end
