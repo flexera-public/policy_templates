@@ -51,18 +51,8 @@ if response.status_code == 200:
       if "sustainedClockSpeedInGhz" in item["processorInfo"]:
         cpu["clockSpeedInGhz"] = item["processorInfo"]["sustainedClockSpeedInGhz"]
 
-    storage = {
-      "baseline": {
-        "bandwidthInMbps": None,
-        "iops": None,
-        "throughputInMBps": None
-      },
-      "maximum": {
-        "bandwidthInMbps": None,
-        "iops": None,
-        "throughputInMBps": None
-      },
-      "maximumEbsAttachments": item["ebsInfo"]["maximumEbsAttachments"]
+    memory = {
+      "sizeInMiB": item["memoryInfo"]["sizeInMiB"]
     }
 
     network = {
@@ -89,15 +79,19 @@ if response.status_code == 200:
           if "maximumNetworkInterfaces" in networkCards[0]:
             network["maximumNetworkInterfaces"] = networkCards[0]["maximumNetworkInterfaces"]
 
-    hypervisor = None
-
-    if "hypervisor" in item:
-      hypervisor = item["hypervisor"]
-
-    phcSupport = False
-
-    if item["phcSupport"] == "supported":
-      phcSupport = True
+    storage = {
+      "baseline": {
+        "bandwidthInMbps": None,
+        "iops": None,
+        "throughputInMBps": None
+      },
+      "maximum": {
+        "bandwidthInMbps": None,
+        "iops": None,
+        "throughputInMBps": None
+      },
+      "maximumEbsAttachments": item["ebsInfo"]["maximumEbsAttachments"]
+    }
 
     if "ebsInfo" in item:
       if "ebsOptimizedInfo" in item["ebsInfo"]:
@@ -108,31 +102,38 @@ if response.status_code == 200:
         storage["maximum"]["iops"] = item["ebsInfo"]["ebsOptimizedInfo"]["maximumIops"]
         storage["maximum"]["throughputInMBps"] = item["ebsInfo"]["ebsOptimizedInfo"]["maximumThroughputInMBps"]
 
+    properties = {
+      "autoRecoverySupported": item["autoRecoverySupported"],
+      "bareMetal": item["bareMetal"],
+      "cpuBurstModel": item["cpuBurstModel"],
+      "currentGeneration": item["currentGeneration"],
+      "dedicatedHostsSupported": item["dedicatedHostsSupported"],
+      "freeTierEligible": item["freeTierEligible"],
+      "hibernationSupported": item["hibernationSupported"],
+      "hypervisor": None,
+      "instanceType": item["instanceType"],
+      "instanceStorageSupported": item["instanceStorageSupported"],
+      "phcSupport": False
+    }
+
+    if "hypervisor" in item:
+      properties["hypervisor"] = item["hypervisor"]
+
+    if item["phcSupport"] == "supported":
+      properties["phcSupport"] = True
+
     data[item["instanceType"]] = {
       "cpu": cpu,
-      "memory": {
-        "sizeInMiB": item["memoryInfo"]["sizeInMiB"]
-      },
+      "memory": memory,
       "network": network,
       "storage": storage,
-      "properties": {
-        "autoRecoverySupported": item["autoRecoverySupported"],
-        "bareMetal": item["bareMetal"],
-        "cpuBurstModel": item["cpuBurstModel"],
-        "currentGeneration": item["currentGeneration"],
-        "dedicatedHostsSupported": item["dedicatedHostsSupported"],
-        "freeTierEligible": item["freeTierEligible"],
-        "hibernationSupported": item["hibernationSupported"],
-        "hypervisor": hypervisor,
-        "instanceStorageSupported": item["instanceStorageSupported"],
-        "phcSupport": phcSupport
-      }
+      "properties": properties
     }
 
 print("Writing final output to file...")
 
 type_file = open(output_filename, "w")
-type_file.write(json.dumps(data, sort_keys=True, indent=2).replace(': "none",', ': null,').replace(': "true",', ': true,').replace(': "false",', ': false,'))
+type_file.write(json.dumps(data, sort_keys=False, indent=2).replace(': "none",', ': null,').replace(': "true",', ': true,').replace(': "false",', ': false,'))
 type_file.close()
 
 print("DONE!")
