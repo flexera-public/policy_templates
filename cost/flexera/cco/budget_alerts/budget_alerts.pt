@@ -133,11 +133,13 @@ script "js_currency", type:"javascript" do
   parameters "ds_currency_reference", "ds_currency_code"
   result "result"
   code <<-'EOS'
+  code = "USD"
   symbol = "$"
   separator = ","
 
   if (ds_currency_code['value'] != undefined) {
     if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      code = ds_currency_reference[ds_currency_code['value']]['code']
       symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
 
       if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
@@ -149,6 +151,7 @@ script "js_currency", type:"javascript" do
   }
 
   result = {
+    code: code,
     symbol: symbol,
     separator: separator
   }
@@ -276,11 +279,11 @@ EOS
 end
 
 datasource "ds_aggregated" do
-  run_script $js_aggregated, $ds_reports, $ds_currency, $ds_dimensions, $param_threshold_percentage, $param_type, $param_budget, $param_filter, f1_app_host
+  run_script $js_aggregated, $ds_reports, $ds_currency, $ds_dimensions, $ds_applied_policy, $param_threshold_percentage, $param_type, $param_budget, $param_filter, f1_app_host
 end
 
 script "js_aggregated", type: "javascript" do
-  parameters "ds_reports", "ds_currency", "ds_dimensions", "param_threshold_percentage", "param_type", "param_budget", "param_filter", "f1_app_host"
+  parameters "ds_reports", "ds_currency", "ds_dimensions", "ds_applied_policy", "param_threshold_percentage", "param_type", "param_budget", "param_filter", "f1_app_host"
   result "result"
   code <<-EOS
   // Function to return forecast for current month based on spend so far
@@ -340,140 +343,138 @@ script "js_aggregated", type: "javascript" do
     }
   })
 
-  var current = new Date();
-  var monthYear = current.getFullYear() + '-' + ('0' + (current.getMonth()+1)).slice(-2);
-  var cost_metric = {
+  now = new Date()
+
+  cost_metric = {
     "cost_nonamortized_unblended_adj": "Unamortized",
     "cost_amortized_unblended_adj": "Amortized",
     "cost_nonamortized_blended_adj": "Unamortized",
     "cost_amortized_blended_adj": "Amortized"
   }
 
-  _.each(ds_reports, function (item) {
-    item.budgetAmount = item.budgetAmount || 0;
-    if (item.spendAmount) {
-      item.monthYear = monthYear;
-      item.forecasted = "";
-      item.currency = ds_currency_code.value;
-      item.forecastedAmount = item.spendAmount;
-      var date = new Date(item.timestamp);
-      item.date = date.toLocaleDateString();
-      var now = new Date();
-      if (date.getFullYear() == now.getFullYear() && date.getMonth() == now.getMonth()) {
-        item.forecastedAmount = Math.round(forecasted(item.spendAmount) * 100) / 100;
-        item.forecasted = item.forecastedAmount;
-      }
+  filtered_reports = _.filter(ds_reports, function(item) {
+    filtered = false
 
-      item.budgetAmount = Math.round(item.budgetAmount * 100) / 100;
-      item.spendAmount = Math.round(item.spendAmount * 100) / 100;
-      item.overBudgetAmount = Math.max(0, Math.round((item.spendAmount - item.budgetAmount) * 100) / 100);
-      item.remaining = Math.round((item.budgetAmount-item.spendAmount) * 100) / 100;
-      item.overBudgetAmountForec = Math.max(0, Math.round((item.forecastedAmount - item.budgetAmount) * 100) / 100);
-      if (item.budgetAmount) {
-        item.spentPercent = Math.round(item.spendAmount / item.budgetAmount * 10000)/100
-        item.spentPercentForec = Math.round(item.forecastedAmount / item.budgetAmount * 10000)/100
-      }
+    if (item["dimensions"]) {
+      filtered = _.some(_.keys(item["dimensions"]), function(dimension_id) {
+        return filters[dimension_id] && !_.contains(filters[dimension_id], item["dimensions"][dimension_id])
+      })
+    }
 
-      // values for export
-      item.budget = item.budgetAmount;
-      item.spend = item.spendAmount;
-      item.overBudget = item.overBudgetAmount;
-      item.overBudgetForec = item.overBudgetAmountForec;
-      item.group = "";
-      item.is_budgeted = true;
-      if (item.dimensions) {
-        // filter
-        if (_.some(_.keys(item.dimensions), function (dimId) {
-          return filters[dimId] && !_.contains(filters[dimId], item.dimensions[dimId]);
-        })){
-          return;
+    return item["spendAmount"] && !filtered
+  })
+
+  _.each(filtered_reports, function(item) {
+    date = new Date(item["timestamp"])
+
+    new_item = {
+      b_id: item["b_id"],
+      name: item["name"],
+      dimensions: item["dimensions"],
+      dimension_ids: item["dimension_ids"],
+      dimm: dimension_names(item["dimension_ids"]),
+      metric: item["metric"],
+      timestamp: item["timestamp"],
+      date: date.toISOString(),
+      budgetAmount: item["budgetAmount"] || 0,
+      spendAmount: item["spendAmount"],
+      forecastedAmount: item["spendAmount"],
+      monthYear: now.toISOString().substring(0, 7),
+      currency: ds_currency["code"],
+      policy_name: ds_applied_policy["name"],
+      is_budgeted: true,
+      host: f1_app_host,
+      forecasted: "",
+      group: ""
+    }
+
+    if (date.toISOString().substring(0, 7) == now.toISOString().substring(0, 7)) {
+      new_item["forecastedAmount"] = Math.round(forecasted(new_item["spendAmount"]) * 100) / 100
+      new_item["forecasted"] = new_item["forecastedAmount"]
+    }
+
+    new_item["budgetAmount"] = Math.round(new_item["budgetAmount"] * 100) / 100
+    new_item["spendAmount"] = Math.round(new_item["spendAmount"] * 100) / 100
+    new_item["overBudgetAmount"] = Math.max(0, Math.round((new_item["spendAmount"] - new_item["budgetAmount"]) * 100) / 100)
+    new_item["remaining"] = Math.round((new_item["budgetAmount"] - new_item["spendAmount"]) * 100) / 100
+    new_item["overBudgetAmountForec"] = Math.max(0, Math.round((new_item["forecastedAmount"] - new_item["budgetAmount"]) * 100) / 100)
+
+    if (new_item["budgetAmount"]) {
+      new_item["spentPercent"] = Math.round(new_item["spendAmount"] / new_item["budgetAmount"] * 10000) / 100
+      new_item["spentPercentForec"] = Math.round(new_item["forecastedAmount"] / new_item["budgetAmount"] * 10000) / 100
+    }
+
+    // values for export
+    new_item["budget"] = new_item["budgetAmount"]
+    new_item["spend"] = new_item["spendAmount"]
+    new_item["overBudget"] = new_item["overBudgetAmount"]
+    new_item["overBudgetForec"] = new_item["overBudgetAmountForec"]
+
+
+    if (new_item["dimensions"]) {
+      new_item["group"] = get_group(new_item["dimensions"], new_item["dimension_ids"])
+      new_item["is_budgeted"] = !new_item["dimensions"]["is_budgeted"] || new_item["dimensions"]["is_budgeted"] == "Budgeted"
+    }
+
+    new_item["metric"] = cost_metric[new_item["metric"] || ''] || new_item["metric"]
+
+    if (new_item["budget"] > 0) { new_item["budget"] = ds_currency['symbol'] + new_item["budget"] }
+    if (new_item["spend"] > 0) { new_item["spend"] = ds_currency['symbol'] + new_item["spend"] }
+    if (new_item["overBudget"] > 0) { new_item["overBudget"] = ds_currency['symbol'] + new_item["overBudget"] }
+    if (new_item["overBudgetForec"] > 0) { new_item["overBudgetForec"] = ds_currency['symbol'] + new_item["overBudgetForec"] }
+    if (new_item["forecasted"]) { new_item["forecasted"] = ds_currency['symbol'] + new_item["forecasted"] }
+
+    if (new_item["spentPercent"] != undefined) {
+      budget_percent = new_item["spentPercent"]
+      budget_percent_forec = new_item["spentPercentForec"]
+      new_item["spentPercent"] += "%"
+      new_item["spentPercentForec"] += "%"
+    }
+
+    if ((!new_item["is_budgeted"] && new_item["spendAmount"] > 0) || new_item["budgetAmount"]) {
+      if (param_type == "Actual Spend") {
+        if (!new_item["is_budgeted"]) {
+          new_item["details"] = "Spend is unbudgeted"
+          result["exceeded"].push(new_item)
+        } else if (new_item["spendAmount"] > new_item["budgetAmount"]) {
+          new_item["details"] = "Actual spend exceeded budget"
+          result["exceeded"].push(new_item)
+        } else if (param_threshold_percentage < budget_percent) {
+          new_item["details"] = "Actual spend exceeded budget threshold"
+          result["exceeded"].push(new_item)
         }
-
-        item.group = get_group(item.dimensions, item.dimension_ids);
-        item.is_budgeted = !item.dimensions.is_budgeted || item.dimensions.is_budgeted === "Budgeted";
-      }
-      item.metric = cost_metric[item.metric || ''] || item.metric;
-
-      if (item.budget > 0) {
-        item.budget = ds_currency['symbol'] + item.budget;
-      }
-      if (item.spend > 0) {
-        item.spend = ds_currency['symbol'] + item.spend;
-      }
-      if (item.overBudget > 0) {
-        item.overBudget = ds_currency['symbol'] + item.overBudget;
-      }
-      if (item.overBudgetForec > 0) {
-        item.overBudgetForec = ds_currency['symbol'] + item.overBudgetForec;
-      }
-      if (item.forecasted) {
-        item.forecasted = ds_currency['symbol'] + item.forecasted;
-      }
-
-      if (item.spentPercent !== undefined) {
-        var budget_percent = item.spentPercent;
-        var budget_percent_forec = item.spentPercentForec;
-        item.spentPercent += "%";
-        item.spentPercentForec += "%";
-      }
-      item.host = f1_app_host;
-      item.dimm = dimension_names(item.dimension_ids);
-
-      if ((!item.is_budgeted && item.spendAmount > 0) || item.budgetAmount) {
-        if (param_type == "Actual Spend") {
-          if (!item.is_budgeted) {
-            item.details = "Spend is unbudgeted"
-            result.exceeded.push(item);
-          } else if (item.spendAmount > item.budgetAmount) {
-            item.details = "Actual spend exceeded budget"
-            result.exceeded.push(item);
-          } else if (param_threshold_percentage < budget_percent) {
-            item.details = "Actual spend exceeded budget threshold"
-            result.exceeded.push(item);
-          }
-        } else {
-          if (!item.is_budgeted) {
-            item.details = "Spend is unbudgeted"
-            result.forecasted.push(item);
-          } else if  (item.forecastedAmount > item.budgetAmount) {
-            item.details = "Projected spend exceeded budget"
-            result.forecasted.push(item);
-          } else if (param_threshold_percentage < budget_percent_forec) {
-            item.details = "Projected spend exceeded budget threshold"
-            result.forecasted.push(item);
-          }
+      } else {
+        if (!new_item["is_budgeted"]) {
+          new_item["details"] = "Spend is unbudgeted"
+          result["forecasted"].push(new_item)
+        } else if (new_item.forecastedAmount > new_item["budgetAmount"]) {
+          new_item["details"] = "Projected spend exceeded budget"
+          result["forecasted"].push(new_item)
+        } else if (param_threshold_percentage < budget_percent_forec) {
+          new_item["details"] = "Projected spend exceeded budget threshold"
+          result["forecasted"].push(new_item)
         }
       }
     }
-  });
+  })
 
-  result.exceeded = _.sortBy(result.exceeded, function (item) {return item.group;})
-  result.forecasted = _.sortBy(result.forecasted, function (item) {return item.group;})
+  result["exceeded"] = _.sortBy(result["exceeded"], function(item) { return item["group"] })
+  result["forecasted"] = _.sortBy(result["forecasted"], function(item) { return item["group"] })
 EOS
 end
 
-datasource "ds_only_forecasted" do
-  run_script $js_only_forecasted, $ds_aggregated
+datasource "ds_forecasted" do
+  run_script $js_aggregated_by_key, $ds_aggregated, "forecasted"
 end
 
-script "js_only_forecasted", type: "javascript" do
-  parameters "arg"
+datasource "ds_exceeded" do
+  run_script $js_aggregated_by_key, $ds_aggregated, "exceeded"
+end
+
+script "js_aggregated_by_key", type: "javascript" do
+  parameters "ds_aggregated", "key"
   result "result"
-  code <<-EOS
-    result = arg.forecasted
-  EOS
-end
-
-datasource "ds_only_exceeded" do
-  run_script $js_only_exceeded, $ds_aggregated
-end
-
-script "js_only_exceeded", type: "javascript" do
-  parameters "arg"
-  result "result"
-  code <<-EOS
-    result = arg.exceeded
-  EOS
+  code "result = ds_aggregated[key]"
 end
 
 ###############################################################################
@@ -493,7 +494,7 @@ EOS
     check eq(size(val(data, "invalid")),0)
   end
 
-  validate $ds_only_exceeded do
+  validate $ds_exceeded do
     summary_template "{{with index data 0}}{{ .name }}{{end}}: {{parameters.param_threshold_percentage}}% Budget Threshold Is Exceeded ({{ parameters.param_type }})"
     detail_template <<-EOS
 # {{with index data 0}}{{ .name }}{{end}}: Budget Exceeded
@@ -543,7 +544,7 @@ EOS
     end
   end
 
-  validate $ds_only_forecasted do
+  validate $ds_forecasted do
     summary_template "{{with index data 0}}{{ .name }}{{end}}: {{parameters.param_threshold_percentage}}% Budget Threshold Is Exceeded ({{ parameters.param_type }})"
   detail_template <<-EOS
 # {{with index data 0}}{{ .name }}{{end}}: Budget Exceeded
