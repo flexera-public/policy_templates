@@ -422,7 +422,7 @@ These templates can generate savings estimates for your environment.
 
 - Cloud Cost Optimization
 
-  - [Bill Processing Error Notification](./operational/flexera/cco/bill_processing_errors_notification)
+  - [Cloud Bill Processing Error Notification](./operational/flexera/cco/bill_processing_errors_notification)
 
 - FlexNet Manager
 
