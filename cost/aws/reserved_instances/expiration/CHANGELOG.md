@@ -1,5 +1,12 @@
 # Changelog
 
+## v3.0.0
+
+- Policy is no longer deprecated
+- Added ability to filter results by Billing Center
+- Additional fields added to incident to provide more context
+- Streamlined code for better readability and faster execution
+
 ## v2.2.1
 
 - Added `deprecated` field to policy metadata. Functionality is unchanged.

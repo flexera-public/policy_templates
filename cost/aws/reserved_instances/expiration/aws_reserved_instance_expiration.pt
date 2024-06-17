@@ -1,14 +1,14 @@
-name "Azure Expiring Reserved Instances"
+name "AWS Expiring Reserved Instances"
 rs_pt_ver 20180301
 type "policy"
-short_description "Reports on Azure Reserved Instances that have or will soon expire. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/reserved_instances/expiration) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Reports on AWS Reserved Instances that have or will soon expire. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/reserved_instances/expiration) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Cost"
 severity "medium"
 default_frequency "daily"
 info(
   version: "3.0.0",
-  provider: "Azure",
+  provider: "AWS",
   service: "Compute",
   policy_set: "Reserved Instances"
 )
@@ -176,63 +176,42 @@ script "js_accounts_by_billing_center", type: "javascript" do
 EOS
 end
 
-datasource "ds_azure_reservations" do
+datasource "ds_aws_reservations" do
   request do
     auth $auth_flexera
     host rs_optima_host
-    path join(["/reserved_instances/orgs/", rs_org_id, "/clouds/azure"])
+    path join(["/reserved_instances/orgs/", rs_org_id, "/clouds/aws"])
   end
   result do
     encoding "json"
     collect jmes_path(response, "[*]") do
-      field "id", jmes_path(col_item, "id")
+      field "end_date", jmes_path(col_item, "end_datetime")
+      field "start_date", jmes_path(col_item, "start_datetime")
       field "account_name", jmes_path(col_item, "account_name")
-      field "amount", jmes_path(col_item, "amount")
-      field "arm_sku_name", jmes_path(col_item, "arm_sku_name")
-      field "billing_frequency", jmes_path(col_item, "billing_frequency")
-      field "cost_center", jmes_path(col_item, "cost_center")
-      field "currency", jmes_path(col_item, "currency")
-      field "current_enrollment", jmes_path(col_item, "current_enrollment")
-      field "department_name", jmes_path(col_item, "department_name")
-      field "description", jmes_path(col_item, "description")
-      field "event_date", jmes_path(col_item, "event_date")
-      field "event_type", jmes_path(col_item, "event_type")
-      field "expiration_date", jmes_path(col_item, "expiration_date")
-      field "monthly_cost", jmes_path(col_item, "monthly_cost")
-      field "purchased_quantity", jmes_path(col_item, "purchased_quantity")
-      field "purchasing_enrollment", jmes_path(col_item, "purchasing_enrollment")
-      field "purchasing_subscription_guid", jmes_path(col_item, "purchasing_subscription_guid")
-      field "purchasing_subscription_name", jmes_path(col_item, "purchasing_subscription_name")
-      field "quantity", jmes_path(col_item, "quantity")
+      field "account_id", jmes_path(col_item, "account_id")
+      field "lease_id", jmes_path(col_item, "lease_id")
       field "region", jmes_path(col_item, "region")
-      field "remaining_quantity", jmes_path(col_item, "remaining_quantity")
-      field "reservation_order_id", jmes_path(col_item, "reservation_order_id")
-      field "reservation_order_name", jmes_path(col_item, "reservation_order_name")
-      field "term", jmes_path(col_item, "term")
-      field "util_avg_percentage", jmes_path(col_item, "utilization.avg_utilization_percentage")
-      field "util_max_percentage", jmes_path(col_item, "utilization.max_utilization_percentage")
-      field "util_min_percentage", jmes_path(col_item, "utilization.min_utilization_percentage")
-      field "util_reservation_id", jmes_path(col_item, "utilization.reservation_id")
-      field "util_reserved_hours", jmes_path(col_item, "utilization.reserved_hours")
-      field "util_sku_name", jmes_path(col_item, "utilization.sku_name")
-      field "util_usage_date", jmes_path(col_item, "utilization.usage_date")
-      field "util_used_hours", jmes_path(col_item, "utilization.used_hours")
+      field "instance_type", jmes_path(col_item, "instance_type")
+      field "number_of_instances", jmes_path(col_item, "number_of_instances")
+      field "scope", jmes_path(col_item, "scope")
+      field "tenancy", jmes_path(col_item, "tenancy")
+      field "offering_type", jmes_path(col_item, "offering_type")
     end
   end
 end
 
-datasource "ds_filtered_azure_reservations" do
-  run_script $js_filtered_azure_reservations, $ds_accounts_by_billing_center, $ds_azure_reservations
+datasource "ds_filtered_aws_reservations" do
+  run_script $js_filtered_aws_reservations, $ds_accounts_by_billing_center, $ds_aws_reservations
 end
 
-script "js_filtered_azure_reservations", type: "javascript" do
-  parameters "ds_accounts_by_billing_center", "ds_azure_reservations"
+script "js_filtered_aws_reservations", type: "javascript" do
+  parameters "ds_accounts_by_billing_center", "ds_aws_reservations"
   result "result"
   code <<-EOS
   bc_account_ids = _.uniq(_.pluck(ds_accounts_by_billing_center, "vendor_account_id"))
 
-  result = _.filter(ds_azure_reservations, function(ri) {
-    return _.contains(bc_account_ids, ri['purchasing_subscription_guid'])
+  result = _.filter(ds_aws_reservations, function(ri) {
+    return _.contains(bc_account_ids, ri['account_id'])
   })
 EOS
 end
@@ -261,37 +240,36 @@ script "js_account_list", type: "javascript" do
 EOS
 end
 
-datasource "ds_expiring_azure_reservations" do
-  run_script $js_expiring_azure_reservations, $ds_filtered_azure_reservations, $ds_account_list, $ds_applied_policy, $param_days_expiration
+datasource "ds_expiring_aws_reservations" do
+  run_script $js_expiring_aws_reservations, $ds_filtered_aws_reservations, $ds_account_list, $ds_applied_policy, $param_days_expiration
 end
 
-script "js_expiring_azure_reservations", type: "javascript" do
-  parameters "ds_filtered_azure_reservations", "ds_account_list", "ds_applied_policy", "param_days_expiration"
+script "js_expiring_aws_reservations", type: "javascript" do
+  parameters "ds_filtered_aws_reservations", "ds_account_list", "ds_applied_policy", "param_days_expiration"
   result "result"
   code <<-'EOS'
   result = []
   today = new Date()
 
-  _.each(ds_filtered_azure_reservations, function(ri) {
-    expiration_date = new Date(plan['expiration_date'])
+  _.each(ds_filtered_aws_reservations, function(ri) {
+    expiration_date = new Date(plan['end_date'])
     days_until_expiry = (expiration_date - today) / 1000 / 60 / 60 / 24
     if (days_until_expiry < 0) { days_until_expiry = 0 }
 
     if (days_until_expiry < param_days_expiration || days_until_expiry == 0) {
       billing_centers = ""
 
-      if (ds_account_list[ri['purchasing_subscription_guid']] != undefined) {
-        billing_centers = ds_account_list[ri['purchasing_subscription_guid']].join(', ')
+      if (ds_account_list[ri['account_id']] != undefined) {
+        billing_centers = ds_account_list[ri['account_id']].join(', ')
       }
 
       result.push({
-        accountID: ri["purchasing_subscription_guid"],
-        accountName: ri["purchasing_subscription_name"],
-        instanceType: ri["util_sku_name"],
-        instanceCount: ri["amount"],
-        resourceID: ri["util_reservation_id"],
+        accountID: ri["account_id"],
+        accountName: ri["account_name"],
+        instanceType: ri["instance_type"],
+        instanceCount: ri["number_of_instances"],
+        resourceID: ri["lease_id"],
         region: ri["region"],
-        term: ri["term"],
         expiration_date: expiration_date.toISOString().substring(0, 10),
         days_until_expiry: Math.round(days_until_expiry),
         billing_centers: billing_centers,
@@ -307,8 +285,8 @@ end
 ###############################################################################
 
 policy "pol_ri_expiration" do
-  validate_each $ds_expiring_azure_reservations do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: Azure Expiring Reservations Found"
+  validate_each $ds_expiring_aws_reservations do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: AWS Expiring Reservations Found"
     check eq(val(item, "resourceID"), "")
     escalate $esc_email
     export do
@@ -324,9 +302,6 @@ policy "pol_ri_expiration" do
       end
       field "region" do
         label "Region"
-      end
-      field "term" do
-        label "Term"
       end
       field "resourceID" do
         label "Lease ID"
