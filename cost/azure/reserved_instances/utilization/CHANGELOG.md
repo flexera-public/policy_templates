@@ -1,5 +1,12 @@
 # Changelog
 
+## v4.0.0
+
+- Policy has fundamentally been reworked to use internal Flexera API
+- Azure credential is no longer required
+- Report can now use either maximum or average utilization when assessing reservations
+- Normalized incident output for parity with other policy templates
+
 ## v3.1.1
 
 - Fixed Microsoft VM Size Flexibility URL which prevented the policy from completing without error. Policy functionality is unchanged.
