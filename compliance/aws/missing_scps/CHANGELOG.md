@@ -1,5 +1,11 @@
 # Changelog
 
+## v3.0.0
+
+- Added ability to audit for multiple Service Control Policies
+- Streamlined code for better readability and faster execution
+- Policy template now requires a valid Flexera credential
+
 ## v2.7
 
 - Updated description of `Account Number` parameter
