@@ -6,6 +6,147 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#2312](https://github.com/flexera-public/policy_templates/pull/2312): POL-1080 AWS Savings Realized From Rate Reduction Purchases Revamp
+
+#### Description
+
+> This is a revamp of the AWS Savings Realized From Rate Reduction Purchases policy. From the CHANGELOG:
+>
+> - Policy template renamed to `AWS Savings Realized From Rate Reduction Purchases` to better indicate that it is not specific to reservations
+> - Several parameters altered to be more descriptive and human-readable
+> - Policy now builds report based on a user-specified number of months back rather than the user specifying a specific start and end date
+> - Fixed issue with invalid results if user specifies both a parent and child billing center for the `Allow/Deny Billing Center List` parameter
+> - Streamlined code for better readability and faster execution
+>
+> I also made a slight tweak to a Dangerfile test; the policy name change test no longer mentions manually removing the old policy from the catalog since this should no longer be necessary due to improved policy catalog automation.
+>
+
+#### Metadata
+
+- **Policies**: [AWS Savings Realized From Rate Reduction Purchases](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/savings_realized/README.md)
+- **Merged At**: 2024-06-14 14:17:10 UTC
+
+---
+
+### PR [#2308](https://github.com/flexera-public/policy_templates/pull/2308): POL-1078 AWS Expiring Savings Plans Revamp
+
+#### Description
+
+> This is a revamp of the AWS Expiring Savings Plans Revamp policy. From the CHANGELOG:
+>
+> - Added more fields to incident table to provide more context
+> - Streamlined code for better readability and faster execution
+> - Policy now requires a valid Flexera credential
+>
+
+#### Metadata
+
+- **Policies**: [AWS Expiring Savings Plans](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/savings_plan/expiration/README.md)
+- **Merged At**: 2024-06-14 13:03:29 UTC
+
+---
+
+### PR [#2306](https://github.com/flexera-public/policy_templates/pull/2306): POL-1239 New Policy: Azure Rightsize SQL Database Storage
+
+#### Description
+
+> This is a new policy, `Azure Rightsize SQL Database Storage`. From the README:
+>
+> > This policy checks the storage usage for all the Azure SQL database instances purchased using the vCore purchasing model and determines if a smaller maximum storage space would be viable. A report is created with these recommendations that can optionally be emailed.
+> >
+> > Only vCore purchases are supported because DTU-purchased databases cannot have their maximum storage space changed independently without changing the entire SKU, including CPU and memory usage. Automatic actions are not supported because a SQL database cannot have its maximum storage space reduced; a new smaller database would need to be provisioned and data would need to be migrated to it.
+>
+> Additionally, this adds a new JSON asset for Azure database storage pricing along with Github workflow automation to periodically update that asset.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2306) for these details.
+- **Merged At**: 2024-06-13 13:21:15 UTC
+
+---
+
+### PR [#2320](https://github.com/flexera-public/policy_templates/pull/2320): POL-1263 AWS Cost Report - EC2 Instance Cost Per Hour
+
+#### Description
+
+> This is a new, currently unpublished policy for reporting Instance Cost Per Hour for EC2 instances.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2320) for details about unpublished policies.
+- **Merged At**: 2024-06-12 18:50:24 UTC
+
+---
+
+### PR [#2314](https://github.com/flexera-public/policy_templates/pull/2314): POL-1081 Azure China Common Bill Ingestion Revamp
+
+#### Description
+
+> This is a revamp of the Azure China Common Bill Ingestion policy. From the CHANGELOG:
+>
+> - Policy now supports `Previous Month` for `Month To Ingest` parameter
+> - Reworked parameters to be more clear and consistent with other policy templates
+> - Streamlined code for better readability and faster execution
+>
+> Some Dangerfile tests were also updated to not treat Azure China stuff as though it were normal Azure to avoid false errors/warnings. The policy permissions generation automation was also updated for the same reason.
+>
+
+#### Metadata
+
+- **Policies**: [Azure China Common Bill Ingestion](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/azure_china_cbi/README.md)
+- **Merged At**: 2024-06-12 18:48:08 UTC
+
+---
+
+### PR [#2294](https://github.com/flexera-public/policy_templates/pull/2294):  FOPTS-3682 Refactor Turbonomic Authentication: cookies to token-base
+
+#### Description
+
+> Address [FOPTS-3682](https://flexera.atlassian.net/browse/FOPTS-3682)
+>
+> List of changes :
+>
+> 1. **Add Turbonomic Credentials:** Integrate basic Turbonomic credentials to obtain an access token.
+> 2. **Replace Authentication Method:** Transition all cookie-based authentication to token-based authentication.
+> 3. **Align PT Codes with GitHub Tests:** Update PT codes to match GitHub tests, including reordering parameters and fields in DS and JS codes, adding necessary fields and comments to parameters, and renaming the Pagination variable.
+> 4. **Update PT Validation:** Add Turbonomic credential and list PTs to `validated_policy_templates.yaml` and update the `generate_policy_master_permissions.rb` file to include Turbonomic credential.
+> 5. **Revise Documentation:** Update the README and Changelog files to reflect the changes, including detailed descriptions of modifications and any new requirements necessary to pass GitHub tests.
+> 6. **Deprecate the auth cookie refresh policy :** Update the PT, README and Changelog files to deprecated.
+>
+>
+> ### Issues Resolved
+>
+> IBM/Turbonomic APIs were updated to support bearer token based authentication. CCO/Turbonomic integration needs to be updated accordingly to move from cookie-based to token-based authentication.
+> Documents: https://www.ibm.com/docs/en/tarm/8.12.4?topic=cookbook-authenticating-oauth-20-clients-api
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2294) for these details.
+- **Merged At**: 2024-06-11 16:15:44 UTC
+
+---
+
+### PR [#2307](https://github.com/flexera-public/policy_templates/pull/2307): FOPTS-4199 Fixing calculation of the Premium SSD price
+
+#### Description
+
+> Fixed premium ssd price calculation
+>
+> ### Issues Resolved
+>
+> https://flexera.atlassian.net/browse/SQ-8064
+>
+
+#### Metadata
+
+- **Policies**: [Azure Rightsize Managed Disks](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_disks/README.md)
+- **Merged At**: 2024-06-10 23:17:48 UTC
+
+---
+
 ### PR [#2227](https://github.com/flexera-public/policy_templates/pull/2227): POL-1240 - Rename `AWS Superseded EBS Volumes` and Introduce new `AWS Rightsize EBS Volumes` Policy Templates
 
 #### Description
@@ -1815,171 +1956,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [AWS Rightsize RDS Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_rds_instances/README.md)
 - **Merged At**: 2024-03-27 12:26:28 UTC
-
----
-
-### PR [#1949](https://github.com/flexera-public/policy_templates/pull/1949): POL-1161 Move currency_reference.json
-
-#### Description
-
-> - currency_reference.json has been copied to `data/currency/currency_reference.json`
-> - File also remains in `cost/scheduled_reports` with a README.md file explaining why it is there and indicating not to use that location going forward
-> - Policies have been updated to point to the new location at `data/currency/currency_reference.json`
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1949) for these details.
-- **Merged At**: 2024-03-22 14:36:00 UTC
-
----
-
-### PR [#1937](https://github.com/flexera-public/policy_templates/pull/1937): POL-1158 Policy Catalog Reorganization
-
-#### Description
-
-> This PR evolved into a behemoth due to changes requiring further changes to facilitate them. This PR does the following:
->
-> ### Billing Center Access Report Policy Revamp
->
-> From the CHANGELOG:
->
-> - Billing Center filter condensed to a single parameter and now supports both names and IDs
-> - Incident summary is now derived from the name of the applied policy
-> - Streamlined code for better readability and faster execution
->
-> Example Applied Policy: https://app.flexera.com/orgs/28010/automation/applied-policies/projects/123559?policyId=65fb2c113ad5094c4696143c
->
-> ### Dangerfile short_description Link Test
->
-> The Dangerfile now checks for invalid URLs in the `short_description` of a policy and raises an error if the link doesn't match the location of the file.
->
-> ### Invalid short_description Link Fixes
->
-> By running a local version of the above test, I found several existing policies with bad URLs in their `short_description`. These have been fixed.
->
-> ### Github Repository Reorganization
->
-> The repository has been reorganized so that Flexera policies are in their own subdirectories based on the specific product they apply to. For example, `compliance/flexera/automation`, `cost/flexera/cco`, `operational/flexera/cmp`, etc. This makes the repository much less cluttered and much easier to find things in. MSP policies also have been moved accordingly into the appropriate `flexera/msp` directories.
->
-> The meta policy and permissions generator files have been updated to account for the new file paths.
->
-> ### Explicit Publish False
->
-> All policies that are currently unpublished due to special rules in the Rakefile have been updated to contain an explicit `publish: false` in their metadata. This means we can get rid of these special rules and have a consistent implementation.
->
-> ### Rakefile Update: `updated_at` and `recommendation_type` fields added
->
-> The Rakefile used for generating the active policy list has been updated to include two new fields. `updated_at` is an ISO-8601 datetime string indicating when the policy was last modified in the catalog. `recommendation_type` is the requivalent field from the policy's info metadata block if such a value is specified.
->
-> The Rakefile also no longer ignores policies based on location or metadata other than the `publish` field in the info block. Policies should always have this field set to false if we don't want them to be published, and this same PR updates the relevant policies to ensure that this is the case.
->
-> ### Gemfile Update: octokit
->
-> `Gemfile` and `Gemfile.lock` have been updated to include the octokit gem. This is what enables the Rakefile to obtain metadata from Github, such as when a policy was last updated.
->
-> ### Manual Workflow Updates
->
-> The `Test Policies` and `Update Active Policy List` workflows have been updated to allow for manual execution to assist in testing changes.
->
-> ### Defunct File Removal
->
-> A handful of ancient defunct files from the RightScale days have been removed.
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1937) for these details.
-- **Merged At**: 2024-03-21 20:02:47 UTC
-
----
-
-### PR [#1930](https://github.com/flexera-public/policy_templates/pull/1930): FOPTS-3569 Fix: empty bill_source_expressions
-
-#### Description
-
-> Currently when `bill_source_expressions` is empty it creates an `or` condition with empty expressions, it causes that policy breaks in runtime, specifically with this error message:
->
-> `Invalid filter: invalid #4 AND expression: attribute 'expressions' must contain at least one expression for type \\\"or\\\": invalid argument\`
->
-> So we added a condition to validate if `bill_source_expressions` is empty, if so get rid to create that `or` condition.
->
-> SQ link: https://flexera.atlassian.net/browse/SQ-7053
-> CLONE link: https://flexera.atlassian.net/browse/FOPTS-3569
->
-> ### Issues Resolved
->
-> - Bug on empty `bill_source_expressions`.
->
-
-#### Metadata
-
-- **Policies**: [Azure Savings Realized from Reservations](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/savings_realized/README.md)
-- **Merged At**: 2024-03-21 18:17:18 UTC
-
----
-
-### PR [#1931](https://github.com/flexera-public/policy_templates/pull/1931): POL-1156 Deprecate "Policy Update Notification" Policy
-
-#### Description
-
-> This deprecates the Policy Update Notification policy and directs users to the more up to date and functional Flexera Automation Outdated Applied Policies policy.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1931) for details about unpublished policies.
-- **Merged At**: 2024-03-20 17:50:31 UTC
-
----
-
-### PR [#1920](https://github.com/flexera-public/policy_templates/pull/1920): FOPTS-3519 Fix work with unbudgeted spend for new API
-
-#### Description
-
-> New Budget API v1 not returning budgeted values for some budgets
->
-> ### Issues Resolved
->
-> https://flexera.atlassian.net/browse/FOPTS-3519
->
-
-#### Metadata
-
-- **Policies**: [Budget vs Actual Spend Report](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/budget_v_actual_spend_report/README.md)
-- **Merged At**: 2024-03-19 22:26:39 UTC
-
----
-
-### PR [#1916](https://github.com/flexera-public/policy_templates/pull/1916): SQ-6941 Sort the dimensions shown in the report
-
-#### Description
-
-> Fixed bug where incident showed dimensions from column `Grouping Dimensions` in random order.
->
-> ### Issues Resolved
->
-> https://flexera.atlassian.net/browse/SQ-6941
->
-
-#### Metadata
-
-- **Policies**: [Cloud Cost Anomaly Alerts](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/cloud_cost_anomaly_alerts/README.md)
-- **Merged At**: 2024-03-13 16:24:33 UTC
-
----
-
-### PR [#1818](https://github.com/flexera-public/policy_templates/pull/1818): feat: initial revision for Google Cloud Run Anomaly Detection PT
-
-#### Description
-
-> New Policy Template from PoC - `Google Cloud Run Anomaly Detection`.
->
-> <img width="1500" alt="image" src="https://github.com/flexera-public/policy_templates/assets/1490015/800b8c04-eed2-4d92-969f-18e2f3c7e245">
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1818) for details about unpublished policies.
-- **Merged At**: 2024-03-06 13:18:15 UTC
 
 ---
 
