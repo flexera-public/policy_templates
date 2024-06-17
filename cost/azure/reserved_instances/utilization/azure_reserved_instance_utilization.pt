@@ -7,7 +7,7 @@ severity "medium"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "3.0",
+  version: "3.1.1",
   provider: "Azure",
   service: "Compute",
   policy_set: ""
@@ -17,38 +17,40 @@ info(
 # Parameters
 ###############################################################################
 
-parameter "param_utilization" do
-  category "RI"
-  label "Show Reservations with utilization below this value (%)"
-  type "number"
-  min_value 1
-  max_value 100
-  default 100
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+  default []
 end
 
 parameter "param_azure_endpoint" do
   type "string"
+  category "Policy Settings"
   label "Azure Endpoint"
   description "Azure Endpoint to access resources"
   allowed_values "management.azure.com", "management.chinacloudapi.cn"
   default "management.azure.com"
 end
 
-parameter "param_lookback_period" do
-  category "Savings Plan"
-  label "Look Back Period"
-  default "Last 7 days"
-  description "The number of days of past Azure Reservation Utilization data to analyze"
-  allowed_values "Last 7 days", "Last 30 days"
-  type "string"
+parameter "param_utilization" do
+  type "number"
+  category "Policy Settings"
+  label "Maximum Reservation Utilization Threshold"
+  description "Show Reservations with utilization below this value (%)"
+  min_value 1
+  max_value 100
+  default 100
 end
 
-parameter "param_email" do
-  type "list"
-  category "Policy Settings"
-  label "Email addresses"
-  description "A list of email addresses to notify."
-  default []
+parameter "param_lookback_period" do
+  type "string"
+  category "Reservation Settings"
+  label "Look Back Period"
+  description "Number of days of prior Azure Reservation usage to analyze."
+  allowed_values "Last 7 days", "Last 30 days"
+  default "Last 7 days"
 end
 
 ###############################################################################
@@ -83,7 +85,7 @@ end
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
     header "User-Agent", "RS Policies"
   end
 end
@@ -133,17 +135,15 @@ end
 
 #IDENTIFY WHETHER ENTERPRISE AGREEMENT (EA) OR MICROSOFT CUSTOMER AGREEMENT (MCA)
 datasource "ds_billing_details" do
-  run_script $js_get_billing_details, $ds_billing_profiles, $ds_billing_accounts
+  run_script $js_billing_details, $ds_billing_profiles, $ds_billing_accounts
 end
 
-script "js_get_billing_details", type: "javascript" do
+script "js_billing_details", type: "javascript" do
   parameters "ds_billing_profiles", "ds_billing_accounts"
   result "result"
   code <<-EOS
     result = []
 
-    console.log("Billing Accounts:", ds_billing_accounts)
-    console.log("Billing Profiles:", ds_billing_profiles)
     _.each(ds_billing_accounts, function(acc) {
       if (acc.agreementType == "EnterpriseAgreement") {
         result.push({
@@ -167,14 +167,12 @@ script "js_get_billing_details", type: "javascript" do
   EOS
 end
 
-
-
 #GET RESERVATION TRANSACTION DETAILS - https://learn.microsoft.com/en-us/rest/api/consumption/reservation-transactions/list?tabs=HTTP
 #Details on Migration from EA - https://learn.microsoft.com/en-us/azure/cost-management-billing/automate/migrate-ea-reporting-arm-apis-overview
 datasource "ds_reservation_transactions" do
   iterate $ds_billing_details
   request do
-    run_script $js_get_reservation_transactions, $param_azure_endpoint, val(iter_item, "id")
+    run_script $js_reservation_transactions, val(iter_item, "id"), $param_azure_endpoint
   end
   result do
     encoding "json"
@@ -209,16 +207,16 @@ datasource "ds_reservation_transactions" do
   end
 end
 
-script "js_get_reservation_transactions", type: "javascript" do
-  parameters "param_azure_endpoint", "ds_billing_account_id"
+script "js_reservation_transactions", type: "javascript" do
+  parameters "ds_billing_account_id", "param_azure_endpoint"
   result "request"
   code <<-EOS
     //Get start and end date (past 30 days)
     var date = new Date()
     date.setDate(date.getDate() - 2)
-    var end_date = date.toISOString().slice(0,10)
+    var end_date = date.toISOString().slice(0, 10)
     date.setDate(date.getDate() - 1094)
-    var start_date = date.toISOString().slice(0,10)
+    var start_date = date.toISOString().slice(0, 10)
 
     //Create Filter Query Param value
     var filter_query = "properties/eventDate ge " + start_date + " AND properties/eventDate le " + end_date
@@ -242,10 +240,10 @@ end
 
 #REMOVE DUPLICATE DATA
 datasource "ds_reduced_reservation_transactions" do
-  run_script $js_reduce_reservation_transactions_data, $ds_reservation_transactions
+  run_script $js_reduced_reservation_transactions, $ds_reservation_transactions
 end
 
-script "js_reduce_reservation_transactions_data", type: "javascript" do
+script "js_reduced_reservation_transactions", type: "javascript" do
   parameters "ds_reservation_transactions"
   result "result"
   code <<-'EOS'
@@ -263,8 +261,7 @@ script "js_reduce_reservation_transactions_data", type: "javascript" do
       //get the purchase date (the first event date) and expiration date for the reservation
       var first_month = _.last(charges_grouped_by_reservation_order[order])
       var purchase_date = first_month.eventDate
-      //console.log("First Month: " + first_month.eventDate, "Last Month: " + _.first(charges_grouped_by_reservation_order[order]).eventDate)
-      
+
       var term_years = 1
       if (first_month.term == "P3Y") {
         term_years = 3
@@ -272,7 +269,6 @@ script "js_reduce_reservation_transactions_data", type: "javascript" do
       var expiration_date = new Date(purchase_date)
       expiration_date.setFullYear(expiration_date.getFullYear() + term_years)
       expiration_date = expiration_date.toISOString()
-      //console.log("Purchase Date: " + purchase_date, "Expiration Date: " + expiration_date, "Term: " + first_month.term)
 
       //get the monthlyAmount for the most recent date
       var most_recent_month = _.first(_.filter(charges_grouped_by_reservation_order[order], function(ord) { return ord.eventType == "Purchase" }))
@@ -328,26 +324,26 @@ end
 
 #GET INDIVIDUAL DATES WITHIN LOOKBACK PERIOD - without doing this leads to this error: "The response is too large and exceeds the maximum permissible limit. Reduce the date range in the request and try again."
 datasource "ds_lookback_period_dates" do
-  run_script $js_get_lookback_period_dates, $param_lookback_period
+  run_script $js_lookback_period_dates, $param_lookback_period
 end
 
-script "js_get_lookback_period_dates", type: "javascript" do
+script "js_lookback_period_dates", type: "javascript" do
   parameters "param_lookback_period"
   result "result"
   code <<-EOS
     //Get start and end date based on lookback period parameter
     var lookback_period = 30
-    if ( param_lookback_period == "Last 7 days" ) { 
-      lookback_period = 7 
-    } else { 
-      lookback_period = 30 
+    if ( param_lookback_period == "Last 7 days" ) {
+      lookback_period = 7
+    } else {
+      lookback_period = 30
     }
 
     var end_date = new Date()
     end_date.setDate(end_date.getDate() - 2)
     var start_date = new Date()
     start_date.setDate(start_date.getDate() - lookback_period - 2)
-    
+
     //Get the Dates in the Lookback Period
     var days_in_lookback_period = []
     while (start_date < end_date) {
@@ -368,10 +364,10 @@ end
 
 #GET BILLING ACCOUNT-LOOKBACK PERIOD COMBINATIONS REQUIRED FOR MICROSOFT AZURE RESERVATION SUMMARIES DETAILS API CALL
 datasource "ds_billing_account_lookback_period_combinations" do
-  run_script $js_get_billing_account_lookback_period_combinations, $ds_billing_details, $ds_lookback_period_dates
+  run_script $js_billing_account_lookback_period_combinations, $ds_billing_details, $ds_lookback_period_dates
 end
 
-script "js_get_billing_account_lookback_period_combinations", type: "javascript" do
+script "js_billing_account_lookback_period_combinations", type: "javascript" do
   parameters "ds_billing_accounts", "ds_lookback_period_dates"
   result "result"
   code <<-EOS
@@ -395,7 +391,7 @@ end
 datasource "ds_reservation_summaries" do
   iterate $ds_billing_account_lookback_period_combinations
   request do
-    run_script $js_get_reservation_summaries, $param_azure_endpoint, val(iter_item, "billingAccountId"), val(iter_item, "agreementType"), val(iter_item, "lookbackPeriodDateRange")
+    run_script $js_reservation_summaries, val(iter_item, "billingAccountId"), val(iter_item, "agreementType"), val(iter_item, "lookbackPeriodDateRange"), $param_azure_endpoint 
   end
   result do
     encoding "json"
@@ -415,8 +411,8 @@ datasource "ds_reservation_summaries" do
   end
 end
 
-script "js_get_reservation_summaries", type: "javascript" do
-  parameters "param_azure_endpoint", "ds_billing_account_id", "ds_agreement_type", "ds_lookback_period_date_range"
+script "js_reservation_summaries", type: "javascript" do
+  parameters "ds_billing_account_id", "ds_agreement_type", "ds_lookback_period_date_range", "param_azure_endpoint"
   result "request"
   code <<-EOS
     //API query params are structured differently depending on Agreement Type (MCA vs EA)
@@ -452,13 +448,12 @@ script "js_get_reservation_summaries", type: "javascript" do
   EOS
 end
 
-
 #CALCULATE AVERAGE UTILIZATION OVER LOOKBACK PERIOD FOR EACH RESERVATION ORDER ID
 datasource "ds_reduced_reservation_summaries" do
-  run_script $js_reduce_reservation_summaries, $ds_reservation_summaries
+  run_script $js_reduced_reservation_summaries, $ds_reservation_summaries
 end
 
-script "js_reduce_reservation_summaries", type: "javascript" do
+script "js_reduced_reservation_summaries", type: "javascript" do
   parameters "ds_reservation_summaries"
   result "result"
   code <<-EOS
@@ -494,7 +489,7 @@ script "js_reduce_reservation_summaries", type: "javascript" do
         avg_utilization_percentage = (total_used_hours / total_reserved_hours) * 100
         reservation_data_exists = true
       }
-      
+
       period.push({
         "reservationOrderId": order,
         "reservedHours": total_reserved_hours,
@@ -512,8 +507,8 @@ end
 #GET DATA WITH INSTANCE FAMILIES FOR INSTANCE TYPES
 datasource "ds_isf_ratio_csv" do
   request do
-    host "isfratio.blob.core.windows.net"
-    path "/isfratio/ISFRatio.csv"
+    host "aka.ms"
+    path "/isf"
   end
   result do
     encoding "text"
@@ -522,10 +517,10 @@ end
 
 #COMBINE CHARGES DETAILS AND SUMMARY DETAILS FOR RESERVATIONS
 datasource "ds_reservation_purchase_details" do
-  run_script $js_combine_reservation_details, $ds_reduced_reservation_transactions, $ds_reduced_reservation_summaries, $ds_isf_ratio_csv, $ds_currency_reference, $param_utilization
+  run_script $js_reservation_purchase_details, $ds_reduced_reservation_transactions, $ds_reduced_reservation_summaries, $ds_isf_ratio_csv, $ds_currency_reference, $param_utilization
 end
 
-script "js_combine_reservation_details", type: "javascript" do
+script "js_reservation_purchase_details", type: "javascript" do
   parameters "reservation_transactions_data", "reservation_summaries_data", "isf_ratio_csv", "currency_reference", "param_utilization"
   result "all_data"
   code <<-'EOS'
@@ -637,17 +632,15 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_azure_active_reserved_instances" do
+policy "pol_azure_active_reserved_instances" do
   validate $ds_reservation_purchase_details do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.reservation_details }} active Azure Reserved Instances - {{ parameters.param_lookback_period }}"
     detail_template <<-EOS
 {{data.message}}
 EOS
-    escalate $esc_email
     check eq(size(val(data, "reservation_details")), 0)
+    escalate $esc_email
     export "reservation_details" do
-    # check eq(1, 0)
-    # export do
       resource_level false
       field "agreementType" do
         label "Agreement Type"

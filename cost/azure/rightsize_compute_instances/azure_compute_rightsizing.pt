@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "4.0",
+  version: "5.2.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -21,7 +21,7 @@ info(
 parameter "param_email" do
   type "list"
   category "Policy Settings"
-  label "Email addresses"
+  label "Email Addresses"
   description "A list of email addresses to notify."
   default []
 end
@@ -47,10 +47,18 @@ end
 parameter "param_exclusion_tags" do
   type "list"
   category "Filters"
-  label "Exclusion Tags (Key:Value)"
-  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:*"
-  allowed_pattern /(^$)|[\w]*\:.*/
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
   default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
 end
 
 parameter "param_subscriptions_allow_or_deny" do
@@ -85,6 +93,24 @@ parameter "param_regions_list" do
   label "Allow/Deny Regions List"
   description "A list of allowed or denied regions. See the README for more details."
   default []
+end
+
+parameter "param_exclude_stopped" do
+  type "string"
+  category "Filters"
+  label "Exclude Stopped Virtual Machines"
+  description "Whether or not to filter stopped virtual machines from the results. If set to \"Yes\", only running virtual machines will be included in the results."
+  allowed_values "Yes", "No"
+  default "No"
+end
+
+parameter "param_exclude_databricks" do
+  type "string"
+  category "Filters"
+  label "Exclude Databricks"
+  description "Whether or not to filter virtual machines used for Azure Databricks from the results. If set to \"Yes\", virtual machines for Azure Databricks will not be included in the results."
+  allowed_values "Yes", "No"
+  default "No"
 end
 
 parameter "param_stats_idle_threshold_cpu_value" do
@@ -150,9 +176,9 @@ parameter "param_stats_lookback" do
   category "Statistics"
   label "Statistic Lookback Period"
   description "How many days back to look at CPU and/or memory data for instances. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days."
-  default 30
   min_value 1
   max_value 90
+  default 30
 end
 
 parameter "param_automatic_action" do
@@ -225,7 +251,6 @@ datasource "ds_billing_centers" do
     path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
     ignore_status [403]
   end
   result do
@@ -259,7 +284,7 @@ end
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
     header "User-Agent", "RS Policies"
   end
 end
@@ -316,11 +341,13 @@ datasource "ds_azure_subscriptions" do
     pagination $pagination_azure
     host $param_azure_endpoint
     path "/subscriptions/"
-    query "api-version","2020-01-01"
+    query "api-version", "2020-01-01"
     header "User-Agent", "RS Policies"
     # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
     # Forces `ds_is_deleted` datasource to run first during policy execution
     header "Meta-Flexera", val($ds_is_deleted, "path")
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
@@ -363,7 +390,7 @@ datasource "ds_azure_instances" do
     pagination $pagination_azure
     host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Compute/virtualMachines"])
-    query "api-version", "2019-03-01"
+    query "api-version", "2024-03-01"
     header "User-Agent", "RS Policies"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
     ignore_status [400, 403, 404]
@@ -376,46 +403,148 @@ datasource "ds_azure_instances" do
       field "resourceKind", jmes_path(col_item, "type")
       field "name", jmes_path(col_item, "name")
       field "region", jmes_path(col_item, "location")
+      field "imagePublisher", jmes_path(col_item, "properties.storageProfile.imageReference.publisher")
+      field "imageOffer", jmes_path(col_item, "properties.storageProfile.imageReference.offer")
+      field "imageSKU", jmes_path(col_item, "properties.storageProfile.imageReference.sku")
       field "osType", jmes_path(col_item, "properties.storageProfile.osDisk.osType")
       field "resourceType", jmes_path(col_item, "properties.hardwareProfile.vmSize")
       field "tags", jmes_path(col_item, "tags")
-      field "subscriptionId",val(iter_item, "id")
-      field "subscriptionName",val(iter_item, "name")
+      field "subscriptionId", val(iter_item, "id")
+      field "subscriptionName", val(iter_item, "name")
     end
   end
 end
 
+datasource "ds_azure_instance_statuses" do
+  iterate $ds_azure_subscriptions_filtered
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Compute/virtualMachines"])
+    query "api-version", "2024-03-01"
+    query "statusOnly", "true"
+    header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "resourceID", jmes_path(col_item, "id")
+      field "statuses", jmes_path(col_item, "properties.instanceView.statuses")
+    end
+  end
+end
+
+datasource "ds_azure_instances_with_status" do
+  run_script $js_azure_instances_with_status, $ds_azure_instances, $ds_azure_instance_statuses
+end
+
+script "js_azure_instances_with_status", type: "javascript" do
+  parameters "ds_azure_instances", "ds_azure_instance_statuses"
+  result "result"
+  code <<-EOS
+  status_object = {}
+
+  _.each(ds_azure_instance_statuses, function(item) {
+    status_object[item['resourceID']] = item['statuses']
+  })
+
+  result = _.map(ds_azure_instances, function(vm) {
+    return {
+      resourceID: vm["resourceID"],
+      resourceGroup: vm["resourceGroup"],
+      resourceKind: vm["resourceKind"],
+      name: vm["name"],
+      region: vm["region"],
+      imagePublisher: vm["imagePublisher"],
+      imageOffer: vm["imageOffer"],
+      imageSKU: vm["imageSKU"],
+      osType: vm["osType"],
+      resourceType: vm["resourceType"],
+      tags: vm["tags"],
+      subscriptionId: vm["subscriptionId"],
+      subscriptionName: vm["subscriptionName"],
+      statuses: status_object[vm["resourceID"]]
+    }
+  })
+EOS
+end
+
 datasource "ds_azure_instances_tag_filtered" do
-  run_script $js_azure_instances_tag_filtered, $ds_azure_instances, $param_exclusion_tags
+  run_script $js_azure_instances_tag_filtered, $ds_azure_instances_with_status, $param_exclusion_tags, $param_exclusion_tags_boolean
 end
 
 script "js_azure_instances_tag_filtered", type: "javascript" do
-  parameters "ds_azure_instances", "param_exclusion_tags"
+  parameters "ds_azure_instances_with_status", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-EOS
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
   if (param_exclusion_tags.length > 0) {
-    result = _.reject(ds_azure_instances, function(vm) {
-      vm_tags = []
+    result = _.reject(ds_azure_instances_with_status, function(resource) {
+      resource_tags = {}
+      if (typeof(resource['tags']) == 'object') { resource_tags = resource['tags'] }
 
-      if (typeof(vm['tags']) == 'object') {
-        _.each(Object.keys(vm['tags']), function(key) {
-          vm_tags.push([key, ":", vm['tags'][key]].join(''))
-          vm_tags.push([key, ":*"].join(''))
-        })
-      }
+      // Store a list of found tags
+      found_tags = []
 
-      exclude_vm = false
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_tag = resource_tags[comparator['key']]
 
-      _.each(param_exclusion_tags, function(exclusion_tag) {
-        if (_.contains(vm_tags, exclusion_tag)) {
-          exclude_vm = true
+        if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+        if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+        if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_tag == undefined) { found_tags.push(string) }
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
         }
       })
 
-      return exclude_vm
+      all_tags_found = found_tags.length == comparators.length
+      any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+      return all_tags_found || any_tags_found
     })
   } else {
-    result = ds_azure_instances
+    result = ds_azure_instances_with_status
   }
 EOS
 end
@@ -440,6 +569,49 @@ script "js_azure_instances_region_filtered", type: "javascript" do
     })
   } else {
     result = ds_azure_instances_tag_filtered
+  }
+EOS
+end
+
+datasource "ds_azure_instances_databricks_filtered" do
+  run_script $js_azure_instances_databricks_filtered, $ds_azure_instances_region_filtered, $param_exclude_databricks
+end
+
+script "js_azure_instances_databricks_filtered", type: "javascript" do
+  parameters "ds_azure_instances_region_filtered", "param_exclude_databricks"
+  result "result"
+  code <<-EOS
+  if (param_exclude_databricks == "Yes") {
+    result = _.filter(ds_azure_instances_region_filtered, function(vm) {
+      imageOffer = ""
+      if (typeof(vm['imageOffer']) == 'string') { imageOffer = vm['imageOffer'] }
+
+      imagePublisher = ""
+      if (typeof(vm['imagePublisher']) == 'string') { imagePublisher = vm['imagePublisher'] }
+
+      return imageOffer.toLowerCase().indexOf('databricks') == -1 && imagePublisher.toLowerCase().indexOf('databricks') == -1
+    })
+  } else {
+    result = ds_azure_instances_region_filtered
+  }
+EOS
+end
+
+datasource "ds_azure_instances_status_filtered" do
+  run_script $js_azure_instances_status_filtered, $ds_azure_instances_databricks_filtered, $param_exclude_stopped
+end
+
+script "js_azure_instances_status_filtered", type: "javascript" do
+  parameters "ds_azure_instances_databricks_filtered", "param_exclude_stopped"
+  result "result"
+  code <<-EOS
+  if (param_exclude_stopped == "Yes") {
+    result = _.filter(ds_azure_instances_databricks_filtered, function(vm) {
+      status_codes = _.pluck(vm['statuses'], 'code')
+      return _.contains(status_codes, 'PowerState/running')
+    })
+  } else {
+    result = ds_azure_instances_databricks_filtered
   }
 EOS
 end
@@ -493,7 +665,7 @@ EOS
 end
 
 datasource "ds_azure_instances_metrics" do
-  iterate $ds_azure_instances_region_filtered
+  iterate $ds_azure_instances_status_filtered
   request do
     run_script $js_azure_instances_metrics, val(iter_item, "resourceID"), $param_azure_endpoint, $param_stats_lookback
   end
@@ -506,10 +678,14 @@ datasource "ds_azure_instances_metrics" do
     field "resourceKind", val(iter_item, "resourceKind")
     field "region", val(iter_item, "region")
     field "tags", val(iter_item, "tags")
+    field "statuses", val(iter_item, "statuses")
+    field "imagePublisher", val(iter_item, "imagePublisher")
+    field "imageOffer", val(iter_item, "imageOffer")
+    field "imageSKU", val(iter_item, "imageSKU")
     field "osType", val(iter_item, "osType")
     field "resourceType", val(iter_item, "resourceType")
-    field "subscriptionId",val(iter_item, "subscriptionId")
-    field "subscriptionName",val(iter_item, "subscriptionName")
+    field "subscriptionId", val(iter_item, "subscriptionId")
+    field "subscriptionName", val(iter_item, "subscriptionName")
   end
 end
 
@@ -655,17 +831,25 @@ script "js_azure_instances_metrics_organized", type: "javascript" do
       })
     }
 
+    status_codes = _.pluck(vm['statuses'], 'code')
+    powerstate = _.find(status_codes, function(code) { return code.indexOf('PowerState') == 0 })
+    state = powerstate.split('/')[1]
+
     result.push({
       resourceName: vm['resourceName'],
       resourceGroup: vm['resourceGroup'],
       resourceID: vm['resourceID'],
       resourceKind: vm['resourceKind'],
       region: vm['region'],
+      imagePublisher: vm['imagePublisher'],
+      imageOffer: vm['imageOffer'],
+      imageSKU: vm['imageSKU'],
       osType: vm['osType'],
       resourceType: vm['resourceType'],
       accountID: vm['subscriptionId'],
       accountName: vm['subscriptionName'],
       tags: vm_tags.join(', '),
+      state: state,
       cpu_minimum: parseFloat(cpu_min.toFixed(2)),
       cpu_maximum: parseFloat(cpu_max.toFixed(2)),
       cpu_average: parseFloat(cpu_avg.toFixed(2)),
@@ -792,17 +976,17 @@ datasource "ds_azure_instance_size_map" do
   request do
     verb "GET"
     host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/data/azure/instance_types.json"
+    path "/flexera-public/policy_templates/master/data/azure/instance_types.json"
     header "User-Agent", "RS Policies"
   end
 end
 
 datasource "ds_idle_and_underutil_instances" do
-  run_script $js_idle_and_underutil_instances, $ds_azure_instances_region_filtered, $ds_azure_instances_metrics_organized, $ds_instance_costs_grouped, $ds_azure_instance_size_map, $ds_currency, $ds_applied_policy, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_min_savings, $param_stats_lookback
+  run_script $js_idle_and_underutil_instances, $ds_azure_instances_region_filtered, $ds_azure_instances_metrics_organized, $ds_instance_costs_grouped, $ds_azure_instance_size_map, $ds_currency, $ds_applied_policy, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_min_savings, $param_stats_lookback, $param_exclude_databricks
 end
 
 script "js_idle_and_underutil_instances", type:"javascript" do
-  parameters "ds_azure_instances_region_filtered", "ds_azure_instances_metrics_organized", "ds_instance_costs_grouped", "ds_azure_instance_size_map", "ds_currency", "ds_applied_policy", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_min_savings", "param_stats_lookback"
+  parameters "ds_azure_instances_region_filtered", "ds_azure_instances_metrics_organized", "ds_instance_costs_grouped", "ds_azure_instance_size_map", "ds_currency", "ds_applied_policy", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_min_savings", "param_stats_lookback", "param_exclude_databricks"
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
@@ -895,6 +1079,7 @@ script "js_idle_and_underutil_instances", type:"javascript" do
         instance["recommendationType"] = "Delete"
         instance["threshold"] = param_stats_idle_threshold_cpu_value
         instance["memoryThreshold"] = param_stats_idle_threshold_mem_value
+        instance["newResourceType"] = "Delete Virtual Machine"
 
         recommendationDetails = [
           "Delete Azure virtual machine ", instance["resourceName"], " ",
@@ -1044,6 +1229,10 @@ script "js_idle_and_underutil_instances", type:"javascript" do
 
     disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
 
+    if (param_exclude_databricks == "No") {
+      disclaimer += "\n\nNote: Recommendations for Azure Databricks VMs may be invalid because not all instance sizes are available for Databricks. Please set the \"Exclude Databricks\" to \"Yes\" to exclude these VMs if desired."
+    }
+
     underutil_message = underutil_findings + underutil_analysis_message + lookback_message + disclaimer
     idle_message = idle_findings + idle_analysis_message + lookback_message + disclaimer
   } else {
@@ -1085,11 +1274,21 @@ script "js_underutilized_instances", type: "javascript" do
   result "result"
   code <<-EOS
   result = [{
-    "resourceID": "",    "recommendationType": "",       "underutil_message": "",
-    "idle_message": "",  "underutil_total_savings": "",  "idle_total_savings": "",
-    "tags": "",          "savings": "",                  "savingsCurrency": "",
-    "cpu_maximum": "",   "cpu_minimum": "",              "cpu_average": "",
-    "mem_maximum": "",   "mem_minimum": "",              "mem_average": ""
+    "resourceID": "",
+    "recommendationType": "",
+    "underutil_message": "",
+    "idle_message": "",
+    "underutil_total_savings": "",
+    "idle_total_savings": "",
+    "tags": "",
+    "savings": "",
+    "savingsCurrency": "",
+    "cpu_maximum": "",
+    "cpu_minimum": "",
+    "cpu_average": "",
+    "mem_maximum": "",
+    "mem_minimum": "",
+    "mem_average": ""
   }]
 
   result = ds_idle_and_underutil_instances["underutil_list"].concat(result)
@@ -1105,17 +1304,26 @@ script "js_idle_instances", type: "javascript" do
   result "result"
   code <<-EOS
   result = [{
-    "resourceID": "",    "recommendationType": "",       "underutil_message": "",
-    "idle_message": "",  "underutil_total_savings": "",  "idle_total_savings": "",
-    "tags": "",          "savings": "",                  "savingsCurrency": "",
-    "cpu_maximum": "",   "cpu_minimum": "",              "cpu_average": "",
-    "mem_maximum": "",   "mem_minimum": "",              "mem_average": ""
+    "resourceID": "",
+    "recommendationType": "",
+    "underutil_message": "",
+    "idle_message": "",
+    "underutil_total_savings": "",
+    "idle_total_savings": "",
+    "tags": "",
+    "savings": "",
+    "savingsCurrency": "",
+    "cpu_maximum": "",
+    "cpu_minimum": "",
+    "cpu_average": "",
+    "mem_maximum": "",
+    "mem_minimum": "",
+    "mem_average": ""
   }]
 
   result = ds_idle_and_underutil_instances["idle_list"].concat(result)
 EOS
 end
-
 
 ###############################################################################
 # Policy
@@ -1171,6 +1379,18 @@ policy "pol_utilization" do
       end
       field "osType" do
         label "Operating System"
+      end
+      field "imagePublisher" do
+        label "Image Publisher"
+      end
+      field "imageOffer" do
+        label "Image Offer"
+      end
+      field "imageSKU" do
+        label "Image SKU"
+      end
+      field "state" do
+        label "Power State"
       end
       field "savings" do
         label "Estimated Monthly Savings"
@@ -1262,6 +1482,9 @@ policy "pol_utilization" do
       field "resourceType" do
         label "Instance Size"
       end
+      field "newResourceType" do
+        label "Recommended Instance Size"
+      end
       field "resourceKind" do
         label "Resource Kind"
       end
@@ -1270,6 +1493,18 @@ policy "pol_utilization" do
       end
       field "osType" do
         label "Operating System"
+      end
+      field "imagePublisher" do
+        label "Image Publisher"
+      end
+      field "imageOffer" do
+        label "Image Offer"
+      end
+      field "imageSKU" do
+        label "Image SKU"
+      end
+      field "state" do
+        label "Power State"
       end
       field "savings" do
         label "Estimated Monthly Savings"
@@ -1365,12 +1600,14 @@ define downsize_instances($data, $param_azure_endpoint) return $all_responses do
 
   foreach $instance in $data do
     sub on_error: handle_error() do
-      call downsize_instance($instance, $param_azure_endpoint) retrieve $downsize_response
+      if $instance["newResourceType"] != "Delete Virtual Machine"
+        call downsize_instance($instance, $param_azure_endpoint) retrieve $downsize_response
+      end
     end
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -1391,7 +1628,7 @@ define downsize_instance($instance, $param_azure_endpoint) return $response do
     body: {
       "properties":{
         "hardwareProfile": {
-          "vmSize": $instance["recommendedVmSize"]
+          "vmSize": $instance["newResourceType"]
         }
       }
     }
@@ -1417,7 +1654,7 @@ define poweroff_instances($data, $param_azure_endpoint, $param_skipshutdown) ret
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -1464,7 +1701,7 @@ define delete_instances($data, $param_azure_endpoint) return $all_responses do
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -1516,7 +1753,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
     header "Api-Version", "1.0"
   end
   result do
@@ -1524,7 +1761,6 @@ datasource "ds_get_policy" do
     field "id", jmes_path(response, "id")
   end
 end
-
 
 datasource "ds_parent_policy_terminated" do
   run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id

@@ -1,5 +1,9 @@
 # AWS Unused Volumes
 
+## Deprecated
+
+This policy is no longer being updated. The [AWS Rightsize EBS Volumes](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ebs_volumes/) policy has superseded this one and includes significantly more functionality.
+
 ## What It Does
 
 This Policy finds unused volumes in the given account and deletes them after user approval. The user can optionally create a snapshot before deleting the volume. CloudWatch is used to determine its use by checking if there are read or write operations within the number of user-specified days. The Volume Status parameter will determine whether to include attached volumes in the resulting incident, unattached, or both. Policy Incident will be created with all of volumes that fall into these criteria.
@@ -30,7 +34,13 @@ This policy has the following input parameters required when launching the polic
 - *Unused Days* - The number of days a volume has been unused. The days should be greater than zero.
 - *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation.
 - *Volume Status* - Whether to include attached volumes, unattached, or both in the results.
-- *Exclusion Tags (Key:Value)* - Cloud native tags to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:\* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:\*
+- *Exclusion Tags* - The policy will filter resources containing the specified tags from the results. The following formats are supported:
+  - `Key` - Filter all resources with the specified tag key.
+  - `Key==Value` - Filter all resources with the specified tag key:value pair.
+  - `Key!=Value` - Filter all resources missing the specified tag key:value pair. This will also filter all resources missing the specified tag key.
+  - `Key=~/Regex/` - Filter all resources where the value for the specified key matches the specified regex string.
+  - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified tag key.
+- *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
 - *Create Final Snapshot* - Boolean for whether or not to take a final snapshot before deleting
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 

@@ -7,7 +7,7 @@ category "Operational"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "4.2",
+  version: "5.1",
   provider: "AWS",
   service: "Compute",
   policy_set: "Long Running Instances"
@@ -63,10 +63,18 @@ end
 parameter "param_exclusion_tags" do
   type "list"
   category "Filters"
-  label "Exclusion Tags (Key:Value)"
-  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:*"
-  allowed_pattern /(^$)|[\w]*\:.*/
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
   default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
 end
 
 parameter "param_automatic_action" do
@@ -261,7 +269,7 @@ end
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
     header "User-Agent", "RS Policies"
   end
 end
@@ -397,36 +405,83 @@ datasource "ds_instance_sets" do
 end
 
 datasource "ds_instances" do
-  run_script $js_instances, $ds_instance_sets, $param_exclusion_tags
+  run_script $js_instances, $ds_instance_sets, $param_exclusion_tags, $param_exclusion_tags_boolean
 end
 
 script "js_instances", type: "javascript" do
-  parameters "ds_instance_sets", "param_exclusion_tags"
+  parameters "ds_instance_sets", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-EOS
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
   result = []
 
   _.each(ds_instance_sets, function(item) {
     if (param_exclusion_tags.length > 0) {
-      filtered_instances = _.reject(item['instances_set'], function(instance) {
-        instance_tags = []
+      filtered_instances = _.reject(item['instances_set'], function(resource) {
+        resource_tags = {}
 
-        if (instance['tags'] != null && instance['tags'] != undefined) {
-          _.each(instance['tags'], function(tag) {
-            instance_tags.push([tag['key'], tag['value']].join(':'))
-            instance_tags.push([tag['key'], '*'].join(':'))
+        if (typeof(resource['tags']) == 'object') {
+          _.each(resource['tags'], function(tag) {
+            resource_tags[tag['key']] = tag['value']
           })
         }
 
-        exclude_instance = false
+        // Store a list of found tags
+        found_tags = []
 
-        _.each(param_exclusion_tags, function(exclusion_tag) {
-          if (_.contains(instance_tags, exclusion_tag)) {
-            exclude_instance = true
+        _.each(comparators, function(comparator) {
+          comparison = comparator['comparison']
+          value = comparator['value']
+          string = comparator['string']
+          resource_tag = resource_tags[comparator['key']]
+
+          if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+          if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+          if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+          if (comparison == '=~') {
+            if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+          }
+
+          if (comparison == '!~') {
+            if (resource_tag == undefined) { found_tags.push(string) }
+            if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
           }
         })
 
-        return exclude_instance
+        all_tags_found = found_tags.length == comparators.length
+        any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+        return all_tags_found || any_tags_found
       })
 
       result = result.concat(filtered_instances)
@@ -804,79 +859,78 @@ end
 ###############################################################################
 
 # Core CWF function to stop instances
-define stop_instances($data) return $all_responses do
-  # Change "No" to "Yes" to enable CWF debug logging
-  $log_to_cm_audit_entries = "No"
-
-  $$debug = $log_to_cm_audit_entries == "Yes"
-  $$log = []
-  $all_responses = []
-  $syslog_subject = "AWS Long Running Instances [Stop]: "
-
-  call sys_log(join([$syslog_subject, "Identified Instances"]), to_s($data))
-
+define stop_instances($data) do
   foreach $instance in $data do
-    call get_instance_state($instance) retrieve $state_response, $initial_state
-    $all_responses << $state_response
+    sub on_error: handle_error() do
+      call get_instance_state($instance) retrieve $initial_state
 
-    if $initial_state != "stopping" && $initial_state != "stopped" && $initial_state != "terminated"
-      call stop_instance($instance) retrieve $stop_response
-      $all_responses << $stop_response
+      if $initial_state != "terminated" && $initial_state != "pending"
+        if $initial_state != "stopped"
+          call stop_instance($instance)
+        end
+      end
     end
+  end
+
+  # If we encountered any errors, use `raise` to mark the CWF process as errored
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+# Core CWF function to terminate instances
+define terminate_instances($data) do
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call get_instance_state($instance) retrieve $initial_state
+
+      if $initial_state != "terminated" && $initial_state != "pending"
+        call terminate_instance($instance)
+      end
+    end
+  end
+
+  # If we encountered any errors, use `raise` to mark the CWF process as errored
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
   end
 end
 
 # CWF function to stop an instance
-define stop_instance($instance) return $status_code do
-  $syslog_subject = "AWS Stopping Instance: "
-
-  call sys_log(join([$syslog_subject, "Instance"]), to_s($instance["id"]))
-
+define stop_instance($instance) return $response do
+  task_label("Stopping Instance: " + $instance["id"])
   $response = http_request(
     auth: $$auth_aws,
     https: true,
     verb: "post",
     href: "/",
-    host: "ec2." + $instance["region"] + ".amazonaws.com",
+    host: "ec2." + $instance['region'] + ".amazonaws.com",
     query_strings: {
       "Action": "StopInstances",
       "Version": "2016-11-15",
       "InstanceId.1": $instance["id"]
     }
   )
+  call handle_response($response)
 
-  call sys_log(join([$syslog_subject, "Responses"]), to_s($response))
-end
-
-# Core CWF function to terminate instances
-define terminate_instances($data) return $all_responses do
-  # Change "No" to "Yes" to enable CWF debug logging
-  $log_to_cm_audit_entries = "No"
-
-  $$debug = $log_to_cm_audit_entries == "Yes"
-  $$log = []
-  $all_responses = []
-  $syslog_subject = "AWS Long Running Instances [Terminate]: "
-
-  call sys_log(join([$syslog_subject, "Identified Instances"]), to_s($data))
-
-  foreach $instance in $data do
-    call get_instance_state($instance) retrieve $state_response, $initial_state
-    $all_responses << $state_response
-
-    if $initial_state != "terminated" && $initial_state != "pending"
-      call terminate_instance($instance) retrieve $terminate_response
-      $all_responses << $terminate_response
+  task_label("Checking for expected response code for Stop Instance: " + $instance["id"])
+  if $response["code"] != 202 && $response["code"] != 200
+    raise 'Unexpected response Stop Instance: '+to_json($response)
+  else
+    task_label("Successful Stop Instance: " + $instance["id"])
+    call get_instance_state($instance) retrieve $instance_state
+    while $instance_state != "stopped" do
+      call get_instance_state($instance) retrieve $instance_state
+      task_label("Waiting for Stop.. Instance State: " + $instance["id"] +" "+ $instance_state)
+      sleep(10)
     end
+    task_label("Completed Stop Instance: " + $instance["id"])
   end
 end
 
 # CWF function to terminate an instance
 define terminate_instance($instance) return $response do
-  $syslog_subject = "AWS Terminating Instance: "
-
-  call sys_log(join([$syslog_subject, "Instance"]), to_s($instance["id"]))
-
+  task_label("Terminating Instance: " + $instance["id"])
   $response = http_request(
     auth: $$auth_aws,
     https: true,
@@ -889,16 +943,26 @@ define terminate_instance($instance) return $response do
       "InstanceId.1": $instance["id"]
     }
   )
+  call handle_response($response)
 
-  call sys_log(join([$syslog_subject, "Responses"]), to_s($response))
+  task_label("Checking for expected response code for Terminate Instance: " + $instance["id"])
+  if $response["code"] != 202 && $response["code"] != 200
+    raise 'Unexpected response Terminate Instance: '+to_json($response)
+  else
+    task_label("Successful Terminate Instance: " + $instance["id"])
+    call get_instance_state($instance) retrieve $instance_state
+    while $instance_state != "terminated" do
+      call get_instance_state($instance) retrieve $instance_state
+      task_label("Waiting for Terminate Instance: " + $instance["id"] +" "+ $instance_state)
+      sleep(10)
+    end
+    task_label("Completed Modify Instance: " + $instance["id"])
+  end
 end
 
 # CWF function to get the current state of an instance
-define get_instance_state($instance) return $response, $instance_state do
-  $syslog_subject = "AWS Describing Instance: "
-
-  call sys_log(join([$syslog_subject, "Instance"]), to_s($instance["id"]))
-
+define get_instance_state($instance) return $instance_state do
+  task_label("Getting Instance State: " + $instance["id"])
   $response = http_request(
     auth: $$auth_aws,
     https: true,
@@ -912,46 +976,28 @@ define get_instance_state($instance) return $response, $instance_state do
       "InstanceId.1": $instance["id"]
     }
   )
-
-  call sys_log(join([$syslog_subject, "Responses"]), to_s($response))
-
+  call handle_response($response)
   $instance_state = $response["body"]["DescribeInstanceStatusResponse"]["instanceStatusSet"]["item"]["instanceState"]["name"]
 end
 
-# CWF function to record information to the logs
-define sys_log($subject, $detail) do
-  # Create empty errors array if doesn't already exist
+# CWF function to handle errors
+define handle_error() do
   if !$$errors
     $$errors = []
   end
-  # Check if debug is enabled
-  if $$debug
-    # Append to global $$errors
-    # This is the suggested way to capture errors
-    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
-    # If Flexera NAM Zone, create audit_entries [to be deprecated]
-    # This is the legacy method for capturing errors and only supported on Flexera NAM
-    if $$rs_optima_host == "api.optima.flexeraeng.com"
-      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
-      $task_label = "Creating audit entry for " + $subject
-      sub task_label: $task, on_error: skip_error_and_append($task) do
-        rs_cm.audit_entries.create(
-          notify: "None",
-          audit_entry: {
-            auditee_href: @@account,
-            summary: $subject,
-            detail: $detail
-          }
-        )
-      end # End sub on_error
-    end # End if rs_optima_host
-  end # End if debug is enabled
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
 end
 
-# CWF function to handle errors
-define skip_error_and_append($subject) do
-  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
-  $_error_behavior = "skip"
+# CWF function to handle responses
+define handle_response($response) do
+  if !$$all_responses
+    $$all_responses = []
+  end
+  # Convert response object to JSON string.  Easier to interpret
+  $$all_responses << to_json($response)
 end
 
 ###############################################################################

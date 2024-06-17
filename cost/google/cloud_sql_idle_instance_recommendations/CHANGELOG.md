@@ -1,5 +1,17 @@
 # Changelog
 
+## v4.1
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
+## v4.0
+
+- Added support for regex when filtering resources by label
+
+## v3.1
+
+- Fixed issue where currency conversion would sometimes not work as expected.
+
 ## v3.0
 
 - Policy now requires a Flexera credential

@@ -2,22 +2,25 @@ name "AWS GP3 Upgradeable Volumes"
 rs_pt_ver 20180301
 type "policy"
 short_description "**Deprecated: This policy is no longer being updated. Please see [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/gp3_volume_upgrade/) for more details.**  Checks for upgradeable volumes and report them for modification. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/gp3_volume_upgrade) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
 category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "4.3",
+  version: "4.4.2",
   provider: "AWS",
   service: "EBS",
-  policy_set: "GP3 Volumes"
+  policy_set: "GP3 Volumes",
+  deprecated: "true"
 )
 
 ###############################################################################
-# User inputs
+# Parameters
 ###############################################################################
 
 parameter "param_allowed_regions_allow_or_deny" do
   type "string"
+  category "Policy Settings"
   label "Allow/Deny Regions"
   description "Allow or Deny entered regions. See the README for more details"
   allowed_values "Allow", "Deny"
@@ -26,15 +29,19 @@ end
 
 parameter "param_allowed_regions" do
   type "list"
+  category "Policy Settings"
   label "Regions"
-  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   description "A list of allowed or denied regions. See the README for more details"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  default []
 end
 
 parameter "param_email" do
   type "list"
+  category "Policy Settings"
   label "Email addresses"
   description "A list of email addresses to notify."
+  default []
 end
 
 parameter "param_aws_account_number" do
@@ -50,31 +57,26 @@ parameter "param_exclude_tags" do
   category "User Inputs"
   label "Exclude Tags"
   description "A list of tags used to excluded volumes from the incident."
+  default []
 end
 
 parameter "param_aws_edp_percentage" do
   type "number"
+  category "User Inputs"
   label "AWS EDP Percentage"
-  description "The AWS Enterprise Discount Program percentage, by default this is calculated from Flexera Optima costs"
-  default -1
+  description "The AWS Enterprise Discount Program percentage, by default this is calculated from Flexera Cloud Cost Optimization costs"
   min_value -1
   max_value 100
+  default -1
 end
 
-parameter "param_flexera_org_id_for_optima" do
+parameter "param_flexera_org_id" do
   type "string"
-  label "Flexera One Org ID for Optima"
-  description "The Flexera One org ID for Optima queries used to determine estimated costs, by default the current org is used"
-  default "current"
+  category "Policy Settings"
+  label "Flexera One Org ID"
+  description "The Flexera One org ID for queries used to determine estimated costs, by default the current org is used"
   allowed_pattern /^(current|[0-9]+)$/
-end
-
-parameter "param_log_to_cm_audit_entries" do
-  type "string"
-  label "Log to CM Audit Entries"
-  description "Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left set to No on Flexera EU"
-  default "No"
-  allowed_values "Yes", "No"
+  default "current"
 end
 
 ###############################################################################
@@ -120,7 +122,7 @@ pagination "pagination_aws_products" do
 end
 
 ###############################################################################
-# Datasource
+# Datasources & Scripts
 ###############################################################################
 
 # ds_region_list is a list of regions that are opted-in or opt-in-not-required
@@ -150,152 +152,11 @@ end
 
 # Get only SCP enabled regions
 datasource "ds_regions" do
-  run_script $js_regions, $param_allowed_regions, $ds_regions_list, $param_allowed_regions_allow_or_deny
+  run_script $js_regions, $ds_regions_list, $param_allowed_regions, $param_allowed_regions_allow_or_deny
 end
-
-# Get list of gp2, io1, and io2 Volumes.
-datasource "ds_superseded_volumes_list" do
-  iterate $ds_regions
-  request do
-    auth $auth_aws
-    pagination $pagination_aws_volumes_xml
-    host join(["ec2.",val(iter_item, "region"),".amazonaws.com"])
-    verb "GET"
-    path "/"
-    query "Action", "DescribeVolumes"
-    query "Version", "2016-11-15"
-    query "Filter.1.Name", "status"
-    query "Filter.1.Value.1", "available"
-    query "Filter.1.Value.2", "in-use"
-    query "Filter.2.Name", "volume-type"
-    query "Filter.2.Value.1", "gp2"
-    query "Filter.2.Value.2", "io1"
-    query "Filter.2.Value.3", "io2"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeVolumesResponse/volumeSet/item", "array") do
-      field "tags" do
-        collect xpath(col_item, "tagSet/item") do
-          field "tagKey", xpath(col_item, "key")
-          field "tagValue", xpath(col_item, "value")
-        end
-      end
-      field "volume_id", xpath(col_item, "volumeId")
-      field "availability_zone", xpath(col_item, "availabilityZone")
-      field "snapshot_id", xpath(col_item, "snapshotId")
-      field "volume_type", xpath(col_item, "volumeType")
-      field "region", val(iter_item, "region")
-      field "createdTime", xpath(col_item, "createTime")
-      field "size", xpath(col_item, "size")
-      field "iops", xpath(col_item, "iops")
-      field "status", xpath(col_item, "status")
-    end
-  end
-end
-
-datasource "ds_superseded_volumes" do
-  run_script $js_filter_aws_superseded_volumes, $ds_superseded_volumes_list, $param_exclude_tags
-end
-
-datasource "ds_volume_types" do
-  run_script $js_volume_types, $ds_superseded_volumes
-end
-
-datasource "ds_aws_products" do
-  iterate $ds_volume_types
-  request do
-    auth $auth_aws
-    pagination $pagination_aws_products
-    host "api.pricing.us-east-1.amazonaws.com"
-    verb "POST"
-    path "/"
-    header "Content-Type", "application/x-amz-json-1.1"
-    header "X-Amz-Target", "AWSPriceListService.GetProducts"
-    body_field "Filters", [{Field: "volumeApiName", Type: "TERM_MATCH", Value: iter_item}]
-    body_field "ServiceCode", "AmazonEC2"
-  end
-  result do
-    collect jq(response, '.PriceList[] | fromjson') do
-      field 'max_iops_volume', jq(col_item, '.product.attributes.maxIopsvolume')
-      field 'price_per_unit', jq(col_item, '.terms.OnDemand[].priceDimensions[].pricePerUnit.USD')
-      field 'region', jq(col_item, '.product.attributes.regionCode')
-      field 'usage_type', jq(col_item, '.product.attributes.usagetype')
-      field 'volume_type', iter_item
-    end
-  end
-end
-
-datasource "ds_flexera_optima" do
-  run_script $js_flexera_optima, $param_flexera_org_id_for_optima, rs_org_id
-end
-
-datasource "ds_billing_centers" do
-  request do
-    auth $auth_flexera
-    host rs_optima_host
-    path join(["/analytics/orgs/", val($ds_flexera_optima, "org_id"), "/billing_centers"])
-    header "Api-Version", "1.0"
-    header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
-    ignore_status [403]
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "[*]") do
-      field "href", jmes_path(col_item, "href")
-      field "id", jmes_path(col_item, "id")
-      field "name", jmes_path(col_item, "name")
-      field "parent_id", jmes_path(col_item, "parent_id")
-    end
-  end
-end
-
-datasource "ds_top_level_billing_centers" do
-  run_script $js_top_level_bc, $ds_billing_centers
-end
-
-datasource "ds_get_caller_identity" do
-  request do
-    auth $auth_aws
-    verb "GET"
-    host "sts.amazonaws.com"
-    path "/"
-    header "User-Agent", "RS Policies"
-    query "Action", "GetCallerIdentity"
-    query "Version", "2011-06-15"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
-      field "account", xpath(col_item, "Account")
-    end
-  end
-end
-
-datasource "ds_volume_costs" do
-  request do
-    run_script $js_get_costs, $ds_get_caller_identity, $ds_top_level_billing_centers, val($ds_flexera_optima, "org_id"), rs_optima_host
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "rows[*]") do
-      field "resource_id", jmes_path(col_item, "dimensions.resource_id")
-      field "cost_nonamortized_unblended_adj", jmes_path(col_item, "metrics.cost_nonamortized_unblended_adj")
-    end
-  end
-end
-
-datasource "ds_volume_cost_mapping" do
-  run_script $js_volume_cost_mapping, $ds_superseded_volumes, $param_aws_edp_percentage, $ds_aws_products, $ds_volume_costs, $ds_billing_centers, $ds_get_caller_identity
-end
-
-###############################################################################
-# Script
-###############################################################################
 
 script "js_regions", type: "javascript" do
-  parameters "user_entered_regions", "all_regions", "regions_allow_or_deny"
+  parameters "all_regions", "user_entered_regions", "regions_allow_or_deny"
   result "regions"
   code <<-EOS
     if(_.isEmpty(user_entered_regions)){
@@ -332,7 +193,52 @@ script "js_regions", type: "javascript" do
   EOS
 end
 
-script "js_filter_aws_superseded_volumes", type: "javascript" do
+# Get list of gp2, io1, and io2 Volumes.
+datasource "ds_superseded_volumes_list" do
+  iterate $ds_regions
+  request do
+    auth $auth_aws
+    pagination $pagination_aws_volumes_xml
+    verb "GET"
+    host join(["ec2.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/"
+    query "Action", "DescribeVolumes"
+    query "Version", "2016-11-15"
+    query "Filter.1.Name", "status"
+    query "Filter.1.Value.1", "available"
+    query "Filter.1.Value.2", "in-use"
+    query "Filter.2.Name", "volume-type"
+    query "Filter.2.Value.1", "gp2"
+    query "Filter.2.Value.2", "io1"
+    query "Filter.2.Value.3", "io2"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeVolumesResponse/volumeSet/item", "array") do
+      field "tags" do
+        collect xpath(col_item, "tagSet/item") do
+          field "tagKey", xpath(col_item, "key")
+          field "tagValue", xpath(col_item, "value")
+        end
+      end
+      field "volume_id", xpath(col_item, "volumeId")
+      field "availability_zone", xpath(col_item, "availabilityZone")
+      field "snapshot_id", xpath(col_item, "snapshotId")
+      field "volume_type", xpath(col_item, "volumeType")
+      field "region", val(iter_item, "region")
+      field "createdTime", xpath(col_item, "createTime")
+      field "size", xpath(col_item, "size")
+      field "iops", xpath(col_item, "iops")
+      field "status", xpath(col_item, "status")
+    end
+  end
+end
+
+datasource "ds_superseded_volumes" do
+  run_script $js_superseded_volumes, $ds_superseded_volumes_list, $param_exclude_tags
+end
+
+script "js_superseded_volumes", type: "javascript" do
   parameters "ds_superseded_volumes_list", "param_exclude_tags"
   result "content"
   code <<-EOS
@@ -352,9 +258,9 @@ script "js_filter_aws_superseded_volumes", type: "javascript" do
 
       // Constructing tags with comma separated to display in detail_template
       if((tag['tagValue']).length > 0){
-        tagKeyValue = tagKeyValue+" , "+tag['tagKey']+'='+tag['tagValue'];
+        tagKeyValue = tagKeyValue+", "+tag['tagKey']+'='+tag['tagValue'];
       }else{
-        tagKeyValue = tagKeyValue+" , "+tag['tagKey'];
+        tagKeyValue = tagKeyValue+", "+tag['tagKey'];
       }
     });
     if(tagKeyValue === "" || tagKeyValue === " " || tagKeyValue == ""){
@@ -371,6 +277,10 @@ script "js_filter_aws_superseded_volumes", type: "javascript" do
   EOS
 end
 
+datasource "ds_volume_types" do
+  run_script $js_volume_types, $ds_superseded_volumes
+end
+
 script "js_volume_types", type: "javascript", type: "javascript" do
   parameters "volumes"
   result "types"
@@ -383,7 +293,35 @@ script "js_volume_types", type: "javascript", type: "javascript" do
   EOS
 end
 
-script "js_flexera_optima", type: "javascript" do
+datasource "ds_aws_products" do
+  iterate $ds_volume_types
+  request do
+    auth $auth_aws
+    pagination $pagination_aws_products
+    verb "POST"
+    host "api.pricing.us-east-1.amazonaws.com"
+    path "/"
+    header "Content-Type", "application/x-amz-json-1.1"
+    header "X-Amz-Target", "AWSPriceListService.GetProducts"
+    body_field "Filters", [{Field: "volumeApiName", Type: "TERM_MATCH", Value: iter_item}]
+    body_field "ServiceCode", "AmazonEC2"
+  end
+  result do
+    collect jq(response, '.PriceList[] | fromjson') do
+      field 'max_iops_volume', jq(col_item, '.product.attributes.maxIopsvolume')
+      field 'price_per_unit', jq(col_item, '.terms.OnDemand[].priceDimensions[].pricePerUnit.USD')
+      field 'region', jq(col_item, '.product.attributes.regionCode')
+      field 'usage_type', jq(col_item, '.product.attributes.usagetype')
+      field 'volume_type', iter_item
+    end
+  end
+end
+
+datasource "ds_flexera_org_id" do
+  run_script $js_flexera_org_id, $param_flexera_org_id, rs_org_id
+end
+
+script "js_flexera_org_id", type: "javascript" do
   parameters "flexera_org_id_for_optima", "current_flexera_org_id"
   result "flexera_optima"
   code <<-EOS
@@ -393,7 +331,32 @@ script "js_flexera_optima", type: "javascript" do
   EOS
 end
 
-script "js_top_level_bc", type: "javascript" do
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", val($ds_flexera_org_id, "org_id"), "/billing_centers"])
+    query "view", "allocation_table"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+datasource "ds_top_level_billing_centers" do
+  run_script $js_top_level_billing_centers, $ds_billing_centers
+end
+
+script "js_top_level_billing_centers", type: "javascript" do
   parameters "billing_centers"
   result "filtered_billing_centers"
   code <<-EOS
@@ -402,8 +365,39 @@ script "js_top_level_bc", type: "javascript" do
   EOS
 end
 
-script "js_get_costs", type: "javascript" do
-  parameters "account_id", "billing_centers", "org", "optima_host"
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account", xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_volume_costs" do
+  request do
+    run_script $js_volume_costs, val($ds_flexera_org_id, "org_id"), $ds_get_caller_identity, $ds_top_level_billing_centers, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "resource_id", jmes_path(col_item, "dimensions.resource_id")
+      field "cost_nonamortized_unblended_adj", jmes_path(col_item, "metrics.cost_nonamortized_unblended_adj")
+    end
+  end
+end
+
+script "js_volume_costs", type: "javascript" do
+  parameters  "org", "account_id", "billing_centers", "optima_host"
   result "request"
   code <<-EOS
     // returns date formatted as string: YYYY-mm-dd
@@ -462,8 +456,12 @@ script "js_get_costs", type: "javascript" do
   EOS
 end
 
+datasource "ds_volume_cost_mapping" do
+  run_script $js_volume_cost_mapping, $ds_superseded_volumes, $ds_aws_products, $ds_volume_costs, $ds_billing_centers, $ds_get_caller_identity, $param_aws_edp_percentage
+end
+
 script "js_volume_cost_mapping", type:"javascript" do
-  parameters "volumes", "aws_edp_percentage", "aws_products", "volume_costs", "ds_billing_centers", "ds_get_caller_identity"
+  parameters "volumes", "aws_products", "volume_costs", "ds_billing_centers", "ds_get_caller_identity", "aws_edp_percentage"
   result "result"
   code <<-EOS
   // map the prices by region and type for easy lookup
@@ -523,7 +521,7 @@ script "js_volume_cost_mapping", type:"javascript" do
     }
     return result+"."+values[1];
   }
-  // calculate the discount ratio from Optima costs unless a positive AWS EDP percentage has been specified
+  // calculate the discount ratio from Flexera CCO costs unless a positive AWS EDP percentage has been specified
   var discount_ratio, discount_percentage_string;
   if (aws_edp_percentage < 0) {
     if(ds_billing_centers.length!=0){
@@ -549,18 +547,18 @@ script "js_volume_cost_mapping", type:"javascript" do
       if (discount_ratios.length > 0) {
         discount_ratio = _.reduce(discount_ratios, function(memo, ratio) { return memo + ratio; }) / discount_ratios.length;
         discount_percentage = aws_edp_percentage = 100 - discount_ratio * 100;
-        discount_percentage_string = discount_percentage.toFixed(1).replace(/\\.0$/, '') + "% calculated from Flexera Optima costs";
+        discount_percentage_string = discount_percentage.toFixed(1).replace(/\\.0$/, '') + "% calculated from Flexera costs";
         discount_calculated = true;
       } else {
         discount_ratio = 1;
         discount_percentage = 0;
-        discount_percentage_string = "0% since the Flexera Optima system does not have any data to calculate from";
+        discount_percentage_string = "0% since Flexera does not have any data to calculate from";
         discount_calculated = false;
       }
     } else {
       discount_ratio = 1;
       discount_percentage = 0;
-      discount_percentage_string = "0% since you do not have the minimum required role of billing_center_viewer to calculate from Flexera Optima costs";
+      discount_percentage_string = "0% since you do not have the minimum required role of billing_center_viewer to calculate from Flexera costs";
       discount_calculated = false;
     }
   } else {
@@ -579,9 +577,9 @@ script "js_volume_cost_mapping", type:"javascript" do
       tag = tags[k];
       // Constructing tags with comma separated to display in detail_template
       if((tag['tagValue']).length > 0){
-        tagKeyValue = tagKeyValue+" , "+tag['tagKey']+'='+tag['tagValue'];
+        tagKeyValue = tagKeyValue+", "+tag['tagKey']+'='+tag['tagValue'];
       }else{
-        tagKeyValue = tagKeyValue+" , "+tag['tagKey'];
+        tagKeyValue = tagKeyValue+", "+tag['tagKey'];
       }
     }
     if(tagKeyValue === "" || tagKeyValue === " " || tagKeyValue == ""){
@@ -627,7 +625,7 @@ script "js_volume_cost_mapping", type:"javascript" do
     "message": message,
     "accountId": ds_get_caller_identity[0]['account']
   }
-  result.upgradeable_volumes=_.sortBy(result.upgradeable_volumes,'region')
+  result.upgradeable_volumes=_.sortBy(result.upgradeable_volumes, 'region')
   EOS
 end
 
@@ -635,14 +633,14 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_superseded_volumes" do
+policy "pol_superseded_volumes" do
   validate $ds_volume_cost_mapping do
     summary_template "AWS Account ID: {{ data.accountId }} - {{ len data.upgradeable_volumes }} Upgradeable Volumes Found"
     detail_template <<-EOS
 {{data.message}}
 EOS
-    escalate $report_volumes
     check logic_or($ds_parent_policy_terminated, eq(size(val(data, "upgradeable_volumes")), 0))
+    escalate $esc_email
     export "upgradeable_volumes" do
       resource_level true
       field "savings" do
@@ -690,7 +688,7 @@ end
 # Escalations
 ###############################################################################
 
-escalation "report_volumes" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
@@ -709,7 +707,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
     header "Api-Version", "1.0"
   end
   result do
@@ -717,7 +715,6 @@ datasource "ds_get_policy" do
     field "id", jmes_path(response, "id")
   end
 end
-
 
 datasource "ds_parent_policy_terminated" do
   run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id

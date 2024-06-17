@@ -2,11 +2,7 @@
 
 ## What It Does
 
-This policy checks for running instances that have been running longer than the `Minimum Age (Days)` parameter. It will then take the appropriate action (Stop/Terminate) on the instance.
-
-## Functional Description
-
-- This policy identifies all instances that have been running longer than the `Minimum Age (Days)` parameter.
+This policy checks for running instances that have been running longer than the `Minimum Age (Days)` parameter. It will then take the appropriate action (Power Off/Delete) on the instance.
 
 ## Input Parameters
 
@@ -20,21 +16,23 @@ the policy can be applied.
 - *Allow/Deny Subscriptions List* - A list of allowed or denied Subscription IDs/names. If empty, no filtering will occur and recommendations will be produced for all subscriptions.
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
 - *Allow/Deny Regions List* - Filter results by region, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all the regions.
-- *Exclusion Tags (Key:Value)* - Cloud native tags to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:\* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:\*
+- *Exclusion Tags* - The policy will filter resources containing the specified tags from the results. The following formats are supported:
+  - `Key` - Filter all resources with the specified tag key.
+  - `Key==Value` - Filter all resources with the specified tag key:value pair.
+  - `Key!=Value` - Filter all resources missing the specified tag key:value pair. This will also filter all resources missing the specified tag key.
+  - `Key=~/Regex/` - Filter all resources where the value for the specified key matches the specified regex string.
+  - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified tag key.
+- *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
 - *Automatic Actions* - The policy will automatically take the selected action.
+- *Power Off Type* - Whether to perform a graceful shutdown or a forced shutdown when powering off idle instances. Only applicable when taking action against instances.
 
-Please note that the "Automatic Actions" parameter contains a list of actions that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave this parameter set to "No Automatic Actions" for *manual* action.
-For example if a user selects the "Terminate Instances" action while applying the policy, all the resources that didn't satisfy the policy condition will be terminated.
+Please note that the "Automatic Actions" parameter contains a list of actions that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave this parameter set to "No Automatic Actions" for *manual* action. For example if a user selects the "Delete Instances" action while applying the policy, all the resources that didn't satisfy the policy condition will be deleted.
 
 ## Policy Actions
 
-Policy actions may include automation to alert or remediate violations found in the
-Policy Incident. Actions that destroy or terminate a resource generally require
-approval from the Policy Approver. This policy includes the following actions.
-
 - Sends an email notification
-- Stop virtual machines after approval
-- Terminate virtual machines after approval
+- Power off virtual machines after approval
+- Delete virtual machines after approval
 
 ## Prerequisites
 
@@ -53,10 +51,12 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
   - `Microsoft.Compute/virtualMachines/read`
   - `Microsoft.Compute/virtualMachines/write`*
 
-\* Only required for taking action (stopping or terminating instances); the policy will still function in a read-only capacity without these permissions.
+\* Only required for taking action (powering off or deleting); the policy will still function in a read-only capacity without these permissions.
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
+
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ## Supported Clouds
 

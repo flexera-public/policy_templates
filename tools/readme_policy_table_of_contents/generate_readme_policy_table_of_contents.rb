@@ -1,6 +1,6 @@
 require 'uri'
 require 'yaml'
-require_relative '../lib/policy_parser'
+require_relative '../../.dangerfile/policy_parser'
 
 
 pp = PolicyParser.new
@@ -167,4 +167,3 @@ puts pt_stats.to_yaml
 puts "-->"
 puts "<!-- End Policy Template Stats -->"
 puts ""
-

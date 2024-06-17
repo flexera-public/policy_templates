@@ -6,7 +6,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "0.1.0",
+  version: "0.2.1",
   provider: "Azure",
   service: "Databricks",
   policy_set: "Databricks",
@@ -65,6 +65,13 @@ parameter "param_databricks_workspace_list" do
   default []
 end
 
+parameter "param_databricks_cluster_list" do
+  label "Databricks Cluster Allowed List"
+  type "list"
+  description "Allowed Databricks Clusters. Name or Cluster ID can be provided.  If empty, all clusters will be checked"
+  default []
+end
+
 parameter "param_azure_endpoint" do
   type "string"
   label "Azure Endpoint"
@@ -78,7 +85,7 @@ parameter "param_stats_check_both" do
   label "Idle/Utilized for both CPU/Memory or either"
   description "Set whether an instance should be considered idle and/or underutilized only if both CPU and memory are under the thresholds or if either CPU or memory are under. Note: this parameter is only valid when at least one Memory Utilization threshold and one CPU Utilization threshold is NOT set to -1"
   allowed_values "Both CPU and Memory", "Either CPU or Memory"
-  default "Either CPU or Memory"
+  default "Both CPU and Memory"
 end
 
 parameter "param_stats_threshold" do
@@ -86,8 +93,8 @@ parameter "param_stats_threshold" do
   category "Statistics"
   label "Threshold Statistic"
   description "Statistic to use when determining if an instance is idle/underutilized."
-  allowed_values "Average", "Maximum", "Minimum"
-  default "Average"
+  allowed_values "Minimum", "Average", "Maximum", "p90", "p95", "p99"
+  default "p90"
 end
 
 parameter "param_stats_interval" do
@@ -96,7 +103,7 @@ parameter "param_stats_interval" do
   label "Statistic Interval"
   description "Interval to use for the time span. The time granularity value should be smaller than the selected time range to be useful, otherwise just one value is returned for the lookback period.  For more details please reference Azure Docs: https://learn.microsoft.com/en-us/azure/azure-monitor/essentials/metrics-aggregation-explained"
   allowed_values "1 minute", "5 minutes", "15 minutes", "30 minutes", "1 hour", "6 hours", "12 hours", "1 day"
-  default "1 day"
+  default "15 minutes"
 end
 
 parameter "param_stats_lookback" do
@@ -264,6 +271,8 @@ datasource "ds_azure_subscriptions" do
     # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
     # Forces `ds_is_deleted` datasource to run first during policy execution
     header "Meta-Flexera", val($ds_is_deleted, "path")
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
@@ -284,7 +293,7 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
   code <<-EOS
   if (param_subscriptions_list.length > 0) {
     result = _.filter(ds_azure_subscriptions, function(subscription) {
-      include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
+      include_subscription = _.contains(param_subscriptions_list, subscription['subscriptionId']) || _.contains(param_subscriptions_list, subscription['subscriptionName'])
 
       if (param_subscriptions_allow_or_deny == "Deny") {
         include_subscription = !include_subscription
@@ -308,6 +317,7 @@ datasource "ds_databricks_workspaces" do
     path join(["/subscriptions/", val(iter_item, "subscriptionId"), "/providers", "/Microsoft.Databricks", "/workspaces"])
     query "api-version", "2023-02-01"
     header "User-Agent", "RS Policies"
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
@@ -474,6 +484,55 @@ datasource "ds_azure_skus" do
   end
 end
 
+datasource "ds_param_stats_threshold" do
+  run_script $js_param_stats_threshold, $param_stats_threshold
+end
+
+script "js_param_stats_threshold", type: "javascript" do
+  parameters "param_stats_threshold"
+  result "result"
+  code <<-EOS
+  switch(param_stats_threshold) {
+    case "Minimum":
+      result = {
+        "param_value" : param_stats_threshold,
+        "aggregation" : "minimum"
+      }
+      break;
+    case "Average":
+      result = {
+        "param_value" : param_stats_threshold,
+        "aggregation" : "average"
+      }
+      break;
+    case "Maximum":
+      result = {
+        "param_value" : param_stats_threshold,
+        "aggregation" : "maximum"
+      }
+      break;
+    case "p90":
+        result = {
+          "param_value" : param_stats_threshold,
+          "aggregation" : "p90"
+        }
+        break;
+    case "p95":
+      result = {
+        "param_value" : param_stats_threshold,
+        "aggregation" : "p95"
+      }
+      break;
+    case "p99":
+      result = {
+        "param_value" : param_stats_threshold,
+        "aggregation" : "p99"
+      }
+      break;
+  }
+EOS
+end
+
 datasource "ds_azure_sku_memory" do
   run_script $js_azure_sku_memory, $ds_azure_skus
 end
@@ -549,7 +608,7 @@ datasource "ds_databricks_clusters" do
     path "/api/2.0/clusters/list"
     # Ignore 400 gets returned when using an AzureRM credential for the databricks credential ["Expected aud claim to be: 2ff814a6-3304-4ab8-85cb-cd0e6f879c1d, but was: https://management.azure.com"]
     # Also ignore 401/403 if the Service Principal has the correct claim but just doesn't have access to the DB Workspace
-    ignore_status [400,401,403]
+    ignore_status [400, 401, 403, 404]
   end
   result do
     encoding "json"
@@ -560,66 +619,32 @@ datasource "ds_databricks_clusters" do
   end
 end
 
-# datasource "ds_databricks_sqlwarehouses" do
-#   iterate $ds_databricks_workspaces_filtered
-#   request do
-#     auth $auth_databricks
-#     host val(iter_item, "workspaceUrl")
-#     path "/api/2.0/sql/warehouses"
-#     ignore_status [404] # 404   {"error_code":"FEATURE_DISABLED","message":"DBSQL is not supported on workspace with Standard feature tier. Please contact Databricks support."}
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "warehouses[*]") do
-#       field "databricks_workspace", iter_item
-#       field "warehouse", col_item
-#     end
-#   end
-# end
-
-# datasource "ds_databricks_instancepools" do
-#   iterate $ds_databricks_workspaces_filtered
-#   request do
-#     auth $auth_databricks
-#     host val(iter_item, "workspaceUrl")
-#     path "/api/2.0/instance-pools/list"
-#   end
-# end
-
-# datasource "ds_databricks_clusters_events" do
-#   iterate $ds_databricks_workspaces_filtered
-#   request do
-#     auth $auth_databricks
-#     pagination $pagination_databricks_events
-#     host jq(iter_item, ".databricks_workspace.workspaceUrl")
-#     path "/api/2.0/clusters/events"
-#     verb "POST"
-#     body_field "cluster_id", jq(iter_item, ".cluster.cluster_id")
-#     body_field "event_types", ["DRIVER_HEALTHY"] # DRIVER_HEALTHY when a "driver" aka instance is started and checks-in as ready
-#     body_field "limit", 2
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "events[*]") do
-#       field "databricks_workspace", val(iter_item, "databricks_workspace")
-#       field "cluster", val(iter_item, "cluster")
-#       field "event", col_item
-#     end
-#   end
-# end
-
 datasource "ds_filtered_workspace_virtualmachines" do
-  run_script $js_filtered_workspace_virtualmachines, $ds_databricks_workspaces_filtered, $ds_azure_databricks_managed_vm_metrics, $param_stats_threshold, $param_stats_underutil_threshold_cpu_value, $ds_databricks_workspaces_vm_costs, $ds_lookback_time_formats, $ds_databricks_clusters, $ds_azure_sku_memory
+  run_script $js_filtered_workspace_virtualmachines, $ds_databricks_workspaces_filtered, $ds_azure_databricks_managed_vm_metrics, $ds_param_stats_threshold, $param_stats_underutil_threshold_cpu_value, $ds_databricks_workspaces_vm_costs, $ds_lookback_time_formats, $ds_databricks_clusters, $ds_azure_sku_memory
 end
 
 script "js_filtered_workspace_virtualmachines", type: "javascript" do
-  parameters "ds_databricks_workspaces", "ds_azure_databricks_managed_vm_metrics", "param_stats_threshold", "param_stats_underutil_threshold_cpu_value", "ds_databricks_workspaces_vm_costs", "ds_lookback_time_formats", "ds_databricks_clusters", "ds_azure_sku_memory"
+  parameters "ds_databricks_workspaces", "ds_azure_databricks_managed_vm_metrics", "ds_param_stats_threshold", "param_stats_underutil_threshold_cpu_value", "ds_databricks_workspaces_vm_costs", "ds_lookback_time_formats", "ds_databricks_clusters", "ds_azure_sku_memory"
   result "result"
   code <<-EOS
   var lastTick = 0; // Holds the timestamp last tick was called
   var tickCount = 0; // Holds the count tick was called
 
   var result = [];
+
+  function percentile(arr, p) {
+    // No need to do math if array is empty
+    if (arr.length === 0) return 0;
+    // array needs to be sorted to select based on percentile
+    arr.sort(function (a, b) {
+      return a - b;
+    });
+    // Get the index using desired percentile and array length
+    var index = (p / 100) * arr.length;
+    // Round index value to nearest integer and return the value of that element in sorted array arr
+    return arr[Math.ceil(index) - 1];
+  }
+
   // Loop through all the batched metrics results
   _.each(ds_azure_databricks_managed_vm_metrics, function(batch_result) {
     _.each(batch_result.values, function(vm_metrics) {
@@ -630,10 +655,6 @@ script "js_filtered_workspace_virtualmachines", type: "javascript" do
         // If the vm resource id contains the databricks workspace managed resource group (prefix of resource id), then return result
         return vm_resourceId.toLowerCase().lastIndexOf(dbws.managedResourceGroupId.toLowerCase()) == 0
       })
-      // Include the subscriptionId and resourceGroup in the databricks_workspace object
-      // This is needed in the result to allocate recommendations to billing centers
-      // databricks_workspace["subscriptionId"] = databricks_workspace["subscriptionId"]
-      // databricks_workspace["subscriptionName"] = databricks_workspace["subscriptionName"]
       databricks_workspace["resourceGroup"] = databricks_workspace["resourceId"].split("/")[4]
       // Setup placeholder result and calculation values for this resource
       var r = {
@@ -642,11 +663,27 @@ script "js_filtered_workspace_virtualmachines", type: "javascript" do
         "metricsForPeriod": {
           "timespan": ds_lookback_time_formats["azure_timespan"],
           "memory_minimum": null,
+          "memory_minimum_p95": null,
+          "memory_minimum_p99": null,
           "memory_average": null,
+          "memory_average_p95": null,
+          "memory_average_p99": null,
           "memory_maximum": null,
+          "memory_maximum_p95": null,
+          "memory_maximum_p99": null,
+          "memory_p95": null,
+          "memory_p99": null,
           "cpu_minimum": null,
+          "cpu_minimum_p95": null,
+          "cpu_minimum_p99": null,
           "cpu_average": null,
-          "cpu_maximum": null
+          "cpu_average_p95": null,
+          "cpu_average_p99": null,
+          "cpu_maximum": null,
+          "cpu_maximum_p95": null,
+          "cpu_maximum_p99": null,
+          "cpu_p95": null,
+          "cpu_p99": null
         }
       }
       // Loop through the timeseries for this resource
@@ -666,9 +703,14 @@ script "js_filtered_workspace_virtualmachines", type: "javascript" do
         _.each(metricNames.timeseries, function(resourceMetrics, index) {
           // Pluck metric values for timespans
           var stats_data_names = ["minimum","average","maximum"] // convenient place to declare the stats we want to loop through
+          var all_measurements = []
           _.each(stats_data_names, function(stat) {
             var measurements = _.compact(_.pluck(resourceMetrics.data,stat))
+            // Append measurements for this stat to all_measurements
+            // We use all measurements (min, avg, max) to calculate percentile
+            all_measurements = all_measurements.concat(measurements)
             if (measurements.length > 0) {
+              r["metricsForPeriod"][metricName+"_"+stat+"_measurements"] = measurements
               switch(stat) {
                 case "minimum":
                   r["metricsForPeriod"][metricName+"_minimum"] = _.min(measurements)
@@ -682,6 +724,10 @@ script "js_filtered_workspace_virtualmachines", type: "javascript" do
               }
             }
           })
+          r["metricsForPeriod"][metricName+"_p90"] = percentile(all_measurements, 90)
+          r["metricsForPeriod"][metricName+"_p95"] = percentile(all_measurements, 95)
+          r["metricsForPeriod"][metricName+"_p99"] = percentile(all_measurements, 99)
+          r["metricsForPeriod"][metricName+"_measurement_count"] = all_measurements.length
         })
       })
       // Add the result to the result array
@@ -753,6 +799,15 @@ script "js_filtered_workspace_virtualmachines_with_costs", type: "javascript" do
       if (typeof r["metricsForPeriod"]["memory_maximum"] == "number" && r["metricsForPeriod"]["memory_maximum"] > 0) {
         r["metricsForPeriod"]["memory_maximum_percent"] = (r["metricsForPeriod"]["memory_maximum"] / r["metricsForPeriod"]["memory_total"]) * 100
       }
+      if (typeof r["metricsForPeriod"]["memory_p90"] == "number" && r["metricsForPeriod"]["memory_p90"] > 0) {
+        r["metricsForPeriod"]["memory_p90_percent"] = (r["metricsForPeriod"]["memory_p90"] / r["metricsForPeriod"]["memory_total"]) * 100
+      }
+      if (typeof r["metricsForPeriod"]["memory_p95"] == "number" && r["metricsForPeriod"]["memory_p95"] > 0) {
+        r["metricsForPeriod"]["memory_p95_percent"] = (r["metricsForPeriod"]["memory_p95"] / r["metricsForPeriod"]["memory_total"]) * 100
+      }
+      if (typeof r["metricsForPeriod"]["memory_p99"] == "number" && r["metricsForPeriod"]["memory_p99"] > 0) {
+        r["metricsForPeriod"]["memory_p99_percent"] = (r["metricsForPeriod"]["memory_p99"] / r["metricsForPeriod"]["memory_total"]) * 100
+      }
     }
     if (typeof r["databricks_cluster_id"] === "string") {
       // Attempt to find additional cluster metadata in ds_databricks_clusters
@@ -786,11 +841,13 @@ end
 datasource "ds_databricks_workspaces_vm_costs" do
   iterate $ds_databricks_workspaces_filtered
   request do
-    run_script $js_databricks_workspaces_vm_costs, iter_item, $ds_top_level_bcs, rs_org_id, rs_optima_host, $ds_lookback_time_formats
+    run_script $js_databricks_workspaces_vm_costs, iter_item, $ds_top_level_bcs, rs_org_id, rs_optima_host, $ds_lookback_time_formats, $param_databricks_cluster_list
   end
   result do
     encoding "json"
     collect jmes_path(response, "rows[*]") do
+      field "subscriptionId", jmes_path(iter_item, "subscriptionId")
+      field "subscriptionName", jmes_path(iter_item, "subscriptionName")
       field "resourceId", jmes_path(col_item, "dimensions.resource_id")
       field "cluster_id", jmes_path(col_item, "dimensions.tag_azure_databricks_clusterid")
       field "usage_unit", jmes_path(col_item, "dimensions.usage_unit")
@@ -805,7 +862,7 @@ datasource "ds_databricks_workspaces_vm_costs" do
 end
 
 script "js_databricks_workspaces_vm_costs", type: "javascript" do
-  parameters "iter_item", "ds_top_level_bcs", "rs_org_id", "rs_optima_host", "ds_lookback_time_formats"
+  parameters "iter_item", "ds_top_level_bcs", "rs_org_id", "rs_optima_host", "ds_lookback_time_formats", "param_databricks_cluster_list"
   result "request"
   code <<-EOS
   subscription_id = iter_item["managedResourceGroupId"].split("/")[2]
@@ -877,6 +934,22 @@ script "js_databricks_workspaces_vm_costs", type: "javascript" do
       'Api-Version': "1.0"
     }
   }
+  // Filter the Resulting VMs to only VMs in the clusters defined in the policy param
+  if (param_databricks_cluster_list.length > 0) {
+    cluster_filter = {
+      "type": "or",
+      "expressions": [
+      ]
+    }
+    _.each(param_databricks_cluster_list, function(cluster) {
+      cluster_filter["expressions"].push({
+        "dimension": "tag_azure_databricks_clusterid",
+        "type": "equal",
+        "value": cluster
+      })
+    })
+    request.body_fields.filter.expressions.push(cluster_filter)
+  }
 EOS
 end
 
@@ -938,11 +1011,11 @@ script "js_virtualmachines_from_bill", type: "javascript" do
 end
 
 datasource "ds_idle_and_underutil_instances" do
-  run_script $js_idle_and_underutil_instances, $param_stats_check_both, $param_stats_threshold, $param_stats_idle_threshold_cpu_value, $param_stats_underutil_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_mem_value, $ds_filtered_workspace_virtualmachines_with_costs, $ds_azure_instance_size_map, $ds_applied_policy
+  run_script $js_idle_and_underutil_instances, $param_stats_check_both, $ds_param_stats_threshold, $param_stats_idle_threshold_cpu_value, $param_stats_underutil_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_mem_value, $ds_filtered_workspace_virtualmachines_with_costs, $ds_azure_instance_size_map, $ds_applied_policy
 end
 
 script "js_idle_and_underutil_instances", type: "javascript" do
-  parameters "param_stats_check_both", "param_stats_threshold", "param_stats_idle_threshold_cpu_value", "param_stats_underutil_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_mem_value", "ds_filtered_workspace_virtualmachines_with_costs", "ds_azure_instance_size_map", "ds_applied_policy"
+  parameters "param_stats_check_both", "ds_param_stats_threshold", "param_stats_idle_threshold_cpu_value", "param_stats_underutil_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_mem_value", "ds_filtered_workspace_virtualmachines_with_costs", "ds_azure_instance_size_map", "ds_applied_policy"
   result "result"
   code <<-EOS
   underutil_total_savings = 0.0
@@ -957,11 +1030,11 @@ script "js_idle_and_underutil_instances", type: "javascript" do
     // Set the Applied Policy Name which is used in the summary_template/detail_template output
     vm["policy_name"] = applied_policy_name
     // Get the utilization metrics that we are going to use for comparison
-    cpu_value = vm.metricsForPeriod["cpu_"+param_stats_threshold.toLowerCase()]
-    mem_value = vm.metricsForPeriod["memory_"+param_stats_threshold.toLowerCase()+"_percent"]
+    cpu_value = vm.metricsForPeriod["cpu_"+ds_param_stats_threshold["aggregation"]]
+    mem_value = vm.metricsForPeriod["memory_"+ds_param_stats_threshold["aggregation"]+"_percent"]
 
     // Set thresholdType for output
-    vm["thresholdType"] = param_stats_threshold
+    vm["thresholdType"] = ds_param_stats_threshold["param_value"]
     vm["thresholdResourceTypes"] = param_stats_check_both
 
     // Test for whether to consider the instance idle or underutilized.
@@ -1004,10 +1077,10 @@ script "js_idle_and_underutil_instances", type: "javascript" do
       if (is_idle) { // First check to see if the resource is below the lower "idle" thresholds
         vm["recommendationType"] = "Delete"
         vm["recommendationDetails"] = [
-          "Delete Databricks Cluster "+vm["databricks_cluster_id"]+" which created Azure virtual machine ", vm["resourceId"], " ",
-          "in Azure Subscription ", vm["subscriptionName"], " ",
-          "(", vm["subscriptionId"], ")"
-        ].join("")
+          "Delete Databricks Cluster",vm["databricks_cluster_id"],
+          "which created Azure virtual machine", vm["resourceId"],
+          "in Azure Subscription", vm["databricks_workspace"]["subscriptionName"],"(", vm["databricks_workspace"]["subscriptionId"], ")"
+        ].join(" ")
         if (typeof vm["monthly_cost_estimate"] == "number") {
           vm["savings"] = vm["monthly_cost_estimate"] // Potential Savings from delete is the estimated monthly cost of the resource
         }
@@ -1021,12 +1094,11 @@ script "js_idle_and_underutil_instances", type: "javascript" do
         }
         vm["recommendationType"] = "Downsize"
         vm["recommendationDetails"] = [
-          "Resize Databricks Cluster "+vm["databricks_cluster_id"]+" which created Azure virtual machine ", vm["resourceId"], " ",
-          "in Azure Subscription ", vm["subscriptionName"], " ",
-          "(", vm["subscriptionId"], ") ",
-          "from ", vm["resourceType"], " ",
-          "to ", vm["newResourceType"]
-        ].join("")
+          "Resize Databricks Cluster",vm["databricks_cluster_id"],
+          "which created Azure virtual machine", vm["resourceId"],
+          "in Azure Subscription", vm["databricks_workspace"]["subscriptionName"],"(", vm["databricks_workspace"]["subscriptionId"], ")",
+          "from", vm["resourceType"],"to", vm["newResourceType"]
+        ].join(" ")
         if (typeof vm["monthly_cost_estimate"] == "number") {
           vm["savings"] = vm["monthly_cost_estimate"] / 2 // Potential Savings from downsize is generally half the estimated monthly cost of current resource type
         }
@@ -1087,7 +1159,7 @@ policy "pol_databricks_optimizations" do
 
 {{ rs_project_name }} (Account ID: {{ rs_project_id }}): Databricks Workspaces with compute resources that are Idle
 
-Found {{ len data }} Databricks compute resources that were *idle* during the last {{ parameters.param_stats_lookback }} days.  *Idle* compute resources are those which have **less than {{ parameters.param_stats_idle_threshold_cpu_value }}% {{ parameters.param_stats_threshold }} CPU utilization** within the last {{ parameters.param_stats_lookback }} days.
+Found {{ len data }} Databricks compute resources that were *idle* during the last {{ parameters.param_stats_lookback }} days.  *Idle* compute resources are those which have **{{ parameters.param_stats_check_both }} less than {{ parameters.param_stats_idle_threshold_cpu_value }}% {{ parameters.param_stats_threshold }} {{ parameters.param_stats_check_both }} utilization** within the last {{ parameters.param_stats_lookback }} days.
     EOS
     check logic_or($ds_parent_policy_terminated,    eq(0,size(data))    )
     export do
@@ -1101,6 +1173,10 @@ Found {{ len data }} Databricks compute resources that were *idle* during the la
       field "subscriptionId" do
         label "Subscription ID"
         path "databricks_workspace.subscriptionId"
+      end
+      field "subscriptionName" do
+        label "Subscription Name"
+        path "databricks_workspace.subscriptionName"
       end
       field "resourceGroup" do
         label "Azure Resource Group Name"
@@ -1153,31 +1229,78 @@ Found {{ len data }} Databricks compute resources that were *idle* during the la
         path "total_cost"
       end
       field "cpuMinimum" do
-        label "CPU Minimum %"
+        label "CPU Used % (Minimum)"
         path "metricsForPeriod.cpu_minimum"
       end
       field "cpuAverage" do
-        label "CPU Average %"
+        label "CPU Used % (Average)"
         path "metricsForPeriod.cpu_average"
       end
       field "cpuMaximum" do
-        label "CPU Maximum %"
+        label "CPU Used % (Maximum)"
         path "metricsForPeriod.cpu_maximum"
       end
+      field "cpuP90" do
+        label "CPU Used % (p90)"
+        path "metricsForPeriod.cpu_p90"
+      end
+      field "cpuP95" do
+        label "CPU Used % (p95)"
+        path "metricsForPeriod.cpu_p95"
+      end
+      field "cpuP99" do
+        label "CPU Used % (p99)"
+        path "metricsForPeriod.cpu_p99"
+      end
+      # field "cpuMeasurements" do
+      #   label "CPU Measurements during Time Period"
+      #   path "metricsForPeriod.cpu_measurements"
+      # end
+      field "cpuMeasurementCount" do
+        label "CPU Measurements Count during Time Period"
+        path "metricsForPeriod.cpu_measurement_count"
+      end
       field "memMinimum" do
-        label "Memory Minimum %"
+        label "Memory Used % (Minimum)"
         path "metricsForPeriod.memory_minimum_percent"
       end
       field "memAverage" do
-        label "Memory Average %"
+        label "Memory Used % (Average)"
         path "metricsForPeriod.memory_average_percent"
       end
       field "memMaximum" do
-        label "Memory Maximum %"
+        label "Memory Used % (Maximum)"
         path "metricsForPeriod.memory_maximum_percent"
+      end
+      field "memP90" do
+        label "Memory Used % (p90)"
+        path "metricsForPeriod.memory_p90_percent"
+      end
+      field "memP95" do
+        label "Memory Used % (p95)"
+        path "metricsForPeriod.memory_p95_percent"
+      end
+      field "memP99" do
+        label "Memory Used % (p99)"
+        path "metricsForPeriod.memory_p99_percent"
+      end
+      # field "memMeasurements" do
+      #   label "Memory Used Bytes Measurements during Time Period"
+      #   path "metricsForPeriod.memory_measurements"
+      # end
+      field "memMeasurementCount" do
+        label "Memory Measurement Count during Time Period"
+        path "metricsForPeriod.memory_measurement_count"
+      end
+      field "memTotalBytes" do
+        label "Memory Total Bytes Available"
+        path "metricsForPeriod.memory_total"
       end
       field "thresholdType" do
         label "Threshold Statistic"
+      end
+      field "thresholdResourceTypes" do
+        label "Threshold Resource Type"
       end
       field "cpuThreshold" do
         label "CPU Threshold"
@@ -1197,7 +1320,7 @@ Found {{ len data }} Databricks compute resources that were *idle* during the la
 
 {{ rs_project_name }} (Account ID: {{ rs_project_id }}): Databricks Workspaces with compute resources that are underutilized
 
-Found {{ len data }} Databricks compute resources that were *underutilized* during the last {{ parameters.param_stats_lookback }} days.  *Underutilized* compute resources are those which have **less than {{ parameters.param_stats_underutil_threshold_cpu_value }}% {{ parameters.param_stats_threshold }} CPU utilization** within the last {{ parameters.param_stats_lookback }} days.
+Found {{ len data }} Databricks compute resources that were *underutilized* during the last {{ parameters.param_stats_lookback }} days.  *Underutilized* compute resources are those which have **{{ parameters.param_stats_check_both }} less than {{ parameters.param_stats_underutil_threshold_cpu_value }}% {{ parameters.param_stats_threshold }} utilization** within the last {{ parameters.param_stats_lookback }} days.
     EOS
     check logic_or($ds_parent_policy_terminated,    eq(0,size(data))    )
     export do
@@ -1211,6 +1334,10 @@ Found {{ len data }} Databricks compute resources that were *underutilized* duri
       field "subscriptionId" do
         label "Subscription ID"
         path "databricks_workspace.subscriptionId"
+      end
+      field "subscriptionName" do
+        label "Subscription Name"
+        path "databricks_workspace.subscriptionName"
       end
       field "resourceGroup" do
         label "Azure Resource Group Name"
@@ -1263,28 +1390,72 @@ Found {{ len data }} Databricks compute resources that were *underutilized* duri
         path "total_cost"
       end
       field "cpuMinimum" do
-        label "CPU Minimum %"
+        label "CPU Used % (Minimum)"
         path "metricsForPeriod.cpu_minimum"
       end
       field "cpuAverage" do
-        label "CPU Average %"
+        label "CPU Used % (Average)"
         path "metricsForPeriod.cpu_average"
       end
       field "cpuMaximum" do
-        label "CPU Maximum %"
+        label "CPU Used % (Maximum)"
         path "metricsForPeriod.cpu_maximum"
       end
+      field "cpuP90" do
+        label "CPU Used % (p90)"
+        path "metricsForPeriod.cpu_p90"
+      end
+      field "cpuP95" do
+        label "CPU Used % (p95)"
+        path "metricsForPeriod.cpu_p95"
+      end
+      field "cpuP99" do
+        label "CPU Used % (p99)"
+        path "metricsForPeriod.cpu_p99"
+      end
+      # field "cpuMeasurements" do
+      #   label "CPU Measurements during Time Period"
+      #   path "metricsForPeriod.cpu_measurements"
+      # end
+      field "cpuMeasurementCount" do
+        label "CPU Measurements Count during Time Period"
+        path "metricsForPeriod.cpu_measurement_count"
+      end
       field "memMinimum" do
-        label "Memory Minimum %"
+        label "Memory Used % (Minimum)"
         path "metricsForPeriod.memory_minimum_percent"
       end
       field "memAverage" do
-        label "Memory Average %"
+        label "Memory Used % (Average)"
         path "metricsForPeriod.memory_average_percent"
       end
       field "memMaximum" do
-        label "Memory Maximum %"
+        label "Memory Used % (Maximum)"
         path "metricsForPeriod.memory_maximum_percent"
+      end
+      field "memP90" do
+        label "Memory Used % (p90)"
+        path "metricsForPeriod.memory_p90_percent"
+      end
+      field "memP95" do
+        label "Memory Used % (p95)"
+        path "metricsForPeriod.memory_p95_percent"
+      end
+      field "memP99" do
+        label "Memory Used % (p99)"
+        path "metricsForPeriod.memory_p99_percent"
+      end
+      # field "memMeasurements" do
+      #   label "Memory Used Bytes Measurements during Time Period"
+      #   path "metricsForPeriod.memory_measurements"
+      # end
+      field "memMeasurementCount" do
+        label "Memory Measurement Count during Time Period"
+        path "metricsForPeriod.memory_measurement_count"
+      end
+      field "memTotalBytes" do
+        label "Memory Total Bytes Available"
+        path "metricsForPeriod.memory_total"
       end
       field "thresholdType" do
         label "Threshold Statistic"

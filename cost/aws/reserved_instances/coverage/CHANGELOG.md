@@ -1,5 +1,16 @@
 # Changelog
 
+## v3.0.0
+
+- Policy can now be run against an arbitrary number of days in the past
+- Policy incident now presented in a more human-readable fashion
+- Streamlined code for better readability and faster execution
+- Policy now requires valid Flexera credential
+
+## v2.12
+
+- Updated policy metadata to correctly identify it as a `Reserved Instances` policy
+
 ## v2.11
 
 - Updated description of `Account Number` parameter

@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.2.1
+
+- Added `deprecated` field to policy metadata. Functionality is unchanged.
+
+## v2.2
+
+- Deprecated: This policy is no longer being updated.
+
 ## v2.1
 
 - Bug fix: Already expired reserved instances are no longer included.

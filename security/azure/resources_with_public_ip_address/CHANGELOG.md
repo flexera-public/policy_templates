@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.6
+
+- fixed link to README in policy description
+
+## v2.5
+
+- Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.
+
 ## v2.4
 
 - Replaced the term **whitelist** with **allowed list**.

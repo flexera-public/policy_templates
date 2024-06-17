@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.0.0
+
+- Added ability to filter resources by Google Project
+- Added ability to filter resources by Google resource type
+- Added additional context to incident description
+- Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera One credential
+
 ## v2.5
 
 - Updated label logic to return `Missing Label Keys` as well as `Label Keys with Missing Label Values` in incident

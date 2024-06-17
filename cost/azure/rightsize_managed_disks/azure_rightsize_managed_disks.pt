@@ -1,0 +1,1223 @@
+name "Azure Rightsize Managed Disks"
+rs_pt_ver 20180301
+type "policy"
+short_description "This policy finds underutilized managed disks and recommends downgrading the managed disk tier if this results in savings and satisfies required usage levels. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_disks/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+category "Cost"
+severity "low"
+default_frequency "monthly"
+info(
+  version: "2.0.3",
+  provider: "Azure",
+  service: "Managed Disks",
+  policy_set: "Rightsize Storage",
+  recommendation_type: "Usage Reduction"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  category "Policy Settings"
+  label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation."
+  min_value 0
+  default 0
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
+parameter "param_subscriptions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Subscriptions"
+  description "Allow or deny entered subscriptions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_subscriptions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Subscriptions List"
+  description "A list of allowed or denied ubscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+parameter "param_min_used_disk_iops_pct" do
+  type "number"
+  category "Filters"
+  label "IOPS Threshold (%)"
+  description "The IOPs threshold at which to consider a managed disk to be underutilized. Set to -1 to turn off this filter."
+  min_value -1
+  max_value 100
+  default -1
+end
+
+parameter "param_stats_aggregation_for_disk_iops" do
+  type "string"
+  category "Statistics"
+  label "IOPS Threshold Statistic"
+  description "Statistic to use for IOPS when determining if a managed disk is underutilized."
+  allowed_values "Average", "Maximum"
+  default "Maximum"
+end
+
+parameter "param_min_used_disk_throughput_pct" do
+  type "number"
+  category "Filters"
+  label "Throughput Threshold (%)"
+  description "The throughput threshold at which to consider a managed disk to be underutilized. Set to -1 to turn off this filter."
+  min_value -1
+  max_value 100
+  default -1
+end
+
+parameter "param_stats_aggregation_for_disk_throughput" do
+  type "string"
+  category "Statistics"
+  label "Throughput Threshold Statistic"
+  description "Statistic to use for throughput when determining if a managed disk is underutilized."
+  allowed_values "Average", "Maximum"
+  default "Maximum"
+end
+
+parameter "param_stats_lookback" do
+  type "number"
+  category "Statistics"
+  label "Lookback period"
+  description "How many days back to look at disk IOPS and throughput data. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days."
+  min_value 1
+  max_value 90
+  default 30
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_azure" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_azure" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+datasource "ds_azure_subscriptions" do
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path "/subscriptions/"
+    query "api-version", "2020-01-01"
+    header "User-Agent", "RS Policies"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "subscriptionId")
+      field "name", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
+    end
+  end
+end
+
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_min_used_disk_space_pct" do
+  run_script $js_min_used_disk_space_pct
+end
+
+script "js_min_used_disk_space_pct", type: "javascript" do
+  result "result"
+  code <<-"EOS"
+  var result = -1
+EOS
+end
+
+datasource "ds_azure_subscriptions_filtered" do
+  run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
+end
+
+script "js_azure_subscriptions_filtered", type: "javascript" do
+  parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
+  result "result"
+  code <<-EOS
+  if (param_subscriptions_list.length > 0) {
+    result = _.filter(ds_azure_subscriptions, function(subscription) {
+      include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
+
+      if (param_subscriptions_allow_or_deny == "Deny") {
+        include_subscription = !include_subscription
+      }
+
+      return include_subscription
+    })
+  } else {
+    result = ds_azure_subscriptions
+  }
+EOS
+end
+
+datasource "ds_azure_disks" do
+  iterate $ds_azure_subscriptions_filtered
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Compute/disks"])
+    query "api-version", "2019-07-01"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[?@.managedBy]") do
+      field "id", jmes_path(col_item, "id")
+      field "resourceName", jmes_path(col_item, "name")
+      field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
+      field "resourceType", jmes_path(col_item, "type")
+      field "region", jmes_path(col_item, "location")
+      field "tags", jmes_path(col_item, "tags")
+      field "managedBy", jmes_path(col_item, "managedBy")
+      field "provisioningState", jmes_path(col_item, "properties.provisioningState")
+      field "osType", jmes_path(col_item, "properties.osType")
+      field "state", jmes_path(col_item, "properties.diskState")
+      field "diskSizeGB", jmes_path(col_item, "properties.diskSizeGB")
+      field "timeCreated", jmes_path(col_item, "properties.timeCreated")
+      field "tier", jmes_path(col_item, "sku.name")
+      field "service", jmes_path(col_item, "type")
+      field "subscriptionID", val(iter_item, "id")
+      field "subscriptionName", val(iter_item, "name")
+    end
+  end
+end
+
+datasource "ds_azure_disks_region_filtered" do
+  run_script $js_azure_disks_region_filtered, $ds_azure_disks, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_azure_disks_region_filtered", type: "javascript" do
+  parameters "ds_azure_disks", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_azure_disks, function(disk) {
+      include_disk = _.contains(param_regions_list, disk['region'])
+
+      if (param_regions_allow_or_deny == "Deny") {
+        include_disk = !include_disk
+      }
+
+      return include_disk
+    })
+  } else {
+    result = ds_azure_disks
+  }
+EOS
+end
+
+datasource "ds_azure_disks_tag_filtered" do
+  run_script $js_azure_disks_tag_filtered, $ds_azure_disks_region_filtered, $param_exclusion_tags, $param_exclusion_tags_boolean
+end
+
+script "js_azure_disks_tag_filtered", type: "javascript" do
+  parameters "ds_azure_disks_region_filtered", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  result "result"
+  code <<-EOS
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  if (param_exclusion_tags.length > 0) {
+    result = _.reject(ds_azure_disks_region_filtered, function(resource) {
+      resource_tags = {}
+      if (typeof(resource['tags']) == 'object') { resource_tags = resource['tags'] }
+
+      // Store a list of found tags
+      found_tags = []
+
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_tag = resource_tags[comparator['key']]
+
+        if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+        if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+        if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_tag == undefined) { found_tags.push(string) }
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+      })
+
+      all_tags_found = found_tags.length == comparators.length
+      any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+      return all_tags_found || any_tags_found
+    })
+  } else {
+    result = ds_azure_disks_region_filtered
+  }
+EOS
+end
+
+datasource "ds_azure_disks_grouped_by_vm" do
+  run_script $js_azure_disks_grouped_by_vm, $ds_azure_disks_tag_filtered
+end
+
+script "js_azure_disks_grouped_by_vm", type: "javascript" do
+  parameters "ds_azure_disks_tag_filtered"
+  result "result"
+  code <<-EOS
+  var result = []
+  var grouped_disks = _.groupBy(ds_azure_disks_tag_filtered, 'managedBy')
+  for (var gd in grouped_disks) {
+    result.push({vmId: gd, disks: grouped_disks[gd]})
+  }
+EOS
+end
+
+datasource "ds_azure_virtual_machines" do
+  iterate $ds_azure_disks_grouped_by_vm
+  request do
+    auth $auth_azure
+    host $param_azure_endpoint
+    path val(iter_item, "vmId")
+    query "api-version", "2023-07-01"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "resourceName", jmes_path(response, "name")
+    field "osDisk", jmes_path(response, "properties.storageProfile.osDisk")
+    field "dataDisks", jmes_path(response, "properties.storageProfile.dataDisks")
+  end
+end
+
+datasource "ds_azure_virtual_machines_with_disks" do
+  run_script $js_azure_virtual_machines_with_disks, $ds_azure_disks_grouped_by_vm, $ds_azure_virtual_machines
+end
+
+script "js_azure_virtual_machines_with_disks", type: "javascript" do
+  parameters "ds_azure_disks_grouped_by_vm", "ds_azure_virtual_machines"
+  result "result"
+  code <<-EOS
+  var result = []
+  for (var i in ds_azure_disks_grouped_by_vm) {
+    var vmId = ds_azure_disks_grouped_by_vm[i].vmId
+    try {
+      var correspondingVm = _.find(ds_azure_virtual_machines, function(vm) { return vm.id.toLowerCase() === vmId.toLowerCase() })
+    } catch(err) {
+      continue
+    }
+    if (correspondingVm === undefined) continue;
+    var virtualMachineWithDiskData = { vmId: vmId, osDisk: null, dataDisks: [] }
+    for (j in ds_azure_disks_grouped_by_vm[i].disks) {
+      var disk = ds_azure_disks_grouped_by_vm[i].disks[j]
+      try {
+        if (correspondingVm.osDisk.managedDisk.id.toLowerCase() === disk.id.toLowerCase()) {
+          virtualMachineWithDiskData.osDisk = disk
+          continue
+        }
+      } catch (err) {
+        continue
+      }
+      try {
+        var correspondingDisk = _.find(correspondingVm.dataDisks, function(dataDisk) { return dataDisk.managedDisk.id.toLowerCase() === disk.id.toLowerCase() })
+      } catch (err) {
+        continue
+      }
+      if (correspondingDisk === undefined) continue;
+      disk.lun = correspondingDisk.lun
+      virtualMachineWithDiskData.dataDisks.push(disk)
+    }
+    result.push(virtualMachineWithDiskData)
+  }
+EOS
+end
+
+datasource "ds_azure_virtual_machines_with_metrics" do
+  iterate $ds_azure_virtual_machines_with_disks
+  request do
+    run_script $js_azure_virtual_machines_with_metrics, val(iter_item, "vmId"), $param_azure_endpoint, $param_stats_lookback
+  end
+  result do
+    encoding "json"
+    field "vmId", val(iter_item, "vmId")
+    field "metrics", jmes_path(response, "value[*]")
+  end
+end
+
+script "js_azure_virtual_machines_with_metrics", type: "javascript" do
+  parameters "vmId", "param_azure_endpoint", "param_stats_lookback"
+  result "request"
+  code <<-EOS
+  var end_date = new Date()
+  end_date.setMilliseconds(999)
+  end_date.setSeconds(59)
+  end_date.setMinutes(59)
+  end_date.setHours(23)
+
+  var start_date = new Date()
+  start_date.setDate(start_date.getDate() - param_stats_lookback)
+  start_date.setMilliseconds(0)
+  start_date.setSeconds(0)
+  start_date.setMinutes(0)
+
+  timespan = start_date.toISOString() + "/" + end_date.toISOString()
+
+  var request = {
+    auth: "auth_azure",
+    host: param_azure_endpoint,
+    verb: "GET",
+    path: vmId + "/providers/microsoft.insights/metrics",
+    query_params: {
+      "api-version": "2018-01-01",
+      "metricnames": "OS Disk IOPS Consumed Percentage,OS Disk Bandwidth Consumed Percentage,Data Disk IOPS Consumed Percentage,Data Disk Bandwidth Consumed Percentage",
+      "timespan": timespan,
+      "$filter": "LUN eq '*'",
+      "aggregation": "Average, Maximum",
+      "interval": "FULL",
+    },
+    headers: {
+      "User-Agent": "RS Policies",
+    },
+    ignore_status: [400, 403, 404],
+  }
+EOS
+end
+
+datasource "ds_azure_virtual_machines_with_disk_space" do
+  run_script $js_azure_virtual_machines_with_disk_space
+end
+
+script "js_azure_virtual_machines_with_disk_space", type: "javascript" do
+  result "result"
+  code <<-EOS
+  var result = []
+EOS
+end
+
+datasource "ds_azure_disks_with_metrics" do
+  run_script $js_azure_disks_with_metrics, $ds_azure_virtual_machines_with_metrics, $ds_azure_virtual_machines_with_disks, $ds_azure_virtual_machines_with_disk_space
+end
+
+script "js_azure_disks_with_metrics", type: "javascript" do
+  parameters "ds_azure_virtual_machines_with_metrics", "ds_azure_virtual_machines_with_disks", "ds_azure_virtual_machines_with_disk_space"
+  result "result"
+  code <<-EOS
+  function findMetricsForDataDisk(metrics, metricName, lun) {
+    for (var i in metrics) {
+      var metric = metrics[i]
+      if (metric.name.value != metricName) continue;
+      var correspondingTs = _.find(metric.timeseries, function(ts) {
+        return (
+          ts.metadatavalues[0].name.value === "lun"
+          && parseInt(ts.metadatavalues[0].value) === lun
+        )
+      })
+      if (correspondingTs === undefined) {
+        return { average: -1, maximum: -1 }
+      } else {
+        return { average: correspondingTs.data[0].average, maximum: correspondingTs.data[0].maximum }
+      }
+    }
+  }
+
+  // Disk IOPS and throughput
+  for (var i in ds_azure_virtual_machines_with_disks) {
+    var vmWithDisk = ds_azure_virtual_machines_with_disks[i]
+    var correspondingVmWithMetrics = _.find(ds_azure_virtual_machines_with_metrics, function(vmWithMt) { return vmWithMt.vmId.toLowerCase() === vmWithDisk.vmId.toLowerCase() })
+    if (correspondingVmWithMetrics === undefined) continue;
+    // OS disk
+    for (var j in correspondingVmWithMetrics.metrics) {
+      var metric = correspondingVmWithMetrics.metrics[j]
+      if (vmWithDisk.osDisk === null || vmWithDisk.osDisk === undefined) continue;
+      if (metric.name.value === "OS Disk IOPS Consumed Percentage") {
+        try {
+          vmWithDisk.osDisk.iopsConsumedPctAvg = metric.timeseries[0].data[0].average
+          vmWithDisk.osDisk.iopsConsumedPctMax = metric.timeseries[0].data[0].maximum
+        } catch (err) {
+          vmWithDisk.osDisk.iopsConsumedPctAvg = -1
+          vmWithDisk.osDisk.iopsConsumedPctMax = -1
+        }
+      }
+      if (metric.name.value === "OS Disk Bandwidth Consumed Percentage") {
+        try {
+          vmWithDisk.osDisk.bandwithConsumedPctAvg = metric.timeseries[0].data[0].average
+          vmWithDisk.osDisk.bandwithConsumedPctMax = metric.timeseries[0].data[0].maximum
+        } catch (err) {
+          vmWithDisk.osDisk.bandwithConsumedPctAvg = -1
+          vmWithDisk.osDisk.bandwithConsumedPctMax = -1
+        }
+      }
+    }
+    // Data disks
+    for (var j in vmWithDisk.dataDisks) {
+      var dataDisk = vmWithDisk.dataDisks[j]
+      // IOPS
+      var correspondingIopsMetrics = findMetricsForDataDisk(
+        correspondingVmWithMetrics.metrics,
+        "Data Disk IOPS Consumed Percentage",
+        dataDisk.lun
+      )
+      dataDisk.iopsConsumedPctAvg = correspondingIopsMetrics.average
+      dataDisk.iopsConsumedPctMax = correspondingIopsMetrics.maximum
+      // Bandwith
+      var correspondingBandwidthMetrics = findMetricsForDataDisk(
+        correspondingVmWithMetrics.metrics,
+        "Data Disk Bandwidth Consumed Percentage",
+        dataDisk.lun
+      )
+      dataDisk.bandwithConsumedPctAvg = correspondingBandwidthMetrics.average
+      dataDisk.bandwithConsumedPctMax = correspondingBandwidthMetrics.maximum
+    }
+  }
+
+  // Disk space
+  for (var i in ds_azure_virtual_machines_with_disks) {
+    var vmWithDisk = ds_azure_virtual_machines_with_disks[i]
+    var correspondingVmWithSpace = _.find(ds_azure_virtual_machines_with_disk_space, function(vmWithSpace) { return vmWithSpace.vmId.toLowerCase() === vmWithDisk.vmId.toLowerCase() })
+    if (correspondingVmWithSpace === undefined) continue;
+    // OS disk
+    if (vmWithDisk.osDisk != null && vmWithDisk.osDisk != undefined) {
+      vmWithDisk.osDisk.diskUsedGB = correspondingVmWithSpace.osDisk.diskUsedGB
+    }
+    // Data disks
+    for (var j in vmWithDisk.dataDisks) {
+      var dataDisk = vmWithDisk.dataDisks[j]
+      var correspondingDataDisk = _.find(correspondingVmWithSpace.dataDisks, function(disk) { return disk.id.toLowerCase() === dataDisk.id.toLowerCase() })
+      if (correspondingDataDisk === undefined) continue;
+      dataDisk.diskUsedGB = correspondingDataDisk.diskUsedGB
+    }
+  }
+
+  var disksWithMetrics = []
+  _.each(ds_azure_virtual_machines_with_disks, function(vmWithDisk) {
+    if (vmWithDisk.osDisk != null && vmWithDisk.osDisk != undefined) {
+      vmWithDisk.osDisk.diskType = "os"
+      // By now, we only care about data disks.
+      // disksWithMetrics.push(vmWithDisk.osDisk)
+    }
+    _.each(vmWithDisk.dataDisks, function(dataDisk) {
+      dataDisk.diskType = "data"
+      disksWithMetrics.push(dataDisk)
+    })
+  })
+
+  var result = disksWithMetrics
+EOS
+end
+
+datasource "ds_azure_disks_with_metrics_thresholds_filtered" do
+  run_script $js_azure_disks_with_metrics_thresholds_filtered, $ds_azure_disks_with_metrics, $ds_min_used_disk_space_pct, $param_min_used_disk_iops_pct, $param_stats_aggregation_for_disk_iops, $param_min_used_disk_throughput_pct, $param_stats_aggregation_for_disk_throughput
+end
+
+script "js_azure_disks_with_metrics_thresholds_filtered", type: "javascript" do
+  parameters "ds_azure_disks_with_metrics", "ds_min_used_disk_space_pct", "param_min_used_disk_iops_pct", "param_stats_aggregation_for_disk_iops", "param_min_used_disk_throughput_pct", "param_stats_aggregation_for_disk_throughput"
+  result "result"
+  code <<-EOS
+  var result = _.filter(ds_azure_disks_with_metrics, function(disk) {
+    // Filter the disk if we do not have IOPS and throughput data for the disk
+    if (disk.iopsConsumedPctAvg === -1 || disk.iopsConsumedPctMax === -1 || disk.bandwithConsumedPctAvg === -1 || disk.bandwithConsumedPctMax === -1) {
+      return false
+    }
+    if (ds_min_used_disk_space_pct != -1) {
+      if (disk.diskUsedGB != undefined) {
+        var usedDiskSpacePct = disk.diskUsedGB * 100 / disk.diskSizeGB
+        if (usedDiskSpacePct > ds_min_used_disk_space_pct) {
+          return false
+        }
+      }
+    }
+    if (param_min_used_disk_iops_pct != -1) {
+      var usedMetricPct = param_stats_aggregation_for_disk_iops === "Average" ? disk.iopsConsumedPctAvg : disk.iopsConsumedPctMax
+      if (usedMetricPct > param_min_used_disk_iops_pct) {
+        return false
+      }
+    }
+    if (param_min_used_disk_throughput_pct != -1) {
+      var usedMetricPct = param_stats_aggregation_for_disk_throughput === "Average" ? disk.bandwithConsumedPctAvg : disk.bandwithConsumedPctMax
+      if (usedMetricPct > param_min_used_disk_throughput_pct) {
+        return false
+      }
+    }
+    return true
+  })
+EOS
+end
+
+datasource "ds_azure_md_tier_types" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/azure/azure_md_tier_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_azure_md_pricing" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/azure/azure_md_pricing.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_disk_rightsizing_recommendations" do
+  run_script $js_disk_rightsizing_recommendations, $ds_azure_disks_with_metrics_thresholds_filtered, $ds_azure_md_tier_types, $ds_azure_md_pricing, $ds_applied_policy, $ds_min_used_disk_space_pct, $param_stats_lookback, $param_min_savings, $param_min_used_disk_iops_pct, $param_min_used_disk_throughput_pct, $param_stats_aggregation_for_disk_iops, $param_stats_aggregation_for_disk_throughput
+end
+
+script "js_disk_rightsizing_recommendations", type: "javascript" do
+  parameters "ds_azure_disks_with_metrics_thresholds_filtered", "ds_azure_md_tier_types", "ds_azure_md_pricing", "ds_applied_policy", "ds_min_used_disk_space_pct", "param_stats_lookback", "param_min_savings", "param_min_used_disk_iops_pct", "param_min_used_disk_throughput_pct", "param_stats_aggregation_for_disk_iops", "param_stats_aggregation_for_disk_throughput"
+  result "result"
+  code <<-'EOS'
+  var hddDiskSizes = [32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32767]
+  var ssdDiskSizes = [4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32767]
+  var ultraDiskSizes = [4, 8, 16, 32, 64, 128, 256, 512]
+  var ultraSize = 1024
+  while (ultraSize <= 65536) {
+    ultraDiskSizes.push(ultraSize)
+    ultraSize += 1024
+  }
+
+  function findDiskSize(diskTier, diskSizeGB) {
+    var diskSizes = null
+    switch (diskTier) {
+      case "Standard":
+        diskSizes = hddDiskSizes
+        break;
+      case "StandardSSD":
+      case "Premium":
+        diskSizes = ssdDiskSizes
+        break;
+      case "Ultra":
+        diskSizes = ultraDiskSizes
+        break;
+      default:
+        throw "Only Standard HDD, Standard SSD, Premium SSD v1 or Ultra disk tiers are supported."
+    }
+    for (i in diskSizes) {
+      var availableSize = diskSizes[i]
+      if (diskSizeGB <= availableSize) {
+        return availableSize
+      }
+    }
+  }
+
+  function findDiskName(diskTier, diskSizeGB) {
+    try {
+      diskTier = diskTier.split("_")[0]
+      diskSizeGB = findDiskSize(diskTier, diskSizeGB)
+    } catch (err) {
+      console.log("Error inside findDiskName for "+diskTier +" "+diskSizeGB)
+      return undefined
+    }
+    for (diskName in ds_azure_md_tier_types) {
+      var diskData = ds_azure_md_tier_types[diskName]
+      if (diskData.tier === diskTier && diskData.sizeGiB === diskSizeGB) {
+        return diskName
+      }
+    }
+  }
+
+  function findDiskPrice(diskName, diskRedundancy, diskRegion) {
+    var diskPrice = diskName + "_" + diskRedundancy
+    var pricesByRegion = ds_azure_md_pricing[diskRegion]
+    if (pricesByRegion === undefined) {
+      throw "Region " + diskRegion + " not found at azure_md_pricing.json"
+    }
+    var priceData = pricesByRegion[diskPrice]
+    if (priceData === undefined) {
+      throw "Price for " + diskPrice + " not found at azure_md_pricing.json"
+    }
+    return priceData
+  }
+
+  function findPremSsdV2Price(diskRegion, currentUsedGB, currentUsedIops, currentUsedThroughput) {
+    var premSsdV2Pricing = ds_azure_md_pricing[diskRegion]
+    if (premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY === undefined) { return }
+    if (currentUsedIops <= 3000 && currentUsedThroughput <= 3000) {
+      return {
+        pricePerUnit: Math.round( premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY.pricePerUnit * 720 * currentUsedGB ),
+        currencyCode: premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY.currencyCode,
+        sizeGiB: currentUsedGB,
+        IOPS: currentUsedIops,
+        throughput: currentUsedThroughput,
+        unitOfMeasure: premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY.unitOfMeasure
+      }
+    }
+    var diskIopsAndThroughputDontFitInDiskSize = true
+    var suggestedDiskSize = currentUsedGB
+    var maxIops = 0
+    var maxThroughput = 0
+    while (diskIopsAndThroughputDontFitInDiskSize) {
+      maxIops = suggestedDiskSize * 500
+      maxThroughput = maxIops * 0.25
+      if (currentUsedIops <= maxIops && currentUsedThroughput <= maxThroughput) {
+        diskIopsAndThroughputDontFitInDiskSize = false
+      }
+      suggestedDiskSize += 1
+    }
+    return {
+      pricePerUnit: Math.round(
+          (premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY.pricePerUnit * 720 * suggestedDiskSize)
+        + (premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_IOPS.pricePerUnit * 720 * currentUsedIops)
+        + (premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_THROUGHPUT_MBPS.pricePerUnit * 720 * currentUsedThroughput)
+      ),
+      currencyCode: premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY.currencyCode,
+      sizeGiB: suggestedDiskSize,
+      IOPS: maxIops,
+      throughput: maxThroughput,
+      unitOfMeasure: premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY.unitOfMeasure,
+    }
+  }
+
+  function findUltraPrice(diskRegion, currentUsedGB, currentUsedIops, currentUsedThroughput) {
+    var ultraPricing = ds_azure_md_pricing[diskRegion]
+    if (ultraPricing.ULTRA_LRS_PROVISIONED_CAPACITY === undefined) { return }
+    var diskSize = findDiskSize("Ultra", currentUsedGB)
+    return {
+      pricePerUnit: Math.round(
+          (ultraPricing.ULTRA_LRS_PROVISIONED_CAPACITY.pricePerUnit * 720 * diskSize)
+        + (ultraPricing.ULTRA_LRS_PROVISIONED_IOPS.pricePerUnit * 720 * diskSize)
+        + (ultraPricing.ULTRA_LRS_PROVISIONED_THROUGHPUT_MBPS.pricePerUnit * 720)
+      ),
+      currencyCode: ultraPricing.ULTRA_LRS_PROVISIONED_CAPACITY.currencyCode,
+      sizeGB: diskSize,
+      IOPS: currentUsedIops,
+      throughput: currentUsedThroughput,
+      unitOfMeasure: ultraPricing.ULTRA_LRS_PROVISIONED_CAPACITY.unitOfMeasure,
+    }
+  }
+
+  function findFittingDiskName(currentDiskName, currentUsedGB, currentUsedIops, currentUsedThroughput) {
+    var currentDiskData = ds_azure_md_tier_types[currentDiskName]
+
+    if (currentDiskData.downgrades.size != null) {
+      var nextDiskName = currentDiskData.downgrades.size
+      var nextDiskData = ds_azure_md_tier_types[nextDiskName]
+      if (
+        currentUsedGB <= nextDiskData.sizeGiB
+        && currentUsedIops <= nextDiskData.IOPS
+        && currentUsedThroughput <= nextDiskData.throughput
+      ) return findFittingDiskName(nextDiskName, currentUsedGB, currentUsedIops, currentUsedThroughput);
+    }
+    if (currentDiskData.downgrades.tier != null) {
+      var nextDiskName = currentDiskData.downgrades.tier
+      var nextDiskData = ds_azure_md_tier_types[nextDiskName]
+      if (
+        currentUsedIops <= nextDiskData.IOPS
+        && currentUsedThroughput <= nextDiskData.throughput
+      ) return findFittingDiskName(nextDiskName, currentUsedGB, currentUsedIops, currentUsedThroughput);
+    }
+
+    return currentDiskName
+  }
+
+  var recommendations = []
+  var totalMonthlySavings = 0
+
+  for (i in ds_azure_disks_with_metrics_thresholds_filtered) {
+    var disk = ds_azure_disks_with_metrics_thresholds_filtered[i]
+    var currentDiskName = findDiskName(disk.tier, disk.diskSizeGB)
+    if (currentDiskName === undefined) {
+     console.log("Current disk name is undefined ", JSON.stringify(disk));
+     continue;
+    }
+    var currentDiskData = ds_azure_md_tier_types[currentDiskName]
+
+    var currentUsedIops = disk.iopsConsumedPctMax * currentDiskData.IOPS / 100
+    var currentUsedThroughput = disk.bandwithConsumedPctMax * currentDiskData.throughput / 100
+
+    var fittingDiskName = findFittingDiskName(currentDiskName, disk.diskUsedGB != undefined ? disk.diskUsedGB : disk.diskSizeGB, currentUsedIops, currentUsedThroughput)
+    var fittingDiskData = ds_azure_md_tier_types[fittingDiskName]
+
+    var currentDiskRedundancy = disk.tier.split("_")[1]
+    try {
+      var currentDiskPrice = findDiskPrice(currentDiskName, currentDiskRedundancy, disk.region)
+      var fittingDiskPrice = findDiskPrice(fittingDiskName, currentDiskRedundancy, disk.region)
+    } catch (err) {
+      console.log("Error while calculating the currentDiskPrice or fittingDiskPrice ", JSON.stringify(disk), JSON.stringify(currentDiskData));
+      if (currentDiskData.tier != "Ultra") {
+        continue
+      }
+    }
+    var premSsdV2Price = findPremSsdV2Price(disk.region, disk.diskUsedGB != undefined ? disk.diskUsedGB : disk.diskSizeGB, currentUsedIops, currentUsedThroughput)
+    var ultraPrice = findUltraPrice(disk.region, disk.diskUsedGB != undefined ? disk.diskUsedGB : disk.diskSizeGB, currentUsedIops, currentUsedThroughput)
+
+    // Righsizing from Ultra to Premium SSD v2
+    if (currentDiskData.tier === "Ultra" && premSsdV2Price != undefined && ultraPrice != undefined && premSsdV2Price.pricePerUnit < ultraPrice.pricePerUnit) {
+      currentDiskPrice = { pricePerUnit: ultraPrice.pricePerUnit, currencyCode: ultraPrice.currencyCode }
+      monthlySavings = currentDiskPrice.pricePerUnit - premSsdV2Price.pricePerUnit
+      newResourceType = "Premium SSD v2"
+      newResourceTypeRedundancy = "LRS"
+      newResourceTypeGiB = premSsdV2Price.sizeGiB
+      newResourceTypeIOPS = premSsdV2Price.IOPS
+      newResourceTypeThroughput = premSsdV2Price.throughput
+      newResourceTypeMonthlyPrice = premSsdV2Price.pricePerUnit
+      newResourceTypePriceCurrency = premSsdV2Price.currencyCode
+
+    }
+    // Righsizing from Premium SSD to Premium SSD v2
+    else if ((currentDiskData.tier === "StandardSSD" || currentDiskData.tier === "Premium") && premSsdV2Price != undefined && premSsdV2Price.pricePerUnit < fittingDiskPrice.pricePerUnit) {
+      monthlySavings = currentDiskPrice.pricePerUnit - premSsdV2Price.pricePerUnit
+      newResourceType = "Premium SSD v2"
+      newResourceTypeRedundancy = "LRS"
+      newResourceTypeGiB = premSsdV2Price.sizeGiB
+      newResourceTypeIOPS = premSsdV2Price.IOPS
+      newResourceTypeThroughput = premSsdV2Price.throughput
+      newResourceTypeMonthlyPrice = premSsdV2Price.pricePerUnit
+      newResourceTypePriceCurrency = premSsdV2Price.currencyCode
+
+    }
+    // Righsizing from Premium SSD to Standard SSD to Standard HDD
+    else if (currentDiskName != fittingDiskName && fittingDiskPrice.pricePerUnit < currentDiskPrice.pricePerUnit) {
+      monthlySavings = currentDiskPrice.pricePerUnit - fittingDiskPrice.pricePerUnit
+      newResourceType = fittingDiskName
+      newResourceTypeRedundancy = currentDiskRedundancy
+      newResourceTypeGiB = fittingDiskData.sizeGiB
+      newResourceTypeIOPS = fittingDiskData.IOPS
+      newResourceTypeThroughput = fittingDiskData.throughput
+      newResourceTypeMonthlyPrice = fittingDiskPrice.pricePerUnit
+      newResourceTypePriceCurrency = fittingDiskPrice.currencyCode
+    } else continue;
+
+    if (monthlySavings < param_min_savings) {
+      continue;
+    }
+
+    tags = []
+    if(disk.tags){
+      if (typeof(disk.tags) == 'object') {
+        _.each(Object.keys(disk.tags), function(key) {
+          tags.push([key, "=", disk.tags[key]].join(''))
+        })
+      }
+    }
+
+    recommendations.push({
+      accountID: disk.subscriptionID,
+      accountName: disk.subscriptionName,
+      resourceGroup: disk.resourceGroup,
+      resourceName: disk.resourceName,
+      resourceID: disk.id,
+      tags: tags,
+      resourceType: currentDiskName,
+      resourceTypeRedundancy: currentDiskRedundancy,
+      resourceTypeGiB: currentDiskData.sizeGiB,
+      resourceTypeIOPS: currentDiskData.IOPS,
+      resourceTypeThroughput: currentDiskData.throughput,
+      resourceTypeMonthlyPrice: currentDiskPrice.pricePerUnit,
+      resourceTypePriceCurrency: currentDiskPrice.currencyCode,
+      newResourceType: newResourceType,
+      newResourceTypeRedundancy: newResourceTypeRedundancy,
+      newResourceTypeGiB: newResourceTypeGiB,
+      newResourceTypeIOPS: newResourceTypeIOPS,
+      newResourceTypeThroughput: newResourceTypeThroughput,
+      newResourceTypeMonthlyPrice: newResourceTypeMonthlyPrice,
+      newResourceTypePriceCurrency: newResourceTypePriceCurrency,
+      resourceKind: disk.resourceType,
+      region: disk.region,
+      monthlySavings: monthlySavings.toFixed(2),
+      savingsCurrency: currentDiskPrice.currencyCode,
+      iopsPctMaximum: Math.round(disk.iopsConsumedPctMax),
+      iopsPctAverage: Math.round(disk.iopsConsumedPctAvg),
+      iopsThreshold: param_min_used_disk_iops_pct,
+      throughputPctMaximum: Math.round(disk.bandwithConsumedPctMax),
+      throughputPctAverage: Math.round(disk.bandwithConsumedPctAvg),
+      throughputThreshold: param_min_used_disk_throughput_pct,
+      sizeGB: disk.diskSizeGB,
+      usedGBPct: disk.diskUsedGB != undefined ? Math.round(disk.diskUsedGB * 100 / disk.diskSizeGB) : "Unknown",
+      diskSpaceThreshold: ds_min_used_disk_space_pct,
+      lookbackPeriod: param_stats_lookback,
+      service: disk.service.split("/")[0],
+    })
+
+    totalMonthlySavings += monthlySavings
+  }
+
+  if (recommendations.length > 0) {
+
+    recommendations[0].message = "Oversized disks are those that meet the following conditions within the last " + param_stats_lookback + " day(s):\n\n"
+    if (param_min_used_disk_iops_pct != -1) {
+      recommendations[0].message += "- Less or equal than " + param_min_used_disk_iops_pct.toString() + "% " + param_stats_aggregation_for_disk_iops.toString() + " IOPS utilization\n"
+    }
+    if (param_min_used_disk_throughput_pct != -1) {
+      recommendations[0].message += "- Less or equal than " + param_min_used_disk_throughput_pct.toString() + "% " + param_stats_aggregation_for_disk_throughput.toString() + " throughput utilization\n"
+    }
+    if (ds_min_used_disk_space_pct != -1) {
+      recommendations[0].message += "- Less or equal than " + ds_min_used_disk_space_pct.toString() + "% used capacity (GiB)\n"
+    }
+    if (param_min_used_disk_iops_pct == -1 && param_min_used_disk_throughput_pct == -1 && ds_min_used_disk_space_pct == -1) {
+      recommendations[0].message += "- This policy was applied with **Minimum used disk IOPS percentage** and **Minimum used disk throughput percentage** set to -1. As a result, any disk with any activity or throughput will be considered oversized.\n"
+    }
+    recommendations[0].message += "\nThe above settings can be modified by editing the applied policy and changing the appropriate parameters."
+    recommendations[0].totalSavings = totalMonthlySavings.toFixed(2)
+    recommendations[0].policyName = ds_applied_policy.name
+  }
+
+  var result = recommendations.concat([
+    {
+      resourceID: "",
+      tags: "",
+      monthlySavings: "",
+      savingsCurrency: "",
+      iopsPctMaximum: "",
+      iopsPctAverage: "",
+      throughputPctMaximum: "",
+      throughputPctAverage: "",
+    }
+  ])
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_azure_rightsize_managed_disks" do
+  validate_each $ds_disk_rightsizing_recommendations do
+    summary_template "{{ with index data 0 }}{{ .policyName }}{{ end }}: {{ len data }} Azure Oversized Managed Disks Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}${{ .totalSavings }} {{ .savingsCurrency }}
+
+    {{ .message }}{{ end }}
+EOS
+    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated.
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    hash_exclude "tags", "monthlySavings", "savingsCurrency", "throughputPctMaximum", "throughputPctAverage", "iopsPctMaximum", "iopsPctAverage"
+    export "recommendations" do
+      resource_level true
+      field "accountID" do
+        label "Subscription ID"
+      end
+      field "accountName" do
+        label "Subscription Name"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "resourceType" do
+        label "Disk Type"
+      end
+      field "resourceTypeRedundancy" do
+        label "Disk Redundancy"
+      end
+      field "resourceTypeGiB" do
+        label "Disk Capacity (GiB)"
+      end
+      field "resourceTypeIOPS" do
+        label "Disk IOPS"
+      end
+      field "resourceTypeThroughput" do
+        label "Disk Throughput (MB/s)"
+      end
+      field "resourceTypeMonthlyPrice" do
+        label "Disk Monthly Price"
+      end
+      field "newResourceType" do
+        label "New Disk Type"
+      end
+      field "newResourceTypeRedundancy" do
+        label "New Disk Redundancy"
+      end
+      field "newResourceTypeGiB" do
+        label "New Disk Capacity (GiB)"
+      end
+      field "newResourceTypeIOPS" do
+        label "New Disk IOPS"
+      end
+      field "newResourceTypeThroughput" do
+        label "New Disk Throughput (MB/s)"
+      end
+      field "newResourceTypeMonthlyPrice" do
+        label "New Disk Monthly Price"
+      end
+      field "resourceTypePriceCurrency" do
+        label "Disk Price Currency"
+      end
+      field "resourceKind" do
+        label "Resource Kind"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+        path "monthlySavings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "iopsPctMaximum" do
+        label "IOPS Maximum %"
+      end
+      field "iopsAverage" do
+        label "IOPS Average %"
+        path "iopsPctAverage"
+      end
+      field "iopsThreshold" do
+        label "IOPS Threshold %"
+      end
+      field "throughputPctMaximum" do
+        label "Throughput Maximum %"
+      end
+      field "throughputPctAverage" do
+        label "Throughput Average %"
+      end
+      field "throughputThreshold" do
+        label "Throughput Threshold %"
+      end
+      field "sizeGB" do
+        label "Actual Disk Size (GiB)"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email."
+  email $param_email
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
+end

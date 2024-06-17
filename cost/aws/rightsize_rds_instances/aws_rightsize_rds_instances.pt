@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "4.2",
+  version: "5.3.1",
   provider: "AWS",
   service: "RDS",
   policy_set: "Rightsize Database Instances",
@@ -56,18 +56,26 @@ parameter "param_regions_list" do
   type "list"
   category "Filters"
   label "Allow/Deny Regions List"
-  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   description "A list of allowed or denied regions. See the README for more details."
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   default []
 end
 
 parameter "param_exclusion_tags" do
   type "list"
   category "Filters"
-  label "Exclusion Tags (Key:Value)"
-  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:*"
-  allowed_pattern /(^$)|[\w]*\:.*/
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
   default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
 end
 
 parameter "param_unused_or_underutilized" do
@@ -94,9 +102,9 @@ parameter "param_stats_lookback" do
   category "Statistics"
   label "Statistic Lookback Period"
   description "How many days back to look at statistical data for instances to determine if they are underutilized or unused. This value cannot be set higher than 90 because AWS does not retain metrics for longer than 90 days."
-  default 30
   min_value 1
   max_value 90
+  default 30
 end
 
 parameter "param_stats_threshold" do
@@ -159,7 +167,7 @@ pagination "pagination_aws_getmetricdata" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
 # Get applied policy metadata for use later
@@ -190,7 +198,7 @@ script "js_flexera_api_hosts", type: "javascript" do
       flexera: "api.flexera.eu",
       fsm: "api.fsm-eu.flexeraeng.com"
     },
-    "api.optima-au.flexeraeng.com": {
+    "api.optima-apac.flexeraeng.com": {
       flexera: "api.flexera.au",
       fsm: "api.fsm-au.flexeraeng.com"
     }
@@ -205,7 +213,7 @@ datasource "ds_aws_instance_size_map" do
   request do
     verb "GET"
     host "raw.githubusercontent.com"
-    path "/flexera/policy_templates/master/data/aws/instance_types.json"
+    path "/flexera-public/policy_templates/master/data/aws/instance_types.json"
     header "User-Agent", "RS Policies"
   end
 end
@@ -234,9 +242,9 @@ datasource "ds_get_caller_identity" do
     verb "GET"
     host "sts.amazonaws.com"
     path "/"
-    header "User-Agent", "RS Policies"
     query "Action", "GetCallerIdentity"
     query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
   end
   result do
     encoding "xml"
@@ -274,9 +282,9 @@ datasource "ds_billing_centers" do
     auth $auth_flexera
     host rs_optima_host
     path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
     ignore_status [403]
   end
   result do
@@ -310,7 +318,7 @@ end
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
     header "User-Agent", "RS Policies"
   end
 end
@@ -367,9 +375,9 @@ datasource "ds_instance_costs" do
   end
   result do
     encoding "json"
-    collect jmes_path(response,"rows[*]") do
+    collect jmes_path(response, "rows[*]") do
       field "id", jmes_path(col_item, "dimensions.resource_id")
-      field "cost", jmes_path(col_item,"metrics.cost_amortized_blended_adj")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_blended_adj")
     end
   end
 end
@@ -494,7 +502,7 @@ end
 datasource "ds_rds_instances_set" do
   iterate $ds_regions
   request do
-    run_script $js_rds_instances_set, val(iter_item,"region")
+    run_script $js_rds_instances_set, val(iter_item, "region")
   end
   result do
     encoding "xml"
@@ -507,6 +515,14 @@ datasource "ds_rds_instances_set" do
       field "privateDnsName", xpath(col_item, "Endpoint/Address")
       field "databaseEngine", xpath(col_item, "Engine")
       field "engineVersion", xpath(col_item, "EngineVersion")
+      field "availabilityZone", xpath(col_item, "AvailabilityZone")
+      field "licenseModel", xpath(col_item, "LicenseModel")
+      field "processorFeatures" do
+        collect xpath(col_item, "ProcessorFeatures/ProcessorFeature") do
+          field "name", xpath(col_item, "Name")
+          field "value", xpath(col_item, "Value")
+        end
+      end
       field "region", val(iter_item, "region")
     end
   end
@@ -585,13 +601,43 @@ EOS
 end
 
 datasource "ds_rds_instances" do
-  run_script $js_rds_instances, $ds_rds_instances_set, $ds_resource_tags, $param_exclusion_tags
+  run_script $js_rds_instances, $ds_rds_instances_set, $ds_resource_tags, $ds_aws_instance_size_map, $param_exclusion_tags, $param_exclusion_tags_boolean
 end
 
 script "js_rds_instances", type: "javascript" do
-  parameters "ds_rds_instances_set", "ds_resource_tags", "param_exclusion_tags"
+  parameters "ds_rds_instances_set", "ds_resource_tags", "ds_aws_instance_size_map", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-EOS
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
   tag_object = {}
 
   _.each(ds_resource_tags, function(item) {
@@ -611,33 +657,59 @@ script "js_rds_instances", type: "javascript" do
   _.each(ds_rds_instances_set, function(instance) {
     id = instance['instanceId'].toLowerCase()
 
-    tags = {}
-    if (tag_object[id] != undefined) { tags = tag_object[id] }
+    resource_tags = {}
+    if (tag_object[id] != undefined) { resource_tags = tag_object[id] }
 
-    include_instance = true
+    // Store a list of found tags
+    found_tags = []
 
-    _.each(param_exclusion_tags, function(tag) {
-      key = tag.split(':')[0]
-      value = tag.split(':')[1]
+    _.each(comparators, function(comparator) {
+      comparison = comparator['comparison']
+      value = comparator['value']
+      string = comparator['string']
+      resource_tag = resource_tags[comparator['key']]
 
-      if (tags[key] == value) {
-        include_instance = false
+      if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+      if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+      if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+      if (comparison == '=~') {
+        if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
       }
 
-      if (tags[key] != undefined && value == '*') {
-        include_instance = false
+      if (comparison == '!~') {
+        if (resource_tag == undefined) { found_tags.push(string) }
+        if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
       }
     })
 
-    tag_string = []
+    all_tags_found = found_tags.length == comparators.length
+    any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
 
-    _.each(Object.keys(tags), function(key) {
-      tag_string.push(key + '=' + tags[key])
-    })
+    if ((!any_tags_found && !all_tags_found) || param_exclusion_tags.length == 0) {
+      tag_string = []
 
-    tag_string = tag_string.join(', ')
+      _.each(Object.keys(resource_tags), function(key) {
+        tag_string.push(key + '=' + resource_tags[key])
+      })
 
-    if (include_instance) {
+      tag_string = tag_string.join(', ')
+
+      vcpus = null
+
+      if (instance["processorFeatures"] != null && instance["processorFeatures"] != undefined) {
+        cores = _.findWhere(instance["processorFeatures"], { "name": "coreCount" })
+        threads = _.findWhere(instance["processorFeatures"], { "name": "threadsPerCore" })
+
+        if (cores != undefined && threads != undefined) {
+          vcpus = cores["value"] * threads["value"]
+        }
+      }
+
+      if (vcpus == null && ds_aws_instance_size_map[instance["resourceType"]] != undefined) {
+        vcpus = ds_aws_instance_size_map[instance["resourceType"]]["vcpu"]
+      }
+
       result.push({
         instanceId: instance['instanceId'],
         instanceArn: instance['instanceArn'],
@@ -648,6 +720,10 @@ script "js_rds_instances", type: "javascript" do
         engineVersion: instance['engineVersion'],
         privateDnsName: instance['privateDnsName'],
         region: instance['region'],
+        availabilityZone: instance['availabilityZone'],
+        licenseModel: instance['licenseModel'],
+        processorFeatures: instance['processorFeatures'],
+        vcpus: vcpus,
         tags: tag_string
       })
     }
@@ -833,6 +909,10 @@ script "js_rds_idle_instances", type: "javascript" do
         privateDnsName: instance['privateDnsName'],
         region: instance['region'],
         tags: instance['tags'],
+        availabilityZone: instance['availabilityZone'],
+        licenseModel: instance['licenseModel'],
+        processorFeatures: instance['processorFeatures'],
+        vcpus: instance['vcpus'],
         savings: savings,
         instance_activity: instance_activity
       })
@@ -1071,6 +1151,10 @@ script "js_rds_nonidle_instances_with_metrics", type: "javascript" do
           privateDnsName: instance['privateDnsName'],
           region: instance['region'],
           tags: instance['tags'],
+          availabilityZone: instance['availabilityZone'],
+          licenseModel: instance['licenseModel'],
+          processorFeatures: instance['processorFeatures'],
+          vcpus: instance['vcpus'],
           savings: savings,
           newResourceType: newResourceType
         }
@@ -1119,10 +1203,10 @@ end
 
 # Find the available resource types for each engine/region so we can filter out invalid recommendations
 datasource "ds_rds_underutil_instance_types" do
-  run_script $js_rds_underutil_instances_types, $ds_rds_underutil_instances
+  run_script $js_rds_underutil_instance_types, $ds_rds_underutil_instances
 end
 
-script "js_rds_underutil_instances_types", type: "javascript" do
+script "js_rds_underutil_instance_types", type: "javascript" do
   parameters "ds_rds_underutil_instances"
   result "result"
   code <<-'EOS'
@@ -1280,9 +1364,14 @@ script "js_rds_idle_incident", type: "javascript" do
         databaseEngine: instance['databaseEngine'],
         platform: instance['databaseEngine'],
         engineVersion: instance['engineVersion'],
+        availabilityZone: instance['availabilityZone'],
+        licenseModel: instance['licenseModel'],
+        processorFeatures: instance['processorFeatures'],
+        vcpus: instance['vcpus'],
         savings: parseFloat(savings.toFixed(3)),
         savingsCurrency: ds_currency['symbol'],
         lookbackPeriod: param_stats_lookback,
+        newResourceType: "Terminate RDS Instance",
         service: "AmazonRDS",
         policy_name: ds_applied_policy['name'],
         // Dummy values to ensure hash_exclude works properly
@@ -1407,6 +1496,10 @@ script "js_rds_underutil_incident", type: "javascript" do
         cpuP99: instance['cpu_p99'],
         cpuP95: instance['cpu_p95'],
         cpuP90: instance['cpu_p90'],
+        availabilityZone: instance['availabilityZone'],
+        licenseModel: instance['licenseModel'],
+        processorFeatures: instance['processorFeatures'],
+        vcpus: instance['vcpus'],
         savings: parseFloat(savings.toFixed(3)),
         savingsCurrency: ds_currency['symbol'],
         lookbackPeriod: param_stats_lookback,
@@ -1514,6 +1607,9 @@ policy "pol_rightsize_rds" do
       field "region" do
         label "Region"
       end
+      field "availabilityZone" do
+        label "Availability Zone"
+      end
       field "state" do
         label "State"
       end
@@ -1555,6 +1651,12 @@ policy "pol_rightsize_rds" do
       end
       field "engineVersion" do
         label "Engine Version"
+      end
+      field "vcpus" do
+        label "vCPUs"
+      end
+      field "licenseModel" do
+        label "License Model"
       end
       field "arn" do
         label "ARN"
@@ -1609,6 +1711,9 @@ policy "pol_rightsize_rds" do
       field "region" do
         label "Region"
       end
+      field "availabilityZone" do
+        label "Availability Zone"
+      end
       field "state" do
         label "State"
       end
@@ -1624,11 +1729,20 @@ policy "pol_rightsize_rds" do
       field "resourceType" do
         label "Resource Type"
       end
+      field "newResourceType" do
+        label "Recommended Resource Type"
+      end
       field "databaseEngine" do
         label "Database Engine"
       end
       field "engineVersion" do
         label "Engine Version"
+      end
+      field "vcpus" do
+        label "vCPUs"
+      end
+      field "licenseModel" do
+        label "License Model"
       end
       field "arn" do
         label "ARN"
@@ -1683,13 +1797,15 @@ define downsize_rds_instances($data, $param_downsize_timeframe) return $all_resp
   $$all_responses = []
 
   foreach $instance in $data do
-    sub on_error: handle_error() do
-      call downsize_instance($instance, $param_downsize_timeframe) retrieve $downsize_response
+    if $instance["newResourceType"] != "Terminate RDS Instance"
+      sub on_error: handle_error() do
+        call downsize_instance($instance, $param_downsize_timeframe) retrieve $downsize_response
+      end
     end
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -1703,7 +1819,7 @@ define terminate_rds_instances($data) return $all_responses do
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -1799,7 +1915,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
     header "Api-Version", "1.0"
   end
   result do

@@ -1,14 +1,13 @@
-name "AWS Long-stopped Instances Meta Parent"
+name "AWS Long Stopped EC2 Instances Meta Parent"
 rs_pt_ver 20180301
 type "policy"
-short_description "Applies and manages \"child\" [AWS Long-stopped Instances](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/long_stopped_instances) Policies."
+short_description "Applies and manages \"child\" [AWS Long Stopped EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/long_stopped_instances) Policies."
 severity "low"
 category "Cost"
-tenancy "single"
 default_frequency "15 minutes"
 info(
   provider: "AWS",
-  version: "4.2", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "6.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "false"
 )
 
@@ -29,7 +28,8 @@ parameter "param_dimension_filter_includes" do
   type "list"
   label "Dimension Include Filters"
   description <<-EOS
-  Filters [`dimension_name=dimension_value` pairs] to determine which AWS Accounts returned by the Flexera Bill Analysis API to **INCLUDE** and be applied to.
+  Filters [`dimension_name=dimension_value` and `dimension_name=~dimension_value` pairs] to determine which AWS Accounts returned by the Flexera Bill Analysis API to **INCLUDE** and be applied to.
+  Use = to match the entire value and =~ to match a substring contained in the value.
   During each run this policy will select AWS Accounts who match **all** the filters defined and apply a child policy for each.
   If no include filters are provided, then all AWS Accounts are included by default.
   Most of the dimensions in Flexera can be used [default dimensions, custom tag dimensions, rule-based dimensions].  Full list of available dimensions documented in the [Bill Analysis API Docs](https://reference.rightscale.com/bill_analysis/).
@@ -41,7 +41,8 @@ parameter "param_dimension_filter_excludes" do
   type "list"
   label "Dimension Exclude Filters"
   description <<-EOS
-  Filters [`dimension_name=dimension_value` pairs] to determine which AWS Accounts returned by  the Flexera Bill Analysis API to **EXCLUDE** and *not* have policy applied to.
+  Filters [`dimension_name=dimension_value` and `dimension_name=~dimension_value` pairs] to determine which AWS Accounts returned by  the Flexera Bill Analysis API to **EXCLUDE** and *not* have policy applied to.
+  Use = to match the entire value and =~ to match a substring contained in the value.
   During each run this policy will select AWS Accounts who match **all** the filters defined here and excludes them from results.
   Can be used to exclude specific AWS Accounts [`vendor_account=123456789012`]
   Most of the dimensions in Flexera can be used [default dimensions, custom tag dimensions, rule-based dimensions].  Full list of available dimensions documented in the [Bill Analysis API Docs](https://reference.rightscale.com/bill_analysis/).
@@ -60,42 +61,60 @@ end
 parameter "param_template_source" do
   type "string"
   label "Child Policy Template Source"
-  description "By default, will use the \"AWS Long-stopped Instances\" Policy Template from Catalog.  Optionally, you can use the \"AWS Long-stopped Instances\" Policy Template uploaded in the current Flexera Project."
+  description "By default, will use the \"AWS Long Stopped EC2 Instances\" Policy Template from Catalog.  Optionally, you can use the \"AWS Long Stopped EC2 Instances\" Policy Template uploaded in the current Flexera Project."
   default "Published Catalog Template"
   allowed_values "Published Catalog Template", "Uploaded Template"
 end
 
 ## Child Policy Parameters
-parameter "param_allowed_regions_allow_or_deny" do
+parameter "param_regions_allow_or_deny" do
   type "string"
+  category "Filters"
   label "Allow/Deny Regions"
   description "Allow or Deny entered regions. See the README for more details"
   allowed_values "Allow", "Deny"
   default "Allow"
 end
 
-parameter "param_allowed_regions" do
+parameter "param_regions_list" do
   type "list"
-  label "Regions"
+  category "Filters"
+  label "Allow/Deny Regions List"
   allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   description "A list of allowed or denied regions. See the README for more details"
+  default []
 end
 
-parameter "param_exclude_tags" do
+parameter "param_exclusion_tags" do
   type "list"
-  category "User Inputs"
-  label "Exclusion Tag"
-  description "List of tags that will exclude EC2 instances from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'."
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
 end
 
 parameter "param_stopped_days" do
   type "number"
-  label "Stopped days"
-  description "Number of days an instance is stopped before it is added to the report."
+  category "Policy Settings"
+  label "Stopped Days"
+  description "The number of days an instance needs to be stopped to include it in the incident report."
+  default 7
+  min_value 1
+  max_value 90
 end
 
 parameter "param_automatic_action" do
   type "list"
+  category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
   allowed_values ["Terminate Instances"]
@@ -106,7 +125,7 @@ end
 # Authentication
 ###############################################################################
 credentials "auth_aws" do
-  schemes "aws","aws_sts"
+  schemes "aws", "aws_sts"
   label "AWS"
   description "Select the AWS Credential from the list"
   tags "provider=aws"
@@ -212,7 +231,7 @@ datasource "ds_published_child_policy_information" do
   result do
     encoding "json"
     # Select the published policy that is published by "support@flexera.com" and matches the name of the child policy template
-    collect jq(response, '.items[] | select(.name == "AWS Long-stopped Instances" and .created_by.email == "support@flexera.com")' ) do
+    collect jq(response, '.items[] | select(.name == "AWS Long Stopped EC2 Instances" and .created_by.email == "support@flexera.com")' ) do
       field "name", jmes_path(col_item, "name")
       field "href", jmes_path(col_item, "href")
       field "short_description", jmes_path(col_item, "short_description")
@@ -231,7 +250,7 @@ datasource "ds_project_child_policy_information" do
   result do
     encoding "json"
     # Select the uploaded policy that matches the name of the child policy template
-    collect jq(response, '.items[] | select(.name == "AWS Long-stopped Instances")' ) do
+    collect jq(response, '.items[] | select(.name == "AWS Long Stopped EC2 Instances")' ) do
       field "name", jmes_path(col_item, "name")
       field "href", jmes_path(col_item, "href")
       field "short_description", jmes_path(col_item, "short_description")
@@ -287,23 +306,49 @@ script "js_make_billing_center_request", type: "javascript" do
   // Append to default dimensions and filter expressions using parent policy params
   _.each(param_dimension_filter_includes, function (v) {
     // split key=value string
-    var split = v.split("=");
+    if (v.indexOf('=~') == -1) {
+      var split = v.split("=");
+      var type = "equal"
+    } else {
+      var split = v.split("=~");
+      var type = "substring"
+    }
+
     var k = split[0];
     var v = split[1];
+
     // append to lists
     dimensions.push(k);
-    filter_expressions.push({ dimension: k, type: "equal", value: v });
+
+    if (type == "equal") {
+      filter_expressions.push({ dimension: k, type: "equal", value: v });
+    } else {
+      filter_expressions.push({ dimension: k, type: "substring", substring: v });
+    }
   });
 
   // Append to filter expressions using exclude policy params
   _.each(param_dimension_filter_excludes, function (v) {
     // split key=value string
-    var split = v.split("=");
+    if (v.indexOf('=~') == -1) {
+      var split = v.split("=");
+      var type = "equal"
+    } else {
+      var split = v.split("=~");
+      var type = "substring"
+    }
+
     var k = split[0];
     var v = split[1];
+
     // append to lists
     dimensions.push(k);
-    filter_expressions.push({ "type": "not", "expression": { "dimension": k, "type": "equal", "value": v } });
+
+    if (type == "equal") {
+      filter_expressions.push({ "type": "not", "expression": { "dimension": k, "type": "equal", "value": v } });
+    } else {
+      filter_expressions.push({ "type": "not", "expression": { "dimension": k, "type": "substring", "substring": v } });
+    }
   });
 
   // Produces a duplicate-free version of the array
@@ -380,11 +425,13 @@ datasource "ds_get_existing_policies_incidents" do
     path join(["/api/governance/projects/", rs_project_id, "/incidents"])
     header "Api-Version", "1.0"
     query "meta_parent_policy_id", policy_id
+    query "state", "triggered"
   end
   result do
     collect jq(response, '.items[]?') do
       field "incident_id", jq(col_item, ".id")
       field "applied_policy_id", jq(col_item, ".applied_policy.id")
+      field "summary", jq(col_item, ".summary")
       field "state", jq(col_item, ".state")
       field "violation_data_count", jq(col_item, ".violation_data_count")
       field "updated_at", jq(col_item, ".updated_at")
@@ -402,11 +449,15 @@ script "js_format_existing_policies_incidents", type: "javascript" do
   result "formatted"
   code <<-EOS
   formatted={}
-  for (x=0;x<unformatted.length; x++) {
-    current = unformatted[x]
-    formatted[current.applied_policy_id] = {incident_id: current.incident_id, state: current.state, violation_data_count: current.violation_data_count, updated_at: current.updated_at}
-  }
-  EOS
+
+  _.each(unformatted, function(incident) {
+    if (formatted[incident['applied_policy_id']] == undefined) {
+      formatted[incident['applied_policy_id']] = []
+    }
+
+    formatted[incident['applied_policy_id']].push(incident)
+  })
+EOS
 end
 
 datasource "ds_format_existing_policies" do
@@ -439,13 +490,24 @@ script "js_format_existing_policies", type: "javascript" do
     options = format_options_keyvalue(ds_get_existing_policies[x].options);
 
     aws_account_id=options["param_aws_account_number"]
+
+    incident = null
+    incident2 = null
+    incidents = ds_format_incidents[ds_get_existing_policies[x]["applied_policy_id"]]
+
+    if (incidents != undefined) {
+      incident = ds_format_incidents[ds_get_existing_policies[x]["applied_policy_id"]][0]
+      incident2 = ds_format_incidents[ds_get_existing_policies[x]["applied_policy_id"]][1]
+    }
+
     if (formatted[aws_account_id] == undefined) {
       formatted[aws_account_id] = {
         "applied_policy_id":ds_get_existing_policies[x]["applied_policy_id"],
         "applied_policy_name":ds_get_existing_policies[x]["name"],
         "status":ds_get_existing_policies[x]["status"],
         "updated_at":ds_get_existing_policies[x]["updated_at"],
-        "incident": ds_format_incidents[ds_get_existing_policies[x]["applied_policy_id"]],
+        "incident": incident,
+        "incident2": incident2,
         "options": options
       }
       tracking[aws_account_id] = false
@@ -461,7 +523,8 @@ script "js_format_existing_policies", type: "javascript" do
           "applied_policy_name":ds_get_existing_policies[x]["name"],
           "status":ds_get_existing_policies[x]["status"],
           "updated_at":ds_get_existing_policies[x]["updated_at"],
-          "incident": ds_format_incidents[ds_get_existing_policies[x]["applied_policy_id"]]
+          "incident": incident,
+          "incident2": incident2
         })
       } else {
         duplicates.push({
@@ -469,14 +532,16 @@ script "js_format_existing_policies", type: "javascript" do
           "applied_policy_name":current["applied_policy_name"],
           "status":current["status"],
           "updated_at":current["updated_at"],
-          "incident": current["incident"]
+          "incident": current["incident"],
+          "incident2": current["incident2"]
         })
         formatted[aws_account_id] = {
           "applied_policy_id":ds_get_existing_policies[x]["applied_policy_id"],
           "applied_policy_name":ds_get_existing_policies[x]["name"],
           "status":ds_get_existing_policies[x]["status"],
           "updated_at":ds_get_existing_policies[x]["updated_at"],
-          "incident": ds_format_incidents[ds_get_existing_policies[x]["applied_policy_id"]],
+          "incident": incident,
+          "incident2": incident2,
           "options": options
         }
 
@@ -528,18 +593,35 @@ script "js_take_in_parameters", type: "javascript" do
 
   function add_to_grid(ep, action) {
     policy_status={
-      "policy_name": ep["applied_policy_name"],
-      "policy_link": applied_policy_url_prefix + ep["applied_policy_id"],
+      "id": ep["applied_policy_id"],
+      "policy_name": ep["applied_policy_name"] + '||' + applied_policy_url_prefix + ep["applied_policy_id"],
       "meta_policy_status": action,
       "policy_status": ep["status"],
       "policy_last_update": ep["updated_at"],
     };
-    if (ep.incident != null) {
-      policy_status["incident_link"] = incident_url_prefix + ep.incident.incident_id;
+
+    if (ep.incident != null && ep.incident != undefined) {
+      // Remove policy name from summary when applicable
+      summary_parts = ep.incident.summary.split(':')
+      summary = summary_parts[summary_parts.length - 1].trim()
+
+      policy_status["incident_summary"] = summary + '||' + incident_url_prefix + ep.incident.incident_id;
       policy_status["incident_state"] = ep.incident.state;
       policy_status["incident_violation_data_count"] = ep.incident.violation_data_count;
       policy_status["incident_last_update"] = ep.incident.updated_at;
     }
+
+    if (ep.incident2 != null && ep.incident2 != undefined) {
+      // Remove policy name from summary when applicable
+      summary_parts = ep.incident2.summary.split(':')
+      summary = summary_parts[summary_parts.length - 1].trim()
+
+      policy_status["incident_summary"] = summary + '||' + incident_url_prefix + ep.incident2.incident_id;
+      policy_status["incident_state"] = ep.incident2.state;
+      policy_status["incident2_violation_data_count"] = ep.incident2.violation_data_count;
+      policy_status["incident2_last_update"] = ep.incident2.updated_at;
+    }
+
     grid_and_cwf.grid.push(policy_status);
   }
 
@@ -736,19 +818,19 @@ datasource "ds_child_incident_details" do
   end
 end
 
-datasource "ds_list_aws_instances_combined_incidents" do
-  run_script $js_ds_list_aws_instances_combined_incidents, $ds_child_incident_details
+datasource "ds_long_stopped_instances_combined_incidents" do
+  run_script $js_ds_long_stopped_instances_combined_incidents, $ds_child_incident_details
 end
 
-script "js_ds_list_aws_instances_combined_incidents", type: "javascript" do
+script "js_ds_long_stopped_instances_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-EOS
   result = []
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
-    // If the incident summary contains "AWS Instances Stopped for Over" then include it in the filter result
-    if (s.indexOf("AWS Instances Stopped for Over") > -1) {
+    // If the incident summary contains "AWS Long Stopped EC2 Instances Found" then include it in the filter result
+    if (s.indexOf("AWS Long Stopped EC2 Instances Found") > -1) {
       _.each(incident["violation_data"], function(violation) {
         violation["incident_id"] = incident["id"];
         result.push(violation);
@@ -760,14 +842,17 @@ end
 
 
 # Escalation for Terminate Instances
-escalation "esc_terminate_stopped_instances" do
+escalation "esc_terminate_instances" do
   automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
   label "Terminate Instances"
-  description "Terminate selected instances"
-  run "esc_terminate_stopped_instances", data, rs_governance_host, rs_project_id
+  description "Approval to terminate all selected instances"
+
+  # Run declaration should go at end, after any parameters that may exist
+  run "esc_terminate_instances", data, rs_governance_host, rs_project_id
 end
-define esc_terminate_stopped_instances($data, $governance_host, $rs_project_id) do
-  call child_run_action($data, $governance_host, $rs_project_id, "Terminate Instances")
+define esc_terminate_instances($data, $governance_host, $rs_project_id) do
+  $actions_options = []
+  call child_run_action($data, $governance_host, $rs_project_id, "Terminate Instances", $action_options)
 end
 
 
@@ -777,26 +862,55 @@ end
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
-    # Consolidated incident for AWS Instances Stopped for Over
-  validate $ds_list_aws_instances_combined_incidents do
-    summary_template "Consolidated Incident: {{ len data }} AWS Instances Stopped for Over"
+    # Consolidated incident for AWS Long Stopped EC2 Instances Found
+  validate $ds_long_stopped_instances_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} AWS Long Stopped EC2 Instances Found"
     escalate $esc_email
-    escalate $esc_report_stopped_instances
-    escalate $esc_terminate_stopped_instances
+    escalate $esc_terminate_instances
     check eq(size(data), 0)
     export do
       resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "resourceType" do
+        label "Instance Size"
+      end
       field "region" do
         label "Region"
       end
+      field "platform" do
+        label "Platform"
+      end
+      field "hostname" do
+        label "Hostname"
+      end
+      field "launchTime" do
+        label "Launch Time"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+      field "service" do
+        label "Service"
+      end
       field "id" do
-        label "Instance Id"
-      end
-      field "instance_type" do
-        label "Instance Type"
-      end
-      field "tagKeyValue" do
-        label "Tags"
+        label "ID"
       end
       field "incident_id" do
         label "Child Incident ID"
@@ -811,50 +925,53 @@ policy "policy_scheduled_report" do
 The current status of Child Policies for **{{ data.parent_policy.name }}**:
 
 Total Child Applied Policies: {{ len data.grid }}
-
-| Applied Policy | Meta Child Policy Status | Policy Status | Policy Last Update | Incident | Incident State | Violation Count | Incident Last Update |
-| -------------- | ------------------------ | ------------- | ------------------ | -------- | -------------- | --------------- | -------------------- |
-{{ range data.grid -}}
-| {{- if .policy_link }} [{{ .policy_name }}]({{ .policy_link }}) {{ else }} {{ .policy_name }} {{- end }} | {{- if .meta_policy_status }} {{ .meta_policy_status }} {{ else }} No value {{- end }} | {{- if .policy_status }} {{ .policy_status }} {{ else }} No value {{- end }} | {{- if .policy_last_update }} {{ .policy_last_update }} {{ else }} No value {{- end }} | {{- if .incident_link }} [Incident]({{ .incident_link }}) {{ else }} No Incident {{- end }} | {{- if .incident_state }} {{ .incident_state }} {{ else }} No Incident {{- end }} | {{- if .incident_last_update }} {{ .incident_violation_data_count }} {{ else }} No Incident {{- end }} | {{- if .incident_last_update }} {{ .incident_last_update }} {{ else }} No Incident {{- end }} |
-{{ end -}}
-
 EOS
     check false # always trigger this status incident
-    # Export Table disabled for now until UI can support URL / linking
-    # Without linking the `policy_link`, `incident_link` values are not usable directly from UI
-    # export "grid" do
-    #   resource_level true
-    #   field "id" do
-    #     label "Applied Policy ID"
-    #   end
-    #   field "policy_name" do
-    #     label "Applied Policy Name"
-    #   end
-    #   field "policy_link" do
-    #     label "Applied Policy Link"
-    #   end
-    #   field "meta_policy_status" do
-    #     label "Meta Child Policy Status"
-    #   end
-    #   field "policy_status" do
-    #     label "Policy Status"
-    #   end
-    #   field "policy_last_update" do
-    #     label "Policy Last Update"
-    #   end
-    #   field "incident_link" do
-    #     label "Incident Link"
-    #   end
-    #   field "incident_state" do
-    #     label "Incident State"
-    #   end
-    #   field "incident_violation_data_count" do
-    #     label "Incident Violation Count"
-    #   end
-    #   field "incident_last_update" do
-    #     label "Incident Last Update"
-    #   end
-    # end
+    export "grid" do
+      resource_level true
+      field "id" do
+        label "Applied Policy ID"
+      end
+      field "policy_name" do
+        label "Applied Policy Name"
+        format "link-external"
+      end
+      field "meta_policy_status" do
+        label "Meta Child Policy Status"
+      end
+      field "policy_status" do
+        label "Policy Status"
+      end
+      field "policy_last_update" do
+        label "Policy Last Update"
+      end
+      field "incident_summary" do
+        label "Incident Summary"
+        format "link-external"
+      end
+      field "incident_state" do
+        label "Incident State"
+      end
+      field "incident_violation_data_count" do
+        label "Incident Violation Count"
+      end
+      field "incident_last_update" do
+        label "Incident Last Update"
+      end
+      field "incident2_summary" do
+        label "Incident 2 Summary"
+        format "link-external"
+      end
+      field "incident2_state" do
+        label "Incident 2 State"
+      end
+      field "incident2_violation_data_count" do
+        label "Incident 2 Violation Count"
+      end
+      field "incident2_last_update" do
+        label "Incident 2 Last Update"
+      end
+    end
   end
 
   # Create Child Policies Incident Check
@@ -925,7 +1042,7 @@ define groupByIncidentID($data) return $incidents do
   end
 end
 
-define child_run_action($data, $governance_host, $rs_project_id, $action_label) do
+define child_run_action($data, $governance_host, $rs_project_id, $action_label, $action_options) do
   # Empty global array for log strings, helpful for debugging
   $$debug = []
 
@@ -934,7 +1051,7 @@ define child_run_action($data, $governance_host, $rs_project_id, $action_label) 
   call groupByIncidentID($data) retrieve $incidents
   $$debug_incidents = to_json($incidents)
 
-  call runActions($incidents, $action_label, $governance_host, $rs_project_id)
+  call runActions($incidents, $action_label, $governance_host, $rs_project_id, $action_options)
 
   # If we encountered any errors, use `raise` to mark the CWF process as errored
   if inspect($$errors) != "null"
@@ -946,7 +1063,7 @@ define child_run_action($data, $governance_host, $rs_project_id, $action_label) 
   task_label("All \""+$action_label+"\" actions completed successfully!")
 end
 
-define runActions($incidents, $action_label, $governance_host, $rs_project_id) do
+define runActions($incidents, $action_label, $governance_host, $rs_project_id, $action_options) do
   foreach $id in keys($incidents) do
     sub on_error: handle_error() do
       $incident = $incidents[$id]
@@ -986,6 +1103,10 @@ define runActions($incidents, $action_label, $governance_host, $rs_project_id) d
         headers: { "Api-Version": "1.0" },
         body: { "options":[{ "name": "ids",  "value": $incident["resource_ids"] }] }
       }
+      # If the action has parameters, add them to the request body
+      if type($action_options) == "array" && size($action_options) > 0
+        $request["body"]["options"] = $request["body"]["options"] + $action_options
+      end
       $response = http_request($request)
       $$debug << to_json({
         "request": $request,

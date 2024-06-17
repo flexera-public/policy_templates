@@ -1,0 +1,732 @@
+name "Azure Untagged Virtual Machines"
+rs_pt_ver 20180301
+type "policy"
+short_description "Find all Azure virtual machines missing any of the user provided tags with the option to update the tags, power off the instance, or delete the instance. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/azure_untagged_vms) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+category "Compliance"
+severity "low"
+default_frequency "weekly"
+info(
+  version: "1.1",
+  provider: "Azure",
+  service: "Compute",
+  policy_set: "Untagged Resources"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  category "Policy Settings"
+  label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_tags" do
+  type "list"
+  category "Filters"
+  label "Tags"
+  description "The policy will report resources missing the specified tags. Enter the key name to look for resources missing a key, and enter Key==Value to find resources missing a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Any / All"
+  description "Whether to report on instances missing any of the specified tags or all of them. Only applicable if more than one value is entered in the 'Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
+parameter "param_subscriptions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Subscriptions"
+  description "Allow or Deny entered Subscriptions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_subscriptions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Subscriptions List"
+  description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Power Off Instances", "Delete Instances"]
+  default []
+end
+
+parameter "param_skipshutdown" do
+  type "string"
+  category "Actions"
+  label "Power Off Type"
+  description "Whether to perform a graceful shutdown or a forced shutdown when powering off instances. Only applicable when taking action against instances."
+  allowed_values "Graceful", "Forced"
+  default "Graceful"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_azure" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_azure" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_azure_subscriptions" do
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path "/subscriptions/"
+    query "api-version", "2020-01-01"
+    header "User-Agent", "RS Policies"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "subscriptionId")
+      field "name", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
+    end
+  end
+end
+
+datasource "ds_azure_subscriptions_filtered" do
+  run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
+end
+
+script "js_azure_subscriptions_filtered", type: "javascript" do
+  parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
+  result "result"
+  code <<-'EOS'
+  if (param_subscriptions_list.length > 0) {
+    result = _.filter(ds_azure_subscriptions, function(subscription) {
+      include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
+
+      if (param_subscriptions_allow_or_deny == "Deny") {
+        include_subscription = !include_subscription
+      }
+
+      return include_subscription
+    })
+  } else {
+    result = ds_azure_subscriptions
+  }
+EOS
+end
+
+datasource "ds_azure_instances" do
+  iterate $ds_azure_subscriptions_filtered
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Compute/virtualMachines"])
+    query "api-version", "2019-03-01"
+    header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "resourceId", jmes_path(col_item, "id")
+      field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
+      field "resourceKind", jmes_path(col_item, "type")
+      field "name", jmes_path(col_item, "name")
+      field "region", jmes_path(col_item, "location")
+      field "osType", jmes_path(col_item, "properties.storageProfile.osDisk.osType")
+      field "resourceType", jmes_path(col_item, "properties.hardwareProfile.vmSize")
+      field "tags", jmes_path(col_item, "tags")
+      field "subscriptionId",val(iter_item, "id")
+      field "subscriptionName",val(iter_item, "name")
+    end
+  end
+end
+
+datasource "ds_azure_instances_region_filtered" do
+  run_script $js_azure_instances_region_filtered, $ds_azure_instances, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_azure_instances_region_filtered", type: "javascript" do
+  parameters "ds_azure_instances", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-'EOS'
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_azure_instances, function(vm) {
+      include_vm = _.contains(param_regions_list, vm['region'])
+
+      if (param_regions_allow_or_deny == "Deny") {
+        include_vm = !include_vm
+      }
+
+      return include_vm
+    })
+  } else {
+    result = ds_azure_instances
+  }
+EOS
+end
+
+datasource "ds_azure_instances_missing_tags" do
+  run_script $js_azure_instances_missing_tags, $ds_azure_instances_region_filtered, $param_tags, $param_tags_boolean
+end
+
+script "js_azure_instances_missing_tags", type: "javascript" do
+  parameters "ds_azure_instances_region_filtered", "param_tags", "param_tags_boolean"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  comparators = _.map(param_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  if (comparators.length > 0) {
+    // Check each VM for missing tags
+    _.each(ds_azure_instances_region_filtered, function(vm) {
+      vm_tags = vm['tags']
+      if (typeof(vm_tags) != 'object') { vm_tags = {} }
+
+      // Store a list of missing tags
+      missing_tags = []
+
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        vm_tag = vm_tags[comparator['key']]
+
+        if (comparison == 'key' && vm_tag == undefined) { missing_tags.push(string) }
+        if (comparison == '==' && vm_tag != value) { missing_tags.push(string) }
+        if (comparison == '!=' && vm_tag == value) { missing_tags.push(string) }
+
+        if (comparison == '=~') {
+          if (vm_tag == undefined) { missing_tags.push(string) }
+          if (vm_tag != undefined && !value.test(vm_tag)) { missing_tags.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (vm_tag != undefined && value.test(vm_tag)) { missing_tags.push(string) }
+        }
+      })
+
+      if (missing_tags.length == comparators.length || (missing_tags.length > 0 && param_tags_boolean == 'Any')) {
+        new_vm = vm
+        new_vm['missing_tags'] = missing_tags
+        result.push(new_vm)
+      }
+    })
+  }
+EOS
+end
+
+datasource "ds_missing_tags_incident" do
+  run_script $js_missing_tags_incident, $ds_azure_instances_missing_tags, $ds_applied_policy, $param_tags, $param_tags_boolean
+end
+
+script "js_missing_tags_incident", type: "javascript" do
+  parameters "ds_azure_instances_missing_tags", "ds_applied_policy", "param_tags", "param_tags_boolean"
+  result "result"
+  code <<-'EOS'
+  result = _.map(ds_azure_instances_missing_tags, function(instance) {
+    instance_tags = []
+
+    if (typeof(instance['tags']) == 'object') {
+      _.each(Object.keys(instance['tags']), function(key) {
+        instance_tags.push(key + '=' + instance['tags'][key])
+      })
+    }
+
+    return {
+      accountID: instance['subscriptionId'],
+      accountName: instance['subscriptionName'],
+      resourceGroup: instance['resourceGroup'],
+      resourceName: instance['name'],
+      resourceID: instance['resourceId'],
+      resourceType: instance['resourceType'],
+      resourceKind: instance['resourceKind'],
+      region: instance['region'],
+      osType: instance['osType'],
+      tags_object: instance['tags'],
+      service: 'Microsoft.Compute',
+      tags: instance_tags.join(', '),
+      missing_tags: instance['missing_tags'].join(', '),
+      policy_name: ds_applied_policy['name'],
+      message: ""
+    }
+  })
+
+  // Dummy item to ensure that the check statement in the policy executes at least once
+  result.push({
+    accountID: "",    accountName: "",   resourceGroup: "",  resourceName: "",
+    resourceID: "",   resourceType: "",  resourceKind: "",   region: "",
+    osType: "",       tags_object: "",   service: "",        tags: "",
+    policy_name: "",  message: "",       missing_tags: ""
+  })
+
+  phrase = "one or more"
+  if (param_tags_boolean == "All") { phrase = "all" }
+
+  message = ["The following Azure virtual machines are missing ", phrase, " of the following tags:\n\n"].join('')
+  tag_list = _.map(param_tags, function(tag) { return ["- ", tag, "\n"].join('') }).join('')
+  disclaimer = "\nThe above settings can be modified by editing the applied policy and changing the appropriate parameters."
+
+  result[0]['message'] = message + tag_list + disclaimer
+EOS
+end
+
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_azure_missing_tags" do
+  validate_each $ds_missing_tags_incident do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Virtual Machines Missing Tags Found"
+    detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
+    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    escalate $esc_tag_instances
+    escalate $esc_poweroff_instances
+    escalate $esc_delete_instances
+    hash_exclude "message"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Subscription ID"
+      end
+      field "accountName" do
+        label "Subscription Name"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "missing_tags" do
+        label "Missing Tags"
+      end
+      field "resourceType" do
+        label "Instance Size"
+      end
+      field "resourceKind" do
+        label "Resource Kind"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "osType" do
+        label "Operating System"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+      field "tags_object" do
+        label "Tag Object"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_tag_instances" do
+  automatic false
+  label "Add Tags"
+  description "Update tags of the selected instance"
+  parameter "param_tags_to_add" do
+    type "list"
+    category "Actions"
+    label "Add Tags (Key:Value)"
+    description "Cloud native tags to add to instances with missing tags. Use Key=Value format. Example: env=production"
+    allowed_pattern /^[^=]+=[^=]+$/
+  end
+  run "tag_instances", data, $param_azure_endpoint, $param_tags_to_add
+end
+
+escalation "esc_poweroff_instances" do
+  automatic contains($param_automatic_action, "Power Off Instances")
+  label "Power Off Instances"
+  description "Approval to power off all selected instances"
+  run "poweroff_instances", data, $param_azure_endpoint, $param_skipshutdown
+end
+
+escalation "esc_delete_instances" do
+  automatic contains($param_automatic_action, "Delete Instances")
+  label "Delete Instances"
+  description "Approval to delete all selected instances"
+  run "delete_instances", data, $param_azure_endpoint
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define tag_instances($data, $param_azure_endpoint, $param_tags_to_add) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call tag_instance($instance, $param_azure_endpoint, $param_tags_to_add) retrieve $tag_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+define tag_instance($instance, $param_azure_endpoint, $param_tags_to_add) return $response do
+  $tags = $instance['tags_object']
+
+  if $tags == null
+    $tags = {}
+  end
+
+  foreach $tag in $param_tags_to_add do
+    $key = first(split($tag, "="))
+    $value = last(split($tag, "="))
+    $tags[$key] = $value
+  end
+
+  $host = $param_azure_endpoint
+  $href = $instance["id"]
+  $params = "?api-version=2023-07-01"
+  $url = $host + $href + $params
+  task_label("PATCH " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "patch",
+    host: $host,
+    href: $href,
+    query_strings: { "api-version": "2023-07-01" },
+    body: { "tags": $tags }
+  )
+
+  task_label("Patch Azure VM instance response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "PATCH " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response patching Azure VM instance: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Patch Azure VM instance successful: " + $instance["id"])
+  end
+end
+
+define poweroff_instances($data, $param_azure_endpoint, $param_skipshutdown) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call poweroff_instance($instance, $param_azure_endpoint, $param_skipshutdown) retrieve $poweroff_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+define poweroff_instance($instance, $param_azure_endpoint, $param_skipshutdown) return $response do
+  $host = $param_azure_endpoint
+  $href = $instance["id"] + "/powerOff"
+  $params = "?api-version=2023-07-01"
+  $url = $host + $href + $params
+  task_label("POST " + $url)
+
+  $query_strings = { "api-version": "2023-07-01" }
+
+  if $param_skipshutdown == "Forced"
+    $query_strings["skipShutdown"] = "true"
+    $params = $params + "&skipShutdown=true"
+  end
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "post",
+    host: $host,
+    href: $href,
+    query_strings: $query_strings
+  )
+
+  task_label("Power off Azure VM instance response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response powering off Azure VM instance: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Power off Azure VM instance successful: " + $instance["id"])
+  end
+end
+
+define delete_instances($data, $param_azure_endpoint) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call delete_instance($instance, $param_azure_endpoint) retrieve $delete_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+define delete_instance($instance, $param_azure_endpoint) return $response do
+  $host = $param_azure_endpoint
+  $href = $instance["id"]
+  $params = "?api-version=2023-07-01"
+  $url = $host + $href + $params
+  task_label("DELETE " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "delete",
+    host: $host,
+    href: $href,
+    query_strings: { "api-version": "2023-07-01" }
+  )
+
+  task_label("Delete Azure VM instance response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response deleting Azure VM instance: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Delete Azure VM instance successful: " + $instance["id"])
+  end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
+end

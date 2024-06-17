@@ -1,5 +1,21 @@
 # Changelog
 
+## v4.2.0
+
+- Modified internal names for incident fields for more accurate scraping into Optimization dashboard
+
+## v4.1
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
+## v4.0
+
+- Added support for regex when filtering resources by label
+
+## v3.2
+
+- Fixed issue where currency conversion would sometimes not work as expected.
+
 ## v3.1
 
 - Added ability to filter by how long a disk has been detached

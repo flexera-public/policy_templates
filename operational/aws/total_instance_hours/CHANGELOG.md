@@ -1,5 +1,26 @@
 # Changelog
 
+## v4.1.2
+
+- Added `deprecated` field to policy metadata. Functionality is unchanged.
+
+## v4.1.1
+
+- Deprecated: This policy is no longer being updated. Please see policy README for more information.
+
+## v4.1.0
+
+- Fixed issue where only top-level billing centers could be filtered on. Policy now additionally supports filtering on child billing centers.
+
+## v4.0
+
+- Added ability to filter the report for a list of Billing Centers that can either be allowed or denied.
+- Added ability to filter the report for a list of Regions that can either be allowed or denied.
+
+## v3.2
+
+- Updated policy metadata to correctly identify it as an AWS policy
+
 ## v3.1
 
 - Updated indentation for chart url so it renders corrrectly in the policy incident email

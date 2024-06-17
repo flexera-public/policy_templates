@@ -1,5 +1,20 @@
 # Changelog
 
+## v5.1.0
+
+- Modified internal names for incident fields for more accurate scraping into Optimization dashboard
+
+## v5.0.0
+
+- Added estimated savings based on Google's Cloud Billing API
+- Added `Minimum Savings Threshold` parameter to filter results
+- Added support for automatic currency conversion for savings
+- To facilitate the above, policy template now requires additional permissions
+
+## v4.0
+
+- Added support for regex when filtering resources by label
+
 ## v3.0
 
 - Several parameters altered to be more descriptive and human-readable

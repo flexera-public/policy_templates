@@ -5,11 +5,11 @@ short_description "Check for object store items for last modified date and moves
 long_description ""
 category "Cost"
 severity "low"
-default_frequency "daily"
+default_frequency "weekly"
 info(
-  version: "3.2",
+  version: "4.0",
   provider: "AWS",
-  service: "S3",
+  service: "Storage",
   policy_set: "Object Store Optimization"
 )
 
@@ -19,14 +19,10 @@ info(
 
 parameter "param_email" do
   type "list"
-  label "Email addresses to notify"
-  description "Email addresses of the recipients you wish to notify when new incidents are created"
-end
-
-parameter "param_glacier_days" do
-  type "string"
-  label "Days since last modified to move to Glacier"
-  description "Move to glacier after days last modified - leave blank to skip moving"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
 end
 
 parameter "param_aws_account_number" do
@@ -37,42 +33,83 @@ parameter "param_aws_account_number" do
   default ""
 end
 
-parameter "param_deep_archive_days" do
-  type "string"
-  label "Days since last modified to move to Deep Archive"
-  description "Move to glacier deep archive after days last modified- leave blank to skip moving"
-end
-
-parameter "param_exclude_tags" do
-  type "list"
-  label "Tags to ignore"
-  description "List of tags that will exclude s3 objects from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'"
-  default []
-end
-
 parameter "param_bucket_list" do
   type "list"
+  category "Filters"
   label "Bucket List"
   description "A list of S3 buckets to assess objects in. Leave blank to assess all buckets."
   default []
 end
 
-parameter "param_automatic_action" do
+parameter "param_exclusion_tags" do
   type "list"
-  label "Automatic Actions"
-  description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Update S3 Objects Class"]
+  category "Filters"
+  label "Exclusion Tags (Key:Value)"
+  description "Cloud native tags to ignore S3 objects that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:* format to match any objects with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:*"
+  allowed_pattern /(^$)|[\w]*\:.*/
   default []
 end
 
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details"
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  description "A list of allowed or denied regions. See the README for more details"
+  default []
+end
+
+parameter "param_new_storage_class" do
+  type "string"
+  category "Actions"
+  label "New Storage Class"
+  description "Whether to move objects to Glacier or Deep Archive if they meet the specified age thresholds. Select 'Both' to consider moving objects to either one based on the specified age thresholds"
+  default "Both"
+  allowed_values "Both", "Glacier", "Deep Archive"
+end
+
+parameter "param_glacier_days" do
+  type "number"
+  category "Actions"
+  label "Glacier Age Threshold (Days)"
+  description "Time in days since object was last modified to change storage class to Glacier. Not applicable if 'Deep Archive' is selected for New Storage Class"
+  default 30
+  min_value 1
+end
+
+parameter "param_deep_archive_days" do
+  type "number"
+  category "Actions"
+  label "Deep Archive Age Threshold (Days)"
+  description "Time in days since object was last modified to change storage class to Deep Archive. Not applicable if 'Glacier' is selected for New Storage Class"
+  default 90
+  min_value 1
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Update S3 Objects Storage Class", "Delete S3 Objects"]
+  default []
+end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-#authenticate with AWS
 credentials "auth_aws" do
-  schemes "aws","aws_sts"
+  schemes "aws", "aws_sts"
   label "AWS"
   description "Select the AWS Credential from the list"
   tags "provider=aws"
@@ -81,7 +118,7 @@ end
 
 credentials "auth_flexera" do
   schemes "oauth2"
-  label "flexera"
+  label "Flexera"
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
@@ -90,7 +127,7 @@ end
 # Pagination
 ###############################################################################
 
-pagination "s3_objects_pagination" do
+pagination "pagination_aws_s3" do
   get_page_marker do
     body_path "//ListBucketResult/NextContinuationToken"
   end
@@ -103,21 +140,58 @@ end
 # Datasources & Scripts
 ###############################################################################
 
-#https://docs.aws.amazon.com/AmazonS3/latest/API/RESTServiceGET.html
-datasource "ds_aws_buckets" do
+## Get applied policy metadata for use later
+datasource "ds_applied_policy" do
   request do
-    auth $auth_aws
-    host "s3.amazonaws.com"
-    path "/"
-    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
-    # Forces `ds_is_deleted` datasource to run first during policy execution
-    header "Meta-Flexera", val($ds_is_deleted, "path")
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get AWS account info
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
   end
   result do
-    encoding "xml"
-    collect xpath(response, "//ListAllMyBucketsResult/Buckets/Bucket", "array") do
-      field "bucket_name", xpath(col_item,"Name")
-      field "bucket_creation_date", xpath(col_item, "CreationDate")
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
     end
   end
 end
@@ -135,198 +209,188 @@ datasource "ds_get_caller_identity" do
   result do
     encoding "xml"
     collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
-      field "account",xpath(col_item, "Account")
+      field "account", xpath(col_item, "Account")
     end
   end
 end
 
-#https://docs.aws.amazon.com/AmazonS3/latest/API/RESTBucketGETlocation.html
-datasource "ds_aws_buckets_with_region" do
-  iterate $ds_aws_buckets
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_get_caller_identity
+end
+
+script "js_aws_account", type:"javascript" do
+  parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+  result = _.find(ds_cloud_vendor_accounts, function(account) {
+    return account['id'] == ds_get_caller_identity[0]['account']
+  })
+
+  // This is in case the API does not return the relevant account info
+  if (result == undefined) {
+    result = {
+      id: ds_get_caller_identity[0]['account'],
+      name: "",
+      tags: {}
+    }
+  }
+EOS
+end
+
+datasource "ds_get_aws_buckets" do
   request do
     auth $auth_aws
     host "s3.amazonaws.com"
-    path join(["/", val(iter_item, "bucket_name")])
+    path "/"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//ListAllMyBucketsResult/Buckets/Bucket", "array") do
+      field "name", xpath(col_item,"Name")
+      field "creation_date", xpath(col_item, "CreationDate")
+    end
+  end
+end
+
+datasource "ds_aws_buckets_name_filtered" do
+  run_script $js_aws_buckets_name_filtered, $ds_get_aws_buckets, $param_bucket_list
+end
+
+script "js_aws_buckets_name_filtered", type: "javascript" do
+  parameters "ds_get_aws_buckets", "param_bucket_list"
+  result "result"
+  code <<-EOS
+  if (param_bucket_list.length > 0) {
+    result = _.filter(ds_get_aws_buckets, function(bucket) {
+      return _.contains(param_bucket_list, bucket['name'])
+    })
+  } else {
+    result = ds_get_aws_buckets
+  }
+EOS
+end
+
+datasource "ds_aws_buckets_with_region" do
+  iterate $ds_aws_buckets_name_filtered
+  request do
+    auth $auth_aws
+    host "s3.amazonaws.com"
+    path join(["/", val(iter_item, "name")])
     query "location", ""
   end
   result do
     encoding "xml"
-    field "bucket_name", val(iter_item, "bucket_name")
-    field "bucket_creation_date", val(iter_item, "bucket_creation_date")
     field "region", xpath(response, "//LocationConstraint")
+    field "name", val(iter_item, "name")
+    field "creation_date", val(iter_item, "creation_date")
   end
 end
 
-datasource "ds_aws_sanitized_buckets" do
-  run_script $js_parse_buckets, $ds_aws_buckets_with_region, $param_bucket_list
+datasource "ds_aws_buckets_region_filtered" do
+  run_script $js_aws_buckets_region_filtered, $ds_aws_buckets_with_region, $param_regions_allow_or_deny, $param_regions_list
 end
 
-script "js_parse_buckets", type: "javascript" do
-  parameters "buckets", "param_bucket_list"
-  result "results"
+script "js_aws_buckets_region_filtered", type: "javascript" do
+  parameters "ds_aws_buckets_with_region", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
   code <<-EOS
-    results = []
-    bucket_list = []
-    if (param_bucket_list.length > 0) {
-      bucket_list = _.filter(buckets, function(bucket){ return _.contains(param_bucket_list, bucket.bucket_name)})
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_aws_buckets_with_region, function(bucket) {
+      include_bucket = _.contains(param_regions_list, bucket['region'])
+
+      if (param_regions_allow_or_deny == "Deny") {
+        include_bucket = !include_bucket
+      }
+
+      return include_bucket
+    })
+  } else {
+    result = ds_aws_buckets_with_region
+  }
+EOS
+end
+
+datasource "ds_aws_buckets" do
+  run_script $js_aws_buckets, $ds_aws_buckets_region_filtered
+end
+
+script "js_aws_buckets", type: "javascript" do
+  parameters "ds_aws_buckets_region_filtered"
+  result "result"
+  code <<-'EOS'
+  result = _.map(ds_aws_buckets_region_filtered, function(bucket) {
+    if (typeof(bucket['region']) != 'string' || bucket['region'] == '' || bucket['region'] == 'us-east-1') {
+      region = 'us-east-1'
+      host = 's3.amazonaws.com'
+    } else if (bucket['region'] == 'EU') {
+      region = 'eu-west-1'
+      host = 's3-eu-west-1.amazonaws.com'
     } else {
-      bucket_list = buckets
+      region = bucket['region'].toLowerCase().trim()
+      host = 's3-' + region + '.amazonaws.com'
     }
 
-    _.each(bucket_list, function (bucket, i) {
-      if ( !bucket["region"] ){
-        results.push({
-          "bucket_name": bucket["bucket_name"],
-          "bucket_creation_date": bucket["bucket_creation_date"],
-          "region": "us-east-1",
-          "host": "s3.amazonaws.com",
-          "tagKeyValue": ""
-        })
-      }else{
-        if(bucket["region"] == "EU" ) { bucket["region"] = "eu-west-1" }
-        results.push({
-          "bucket_name": bucket["bucket_name"],
-          "bucket_creation_date": bucket["bucket_creation_date"],
-          "region": bucket["region"],
-          "host": "s3-" + bucket["region"] + ".amazonaws.com",
-          "tagKeyValue": ""
-        })
-      }
-    });
-  EOS
+    return {
+      name: bucket['name'],
+      creation_date: bucket['creation_date'],
+      region: region,
+      host: host
+    }
+  })
+EOS
 end
 
-#https://docs.aws.amazon.com/AmazonS3/latest/API/v2-RESTBucketGET.html
 datasource "ds_aws_list_s3_objects" do
-  iterate $ds_aws_sanitized_buckets
+  iterate $ds_aws_buckets
   request do
     auth $auth_aws
-    pagination $s3_objects_pagination
+    pagination $pagination_aws_s3
     verb "GET"
     host val(iter_item, "host")
-    path join(["/", val(iter_item, "bucket_name"),"/"])
+    path join(["/", val(iter_item, "name"), "/"])
     query "list-type", "2"
   end
   result do
     encoding "xml"
     collect xpath(response, "//ListBucketResult/Contents", "array") do
-      field "bucket_name", val(iter_item, "bucket_name")
+      field "object_key", xpath(col_item, "Key")
+      field "storage_class", xpath(col_item, "StorageClass")
+      field "last_modified", xpath(col_item, "LastModified")
+      field "object_size", xpath(col_item, "Size")
+      field "bucket_name", val(iter_item, "name")
+      field "bucket_creation_date", val(iter_item, "creation_date")
       field "region", val(iter_item, "region")
-      field "bucket_creation_date", val(iter_item, "bucket_creation_date")
-      field "object_key", xpath(col_item,"Key")
-      field "storage_class", xpath(col_item,"StorageClass")
-      field "last_modified", xpath(col_item,"LastModified")
-      field "object_size", xpath(col_item,"Size")
       field "host", val(iter_item, "host")
     end
   end
 end
 
-datasource "ds_only_last_modified_objects" do
-  run_script $js_only_last_modified_objects, $ds_aws_list_s3_objects, $param_deep_archive_days, $param_glacier_days, $param_exclude_tags
+datasource "ds_aws_s3_objects_tag_queries" do
+  run_script $js_aws_s3_objects_tag_queries, $ds_aws_list_s3_objects, $param_exclusion_tags
 end
 
-script "js_only_last_modified_objects", type: "javascript" do
-  parameters "ds_aws_list_s3_objects", "param_deep_archive_days", "param_glacier_days", "param_exclude_tags"
-  result "results"
-  code <<-EOS
-    var results = {
-      "require_tags": [],
-      "without_tags": []
-    }
-
-    var arr = results.without_tags
-    if (param_exclude_tags.length > 0){
-      arr = results.require_tags
-    }
-
-    var glacier_date = new Date();
-    var deep_archive_date = new Date();
-    var glacier_days_to_move = parseInt(param_glacier_days,10);
-    var deep_archive_days_to_move = parseInt(param_deep_archive_days,10);
-    glacier_date = glacier_date.setDate(glacier_date.getDate() - glacier_days_to_move);
-    deep_archive_date = deep_archive_date.setDate(deep_archive_date.getDate() - deep_archive_days_to_move);
-    glacier_date = (new Date(glacier_date)).setHours(23, 59, 59, 999);
-    deep_archive_date =(new Date(deep_archive_date)).setHours(23, 59, 59, 999);
-
-    _.each(ds_aws_list_s3_objects, function (s3Object) {
-      if (s3Object.storage_class !== "GLACIER" && s3Object.storage_class !== "DEEP_ARCHIVE"){
-        var last_modified_date = (new Date(s3Object["last_modified"])).setHours(23, 59, 59, 999);
-        var modify_storage_class_to="";
-        if(param_glacier_days.length > 0 && param_deep_archive_days.length == 0 &&  last_modified_date <= glacier_date){
-          //When param_deep_archive_days is blank.
-          modify_storage_class_to = "GLACIER";
-        }else if(param_glacier_days.length == 0 && param_deep_archive_days.length > 0 && last_modified_date <= deep_archive_date){
-          //When param_glacier_days is blank.
-          modify_storage_class_to = "DEEP_ARCHIVE";
-        }else if(param_glacier_days.length > 0 && param_deep_archive_days.length > 0 && (last_modified_date <= glacier_date || last_modified_date <= deep_archive_date)){
-          if(glacier_days_to_move < deep_archive_days_to_move){
-            if(last_modified_date <= glacier_date && last_modified_date >= deep_archive_date){
-              modify_storage_class_to = "GLACIER";
-            }else{
-              modify_storage_class_to = "DEEP_ARCHIVE";
-            }
-          }else if(glacier_days_to_move > deep_archive_days_to_move){
-            if(last_modified_date <= deep_archive_date && last_modified_date >= glacier_date){
-              modify_storage_class_to = "DEEP_ARCHIVE";
-            }else{
-              modify_storage_class_to = "GLACIER";
-            }
-          }
-        }
-        if(modify_storage_class_to.length > 0){
-          var result = {
-              "bucket_name": s3Object["bucket_name"],
-              "region":s3Object["region"],
-              "bucket_creation_date": s3Object["bucket_creation_date"],
-              "host": s3Object["host"],
-              "object_key": s3Object["object_key"],
-              "storage_class": s3Object["storage_class"],
-              "last_modified": s3Object["last_modified"],
-              "modify_storage_class_to": modify_storage_class_to,
-              "object_size": s3Object["object_size"]
-          }
-          arr.push(result);
-        }
-      }
-    });
-    results.without_tags = _.sortBy(results.without_tags, 'region');
-    results.require_tags = _.sortBy(results.require_tags, 'region');
-  EOS
+script "js_aws_s3_objects_tag_queries", type: "javascript" do
+  parameters "ds_aws_list_s3_objects", "param_exclusion_tags"
+  result "result"
+  code <<-'EOS'
+  if (param_exclusion_tags.length > 0) {
+    result = ds_aws_list_s3_objects
+  } else {
+    result = []
+  }
+EOS
 end
 
-datasource "ds_require_tags" do
-  run_script $js_require_tags, $ds_only_last_modified_objects
-end
-
-script "js_require_tags", type: "javascript" do
-  parameters "s3objects"
-  result "results"
-  code <<-EOS
-    results = s3objects.require_tags
-  EOS
-end
-
-datasource "ds_without_tags" do
-  run_script $js_without_tags, $ds_only_last_modified_objects
-end
-
-script "js_without_tags", type: "javascript" do
-  parameters "s3objects"
-  result "results"
-  code <<-EOS
-    results = s3objects.without_tags
-  EOS
-end
-
-#https://docs.aws.amazon.com/AmazonS3/latest/API/RESTObjectGETtagging.html
-datasource "ds_aws_list_s3_objects_with_tags" do
-  iterate $ds_require_tags
+datasource "ds_aws_s3_objects_with_tags" do
+  iterate $ds_aws_s3_objects_tag_queries
   request do
     auth $auth_aws
     verb "GET"
     host val(iter_item, "host")
-    path join(["/", val(iter_item, "bucket_name"),"/", val(iter_item, "object_key")])
+    path join(["/", val(iter_item, "bucket_name"), "/", val(iter_item, "object_key")])
     query "tagging", ""
   end
   result do
@@ -334,132 +398,259 @@ datasource "ds_aws_list_s3_objects_with_tags" do
     collect xpath(response, "//Tagging/TagSet", "array") do
       field "tags" do
         collect xpath(col_item, "Tag") do
-          field "tagKey", xpath(col_item, "Key")
-          field "tagValue", xpath(col_item, "Value")
+          field "key", xpath(col_item, "Key")
+          field "value", xpath(col_item, "Value")
         end
       end
-      field "bucket_name", val(iter_item, "bucket_name")
-      field "region", val(iter_item, "region")
-      field "bucket_creation_date", val(iter_item, "bucket_creation_date")
       field "object_key", val(iter_item, "object_key")
       field "storage_class", val(iter_item, "storage_class")
       field "last_modified", val(iter_item, "last_modified")
       field "object_size", val(iter_item, "object_size")
+      field "bucket_name", val(iter_item, "bucket_name")
+      field "bucket_creation_date", val(iter_item, "bucket_creation_date")
+      field "region", val(iter_item, "region")
       field "host", val(iter_item, "host")
-      field "modify_storage_class_to", val(iter_item, "modify_storage_class_to")
     end
   end
 end
 
-datasource "ds_aws_filtered_s3_objects" do
-  run_script $js_aws_filtered_s3_objects, $ds_aws_list_s3_objects_with_tags, $param_exclude_tags, $ds_get_caller_identity, $ds_without_tags
+datasource "ds_aws_s3_objects" do
+  run_script $js_aws_s3_objects, $ds_aws_list_s3_objects, $ds_aws_s3_objects_with_tags, $param_exclusion_tags
 end
 
-#Process the response data, check for the tags and generate a list of s3 objects
-script "js_aws_filtered_s3_objects", type: "javascript" do
-  parameters "ds_aws_list_s3_objects_with_tags", "param_exclude_tags", "ds_get_caller_identity", "ds_without_tags"
-  result "results"
-  code <<-EOS
-    results = [];
-    var param_exclude_tags_lower=[];
+script "js_aws_s3_objects", type: "javascript" do
+  parameters "ds_aws_list_s3_objects", "ds_aws_s3_objects_with_tags", "param_exclusion_tags"
+  result "result"
+  code <<-'EOS'
+  if (param_exclusion_tags.length > 0) {
+    result = _.reject(ds_aws_s3_objects_with_tags, function(object) {
+      object_tags = []
 
-    for(var i=0; i < param_exclude_tags.length; i++){
-      param_exclude_tags_lower[i]=param_exclude_tags[i].toString().toLowerCase();
+      if (object['tags'] != null && object['tags'] != undefined) {
+        _.each(object['tags'], function(tag) {
+          object_tags.push([tag['key'], tag['value']].join(':'))
+          object_tags.push([tag['key'], '*'].join(':'))
+        })
+      }
+
+      exclude_object = false
+
+      _.each(param_exclusion_tags, function(exclusion_tag) {
+        if (_.contains(object_tags, exclusion_tag)) {
+          exclude_object = true
+        }
+      })
+
+      return exclude_object
+    })
+  } else {
+    result = _.map(ds_aws_list_s3_objects, function(object) {
+      return {
+        object_key: object['object_key'],
+        storage_class: object['storage_class'],
+        last_modified: object['last_modified'],
+        object_size: object['object_size'],
+        bucket_name: object['bucket_name'],
+        bucket_creation_date: object['bucket_creation_date'],
+        region: object['region'],
+        host: object['host'],
+        tags: []
+      }
+    })
+  }
+EOS
+end
+
+datasource "ds_aws_s3_objects_with_storage_class" do
+  run_script $js_aws_s3_objects_with_storage_class, $ds_aws_list_s3_objects, $param_deep_archive_days, $param_glacier_days, $param_new_storage_class
+end
+
+script "js_aws_s3_objects_with_storage_class", type: "javascript" do
+  parameters "ds_aws_list_s3_objects", "param_deep_archive_days", "param_glacier_days", "param_new_storage_class"
+  result "result"
+  code <<-'EOS'
+  result = _.map(ds_aws_list_s3_objects, function(object) {
+    object_tags = []
+
+    if (object['tags'] != null && object['tags'] != undefined) {
+      _.each(object['tags'], function(tag) {
+        object_tags.push([tag['key'], tag['value']].join('='))
+      })
     }
 
-    _.each(ds_aws_list_s3_objects_with_tags, function(s3Object){
-      var tags = s3Object['tags'];
-      var isTagMatched=false
-      var tagKeyValue=""
-      for(var k=0; k < tags.length; k++){
-        tag = tags[k]
-        //Check, if the tag present in entered param_exclude_tags, ignore the S3 object if the tag matches/present.
-        if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
-          isTagMatched = true;
-        }
-        if((tag['tagValue']).length > 0){
-          tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
-        }else{
-          tagKeyValue = tagKeyValue + ', '+ tag['tagKey']
-        }
-      }
-      if(!isTagMatched){
-        results.push({
-          "accountId": ds_get_caller_identity[0]['account'],
-          "bucket_name": s3Object["bucket_name"],
-          "region":s3Object["region"],
-          "bucket_creation_date": s3Object["bucket_creation_date"],
-          "host": s3Object["host"],
-          "object_key": s3Object["object_key"],
-          "storage_class": s3Object["storage_class"],
-          "last_modified": s3Object["last_modified"],
-          "modify_storage_class_to": s3Object["modify_storage_class_to"],
-          "object_size": s3Object["object_size"],
-          "tagKeyValue":(tagKeyValue.slice(2))
-        });
-      }
-    });
+    last_modified_date = new Date(object['last_modified'])
+    glacier_date = new Date(new Date() - (1000 * 60 * 60 * 24 * param_glacier_days))
+    deep_archive_date = new Date(new Date() - (1000 * 60 * 60 * 24 * param_deep_archive_days))
+    new_storage_class = null
 
-    _.each(ds_without_tags, function(s3Object){
-      results.push({
-        "accountId": ds_get_caller_identity[0]['account'],
-        "bucket_name": s3Object["bucket_name"],
-        "region":s3Object["region"],
-        "bucket_creation_date": s3Object["bucket_creation_date"],
-        "host": s3Object["host"],
-        "object_key": s3Object["object_key"],
-        "storage_class": s3Object["storage_class"],
-        "last_modified": s3Object["last_modified"],
-        "modify_storage_class_to": s3Object["modify_storage_class_to"],
-        "object_size": s3Object["object_size"],
-        "tagKeyValue": ""
-      });
-    });
+    if (object['storage_class'] != "GLACIER" && object['storage_class'] != "DEEP_ARCHIVE") {
+      if (last_modified_date <= glacier_date && param_new_storage_class != 'Deep Archive') {
+        new_storage_class = "GLACIER"
+      }
 
-    results = _.sortBy(results, 'region');
-  EOS
+      if (last_modified_date <= deep_archive_date && param_new_storage_class != 'Glacier') {
+        new_storage_class = "DEEP_ARCHIVE"
+      }
+    }
+
+    return {
+      object_key: object['object_key'],
+      storage_class: object['storage_class'],
+      object_size: object['object_size'],
+      bucket_name: object['bucket_name'],
+      bucket_creation_date: object['bucket_creation_date'],
+      region: object['region'],
+      host: object['host'],
+      tags: object_tags.join(', '),
+      last_modified: last_modified_date.toISOString(),
+      new_storage_class: new_storage_class
+    }
+  })
+EOS
 end
+
+
+datasource "ds_aws_s3_objects_incident" do
+  run_script $js_aws_s3_objects_incident, $ds_aws_s3_objects_with_storage_class, $ds_aws_account, $ds_applied_policy, $param_deep_archive_days, $param_glacier_days, $param_new_storage_class
+end
+
+script "js_aws_s3_objects_incident", type: "javascript" do
+  parameters "ds_aws_s3_objects_with_storage_class", "ds_aws_account", "ds_applied_policy", "param_deep_archive_days", "param_glacier_days", "param_new_storage_class"
+  result "result"
+  code <<-'EOS'
+  objects_to_change = _.reject(ds_aws_s3_objects_with_storage_class, function(object) {
+    return object['new_storage_class'] == null
+  })
+
+  result = _.map(objects_to_change, function(object) {
+    recommendationDetails = [
+      "Change storage class of S3 Object ", object['object_key'],
+      " in S3 Bucket ", object['bucket_name'],
+      " in AWS Account ", ds_aws_account['name'], " (", ds_aws_account['id'], ")",
+      " from ", object['storage_class'], " to ", object['new_storage_class']
+    ].join('')
+
+    return {
+      resourceID: object['object_key'],
+      resourceType: object['storage_class'],
+      newResourceType: object['new_storage_class'],
+      object_size: object['object_size'],
+      bucket_name: object['bucket_name'],
+      bucket_creation_date: object['bucket_creation_date'],
+      region: object['region'],
+      host: object['host'],
+      tags: object['tags'],
+      last_modified: object['last_modified'],
+      accountID: ds_aws_account['id'],
+      accountName: ds_aws_account['name'],
+      policy_name: ds_applied_policy['name'],
+      recommendationDetails: recommendationDetails,
+      message: ''
+    }
+  })
+
+  objects_total = ds_aws_s3_objects_with_storage_class.length.toString()
+  objects_to_change_total = result.length.toString()
+  objects_to_change_percentage = (objects_to_change_total / objects_total * 100).toFixed(2).toString() + '%'
+
+  object_noun = "objects"
+  if (objects_total == 1) { object_noun = "object" }
+
+  object_verb = "are"
+  if (objects_to_change_total == 1) { object_verb = "is" }
+
+  findings = [
+    "Out of ", objects_total, " AWS S3 ", object_noun, " analyzed, ",
+    objects_to_change_total, " (", objects_to_change_percentage,
+    ") ", object_verb, " recommended for a change in storage class. "
+  ].join('')
+
+  analysis = ''
+
+  if (param_new_storage_class != 'Deep Archive') {
+    glacier_day_noun = "days ago"
+    if (param_glacier_days == 1) { glacier_day_noun = "day ago" }
+
+    analysis += [
+      "An S3 Object is recommended for a change to the Glacier storage class ",
+      "if it was last modified at least ", param_glacier_days, " ", glacier_day_noun, ". "
+    ].join('')
+  }
+
+  if (param_new_storage_class != 'Glacier') {
+    deep_day_noun = "days ago"
+    if (param_deep_archive_days == 1) { deep_day_noun = "day ago" }
+
+    analysis += [
+      "An S3 Object is recommended for a change to the Deep Archive storage class ",
+      "if it was last modified at least ", param_deep_archive_days, " ", deep_day_noun, "."
+    ].join('')
+  }
+
+  analysis += "\n\n"
+
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+
+  // Dummy entry to ensure validation runs at least once
+  result.push({ resourceID: "", policy_name: "", message: "", tags: "" })
+
+  result[0]['message'] = findings + analysis + disclaimer
+EOS
+end
+
 
 ###############################################################################
 # Policy
 ###############################################################################
 
 policy "policy_s3_object_list" do
-  validate $ds_aws_filtered_s3_objects do
-    summary_template "AWS Account ID: {{with index data 0}}{{ .accountId }}{{end}} - {{ len data }} Opportunities for AWS Object Storage Optimization"
-    escalate $esc_report_s3_Objects_list
-    escalate $esc_modify_s3_object_storage_class_approval
-    escalate $esc_delete_s3_objects_approval
-    check logic_or($ds_parent_policy_terminated, eq(size(data), 0))
+  validate_each $ds_aws_s3_objects_incident do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS S3 Objects Recommended For Storage Class Change"
+    detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
+    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    escalate $esc_update
+    escalate $esc_delete
+    hash_exclude "message", "tags"
     export do
       resource_level true
-      field "accountId" do
-        label "Account Id"
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "bucket_name" do
+        label "Bucket Name"
+      end
+      field "resourceID" do
+        label "Object Key"
       end
       field "region" do
         label "Region"
       end
-      field "id" do
-        label "Bucket Name"
-        path "bucket_name"
-      end
-      field "object_key" do
-        label "Object Key"
-      end
-      field "storage_class" do
-        label "Current Storage Class"
-      end
       field "last_modified" do
         label "Last Modified Date"
       end
-      field "modify_storage_class_to" do
-        label "Move Storage Class To"
+      field "recommendationDetails" do
+        label "Recommendation"
       end
-      field "tagKeyValue" do
+      field "resourceType" do
+        label "Current Storage Class"
+      end
+      field "newResourceType" do
+        label "Recommended Storage Class"
+      end
+      field "tags" do
         label "Tags"
       end
       field "host" do
         label "Host"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
       end
     end
   end
@@ -469,107 +660,120 @@ end
 # Escalation
 ###############################################################################
 
-escalation "esc_report_s3_Objects_list" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
   email $param_email
 end
 
-escalation "esc_modify_s3_object_storage_class_approval" do
-  automatic contains($param_automatic_action, "Update S3 Objects Class")
-  label "Approve S3 Object Storage Class Change"
-  description "Approve selected S3 object storage class change"
-  run "modify_s3_object_storage_class", data, rs_optima_host
+escalation "esc_update" do
+  automatic contains($param_automatic_action, "Update S3 Objects Storage Class")
+  label "Update S3 Objects Storage Class"
+  description "Approval to update the storage class of all selected S3 Objects"
+  run "update_objects", data
 end
 
-escalation "esc_delete_s3_objects_approval" do
-  automatic false
+escalation "esc_delete" do
+  automatic contains($param_automatic_action, "Delete S3 Objects")
   label "Delete S3 Objects"
-  description "Delete selected S3 objects"
-  run "delete_s3_objects", data, rs_optima_host
+  description "Approval to delete all selected S3 Objects"
+  run "delete_objects", data
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-#https://docs.aws.amazon.com/AmazonS3/latest/API/RESTObjectCOPY.html
-define modify_s3_object_storage_class($data, $$rs_optima_host) return $all_responses do
-  $$debug=true
-  $all_responses = []
-  foreach $item in $data do
-    sub on_error: skip do
-      call url_encode($item['id']) retrieve $bucket_name
-      call url_encode($item['object_key']) retrieve $object_key
-      call url_encode($item['id']+"/"+$item['object_key']) retrieve $copy_source
-      call url_encode($item['modify_storage_class_to']) retrieve $storage_class
-      $response = http_request({
-                                verb: 'put',
-                                host: $item['host'],
-                                auth: $$auth_aws,
-                                href: join(['/', $bucket_name, '/', $object_key]),
-                                https: true,
-                                headers: {'content-type': 'application/x-amz-json-1.1',
-                                          'x-amz-copy-source': $copy_source,
-                                          'x-amz-storage-class': $storage_class
-                                        }
-                            })
-      $all_responses << $response
-      call sys_log('AWS object storage optimization ',to_s($response))
+define update_objects($data) return $all_responses do
+  $$all_responses = []
+
+  foreach $object in $data do
+    sub on_error: handle_error() do
+      call update_object($object) retrieve $update_response
+      $$all_responses << $update_response
     end
   end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
 end
 
-#https://docs.aws.amazon.com/AmazonS3/latest/API/RESTObjectDELETE.html
-define delete_s3_objects($data, $$rs_optima_host) return $all_responses do
-  $$debug=true
-  $all_responses = []
-  foreach $item in $data do
-    sub on_error: skip do
-      call url_encode($item['id']) retrieve $bucket_name
-      call url_encode($item['object_key']) retrieve $object_key
-    $response = http_delete(url: join(["https://",$item['host'],"/",$bucket_name,"/", $object_key]),
-                              auth: $$auth_aws
-                            )
-      $all_responses << $response
-      call sys_log('Delete AWS S3-Objects',to_s($response))
+define update_object($object) return $response do
+  call url_encode($object['bucket_name']) retrieve $bucket_name
+  call url_encode($object['resourceID']) retrieve $object_key
+  call url_encode($object['bucket_name'] + '/' + $object['resourceID']) retrieve $copy_source
+  call url_encode($object['newResourceType']) retrieve $storage_class
+
+  $host = $object['host']
+  $href = '/' + $bucket_name + '/' + $object_key
+  $url = $host + $href
+  task_label("PUT " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "put",
+    href: $href,
+    host: $host,
+    headers: {
+      'content-type': 'application/x-amz-json-1.1',
+      'x-amz-copy-source': $copy_source,
+      'x-amz-storage-class': $storage_class
+    }
+  )
+
+  task_label("Put AWS S3 Object response: " + $object['resourceID'] + " " + to_json($response))
+  $$all_responses << to_json({"req": "PUT " + $url, "resp": $response})
+
+  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
+    raise "Unexpected response putting AWS S3 Object: "+ $object['resourceID'] + " " + to_json($response)
+  else
+    task_label("Put AWS S3 Object successful: " + $object['resourceID'])
+  end
+end
+
+define delete_objects($data) return $all_responses do
+  $$all_responses = []
+
+  foreach $object in $data do
+    sub on_error: handle_error() do
+      call delete_object($object) retrieve $delete_response
+      $$all_responses << $delete_response
     end
   end
-end
 
-define sys_log($subject, $detail) do
-  # Create empty errors array if doesn't already exist
-  if !$$errors
-    $$errors = []
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
   end
-  # Check if debug is enabled
-  if $$debug
-    # Append to global $$errors
-    # This is the suggested way to capture errors
-    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
-    # If Flexera NAM Zone, create audit_entries [to be deprecated]
-    # This is the legacy method for capturing errors and only supported on Flexera NAM
-    if $$rs_optima_host == "api.optima.flexeraeng.com"
-      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
-      $task_label = "Creating audit entry for " + $subject
-      sub task_label: $task, on_error: skip_error_and_append($task) do
-        rs_cm.audit_entries.create(
-          notify: "None",
-          audit_entry: {
-            auditee_href: @@account,
-            summary: $subject,
-            detail: $detail
-          }
-        )
-      end # End sub on_error
-    end # End if rs_optima_host
-  end # End if debug is enabled
 end
 
-define skip_error_and_append($subject) do
-  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
-  $_error_behavior = "skip"
+define delete_object($object) return $response do
+  call url_encode($object['bucket_name']) retrieve $bucket_name
+  call url_encode($object['resourceID']) retrieve $object_key
+
+  $host = $object['host']
+  $href = '/' + $bucket_name + '/' + $object_key
+  $url = $host + $href
+  task_label("DELETE " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "delete",
+    href: $href,
+    host: $host
+  )
+
+  task_label("Delete AWS S3 Object response: " + $object['resourceID'] + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
+
+  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
+    raise "Unexpected response deleting AWS S3 Object: "+ $object['resourceID'] + " " + to_json($response)
+  else
+    task_label("Delete AWS S3 Object successful: " + $object['resourceID'])
+  end
 end
 
 define url_encode($string) return $encoded_string do
@@ -595,6 +799,15 @@ define url_encode($string) return $encoded_string do
   $encoded_string = gsub($encoded_string, "]", "%5D")
 end
 
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
+end
 
 ###############################################################################
 # Meta Policy [alpha]
@@ -616,7 +829,6 @@ datasource "ds_get_policy" do
     field "id", jmes_path(response, "id")
   end
 end
-
 
 datasource "ds_parent_policy_terminated" do
   run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id

@@ -1,26 +1,28 @@
-name "AWS S3 Bucket Intelligent Tiering Check"
+name "AWS S3 Buckets Without Intelligent Tiering"
 rs_pt_ver 20180301
 type "policy"
-short_description "This Policy Template scans all s3 buckets and reports if they don't have intelligent tiering enabled. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_storage_policy) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "This Policy Template scans all AWS S3 buckets and reports any that don't have intelligent tiering enabled. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_storage_policy) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
-severity "medium"
 category "Cost"
-default_frequency "daily"
+severity "medium"
+default_frequency "weekly"
 info(
-  version: "3.1",
+  version: "4.0",
   provider: "AWS",
-  service: "S3",
+  service: "Storage",
   policy_set: ""
 )
 
 ###############################################################################
-# User inputs
+# Parameters
 ###############################################################################
 
 parameter "param_email" do
   type "list"
-  label "Email Address"
-  description "Email addresses of the recipients you wish to notify"
+  category "Policy Settings"
+  label "Email addresses to notify"
+  description "A list of email addresses to notify."
+  default []
 end
 
 parameter "param_aws_account_number" do
@@ -31,20 +33,47 @@ parameter "param_aws_account_number" do
   default ""
 end
 
-parameter "param_exclude_tags" do
+parameter "param_exclusion_tags" do
   type "list"
-  category "User Inputs"
-  label "Exclude Tags"
-  description "A list of tags used to excluded volumes from the incident."
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details"
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  default []
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-#authenticate with AWS
 credentials "auth_aws" do
-  schemes "aws","aws_sts"
+  schemes "aws", "aws_sts"
   label "AWS"
   description "Select the AWS Credential from the list"
   tags "provider=aws"
@@ -59,8 +88,64 @@ credentials "auth_flexera" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
+
+## Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get AWS account info
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
 
 datasource "ds_get_caller_identity" do
   request do
@@ -68,21 +153,42 @@ datasource "ds_get_caller_identity" do
     verb "GET"
     host "sts.amazonaws.com"
     path "/"
-    header "User-Agent", "RS Policies"
     query "Action", "GetCallerIdentity"
     query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
   end
   result do
     encoding "xml"
     collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
-      field "account",xpath(col_item, "Account")
+      field "account", xpath(col_item, "Account")
     end
   end
 end
 
-# Reference: https://docs.aws.amazon.com/AmazonS3/latest/API/RESTServiceGET.html
-datasource "aws_buckets" do
-  # This request is not paginated
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_get_caller_identity
+end
+
+script "js_aws_account", type:"javascript" do
+  parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+  result = _.find(ds_cloud_vendor_accounts, function(account) {
+    return account['id'] == ds_get_caller_identity[0]['account']
+  })
+
+  // This is in case the API does not return the relevant account info
+  if (result == undefined) {
+    result = {
+      id: ds_get_caller_identity[0]['account'],
+      name: "",
+      tags: {}
+    }
+  }
+EOS
+end
+
+datasource "ds_get_aws_buckets" do
   request do
     auth $auth_aws
     host "s3.amazonaws.com"
@@ -95,157 +201,300 @@ datasource "aws_buckets" do
   result do
     encoding "xml"
     collect xpath(response, "//ListAllMyBucketsResult/Buckets/Bucket", "array") do
-      field "bucket_name", xpath(col_item, "Name")
+      field "name", xpath(col_item, "Name")
       field "creation_date", xpath(col_item, "CreationDate")
     end
   end
 end
 
-datasource "aws_buckets_with_region" do
-  iterate $aws_buckets
+datasource "ds_aws_buckets_with_region" do
+  iterate $ds_get_aws_buckets
   request do
     auth $auth_aws
-    host "s3-external-1.amazonaws.com"
-    path join(["/", val(iter_item, "bucket_name")])
+    host "s3.amazonaws.com"
+    path join(["/", val(iter_item, "name")])
     query "location", ""
-    header "User-Agent", "RS Policies"
   end
   result do
     encoding "xml"
-    field "bucket_name", val(iter_item, "bucket_name")
-    field "creation_date", val(iter_item, "creation_date")
     field "region", xpath(response, "//LocationConstraint")
+    field "name", val(iter_item, "name")
+    field "creation_date", val(iter_item, "creation_date")
   end
 end
 
-datasource "ds_aws_sanitized_buckets" do
-  run_script $parse_buckets, $aws_buckets_with_region
+datasource "ds_aws_buckets_sanitized" do
+  run_script $js_aws_buckets_sanitized, $ds_aws_buckets_with_region
 end
 
-script "parse_buckets", type: "javascript" do
-  parameters "buckets"
-  result "results"
-  code <<-EOS
-  results = []
-  for ( i = 0; i < buckets.length; i++ ) {
-    if ( !buckets[i]["region"] ){
-      results.push(
-      {
-        "bucket_name": buckets[i]["bucket_name"],
-        "creation_date": buckets[i]["creation_date"],
-        "region": "us-east-1",
-        "host": "s3-external-1.amazonaws.com",
-        "auth": "auth_aws"
-      }
-      )
+script "js_aws_buckets_sanitized", type: "javascript" do
+  parameters "ds_aws_buckets_with_region"
+  result "result"
+  code <<-'EOS'
+  result = _.map(ds_aws_buckets_with_region, function(bucket) {
+    if (typeof(bucket['region']) != 'string' || bucket['region'] == '' || bucket['region'] == 'us-east-1') {
+      region = 'us-east-1'
+      host = 's3.amazonaws.com'
+    } else if (bucket['region'] == 'EU') {
+      region = 'eu-west-1'
+      host = 's3-eu-west-1.amazonaws.com'
     } else {
-      if ( buckets[i]["region"] == "EU" ) { buckets[i]["region"] = "eu-west-1" }
-      results.push(
-      {
-        "bucket_name": buckets[i]["bucket_name"],
-        "creation_date": buckets[i]["creation_date"],
-        "region": buckets[i]["region"],
-        "host": "s3-" + buckets[i]["region"] + ".amazonaws.com"
-      }
-      )
+      region = bucket['region'].toLowerCase().trim()
+      host = 's3-' + region + '.amazonaws.com'
     }
-  };
+
+    return {
+      name: bucket['name'],
+      creation_date: bucket['creation_date'],
+      region: region,
+      host: host
+    }
+  })
 EOS
 end
 
-datasource "ds_aws_bucket_tags_list" do
-  iterate $ds_aws_sanitized_buckets
+datasource "ds_aws_buckets_region_filtered" do
+  run_script $js_aws_buckets_region_filtered, $ds_aws_buckets_sanitized, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_aws_buckets_region_filtered", type: "javascript" do
+  parameters "ds_aws_buckets_sanitized", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_aws_buckets_sanitized, function(bucket) {
+      include_bucket = _.contains(param_regions_list, bucket['region'])
+
+      if (param_regions_allow_or_deny == "Deny") {
+        include_bucket = !include_bucket
+      }
+
+      return include_bucket
+    })
+  } else {
+    result = ds_aws_buckets_sanitized
+  }
+EOS
+end
+
+datasource "ds_aws_buckets_with_tags" do
+  iterate $ds_aws_buckets_region_filtered
   request do
     auth $auth_aws
     host val(iter_item, "host")
-    path join(["/", val(iter_item, "bucket_name"),"/"])
-    ignore_status [404]
+    path join(["/", val(iter_item, "name")])
     query "tagging", ""
+    # Buckets with no tags cause a 404 response so we ignore that
+    ignore_status [404]
   end
   result do
     encoding "xml"
-    collect xpath(response, "//Tagging/TagSet", "array") do
-      field "tags" do
-        collect xpath(col_item, "Tag") do
-          field "tagKey", xpath(col_item, "Key")
-          field "tagValue", xpath(col_item, "Value")
-        end
+    field "name", val(iter_item, "name")
+    field "region", val(iter_item, "region")
+    field "creation_date", val(iter_item, "creation_date")
+    field "host", val(iter_item, "host")
+    field "tags" do
+      collect xpath(response, "//Tagging/TagSet/Tag", "array") do
+        field "key", xpath(col_item, "Key")
+        field "value", xpath(col_item, "Value")
       end
-      field "bucket_name", val(iter_item, "bucket_name")
-      field "creation_date", val(iter_item, "creation_date")
-      field "region", val(iter_item, "region")
-      field "host", val(iter_item, "host")
     end
   end
 end
 
+datasource "ds_aws_buckets_tag_filtered" do
+  run_script $js_aws_buckets_tag_filtered, $ds_aws_buckets_with_tags, $ds_aws_buckets_region_filtered, $param_exclusion_tags, $param_exclusion_tags_boolean
+end
+
+script "js_aws_buckets_tag_filtered", type: "javascript" do
+  parameters "ds_aws_buckets_with_tags", "ds_aws_buckets_region_filtered", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  result "result"
+  code <<-EOS
+  // Logic to ensure any buckets skipped because of a 404 response due to no tags
+  // are still included in the final result
+  tagged_bucket_list = _.map(ds_aws_buckets_with_tags, function(bucket) {
+    return bucket['name'] + '___' + bucket['region']
+  })
+
+  tagless_buckets = _.reject(ds_aws_buckets_region_filtered, function(bucket) {
+    return _.contains(tagged_bucket_list, bucket['name'] + '___' + bucket['region'])
+  })
+
+  aws_buckets = ds_aws_buckets_with_tags.concat(tagless_buckets)
+
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  if (param_exclusion_tags.length > 0) {
+    result = _.filter(aws_buckets, function(bucket) {
+      resource_tags = {}
+
+      if (typeof(resource['tags']) == 'object') {
+        _.each(resource['tags'], function(tag) {
+          resource_tags[tag['key']] = tag['value']
+        })
+      }
+
+      // Store a list of found tags
+      found_tags = []
+
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_tag = resource_tags[comparator['key']]
+
+        if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+        if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+        if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_tag == undefined) { found_tags.push(string) }
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+      })
+
+      all_tags_found = found_tags.length == comparators.length
+      any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+      return all_tags_found || any_tags_found
+    })
+  } else {
+    result = aws_buckets
+  }
+EOS
+end
+
 datasource "ds_aws_bucket_policies" do
-  iterate $ds_aws_sanitized_buckets
+  iterate $ds_aws_buckets_tag_filtered
   request do
     auth $auth_aws
     host val(iter_item, "host")
-    path join(["/", val(iter_item, "bucket_name"),"/"])
-    ignore_status [404]
+    path join(["/", val(iter_item, "name"), "/"])
     query "intelligent-tiering", ""
+    ignore_status [404]
   end
   result do
     encoding "xml"
-    field "bucket_name", val(iter_item, "bucket_name")
-    field "creation_date", val(iter_item, "creation_date")
+    field "it_configuration", xpath(response, "//ListIntelligentTieringConfigurationsResult/IntelligentTieringConfiguration")
+    field "name", val(iter_item, "name")
     field "region", val(iter_item, "region")
+    field "creation_date", val(iter_item, "creation_date")
+    field "host", val(iter_item, "host")
     field "tags", val(iter_item, "tags")
-    field "configuration", xpath(response, "//ListIntelligentTieringConfigurationsResult/IntelligentTieringConfiguration")
   end
 end
 
 datasource "ds_combined_bucket_info" do
-  run_script $js_combined_bucket_info, $ds_aws_bucket_policies, $ds_aws_bucket_tags_list, $ds_get_caller_identity, $param_exclude_tags
+  run_script $js_combined_bucket_info, $ds_aws_bucket_policies, $ds_aws_account, $ds_applied_policy
 end
 
 script "js_combined_bucket_info", type: "javascript" do
-  parameters "ds_aws_bucket_policies", "ds_aws_bucket_tags_list", "ds_get_caller_identity", "param_exclude_tags"
-  result "results"
-  code <<-EOF
-  var results = []
-  _.each(ds_aws_bucket_policies, function(bucket){
-    var tagged_bucket = _.first(_.filter(ds_aws_bucket_tags_list, function(item) {
-      if (item.bucket_name == bucket.bucket_name){
-        return item
-      }}
-    ))
-    var is_tagged_match = false;
-    if (tagged_bucket !== undefined){
-      tags = tagged_bucket.tags
-      bucket["tags"] = tags
-      var tagKeyValue=""
-
-      _.each(tags, function(tag){
-        if((tag['tagValue']).length > 0){
-          tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
-        }else{
-          tagKeyValue = tagKeyValue + ', '+ tag['tagKey']
-        }
-        key = tag['tagKey']
-        val = tag['tagValue']
-        _.each(param_exclude_tags, function(exclude_tag){
-          exclude_tag_key  = exclude_tag.split('=')[0]
-          exclude_tag_value = exclude_tag.split('=')[1]
-          if (exclude_tag_key == key){
-            if (exclude_tag_value == val){
-              is_tag_matched = true
-            }
-          }
-        })
-      })
-      bucket["tagKeyValue"] = (tagKeyValue.slice(2))
-    } else {
-      bucket["tags"] = ""
-    }
-    bucket["accountId"] = ds_get_caller_identity[0]['account']
-    results.push(bucket)
+  parameters "ds_aws_bucket_policies", "ds_aws_account", "ds_applied_policy"
+  result "result"
+  code <<-EOS
+  buckets_without_it = _.filter(ds_aws_bucket_policies, function(bucket) {
+    return bucket['it_configuration'] == "" || bucket['it_configuration'] == null || bucket['it_configuration'] == undefined
   })
-EOF
+
+  result = _.map(buckets_without_it, function(bucket) {
+    tags = []
+
+    if (bucket['tags'] != undefined && bucket['tags'] != null) {
+      tags = _.map(bucket['tags'], function(tag) { return [tag['key'], tag['value']].join('=') })
+    }
+
+    return {
+      resourceID: bucket['name'],
+      name: bucket['name'],
+      region: bucket['region'],
+      tags: tags.join(", "),
+      creation_date: new Date(bucket['creation_date']).toISOString(),
+      accountID: ds_aws_account['id'],
+      accountName: ds_aws_account['name'],
+      policy_name: ds_applied_policy['name'],
+      service: "AmazonS3"
+    }
+  })
+
+  // Dummy entry to ensure validation always occurs
+  result.push({ resourceID: "", tags: "", policy_name: "" })
+EOS
 end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_aws_intelligent_tiering" do
+  validate_each $ds_combined_bucket_info do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS S3 Buckets Without Intelligent Tiering Found"
+    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    hash_exclude "tags"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Bucket Name"
+      end
+      field "tags" do
+        label "Bucket Tags"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "creation_date" do
+        label "Creation Date"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+    end
+  end
+end
+
 ###############################################################################
 # Escalations
 ###############################################################################
@@ -256,36 +505,6 @@ escalation "esc_email" do
   description "Send incident email"
   email $param_email
 end
-
-###############################################################################
-# Policy
-###############################################################################
-
-policy "pol_aws_intelligent_tiering_check" do
-  validate_each $ds_combined_bucket_info do
-    summary_template "AWS Account ID: {{with index data 0}}{{ .accountId }}{{end}} - {{ len data }} Buckets found without intelligent tiering policies"
-    export do
-      resource_level true
-      field "id" do
-        path "bucket_name"
-        label "Bucket Name"
-      end
-      field "creation_date" do
-        label "Creation Date"
-      end
-      field "region" do
-        label "Region"
-      end
-      field "tagKeyValue" do
-        label "Tags"
-      end
-    end
-    #check if empty
-    check logic_or($ds_parent_policy_terminated, ne(val(item,"configuration"),""))
-    escalate $esc_email
-  end
-end
-
 
 ###############################################################################
 # Meta Policy [alpha]
@@ -299,7 +518,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
     header "Api-Version", "1.0"
   end
   result do

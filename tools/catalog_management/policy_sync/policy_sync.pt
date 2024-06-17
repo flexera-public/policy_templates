@@ -1,0 +1,544 @@
+name "Policy Template Synchronization"
+rs_pt_ver 20180301
+type "policy"
+short_description "Synchronizes policy templates in a Flexera organization's catalog with a GitHub repository. See the [README](https://github.com/flexera-public/policy_templates/tree/master/tools/catalog_management/policy_sync/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "low"
+category "Operational"
+default_frequency "15 minutes"
+info(
+  version: "3.0.0",
+  provider: "Flexera",
+  service: "Policy Engine",
+  policy_set: "",
+  publish: "false"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify"
+  default []
+end
+
+parameter "param_github_org" do
+  type "string"
+  category "Policy Settings"
+  label "GitHub Organization Name"
+  description "Name of the GitHub organization containing the policy repository"
+  default "flexera-public"
+end
+
+parameter "param_github_repo" do
+  type "string"
+  category "Policy Settings"
+  label "GitHub Repository Name"
+  description "Name of the policy repository on GitHub"
+  default "policy_templates"
+end
+
+parameter "param_github_branch" do
+  type "string"
+  category "Policy Settings"
+  label "GitHub Branch Name"
+  description "Name of the GitHub branch to pull the active policy JSON file from"
+  default "master"
+end
+
+parameter "param_github_active_list_path" do
+  type "string"
+  category "Policy Settings"
+  label "Active Policy JSON Path"
+  description "Path to the active policy list JSON file in the GitHub repository"
+  default "data/active_policy_list/active_policy_list.json"
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Publish Policy Templates", "Unpublish Defunct Policy Templates"]
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_active_policy_list" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path join([$param_github_org, "/", $param_github_repo, "/", $param_github_branch, "/", $param_github_active_list_path])
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    collect jmes_path(response, "policies") do
+      field "name", jmes_path(col_item, "name")
+      field "description", jmes_path(col_item, "description")
+      field "file_name", jmes_path(col_item, "file_name")
+      field "version", jmes_path(col_item, "version")
+      field "change_log", jmes_path(col_item, "change_log")
+      field "updated_at", jmes_path(col_item, "updated_at")
+    end
+  end
+end
+
+datasource "ds_current_template_list" do
+  request do
+    auth $auth_flexera
+    verb "GET"
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/policy_templates"])
+    query "view", "extended"
+    header "Api-Version", "1.0"
+  end
+  result do
+    collect jmes_path(response, "items") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "href", jmes_path(col_item, "href")
+      field "description", jmes_path(col_item, "short_description")
+      field "info", jmes_path(col_item, "info")
+      field "updated_at", jmes_path(col_item, "updated_at")
+    end
+  end
+end
+
+datasource "ds_current_published_list" do
+  request do
+    auth $auth_flexera
+    verb "GET"
+    host rs_governance_host
+    path join(["/api/governance/orgs/", rs_org_id, "/published_templates"])
+    query "view", "extended"
+    header "Api-Version", "1.0"
+  end
+  result do
+    collect jmes_path(response, "items") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "href", jmes_path(col_item, "href")
+      field "description", jmes_path(col_item, "short_description")
+      field "info", jmes_path(col_item, "info")
+      field "updated_at", jmes_path(col_item, "updated_at")
+    end
+  end
+end
+
+datasource "ds_current_templates_by_name" do
+  run_script $js_templates_by_name, $ds_current_template_list
+end
+
+datasource "ds_current_published_by_name" do
+  run_script $js_templates_by_name, $ds_current_published_list
+end
+
+script "js_templates_by_name", type: "javascript" do
+  parameters "templates"
+  result "result"
+  code <<-EOS
+  result = {}
+  _.each(templates, function(template) { result[template["name"]] = template })
+EOS
+end
+
+datasource "ds_updated_templates" do
+  run_script $js_updated_templates, $ds_active_policy_list, $ds_current_templates_by_name, $ds_current_published_by_name, $ds_applied_policy, $param_github_org, $param_github_repo, $param_github_branch
+end
+
+script "js_updated_templates", type: "javascript" do
+  parameters "ds_active_policy_list", "ds_current_templates_by_name", "ds_current_published_by_name", "ds_applied_policy", "param_github_org", "param_github_repo", "param_github_branch"
+  result "result"
+  code <<-EOS
+  // Filter out just the templates that are either new or in need of an update
+  updated_templates = _.filter(ds_active_policy_list, function(template) {
+    updated_template = false
+    catalog_template = ds_current_published_by_name[template['name']]
+
+    if (catalog_template != undefined) {
+      catalog_date = new Date(catalog_template['updated_at'])
+      github_date = new Date(template['updated_at'])
+      updated_template = github_date > catalog_date
+    }
+
+    // Include template if it has been updated OR if it isn't in the catalog at all
+    return updated_template || catalog_template == undefined
+  })
+
+  result = _.map(updated_templates, function(template) {
+    // Gather metadata from catalog template if it exists
+    catalog_template = ds_current_published_by_name[template['name']]
+
+    catalog_id = ""
+    catalog_href = ""
+    catalog_updated_at = ""
+
+    if (catalog_template != undefined) {
+      catalog_id = catalog_template['id']
+      catalog_href = catalog_template['href']
+      catalog_updated_at = new Date(catalog_template['updated_at']).toISOString()
+    }
+
+    // Gather metadata from org template if it exists
+    org_template = ds_current_templates_by_name[template["name"]]
+
+    template_href = ""
+    if (org_template != undefined) { template_href = org_template["href"] }
+
+    // Create full file path within GitHub repo to policy template
+    file_path = ["", param_github_org, param_github_repo, param_github_branch, template["file_name"]].join("/")
+
+    return {
+      id: template['name'],
+      description: template['description'],
+      file_name: template['file_name'],
+      version: template['version'],
+      change_log: template['change_log'],
+      updated_at: new Date(template['updated_at']).toISOString(),
+      catalog_updated_at: catalog_updated_at,
+      catalog_href: catalog_href,
+      sync_policy_name: ds_applied_policy['name'],
+      file_path: file_path,
+      template_href: template_href,
+      catalog_id: catalog_id
+    }
+  })
+EOS
+end
+
+datasource "ds_defunct_templates" do
+  run_script $js_defunct_templates, $ds_active_policy_list, $ds_current_published_list, $ds_applied_policy
+end
+
+script "js_defunct_templates", type: "javascript" do
+  parameters "ds_active_policy_list", "ds_current_published_list", "ds_applied_policy"
+  result "result"
+  code <<-EOS
+  active_names = _.pluck(ds_active_policy_list, "name")
+
+  // Filter down the catalog templates to just the ones not in the active policy JSON file
+  defunct_templates = _.reject(ds_current_published_list, function(template) {
+    return _.contains(active_names, template["name"])
+  })
+
+  result = _.map(defunct_templates, function(template) {
+    return {
+      id: template['id'],
+      name: template['name'],
+      href: template['href'],
+      description: template['description'],
+      sync_policy_name: ds_applied_policy['name']
+    }
+  })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_templates_to_update" do
+  validate_each $ds_updated_templates do
+    summary_template "{{ with index data 0 }}{{ .sync_policy_name }}{{ end }}: {{ len data }} Policy Templates To Publish/Update"
+    check eq(val(item, "id"), "")
+    escalate $esc_email
+    escalate $esc_publish_templates
+    export do
+      resource_level true
+      field "id" do
+        label "Name"
+      end
+      field "description" do
+        label "Description"
+      end
+      field "version" do
+        label "Version"
+      end
+      field "file_name" do
+        label "File Name"
+      end
+      field "updated_at" do
+        label "Updated At"
+      end
+      field "file_path" do
+        label "GitHub HREF"
+      end
+      field "template_href" do
+        label "Template HREF"
+      end
+      field "catalog_updated_at" do
+        label "Catalog Updated At"
+      end
+      field "catalog_href" do
+        label "Catalog HREF"
+      end
+      field "catalog_id" do
+        label "Catalog ID"
+      end
+    end
+  end
+  validate_each $ds_defunct_templates do
+    summary_template "{{ with index data 0 }}{{ .sync_policy_name }}{{ end }}: {{ len data }} Policy Templates To Unpublish"
+    check eq(val(item, "id"), "")
+    escalate $esc_email
+    escalate $esc_unpublish_defunct_templates
+    export do
+      resource_level true
+      field "name" do
+        label "Name"
+      end
+      field "description" do
+        label "Description"
+      end
+      field "id" do
+        label "ID"
+      end
+      field "href" do
+        label "HREF"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_publish_templates" do
+  automatic contains($param_automatic_action, "Publish Policy Templates")
+  label "Publish Policy Templates"
+  description "Approval to publish all selected policy templates"
+  run "publish_templates", data, rs_governance_host, rs_org_id, rs_project_id
+end
+
+escalation "esc_unpublish_defunct_templates" do
+  automatic contains($param_automatic_action, "Unpublish Defunct Policy Templates")
+  label "Unpublish Defunct Policy Templates"
+  description "Approval to unpublish all selected policy templates"
+  run "unpublish_templates", data, rs_governance_host
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define publish_templates($data, $rs_governance_host, $rs_org_id, $rs_project_id) return $all_responses do
+  $$all_responses = []
+
+  foreach $template in $data do
+    sub on_error: handle_error() do
+      call get_template_source($template) retrieve $response, $template_source
+      call upload_template($template, $template_source, $rs_governance_host, $rs_project_id) retrieve $response, $template_href
+      call publish_template($template, $template_href, $rs_governance_host, $rs_org_id) retrieve $response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define unpublish_templates($data, $rs_governance_host) return $all_responses do
+  $$all_responses = []
+
+  foreach $template in $data do
+    sub on_error: handle_error() do
+      call unpublish_template($template, $rs_governance_host) retrieve $response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define get_template_source($template) return $response, $template_source do
+  $url = "https://raw.githubusercontent.com" + $template["file_path"]
+  task_label("GET " + $url)
+
+  $response = http_get(url: $url)
+
+  task_label("GET GitHub Policy Template response: " + $url + " " + to_json($response))
+  $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response from GET GitHub Policy Template: "+ $url + " " + to_json($response)
+  else
+    task_label("GET GitHub Policy Template successful: " + $url)
+    $template_source = $response["body"]
+  end
+end
+
+define upload_template($template, $template_source, $rs_governance_host, $rs_project_id) return $response, $template_href do
+  # We attempt a POST request first.
+  # This will work if there is no template with the same name in the project.
+  $template_file_name = last(split($template["file_name"], '/'))
+  $verb = "post"
+  $host = $rs_governance_host
+  $href = join(["/api/governance/projects/", $rs_project_id, "/policy_templates"])
+  $url = $host + $href
+  task_label(upcase($verb) + " " + $url)
+
+  $response = http_request(
+    auth: $$auth_flexera,
+    verb: $verb,
+    https: true,
+    host: $host,
+    href: $href,
+    headers: { "Api-Version": "1.0" },
+    body: { "source": $template_source, filename: $template_file_name }
+  )
+
+  task_label(upcase($verb) + " Flexera Policy Template response: " + $template_file_name + " " + to_json($response))
+  $$all_responses << to_json({"req": upcase($verb) + " " + $url, "resp": $response})
+
+  # If we get a 409 response, that means a template with this name already exists in the project.
+  # To resolve this, we instead do a PUT request to the HREF for that existing template.
+  if $response["code"] == 409
+    $verb = "put"
+    $href = $response["headers"]["Location"] # 409 response includes HREF of offending template
+    $url = $host + $href
+    task_label(upcase($verb) + " " + $url)
+
+    $response = http_request(
+      auth: $$auth_flexera,
+      verb: $verb,
+      https: true,
+      host: $host,
+      href: $href,
+      headers: { "Api-Version": "1.0" },
+      body: { "source": $template_source, filename: $template_file_name }
+    )
+
+    task_label(upcase($verb) + " Flexera Policy Template response: " + $template_file_name + " " + to_json($response))
+    $$all_responses << to_json({"req": upcase($verb) + " " + $url, "resp": $response})
+  end
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response from " + upcase($verb) + " Flexera Policy Template: " + $template_file_name + " " + to_json($response)
+  else
+    task_label(upcase($verb) + " Flexera Policy Template successful: " + $template_file_name)
+    $template_href = $response["body"]["href"]
+  end
+end
+
+define publish_template($template, $template_href, $rs_governance_host, $rs_org_id) return $response do
+  # We attempt a POST request first.
+  # This will work if there is no template with the same name in the catalog.
+  $verb = "post"
+  $host = $rs_governance_host
+  $href = join(["/api/governance/orgs/", $rs_org_id, "/published_templates"])
+  $url = $host + $href
+  task_label(upcase($verb) + " " + $url)
+
+  $response = http_request(
+    auth: $$auth_flexera,
+    verb: $verb,
+    https: true,
+    host: $host,
+    href: $href,
+    headers: { "Api-Version": "1.0" },
+    body: { "template_href": $template_href }
+  )
+
+  task_label(upcase($verb) + " Flexera Policy Template response: " + $template_href + " " + to_json($response))
+  $$all_responses << to_json({"req": upcase($verb) + " " + $url, "resp": $response})
+
+  # If we get a 409 response, that means a template with this name is already published in the catalog.
+  # To resolve this, we instead do a PUT request to the HREF for that existing catalog template.
+  if $response["code"] == 409
+    $verb = "put"
+    $href = $response["headers"]["Location"] # 409 response includes HREF of offending template
+    $url = $host + $href
+    task_label(upcase($verb) + " " + $url)
+
+    $response = http_request(
+      auth: $$auth_flexera,
+      verb: $verb,
+      https: true,
+      host: $host,
+      href: $href,
+      headers: { "Api-Version": "1.0" },
+      body: { "template_href": $template_href }
+    )
+
+    task_label(upcase($verb) + " Flexera Policy Template response: " + $template_href + " " + to_json($response))
+    $$all_responses << to_json({"req": upcase($verb) + " " + $url, "resp": $response})
+  end
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response from " + upcase($verb) + " Flexera Policy Template: " + $template_href + " " + to_json($response)
+  else
+    task_label(upcase($verb) + " Flexera Policy Template successful: " + $template_href)
+  end
+end
+
+define unpublish_template($template, $rs_governance_host) return $response do
+  $host = $rs_governance_host
+  $href = $template["href"]
+  $url = $host + $href
+  task_label("DELETE " + $url)
+
+  $response = http_request(
+    auth: $$auth_flexera,
+    https: true,
+    verb: "delete",
+    host: $host,
+    href: $href,
+    headers: { "Api-Version": "1.0" }
+  )
+
+  task_label("DELETE Flexera Policy Template response: " + $template["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response from DELETE Flexera Policy Template: "+ $template["id"] + " " + to_json($response)
+  else
+    task_label("DELETE Flexera Policy Template successful: " + $template["id"])
+  end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
+end

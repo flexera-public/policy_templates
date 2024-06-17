@@ -1,194 +1,472 @@
-require 'uri'
-require_relative 'tools/lib/policy_parser'
 # DangerFile
 # https://danger.systems/reference.html
-# get list of old names that were renamed
-renamed_files = (git.renamed_files.collect{|r| r[:before]})
-# get list of all files changes minus the old files renamed
-# remove list of renamed files to prevent errors on files that don't exist
-changed_files = (git.added_files + git.modified_files - renamed_files)
-has_app_changes = changed_files.select{ |file| file.end_with? "pt" }
-has_new_policy_template = git.added_files.select{ |file| (file.end_with? "pt") && (! file.end_with? "meta_parent.pt") } # exclude meta_parent.pt -- these are generated from the child policy templates
-md_files = changed_files.select{ |file| file.end_with? "md" }
+# Tests located in .dangerfile directory
 
-pp = PolicyParser.new
-# Changelog entries are required for changes to library files.
-no_changelog_entry = (changed_files.grep(/[\w]+CHANGELOG.md/i)+changed_files.grep(/CHANGELOG.md/i)).empty?
-if (has_app_changes.length != 0) && no_changelog_entry
-  fail "Please add a CHANGELOG.md file"
-end
+###############################################################################
+# Required Libraries
+###############################################################################
 
-missing_doc_changes = (changed_files.grep(/[\w]+README.md/i)+changed_files.grep(/README.md/i)).empty?
-if (has_app_changes.length != 0) && missing_doc_changes
-  warn("Should this include readme changes")
-end
+require 'uri'
+require 'yaml'
 
-if (has_new_policy_template.length != 0) && missing_doc_changes
-  fail "A README.md is required for new templates"
-end
+###############################################################################
+# Required External Files
+###############################################################################
 
-fpt = nil
-has_app_changes.each do |file|
-  message "Checking #{file}\n#{fpt}"
-  # check if fpt is installed and do the check.  only report if there is a syntax error
-  fpt = `[ -x ./fpt ] && ./fpt check #{file} | grep -v Checking`
-  if ! fpt.empty?
-    fail "Checking #{file}\n#{fpt}"
-  end
-end
+require_relative '.dangerfile/policy_parser'
+require_relative '.dangerfile/github_tests'
+require_relative '.dangerfile/general_tests'
+require_relative '.dangerfile/code_tests'
+require_relative '.dangerfile/readme_tests'
+require_relative '.dangerfile/changelog_tests'
+require_relative '.dangerfile/policy_tests'
 
-# checks for broken links in the any file
-# exclude api and auth hostnames
-exclude_hosts = [
-  'api.loganalytics.io',
-  'management.azure.com',
-  'management.core.windows.net',
-  'login.microsoftonline.com',
-  'oauth2.googleapis.com',
-  'www.googleapis.com',
-  'image-charts.com',
-  'graph.microsoft.com',
-  'www.w3.org',
-  'tempuri.org',
-  'us-3.rightscale.com',
-  'us-4.rightscale.com'
-]
+###############################################################################
+# File Sorting
+###############################################################################
+
+# Create lists of files based on specific attributes for testing
+# Renamed Files.
+renamed_files = git.renamed_files.collect{ |r| r[:before] }
+# Changed Files. Ignores renamed files to prevent errors on files that don't exist
+changed_files = git.added_files + git.modified_files - renamed_files
+# Changed Dangerfile
+changed_dangerfiles = changed_files.select{ |file| file == "Dangerfile" || file.start_with?(".dangerfile/") }
+# Changed Dot Files
+changed_dot_files = changed_files.select{ |file| file.start_with?(".") && !file.start_with?(".dangerfile/") }
+# Changed Config Files
+config_files = ["Gemfile", "Gemfile.lock", "Rakefile", "package.json", "package-lock.json"]
+changed_config_files = changed_files.select{ |file| config_files.include?(file) }
+# Changed Ruby files.
+changed_rb_files = changed_files.select{ |file| file.end_with?(".rb") || file == "Dangerfile" || file == "Rakefile" }
+# Changed Python files.
+changed_py_files = changed_files.select{ |file| file.end_with?(".py") }
+# Changed Policy Template files. Ignore meta policy files.
+changed_pt_files = changed_files.select{ |file| file.end_with?(".pt") && !file.end_with?("meta_parent.pt") }
+# Changed Meta Policy Template files.
+changed_meta_pt_files = changed_files.select{ |file| file.end_with?("meta_parent.pt") }
+# Changed README files.
+changed_readme_files = changed_files.select{ |file| file.end_with?("/README.md") && (file.start_with?("automation/") || file.start_with?("compliance/") || file.start_with?("cost/") || file.start_with?("operational/") || file.start_with?("saas/") || file.start_with?("security/")) }
+# Changed Changelog files.
+changed_changelog_files = changed_files.select{ |file| file.end_with?("/CHANGELOG.md") }
+# Changed MD files other than the above.
+changed_misc_md_files = changed_files.select{ |file| file.end_with?(".md") && !file.end_with?("/CHANGELOG.md") && !file.start_with?("HISTORY.md") && !(file.end_with?("/README.md") && (file.start_with?("automation/") || file.start_with?("compliance/") || file.start_with?("cost/") || file.start_with?("operational/") || file.start_with?("saas/") || file.start_with?("security/"))) }
+# Changed JSON files.
+changed_json_files = changed_files.select{ |file| file.end_with?(".json") }
+# Changed YAML files.
+changed_yaml_files = changed_files.select{ |file| file.end_with?(".yaml") || file.end_with?(".yml") }
+# New Policy Template files. Ignore meta policy files.
+new_pt_files = git.added_files.select{ |file| file.end_with?(".pt") && !file.end_with?("meta_parent.pt") }
+
+###############################################################################
+# Github Pull Request Testing
+###############################################################################
+
+test = github_pr_bad_title?(github); warn test if test
+test = github_pr_missing_summary?(github); fail test if test
+test = github_pr_missing_labels?(github); fail test if test
+test = github_pr_missing_ready_label?(github); message test if test
+
+###############################################################################
+# Modified Important Files Testing
+###############################################################################
+
+modified_important_files = changed_dangerfiles + changed_dot_files + changed_config_files
+modified_important_files = modified_important_files.join("\n")
+
+# Consolidate changed files into a single warning to save space
+warn "**Important Files Modified**\nPlease make sure these modifications were intentional and have been tested. These files are necessary for configuring the Github repository and managing automation.\n\n" + modified_important_files.strip if !modified_important_files.empty?
+
+###############################################################################
+# All Files Testing
+###############################################################################
+
 changed_files.each do |file|
- diff = git.diff_for_file(file)
- regex =/(^\+)/
- if diff && diff.patch =~ regex
-   diff.patch.each_line do |line|
-     if line =~ regex
-       URI.extract(line,['http','https']).each do |url|
-         res = nil
-         next if exclude_hosts.include?(url.scan(URI.regexp)[0][3])
-         url_string = url.to_s.gsub(/[!@#$%^&*(),.?":{}|<>]/,'')  #remove extra chars
-         url = URI(url_string) #convert to URL
-         # check for a valid host.  skip urls that are dynamicly constructed may not have a valid hostname
-         # for example http://ec2. + $region + .awsamazon.com/... does not have a valid hostname to query
-         next if url.host !~ /(?=^.{4,253}$)(^((?!-)[a-zA-Z0-9-]{1,63}(?<!-)\.)+[a-zA-Z]{2,63}$)/
-         res = Net::HTTP.get_response(url) #make request
-         # test again when the file isn't found and path includes tree/master
-         # likely the README link or a new file included in the repo
-         if res.code == '404' && url_string =~ /tree\/master/
-           url_string = url.to_s.gsub('tree/master',"tree/#{github.branch_for_head}").gsub(')','')
-           url = URI(url_string) #convert to URL
-           res = Net::HTTP.get_response(url) #make request
-         end
-         if res.code !~ /200|302/ #allow OK and temporary redirects such as login
-           fail "The URL is not valid: #{url_string} in #{file} Status: #{res.code}"
-         end
-       end
-     end
-   end
- end
+  warnings = []
+  failures = []
+
+  # Perform a basic text lint on all changed files
+  test = general_textlint?(file); warnings << test if test
+
+  # Output final list of failures and warnings
+  fail "### **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
+  warn "### **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
 end
 
-# check for valid category values.
-# must be one of the following categories
-# when adding a new category update the Rakefile generate_policy_list task and
-# https://docs.flexera.com/flexera/EN/Automation/PoliciesList.htm also.
-categories = [
-  'cost',
-  'compliance',
-  'operational',
-  'saas management',
-  'security'
-].sort
-#only check .pt files
-has_app_changes.each do |file|
-  pp.parse(file)
-  category = pp.parsed_category
-  if ! category
-    fail "Please add a category field. #{file}"
-  end
-  # check category meets the expected list
-  if category && !categories.include?(category.downcase)
-    fail "The Category is not valid: #{category}.  Valid Categories include #{categories.join(", ")}"
-  end
-  # check first character of category is uppercase
-  if category !~ /^[A-Z]/
-    fail "The First letter of Category is not capitalised: #{category}."
-  end
+###############################################################################
+# Ruby File Testing
+###############################################################################
+
+# Perform a lint check on changed Ruby files
+changed_rb_files.each do |file|
+  warnings = []
+  failures = []
+
+  # Raise warning if outdated terminology found
+  test = general_outdated_terminology?(file); warnings << test if test
+
+  # Raise error if code errors found
+  test = code_ruby_errors?(file); failures << test if test
+
+  # Rubocop linting currently disabled. It is *very* verbose.
+  #test = code_rubocop_problems?(file); warn test if test
+
+  # Output final list of failures and warnings
+  fail "### **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
+  warn "### **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
 end
 
-# check markdown of .md files with markdown lint
-# .md files should follow these rules https://github.com/markdownlint/markdownlint/blob/master/docs/RULES.md
-mdl = nil
-md_files.each do |file|
-  # Exemptions for top-level README.md
-  if file == 'README.md'
-    # MD013 Line length
-    # MD024 Multiple headers with the same content
-    mdl = `mdl -r "~MD024","~MD013" #{file}`
-  # Exemptions for tools/cloudformation-template/README.md
-  elsif file == 'tools/cloudformation-template/README.md'
-      # MD013 Line length
-      # MD033 Inline HTML. Required for example snippets.
-      # MD034 Bare URL used - Bugged. No bare URLs are actually used in this README.
-      mdl = `mdl -r "~MD013","~MD033","~MD034" #{file}`
-  # Exemptions for tools/cloudformation-template/README.md
-  elsif file == '.github/PULL_REQUEST_TEMPLATE.md'
-    # MD002 First header should be a top level header
-    # MD013 Line length
-    mdl = `mdl -r "~MD002","~MD013" #{file}`
-  else
-    # use .mdlrc rules
-    mdl = `mdl #{file}`
-  end
-  if !mdl.empty?
-    fail mdl
-  end
+###############################################################################
+# Python File Testing
+###############################################################################
+
+# Perform a lint check on changed Python files
+changed_py_files.each do |file|
+  warnings = []
+  failures = []
+
+  # Raise warning if outdated terminology found
+  test = general_outdated_terminology?(file); warnings << test if test
+
+  # Raise error if code errors found
+  test = code_python_errors?(file); failures << test if test
+
+  # Output final list of failures and warnings
+  fail "### **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
+  warn "### **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
 end
 
-# check for lowercase files and directories
-has_app_changes.each do |file|
-  if file.scan(/^[a-z0-9.\/_-]+$/).empty?
-    fail "Policy Template path should be lowercase. #{file}"
-  end
+###############################################################################
+# JSON/YAML File Testing
+###############################################################################
+
+changed_json_files.each do |file|
+  warnings = []
+  failures = []
+
+  # Raise warning if outdated terminology found
+  test = general_outdated_terminology?(file); warnings << test if test
+
+  # Look for out of place JSON files
+  test = code_json_bad_location?(file); failures << test if test
+
+  # Lint test JSON files
+  test = code_json_errors?(file); failures << test if test
+
+  # Output final list of failures and warnings
+  fail "### **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
+  warn "### **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
 end
 
-# check for default_frequency
-# only check .pt files
-frequencies = [
-  '15 minutes',
-  'hourly',
-  'daily',
-  'weekly',
-  'monthly'
-].sort
-has_app_changes.each do |file|
-  pp.parse(file)
-  default_frequency = pp.parsed_default_frequency
-  if ! default_frequency
-    fail "Please add a 'default_frequency' property field and value. #{file}"
-  end
+changed_yaml_files.each do |file|
+  warnings = []
+  failures = []
+
+  # Raise warning if outdated terminology found
+  test = general_outdated_terminology?(file); warnings << test if test
+
+  # Look for out of place YAML files
+  test = code_yaml_bad_location?(file); failures << test if test
+
+  # Lint test YAML files
+  test = code_yaml_errors?(file); failures << test if test
+
+  # Output final list of failures and warnings
+  fail "### **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
+  warn "### **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
 end
 
-# check for info field required fields
-has_app_changes.each do |file|
-  # get info field data
-  pp.parse(file)
+###############################################################################
+# README Testing
+###############################################################################
 
-  fail "Please add the info field. #{file}" if pp.parsed_info.nil?
-  if pp.parsed_info
-    fail "Please add version to the info field. #{file} " if pp.parsed_info[:version].nil?
-    fail "Please add provider to the info field. #{file} " if pp.parsed_info[:provider].nil?
-    warn "Should this include service in the info field. #{file}"  if pp.parsed_info[:service].nil?
-    warn "Should this include policy_set in the info field. #{file}" if pp.parsed_info[:policy_set].nil?
+# Check README.md for issues for each file
+changed_readme_files.each do |file|
+  warnings = []
+  failures = []
+
+  # Don't run tests against deprecated READMEs
+  unless readme_deprecated?(file)
+    # Run Danger spell check on file
+    general_spellcheck?(file)
+
+    # Raise warning if outdated terminology found
+    test = general_outdated_terminology?(file); warnings << test if test
+
+    # Raise error if the file contains any bad urls
+    test = general_bad_urls?(file); failures << test if test
+
+    # Raise error if improper markdown is found via linter
+    test = general_bad_markdown?(file); failures << test if test
+
+    # Raise error if README is missing required sections
+    test = readme_missing_sections?(file); failures << test if test
+
+    # Raise error if README sections are out of order
+    test = readme_sections_out_of_order?(file); failures << test if test
+
+    # Raise error if README credentials are formatted incorrectly
+    test = readme_invalid_credentials?(file); failures << test if test
   end
+
+  # Output final list of failures and warnings
+  fail "### **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
+  warn "### **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
 end
 
-fail 'Please provide a summary of your Pull Request.' if github.pr_body.length < 10
+###############################################################################
+# CHANGELOG Testing
+###############################################################################
 
-fail 'Please add labels to this Pull Request' if github.pr_labels.empty?
+# Check CHANGELOG.md for issues for each file
+changed_changelog_files.each do |file|
+  warnings = []
+  failures = []
 
-# Lint added and modified files only
-# textlint.lint
-changed_files.each do |file|
-  `node_modules/.bin/textlint #{file} 1>textlint.log`
-  if $?.exitstatus != 0
-    message `cat textlint.log`
-    fail "Textlint failed on #{file}"
+  # Don't run tests against deprecated CHANGELOGs
+  unless changelog_deprecated?(file)
+    # Raise error if the file contains any bad urls
+    test = general_bad_urls?(file); failures << test if test
+
+    # Raise error if improper markdown is found via linter
+    test = general_bad_markdown?(file); failures << test if test
+
+    # Raise error if CHANGELOG is incorrectly formatted
+    test = changelog_bad_formatting?(file); failures << test if test
   end
+
+  # Output final list of failures and warnings
+  fail "### **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
+  warn "### **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
+end
+
+###############################################################################
+# Misc. Markdown Testing
+###############################################################################
+
+# Check Markdown files for issues for each file
+changed_misc_md_files.each do |file|
+  warnings = []
+  failures = []
+
+  # Run Danger spell check on file
+  general_spellcheck?(file)
+
+  # Raise warning if outdated terminology found
+  test = general_outdated_terminology?(file); warnings << test if test
+
+  # Raise error if the file contains any bad urls
+  test = general_bad_urls?(file); failures << test if test
+
+  # Raise error if improper markdown is found via linter
+  test = general_bad_markdown?(file); failures << test if test
+
+  # Output final list of failures and warnings
+  fail "### **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
+  warn "### **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
+end
+
+###############################################################################
+# Policy Testing
+###############################################################################
+
+# Load external YAML file for testing
+permissions_yaml = YAML.load_file('tools/policy_master_permission_generation/validated_policy_templates.yaml')
+
+# Check policies for issues for each file
+changed_pt_files.each do |file|
+  # Run policy through various methods that test for problems.
+  # These methods will return false if no problems are found.
+  # Otherwise, they return the warning or error message that should be raised.
+
+  warnings = []
+  failures = []
+
+  # Raise error if policy is deprecated but missing deprecated field in info() block
+  test = policy_missing_deprecated_field?(file); failures << test if test
+
+  # Raise error if policy changed but changelog has not been
+  test = policy_unmodified_changelog?(file, changed_changelog_files); failures << test if test
+
+  # Raise error if policy and changelog do not have matching version numbers
+  test = policy_changelog_mismatch?(file); failures << test if test
+
+  # Run policy through fpt testing. Only raise error if there is a syntax error.
+  test = policy_fpt_syntax_error?(file); failures << test if test
+
+  # Don't run remaining tests against deprecated policies
+  unless policy_deprecated?(file)
+    # Raise error if policy is not in a valid directory within the repo directory structure
+    test = policy_bad_directory?(file); failures << test if test
+
+    # Raise warning if policy changed but readme has not been
+    rd_test = policy_unmodified_readme?(file, changed_readme_files); warnings << rd_test if rd_test
+
+    # Raise error if policy is not in the master permissions file.
+    # Raise warning if policy is in this file, but datasources have been added.
+    # Only raise the above warning if the more general warning about updating the README doesn't exist.
+    test = policy_missing_master_permissions?(file, permissions_yaml); failures << test if test
+    ds_test = policy_new_datasource?(file, permissions_yaml); warnings << ds_test if ds_test && !test && !rd_test
+
+    # Raise error if policy filename/path contains any uppercase letters
+    test = policy_bad_filename_casing?(file); failures << test if test
+
+    # Raise error if policy short_description is missing valid README link
+    test = policy_bad_readme_link?(file); failures << test if test
+
+    # Raise warning if policy won't be published
+    test = policy_unpublished?(file); warnings << test if test
+
+    # Raise warning if policy's name has changed
+    test = policy_name_changed?(file); warnings << test if test
+
+    # Raise warning if outdated terminology found
+    test = general_outdated_terminology?(file); warnings << test if test
+
+    # Raise error if the file contains any bad urls
+    test = general_bad_urls?(file); failures << test if test
+
+    # Raise warning if policy contains invalid indentation
+    test = policy_bad_indentation?(file); warnings << test if test
+
+    # Raise error if policy contains multiple blank lines
+    test = policy_consecutive_empty_lines?(file); failures << test if test
+
+    # Raise errors or warnings if bad metadata is found
+    test = policy_bad_metadata?(file, "name"); failures << test if test
+    test = policy_bad_metadata?(file, "short_description"); failures << test if test
+    test = policy_bad_metadata?(file, "long_description"); failures << test if test
+    test = policy_bad_metadata?(file, "category"); failures << test if test
+    test = policy_bad_metadata?(file, "default_frequency"); failures << test if test
+    test = policy_bad_metadata?(file, "severity"); failures << test if test
+    test = policy_bad_metadata?(file, "info"); failures << test if test
+
+    # Raise errors or warnings if bad info block metadata is found
+    if !test
+      info_test = policy_missing_info_field?(file, "version"); failures << info_test if info_test
+      info_test = policy_missing_info_field?(file, "provider"); failures << info_test if info_test
+      info_test = policy_missing_info_field?(file, "service"); warnings << info_test if info_test
+      info_test = policy_missing_info_field?(file, "policy_set"); warnings << info_test if info_test
+    end
+
+    # Raise error if policy version number does not use semantic versioning
+    test = policy_nonsemantic_version?(file); failures << test if test
+
+    # Raise error if there is a mismatch between the policy's credentials and the README
+    test = policy_readme_missing_credentials?(file); failures << test if test
+
+    # Raise error if policy sections are out of order
+    test = policy_sections_out_of_order?(file); failures << test if test
+
+    # Raise error of code blocks exist in policy that aren't used anywhere
+    test = policy_orphaned_blocks?(file, "parameter"); failures << test if test
+    test = policy_orphaned_blocks?(file, "credentials"); failures << test if test
+    test = policy_orphaned_blocks?(file, "pagination"); failures << test if test
+    test = policy_orphaned_blocks?(file, "datasource"); failures << test if test
+    test = policy_orphaned_blocks?(file, "script"); failures << test if test
+    test = policy_orphaned_blocks?(file, "escalation"); failures << test if test
+    test = policy_orphaned_blocks?(file, "define"); failures << test if test
+
+    # Raise error if policy blocks are not grouped together by type
+    test = policy_blocks_ungrouped?(file); failures << test if test
+
+    # Report on missing policy section comments
+    test = policy_missing_section_comments?(file, "parameter"); failures << test if test
+    test = policy_missing_section_comments?(file, "credentials"); failures << test if test
+    test = policy_missing_section_comments?(file, "pagination"); failures << test if test
+    test = policy_missing_section_comments?(file, "datasource"); failures << test if test
+    test = policy_missing_section_comments?(file, "policy"); failures << test if test
+    test = policy_missing_section_comments?(file, "escalation"); failures << test if test
+    test = policy_missing_section_comments?(file, "cwf"); failures << test if test
+
+    # Report on invalidly named code blocks
+    test = policy_bad_block_name?(file, "parameter"); failures << test if test
+    test = policy_bad_block_name?(file, "credentials"); failures << test if test
+    test = policy_bad_block_name?(file, "pagination"); failures << test if test
+    test = policy_bad_block_name?(file, "datasource"); failures << test if test
+    test = policy_bad_block_name?(file, "script"); failures << test if test
+    test = policy_bad_block_name?(file, "policy"); failures << test if test
+    test = policy_bad_block_name?(file, "escalation"); failures << test if test
+
+    # Report on invalid/deprecated code blocks
+    test = policy_deprecated_code_blocks?(file, "permission"); warnings << test if test
+    test = policy_deprecated_code_blocks?(file, "resources"); warnings << test if test
+
+    # Report on missing fields in code blocks
+    fields_to_check = [
+      { block: "parameter", fields: ["type", "category", "label", "description"] },
+      { block: "credentials", fields: ["schemes", "tags", "label", "description"] },
+      { block: "escalation", fields: ["automatic", "label", "description"] }
+    ]
+
+    fields_to_check.each do |item|
+      item[:fields].each do |field|
+        test = policy_block_missing_field?(file, item[:block], field); failures << test if test
+      end
+    end
+
+    # Raise warning, not error, if parameter block is missing a default field.
+    # This is because there are occasionally legitimate reasons to not have a default
+    test = policy_block_missing_field?(file, "parameter", "default")
+
+    if test
+      warnings << test + "\n\nWhile not required, it is recommended that every parameter have a default value unless user input for that parameter is required and too specific for any default value to make sense"
+    end
+
+    # Raise warning, not error, if a datasource and the script it calls have mismatched names.
+    # Warning because there are occasionally legitimate reasons to do this.
+    test = policy_ds_js_name_mismatch?(file); warnings << test if test
+
+    # Raise error if run_script statements with incorrect parameter ordering are found
+    test = policy_run_script_incorrect_order?(file); failures << test if test
+
+    # Raise error if code blocks have fields in improper order
+    test = policy_block_fields_incorrect_order?(file, "parameter"); failures << test if test
+    test = policy_block_fields_incorrect_order?(file, "credentials"); failures << test if test
+    test = policy_block_fields_incorrect_order?(file, "pagination"); failures << test if test
+    test = policy_block_fields_incorrect_order?(file, "datasource"); failures << test if test
+    test = policy_block_fields_incorrect_order?(file, "script"); failures << test if test
+    test = policy_block_fields_incorrect_order?(file, "policy"); failures << test if test
+    test = policy_block_fields_incorrect_order?(file, "escalation"); failures << test if test
+
+    # Raise error if recommendation policy is missing required export fields
+    test = policy_missing_recommendation_fields?(file, "required"); failures << test if test
+
+    # Raise warning if recommendation policy is missing recommended export fields
+    test = policy_missing_recommendation_fields?(file, "recommended"); warnings << test if test
+
+    # Raise error if policy has outdated links
+    test = policy_outdated_links?(file); failures << test if test
+
+    # Raise warning if policy has any datasources using http instead of https
+    test = policy_http_connections?(file); warnings << test if test
+
+    # Raise warning if improper spacing between comma-separated items found
+    test = policy_bad_comma_spacing?(file); warnings << test if test
+  end
+
+  # Output final list of failures and warnings
+  fail "### **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
+  warn "### **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
+end
+
+###############################################################################
+# Meta Policy Testing
+###############################################################################
+
+# Check meta policies for issues for each file
+changed_meta_pt_files.each do |file|
+  # Run meta policy through various methods that test for problems.
+  # These methods will return false if no problems are found.
+  # Otherwise, they return the warning or error message that should be raised.
+
+  warnings = []
+  failures = []
+
+  # Run policy through fpt testing. Only raise error if there is a syntax error.
+  test = policy_fpt_syntax_error?(file, "meta"); failures << test if test
+
+  # Output final list of failures and warnings
+  fail "### **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
+  warn "### **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
 end

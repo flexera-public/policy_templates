@@ -1,41 +1,28 @@
 name "AWS Untagged Resources"
 rs_pt_ver 20180301
 type "policy"
-short_description "Find all AWS resources missing any of the user provided tags with the option to update the resources with the missing tags. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/untagged_resources/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Find all taggable AWS resources missing any of the user provided tags with the option to update the tags. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/untagged_resources/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
-severity "low"
 category "Compliance"
+severity "low"
 default_frequency "weekly"
 info(
-  version: "4.1",
+  version: "5.2.0",
   provider: "AWS",
-  service: "",
-  policy_set:"Untagged resources"
+  service: "Compute",
+  policy_set: "Untagged Resources"
 )
 
 ###############################################################################
-# User inputs
+# Parameters
 ###############################################################################
-
-parameter "param_allowed_regions_allow_or_deny" do
-  type "string"
-  label "Allow/Deny Regions"
-  description "Allow or Deny entered regions. See the README for more details"
-  allowed_values "Allow", "Deny"
-  default "Allow"
-end
-
-parameter "param_allowed_regions" do
-  type "list"
-  label "Regions"
-  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
-  description "A list of allowed or denied regions. See the README for more details"
-end
 
 parameter "param_email" do
   type "list"
-  label "Email addresses"
-  description "A list of email addresses to notify"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
 end
 
 parameter "param_aws_account_number" do
@@ -46,31 +33,71 @@ parameter "param_aws_account_number" do
   default ""
 end
 
-parameter "param_tags_to_check" do
+parameter "param_include_savings" do
+  type "string"
+  category "Policy Settings"
+  label "Include Savings"
+  description "Whether or not to include the total estimated savings opportunities for each resource in the results. Disabling this can speed up policy execution but will result in the relevant fields in the report being empty."
+  allowed_values "Include Savings", "Do Not Include Savings"
+  default "Include Savings"
+end
+
+parameter "param_tags" do
   type "list"
-  label "Tag Keys"
-  category "AWS"
-  allowed_pattern /\S/
-  description "List of tag keys e.g., 'Environment' to find resources which are not tagged by the given inputs."
-  constraint_description <<-EOS
-    This is a mandatory field.
-  EOS
+  category "Filters"
+  label "Tags"
+  description "The policy will report resources missing the specified tags. Enter the key name to look for resources missing a key, and enter Key==Value to find resources missing a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Any / All"
+  description "Whether to report on instances missing any of the specified tags or all of them. Only applicable if more than one value is entered in the 'Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  default []
+end
+
+parameter "param_consider_tag_dimensions" do
+  type "string"
+  category "Filters"
+  label "Consider Tag Dimensions"
+  description "Exclude results when a tag has a value for a tag key normalized by a Tag Dimension. Please see README for more details."
+  allowed_values "Consider Tag Dimensions", "Do Not Consider Tag Dimensions"
+  default "Consider Tag Dimensions"
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-#AUTHENTICATE WITH AWS
 credentials "auth_aws" do
-  schemes "aws","aws_sts"
+  schemes "aws", "aws_sts"
   label "AWS"
-  description "Select the AWS Cloud Credential from the list."
+  description "Select the AWS Credential from the list"
   tags "provider=aws"
   aws_account_number $param_aws_account_number
 end
 
-#AUTHENTICATE WITH FLEXERA
 credentials "auth_flexera" do
   schemes "oauth2"
   label "Flexera"
@@ -82,12 +109,12 @@ end
 # Pagination
 ###############################################################################
 
-pagination "aws_pagination" do
+pagination "pagination_aws" do
   get_page_marker do
-    body_path jmes_path(response,"PaginationToken")
+    body_path jmes_path(response, "NextToken")
   end
   set_page_marker do
-    body_field "PaginationToken"
+    body_field "NextToken"
   end
 end
 
@@ -95,9 +122,250 @@ end
 # Datasources & Scripts
 ###############################################################################
 
-# GET LIST OF OPTED-IN OR OPTED-IN-NOT-REQUIRED REGIONS
-datasource "ds_regions_list" do
-  # https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeRegions.html
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get AWS account info
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
+end
+
+# Get Tag Dimensions
+# Used for exluding resources that already have a value for one of the enable tag dimensions
+datasource "ds_tag_dimensions" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-customizations/v1/orgs/", rs_org_id, "/tag-dimensions"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+
+# Branching logic:
+# Only pull savings data if user opted to include it
+datasource "ds_include_savings" do
+  run_script $js_include_savings, $param_include_savings
+end
+
+script "js_include_savings", type: "javascript" do
+  parameters "param_include_savings"
+  result "result"
+  code <<-EOS
+  result = []
+  if (param_include_savings == "Include Savings") { result = [1] }
+EOS
+end
+
+# Recommendations List
+# Used to provide the savings amount per resource in the results (if available)
+# A user can then sort the untagged resource list results and sort by highest savings to prioritize tagging
+datasource "ds_recommendations_all" do
+  iterate $ds_include_savings
+  request do
+    auth $auth_flexera
+    verb "GET"
+    host rs_optima_host
+    path join(["/recommendations/orgs/", rs_org_id, "/recommendations"])
+    header "Api-Version", "1.0"
+    header "content-type", "application/json"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "resourceID", jmes_path(col_item, "resourceID")
+      field "savings", jmes_path(col_item, "savings")
+      field "details", jmes_path(col_item, "details")
+    end
+  end
+end
+
+datasource "ds_recommendation_resources_total_savings" do
+  run_script $js_recommendation_resources_total_savings, $ds_recommendations_all
+end
+
+script "js_recommendation_resources_total_savings", type: "javascript" do
+  parameters "ds_recommendations_all"
+  result "result"
+  code <<-EOS
+  recs_with_resource = _.reject(ds_recommendations_all, function(rec) {
+    return rec['resourceID'] == "" || rec['resourceID'] == null || rec['resourceID'] == undefined
+  })
+
+  rec_object = {}
+
+  _.each(recs_with_resource, function(rec) {
+    id = rec['resourceID']
+    if (rec_object[id] == undefined) { rec_object[id] = []}
+    rec_object[id].push(rec)
+  })
+
+  result = []
+
+  _.each(_.keys(rec_object), function(id) {
+    savings_numbers = _.compact(_.pluck(rec_object[id], 'savings'))
+    savings = _.reduce(savings_numbers, function(memo, num) { return memo + num }, 0)
+
+    result.push({
+      resourceID: id,
+      details: rec_object[id][0]["details"],
+      savings: savings
+    })
+  })
+EOS
+end
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account", xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_get_caller_identity
+end
+
+script "js_aws_account", type:"javascript" do
+  parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+  result = _.find(ds_cloud_vendor_accounts, function(account) {
+    return account['id'] == ds_get_caller_identity[0]['account']
+  })
+
+  // This is in case the API does not return the relevant account info
+  if (result == undefined) {
+    result = {
+      id: ds_get_caller_identity[0]['account'],
+      name: "",
+      tags: {}
+    }
+  }
+EOS
+end
+
+datasource "ds_describe_regions" do
   request do
     auth $auth_aws
     verb "GET"
@@ -120,152 +388,324 @@ datasource "ds_regions_list" do
   end
 end
 
-#FILTER REGIONS LIST ON 'ALLOWED REGIONS' PARAMETER
 datasource "ds_regions" do
-  run_script $js_get_regions, $param_allowed_regions, $ds_regions_list, $param_allowed_regions_allow_or_deny
+  run_script $js_regions, $ds_describe_regions, $param_regions_list, $param_regions_allow_or_deny
 end
 
-script "js_get_regions", type:"javascript" do
-  parameters "user_entered_regions", "all_regions", "regions_allow_or_deny"
-  result "regions"
+script "js_regions", type:"javascript" do
+  parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
+  result "result"
   code <<-EOS
-    if (_.isEmpty(user_entered_regions)) {
-      regions = all_regions
-    } else {
-      //Filter unique regions
-      var uniqueRegions = _.uniq(user_entered_regions);
-      var all_regions_list = []
-      //Filter and remove denied regions from all_regions
-      if (regions_allow_or_deny == "Deny"){
-        var all_regions = all_regions.filter(function(obj){
-          return user_entered_regions.indexOf(obj.region) === -1;
-        });
-      }
-      all_regions.forEach(function(all_region){
-        all_regions_list.push(all_region.region)
-      })
-      //Filter valid regions
-      var valid_regions = []
-      _.map(uniqueRegions, function(uniqueRegion){
-        if (all_regions_list.indexOf(uniqueRegion) > -1) {
-          valid_regions.push({"region": uniqueRegion})
-        }
-      })
+  allow_deny_test = { "Allow": true, "Deny": false }
 
-      //Throw an error if no valid regions found
-      if (_.isEmpty(valid_regions)) {
-        regions = all_regions
-      } else {
-        regions = valid_regions
-      }
-    }
-  EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_describe_regions, function(item) {
+      return _.contains(param_regions_list, item['region']) == allow_deny_test[param_regions_allow_or_deny]
+    })
+  } else {
+    result = ds_describe_regions
+  }
+EOS
 end
 
-#GET LIST OF ALL RESOURCES FROM AWS
-datasource "ds_all_resources" do
+datasource "ds_aws_resources" do
   iterate $ds_regions
   request do
     auth $auth_aws
-    pagination $aws_pagination
-    host join(["tagging.",val(iter_item, "region"),".amazonaws.com"])
+    pagination $pagination_aws
     verb "POST"
+    host join(["tagging.", val(iter_item, "region"), ".amazonaws.com"])
     path "/"
-    header "X-Amz-Target","ResourceGroupsTaggingAPI_20170126.GetResources"
-    header "Content-Type","application/x-amz-json-1.1"
-    body_field "ExcludeCompliantResources","false"
-    body_field "IncludeComplianceDetails","true"
+    header "X-Amz-Target", "ResourceGroupsTaggingAPI_20170126.GetResources"
+    header "Content-Type", "application/x-amz-json-1.1"
+    body_field "ExcludeCompliantResources", "false"
+    body_field "IncludeComplianceDetails", "true"
   end
   result do
     encoding "json"
-    collect jmes_path(response,"ResourceTagMappingList[*]") do
-      field "arn", jmes_path(col_item,"ResourceARN")
+    collect jmes_path(response, "ResourceTagMappingList[*]") do
+      field "arn", jmes_path(col_item, "ResourceARN")
       field "tags" do
-        collect jmes_path(col_item,"Tags[*]") do
-          field "tagKey", jmes_path(col_item,"Key")
-          field "tagValue", jmes_path(col_item,"Value")
+        collect jmes_path(col_item, "Tags[*]") do
+          field "key", jmes_path(col_item, "Key")
+          field "value", jmes_path(col_item, "Value")
         end
       end
-      field "region", val(iter_item,"region")
+      field "region", val(iter_item, "region")
     end
   end
 end
 
-#FILTER RESOURCES BY 'TAGS TO CHECK' PARAMETER
-datasource "ds_filtered_resources" do
-  run_script $js_filter_resources, $ds_all_resources, $param_tags_to_check
+datasource "ds_aws_resources_missing_tags" do
+  run_script $js_aws_resources_missing_tags, $ds_aws_resources, $ds_tag_dimensions, $param_tags, $param_tags_boolean, $param_consider_tag_dimensions
 end
 
-script "js_filter_resources", type: "javascript" do
-  parameters "ds_resources", "param_tags_to_check"
+script "js_aws_resources_missing_tags", type:"javascript" do
+  parameters "ds_aws_resources", "ds_tag_dimensions", "param_tags", "param_tags_boolean", "param_consider_tag_dimensions"
   result "result"
   code <<-EOS
-  //For each Resource in Resource List
-  _.each(ds_resources, function(resource){
+  result = []
 
-    //Create a field for Missing tags
-    resource["missingTagKeys"] = []
-    resource["missingTagValues"] = []
+  comparators = _.map(param_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
 
-    //For each Tag in Param Tag List
-    _.each(param_tags_to_check, function(param){
-      // Find Param Tag Key in Resource Tag Array
-      current_tag = _.find(resource.tags, function(tag){ return tag.tagKey == param })
-      // If Tag Key does not exist for Resource, create Missing Tag field and set to True
-      if ( current_tag == undefined || current_tag == null) {
-        resource["isMissingTagKey"] = true
-        resource.missingTagKeys.push(param)
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  if (comparators.length > 0) {
+    // Check each VM for missing tags
+    _.each(ds_aws_resources, function(resource) {
+      resource_tags = {}
+
+      if (typeof(resource['tags']) == 'object') {
+        _.each(resource['tags'], function(tag) {
+          resource_tags[tag['key']] = tag['value']
+        })
       }
-      // Otherwise, if Tag Key does exist...
-      else {
-        // …and if Tag Value is empty, create Missing Tag field and set to True
-        if ( current_tag.tagValue == "" || current_tag.tagValue == null ) {
-          resource["isMissingTagValue"] = true
-          resource.missingTagValues.push(param)
+
+      // Store a list of missing tags
+      missing_tags = []
+
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_tag = resource_tags[comparator['key']]
+
+        if (comparison == 'key' && resource_tag == undefined) { missing_tags.push(string) }
+        if (comparison == '==' && resource_tag != value) { missing_tags.push(string) }
+        if (comparison == '!=' && resource_tag == value) { missing_tags.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_tag == undefined) { missing_tags.push(string) }
+          if (resource_tag != undefined && !value.test(resource_tag)) { missing_tags.push(string) }
         }
+
+        if (comparison == '!~') {
+          if (resource_tag != undefined && value.test(resource_tag)) { missing_tags.push(string) }
+        }
+      })
+
+      missing_tags_result = missing_tags
+      if (param_consider_tag_dimensions == "Consider Tag Dimension") {
+        // Exclude resources that have a tag value for one of the tag dimensions
+        // For each tag on the resource
+        _.each(missing_tags, function(missing_tag) {
+          matching_tag_dimension_tag_keys = []
+          // For each missing tag
+          // Check if the tag is a tag dimension
+          // If it is, check if the resource has one of the tag keys under the tag dimension
+          // If it does, remove the missing tag
+
+          tag_dimension = _.find(ds_tag_dimensions, function(tag_dimension) {
+            // Check if the missing tag matches any tag dimension name or ids
+            return tag_dimension['id'] == missing_tag || tag_dimension['name'] == missing_tag
+          })
+          // Check if we found a matching tag dimension
+          if (tag_dimension != undefined) {
+            // Pluck tag keys from the tag dimension
+            tag_dimension_tag_keys = _.pluck(tag_dimension['tags'], 'key')
+            // Check if we found a value for the tag dimension
+            if (typeof tag_dimension_tag_keys != "undefined") {
+              // Plug tag keys from the resource
+              resource_tag_keys = _.keys(resource_tags)
+              // Check if the resource has any of the tag keys which are normalized under the tag dimension
+              if (_.intersection(tag_dimension_tag_keys, resource_tag_keys).length > 0) {
+                // If there is a resource tag matching tag key under the tag dimension, then remove the tag from missing tags result for the resource
+                missing_tags_result = _.without(missing_tags_result, missing_tag)
+              }
+            }
+          }
+        });
+      }
+
+      if (missing_tags.length == comparators.length || (missing_tags.length > 0 && param_tags_boolean == 'Any')) {
+        new_resource = resource
+        new_resource['tags'] = resource_tags
+        new_resource['missing_tags'] = missing_tags_result
+        result.push(new_resource)
       }
     })
+  }
+EOS
+end
+
+datasource "ds_missing_tags_incident" do
+  run_script $js_missing_tags_incident, $ds_aws_resources_missing_tags, $ds_aws_account, $ds_applied_policy, $ds_recommendation_resources_total_savings, $ds_currency, $param_tags, $param_tags_boolean, $param_include_savings
+end
+
+script "js_missing_tags_incident", type:"javascript" do
+  parameters "ds_aws_resources_missing_tags", "ds_aws_account", "ds_applied_policy", "ds_recommendation_resources_total_savings", "ds_currency", "param_tags", "param_tags_boolean", "param_include_savings"
+  result "result"
+  code <<-'EOS'
+  result = _.map(ds_aws_resources_missing_tags, function(resource) {
+    tags = []
+    name = ''
+
+    if (typeof(resource['tags']) == 'object') {
+      _.each(Object.keys(resource['tags']), function(key) {
+        tags.push(key + '=' + resource['tags'][key])
+      })
+
+      if (typeof(resource['tags']['name']) == 'string') {
+        name = resource['tags']['name']
+      }
+    }
+
+    arn_parts = resource['arn'].split(':')
+    service = arn_parts[2]
+    resourceType = arn_parts[5].split('/')[0]
+
+    currency = null
+    savings = null
+
+    if (param_include_savings == "Include Savings") {
+      currency = ds_currency['symbol']
+      savings = 0.0
+
+      savings_resource = _.find(ds_recommendation_resources_total_savings, function(item) {
+        id_match = resource['arn'].indexOf(item['resourceID']) != -1
+        inc_id_match = resource['arn'].indexOf(item['details']['ID']) != -1
+        inc_resid_match = resource['arn'].indexOf(item['details']['Resource ID']) != -1
+        inc_arn_match = resource['arn'].indexOf(item['details']['Resource ARN']) != -1
+
+        return id_match || inc_id_match || inc_resid_match || inc_arn_match
+      })
+
+      if (savings_resource != undefined) { savings = savings_resource['savings'] }
+    }
+
+    return {
+      accountID: ds_aws_account['id'],
+      accountName: ds_aws_account['name'],
+      resourceID: resource['arn'],
+      resourceName: name,
+      resourceType: resourceType,
+      service: service,
+      region: resource['region'],
+      tags: tags.join(', '),
+      tags_object: resource['tags'],
+      missing_tags: resource['missing_tags'].join(', '),
+      policy_name: ds_applied_policy['name'],
+      savings: savings,
+      savingsCurrency: currency,
+      message: ''
+    }
   })
 
-  //Filter out all tags where isMissingTag != true
-  filtered_resources = _.filter(ds_resources, function(resource){ return resource.isMissingTagKey == true || resource.isMissingTagValue == true })
-
-  //Enrich filtered_resources data with Resource ID and Resource Type, also convert existing tags to string (so it can be viewed in Policy Incident)
-  _.each(filtered_resources, function(resource){
-    //Inject ID and Type
-    //var resourceId = "";
-    //var type = "";
-    var arn_last = resource.arn.split(":")
-    if ( arn_last[arn_last.length - 1].indexOf("/") != -1 ) {
-        var arr = arn_last[arn_last.length - 1].split("/")
-        resource["type"] = arr[0]
-        resource["resourceId"] = arr[1]
-    }
-    else {
-        resource["type"] = "< Not Available >"
-        resource["resourceId"] = arn_last[arn_last.length - 1]
-    }
-
-    //Create string for existing Tags
-    var existing_tags = ""
-    _.each(resource.tags, function(tag){
-      if ( existing_tags == "" ) { existing_tags += tag.tagKey + "=" + tag.tagValue }
-      else { existing_tags += ", " + tag.tagKey + "=" + tag.tagValue }
-    })
-    resource["existingTags"] = existing_tags
+  // Dummy item to ensure that the check statement in the policy executes at least once
+  result.push({
+    accountID: "",
+    accountName: "",
+    resourceID: "",
+    resourceName: "",
+    resourceType: "",
+    service: "",
+    region: "",
+    tags: "",
+    tags_object: "",
+    missing_tags: "",
+    policy_name: "",
+    savings: "",
+    savingsCurrency: "",
+    message: ''
   })
 
-  //Sort result data
-  result = _.sortBy(filtered_resources, 'resourceId')
-  result = _.sortBy(result, 'region')
-  EOS
+  phrase = "one or more"
+  if (param_tags_boolean == "All") { phrase = "all" }
+
+  message = ["The following AWS resources are missing ", phrase, " of the following tags:\n\n"].join('')
+  tag_list = _.map(param_tags, function(tag) { return ["- ", tag, "\n"].join('') }).join('')
+  disclaimer = "\nThe above settings can be modified by editing the applied policy and changing the appropriate parameters."
+
+  result[0]['message'] = message + tag_list + disclaimer
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_untagged_resources" do
+  validate_each $ds_missing_tags_incident do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Resources Missing Tags Found"
+    detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
+    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    escalate $esc_tag_resources
+    hash_exclude "message"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Resource ARN"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "missing_tags" do
+        label "Missing Tags"
+      end
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+    end
+  end
 end
 
 ###############################################################################
 # Escalations
 ###############################################################################
 
-#SEND EMAIL
 escalation "esc_email" do
   automatic true
   label "Send Email"
@@ -273,126 +713,86 @@ escalation "esc_email" do
   email $param_email
 end
 
-#ADD TAGS TO UNTAGGED RESOURCES
-escalation "esc_add_tags" do
+escalation "esc_tag_resources" do
   automatic false
   label "Add Tags"
-  description "Update tags of the selected resource"
+  description "Update tags of the selected resources"
   parameter "param_tags_to_add" do
     type "list"
-    label "Add Tags - Enter the list of tags you wish to add to the selected resource. Tags should follow 'Key=Value' format."
-    description "Enter the list of tags you wish to add to the selected resource. Tags should follow 'Key=Value' format."
+    category "Actions"
+    label "Add Tags (Key=Value)"
+    description "Cloud native tags to add to resources with missing tags. Use Key=Value format. Example: env=production"
+    allowed_pattern /^[^=]+=[^=]+$/
+    # No default value, user input required
   end
-  run "cwf_add_tags", data, $param_tags_to_add
-end
-
-###############################################################################
-# Policy
-###############################################################################
-
-policy "policy_untagged_resources" do
-  validate $ds_filtered_resources do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} AWS untagged resources found."
-    escalate $esc_email
-    escalate $esc_add_tags
-    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
-    check logic_or($ds_parent_policy_terminated, eq(size(data),0))
-    export do
-      resource_level true
-      field "region" do
-        label "Region"
-      end
-      field "resourceId" do
-        label "Resource ID"
-      end
-      field "type" do
-        label "Resource Type"
-      end
-      field "existingTags" do
-        label "Existing Tags"
-      end
-      field "missingTagKeys" do
-        label "Missing Tag Keys"
-      end
-      field "missingTagValues" do
-        label "Tag Keys with Missing Tag Values"
-      end
-      field "id" do
-        label "ARN"
-        path "arn"
-      end
-    end
-  end
+  run "tag_resources", data, $param_tags_to_add
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-#ADD TAGS TO UNTAGGED RESOURCE
-define cwf_add_tags($data, $param_tags_to_add) return $all_responses, $list_of_tags_to_add_foreach_data do
-  $$debug = true
-  $all_responses = []
+define tag_resources($data, $param_tags_to_add) return $all_responses do
+  $$all_responses = []
 
-  #Used to show list of tags in the Output in Self-Service
-  $list_of_tags_to_add_foreach_data = []
-
-  #For each resource to action on:
-  foreach $item in $data do
-
-    #Get list of Missing Tag Keys and Tag Keys Missing Tag Values
-    $missing_tag_keys = $item["missingTagKeys"]
-    $missing_tag_values = $item["missingTagValues"]
-
-    $filtered_tags_to_add_obj = {}
-    foreach $tag in $param_tags_to_add do
-      $tag_key_to_add = first(split( $tag, "=" ))
-      $tag_value_to_add = ""
-      if $tag_key_to_add != last(split( $tag, "="))
-        $tag_value_to_add = last(split( $tag, "="))
-      end
-      $filtered_tags_to_add_obj[$tag_key_to_add] = $tag_value_to_add
+  foreach $resource in $data do
+    sub on_error: handle_error() do
+      call tag_resource($resource, $param_tags_to_add) retrieve $tag_response
     end
+  end
 
-    $list_of_tags_to_add_foreach_data << $filtered_tags_to_add_obj
-
-    #Create POST request to update resource with new tags
-    $response = http_request(
-      verb: "post",
-      auth: $$auth_aws,
-      host: join(["tagging.", $item["region"], ".amazonaws.com"]),
-      href: "/",
-      https: true,
-      headers:{
-        "X-Amz-Target": "ResourceGroupsTaggingAPI_20170126.TagResources",
-        "content-type": "application/x-amz-json-1.1"
-      },
-      body: {
-        "ResourceARNList": [ $item["id"] ],
-        "Tags": $filtered_tags_to_add_obj
-      }
-    )
-    call sys_log('Create AWS Tags for response: ',to_s($response))
-    $all_responses << $response
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
   end
 end
 
-#DEFINE SYSLOG
-define sys_log($subject, $detail) do
-  if $$debug
-    rs_cm.audit_entries.create(
-      notify: "None",
-      audit_entry: {
-        auditee_href: @@account,
-        summary: "AWS add Tags "+ $subject,
-        detail: $detail
-      }
-    )
+define tag_resource($resource, $param_tags_to_add) return $response do
+  $tags_to_add = {}
+
+  foreach $tag in $param_tags_to_add do
+    $key = first(split($tag, "=" ))
+    $value = last(split($tag, "="))
+    $tags_to_add[$key] = $value
+  end
+
+  $host = "tagging." + $resource["region"] + ".amazonaws.com"
+  $href = "/"
+  $url = $host + $href
+  task_label("POST " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    host: $host,
+    href: $href,
+    headers:{
+      "X-Amz-Target": "ResourceGroupsTaggingAPI_20170126.TagResources",
+      "content-type": "application/x-amz-json-1.1"
+    },
+    body: {
+      "ResourceARNList": [ $resource["resourceID"] ],
+      "Tags": $tags_to_add
+    }
+  )
+
+  task_label("Post AWS resource response: " + $resource["resourceID"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response posting AWS resource: "+ $resource["resourceID"] + " " + to_json($response)
+  else
+    task_label("Post AWS resource successful: " + $resource["resourceID"])
   end
 end
 
-define skip_error_and_append($subject) do
-  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
   $_error_behavior = "skip"
 end
 
@@ -408,7 +808,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
     header "Api-Version", "1.0"
   end
   result do
@@ -416,7 +816,6 @@ datasource "ds_get_policy" do
     field "id", jmes_path(response, "id")
   end
 end
-
 
 datasource "ds_parent_policy_terminated" do
   run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id

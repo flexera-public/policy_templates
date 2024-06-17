@@ -7,16 +7,16 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "6.7",
+  version: "9.1.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Unused IP Addresses",
   recommendation_type: "Usage Reduction"
 )
 
-##############################################################################
+###############################################################################
 # Parameters
-##############################################################################
+###############################################################################
 
 parameter "param_email" do
   type "list"
@@ -39,18 +39,9 @@ parameter "param_days_unattached" do
   category "Policy Settings"
   label "Days Unattached"
   description "The number of days an IP address needs to be detached to be considered unused. This value cannot be set above 90 due to CloudTrail only storing 90 days of log data. If this value is set to 0, all unattached IP addresses will be considered unused."
-  default 30
   min_value 0
   max_value 90
-end
-
-parameter "param_pricing_api_endpoint" do
-  type "string"
-  category "Policy Settings"
-  label "AWS Pricing API Endpoint"
-  description "See AWS Docs for more details: https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/using-price-list-query-api.html#price-list-query-api-endpoints"
-  allowed_values "api.pricing.us-east-1.amazonaws.com", "api.pricing.eu-central-1.amazonaws.com", "api.pricing.ap-south-1.amazonaws.com"
-  default "api.pricing.us-east-1.amazonaws.com"
+  default 30
 end
 
 parameter "param_regions_allow_or_deny" do
@@ -58,8 +49,8 @@ parameter "param_regions_allow_or_deny" do
   category "Filters"
   label "Allow/Deny Regions"
   description "Allow or Deny entered regions. See the README for more details."
-  default "Allow"
   allowed_values "Allow", "Deny"
+  default "Allow"
 end
 
 parameter "param_regions_list" do
@@ -67,17 +58,25 @@ parameter "param_regions_list" do
   category "Filters"
   label "Allow/Deny Regions List"
   description "A list of allowed or denied regions. See the README for more details."
-  default []
   allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  default []
 end
 
 parameter "param_exclusion_tags" do
   type "list"
   category "Filters"
-  label "Exclusion Tags (Key:Value)"
-  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:*"
-  allowed_pattern /(^$)|[\w]*\:.*/
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
   default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
 end
 
 parameter "param_automatic_action" do
@@ -85,8 +84,8 @@ parameter "param_automatic_action" do
   category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action."
-  default []
   allowed_values ["Release Unused IP Addresses"]
+  default []
 end
 
 ###############################################################################
@@ -94,7 +93,7 @@ end
 ###############################################################################
 
 credentials "auth_aws" do
-  schemes "aws","aws_sts"
+  schemes "aws", "aws_sts"
   label "AWS"
   description "Select the AWS Cloud Credential from the list."
   tags "provider=aws"
@@ -118,15 +117,6 @@ pagination "pagination_aws" do
   end
   set_page_marker do
     query "nextToken"
-  end
-end
-
-pagination "pagination_aws_products" do
-  get_page_marker do
-    body_path "NextToken"
-  end
-  set_page_marker do
-    body_field "NextToken"
   end
 end
 
@@ -196,9 +186,9 @@ datasource "ds_get_caller_identity" do
     verb "GET"
     host "sts.amazonaws.com"
     path "/"
-    header "User-Agent", "RS Policies"
     query "Action", "GetCallerIdentity"
     query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
   end
   result do
     encoding "xml"
@@ -235,7 +225,7 @@ end
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
     header "User-Agent", "RS Policies"
   end
 end
@@ -272,7 +262,6 @@ script "js_currency_target", type:"javascript" do
   }
 EOS
 end
-
 
 # Branching logic:
 # This datasource returns an empty array if the target currency is USD.
@@ -325,11 +314,11 @@ script "js_currency", type:"javascript" do
   result = ds_currency_target
   result['exchange_rate'] = 1
 
-  if (ds_currency_conversion['to'] != undefined) {
+  if (ds_currency_conversion.length > 0) {
     currency_code = ds_currency_target['code']
     current_month = parseInt(new Date().toISOString().split('-')[1])
 
-    conversion_block = _.find(ds_currency_conversion['to'][currency_code], function(item) {
+    conversion_block = _.find(ds_currency_conversion[0]['to'][currency_code], function(item) {
       return item['month'] == current_month
     })
 
@@ -400,11 +389,11 @@ datasource "ds_ip_addresses" do
     collect xpath(response, "//DescribeAddressesResponse/addressesSet/item") do
       field "region", val(iter_item, "region")
       field "publicIp", xpath(col_item, "publicIp")
-      field "domain" , xpath(col_item, "domain")
+      field "domain", xpath(col_item, "domain")
       field "instanceID", xpath(col_item, "instanceId")
       field "associationID", xpath(col_item, "associationId")
       field "allocationID", xpath(col_item, "allocationId")
-      field "privateIpAddress", xpath(col_item,"privateIpAddress")
+      field "privateIpAddress", xpath(col_item, "privateIpAddress")
       field "tags" do
         collect xpath(col_item, "tagSet/item") do
           field "key", xpath(col_item, "key")
@@ -416,33 +405,84 @@ datasource "ds_ip_addresses" do
 end
 
 datasource "ds_ip_addresses_filtered" do
-  run_script $js_ip_addresses_filtered, $ds_ip_addresses, $param_exclusion_tags
+  run_script $js_ip_addresses_filtered, $ds_ip_addresses, $param_exclusion_tags, $param_exclusion_tags_boolean
 end
 
 script "js_ip_addresses_filtered", type: "javascript" do
-  parameters "ds_ip_addresses", "param_exclusion_tags"
+  parameters "ds_ip_addresses", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-EOS
-  result = _.reject(ds_ip_addresses, function(ip) {
-    ip_tags = []
-
-    if (ip['tags'] != null && ip['tags'] != undefined) {
-      _.each(ip['tags'], function(tag) {
-        ip_tags.push([tag['key'], tag['value']].join(':'))
-        ip_tags.push([tag['key'], '*'].join(':'))
-      })
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
     }
 
-    exclude_ip = false
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
 
-    _.each(param_exclusion_tags, function(exclusion_tag) {
-      if (_.contains(ip_tags, exclusion_tag)) {
-        exclude_ip = true
-      }
-    })
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
 
-    return exclude_ip
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
   })
+
+  if (param_exclusion_tags.length > 0) {
+    result = _.reject(ds_ip_addresses, function(resource) {
+      resource_tags = {}
+
+      if (typeof(resource['tags']) == 'object') {
+        _.each(resource['tags'], function(tag) {
+          resource_tags[tag['key']] = tag['value']
+        })
+      }
+
+      // Store a list of found tags
+      found_tags = []
+
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_tag = resource_tags[comparator['key']]
+
+        if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+        if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+        if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_tag == undefined) { found_tags.push(string) }
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+      })
+
+      all_tags_found = found_tags.length == comparators.length
+      any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+      return all_tags_found || any_tags_found
+    })
+  } else {
+    result = ds_ip_addresses
+  }
 EOS
 end
 
@@ -586,51 +626,25 @@ script "js_unused_ips", type: "javascript" do
 EOS
 end
 
-# Gather list prices for unassigned IPs for each region
-datasource "ds_ip_address_prices" do
-  request do
-    auth $auth_aws
-    pagination $pagination_aws_products
-    host $param_pricing_api_endpoint
-    verb "POST"
-    path "/"
-    header "Content-Type", "application/x-amz-json-1.1"
-    header "X-Amz-Target", "AWSPriceListService.GetProducts"
-    body_field "Filters", [{Field: "productFamily", Type: "TERM_MATCH", Value: "IP Address"}]
-    body_field "ServiceCode", "AmazonEC2"
-  end
-  result do
-    collect jq(response, '.PriceList[] | fromjson | select(.product.attributes.usagetype | test("ElasticIP:IdleAddress"))') do
-      field 'price', jq(col_item, '.terms.OnDemand[].priceDimensions[] | select(.description | test("Elastic IP address not attached to a running instance per hour")).pricePerUnit.USD')
-      field 'region', jq(col_item, '.product.attributes.regionCode')
-    end
-  end
+datasource "ds_ip_address_monthly_price_usd" do
+  run_script $js_ip_address_monthly_price_usd
 end
 
-datasource "ds_ip_address_prices_grouped" do
-  run_script $js_ip_address_prices_grouped, $ds_ip_address_prices
-end
-
-script "js_ip_address_prices_grouped", type: "javascript" do
-  parameters "ip_address_prices"
+script "js_ip_address_monthly_price_usd", type: "javascript" do
   result "result"
   code <<-EOS
-  // Group price data by region for later use
-  result = {}
-
-  _.each(ip_address_prices, function(item) {
-    result[item['region'].toLowerCase()] = item['price']
-  })
+  hourly = 0.005
+  result = (hourly * 24 * 365.25) / 12
 EOS
 end
 
 # Combine IP information with cost data and prepare final datasource for incident
 datasource "ds_ip_cost_mapping" do
-  run_script $js_ip_cost_mapping, $ds_unused_ips, $ds_ip_addresses_filtered, $ds_ip_address_prices_grouped, $ds_aws_account, $ds_currency, $ds_currency_conversion, $ds_applied_policy, $param_days_unattached
+  run_script $js_ip_cost_mapping, $ds_unused_ips, $ds_ip_addresses_filtered, $ds_ip_address_monthly_price_usd, $ds_aws_account, $ds_currency, $ds_currency_conversion, $ds_applied_policy, $param_days_unattached
 end
 
 script "js_ip_cost_mapping", type:"javascript" do
-  parameters "ds_unused_ips", "ds_ip_addresses_filtered", "ds_ip_address_prices_grouped", "ds_aws_account", "ds_currency", "ds_currency_conversion", "ds_applied_policy", "param_days_unattached"
+  parameters "ds_unused_ips", "ds_ip_addresses_filtered", "ds_ip_address_monthly_price_usd", "ds_aws_account", "ds_currency", "ds_currency_conversion", "ds_applied_policy", "param_days_unattached"
   result "result"
   code <<-'EOS'
   // Function for formatting currency numbers later
@@ -656,11 +670,7 @@ script "js_ip_cost_mapping", type:"javascript" do
   total_savings = 0.0
 
   _.each(ds_unused_ips, function(ip) {
-    ip_cost = ds_ip_address_prices_grouped[ip['region'].toLowerCase()] * 24 * 365.25 / 12 * ds_currency['exchange_rate']
-
-    if (typeof(ip_cost) != 'number') {
-      ip_cost = 0.0
-    }
+    ip_cost = ds_ip_address_monthly_price_usd * ds_currency['exchange_rate']
 
     total_savings += ip_cost
 
@@ -695,7 +705,7 @@ script "js_ip_cost_mapping", type:"javascript" do
       savingsCurrency: ds_currency['symbol'],
       ipAddress: ip['privateIpAddress'],
       service: "EC2",
-      resourceType: "IP Address",
+      type: "IP Address",
       lookbackPeriod: param_days_unattached,
       tags: tags.join(', '),
       // These are to avoid errors when we hash_exclude these fields
@@ -782,7 +792,7 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_unused_ips" do
+policy "pol_unused_ips" do
   validate_each $ds_ip_cost_mapping do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Unused IP Addresses Found"
     detail_template <<-'EOS'
@@ -812,8 +822,8 @@ policy "policy_unused_ips" do
       field "resourceName" do
         label "Resource Name"
       end
-      field "resourceType" do
-        label "Resource Type"
+      field "type" do
+        label "Type"
       end
       field "recommendationDetails" do
         label "Recommendation"
@@ -868,100 +878,82 @@ escalation "esc_release_ip_address" do
   automatic contains($param_automatic_action, "Release Unused IP Addresses")
   label "Release Unused IP Addresses"
   description "Approval to release all selected IP addresses"
-  run "release_unused_ip_addresses", data, rs_optima_host
+  run "release_unused_ip_addresses", data
 end
-
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define release_unused_ip_addresses($data, $$rs_optima_host) do
-  # Change "No" to "Yes" to enable CWF debug logging
-  $log_to_cm_audit_entries = "No"
+define release_unused_ip_addresses($data) return $all_responses do
+  $$all_responses = []
 
-  $$debug = $param_log_to_cm_audit_entries == "Yes"
-  $$errors = []
-  $all_responses = []
-  foreach $item in $data do
-    sub on_error: skip_error_and_append($item["id"]) do
-      if $item["domain"] == "standard"
-        $response = http_request(
-          verb: "get",
-          host: join(["ec2.", $item["region"], ".amazonaws.com"]),
-          auth: $$auth_aws,
-          href: "/",
-          query_strings:{
-            "Action": "ReleaseAddress",
-            "PublicIp": $item["id"],
-            "Version": "2016-11-15"
-          },
-          https: true
-        )
-      elsif $item["domain"] == "vpc"
-        $response = http_request(
-          verb: "get",
-          host: join(["ec2.", $item["region"], ".amazonaws.com"]),
-          auth: $$auth_aws,
-          href: "/",
-          query_strings:{
-            "Action": "ReleaseAddress",
-            "AllocationId": $item["allocationID"],
-            "Version": "2016-11-15"
-          },
-          https: true
-        )
-      end
-      call check_response_and_append_if_error($response, "Release Address " + $item["id"], $$errors) retrieve $$errors
-      $all_responses << $response
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call release_unused_ip_address($instance) retrieve $release_response
+      $$all_responses << $release_response
     end
   end
-  call sys_log("Responses", to_s($all_responses))
-  if size($$errors) > 0
-    $error = join($$errors, "\n")
-    call sys_log("Errors", $error)
-    raise $error
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
   end
 end
 
-define sys_log($subject, $detail) do
-  # Create empty errors array if doesn't already exist
+define release_unused_ip_address($instance) return $response do
+  if $instance["domain"] == "standard"
+    $id = strip($instance["resourceID"])
+    $id_param = "PublicIp=" + $id
+    $query_strings = {
+      "Action": "ReleaseAddress",
+      "Version": "2016-11-15",
+      "PublicIp": $id
+    }
+  end
+
+  if $instance["domain"] == "vpc"
+    $id = strip($instance["allocationID"])
+    $id_param = "AllocationId=" + $id
+    $query_strings = {
+      "Action": "ReleaseAddress",
+      "Version": "2016-11-15",
+      "AllocationId": $id
+    }
+  end
+
+  $host = "ec2." + $instance["region"] + ".amazonaws.com"
+  $href = "/"
+  $params = "?Action=ReleaseAddress&Version=2016-11-15&" + $id_param
+  $url = $host + $href + $params
+  task_label("GET " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "get",
+    href: $href,
+    host: $host,
+    query_strings: $query_strings
+  )
+
+  task_label("Get AWS IP Address response: " + $id + " " + to_json($response))
+  $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
+
+  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
+    raise "Unexpected response getting AWS IP Address: "+ $id + " " + to_json($response)
+  else
+    task_label("Get AWS IP Address successful: " + $id)
+  end
+end
+
+define handle_error() do
   if !$$errors
     $$errors = []
   end
-  # Check if debug is enabled
-  if $$debug
-    # Append to global $$errors
-    # This is the suggested way to capture errors
-    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
-    # If Flexera NAM Zone, create audit_entries [to be deprecated]
-    # This is the legacy method for capturing errors and only supported on Flexera NAM
-    if $$rs_optima_host == "api.optima.flexeraeng.com"
-      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
-      $task_label = "Creating audit entry for " + $subject
-      sub task_label: $task, on_error: skip_error_and_append($task) do
-        rs_cm.audit_entries.create(
-          notify: "None",
-          audit_entry: {
-            auditee_href: @@account,
-            summary: $subject,
-            detail: $detail
-          }
-        )
-      end # End sub on_error
-    end # End if rs_optima_host
-  end # End if debug is enabled
-end
-
-define skip_error_and_append($subject) do
-  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
   $_error_behavior = "skip"
-end
-
-define check_response_and_append_if_error($response, $request_description, $errors) return $errors do
-  if $response["code"] > 299 || $response["code"] < 200
-    $errors << "Unexpected status code from " + $request_description + " request\n  " + to_s($response)
-  end
 end
 
 ###############################################################################
@@ -976,7 +968,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
     header "Api-Version", "1.0"
   end
   result do

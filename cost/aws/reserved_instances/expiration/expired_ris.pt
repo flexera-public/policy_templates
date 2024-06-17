@@ -1,41 +1,38 @@
 name "AWS Expiring Reserved Instances"
 rs_pt_ver 20180301
 type "policy"
-short_description "A policy that sends email notifications before AWS Reserved Instances expire. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/reserved_instances/expiration) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "**Deprecated: This policy is no longer being updated.**  A policy that sends email notifications before AWS Reserved Instances expire. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/reserved_instances/expiration) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "medium"
 category "Cost"
 tenancy "single"
 default_frequency "daily"
 info(
-  version: "2.0",
-  provider: "Flexera Optima",
-  service: "",
-  policy_set: ""
+  version: "2.2.1",
+  provider: "AWS",
+  service: "Compute",
+  policy_set: "Reserved Instances",
+  deprecated: "true"
 )
 
 ###############################################################################
-# Permissions
+# Parameters
 ###############################################################################
-
-permission "optima" do
-  label "Access Optima Resources"
-  resources "rs_optima.aws_reserved_instances"
-  actions "rs_optima.index"
-end
-
-###############################################################################
-# User inputs
-###############################################################################
-
-parameter "param_heads_up_days" do
-  type "number"
-  label "Number of days to prior to expiration date to trigger incident"
-end
 
 parameter "param_email" do
   type "list"
-  label "Email addresses of the recipients you wish to notify"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify when new incidents are created."
+  default []
+end
+
+parameter "param_heads_up_days" do
+  type "number"
+  category "Policy Settings"
+  label "Days Prior To Expiration"
+  description "Number of days to prior to expiration date to trigger incident"
+  default 7
 end
 
 ###############################################################################
@@ -50,44 +47,33 @@ credentials "auth_flexera" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
 datasource "ds_reservations" do
   request do
     auth $auth_flexera
     host rs_optima_host
-    path join(["/reserved_instances/orgs/",rs_org_id,"/clouds/aws"])
+    path join(["/reserved_instances/orgs/", rs_org_id, "/clouds/aws"])
   end
   result do
     encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "end_datetime", jmes_path(col_item,"end_datetime")
-      field "account_name", jmes_path(col_item,"account_name")
-      field "account_id", jmes_path(col_item,"account_id")
-      field "region", jmes_path(col_item,"region")
-      field "instance_type", jmes_path(col_item,"instance_type")
-      field "instance_count", jmes_path(col_item,"number_of_instances")
+    collect jmes_path(response, "[*]") do
+      field "end_datetime", jmes_path(col_item, "end_datetime")
+      field "account_name", jmes_path(col_item, "account_name")
+      field "account_id", jmes_path(col_item, "account_id")
+      field "region", jmes_path(col_item, "region")
+      field "instance_type", jmes_path(col_item, "instance_type")
+      field "instance_count", jmes_path(col_item, "number_of_instances")
     end
   end
-end
-
-###############################################################################
-# Escalations
-###############################################################################
-
-escalation "esc_email" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
 end
 
 ###############################################################################
 # Policy
 ###############################################################################
 
-policy "ri_expiration" do
+policy "pol_ri_expiration" do
   validate_each $ds_reservations do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Reserved instances are nearing expiration."
     export do
@@ -111,4 +97,15 @@ policy "ri_expiration" do
     escalate $esc_email
     check gt(dec(to_d(val(item, "end_datetime")), now), prod($param_heads_up_days, 24*3600))
   end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
 end

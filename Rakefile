@@ -1,55 +1,67 @@
 require 'rubygems'
 require 'json'
 require 'fileutils'
-require_relative 'tools/lib/policy_parser'
+require 'octokit'
+require 'uri'
+require 'time'
+require_relative '.dangerfile/policy_parser'
 
-# the list of policies is consumed by the tools/policy_sync/policy_sync.pt
+# The list of policies is consumed by the tools/policy_sync/policy_sync.pt
 # and the docs.rightscale.com build to generate the policies/user/policy_list.html
 # the file is uploaded to S3 during a merge to master deploy step in .travis.yml
 desc "Create a list of active policies to be published to the Public Policy Catalog"
+
 task :generate_policy_list do
+  # Preparation for getting information from Github repository
+  repo_name = "flexera-public/policy_templates"
+  branch = "master"
+  github_api_token = ENV["GITHUB_API_TOKEN"]
+  github_client = Octokit::Client.new(access_token: github_api_token)
+
   FileUtils.mkdir_p 'dist'
   file_list = []
-  Dir['**/*.pt'].reject{ |f| f['msp/'] }.each do |file|
-    change_log = ::File.join(file.split('/')[0...-1].join('/'),'CHANGELOG.md')
-    readme = ::File.join(file.split('/')[0...-1].join('/'),'README.md')
-    publish = true
 
-    if !file.match(/test_code/)
-      f = File.open(file, "r:bom|utf-8")
+  Dir['**/*.pt'].each do |file|
+    change_log = ::File.join(file.split('/')[0...-1].join('/'), 'CHANGELOG.md')
+    readme = ::File.join(file.split('/')[0...-1].join('/'), 'README.md')
+    updated_at = nil
 
-      pp = PolicyParser.new
-      pp.parse(file)
+    f = File.open(file, "r:bom|utf-8")
 
-      if pp.parsed_info
-        version = pp.parsed_info[:version]
-        provider = pp.parsed_info[:provider]
-        service = pp.parsed_info[:service]
-        policy_set = pp.parsed_info[:policy_set]
-        publish = pp.parsed_info[:publish]
-        # not all templates have the publish key
-        # set these to true,
-        if ( publish.nil? || publish=='true' || publish==true ) && provider!="Flexera Cloud Management"
-          publish = true
-        else
-          publish = false
-        end
-      end
+    pp = PolicyParser.new
+    pp.parse(file)
 
-      # get version from long description
-      if version.nil? && pp.parsed_long_description =~ /Version/
-        version = pp.parsed_long_description.split(':').last.strip.chomp("\"")
-      end
+    if pp.parsed_info
+      version = pp.parsed_info[:version]
+      provider = pp.parsed_info[:provider]
+      service = pp.parsed_info[:service]
+      policy_set = pp.parsed_info[:policy_set]
+      recommendation_type = pp.parsed_info[:recommendation_type]
+      publish = pp.parsed_info[:publish]
+      deprecated = pp.parsed_info[:deprecated]
 
-      # skip policy if the version isn't supplied or if version is '0.0'
-      if ! version || version == '0.0' || ! publish
-        puts "Skipping #{pp.parsed_name}, policy not published"
-        next
-      end
+      # 'publish' defaults to true unless explicitly set to false
+      # 'deprecated' defaults to false unless explicitly set to true
+      publish = !(publish == 'false' || publish == false)
+      deprecated = deprecated == 'true' || deprecated == true
+    end
+
+    # Get version from long description
+    if version.nil? && pp.parsed_long_description =~ /Version/
+      version = pp.parsed_long_description.split(':').last.strip.chomp("\"")
+    end
+
+    # Skip policy if the version isn't supplied or if version is '0.0'
+    if !version || version == '0.0' || !publish
+      puts "Skipping #{pp.parsed_name} because publish flag set to a value other than 'true'"
+    else
+      # Get datetime for last time file was modified
+      commits = github_client.commits(repo_name, branch, path: file)
+      updated_at = commits.first.commit.author.date.utc.iso8601 if !commits.empty?
 
       puts "Adding #{pp.parsed_name}"
 
-      file_list<<{
+      file_list << {
         "name": pp.parsed_name,
         "file_name": file,
         "version": version,
@@ -61,14 +73,22 @@ task :generate_policy_list do
         "provider": provider,
         "service": service,
         "policy_set": policy_set,
+        "recommendation_type": recommendation_type,
+        "updated_at": updated_at,
+        "deprecated": deprecated
       }
     end
   end
+
   # Sort the file list by Policy Template Name
   # This minimizes output diffs between runs
   file_list = file_list.sort_by { |pt| pt[:name] }
+
   # Construct final object
-  policies = {"policies": file_list }
+  policies = { "policies": file_list }
+
   # Write the output JSON file to disk
-  File.open('dist/active-policy-list.json', 'w') { |file| file.write(JSON.pretty_generate(policies)+"\n") }
+  File.open('dist/active-policy-list.json', 'w') {
+    |file| file.write(JSON.pretty_generate(policies) + "\n")
+  }
 end

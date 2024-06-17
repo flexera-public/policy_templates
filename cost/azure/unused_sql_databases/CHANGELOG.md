@@ -1,5 +1,21 @@
 # Changelog
 
+## v5.4.2
+
+- Added `deprecated` field to policy metadata. Functionality is unchanged.
+
+## v5.4.1
+
+- Added default value for parameters that do not require user input
+
+## v5.4
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
+## v5.3
+
+- Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.
+
 ## v5.2
 
 - Deprecated: This policy is no longer being updated. Please see policy README for more information.
