@@ -50,6 +50,7 @@ default_child_policy_template_files = [
   "../../cost/azure/rightsize_managed_disks/azure_rightsize_managed_disks.pt",
   "../../cost/azure/rightsize_netapp_files/azure_rightsize_netapp_files.pt",
   "../../cost/azure/rightsize_sql_instances/azure_rightsize_sql_instances.pt",
+  "../../cost/azure/rightsize_synapse_sql_pools/azure_rightsize_synapse_sql_pools.pt",
   "../../cost/azure/unused_ip_addresses/azure_unused_ip_addresses.pt",
   "../../cost/azure/unused_sql_databases/azure_unused_sql_databases.pt",
   "../../cost/azure/unused_volumes/azure_unused_volumes.pt",

@@ -56,6 +56,7 @@ These templates can generate savings estimates for your environment.
 - [Azure Rightsize Managed Disks](./cost/azure/rightsize_managed_disks)
 - [Azure Rightsize NetApp Files](./cost/azure/rightsize_netapp_files)
 - [Azure Rightsize SQL Databases](./cost/azure/rightsize_sql_instances)
+- [Azure Rightsize Synapse SQL Pools](./cost/azure/rightsize_synapse_sql_pools)
 - [Azure Savings Plan Recommendations](./cost/azure/savings_plan/recommendations)
 - [Azure Superseded Compute Instances](./cost/azure/superseded_instances)
 - [Azure Unused IP Addresses](./cost/azure/unused_ip_addresses)
