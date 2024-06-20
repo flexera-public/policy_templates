@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.11.0
+
+- Modified version to match [Semantic Versioning](https://semver.org) strategies
+- Added default value to `Email addresses to notify` and `Exclusion Label Key:Value` parameters to make them optional
+
 ## v2.10
 
 - Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM
