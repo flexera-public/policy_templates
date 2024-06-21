@@ -57,13 +57,15 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ### Amazon Web Services
 
-1. **Create AWS Cross-Account Roles in AWS Account(s)**
-   - The same name should be used for the role in every account. Permissions should be configured for whichever policy templates you intended to use.
-   - Recommended method for creating roles is AWS CloudFormation (StackSets). [We provide a template](https://raw.githubusercontent.com/flexera-public/policy_templates/master/tools/cloudformation-template/FlexeraAutomationPolicies.template) for this purpose.
+#### Create AWS Cross-Account Roles in AWS Account(s)
 
-2. **[Create an AWS credential in the Flexera CCO platform](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1122264)**
-   - This should be created as an ordinary AWS cross-account role.
-   - The role can be any of the roles created in step 1. The meta policy will infer the credentials for the rest of the AWS accounts based on the shared name.
+- The same name should be used for the role in every account. Permissions should be configured for whichever policy templates you intended to use.
+- Recommended method for creating roles is AWS CloudFormation (StackSets). [We provide a template](https://raw.githubusercontent.com/flexera-public/policy_templates/master/tools/cloudformation-template/FlexeraAutomationPolicies.template) for this purpose.
+
+#### [Create an AWS credential in the Flexera CCO platform](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1122264)
+
+- This should be created as an ordinary AWS cross-account role.
+- The role can be any of the roles created in step 1. The meta policy will infer the credentials for the rest of the AWS accounts based on the shared name.
 
 ### Microsoft Azure
 
@@ -181,7 +183,7 @@ end
 
 The majority of additions for child policies are common to all policies.  Generally it is recommended to place this at the bottom with the following comments.
 
-<details><summary><b>Click to Expand</b> Common Meta Policy Logic</summary>
+<details><summary>Common Meta Policy Logic (Click to Expand)</summary>
 
 ```ruby
 ###############################################################################
@@ -277,7 +279,7 @@ end
 
 </details>
 
----
+----
 
 ### Meta Parent Policy Template
 
