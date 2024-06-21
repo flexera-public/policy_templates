@@ -896,19 +896,28 @@ script "js_azure_synapse_sql_pool_costs_grouped", type: "javascript" do
   parameters "ds_azure_synapse_sql_pool_costs"
   result "result"
   code <<-EOS
-  // Multiple a single day's cost by the average number of days in a month.
-  // The 0.25 is to account for leap years for extra precision.
-  cost_multiplier = 365.25 / 12
+  var cost_multiplier = 365.25 / 12;
 
   // Group cost data by resourceId for later use
-  result = {}
+  var result = {};
 
-  _.each(ds_azure_synapse_sql_pool_costs, function(item) {
-    id = item['resourceId'].toLowerCase()
+  _.each(ds_azure_synapse_sql_pool_costs, function (item) {
+    var id = item["resourceId"].toLowerCase();
 
-    if (result[id] == undefined) { result[id] = 0.0 }
-    result[id] += item['cost'] * cost_multiplier
-  })
+    var types = {
+      "Azure Synapse Analytics-Compute Optimized Gen2": "Compute",
+      "Azure Synapse Analytics-Disaster Recovery Storage": "Storage",
+      "Azure Synapse Analytics-Storage": "Storage",
+    };
+
+    if (result[id] == undefined) {
+      result[id] = {
+        cost: 0.0,
+        resourceCategory: types[item.resourceCategory],
+      };
+    }
+    result[id].cost += item["cost"] * cost_multiplier;
+  });
 EOS
 end
 
@@ -920,12 +929,11 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
   parameters "ds_azure_synapse_sql_pool_terminate_metrics", "ds_azure_synapse_sql_pool_pause_metrics", "ds_azure_synapse_sql_pool_downsize_metrics", "ds_azure_synapse_sql_pool_min_active_metrics", "ds_azure_synapse_sql_pools_region_filtered", "ds_azure_synapse_sql_pool_costs_grouped", "ds_applied_policy", "ds_currency", "ds_azure_synapse_size_map", "param_terminate_lookback", "param_pause_lookback", "param_downsize_lookback", "param_stats_threshold", "param_min_savings", "param_min_active", "param_filter_stats"
   result "result"
   code <<-EOS
-
   // Used for formatting numbers to look pretty
-  function formatNumber(number, separator){
-    numString = number.toString()
-    values = numString.split(".")
-    formatted_number = ''
+  function formatNumber(number, separator) {
+    var numString = number.toString()
+    var values = numString.split(".")
+    var formatted_number = ''
 
     while (values[0].length > 3) {
       var chunk = values[0].substr(-3)
@@ -940,30 +948,30 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
   }
 
   // Used to add common attributes to all kind of recommendations
-  function addItemAttributes(item, id, pools, metrics){
-    item["status"] = pools[id]['status'],
-    item["creationDate"] = pools[id]['creationDate'],
-    item["provisioningState"] = pools[id]['provisioningState'],
-    item["storageAccountType"] = pools[id]['storageAccountType'],
-    item["DWUavgUsed"] = parseFloat(metrics['DWUUsed'][0]['average']).toFixed(3),
-    item["DWUavgUsedPercent"] = parseFloat(metrics['DWUUsedPercent'][0]['average']).toFixed(3),   
-    item["DWUUsed"] = metrics['DWUUsed'][0]['maximum'],
-    item["DWUUsedPercent"] = metrics['DWUUsedPercent'][0]['maximum'],
-    item["CPUavgPercent"] = parseFloat(metrics['CPUPercent'][0]['average']).toFixed(3),
-    item["CPUPercent"] = metrics['CPUPercent'][0]['maximum'],
-    item["MemoryAvgUsedPercent"] = parseFloat(metrics['MemoryUsedPercent'][0]['average']).toFixed(3),
-    item["MemoryUsedPercent"] = metrics['MemoryUsedPercent'][0]['maximum'],
-    item["ConnectionsAverage"] = metrics['Connections'][0]['average'],
-    item["Connections"] = metrics['Connections'][0]['maximum'],
-    item["service"] = "Microsoft.Synapse",
-    item['savingsCurrency'] = ds_currency['symbol'],
+  function addItemAttributes(item, id, pools, metrics) {
+    item["status"] = pools[id]['status']
+    item["creationDate"] = pools[id]['creationDate']
+    item["provisioningState"] = pools[id]['provisioningState']
+    item["storageAccountType"] = pools[id]['storageAccountType']
+    item["DWUavgUsed"] = parseFloat(metrics['DWUUsed'][0]['average']).toFixed(3)
+    item["DWUavgUsedPercent"] = parseFloat(metrics['DWUUsedPercent'][0]['average']).toFixed(3)
+    item["DWUUsed"] = metrics['DWUUsed'][0]['maximum']
+    item["DWUUsedPercent"] = metrics['DWUUsedPercent'][0]['maximum']
+    item["CPUavgPercent"] = parseFloat(metrics['CPUPercent'][0]['average']).toFixed(3)
+    item["CPUPercent"] = metrics['CPUPercent'][0]['maximum']
+    item["MemoryAvgUsedPercent"] = parseFloat(metrics['MemoryUsedPercent'][0]['average']).toFixed(3)
+    item["MemoryUsedPercent"] = metrics['MemoryUsedPercent'][0]['maximum']
+    item["ConnectionsAverage"] = metrics['Connections'][0]['average']
+    item["Connections"] = metrics['Connections'][0]['maximum']
+    item["service"] = "Microsoft.Synapse"
+    item['savingsCurrency'] = ds_currency['symbol']
     item["resourceType"] = pools[id]['sku']
   }
 
-  result = []
-  pools = {}
-  daysUsed = {}
-  poolNotAvailable = {}
+  var result = []
+  var pools = {}
+  var daysUsed = {}
+  var poolNotAvailable = {}
 
   var terminate_total_savings = 0.0
   var idle_total_savings = 0.0
@@ -971,39 +979,43 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
   var terminate_list = []
   var idle_list = []
   var underutil_list = []
-  
 
-
-  _.each(ds_azure_synapse_sql_pools_region_filtered, function(item) {
-    id = item['resourceId'].toLowerCase()
+  _.each(ds_azure_synapse_sql_pools_region_filtered, function (item) {
+    var id = item['resourceId'].toLowerCase()
     pools[id] = item
   })
-    
 
   // Terminate Instances
-  _.each(ds_azure_synapse_sql_pool_terminate_metrics, function(item) {
-    id = item['resourceId'].toLowerCase()
-    total_cost = 0.0
-    if (ds_azure_synapse_sql_pool_costs_grouped[id] != undefined) { total_cost = ds_azure_synapse_sql_pool_costs_grouped[id] }
+  _.each(ds_azure_synapse_sql_pool_terminate_metrics, function (item) {
+    var id = item['resourceId'].toLowerCase()
+    var total_cost = 0.0
+    var groupedResource = ds_azure_synapse_sql_pool_costs_grouped[id]
 
-    metrics = {}
-    values = item['value']
+    if (groupedResource != undefined) {
+      total_cost = groupedResource.cost;
 
-    _.each(values, function(metric) {
+      if (groupedResource.resourceCategory != "Storage") { return }
+    } else {
+      return
+    }
+
+    var metrics = {}
+    var values = item['value']
+
+    _.each(values, function (metric) {
       metrics[metric['name']['value']] = metric['timeseries'][0]['data']
     })
 
-    connections = 0.0
+    var connections = 0.0
     if (param_filter_stats == "Average") {
       connections = metrics['Connections'][0]['average']
     } else if (param_filter_stats == "Maximum") {
       connections = parseInt(metrics['Connections'][0]['maximum'])
     }
 
-    savings = parseFloat(parseFloat(total_cost).toFixed(3))
+    var savings = parseFloat(parseFloat(total_cost).toFixed(3))
 
     if (connections == 0 && savings >= param_min_savings) {
-
       addItemAttributes(item, id, pools, metrics)
 
       item["lookbackPeriod"] = param_terminate_lookback
@@ -1020,44 +1032,50 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
 
       poolNotAvailable[id] = true
     }
-
   })
 
   // Pause Instances
-  _.each(ds_azure_synapse_sql_pool_pause_metrics, function(item) {
-    id = item['resourceId'].toLowerCase()
+  _.each(ds_azure_synapse_sql_pool_pause_metrics, function (item) {
+    var id = item['resourceId'].toLowerCase()
 
-    var poolNotAvailable = false
-    if (poolNotAvailable[id] != null && poolNotAvailable[id] != undefined && poolNotAvailable[id]) { poolNotAvailable = true }
+    var notAvailable = false
+    if (poolNotAvailable[id] != null && poolNotAvailable[id] != undefined && poolNotAvailable[id]) { notAvailable = true }
 
-    if (poolNotAvailable) {
+    if (notAvailable) {
+      return
+    }
+    var total_cost = 0.0
+    var groupedResource = ds_azure_synapse_sql_pool_costs_grouped[id]
+
+    if (groupedResource != undefined) {
+      total_cost = groupedResource.cost;
+
+      if (groupedResource.resourceCategory != "Compute") { return }
+    } else {
       return
     }
 
-    total_cost = 0.0
-    if (ds_azure_synapse_sql_pool_costs_grouped[id] != undefined) { total_cost = ds_azure_synapse_sql_pool_costs_grouped[id] }
-
-    savings = parseFloat(parseFloat(total_cost).toFixed(3))
+    var savings = parseFloat(parseFloat(total_cost).toFixed(3))
 
     if (savings < param_min_savings) {
       return
     }
 
-    metrics = {}
-    values = item['value']
+    var metrics = {}
+    var values = item['value']
 
-    _.each(values, function(metric) {
+    _.each(values, function (metric) {
       metrics[metric['name']['value']] = metric['timeseries'][0]['data']
     })
 
-    connections = 0.0
+    var connections = 0.0
     if (param_filter_stats == "Average") {
       connections = metrics['Connections'][0]['average']
     } else if (param_filter_stats == "Maximum") {
       connections = parseInt(metrics['Connections'][0]['maximum'])
     }
 
-    status = pools[id]['status']
+    var status = pools[id]['status']
 
     if (connections == 0 && status != "Paused") {
 
@@ -1080,21 +1098,20 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
 
   })
 
-
   // Min Active Metrics for Downsizing
-  _.each(ds_azure_synapse_sql_pool_min_active_metrics, function(item) {
-    id = item['resourceId'].toLowerCase()
-    
-    var poolNotAvailable = false
-    if (poolNotAvailable[id] != null && poolNotAvailable[id] != undefined && poolNotAvailable[id]) { poolNotAvailable = true }
+  _.each(ds_azure_synapse_sql_pool_min_active_metrics, function (item) {
+    var id = item['resourceId'].toLowerCase()
 
-    if (poolNotAvailable) {
+    var notAvailable = false
+    if (poolNotAvailable[id] != null && poolNotAvailable[id] != undefined && poolNotAvailable[id]) { notAvailable = true }
+
+    if (notAvailable) {
       return
     }
 
-    days = 0
+    var days = 0
 
-    _.each(item['value'][0]['timeseries'][0]['data'], function(day) {
+    _.each(item['value'][0]['timeseries'][0]['data'], function (day) {
 
       if (param_filter_stats == "Average") {
         if (day['average'] > 0) {
@@ -1104,7 +1121,7 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
         if (day['maximum'] > 0) {
           days++
         }
-      }     
+      }
     })
 
     daysUsed[id] = days
@@ -1112,13 +1129,13 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
   })
 
   // Downsize Instances
-  _.each(ds_azure_synapse_sql_pool_pause_metrics, function(item) {
-    id = item['resourceId'].toLowerCase()
+  _.each(ds_azure_synapse_sql_pool_pause_metrics, function (item) {
+    var id = item['resourceId'].toLowerCase()
 
-    var poolNotAvailable = false
-    if (poolNotAvailable[id] != null && poolNotAvailable[id] != undefined && poolNotAvailable[id]) { poolNotAvailable = true }
+    var notAvailable = false
+    if (poolNotAvailable[id] != null && poolNotAvailable[id] != undefined && poolNotAvailable[id]) { notAvailable = true }
 
-    if (poolNotAvailable) {
+    if (notAvailable) {
       return
     }
 
@@ -1129,13 +1146,21 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
       return
     }
 
-    total_cost = 0.0
-    if (ds_azure_synapse_sql_pool_costs_grouped[id] != undefined) { total_cost = ds_azure_synapse_sql_pool_costs_grouped[id] }
+    var total_cost = 0.0
+    var groupedResource = ds_azure_synapse_sql_pool_costs_grouped[id]
+
+    if (groupedResource != undefined) {
+      total_cost = groupedResource.cost;
+
+      if (groupedResource.resourceCategory != "Compute") { return }
+    } else {
+      return
+    }
 
     metrics = {}
     values = item['value']
 
-    _.each(values, function(metric) {
+    _.each(values, function (metric) {
       metrics[metric['name']['value']] = metric['timeseries'][0]['data']
     })
 
@@ -1153,21 +1178,19 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
       dwuUsed = parseInt(metrics['DWUUsed'][0]['maximum'])
     }
 
-    if (dwuUsedPercent <= param_stats_threshold) { 
-      
+    if (dwuUsedPercent <= param_stats_threshold) {
       addItemAttributes(item, id, pools, metrics)
 
       item["threshold"] = param_stats_threshold
 
       item["lookbackPeriod"] = param_downsize_lookback
-      
+
       var currentResourceSize = item["resourceType"].substring(2, item["resourceType"].indexOf('c'))
       var tempNewSize = dwuUsed * 100 / param_stats_threshold
       var newResourceType = null
       var recommendationType = ""
 
       if (ds_azure_synapse_size_map[item['resourceType']]) {
-
         item["newResourceType"] = item['resourceType']
 
         if (tempNewSize < currentResourceSize) {
@@ -1176,7 +1199,7 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
 
           while (ds_azure_synapse_size_map[item['newResourceType']]['down'] != null) {
 
-            newResourceType  = ds_azure_synapse_size_map[item['newResourceType']]['down']
+            newResourceType = ds_azure_synapse_size_map[item['newResourceType']]['down']
             newResourceSize = newResourceType.substring(2, newResourceType.indexOf('c'))
 
             if (newResourceSize >= tempNewSize) {
@@ -1188,12 +1211,11 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
         }
 
         if (tempNewSize > currentResourceSize) {
-
           recommendationType = "Upsize"
 
           while (ds_azure_synapse_size_map[item['newResourceType']]['up'] != null) {
 
-            newResourceType  = ds_azure_synapse_size_map[item['newResourceType']]['up']
+            newResourceType = ds_azure_synapse_size_map[item['newResourceType']]['up']
             newResourceSize = newResourceType.substring(2, newResourceType.indexOf('c'))
 
             if (item["newResourceType"] <= tempNewSize) {
@@ -1203,7 +1225,7 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
             }
           }
         }
-        
+
       }
 
       if (item["newResourceType"] != null && item["newResourceType"] != undefined && item["newResourceType"] != item["resourceType"]) {
@@ -1219,7 +1241,7 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
 
         item["savings"] = parseFloat(total_cost - parseFloat(newResourceSize) * total_cost / parseFloat(currentResourceSize)).toFixed(3)
         var savings = parseFloat(item["savings"])
-        
+
         if (item["savings"] >= param_min_savings) {
           underutil_list.push(item)
           underutil_total_savings += savings
@@ -1229,25 +1251,25 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
   })
 
   if (terminate_list.length > 0) {
-    items_total = ds_azure_synapse_sql_pools_region_filtered.length.toString()
-    terminate_items_total = terminate_list.length.toString()
-    terminate_items_percentage = (terminate_items_total / items_total * 100).toFixed(2).toString() + '%'
-    terminate_total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(terminate_total_savings).toFixed(2), ds_currency['separator'])
-    terminate_verb = "are"
+    var items_total = ds_azure_synapse_sql_pools_region_filtered.length.toString()
+    var terminate_items_total = terminate_list.length.toString()
+    var terminate_items_percentage = (terminate_items_total / items_total * 100).toFixed(2).toString() + '%'
+    var terminate_total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(terminate_total_savings).toFixed(2), ds_currency['separator'])
+    var terminate_verb = "are"
     if (terminate_items_total == 1) { terminate_verb = "is" }
-    terminate_findings = [
+    var terminate_findings = [
       "Out of ", items_total, " Azure Synapse SQL pools analyzed, ",
       terminate_items_total, " (", terminate_items_percentage,
       ") ", terminate_verb, " idle and recommended for termination. "
     ].join('')
-    day_message = "day"
+    var day_message = "day"
     if (param_terminate_lookback > 1) { day_message += "s" }
-    terminate_analysis_message = [
+    var terminate_analysis_message = [
       "An Azure Synapse SQL pool is considered unused for termination if it has not had any connections ",
       "in the last ", param_terminate_lookback, " ", day_message, ". "
     ].join('')
-    disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
-    terminate_message = terminate_findings + terminate_analysis_message + disclaimer
+    var disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+    var terminate_message = terminate_findings + terminate_analysis_message + disclaimer
 
     terminate_list[0]['terminate_message'] = terminate_message
     terminate_list[0]['terminate_total_savings'] = terminate_total_savings
@@ -1256,24 +1278,24 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
 
   if (idle_list.length > 0) {
     items_total = ds_azure_synapse_sql_pools_region_filtered.length.toString()
-    idle_items_total = idle_list.length.toString()
-    idle_items_percentage = (idle_items_total / items_total * 100).toFixed(2).toString() + '%'
+    var idle_items_total = idle_list.length.toString()
+    var idle_items_percentage = (idle_items_total / items_total * 100).toFixed(2).toString() + '%'
     idle_total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(idle_total_savings).toFixed(2), ds_currency['separator'])
-    idle_verb = "are"
+    var idle_verb = "are"
     if (idle_items_total == 1) { idle_verb = "is" }
-    idle_findings = [
+    var idle_findings = [
       "Out of ", items_total, " Azure Synapse SQL pools analyzed, ",
       idle_items_total, " (", idle_items_percentage,
       ") ", idle_verb, " idle and recommended for pausing. "
     ].join('')
     day_message = "day"
     if (param_pause_lookback > 1) { day_message += "s" }
-    idle_analysis_message = [
+    var idle_analysis_message = [
       "An Azure Synapse SQL pool is considered unused for pausing if it has not had any connections ",
       "in the last ", param_pause_lookback, " ", day_message, ", and its status is not 'Paused'. "
     ].join('')
     disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
-    idle_message = idle_findings + idle_analysis_message + disclaimer
+    var idle_message = idle_findings + idle_analysis_message + disclaimer
 
     idle_list[0]['idle_message'] = idle_message
     idle_list[0]['idle_total_savings'] = idle_total_savings
@@ -1307,13 +1329,13 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
     underutil_list[0]['underutil_total_savings'] = underutil_total_savings
     underutil_list[0]['policy_name'] = ds_applied_policy['name']
   }
-  
+
   result = {
     terminate_list: terminate_list,
     idle_list: idle_list,
     underutil_list: underutil_list
   }
-EOS
+  EOS
 end
 
 datasource "ds_azure_synapse_terminate_pools" do
