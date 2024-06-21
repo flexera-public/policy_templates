@@ -153,12 +153,12 @@ parameter "param_min_savings" do
 end
 
 parameter "param_automatic_pause" do
-  type "list"
+  type "string"
   category "Actions"
   label "Enable Automatic Pausing"
   description "When this value is set, this policy will automatically pause the selected underutilized Synapse SQL Pools."
-  allowed_values ["Yes", "No"]
-  default ["No"] 
+  allowed_values "Yes", "No"
+  default "No"
 end
 
 ###############################################################################
@@ -717,6 +717,66 @@ script "js_azure_synapse_sql_pool_downsize_metrics", type: "javascript" do
 EOS
 end
 
+datasource "ds_azure_synapse_sql_pool_percentile_metrics" do
+  iterate $ds_azure_synapse_sql_pools_region_filtered
+  request do
+    run_script $js_azure_synapse_sql_pool_percentile_metrics, val(iter_item, "resourceId"), val(iter_item, "creationDate"), $param_azure_endpoint, $param_downsize_lookback
+  end
+  result do
+    encoding "json"
+    field "value", val(response, "value")
+    field "resourceId", val(iter_item, "resourceId")
+  end
+end
+
+script "js_azure_synapse_sql_pool_percentile_metrics", type: "javascript" do
+  parameters "resourceId", "creationDate", "param_azure_endpoint", "param_downsize_lookback"
+  result "request"
+  code <<-EOS
+  end_date = new Date()
+  end_date.setMilliseconds(999)
+  end_date.setSeconds(59)
+  end_date.setMinutes(59)
+  end_date.setHours(23)
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - param_downsize_lookback)
+
+  creation_date = new Date(creationDate)
+
+  if (start_date.getDate() < creation_date.getDate()) {
+      start_date.setDate(creation_date.getDate())
+  }
+
+  start_date.setMilliseconds(0)
+  start_date.setSeconds(0)
+  start_date.setMinutes(0)
+  start_date.setHours(0)
+
+  timespan = start_date.toISOString() + "/" + end_date.toISOString()
+
+  var request = {
+    auth: "auth_azure",
+    pagination: "pagination_azure",
+    host: param_azure_endpoint,
+    verb: "GET",
+    path: resourceId + "/providers/microsoft.insights/metrics",
+    query_params: {
+      "api-version": "2023-10-01",
+      "timespan": timespan,
+      "interval": "PT1H",
+      "metricnames": "DWUUsedPercent",
+      "aggregation": "maximum"
+    },
+    headers: {
+      "User-Agent": "RS Policies"
+    }, 
+    // Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status: [400, 403, 404]
+  }
+EOS
+end
+
 datasource "ds_azure_synapse_sql_pool_min_active_metrics" do
   iterate $ds_azure_synapse_sql_pools_region_filtered
   request do
@@ -922,11 +982,11 @@ EOS
 end
 
 datasource "ds_azure_synapse_underutil_and_idle_pools" do
-  run_script $js_azure_synapse_sql_underutil_and_idle_pools, $ds_azure_synapse_sql_pool_terminate_metrics, $ds_azure_synapse_sql_pool_pause_metrics, $ds_azure_synapse_sql_pool_downsize_metrics, $ds_azure_synapse_sql_pool_min_active_metrics, $ds_azure_synapse_sql_pools_region_filtered, $ds_azure_synapse_sql_pool_costs_grouped, $ds_applied_policy, $ds_currency, $ds_azure_synapse_size_map, $param_terminate_lookback, $param_pause_lookback, $param_downsize_lookback, $param_stats_threshold, $param_min_savings, $param_min_active, $param_filter_stats
+  run_script $js_azure_synapse_sql_underutil_and_idle_pools, $ds_azure_synapse_sql_pool_terminate_metrics, $ds_azure_synapse_sql_pool_pause_metrics, $ds_azure_synapse_sql_pool_downsize_metrics, $ds_azure_synapse_sql_pool_percentile_metrics, $ds_azure_synapse_sql_pool_min_active_metrics, $ds_azure_synapse_sql_pools_region_filtered, $ds_azure_synapse_sql_pool_costs_grouped, $ds_applied_policy, $ds_currency, $ds_azure_synapse_size_map, $param_terminate_lookback, $param_pause_lookback, $param_downsize_lookback, $param_stats_threshold, $param_min_savings, $param_min_active, $param_filter_stats
 end
 
 script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
-  parameters "ds_azure_synapse_sql_pool_terminate_metrics", "ds_azure_synapse_sql_pool_pause_metrics", "ds_azure_synapse_sql_pool_downsize_metrics", "ds_azure_synapse_sql_pool_min_active_metrics", "ds_azure_synapse_sql_pools_region_filtered", "ds_azure_synapse_sql_pool_costs_grouped", "ds_applied_policy", "ds_currency", "ds_azure_synapse_size_map", "param_terminate_lookback", "param_pause_lookback", "param_downsize_lookback", "param_stats_threshold", "param_min_savings", "param_min_active", "param_filter_stats"
+  parameters "ds_azure_synapse_sql_pool_terminate_metrics", "ds_azure_synapse_sql_pool_pause_metrics", "ds_azure_synapse_sql_pool_downsize_metrics", "ds_azure_synapse_sql_pool_percentile_metrics", "ds_azure_synapse_sql_pool_min_active_metrics", "ds_azure_synapse_sql_pools_region_filtered", "ds_azure_synapse_sql_pool_costs_grouped", "ds_applied_policy", "ds_currency", "ds_azure_synapse_size_map", "param_terminate_lookback", "param_pause_lookback", "param_downsize_lookback", "param_stats_threshold", "param_min_savings", "param_min_active", "param_filter_stats"
   result "result"
   code <<-EOS
   // Used for formatting numbers to look pretty
@@ -945,6 +1005,15 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
     if (values[1] == undefined) { return formatted_number }
 
     return formatted_number + "." + values[1]
+  }
+
+  function percentile(arr, p) {
+    if (arr.length === 0) return 0
+    arr.sort(function (a, b) {
+      return a - b;
+    })
+    var index = (p / 100) * arr.length
+    return arr[Math.ceil(index) - 1]
   }
 
   // Used to add common attributes to all kind of recommendations
@@ -971,6 +1040,7 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
   var result = []
   var pools = {}
   var daysUsed = {}
+  arr_percentile = {}
   var poolNotAvailable = {}
 
   var terminate_total_savings = 0.0
@@ -1006,16 +1076,13 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
       metrics[metric['name']['value']] = metric['timeseries'][0]['data']
     })
 
-    var connections = 0.0
-    if (param_filter_stats == "Average") {
-      connections = metrics['Connections'][0]['average']
-    } else if (param_filter_stats == "Maximum") {
-      connections = parseInt(metrics['Connections'][0]['maximum'])
-    }
+    var connections = parseInt(metrics['Connections'][0]['maximum'])
 
     var savings = parseFloat(parseFloat(total_cost).toFixed(3))
 
-    if (connections == 0 && savings >= param_min_savings) {
+    var status = pools[id]['status']
+
+    if (connections == 0 && status == "Paused" && savings >= param_min_savings) {
       addItemAttributes(item, id, pools, metrics)
 
       item["lookbackPeriod"] = param_terminate_lookback
@@ -1068,12 +1135,7 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
       metrics[metric['name']['value']] = metric['timeseries'][0]['data']
     })
 
-    var connections = 0.0
-    if (param_filter_stats == "Average") {
-      connections = metrics['Connections'][0]['average']
-    } else if (param_filter_stats == "Maximum") {
-      connections = parseInt(metrics['Connections'][0]['maximum'])
-    }
+    var connections = parseInt(metrics['Connections'][0]['maximum'])
 
     var status = pools[id]['status']
 
@@ -1096,6 +1158,36 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
       poolNotAvailable[id] = true
     }
 
+  })
+
+   // Percentile Metrics
+  _.each(ds_azure_synapse_sql_pool_percentile_metrics, function(item) {
+    id = item['resourceId'].toLowerCase()
+    
+    var notAvailable = false
+    if (poolNotAvailable[id] != null && poolNotAvailable[id] != undefined && poolNotAvailable[id]) { notAvailable = true }
+
+    if (notAvailable) {
+      return
+    }
+    metrics = {}
+    values = item['value']
+ 
+    _.each(values, function(metric) {
+      metrics[metric['name']['value']] = metric['timeseries'][0]['data']
+    })
+
+   
+
+    var all_measurements = []
+    _.each(metrics['DWUUsedPercent'], function(data){
+      all_measurements = all_measurements.concat(data['maximum'])
+    })
+
+    arr_percentile[id+"90"] = percentile(all_measurements, 90).toFixed(3)
+    arr_percentile[id+"95"] = percentile(all_measurements, 95).toFixed(3)
+    arr_percentile[id+"99"] = percentile(all_measurements, 99).toFixed(3)
+    
   })
 
   // Min Active Metrics for Downsizing
@@ -1164,18 +1256,22 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
       metrics[metric['name']['value']] = metric['timeseries'][0]['data']
     })
 
-    connections = 0.0
+    var connections = parseInt(metrics['Connections'][0]['maximum'])
     var dwuUsedPercent = 0.0
     var dwuUsed = 0.0
 
     if (param_filter_stats == "Average") {
-      connections = metrics['Connections'][0]['average']
       dwuUsedPercent = metrics['DWUUsedPercent'][0]['average']
       dwuUsed = metrics['DWUUsed'][0]['average']
     } else if (param_filter_stats == "Maximum") {
-      connections = parseInt(metrics['Connections'][0]['maximum'])
       dwuUsedPercent = metrics['DWUUsedPercent'][0]['maximum']
       dwuUsed = parseInt(metrics['DWUUsed'][0]['maximum'])
+    } else if (param_filter_stats == "P90") {
+      dwuUsedPercent = arr_percentile[id+"90"]
+    } else if (param_filter_stats == "P95") {
+      dwuUsedPercent = arr_percentile[id+"95"]
+    } else if (param_filter_stats == "P99") {
+      dwuUsedPercent = arr_percentile[id+"99"]
     }
 
     if (dwuUsedPercent <= param_stats_threshold) {
@@ -1243,6 +1339,9 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
         var savings = parseFloat(item["savings"])
 
         if (item["savings"] >= param_min_savings) {
+          item["DWUP90"] = arr_percentile[id+"90"],
+          item["DWUP95"] = arr_percentile[id+"95"],
+          item["DWUP99"] = arr_percentile[id+"99"],
           underutil_list.push(item)
           underutil_total_savings += savings
         }
@@ -1474,6 +1573,9 @@ script "js_azure_synapse_underutil_pools", type: "javascript" do
     "DWUavgUsedPercent": "",
     "DWUUsed": "",
     "DWUUsedPercent": "",
+    "DWUP90": "",
+    "DWUP95": "",
+    "DWUP99": "",
     "CPUavgPercent": "",
     "CPUPercent": "",
     "MemoryAvgUsedPercent": "",
@@ -1792,6 +1894,15 @@ policy "pol_azure_synapse_sql_pool_utilization" do
       end
       field "DWUUsedPercent" do
         label "DWU Utilization % (Maximum)"
+      end
+      field "DWUP90" do
+        label "DWU Utilization % (P90)"
+      end
+      field "DWUP95" do
+        label "DWU Utilization % (P95)"
+      end
+      field "DWUP99" do
+        label "DWU Utilization % (P99)"
       end
       field "threshold" do
         label "Threshold"
