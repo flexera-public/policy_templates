@@ -1,7 +1,7 @@
 name "Azure Rightsize Synapse SQL Pools"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks for Synapse Dedicated SQL Pools instances that have inefficient utilization for the last N days and downsizes or pauses them after approval. \n See the [README](https://github.com/flexera-public/policy_templates/tree/FOPTS-3684_v2_azure_synapse/cost/azure/rightsize_synapse_sql_pools/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Checks for Synapse Dedicated SQL Pools instances that have inefficient utilization for the user-specified number of days and pauses them after approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_synapse_sql_pools/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Cost"
 severity "low"
@@ -90,7 +90,7 @@ parameter "param_filter_stats" do
   type "string"
   category "Filters"
   label "Threshold Statistic"
-  description "Metric statistic that will be used to check for connections and DWU used values."
+  description "Statistic to use when determining if an instance is underutilized."
   allowed_values "Average", "Maximum", "P90", "P95", "P99"
   default "Average"
 end
@@ -98,15 +98,17 @@ end
 parameter "param_stats_threshold" do
   type "number"
   category "Statistics"
-  label "DWU used Threshold (%)"
-  description "Threshold for DWU utilization to use when determining if a pool is underutilized."
+  label "DWU Used Threshold (%)"
+  description "The DWU threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing."
+  min_value 1
+  max_value 100
   default 20
 end
 
 parameter "param_terminate_lookback" do
   type "number"
   category "Statistics"
-  label "Terminate Lookback Period"
+  label "Terminate Lookback Period (Days)"
   description "How many days back to look at metrics to consider a pool idle for termination. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days."
   min_value 1
   max_value 90
@@ -116,7 +118,7 @@ end
 parameter "param_pause_lookback" do
   type "number"
   category "Statistics"
-  label "Pause Lookback Period"
+  label "Pause Lookback Period (Days)"
   description "How many days back to look at metrics to consider a pool idle for pausing. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days."
   min_value 1
   max_value 90
@@ -126,7 +128,7 @@ end
 parameter "param_downsize_lookback" do
   type "number"
   category "Statistics"
-  label "Downsize Lookback Period"
+  label "Downsize Lookback Period (Days)"
   description "How many days back to look at metrics to consider a pool underutilized for downsizing. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days."
   min_value 1
   max_value 90
@@ -156,7 +158,7 @@ parameter "param_automatic_pause" do
   type "string"
   category "Actions"
   label "Enable Automatic Pausing"
-  description "When this value is set, this policy will automatically pause the selected underutilized Synapse SQL Pools."
+  description "When this value is set to Yes, this policy will automatically pause the selected idle Synapse SQL Pools."
   allowed_values "Yes", "No"
   default "No"
 end
@@ -838,18 +840,21 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
     item["CPUPercent"] = metrics['CPUPercent'][0]['maximum']
     item["MemoryAvgUsedPercent"] = parseFloat(metrics['MemoryUsedPercent'][0]['average']).toFixed(3)
     item["MemoryUsedPercent"] = metrics['MemoryUsedPercent'][0]['maximum']
-    item["ConnectionsAverage"] = metrics['Connections'][0]['average']
     item["Connections"] = metrics['Connections'][0]['maximum']
     item["service"] = "Microsoft.Synapse"
     item['savingsCurrency'] = ds_currency['symbol']
     item["resourceType"] = pools[id]['sku']
   }
 
+  function poolIsNotAvailable(recommendedPool) {
+    return recommendedPool != null && recommendedPool != undefined && recommendedPool == true
+  }
+
   var result = []
   var pools = {}
   var daysUsed = {}
   arr_percentile = {}
-  var poolNotAvailable = {}
+  var recommendedPools = {}
 
   var terminate_total_savings = 0.0
   var idle_total_savings = 0.0
@@ -905,7 +910,7 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
       terminate_list.push(item)
       terminate_total_savings += total_cost
 
-      poolNotAvailable[id] = true
+      recommendedPools[id] = true
     }
   })
 
@@ -913,12 +918,10 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
   _.each(ds_azure_synapse_sql_pool_pause_metrics, function (item) {
     var id = item['resourceId'].toLowerCase()
 
-    var notAvailable = false
-    if (poolNotAvailable[id] != null && poolNotAvailable[id] != undefined && poolNotAvailable[id]) { notAvailable = true }
-
-    if (notAvailable) {
+    if (poolIsNotAvailable(recommendedPools[id])) {
       return
     }
+
     var total_cost = 0.0
     var groupedResource = ds_azure_synapse_sql_pool_costs_grouped[id]
 
@@ -963,7 +966,7 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
       idle_list.push(item)
       idle_total_savings += total_cost
 
-      poolNotAvailable[id] = true
+      recommendedPools[id] = true
     }
 
   })
@@ -972,12 +975,10 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
   _.each(ds_azure_synapse_sql_pool_percentile_metrics, function(item) {
     id = item['resourceId'].toLowerCase()
     
-    var notAvailable = false
-    if (poolNotAvailable[id] != null && poolNotAvailable[id] != undefined && poolNotAvailable[id]) { notAvailable = true }
-
-    if (notAvailable) {
+    if (poolIsNotAvailable(recommendedPools[id])) {
       return
     }
+
     metrics = {}
     values = item['value']
  
@@ -1002,10 +1003,7 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
   _.each(ds_azure_synapse_sql_pool_min_active_metrics, function (item) {
     var id = item['resourceId'].toLowerCase()
 
-    var notAvailable = false
-    if (poolNotAvailable[id] != null && poolNotAvailable[id] != undefined && poolNotAvailable[id]) { notAvailable = true }
-
-    if (notAvailable) {
+    if (poolIsNotAvailable(recommendedPools[id])) {
       return
     }
 
@@ -1032,10 +1030,7 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
   _.each(ds_azure_synapse_sql_pool_pause_metrics, function (item) {
     var id = item['resourceId'].toLowerCase()
 
-    var notAvailable = false
-    if (poolNotAvailable[id] != null && poolNotAvailable[id] != undefined && poolNotAvailable[id]) { notAvailable = true }
-
-    if (notAvailable) {
+    if (poolIsNotAvailable(recommendedPools[id])) {
       return
     }
 
@@ -1164,13 +1159,13 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
     var terminate_total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(terminate_total_savings).toFixed(2), ds_currency['separator'])
     var terminate_verb = "are"
     if (terminate_items_total == 1) { terminate_verb = "is" }
+    var day_message = "day"
+    if (param_terminate_lookback > 1) { day_message += "s" }
     var terminate_findings = [
       "Out of ", items_total, " Azure Synapse SQL pools analyzed, ",
       terminate_items_total, " (", terminate_items_percentage,
-      ") ", terminate_verb, " idle and recommended for termination. "
+      ") ", terminate_verb, " idle in the last ", param_terminate_lookback, " ", day_message, " and recommended for termination. "
     ].join('')
-    var day_message = "day"
-    if (param_terminate_lookback > 1) { day_message += "s" }
     var terminate_analysis_message = [
       "An Azure Synapse SQL pool is considered unused for termination if it has not had any connections ",
       "in the last ", param_terminate_lookback, " ", day_message, ". "
@@ -1190,13 +1185,13 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
     idle_total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(idle_total_savings).toFixed(2), ds_currency['separator'])
     var idle_verb = "are"
     if (idle_items_total == 1) { idle_verb = "is" }
+    var day_message = "day"
+    if (param_pause_lookback > 1) { day_message += "s" }
     var idle_findings = [
       "Out of ", items_total, " Azure Synapse SQL pools analyzed, ",
       idle_items_total, " (", idle_items_percentage,
-      ") ", idle_verb, " idle and recommended for pausing. "
+      ") ", idle_verb, " idle in the last ", param_pause_lookback, " ", day_message, " and recommended for pausing. "
     ].join('')
-    day_message = "day"
-    if (param_pause_lookback > 1) { day_message += "s" }
     var idle_analysis_message = [
       "An Azure Synapse SQL pool is considered unused for pausing if it has not had any connections ",
       "in the last ", param_pause_lookback, " ", day_message, ", and its status is not 'Paused'. "
@@ -1275,15 +1270,6 @@ script "js_azure_synapse_terminate_pools", type: "javascript" do
     "creationDate": "",
     "provisioningState": "",
     "storageAccountType": "",
-    "DWUavgUsed": "",
-    "DWUavgUsedPercent": "",
-    "DWUUsed": "",
-    "DWUUsedPercent": "",
-    "CPUavgPercent": "",
-    "CPUPercent": "",
-    "MemoryAvgUsedPercent": "",
-    "MemoryUsedPercent": "",
-    "ConnectionsAverage": "",
     "Connections": "",
     "service": "",
     "lookbackPeriod": "",
@@ -1334,7 +1320,6 @@ script "js_azure_synapse_idle_pools", type: "javascript" do
     "CPUPercent": "",
     "MemoryAvgUsedPercent": "",
     "MemoryUsedPercent": "",
-    "ConnectionsAverage": "",
     "Connections": "",
     "service": "",
     "lookbackPeriod": "",
@@ -1388,7 +1373,6 @@ script "js_azure_synapse_underutil_pools", type: "javascript" do
     "CPUPercent": "",
     "MemoryAvgUsedPercent": "",
     "MemoryUsedPercent": "",
-    "ConnectionsAverage": "",
     "Connections": "",
     "service": "",
     "lookbackPeriod": "",
@@ -1469,39 +1453,8 @@ policy "pol_azure_synapse_sql_pool_utilization" do
       field "savingsCurrency" do
         label "Savings Currency"
       end
-      field "DWUavgUsed" do
-        label "DWU Utilization (Average)"
-      end
-      field "DWUavgUsedPercent" do
-        label "DWU Utilization % (Average)"
-      end
-      field "DWUUsed" do
-        label "DWU Utilization (Maximum)"
-      end
-      field "DWUUsedPercent" do
-        label "DWU Utilization % (Maximum)"
-      end
-      field "ConnectionsAverage" do
-        label "Connections Utilization (Average)"
-      end
       field "Connections" do
         label "Connections Utilization (Maximum)"
-      end
-      field "cpuAverage" do
-        label "CPU Utilization % (Average)"
-        path "CPUavgPercent"
-      end
-      field "cpuMaximum" do
-        label "CPU Utilization % (Maximum)"
-        path "CPUPercent"
-      end
-      field "memAverage" do
-        label "Memory Utilization % (Average)"
-        path "MemoryAvgUsedPercent"
-      end
-      field "memMaximum" do
-        label "Memory Utilization % (Maximum)"
-        path "MemoryUsedPercent"
       end
       field "lookbackPeriod" do
         label "Look Back Period (Days)"
@@ -1591,9 +1544,6 @@ policy "pol_azure_synapse_sql_pool_utilization" do
       end
       field "DWUUsedPercent" do
         label "DWU Utilization % (Maximum)"
-      end
-      field "ConnectionsAverage" do
-        label "Connections Utilization (Average)"
       end
       field "Connections" do
         label "Connections Utilization (Maximum)"
@@ -1714,9 +1664,6 @@ policy "pol_azure_synapse_sql_pool_utilization" do
       end
       field "threshold" do
         label "Threshold"
-      end
-      field "ConnectionsAverage" do
-        label "Connections Utilization (Average)"
       end
       field "Connections" do
         label "Connections Utilization (Maximum)"
