@@ -6,6 +6,44 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#2335](https://github.com/flexera-public/policy_templates/pull/2335): POL-1268 AWS/Azure Expiring Reserved Instances Revamp
+
+#### Description
+
+> This is a revamp of the AWS/Azure Expiring Reserved Instances policies. From the CHANGELOGs:
+>
+> - Policy is no longer deprecated
+> - Added ability to filter results by Billing Center
+> - Additional fields added to incident to provide more context
+> - Streamlined code for better readability and faster execution
+>
+
+#### Metadata
+
+- **Policies**: [AWS Expiring Reserved Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/reserved_instances/expiration/README.md), [Azure Expiring Reserved Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/reserved_instances/expiration/README.md)
+- **Merged At**: 2024-06-21 12:13:03 UTC
+
+---
+
+### PR [#2317](https://github.com/flexera-public/policy_templates/pull/2317): POL-1255 Cloud Bill Processing Error Notification Revamp
+
+#### Description
+
+> This is a revamp of the `Bill Processing Error Notification` policy. From the CHANGELOG:
+>
+> - Renamed to `Cloud Bill Processing Error Notification` to better indicate that it is specific to Cloud Cost Optimization
+> - Parameters altered to be more descriptive and human-readable
+> - Added additional fields to incident table to provide more context
+> - Streamlined code for better readability and faster execution
+>
+
+#### Metadata
+
+- **Policies**: [Cloud Bill Processing Error Notification](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/bill_processing_errors_notification/README.md)
+- **Merged At**: 2024-06-17 12:05:27 UTC
+
+---
+
 ### PR [#2312](https://github.com/flexera-public/policy_templates/pull/2312): POL-1080 AWS Savings Realized From Rate Reduction Purchases Revamp
 
 #### Description
@@ -1926,36 +1964,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [AWS Old Snapshots](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/old_snapshots/README.md)
 - **Merged At**: 2024-03-29 19:27:52 UTC
-
----
-
-### PR [#1967](https://github.com/flexera-public/policy_templates/pull/1967): POL-1182 New Policy: AWS Missing Regions
-
-#### Description
-
-> This adds a new unpublished policy to test for AWS regions that are returned as enabled by the AWS API but that we can't actually make requests to.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1967) for details about unpublished policies.
-- **Merged At**: 2024-03-27 19:23:22 UTC
-
----
-
-### PR [#1954](https://github.com/flexera-public/policy_templates/pull/1954): POL-1171 AWS Rightsize RDS Instances APAC Fix
-
-#### Description
-
-> This fixes an issue with the policy referencing an invalid API endpoint for the APAC shard. This was fixed in other policies already but somehow this specific policy slipped through the cracks.
->
-> Some other very minor tweaks around block names and ordering of fields were also made for the sake of conformity to other policies and to pass the new lint tests.
->
-
-#### Metadata
-
-- **Policies**: [AWS Rightsize RDS Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_rds_instances/README.md)
-- **Merged At**: 2024-03-27 12:26:28 UTC
 
 ---
 
