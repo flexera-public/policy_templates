@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.0.0
+
+- Changed policy template name to `AWS Accounts Missing Service Control Policies` to better reflect its functionality
+- Added ability to audit for multiple Service Control Policies in a single execution
+- Policy template no longer reports suspended AWS accounts
+- Streamlined code for better readability and faster execution
+- Policy template now requires a valid Flexera credential
+
 ## v2.7
 
 - Updated description of `Account Number` parameter
