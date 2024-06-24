@@ -108,9 +108,9 @@ These templates can generate savings estimates for your environment.
 
   - [AWS IAM Role Audit](./compliance/aws/iam_role_audit)
 
-- Org
+- Organization
 
-  - [AWS Service Control Policy Audit](./compliance/aws/scp_audit)
+  - [AWS Accounts Missing Service Control Policies](./compliance/aws/missing_scps)
 
 #### Azure
 
@@ -720,7 +720,7 @@ These templates can generate savings estimates for your environment.
   Network: 3
   Network Security Group: 2
   Office 365: 1
-  Org: 1
+  Organization: 1
   PaaS: 3
   PostgreSQL: 4
   RDS: 4
