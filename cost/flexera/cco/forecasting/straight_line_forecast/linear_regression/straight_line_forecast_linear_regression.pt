@@ -335,7 +335,7 @@ script "js_past_costs", type: "javascript" do
   enriched_costs = _.map(filtered_costs, function(cost) {
     billing_center_name = undefined
 
-    if (typeof(cost["billing_center_id"]) == 'string' && billing_center_table[cost["billing_center_id"]] != undefined]) {
+    if (typeof(cost["billing_center_id"]) == 'string' && billing_center_table[cost["billing_center_id"]] != undefined) {
       billing_center_name = billing_center_table[cost["billing_center_id"]]
     }
 
@@ -406,11 +406,11 @@ EOS
 end
 
 datasource "ds_forecasted_costs" do
-  run_script $js_forecasted_costs, $ds_past_costs, $param_forecasted
+  run_script $js_forecasted_costs, $ds_past_costs, $param_forecasted, $param_dimension
 end
 
 script "js_forecasted_costs", type: "javascript" do
-  parameters "ds_past_costs", "param_forecasted"
+  parameters "ds_past_costs", "param_forecasted", "param_dimension"
   result "result"
   code <<-EOS
   // Simple function to advance date in YYYY-MM format ahead or behind one month
@@ -476,88 +476,42 @@ script "js_forecasted_costs", type: "javascript" do
 
       result.push({
         month: iterating_month,
-        dimension: data['dimension'],
+        dimension: param_dimension,
+        value: data['dimension'],
         forecasted_cost: Math.round(parseFloat(y_value) * 100) / 100
       })
-    }
+    })
 
     iterating_month = change_month(iterating_month, 1)
   }
 EOS
 end
 
-datasource "ds_chart_data" do
-  run_script $js_chart_data, $ds_forecasted_costs, $param_dimension
+datasource "ds_chart_creation" do
+  run_script $js_chart_creation, $ds_forecasted_costs, $ds_applied_policy, $param_dimension
 end
 
-script "js_chart_data", type: "javascript" do
-  parameters "ds_forecasted_costs", "param_dimension"
+script "js_chart_creation", type: "javascript" do
+  parameters "ds_forecasted_costs", "ds_applied_policy", "param_dimension"
   result "result"
   code <<-EOS
-EOS
-end
+  group_by_dimension = _.groupBy(ds_forecasted_costs, "value")
 
+  chart_axis_label = 'chxl=0:|' + _.pluck(ds_forecasted_costs, "month").join('|')
+  chart_legend = "chdl=" + _.keys(group_by_dimension).join('|')
 
-
-#CREATE CHART
-datasource "ds_chart_data" do
-  run_script $js_create_chart_data, $ds_forecast_data, $param_dimension
-end
-
-script "js_create_chart_data", type: "javascript" do
-  parameters "forecast_data", "param_dimension"
-  result "report"
-  code <<-EOS
-
-  //Group data by Dimension
-  group_by_dimension =
-  _.groupBy(forecast_data, function(data){ return data.dimension })
-  report = forecast_data
-
-  //Create chart axis labels
-  chart_axis_labels =
-  ("chxl=0:," +
-    _.uniq(forecast_data, function(data){ return data.month })
-    .map(function(data){ return data.month })
-  ).split(",").join("|")
-
-  //Create legend
-  chart_legend = "chdl="
-  var i = 0
-  for (var key in group_by_dimension) {
-    chart_legend += key
-    i++
-    if (i < _.size(group_by_dimension)) { chart_legend += "|" }
-  }
-
-  //Create chart dataset
-  chart_data = "chd=t:"
-  var count_1 = 0
-  _.each(group_by_dimension, function(o){
-    var count_2 = 0
-    _.each(o, function(p){
-      chart_data = chart_data + p.forecasted_cost
-      count_2++
-      if (count_2 < _.size(o)){ chart_data = chart_data + "," }
-    })
-    count_1++
-    if (count_1 < _.size(group_by_dimension)){ chart_data = chart_data + "|" }
+  // Get data for each dimension and create chart data from it
+  data_parts = _.map(group_by_dimension, function(dimension_list) {
+    return _.pluck(dimension_list, 'forecasted_cost').join(',')
   })
 
-  //Create Chart Title
-  policy_title = "Forecasted Costs by " + param_dimension
-  chart_title = "chtt=" + policy_title
-  if( param_dimension == "" ){
-    policy_title = "Forecasted Costs"
-    chart_title = "chtt=" + policy_title
-  }
+  chart_data = "chd=t:" + data_parts.join('|')
 
-  //get current month
-  var month_names = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
-  var now = new Date();
-  var current_month_name = month_names[now.getMonth()];
-  //Whole Chart object
-  chart = {
+  policy_title = "Forecasted Costs"
+  if (param_dimension != "") { policy_title += " by " + param_dimension }
+  chart_title = "chtt=" + policy_title
+
+  result = {
     chart_type: encodeURI("cht=bvs"),
     chart_size: encodeURI("chs=900x500"),
     chart_data: encodeURI(chart_data),
@@ -565,7 +519,7 @@ script "js_create_chart_data", type: "javascript" do
     chart_image: encodeURI("chof=.png"),
     chart_label_position: encodeURI("chdlp=b"),
     chart_axis: encodeURI("chxt=x,y"),
-    chart_axis_label: encodeURI(chart_axis_labels),
+    chart_axis_label: encodeURI(chart_axis_label),
     chart_axis_format: encodeURI("chxs=1N*cUSD0sz*|0,min40"),
     chart_line_style: encodeURI("chls=3|3|3|3|3|3|3|3|3|3|3"),
     chart_line_color: encodeURI("chco=6929c4,9f1853,198038,b28600,1192e8,009d9a,005d5d,007d79"),
@@ -573,37 +527,38 @@ script "js_create_chart_data", type: "javascript" do
     chart_legend: encodeURI(chart_legend),
     chart_legend_size: encodeURI("chdls=000000,10"),
     policy_title: policy_title,
-    current_month_name: current_month_name
+    current_month_name: new Date().toLocaleString('default', { month: 'long' }),
+    policy_name: ds_applied_policy["name"],
+    report_data: ds_forecasted_costs
   }
-
-  report[0]["chart_dimensions"] = chart
-  EOS
+EOS
 end
 
 ###############################################################################
 # Policy
 ###############################################################################
 
-policy "policy_straight_line_forecast" do
-  validate $ds_chart_data do
-    summary_template "Cloud Spend Forecast - Straight-Line (Linear Regression Model)"
+policy "pol_straight_line_forecast" do
+  validate $ds_chart_creation do
+    summary_template "{{ data.policy_name }}"
     detail_template <<-EOS
-# Full Cost Report for {{ rs_org_name }} - {{ with index data 0 }}{{ .chart_dimensions.current_month_name }}{{ end }}
-![Forecast Chart](https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id={{ rs_org_id }}&rs_project_id={{ rs_project_id }}&{{ with index data 0 }}{{ .chart_dimensions.chart_data }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_type }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_image }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_title }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_label_position }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_label }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_style }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_color }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_data_scale }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_format }}{{ end }})
-___
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+# Forecast Report for {{ rs_org_name }} - {{ data.current_month_name }}
+![Forecast Chart](https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id={{ rs_org_id }}&rs_project_id={{ rs_project_id }}&{{ data.chart_data }}&{{ data.chart_size }}&{{ data.chart_type }}&{{ data.chart_image }}&{{ data.chart_title }}&{{ data.chart_label_position }}&{{ data.chart_axis }}&{{ data.chart_axis_label }}&{{ data.chart_line_style }}&{{ data.chart_line_color }}&{{ data.chart_data_scale }}&{{ data.chart_legend_size }}&{{ data.chart_legend }}&{{ data.chart_axis_format }})
 EOS
     check eq(1, 0)
     escalate $esc_email
-    export do
+    export "report_data" do
       field "month" do
         label "Month"
       end
       field "dimension" do
+        label "Dimension"
+      end
+      field "value" do
         label "Dimension Value"
       end
       field "forecasted_cost" do
-        label "Forecasted Costs"
+        label "Forecasted Cost"
       end
     end
   end
