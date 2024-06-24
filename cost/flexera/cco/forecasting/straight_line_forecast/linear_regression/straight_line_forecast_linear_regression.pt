@@ -3,12 +3,11 @@ rs_pt_ver 20180301
 type "policy"
 short_description "Pulls the cost data for lookback period then generates a Straight-Line Forecast for the specified months using a Linear Regression model. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/forecasting/straight_line_forecast/linear_regression/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
-severity "high"
+severity "low"
 category "Cost"
-tenancy "single"
 default_frequency "monthly"
 info(
-  version: "3.7",
+  version: "4.0.0",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Forecasting"
@@ -18,45 +17,64 @@ info(
 # Parameters
 ###############################################################################
 
-parameter "param_billing_centers" do
-  label "Billing Center Name"
-  description "List of Billing Center Names to check"
+parameter "param_email" do
   type "list"
-end
-
-parameter "param_lookback_months" do
-  label "Lookback Months"
-  description "Number of months to lookback to generate forecast"
-  type "number"
-  default 10
-end
-
-parameter "param_forecasted_months" do
-  label "Months to forecast"
-  description "Number of months in the future to forecast"
-  type "number"
-  default 6
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to send the scheduled report to."
+  default []
 end
 
 parameter "param_cost_metric" do
   type "string"
+  category "Policy Settings"
   label "Cost Metric"
-  allowed_values "Amortized Unblended", "Amortized Blended"
-  default "Amortized Unblended"
-  description "Select the cost metric for your report.  See the README file for more details"
+  description "The cost metric to use when calculating and reporting the moving average."
+  allowed_values "Unamortized Unblended", "Amortized Unblended", "Unamortized Blended", "Amortized Blended"
+  default "Unamortized Unblended"
 end
 
-parameter "param_email" do
-  label "Email Addresses"
-  description "Email addresses of the recipients you wish to notify"
+parameter "param_bc_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Billing Centers"
+  description "Allow or Deny entered Billing Centers."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_bc_list" do
   type "list"
+  category "Filters"
+  label "Allow/Deny Billing Center List"
+  description "A list of allowed or denied Billing Center names/IDs. Leave blank to produce forecast for entire Flexera organization."
+  default []
+end
+
+parameter "param_lookback" do
+  type "number"
+  category "Policy Settings"
+  label "Look Back Months (#)"
+  description "Number of months into the past to use for generating forecast."
+  min_value 1
+  default 10
+end
+
+parameter "param_forecasted" do
+  type "number"
+  category "Policy Settings"
+  label "Forecast Months (#)"
+  description "Number of months in the future to forecast"
+  min_value 1
+  default 6
 end
 
 parameter "param_dimension" do
+  type "string"
+  category "Policy Settings"
   label "Dimension"
   description "Select dimension, leave blank for no dimensions"
-  type "string"
-  allowed_values ["Category", "Region", "Service", "Vendor Account Name", "Billing Center"]
+  allowed_values "Category", "Region", "Service", "Vendor Account Name", "Billing Center"
   default "Category"
 end
 
@@ -64,7 +82,6 @@ end
 # Authentication
 ###############################################################################
 
-#AUTHENTICATE WITH FLEXERA/OPTIMA
 credentials "auth_flexera" do
   schemes "oauth2"
   label "flexera"
@@ -73,10 +90,19 @@ credentials "auth_flexera" do
 end
 
 ###############################################################################
-# Datasources and Scripts
+# Datasources & Scripts
 ###############################################################################
 
-#GET CURRENCY REFERENCE
+# Gather applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
@@ -85,183 +111,215 @@ datasource "ds_currency_reference" do
   end
 end
 
-#GET CURRENCY CODE FOR ORG
 datasource "ds_currency_code" do
   request do
     auth $auth_flexera
     host rs_optima_host
-    path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
     header "Api-Version", "0.1"
     header "User-Agent", "RS Policies"
+    ignore_status [403]
   end
   result do
     encoding "json"
-    field "id", jmes_path(response,"id")
-    field "value", jmes_path(response,"value")
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
   end
 end
 
-#GET ALL BILLING CENTERS FOR ORG
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-'EOS'
+  code = "USD"
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      code = ds_currency_reference[ds_currency_code['value']]['code']
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    code: code,
+    symbol: symbol,
+    separator: separator
+  }
+EOS
+end
+
 datasource "ds_billing_centers" do
   request do
     auth $auth_flexera
     host rs_optima_host
-    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
   end
   result do
     encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "href", jmes_path(col_item,"href")
-      field "id", jmes_path(col_item,"id")
-      field "name", jmes_path(col_item,"name")
-      field "parent_id", jmes_path(col_item,"parent_id")
-      field "ancestor_ids", jmes_path(col_item,"ancestor_ids")
-      field "allocation_table", jmes_path(col_item,"allocation_table")
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
     end
   end
 end
 
-#GET TOP-LEVEL BILLING CENTERS
-datasource "ds_top_level_billing_centers" do
-  run_script $js_top_level_bc, $ds_billing_centers
+datasource "ds_billing_centers_filtered" do
+  run_script $js_billing_centers_filtered, $ds_billing_centers, $param_bc_allow_or_deny, $param_bc_list
 end
 
-script "js_top_level_bc", type: "javascript" do
-  parameters "billing_centers"
-  result "filtered_billing_centers"
+script "js_billing_centers_filtered", type: "javascript" do
+  parameters "ds_billing_centers", "param_bc_allow_or_deny", "param_bc_list"
+  result "result"
   code <<-EOS
-  var filtered_billing_centers =
-    _.reject(billing_centers, function(bc){ return bc.parent_id != null });
-  EOS
-end
+  allow_deny_test = { "Allow": true, "Deny": false }
 
-#CREATE LIST OF PAST MONTHS
-datasource "ds_past_month_list" do
-  run_script $js_generate_past_month_list, $param_lookback_months
-end
+  if (param_bc_list.length > 0) {
+    billing_centers = _.filter(ds_billing_centers, function(item) {
+      id_found = _.contains(param_bc_list, item['id']) == allow_deny_test[param_bc_allow_or_deny]
+      name_found = _.contains(param_bc_list, item['name']) == allow_deny_test[param_bc_allow_or_deny]
+      return id_found || name_found
+    })
 
-script "js_generate_past_month_list", type: "javascript" do
-  parameters "param_lookback_months"
-  result "month_list"
-  code <<-EOS
-  var month_list = [];
-  var previous_month = new Date()
-  previous_month.setMonth( previous_month.getMonth() - 1 )
+    // Check for conflicting parents/children and remove children if present
+    bc_ids = _.compact(_.pluck(billing_centers, 'id'))
+    bad_children = _.filter(ds_billing_centers, function(bc) { return _.contains(bc_ids, bc['parent_id']) })
+    bad_children_ids = _.pluck(bad_children, 'id')
 
-
-  for (var i = 0; i < param_lookback_months; i++) {
-    var start_date = new Date( previous_month )
-    start_date.setMonth( start_date.getMonth() - i )
-    start_date = start_date.toISOString().split("T")[0]
-    start_month = start_date.split("-")[0] + "-" + start_date.split("-")[1]
-    var end_date = new Date( previous_month )
-    end_date.setMonth( end_date.getMonth() - i + 1 )
-    end_date = end_date.toISOString().split("T")[0]
-    end_month = end_date.split("-")[0] + "-" + end_date.split("-")[1]
-
-    month_list.push({
-      "start_date": start_month,
-      "end_date": end_month
+    // Create final result with the bad children removed
+    result = _.reject(billing_centers, function(bc) { return _.contains(bad_children_ids, bc['id']) })
+  } else {
+    // If we're not filtering at all, just grab all of the top level billing centers
+    result = _.filter(ds_billing_centers, function(bc) {
+      return bc['parent_id'] == null || bc['parent_id'] == undefined
     })
   }
-  EOS
+EOS
 end
 
-#GET COST DATA FOR BILLING CENTERS (AND DIMENSION IF APPLICABLE)
+datasource "ds_past_month_list" do
+  run_script $js_past_month_list, $param_lookback
+end
+
+script "js_past_month_list", type: "javascript" do
+  parameters "param_lookback"
+  result "result"
+  code <<-EOS
+  // Simple function to advance date in YYYY-MM format ahead or behind one month
+  // Avoids issues caused by using setMonth() functionality
+  function change_month(date, change) {
+    year = Number(date.split('-')[0])
+    month = Number(date.split('-')[1])
+
+    month = month + change
+    if (month == 0) { year -= 1; month = 12 }
+    if (month == 13) { year += 1; month = 1 }
+
+    if (month < 10) { month = "0" + month.toString() }
+    return year.toString() + '-' + month.toString()
+  }
+
+  result = []
+
+  iterating_month = new Date().toISOString().substring(0, 7)
+
+  for (var i = 0; i < param_lookback; i++) {
+    iterating_month = change_month(iterating_month, -1)
+    result.push({ start_date: iterating_month, end_date: change_month(iterating_month, 1) })
+  }
+EOS
+end
+
 datasource "ds_costs" do
   iterate $ds_past_month_list
   request do
-    run_script $js_new_costs_request, rs_optima_host, rs_org_id, $ds_top_level_billing_centers, $param_cost_metric, $param_billing_centers, $param_dimension, val(iter_item, 'start_date'), val(iter_item, 'end_date')
+    run_script $js_costs, val(iter_item, "start_date"), val(iter_item, "end_date"), $ds_billing_centers_filtered, $param_cost_metric, $param_dimension, rs_optima_host, rs_org_id
   end
   result do
     encoding "json"
-    collect jmes_path(response,"rows[*]") do
-      field "start_date", val(iter_item,"start_date")
-      field "cost_amortized_unblended_adj", jmes_path(col_item,"metrics.cost_amortized_unblended_adj")
-      field "cost_amortized_blended_adj", jmes_path(col_item,"metrics.cost_amortized_blended_adj")
-      field "billing_center_id", jmes_path(col_item,"dimensions.billing_center_id")
-      field "category", jmes_path(col_item,"dimensions.category")
-      field "region", jmes_path(col_item,"dimensions.region")
-      field "service", jmes_path(col_item,"dimensions.service")
-      field "vendor_account_name", jmes_path(col_item,"dimensions.vendor_account_name")
-      field "timestamp", jmes_path(col_item,"timestamp")
+    collect jmes_path(response, "rows[*]") do
+      field "cost_amortized_unblended_adj", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+      field "cost_amortized_blended_adj", jmes_path(col_item, "metrics.cost_amortized_blended_adj")
+      field "cost_nonamortized_unblended_adj", jmes_path(col_item, "metrics.cost_nonamortized_unblended_adj")
+      field "cost_nonamortized_blended_adj", jmes_path(col_item, "metrics.cost_nonamortized_blended_adj")
+      field "billing_center_id", jmes_path(col_item, "dimensions.billing_center_id")
+      field "category", jmes_path(col_item, "dimensions.category")
+      field "region", jmes_path(col_item, "dimensions.region")
+      field "service", jmes_path(col_item, "dimensions.service")
+      field "vendor_account_name", jmes_path(col_item, "dimensions.vendor_account_name")
+      field "start_date", val(iter_item, "start_date")
     end
   end
 end
 
-script "js_new_costs_request", type: "javascript" do
-  parameters "rs_optima_host", "org_id", "ds_billing_centers", "param_cost_metric", "param_billing_centers", "param_dimension", "start_at", "end_at"
+script "js_costs", type: "javascript" do
+  parameters "start_date", "end_date", "ds_billing_centers_filtered", "param_cost_metric", "param_dimension", "rs_optima_host", "rs_org_id"
   result "request"
   code <<-EOS
-
-  //Get billing centers. If user specifies no billing centers, retrieve all top level billing centers. Else get array of billing centers that match the names stated in BC param
-  var billing_center_ids = []
-  if (param_billing_centers.length === 0){
-    var top_billing_centers = _.reject(ds_billing_centers, function(bc){ return bc.parent_id != null });
-    billing_center_ids = _.map(top_billing_centers, function(value, key){ return value.id });
-  } else {
-    billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
-    billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
+  cost_metric_table = {
+    "Unamortized Unblended": "cost_nonamortized_unblended_adj",
+    "Amortized Unblended": "cost_amortized_unblended_adj",
+    "Unamortized Blended": "cost_nonamortized_blended_adj",
+    "Amortized Blended": "cost_amortized_blended_adj"
   }
 
-  //Mapping for cost metrics
-  var cost_metric = {
-    "Amortized Unblended":"cost_amortized_unblended_adj",
-    "Amortized Blended":"cost_amortized_blended_adj"
-  }
+  dimensions = []
 
-  //Mapping for dimensions
-  var dimensions = []
   if (param_dimension == "Category" || param_dimension == "Billing Center") {
     dimensions = [ "billing_center_id", "category" ]
   } else if (param_dimension != "") {
-    dimensions = [ "billing_center_id", "category", (param_dimension.toLowerCase().replace(/ /g,"_")) ]
+    dimensions = [ "billing_center_id", "category", param_dimension.toLowerCase().replace(/ /g, "_") ]
   }
 
-  //POST Request
   var request = {
     auth: "auth_flexera",
     verb: "POST",
     host: rs_optima_host,
-    path: "/bill-analysis/orgs/" + org_id + "/costs/aggregated",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
+    headers: { "Api-Version": "1.0", "User-Agent": "RS Policies" },
     body_fields: {
       "dimensions": dimensions,
       "granularity": "month",
-      "metrics": [cost_metric[param_cost_metric]],
-      "billing_center_ids": billing_center_ids,
-      "start_at": start_at,
-      "end_at": end_at
-    },
-    headers: {
-      "Api-Version": "1.0",
-      "User-Agent": "RS Policies",
+      "metrics": [ cost_metric_table[param_cost_metric] ],
+      "billing_center_ids": _.pluck(ds_billing_centers_filtered, "id"),
+      "start_at": start_date,
+      "end_at": end_date
     }
   }
-  EOS
+EOS
 end
 
-#GROUP COSTS BY DIMENSION AND BY MONTH
-datasource "ds_data_package" do
-  run_script $js_make_data_package, $param_cost_metric, $param_forecasted_months, $param_dimension, $ds_costs, $ds_top_level_billing_centers
+datasource "ds_past_costs" do
+  run_script $js_past_costs, $ds_costs, $ds_billing_centers, $param_cost_metric, $param_forecasted, $param_dimension
 end
 
-script "js_make_data_package", type: "javascript" do
-  parameters "param_cost_metric", "param_forecasted_months", "param_dimension", "ds_costs", "ds_billing_centers"
-  result "results"
+script "js_past_costs", type: "javascript" do
+  parameters "ds_costs", "ds_billing_centers", "param_cost_metric", "param_forecasted", "param_dimension"
+  result "result"
   code <<-EOS
-  var results = [];
-
-  //Cost Metric Mapping
-  var cost_metric = {
-    "Amortized Unblended":"cost_amortized_unblended_adj",
-    "Amortized Blended":"cost_amortized_blended_adj"
+  cost_metric_table = {
+    "Unamortized Unblended": "cost_nonamortized_unblended_adj",
+    "Amortized Unblended": "cost_amortized_unblended_adj",
+    "Unamortized Blended": "cost_nonamortized_blended_adj",
+    "Amortized Blended": "cost_amortized_blended_adj"
   }
 
-  //Dimension Mapping
-  var dimension_type = {
+  dimension_table = {
     "Category": "category",
     "Region": "region",
     "Service": "service",
@@ -269,190 +327,177 @@ script "js_make_data_package", type: "javascript" do
     "Billing Center": "billing_center_name"
   }
 
-  //If param_dimension == "Billing Center", add Billing Center Name field to data
-  if (param_dimension == "Billing Center"){
-    _.each(ds_costs, function(cost) {
-      var matched_billing_center = _.find(ds_billing_centers, function(bc) { return cost.billing_center_id == bc.id })
-      if (matched_billing_center != undefined) {
-        cost["billing_center_name"] = matched_billing_center.name
-      } else {
-        cost["billing_center_name"] = cost.billing_center_id
-      }
+  billing_center_table = {}
+  _.each(ds_billing_centers, function(bc) { billing_center_table[bc['id']] = bc['name'] })
+
+  filtered_costs = _.reject(ds_costs, function(cost) { return cost["category"] == "Commitments" })
+
+  enriched_costs = _.map(filtered_costs, function(cost) {
+    billing_center_name = undefined
+
+    if (typeof(cost["billing_center_id"]) == 'string' && billing_center_table[cost["billing_center_id"]] != undefined]) {
+      billing_center_name = billing_center_table[cost["billing_center_id"]]
+    }
+
+    return {
+      billing_center_id: cost["billing_center_id"],
+      category: cost["category"],
+      region: cost["region"],
+      service: cost["service"],
+      vendor_account_name: cost["vendor_account_name"],
+      month: cost["start_date"],
+      cost: cost[cost_metric_table[param_cost_metric]],
+      billing_center_name: billing_center_name
+    }
+  })
+
+  months = _.uniq(_.pluck(enriched_costs, "month"))
+  dimensions = _.uniq(_.pluck(enriched_costs, dimension_table[param_dimension]))
+
+  costs_by_month_and_dimension = []
+  sums_by_dimension = {}
+
+  _.each(months, function(month) {
+    _.each(dimensions, function(dimension) {
+      sliced_costs = _.filter(enriched_costs, function(item) {
+        return item["month"] == month && item[dimension_table[param_dimension]] == dimension
+      })
+
+      costs = _.pluck(sliced_costs, 'cost')
+      total_cost = _.reduce(costs, function(memo, num) { return memo + num }, 0)
+      costs_by_month_and_dimension.push({ month: month, dimension: dimension, cost: total_cost })
+
+      if (sums_by_dimension[dimension] == undefined) { sums_by_dimension[dimension] = 0 }
+      sums_by_dimension[dimension] += total_cost
     })
+  })
+
+  // Take the above, find the top 8 dimension values, and mark everything else as "Other"
+  sums_by_dimension_list = []
+
+  _.each(_.keys(sums_by_dimension), function(key) {
+    sums_by_dimension_list.push({ dimension: key, cost: sums_by_dimension[key] })
+  })
+
+  top_eight_dimensions = _.pluck(_.sortBy(sums_by_dimension_list, 'cost').reverse().slice(0, 8), 'dimension')
+
+  top_eight_result = _.filter(costs_by_month_and_dimension, function(item) {
+    return _.contains(top_eight_dimensions, item['dimension'])
+  })
+
+  other_result = _.reject(costs_by_month_and_dimension, function(item) {
+    return _.contains(top_eight_dimensions, item['dimension'])
+  })
+
+  other_result_monthly = _.groupBy(other_result, "month")
+
+  other_result_summed = []
+
+  _.each(_.keys(other_result_monthly), function(month) {
+    other_result_summed.push({
+      month: month,
+      dimension: "Other",
+      cost: _.reduce(_.pluck(other_result_monthly[month], "cost"), function(memo, num) { return memo + num }, 0)
+    })
+  })
+
+  result = _.sortBy(top_eight_result.concat(other_result_summed), "month")
+EOS
+end
+
+datasource "ds_forecasted_costs" do
+  run_script $js_forecasted_costs, $ds_past_costs, $param_forecasted
+end
+
+script "js_forecasted_costs", type: "javascript" do
+  parameters "ds_past_costs", "param_forecasted"
+  result "result"
+  code <<-EOS
+  // Simple function to advance date in YYYY-MM format ahead or behind one month
+  // Avoids issues caused by using setMonth() functionality
+  function change_month(date, change) {
+    year = Number(date.split('-')[0])
+    month = Number(date.split('-')[1])
+
+    month = month + change
+    if (month == 0) { year -= 1; month = 12 }
+    if (month == 13) { year += 1; month = 1 }
+
+    if (month < 10) { month = "0" + month.toString() }
+    return year.toString() + '-' + month.toString()
   }
 
-  //Ignore costs where Category is "Commitments"
-  ds_costs = _.reject(ds_costs, function(cost){ return cost.category == "Commitments" })
+  group_by_dimension = _.groupBy(ds_past_costs, "dimension")
 
-  //For each month, for each type in dimension, sum costs
-  var month = _.uniq(_.pluck(ds_costs, "start_date"))
-  var dimension = _.uniq(_.pluck(ds_costs, dimension_type[param_dimension]))
+  forecast_data = []
 
-  sum_costs_by_dimension = []
-  _.each(month, function(mo){
-    _.each(dimension, function(dim){
-      total_cost = 0
-      timestamp = mo + "-01T00:00:00Z"
-      _.each(ds_costs, function(cost){
-        if(cost.start_date == mo && cost[dimension_type[param_dimension]] == dim ){
-          if(cost[cost_metric[param_cost_metric]] == null){
-            cost[cost_metric[param_cost_metric]] = 0
-          }
-          total_cost += cost[cost_metric[param_cost_metric]]
-          timestamp = cost.timestamp
-        }
-      })
-      sum_costs_by_dimension.push({
-        "month": mo,
-        "dimension": dim,
-        "cost": total_cost,
-        "timestamp": timestamp
-      })
-    })
-  })
-
-  //Get highest 8 Dimension values for Costs - Currently not used
-  cost_totals_for_dims = []
-  _.each(dimension, function (dim) {
-    total_cost_12_months = 0
-    _.each(sum_costs_by_dimension, function(data) {
-      if (data.dimension == dim) {
-        total_cost_12_months += data.cost
-      }
-    })
-    cost_totals_for_dims.push({
-      "total_cost_12_months": total_cost_12_months,
-      "dimension": dim
-    })
-  })
-  top_8_dimensions = _.last( _.pluck( _.sortBy(cost_totals_for_dims, "total_cost_12_months"), "dimension" ), [8] )
-
-  //If Dimension value is not in 8 highest Hours used, then put into "Other" category
-  result = []
-  _.each(month, function (mo) {
-    total_costs_other = 0
-    timestamp = mo + "-01T00:00:00Z"
-    _.each(sum_costs_by_dimension, function(data) {
-      if (data.month == mo) {
-        exists = _.find(top_8_dimensions, function (dim){ return dim == data.dimension })
-        if (exists == null || data.dimension == "Other") {
-          total_costs_other += data.cost
-        } else {
-          result.push({
-            "start_date": data.month,
-            "dimension": data.dimension,
-            "cost": data.cost,
-            "timestamp": data.timestamp
-          })
-        }
-      }
-    })
-    result.push({
-      "start_date": mo,
-      "dimension": "Other",
-      "cost": total_costs_other,
-      "timestamp": timestamp
-    })
-  })
-
-  results.push({
-    costs: result,
-    forecasted_months: param_forecasted_months,
-  })
-  EOS
-end
-
-#CALCULATE FORECAST DATA
-datasource "ds_forecast_data" do
-  run_script $js_get_forecast_data, $ds_data_package, $param_lookback_months
-end
-
-script "js_get_forecast_data", type: "javascript" do
-  parameters "data_package", "lookback_months"
-  result "report_data"
-  code <<-EOS
-
-  //Group data by Dimension (Category/Region/Vendor Account etc.)
-  var group_by_dimension = _.groupBy(data_package[0].costs, function(data){ return data.dimension })
-
-  //Calculate linear regression line/line of best fit across data
-  var forecast_data = []
-  var dimensions = _.keys(group_by_dimension)
-  _.each(dimensions, function(dim_from_list){
+  _.each(_.keys(group_by_dimension), function(key) {
     n = 0
     sum_x = 0, sum_x_squared = 0, x_mean = 0
     sum_y = 0, sum_x_y = 0, y_mean = 0
 
-    _.each(group_by_dimension[dim_from_list], function(dim){
-      //get the cost and the month (as an integer e.g. 2021-02 is x=1, 2021-03 is x=2, etc.)
-      x = group_by_dimension[dim_from_list].length - n          //represents month on the x axis
-      y = dim.cost                //represents cost on the y axis
-      x_squared = x * x
-      x_y = x * y
+    _.each(group_by_dimension[key], function(dimension) {
+      // Get the cost and the month as an integer e.g. 2021-02 is x=1, 2021-03 is x=2, etc.
+      x = group_by_dimension[key].length - n   // Represents month on the x axis
+      y = dimension['cost']                    // Represents cost on the y axis
 
-      if(dim_from_list == "Database"){
-        console.log(dim_from_list, "x y product = " + x_y, "x and y are", x, y)
-      }
-
-      sum_x += x, sum_x_squared += x_squared
-      sum_y += y, sum_x_y += x_y
+      sum_x += x, sum_x_squared += x * x
+      sum_y += y, sum_x_y += x * y
       n++
     })
 
-    x_mean = sum_x / n    // n = number of months
+    x_mean = sum_x / n
     y_mean = sum_y / n
 
-    //Calculate Sxx and Sxy to then calculate Beta
+    // Calculate Sxx and Sxy to then calculate Beta
     s_xx = sum_x_squared - ((sum_x * sum_x) / n)
     s_xy = sum_x_y - ((sum_x * sum_y) / n)
-    console.log(dim_from_list, "Sxx = " + s_xx, "Sxy = " + s_xy)
     beta = s_xy / s_xx
 
-    //Calculate Alpha
+    // Calculate Alpha
     alpha = y_mean - (beta * x_mean)
 
-    //Data required to calculate forecast costs
     forecast_data.push({
-      "dimension": dim_from_list,
-      "alpha": alpha,
-      "beta": beta,
-      "historical_months": n
+      dimension: dimension,
+      alpha: alpha,
+      beta: beta,
+      historical_months: n
     })
   })
 
-  //Function to get formatted month
-  function getFormattedDailyDate( date ){
-    var year = date.getFullYear();
-    var month = (1 + date.getMonth()).toString();
-    month = month.length > 1 ? month : '0' + month;
-    return year + '-' + month;
-  }
+  result = []
+  iterating_month = new Date().toISOString().substring(0, 7)
 
-  //Function to get future forecasted months
-  function getFutureMonth( date, month_counter ){
-    date.setMonth(date.getMonth() + month_counter);
-    return date;
-  }
+  for (i = 0; i < param_forecasted; i++) {
+    _.each(forecast_data, function(data) {
+      x_value = data['historical_months'] + (i + 1)       // 'x' in y = bx + a (x represents forecasted month)
+      y_value = (data['beta'] * x_value) + data['alpha']  // 'y' in y = bx + a (y represents forecasted cost)
+      if (y_value < 0) { y_value = 0 }                    // To stop downward trends in cost from going below 0
 
-  //Calculate forecasted costs for each future month (For each month use linear regression line to extrapolate costs for each dimension)
-  report_data = []
-  for(i = 0; i < data_package[0].forecasted_months; i++){
-    var forecast_month = getFormattedDailyDate( getFutureMonth( new Date(), i ) )
-    _.each(forecast_data, function(data){
-      x_value = data.historical_months + (i + 1)        //'x' in y = bx + a (x represents forecasted month)
-      y_value = (data.beta * x_value) + data.alpha      //'y' in y = bx + a (y represents forecasted cost)
-
-      if(y_value < 0){ y_value = 0 }                    //To stop downward trends in cost from going below 0
-
-      report_data.push({
-        "month": forecast_month,
-        "dimension": data.dimension,
-        "forecasted_cost": parseFloat(y_value).toFixed(2)
+      result.push({
+        month: iterating_month,
+        dimension: data['dimension'],
+        forecasted_cost: Math.round(parseFloat(y_value) * 100) / 100
       })
-    })
+    }
+
+    iterating_month = change_month(iterating_month, 1)
   }
-  EOS
+EOS
 end
+
+datasource "ds_chart_data" do
+  run_script $js_chart_data, $ds_forecasted_costs, $param_dimension
+end
+
+script "js_chart_data", type: "javascript" do
+  parameters "ds_forecasted_costs", "param_dimension"
+  result "result"
+  code <<-EOS
+EOS
+end
+
+
 
 #CREATE CHART
 datasource "ds_chart_data" do
@@ -536,17 +581,6 @@ script "js_create_chart_data", type: "javascript" do
 end
 
 ###############################################################################
-# Escalations
-###############################################################################
-
-escalation "esc_straight_line_forecast" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
-end
-
-###############################################################################
 # Policy
 ###############################################################################
 
@@ -559,8 +593,8 @@ policy "policy_straight_line_forecast" do
 ___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 EOS
-    escalate $esc_straight_line_forecast
-    check eq(1,0)
+    check eq(1, 0)
+    escalate $esc_email
     export do
       field "month" do
         label "Month"
@@ -573,4 +607,15 @@ EOS
       end
     end
   end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
 end
