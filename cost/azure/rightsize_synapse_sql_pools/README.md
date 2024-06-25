@@ -9,7 +9,7 @@ This policy checks for Synapse Dedicated SQL Pools instances that have inefficie
 - The policy leverages the Azure API to check all Synapse SQL Pools and then checks the instance metrics (DWU Used Percent, CPU Percent, Memory Used Percent, Connections) over a user-specified number of days.
 - The policy identifies all instances that have metrics below the user-specified thresholds and provides the relevant recommendation.
 - The recommendation provided for idle instances (no connections) is a pause action. These instances can be paused in an automated manner or after approval.
-- The Recommendations to downsize underutilized instances are also generated for review and approval. 
+- The Recommendations to downsize underutilized instances are also generated for review and approval.
 
 ### Policy Savings Details
 
@@ -43,7 +43,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy.
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
 ### Credential configuration
 

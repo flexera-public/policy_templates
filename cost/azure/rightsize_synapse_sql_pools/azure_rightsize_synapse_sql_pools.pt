@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "1.0",
+  version: "1.0.0",
   provider: "Azure",
   service: "SQL",
   policy_set: "Rightsize Synapse SQL Pools",
@@ -250,7 +250,7 @@ datasource "ds_azure_synapse_size_map" do
   request do
     verb "GET"
     host "raw.githubusercontent.com"
-    path "/flexera-public/policy_templates/FOPTS-3684_v2_azure_synapse/data/azure/azure_synapse_tier_types.json"
+    path "/flexera-public/policy_templates/master/data/azure/azure_synapse_tier_types.json"
     header "User-Agent", "RS Policies"
   end
 end
@@ -821,15 +821,18 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
     return formatted_number + "." + values[1]
   }
 
-  function percentile(arr, p) {
-    console.log("Entering percentile:", arr, "Percentile:", p)
-    if (arr.length === 0) return 0
-    console.log("Empty array, returning 0")
-    arr.sort(function (a, b) {
+  // Returns an array of single values sorted.
+  function sortArray(array) {
+    return array.sort(function (a, b) {
       return a - b;
-    })
-    var index = (p / 100) * arr.length
-    var result = arr[Math.ceil(index) - 1]
+    });
+  }
+
+  function percentile(sortedArray, p) {
+    console.log("Entering percentile:", sortedArray, "Percentile:", p)
+    if (sortedArray.length === 0) return 0
+    var index = (p / 100) * sortedArray.length
+    var result = sortedArray[Math.ceil(index) - 1]
     console.log("Result of percentile:", result)
     return result
   }
@@ -853,7 +856,7 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
   var result = []
   var pools = {}
   var daysUsed = {}
-  arr_percentile = {}
+  var arr_percentile = {}
   var recommendedPools = {}
 
   var terminate_total_savings = 0.0
@@ -979,35 +982,44 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
 
   })
 
-   // Percentile Metrics
-  _.each(ds_azure_synapse_sql_pool_percentile_metrics, function(item) {
+  // Percentile Metrics
+  _.each(ds_azure_synapse_sql_pool_percentile_metrics, function (item) {
     id = item['resourceId'].toLowerCase()
-    
+
     if (poolIsNotAvailable(recommendedPools[id])) {
       return
     }
 
     metrics = {}
     values = item['value']
- 
-    _.each(values, function(metric) {
+
+    _.each(values, function (metric) {
       metrics[metric['name']['value']] = metric['timeseries'][0]['data']
     })
 
     var all_measurements = []
-    _.each(metrics['DWUUsedPercent'], function(data){
+    _.each(metrics['DWUUsedPercent'], function (data) {
       all_measurements = all_measurements.concat(data['maximum'])
     })
 
-    console.log("Calculate percentile for:", id, "all_measurements:", all_measurements)
+    var sortedArray = sortArray(all_measurements)
 
-    arr_percentile[id+"90"] = percentile(all_measurements, 90).toFixed(3)
-    arr_percentile[id+"95"] = percentile(all_measurements, 95).toFixed(3)
-    arr_percentile[id+"99"] = percentile(all_measurements, 99).toFixed(3)
+    console.log("Calculate percentile for:", id, "all_measurements:", sortedArray)
 
-    console.log("Calculated percentiles for:", id, "P90:", arr_percentile[id+"90"])
-    console.log("Calculated percentiles for:", id, "P95:", arr_percentile[id+"95"])
-    console.log("Calculated percentiles for:", id, "P99:", arr_percentile[id+"99"])
+    arr_percentile[id + "90"] = percentile(all_measurements, 90).toFixed(3)
+    arr_percentile[id + "95"] = percentile(all_measurements, 95).toFixed(3)
+    arr_percentile[id + "99"] = percentile(all_measurements, 99).toFixed(3)
+    arr_percentile[id + "maximum"] = 0.0;
+
+    // If sortedArray isn't empty, takes as "maximum" the last item in the list.
+    if (sortedArray.length > 0) {
+      arr_percentile[id + "maximum"] = sortedArray[sortedArray.length - 1]
+    }
+
+    console.log("Calculated percentiles for:", id, "P90:", arr_percentile[id + "90"])
+    console.log("Calculated percentiles for:", id, "P95:", arr_percentile[id + "95"])
+    console.log("Calculated percentiles for:", id, "P99:", arr_percentile[id + "99"])
+    console.log("Calculated percentiles for:", id, "maximum:", arr_percentile[id + "maximum"])
   })
 
   // Min Active Metrics for Downsizing
@@ -1021,15 +1033,12 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
     var days = 0
 
     _.each(item['value'][0]['timeseries'][0]['data'], function (day) {
-
       if (day['average'] > 0) {
         days++
       }
-
     })
 
     daysUsed[id] = days
-
   })
 
   // Downsize Instances
@@ -1081,13 +1090,13 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
       dwuUsedPercent = metrics['DWUUsedPercent'][0]['maximum']
       dwuUsed = parseInt(metrics['DWUUsed'][0]['maximum'])
     } else if (param_filter_stats == "P90") {
-      dwuUsedPercent = arr_percentile[id+"90"]
+      dwuUsedPercent = arr_percentile[id + "90"]
       dwuUsed = dwuUsedPercent * currentResourceSize / 100
     } else if (param_filter_stats == "P95") {
-      dwuUsedPercent = arr_percentile[id+"95"]
+      dwuUsedPercent = arr_percentile[id + "95"]
       dwuUsed = dwuUsedPercent * currentResourceSize / 100
     } else if (param_filter_stats == "P99") {
-      dwuUsedPercent = arr_percentile[id+"99"]
+      dwuUsedPercent = arr_percentile[id + "99"]
       dwuUsed = dwuUsedPercent * currentResourceSize / 100
     }
 
@@ -1158,15 +1167,15 @@ script "js_azure_synapse_sql_underutil_and_idle_pools", type: "javascript" do
           item["DWUavgUsed"] = parseFloat(metrics['DWUUsed'][0]['average']).toFixed(3)
           item["DWUavgUsedPercent"] = parseFloat(metrics['DWUUsedPercent'][0]['average']).toFixed(3)
           item["DWUUsed"] = metrics['DWUUsed'][0]['maximum']
-          item["DWUUsedPercent"] = metrics['DWUUsedPercent'][0]['maximum']
+          item["DWUUsedPercent"] = arr_percentile[id + "maximum"]
           item["CPUavgPercent"] = parseFloat(metrics['CPUPercent'][0]['average']).toFixed(3)
           item["CPUPercent"] = metrics['CPUPercent'][0]['maximum']
           item["MemoryAvgUsedPercent"] = parseFloat(metrics['MemoryUsedPercent'][0]['average']).toFixed(3)
           item["MemoryUsedPercent"] = metrics['MemoryUsedPercent'][0]['maximum']
-          item["DWUP90"] = arr_percentile[id+"90"],
-          item["DWUP95"] = arr_percentile[id+"95"],
-          item["DWUP99"] = arr_percentile[id+"99"],
-          underutil_list.push(item)
+          item["DWUP90"] = arr_percentile[id + "90"],
+            item["DWUP95"] = arr_percentile[id + "95"],
+            item["DWUP99"] = arr_percentile[id + "99"],
+            underutil_list.push(item)
           underutil_total_savings += savings
         }
       }
