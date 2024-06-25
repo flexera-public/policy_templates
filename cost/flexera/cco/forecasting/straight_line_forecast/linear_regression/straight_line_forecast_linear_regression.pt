@@ -1,4 +1,4 @@
-name "Cloud Spend Forecast - Straight-Line (Linear Regression Model)"
+name "Cloud Spend Forecast - Straight-Line"
 rs_pt_ver 20180301
 type "policy"
 short_description "Pulls the cost data for lookback period then generates a Straight-Line Forecast for the specified months using a Linear Regression model. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/forecasting/straight_line_forecast/linear_regression/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
@@ -64,18 +64,26 @@ parameter "param_forecasted" do
   type "number"
   category "Policy Settings"
   label "Forecast Months (#)"
-  description "Number of months in the future to forecast"
+  description "Number of months in the future to forecast."
   min_value 1
   default 6
+end
+
+parameter "param_formula" do
+  type "string"
+  category "Policy Settings"
+  label "Forecast Formula"
+  description "Formula to use when projecting costs."
+  allowed_values "Linear Regression", "Simple"
+  default "Linear Regression"
 end
 
 parameter "param_dimension" do
   type "string"
   category "Policy Settings"
   label "Dimension"
-  description "Select dimension, leave blank for no dimensions"
-  allowed_values "Category", "Region", "Service", "Vendor Account Name", "Billing Center"
-  default "Category"
+  description "The name or ID of the Flexera dimension you want to split costs by. Enter 'Billing Center' to split costs by Billing Center. Leave blank to not split costs by any dimension."
+  default ""
 end
 
 ###############################################################################
@@ -212,6 +220,54 @@ script "js_billing_centers_filtered", type: "javascript" do
 EOS
 end
 
+datasource "ds_dimensions_list" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/costs/dimensions"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "dimensions[].{id: id, name: name}") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+    end
+  end
+end
+
+datasource "ds_dimension" do
+  run_script $js_dimension, $ds_dimensions_list, $param_dimension
+end
+
+script "js_dimension", type: "javascript" do
+  parameters "ds_dimensions_list", "param_dimension"
+  result "result"
+  code <<-EOS
+  if (param_dimension == "Billing Center") {
+    result = { id: "billing_center_name", name: "Billing Center" }
+  } else {
+    result = _.find(ds_dimensions_list, function(item) { return item['id'] == param_dimension })
+
+    // If user-specified dimension isn't a valid dimension ID, check for name instead
+    if (result == undefined) {
+      result = _.find(ds_dimensions_list, function(item) { return item['name'] == param_dimension })
+    }
+
+    // If user-specified dimension isn't a valid dimension ID *or* name, check for name without case
+    if (result == undefined) {
+      result = _.find(ds_dimensions_list, function(item) { return item['name'].toLowerCase() == param_dimension.toLowerCase() })
+    }
+
+    // If the above has failed, assume the user wants a report across all dimensions
+    if (result == undefined) {
+      result = { id: "all_costs", name: "All Costs" }
+    }
+  }
+EOS
+end
+
 datasource "ds_past_month_list" do
   run_script $js_past_month_list, $param_lookback
 end
@@ -248,27 +304,20 @@ end
 datasource "ds_costs" do
   iterate $ds_past_month_list
   request do
-    run_script $js_costs, val(iter_item, "start_date"), val(iter_item, "end_date"), $ds_billing_centers_filtered, $param_cost_metric, $param_dimension, rs_optima_host, rs_org_id
+    run_script $js_costs, val(iter_item, "start_date"), val(iter_item, "end_date"), $ds_billing_centers_filtered, $ds_dimension, $param_cost_metric, rs_optima_host, rs_org_id
   end
   result do
     encoding "json"
     collect jmes_path(response, "rows[*]") do
-      field "cost_amortized_unblended_adj", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
-      field "cost_amortized_blended_adj", jmes_path(col_item, "metrics.cost_amortized_blended_adj")
-      field "cost_nonamortized_unblended_adj", jmes_path(col_item, "metrics.cost_nonamortized_unblended_adj")
-      field "cost_nonamortized_blended_adj", jmes_path(col_item, "metrics.cost_nonamortized_blended_adj")
-      field "billing_center_id", jmes_path(col_item, "dimensions.billing_center_id")
-      field "category", jmes_path(col_item, "dimensions.category")
-      field "region", jmes_path(col_item, "dimensions.region")
-      field "service", jmes_path(col_item, "dimensions.service")
-      field "vendor_account_name", jmes_path(col_item, "dimensions.vendor_account_name")
+      field "metrics", jmes_path(col_item, "metrics")
+      field "dimensions", jmes_path(col_item, "dimensions")
       field "start_date", val(iter_item, "start_date")
     end
   end
 end
 
 script "js_costs", type: "javascript" do
-  parameters "start_date", "end_date", "ds_billing_centers_filtered", "param_cost_metric", "param_dimension", "rs_optima_host", "rs_org_id"
+  parameters "start_date", "end_date", "ds_billing_centers_filtered", "ds_dimension", "param_cost_metric", "rs_optima_host", "rs_org_id"
   result "request"
   code <<-EOS
   cost_metric_table = {
@@ -278,12 +327,10 @@ script "js_costs", type: "javascript" do
     "Amortized Blended": "cost_amortized_blended_adj"
   }
 
-  dimensions = []
+  dimensions = [ "billing_center_id", "category" ]
 
-  if (param_dimension == "Category" || param_dimension == "Billing Center") {
-    dimensions = [ "billing_center_id", "category" ]
-  } else if (param_dimension != "") {
-    dimensions = [ "billing_center_id", "category", param_dimension.toLowerCase().replace(/ /g, "_") ]
+  if (ds_dimension['id'] != "billing_center_name" && ds_dimension['id'] != "all_costs") {
+    dimensions = _.uniq([ "billing_center_id", "category", ds_dimension['id'] ])
   }
 
   var request = {
@@ -305,11 +352,11 @@ EOS
 end
 
 datasource "ds_past_costs" do
-  run_script $js_past_costs, $ds_costs, $ds_billing_centers, $param_cost_metric, $param_forecasted, $param_dimension
+  run_script $js_past_costs, $ds_costs, $ds_billing_centers, $ds_dimension, $param_cost_metric, $param_forecasted
 end
 
 script "js_past_costs", type: "javascript" do
-  parameters "ds_costs", "ds_billing_centers", "param_cost_metric", "param_forecasted", "param_dimension"
+  parameters "ds_costs", "ds_billing_centers", "ds_dimension", "param_cost_metric", "param_forecasted"
   result "result"
   code <<-EOS
   cost_metric_table = {
@@ -319,74 +366,60 @@ script "js_past_costs", type: "javascript" do
     "Amortized Blended": "cost_amortized_blended_adj"
   }
 
-  dimension_table = {
-    "Category": "category",
-    "Region": "region",
-    "Service": "service",
-    "Vendor Account Name": "vendor_account_name",
-    "Billing Center": "billing_center_name"
-  }
-
   billing_center_table = {}
   _.each(ds_billing_centers, function(bc) { billing_center_table[bc['id']] = bc['name'] })
 
-  filtered_costs = _.reject(ds_costs, function(cost) { return cost["category"] == "Commitments" })
+  filtered_costs = _.reject(ds_costs, function(cost) { return cost["dimensions"]["category"] == "Commitments" })
 
   enriched_costs = _.map(filtered_costs, function(cost) {
-    billing_center_name = undefined
+    new_cost = cost["dimensions"]
+    new_cost["month"] = cost["start_date"]
+    new_cost["cost"] = cost['metrics'][cost_metric_table[param_cost_metric]]
+    new_cost["billing_center_name"] = billing_center_table[cost["dimensions"]["billing_center_id"]]
+    new_cost["all_costs"] = "All Costs"
 
-    if (typeof(cost["billing_center_id"]) == 'string' && billing_center_table[cost["billing_center_id"]] != undefined) {
-      billing_center_name = billing_center_table[cost["billing_center_id"]]
-    }
-
-    return {
-      billing_center_id: cost["billing_center_id"],
-      category: cost["category"],
-      region: cost["region"],
-      service: cost["service"],
-      vendor_account_name: cost["vendor_account_name"],
-      month: cost["start_date"],
-      cost: cost[cost_metric_table[param_cost_metric]],
-      billing_center_name: billing_center_name
-    }
+    return new_cost
   })
 
   months = _.uniq(_.pluck(enriched_costs, "month"))
-  dimensions = _.uniq(_.pluck(enriched_costs, dimension_table[param_dimension]))
+  dimension_values = _.uniq(_.pluck(enriched_costs, ds_dimension['id']))
 
-  costs_by_month_and_dimension = []
-  sums_by_dimension = {}
+  sorted_costs = []
+  sums_by_value = {}
 
   _.each(months, function(month) {
-    _.each(dimensions, function(dimension) {
+    _.each(dimension_values, function(value) {
       sliced_costs = _.filter(enriched_costs, function(item) {
-        return item["month"] == month && item[dimension_table[param_dimension]] == dimension
+        return item["month"] == month && item[ds_dimension['id']] == value
       })
 
       costs = _.pluck(sliced_costs, 'cost')
       total_cost = _.reduce(costs, function(memo, num) { return memo + num }, 0)
-      costs_by_month_and_dimension.push({ month: month, dimension: dimension, cost: total_cost })
+      sorted_costs.push({ month: month, dimension: ds_dimension['name'], value: value, cost: total_cost })
 
-      if (sums_by_dimension[dimension] == undefined) { sums_by_dimension[dimension] = 0 }
-      sums_by_dimension[dimension] += total_cost
+      if (sums_by_value[value] == undefined) { sums_by_value[value] = 0 }
+      sums_by_value[value] += total_cost
     })
   })
 
   // Take the above, find the top 8 dimension values, and mark everything else as "Other"
-  sums_by_dimension_list = []
+  sums_by_value_list = []
 
-  _.each(_.keys(sums_by_dimension), function(key) {
-    sums_by_dimension_list.push({ dimension: key, cost: sums_by_dimension[key] })
+  _.each(_.keys(sums_by_value), function(key) {
+    // This is to account for the possibility of 'other' as an actual value for a dimension
+    if (key.toLowerCase().trim() != 'other') {
+      sums_by_value_list.push({ value: key, cost: sums_by_value[key] })
+    }
   })
 
-  top_eight_dimensions = _.pluck(_.sortBy(sums_by_dimension_list, 'cost').reverse().slice(0, 8), 'dimension')
+  top_eight_dimensions = _.pluck(_.sortBy(sums_by_value_list, 'cost').reverse().slice(0, 8), 'value')
 
-  top_eight_result = _.filter(costs_by_month_and_dimension, function(item) {
-    return _.contains(top_eight_dimensions, item['dimension'])
+  top_eight_result = _.filter(sorted_costs, function(item) {
+    return _.contains(top_eight_dimensions, item['value'])
   })
 
-  other_result = _.reject(costs_by_month_and_dimension, function(item) {
-    return _.contains(top_eight_dimensions, item['dimension'])
+  other_result = _.reject(sorted_costs, function(item) {
+    return _.contains(top_eight_dimensions, item['value'])
   })
 
   other_result_monthly = _.groupBy(other_result, "month")
@@ -396,21 +429,22 @@ script "js_past_costs", type: "javascript" do
   _.each(_.keys(other_result_monthly), function(month) {
     other_result_summed.push({
       month: month,
-      dimension: "Other",
+      dimension: ds_dimension['name'],
+      value: "Other",
       cost: _.reduce(_.pluck(other_result_monthly[month], "cost"), function(memo, num) { return memo + num }, 0)
     })
   })
 
-  result = _.sortBy(top_eight_result.concat(other_result_summed), "month")
+  result = _.sortBy(top_eight_result.concat(other_result_summed), "month").reverse()
 EOS
 end
 
 datasource "ds_forecasted_costs" do
-  run_script $js_forecasted_costs, $ds_past_costs, $param_forecasted, $param_dimension
+  run_script $js_forecasted_costs, $ds_past_costs, $ds_dimension, $param_forecasted, $param_formula
 end
 
 script "js_forecasted_costs", type: "javascript" do
-  parameters "ds_past_costs", "param_forecasted", "param_dimension"
+  parameters "ds_past_costs", "ds_dimension", "param_forecasted", "param_formula"
   result "result"
   code <<-EOS
   // Simple function to advance date in YYYY-MM format ahead or behind one month
@@ -427,107 +461,146 @@ script "js_forecasted_costs", type: "javascript" do
     return year.toString() + '-' + month.toString()
   }
 
-  group_by_dimension = _.groupBy(ds_past_costs, "dimension")
-
-  forecast_data = []
-
-  _.each(_.keys(group_by_dimension), function(key) {
-    n = 0
-    sum_x = 0, sum_x_squared = 0, x_mean = 0
-    sum_y = 0, sum_x_y = 0, y_mean = 0
-
-    _.each(group_by_dimension[key], function(dimension) {
-      // Get the cost and the month as an integer e.g. 2021-02 is x=1, 2021-03 is x=2, etc.
-      x = group_by_dimension[key].length - n   // Represents month on the x axis
-      y = dimension['cost']                    // Represents cost on the y axis
-
-      sum_x += x, sum_x_squared += x * x
-      sum_y += y, sum_x_y += x * y
-      n++
-    })
-
-    x_mean = sum_x / n
-    y_mean = sum_y / n
-
-    // Calculate Sxx and Sxy to then calculate Beta
-    s_xx = sum_x_squared - ((sum_x * sum_x) / n)
-    s_xy = sum_x_y - ((sum_x * sum_y) / n)
-    beta = s_xy / s_xx
-
-    // Calculate Alpha
-    alpha = y_mean - (beta * x_mean)
-
-    forecast_data.push({
-      dimension: key,
-      alpha: alpha,
-      beta: beta,
-      historical_months: n
-    })
-  })
-
+  group_by_value = _.groupBy(ds_past_costs, "value")
   result = []
-  iterating_month = new Date().toISOString().substring(0, 7)
 
-  for (i = 0; i < param_forecasted; i++) {
-    _.each(forecast_data, function(data) {
-      x_value = data['historical_months'] + (i + 1)       // 'x' in y = bx + a (x represents forecasted month)
-      y_value = (data['beta'] * x_value) + data['alpha']  // 'y' in y = bx + a (y represents forecasted cost)
-      if (y_value < 0) { y_value = 0 }                    // To stop downward trends in cost from going below 0
+  if (param_formula == "Linear Regression") {
+    forecast_data = []
 
-      result.push({
-        month: iterating_month,
-        dimension: param_dimension,
-        value: data['dimension'],
-        cost: Math.round(parseFloat(y_value) * 100) / 100
+    _.each(_.keys(group_by_value), function(key) {
+      n = 0
+      sum_x = 0, sum_x_squared = 0, x_mean = 0
+      sum_y = 0, sum_x_y = 0, y_mean = 0
+
+      _.each(group_by_value[key], function(value) {
+        // Get the cost and the month as an integer e.g. 2021-02 is x=1, 2021-03 is x=2, etc.
+        x = group_by_value[key].length - n   // Represents month on the x axis
+        y = value['cost']                    // Represents cost on the y axis
+
+        sum_x += x, sum_x_squared += x * x
+        sum_y += y, sum_x_y += x * y
+        n++
+      })
+
+      x_mean = sum_x / n
+      y_mean = sum_y / n
+
+      // Calculate Sxx and Sxy to then calculate Beta
+      s_xx = sum_x_squared - ((sum_x * sum_x) / n)
+      s_xy = sum_x_y - ((sum_x * sum_y) / n)
+      beta = s_xy / s_xx
+
+      // Calculate Alpha
+      alpha = y_mean - (beta * x_mean)
+
+      forecast_data.push({ value: key, alpha: alpha, beta: beta, historical_months: n })
+    })
+
+    iterating_month = new Date().toISOString().substring(0, 7)
+
+    for (i = 0; i < param_forecasted; i++) {
+      _.each(forecast_data, function(data) {
+        x_value = data['historical_months'] + (i + 1)       // 'x' in y = bx + a (x represents forecasted month)
+        y_value = (data['beta'] * x_value) + data['alpha']  // 'y' in y = bx + a (y represents forecasted cost)
+        if (y_value < 0) { y_value = 0 }                    // To stop downward trends in cost from going below 0
+
+        result.push({
+          month: iterating_month,
+          dimension: ds_dimension['name'],
+          value: data['value'],
+          cost: Math.round(parseFloat(y_value) * 100) / 100
+        })
+      })
+
+      iterating_month = change_month(iterating_month, 1)
+    }
+  }
+
+  if (param_formula == "Simple") {
+    forecast_data = []
+
+    _.each(_.keys(group_by_value, function(key) {
+      start_cost = group_by_value[key][group_by_value[key].length - 1]["cost"]
+      end_cost = group_by_value[key][0]["cost"]
+      cost_difference = end_cost - start_cost
+
+      forecast_data.push({
+        value: key,
+        monthly_cost_difference: (cost_difference / group_by_value[key].length),
+        forecasted_cost: end_cost
       })
     })
 
-    iterating_month = change_month(iterating_month, 1)
+    iterating_month = new Date().toISOString().substring(0, 7)
+
+    for (i = 0; i < param_forecasted; i++) {
+      _.each(forecast_data, function(data) {
+        forecasted_cost = data['forecasted_cost'] + (data['monthly_cost_difference'] * (i + 1))
+        if (forecasted_cost < 0) { forecasted_cost = 0 } // To stop downward trends in cost from going below 0
+
+        result.push({
+          month: iterating_month,
+          dimension: ds_dimension['name'],
+          value: data['value'],
+          cost: Math.round(parseFloat(forecasted_cost) * 100) / 100
+        })
+      })
+
+      iterating_month = change_month(iterating_month, 1)
+    }
   }
 EOS
 end
 
 datasource "ds_chart_creation" do
-  run_script $js_chart_creation, $ds_forecasted_costs, $ds_applied_policy, $param_dimension
+  run_script $js_chart_creation, $ds_forecasted_costs, $ds_dimension, $ds_applied_policy
 end
 
 script "js_chart_creation", type: "javascript" do
-  parameters "ds_forecasted_costs", "ds_applied_policy", "param_dimension"
+  parameters "ds_forecasted_costs", "ds_dimension", "ds_applied_policy"
   result "result"
-  code <<-EOS
-  group_by_dimension = _.groupBy(ds_forecasted_costs, "value")
+  code <<-'EOS'
+  chart_axis_label = 'chxl=0:|' + _.uniq(_.pluck(ds_forecasted_costs, "month")).join('|')
 
-  chart_axis_label = 'chxl=0:|' + _.pluck(ds_forecasted_costs, "month").join('|')
-  chart_legend = "chdl=" + _.keys(group_by_dimension).join('|')
+  group_by_value = _.groupBy(ds_forecasted_costs, "value")
+  chart_legend = "chdl=" + _.keys(group_by_value).join('|').replace(/\&/g, "%26")
 
   // Get data for each dimension and create chart data from it
-  data_parts = _.map(group_by_dimension, function(dimension_list) {
-    return _.pluck(dimension_list, 'cost').join(',')
+  data_parts = _.map(group_by_value, function(value_list) {
+    return _.pluck(value_list, 'cost').join(',')
   })
 
-  chart_data = "chd=t:" + data_parts.join('|')
+  chart_data = "chd=t:" + data_parts.join('|').replace(/\&/g, "%26")
 
-  policy_title = "Forecasted Costs"
-  if (param_dimension != "") { policy_title += " by " + param_dimension }
+  policy_title = "Forecasted Costs by " + ds_dimension["name"]
+  if (ds_dimension["id"] == "all_costs") { policy_title = "Forecasted Costs" }
   chart_title = "chtt=" + policy_title
 
+  chart_type = "cht=bvs"
+  chart_size = "chs=900x500"
+  chart_image = "chof=.png"
+  chart_label_position = "chdlp=b"
+  chart_axis = "chxt=x,y"
+  chart_axis_format = "chxs=1N*cUSD0sz*|0,min40"
+  chart_line_style = "chls=3|3|3|3|3|3|3|3|3|3|3"
+  chart_line_color = "chco=6929c4,9f1853,198038,b28600,1192e8,009d9a,005d5d,007d79"
+  chart_data_scale = "chds=a"
+  chart_legend_size = "chdls=000000,10"
+
+  chart_options = [
+    encodeURI(chart_data), encodeURI(chart_size), encodeURI(chart_type),
+    encodeURI(chart_image), encodeURI(chart_title), encodeURI(chart_label_position),
+    encodeURI(chart_axis), encodeURI(chart_axis_label), encodeURI(chart_line_style),
+    encodeURI(chart_line_color), encodeURI(chart_data_scale), encodeURI(chart_legend_size),
+    encodeURI(chart_legend), encodeURI(chart_axis_format)
+  ].join('&').replace(/\(/g, "%28").replace(/\)/g, "%29")
+
+  month_names = [ "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December" ]
+
   result = {
-    chart_type: encodeURI("cht=bvs"),
-    chart_size: encodeURI("chs=900x500"),
-    chart_data: encodeURI(chart_data),
-    chart_title: encodeURI(chart_title),
-    chart_image: encodeURI("chof=.png"),
-    chart_label_position: encodeURI("chdlp=b"),
-    chart_axis: encodeURI("chxt=x,y"),
-    chart_axis_label: encodeURI(chart_axis_label),
-    chart_axis_format: encodeURI("chxs=1N*cUSD0sz*|0,min40"),
-    chart_line_style: encodeURI("chls=3|3|3|3|3|3|3|3|3|3|3"),
-    chart_line_color: encodeURI("chco=6929c4,9f1853,198038,b28600,1192e8,009d9a,005d5d,007d79"),
-    chart_data_scale: encodeURI("chds=a"),
-    chart_legend: encodeURI(chart_legend),
-    chart_legend_size: encodeURI("chdls=000000,10"),
+    chart_options: chart_options,
     policy_title: policy_title,
-    current_month_name: new Date().toLocaleString('default', { month: 'long' }),
+    current_month_name: month_names[new Date().getMonth()],
     policy_name: ds_applied_policy["name"],
     report_data: ds_forecasted_costs
   }
@@ -543,7 +616,7 @@ policy "pol_straight_line_forecast" do
     summary_template "{{ data.policy_name }}"
     detail_template <<-EOS
 # Forecast Report for {{ rs_org_name }} - {{ data.current_month_name }}
-![Forecast Chart](https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id={{ rs_org_id }}&rs_project_id={{ rs_project_id }}&{{ data.chart_data }}&{{ data.chart_size }}&{{ data.chart_type }}&{{ data.chart_image }}&{{ data.chart_title }}&{{ data.chart_label_position }}&{{ data.chart_axis }}&{{ data.chart_axis_label }}&{{ data.chart_line_style }}&{{ data.chart_line_color }}&{{ data.chart_data_scale }}&{{ data.chart_legend_size }}&{{ data.chart_legend }}&{{ data.chart_axis_format }})
+![Forecast Chart](https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id={{ rs_org_id }}&rs_project_id={{ rs_project_id }}&{{ data.chart_options }})
 EOS
     check eq(1, 0)
     escalate $esc_email
