@@ -2,13 +2,13 @@
 
 ## What It Does
 
-This Policy Template will get all the Outside Collaborators (User that have been granted access to a repository, but are not a Member of the repository owner's Organization) under GitHub.com Organization(s) and creates an incident for each that are not included in the specified username whitelist.
+This policy template reports on any [outside collaborators](https://docs.github.com/en/organizations/managing-user-access-to-your-organizations-repositories/managing-outside-collaborators/adding-outside-collaborators-to-repositories-in-your-organization) under the user-specified GitHub.com organizations, ignoring the users in the `User Allow List` parameter. Optionally, it emails this report.
 
 ## Input Parameters
 
-1. GitHub.com Organizations to check - Example: flexera
-1. Whitelisted Outside Collaborators - Example: flexera-ci
-1. Email address to send escalation emails to - Example: noreply@example.com
+- *Email Addresses* - A list of email addresses to notify.
+- *GitHub.com Organizations* - A list of GitHub.com Organizations to check.
+- *User Allow List* - GitHub.com user accounts to exclude from the results.
 
 ## Policy Actions
 
