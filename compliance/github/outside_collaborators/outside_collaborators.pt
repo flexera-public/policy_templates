@@ -85,31 +85,66 @@ datasource "ds_applied_policy" do
   end
 end
 
-datasource "ds_orgs_array" do
-  run_script $js_orgs_array, $param_orgs
+datasource "ds_org_list" do
+  run_script $js_org_list, $param_orgs
 end
 
-script "js_orgs_array", type: "javascript" do
+script "js_org_list", type: "javascript" do
   parameters "param_orgs"
-  result "orgs_array"
-  code <<-EOS
-var orgs_array = param_orgs;
-EOS
+  result "result"
+  code "result = param_orgs"
 end
 
-datasource "ds_github_org_repos" do
-  iterate $ds_orgs_array
+datasource "ds_github_orgs" do
+  iterate $ds_org_list
   request do
     auth $auth_github
     pagination $pagination_github
     host "api.github.com"
-    path join(["/orgs/", iter_item, "/repos"])
+    path join(["/orgs/", iter_item])
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[@]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "login")
+      field "company", jmes_path(col_item, "company")
+      field "blog", jmes_path(col_item, "blog")
+      field "location", jmes_path(col_item, "location")
+      field "email", jmes_path(col_item, "email")
+      field "html_url", jmes_path(col_item, "html_url")
+      field "created_at", jmes_path(col_item, "created_at")
+      field "type", jmes_path(col_item, "type")
+    end
+  end
+end
+
+datasource "ds_github_org_repos" do
+  iterate $ds_github_orgs
+  request do
+    auth $auth_github
+    pagination $pagination_github
+    host "api.github.com"
+    path join(["/orgs/", val(iter_item, "name"), "/repos"])
   end
   result do
     encoding "json"
     collect jmes_path(response, "[*]") do
-      field "repo_org", jmes_path(col_item, "owner.login")
-      field "repo_name", jmes_path(col_item, "name")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "full_name", jmes_path(col_item, "full_name")
+      field "html_url", jmes_path(col_item, "html_url")
+      field "description", jmes_path(col_item, "description")
+      field "default_branch", jmes_path(col_item, "default_branch")
+      field "created_at", jmes_path(col_item, "created_at")
+      field "org_id", val(iter_item, "id")
+      field "org_name", val(iter_item, "name")
+      field "org_company", val(iter_item, "company")
+      field "org_blog", val(iter_item, "blog")
+      field "org_location", val(iter_item, "location")
+      field "org_email", val(iter_item, "email")
+      field "org_url", val(iter_item, "html_url")
+      field "org_created_at", val(iter_item, "created_at")
     end
   end
 end
@@ -117,41 +152,64 @@ end
 datasource "ds_github_org_collaborators" do
   iterate $ds_github_org_repos
   request do
-      auth $auth_github
-      pagination $pagination_github
-      host "api.github.com"
-      path join(["/repos/", val(iter_item, "repo_org"), "/", val(iter_item, "repo_name"), "/collaborators"])
-      query "affiliation", "outside"
+    auth $auth_github
+    pagination $pagination_github
+    host "api.github.com"
+    path join(["/repos/", val(iter_item, "org_name"), "/", val(iter_item, "name"), "/collaborators"])
+    query "affiliation", "outside"
   end
   result do
-      encoding "json"
-      collect jmes_path(response, "[*]") do
-        field "id", jmes_path(col_item, "id")
-        field "username", jmes_path(col_item, "login")
-        field "repo_org", val(iter_item, "repo_org")
-        field "repo_name", val(iter_item, "repo_name")
-      end
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "login")
+      field "html_url", jmes_path(col_item, "html_url")
+      field "type", jmes_path(col_item, "type")
+      field "site_admin", jmes_path(col_item, "site_admin")
+      field "permissions", jmes_path(col_item, "permissions")
+      field "role_name", jmes_path(col_item, "role_name")
+      field "repo_id", val(iter_item, "id")
+      field "repo_name", val(iter_item, "name")
+      field "repo_full_name", val(iter_item, "full_name")
+      field "repo_url", val(iter_item, "html_url")
+      field "repo_description", val(iter_item, "description")
+      field "repo_default_branch", val(iter_item, "default_branch")
+      field "repo_created_at", val(iter_item, "created_at")
+      field "org_id", val(iter_item, "id")
+      field "org_name", val(iter_item, "org_name")
+      field "org_company", val(iter_item, "org_company")
+      field "org_blog", val(iter_item, "org_blog")
+      field "org_location", val(iter_item, "org_location")
+      field "org_email", val(iter_item, "org_email")
+      field "org_url", val(iter_item, "org_url")
+      field "org_created_at", val(iter_item, "org_created_at")
+    end
   end
 end
 
-datasource "ds_invalid_collab" do
-  run_script $js_invalid_collab, $ds_github_org_collaborators, $param_user_allowlist
+datasource "ds_invalid_collaborators" do
+  run_script $js_invalid_collaborators, $ds_github_org_collaborators, $ds_applied_policy, $param_user_allowlist
 end
 
-script "js_invalid_collab", type: "javascript" do
-    parameters "collaborators","param_user_allowlist"
-    result "invalid_collab"
-    code <<-EOS
-var invalid_collab=[];
-for (var index = 0; index < collaborators.length; index++) {
-    var user = collaborators[index];
-    // exclude white listed names
-    if( !_.contains(param_user_allowlist, user.username) ){
-        user["fullRepositoryName"] = "["+user.repo_org+"/"+user.repo_name+"](https://github.com/"+user.repo_org+"/"+user.repo_name+"/settings/collaboration)";
-        user["fullAuditLogLink"] = "[Audittt Log](https://github.com/organizations/"+user.repo_org+"/settings/audit-log?utf8=%E2%9C%93&q=repo%3A"+user.repo_org+"%2F"+user.repo_name+")"
-        invalid_collab.push(user)
-    }
-}
+script "js_invalid_collaborators", type: "javascript" do
+  parameters "ds_github_org_collaborators", "ds_applied_policy", "param_user_allowlist"
+  result "result"
+  code <<-EOS
+  users_cleaned = _.map(ds_github_org_collaborators, function(user) {
+    org_name = encodeURI(user["org_name"])
+    q_param = encodeURI("repo:" + user["org_name"] + "/" + user["repo_name"])
+    audit_log_url = "https://github.com/organizations/" + org_name + "/settings/audit-log?utf8=%E2%9C%93&q=" + q_param
+
+    new_user = user
+    new_user["policy_name"] = ds_applied_policy["name"]
+    new_user["audit_log"] = "Audit Log||" + audit_log_url
+
+    return new_user
+  })
+
+  result = _.reject(users_cleaned, function(user) {
+    return _.contains(param_user_allowlist, user["name"])
+  })
 EOS
 end
 
@@ -160,23 +218,30 @@ end
 ###############################################################################
 
 policy "pol_outside_collaborator" do
-  validate_each $ds_invalid_collab do
-    summary_template "GitHub.com Outside Collaborator Report"
-    check lt(size($ds_invalid_collab), 0)
+  validate_each $ds_invalid_collaborators do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} GitHub Unpermitted Outside Collaborators Found"
+    check eq(val(item, "id"), "")
     escalate $esc_email
     export do
       resource_level true
-      field "username" do
-        label "User"
-      end
-      field "fullRepositoryName" do
-        label "Organization / Repository"
-      end
-      field "fullAuditLogLink" do
-        label "Audit Log Link"
-      end
       field "id" do
-        label "ID"
+        label "User ID"
+      end
+      field "name" do
+        label "User Name"
+      end
+      field "role_name" do
+        label "User Role"
+      end
+      field "repo_name" do
+        label "Repository"
+      end
+      field "org_name" do
+        label "Organization"
+      end
+      field "audit_log" do
+        label "Audit Log"
+        format "link-external"
       end
     end
   end
