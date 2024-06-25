@@ -1,7 +1,7 @@
 name "GitHub.com Unpermitted Top-Level Teams"
 rs_pt_ver 20180301
 type "policy"
-short_description "Gets the top-level / parent Teams for a GitHub.com Org and creates an incident if any do not match the whitelisted values.  See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/github/toplevel_teams) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Reports on teams under the specified Github.com organizations that are at the top-level but should not be. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/github/toplevel_teams) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "low"
 category "Compliance"
@@ -33,9 +33,12 @@ parameter "param_orgs" do
   # No default value, user input required
 end
 
-parameter "param_team_allowlist" do
+parameter "param_allowed_teams" do
   type "list"
-  label "Team names that are whitelisted to be at the top-level"
+  category "Policy Settings"
+  label "Allowed Teams"
+  description "Teams that are permitted to be top-level and should not be included in the results."
+  # No default value, user input required
 end
 
 ###############################################################################
@@ -83,63 +86,97 @@ datasource "ds_applied_policy" do
   end
 end
 
-datasource "ds_orgs_array" do
-  run_script $js_orgs_array, $param_orgs
+
+datasource "ds_org_list" do
+  run_script $js_org_list, $param_orgs
 end
 
-script "js_orgs_array", type: "javascript" do
+script "js_org_list", type: "javascript" do
   parameters "param_orgs"
-  result "orgs_array"
-  code <<-EOS
-var orgs_array = param_orgs;
-EOS
+  result "result"
+  code "result = param_orgs"
 end
 
-datasource "ds_github_org_teams" do
-  iterate $ds_orgs_array
+datasource "ds_github_orgs" do
+  iterate $ds_org_list
   request do
     auth $auth_github
     pagination $pagination_github
     host "api.github.com"
-    path join(["/orgs/",iter_item,"/teams"])
-    header "Accept", "application/vnd.github.hellcat-preview+json"
+    path join(["/orgs/", iter_item])
+    header "X-GitHub-Api-Version", "2022-11-28"
   end
   result do
     encoding "json"
     collect jmes_path(response, "[*]") do
       field "id", jmes_path(col_item, "id")
-      field "members_url", jmes_path(col_item, "members_url")
-      field "name", jmes_path(col_item, "name")
-      field "slug", jmes_path(col_item, "slug")
-      field "description", jmes_path(col_item, "description")
-      field "privacy", jmes_path(col_item, "privacy")
-      field "parent", jmes_path(col_item, "parent")
-      field "org", iter_item
+      field "name", jmes_path(col_item, "login")
+      field "company", jmes_path(col_item, "company")
+      field "blog", jmes_path(col_item, "blog")
+      field "location", jmes_path(col_item, "location")
+      field "email", jmes_path(col_item, "email")
+      field "html_url", jmes_path(col_item, "html_url")
+      field "created_at", jmes_path(col_item, "created_at")
+      field "type", jmes_path(col_item, "type")
     end
   end
 end
 
+datasource "ds_org_teams" do
+  iterate $ds_github_orgs
+  request do
+    auth $auth_github
+    pagination $pagination_github
+    host "api.github.com"
+    path join(["/orgs/", val(iter_item, "name"), "/teams"])
+    header "X-GitHub-Api-Version", "2022-11-28"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "description", jmes_path(col_item, "description")
+      field "parent", jmes_path(col_item, "parent")
+      field "privacy", jmes_path(col_item, "privacy")
+      field "permission", jmes_path(col_item, "permission")
+      field "slug", jmes_path(col_item, "slug")
+      field "html_url", jmes_path(col_item, "html_url")
+      field "org_id", val(iter_item, "id")
+      field "org_name", val(iter_item, "org_name")
+      field "org_company", val(iter_item, "org_company")
+      field "org_blog", val(iter_item, "org_blog")
+      field "org_location", val(iter_item, "org_location")
+      field "org_email", val(iter_item, "org_email")
+      field "org_url", val(iter_item, "org_url")
+      field "org_created_at", val(iter_item, "org_created_at")
+    end
+  end
+end
 
 datasource "ds_invalid_teams" do
-  run_script $js_invalid_teams, $ds_github_org_teams, $param_team_allowlist
+  run_script $js_invalid_teams, $ds_org_teams, $param_allowed_teams
 end
 
 script "js_invalid_teams", type: "javascript" do
-    parameters "teams","param_team_allowlist"
-    result "invalid_teams"
-    code <<-EOS
-var invalid_teams=[];
-for (var index = 0; index < teams.length; index++) {
-    var team = teams[index];
-    // top-level teams only
-    if( typeof team.parent == "undefined" ) {
-        // exclude white listed names
-        if( !_.contains(param_team_allowlist, team.name) ){
-            team["teamName"] = "["+team.name+"](https://github.com/orgs/"+"team.org"+"/"+team.slug+"/members)";
-            invalid_teams.push(team);
-        }
+  parameters "ds_org_teams", "param_allowed_teams"
+  result "result"
+  code <<-EOS
+  invalid_teams = _.reject(ds_org_teams, function(team) {
+    return typeof(team["parent"]) == "string" || _.contains(param_allowed_teams, team["name"])
+  })
+
+  result = _.map(invalid_teams, function(team) {
+    return {
+      id: team['id'],
+      name: team['name'],
+      description: team['description'],
+      privacy: repo['privacy'],
+      org_name: repo['org_name'],
+      policy_name: ds_applied_policy['name'],
+      team_link: "Team||" + team['html_url'],
     }
-}
+  })
 EOS
 end
 
@@ -147,29 +184,31 @@ end
 # Policy
 ###############################################################################
 
-policy "pol_toplevel_teams" do
+policy "pol_invalid_teams" do
   validate_each $ds_invalid_teams do
-    summary_template "GitHub.com Top-Level Teams Report"
-    check lt(size($ds_invalid_teams),0)
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Unpermitted GitHub Top-Level Teams Found"
+    check eq(val(item, "id"), "")
     escalate $esc_email
-    #### Policy Organization(s): {{  parameters.param_orgs }}
-    #### Policy Whitelisted Teams: {{  parameters.param_team_allowlist }}
     export do
       resource_level true
-      field "org" do
-        label "Organization"
-      end
-      field "teamName" do
-        label "Team Name"
-      end
-      field "description" do
-        label "Team Description"
-      end
-      field "privacy" do
-        label "Team Privacy"
-      end
       field "id" do
         label "ID"
+      end
+      field "name" do
+        label "Name"
+      end
+      field "description" do
+        label "Description"
+      end
+      field "privacy" do
+        label "Privacy"
+      end
+      field "org_name" do
+        label "Organization"
+      end
+      field "team_link" do
+        label "Link"
+        format "link-external"
       end
     end
   end

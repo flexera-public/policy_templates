@@ -2,13 +2,13 @@
 
 ## What It Does
 
-This Policy Template gets the top-level / parent Teams for a GitHub.com Org and creates an incident if any do not match the whitelisted values.
+This policy template reports any GitHub teams under the user-specified GitHub.com organizations that are top-level (have no parent) and are not on a user-specified list of permitted top-level teams. Optionally, it emails this report.
 
 ## Input Parameters
 
-1. GitHub.com Organizations to check - Example: `flexera`
-1. Whitelisted Top-Level Team Names - Example: `Engineering`, `Services`
-1. Email address to send escalation emails to - Example: `noreply@example.com`
+- *Email Addresses* - A list of email addresses to notify.
+- *GitHub.com Organizations* - A list of GitHub.com Organizations to check.
+- *Allowed Top-Level Teams* - Teams that are permitted to be top-level and should not be included in the results.
 
 ## Policy Actions
 
