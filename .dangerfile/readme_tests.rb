@@ -5,6 +5,19 @@
 # Methods: README
 ###############################################################################
 
+### Deprecated README test
+# Utility method. Returns true if README is for a deprecated policy
+def readme_deprecated?(file)
+  # Store contents of file for direct analysis
+  readme_text = File.read(file)
+
+  readme_text.each_line do |line|
+    return true if line.start_with?("## Deprecated")
+  end
+
+  return false
+end
+
 ### Missing README Sections
 # Verify that README file has all required sections
 def readme_missing_sections?(file)
@@ -29,7 +42,7 @@ def readme_missing_sections?(file)
     policy_actions_found = true if line.start_with?("## Policy Actions")
     prerequisites_found = true if line.start_with?("## Prerequisites")
     supported_clouds_found = true if line.start_with?("## Supported Clouds")
-    cost_found = true if line.start_with?("## Cost")
+    cost_found = true if line.strip == "## Cost"
   end
 
   fail_message += "```# Policy Name```\n" if !name_found
@@ -85,7 +98,7 @@ def readme_sections_out_of_order?(file)
     policy_actions_found = true if line.start_with?("## Policy Actions")
     prerequisites_found = true if line.start_with?("## Prerequisites")
     supported_clouds_found = true if line.start_with?("## Supported Clouds")
-    cost_found = true if line.start_with?("## Cost")
+    cost_found = true if line.strip == "## Cost"
 
     if !what_it_does_raised && what_it_does_found && !name_found
       fail_message += "Line #{line_number.to_s}: What It Does out of order.\n"
@@ -171,7 +184,7 @@ def readme_invalid_credentials?(file)
     credential_footnote = true if line.start_with?("The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.")
 
     aws_policy = true if (line.include?("AWS") || line.include?("aws")) && (line.include?("Credential") || line.include?("credential"))
-    azure_policy = true if (line.include?("Azure") || line.include?("azure")) && (line.include?("Credential") || line.include?("credential"))
+    azure_policy = true if (line.include?("Azure") || line.include?("azure")) && (line.include?("Credential") || line.include?("credential")) && !line.include?("China") && !line.include?("china")
     google_policy = true if (line.include?("Google") || line.include?("google") || line.include?("GCP") || line.include?("gcp")) && (line.include?("Credential") || line.include?("credential"))
 
     # Description check
@@ -204,7 +217,7 @@ def readme_invalid_credentials?(file)
 
     azure_permission_scanning = false if line.start_with?("- [") && (!line.include?("Azure") && !line.include?("azure"))
     azure_permission_scanning = false if aws_permission_scanning || google_permission_scanning || flexera_permission_scanning
-    azure_permission_scanning = true if !line.start_with?("This Policy Template uses [Credentials]") && !azure_permission_stop_scanning && !azure_permission_scanning && prereq_line_number > 0 && (line.include?("[**Azure") || line.include?("[**azure"))
+    azure_permission_scanning = true if !line.start_with?("This Policy Template uses [Credentials]") && !azure_permission_stop_scanning && !azure_permission_scanning && prereq_line_number > 0 && (line.include?("[**Azure") || line.include?("[**azure")) && !line.include?("Azure China")
     azure_permission_line = line_number if !azure_permission_line && azure_permission_scanning
     azure_permission_text << line if azure_permission_scanning
 
@@ -410,8 +423,7 @@ def readme_invalid_credentials?(file)
 
           if !line.split("  - ")[1].match?(flexera_perm_tester)
             fail_message += "Line #{line_number.to_s}: Flexera permission list item formatted incorrectly. Please make sure all list items are formatted like the following examples:\n\n"
-            fail_message += "```  - `billing_center_viewer`*```\n"
-            fail_message += "```  - `common:org:own` ```\n\n"
+            fail_message += "```  - `billing_center_viewer`*```\n\n"
           end
         end
       end
@@ -421,8 +433,7 @@ def readme_invalid_credentials?(file)
 
     if permission_list_found == 0
       fail_message += "Flexera permission list missing or formatted incorrectly. Please ensure there is a list of permissions beneath the Flexera permission statement. Each list item should begin with [space][space][hyphen][space] like so:\n\n"
-      fail_message += "```  - `billing_center_viewer`*```\n"
-      fail_message += "```  - `common:org:own` ```\n\n"
+      fail_message += "```  - `billing_center_viewer`*```\n\n"
     end
 
     if asterix_found == 1

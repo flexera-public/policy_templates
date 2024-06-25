@@ -1,5 +1,16 @@
 # Changelog
 
+## v2.0.1
+
+- Added `deprecated` field to policy metadata. Functionality is unchanged.
+
+## v2.0.0
+
+- Deprecated: This policy is no longer being updated.
+- Updated policy to use internal Flexera API for generating charts. Policy functionality is unchanged.
+- Code cleanup to bring it up to standard
+- Policy now requires a valid Flexera credential
+
 ## v1.6
 
 - Updated policy metadata to make it more clear what Flexera service the policy is for

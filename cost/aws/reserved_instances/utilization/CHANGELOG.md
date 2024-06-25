@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.0.0
+
+- Billing Center list can now be used as an allow list or a deny list
+- Added logic to prevent duplicate results due to overlapping child/parent billing centers
+- Added additional fields and context to incident output
+- Normalized incident output for parity with other policy templates
+- Streamlined code for better readability and faster execution
+
 ## v2.2
 
 - Updated policy metadata to correctly identify it as an AWS policy

@@ -1,0 +1,1856 @@
+name "AWS Rightsize EBS Volumes"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks for unused volumes with no read/write operations performed within a specified number of days and, optionally, deletes them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ebs_volumes) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+category "Cost"
+severity "low"
+default_frequency "weekly"
+info(
+  version: "0.1.0",
+  provider: "AWS",
+  service: "EBS",
+  policy_set: "Unused Volumes",
+  recommendation_type: "Usage Reduction"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_aws_account_number" do
+  type "string"
+  category "Policy Settings"
+  label "Account Number"
+  description "Leave blank; this is for automated use with Meta Policies. See README for more details."
+  default ""
+end
+
+parameter "param_stats_threshold" do
+  type "string"
+  category "Statistics"
+  label "Threshold Statistic"
+  description "Statistic to use when determining if an volume is underutilized"
+  allowed_values "Average", "Maximum", "p99", "p95", "p90"
+  default "Average"
+end
+
+parameter "param_unused_days" do
+  type "number"
+  category "Policy Settings"
+  label "Unused Days"
+  description "The number of days a volume has been unused."
+  min_value 1
+  default 30
+end
+
+parameter "param_utilization_threshold" do
+  type "number"
+  category "Policy Settings"
+  label "Percent Utilization Threshold"
+  description "The threshold (in percent) for the volume to be considered underutilized. If utilization is below this threshold, the resource is considered underutilized. For Provisioned IOPS volumes, this is the percentage of IOPS used."
+  min_value 1
+  max_value 100
+  default 40
+end
+
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation."
+  min_value 0
+  default 0
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details"
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  default []
+end
+
+parameter "param_include_status" do
+  type "string"
+  category "Filters"
+  label "Volume Status"
+  description "Whether the policy should only check unattached volumes, attached volumes, or both."
+  allowed_values "Unattached Volumes", "Attached Volumes", "All Volumes"
+  default "All Volumes"
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
+parameter "param_take_snapshot" do
+  type "string"
+  category "Actions"
+  label "Create Final Snapshot"
+  description "Whether or not to take a final snapshot before deleting a volume."
+  allowed_values "Yes", "No"
+  default "Yes"
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Delete Volumes"]
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws", "aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+  aws_account_number $param_aws_account_number
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_aws_volumes_xml" do
+  get_page_marker do
+    body_path "//DescribeVolumesResponse/nextToken"
+  end
+  set_page_marker do
+    query "NextToken"
+  end
+end
+
+pagination "pagination_aws_getmetricdata" do
+  get_page_marker do
+    body_path "NextToken"
+  end
+  set_page_marker do
+    body_field "NextToken"
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get AWS account info
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account", xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_get_caller_identity
+end
+
+script "js_aws_account", type:"javascript" do
+  parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+  result = _.find(ds_cloud_vendor_accounts, function(account) {
+    return account['id'] == ds_get_caller_identity[0]['account']
+  })
+
+  // This is in case the API does not return the relevant account info
+  if (result == undefined) {
+    result = {
+      id: ds_get_caller_identity[0]['account'],
+      name: "",
+      tags: {}
+    }
+  }
+EOS
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
+end
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-EOS
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
+end
+
+datasource "ds_describe_regions" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "ec2.amazonaws.com"
+    path "/"
+    query "Action", "DescribeRegions"
+    query "Version", "2016-11-15"
+    query "Filter.1.Name", "opt-in-status"
+    query "Filter.1.Value.1", "opt-in-not-required"
+    query "Filter.1.Value.2", "opted-in"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
+      field "region", xpath(col_item, "regionName")
+    end
+  end
+end
+
+datasource "ds_regions" do
+  run_script $js_regions, $ds_describe_regions, $param_regions_list, $param_regions_allow_or_deny
+end
+
+script "js_regions", type:"javascript" do
+  parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
+  result "result"
+  code <<-EOS
+  allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_describe_regions, function(item) {
+      return _.contains(param_regions_list, item['region']) == allow_deny_test[param_regions_allow_or_deny]
+    })
+  } else {
+    result = ds_describe_regions
+  }
+EOS
+end
+
+datasource "ds_volumes_list" do
+  iterate $ds_regions
+  request do
+    run_script $js_volumes_list, val(iter_item, "region"), $param_include_status
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeVolumesResponse/volumeSet/item", "array") do
+      field "tags" do
+        collect xpath(col_item, "tagSet/item") do
+          field "key", xpath(col_item, "key")
+          field "value", xpath(col_item, "value")
+        end
+      end
+      # Attachments not needed today but will be needed if we ever do capacity
+      # field "attachments" do
+      #   collect xpath(col_item, "attachmentSet/item") do
+      #     field "instance_id", xpath(col_item, "instanceId")
+      #     field "attach_time", xpath(col_item, "attachTime")
+      #     field "device", xpath(col_item, "device")
+      #   end
+      # end
+      field "volume_id", xpath(col_item, "volumeId")
+      field "availability_zone", xpath(col_item, "availabilityZone")
+      field "snapshot_id", xpath(col_item, "snapshotId")
+      field "volume_type", xpath(col_item, "volumeType")
+      field "region", val(iter_item, "region")
+      field "created_time", xpath(col_item, "createTime")
+      field "size", xpath(col_item, "size")
+      field "iops", xpath(col_item, "iops")
+      field "status", xpath(col_item, "status")
+    end
+  end
+end
+
+script "js_volumes_list", type: "javascript" do
+  parameters "region", "param_include_status"
+  result "result"
+  code <<-EOS
+  query_params = {
+    "Action": "DescribeVolumes",
+    "Version": "2016-11-15"
+  }
+
+  if (param_include_status == "Unattached Volumes") {
+    query_params["Filter.1.Name"] = "status"
+    query_params["Filter.1.Value.1"] = "available"
+  }
+
+  if (param_include_status == "Attached Volumes") {
+    query_params["Filter.1.Name"] = "status"
+    query_params["Filter.1.Value.1"] = "in-use"
+  }
+
+  result = {
+    auth: "auth_aws",
+    host: "ec2." + region + ".amazonaws.com",
+    path: "/",
+    pagination: "pagination_aws_volumes_xml",
+    query_params: query_params
+  }
+EOS
+end
+
+datasource "ds_volumes_tag_filtered" do
+  run_script $js_volumes_tag_filtered, $ds_volumes_list, $param_exclusion_tags, $param_exclusion_tags_boolean
+end
+
+script "js_volumes_tag_filtered", type: "javascript" do
+  parameters "ds_volumes_list", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  result "result"
+  code <<-EOS
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  if (param_exclusion_tags.length > 0) {
+    result = _.reject(ds_volumes_list, function(resource) {
+      resource_tags = {}
+
+      if (typeof(resource['tags']) == 'object') {
+        _.each(resource['tags'], function(tag) {
+          resource_tags[tag['key']] = tag['value']
+        })
+      }
+
+      // Store a list of found tags
+      found_tags = []
+
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_tag = resource_tags[comparator['key']]
+
+        if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+        if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+        if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_tag == undefined) { found_tags.push(string) }
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+      })
+
+      all_tags_found = found_tags.length == comparators.length
+      any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+      return all_tags_found || any_tags_found
+    })
+  } else {
+    result = ds_volumes_list
+  }
+EOS
+end
+
+datasource "ds_volumes_map" do
+  run_script $js_volumes_map, $ds_volumes_tag_filtered, $param_unused_days
+end
+
+script "js_volumes_map", type: "javascript" do
+  parameters "ds_volumes_list", "param_unused_days"
+  result "result"
+  code <<-EOS
+  result = []
+
+  _.each(ds_volumes_list, function(volume) {
+    startDate = new Date(volume['created_time']) // Volume Created Date
+    endDate = new Date()
+    timeDifference = endDate.getTime() - startDate.getTime()
+    daysDifference = (timeDifference / (1000 * 3600 * 24)).toFixed(2)
+
+    // Exclude any volumes that have not existed for longer than the param_unused_days threshold
+    if (daysDifference > param_unused_days) {
+      tags = []
+      name = ""
+
+      _.each(volume['tags'], function(tag) {
+        tags.push(tag['key'] + '=' + tag['value'])
+
+        if (typeof tag['key'] == "string" && typeof tag['value'] == "string" && tag['key'].toLowerCase() == 'name') {
+          name = tag['value']
+        }
+      })
+
+      // Append mapping of minimum iops for the volume type
+      // Useful for rightsizing and determining if the volume is already configured for minimum iops later in policy
+      volume["volume_type_iops_min"] = -1
+      switch (volume['volume_type']) {
+        case "io1":
+          volume["volume_type_iops_min"] = 100
+          break;
+        case "io2":
+          volume["volume_type_iops_min"] = 100
+          break;
+        case "gp2":
+          volume["volume_type_iops_min"] = 100 // This does not matter because we explicitly exclude gp2 volumes from IOPS checks
+          break;
+        case "gp3":
+          volume["volume_type_iops_min"] = 3000
+          break;
+      }
+
+      volume["message"] = ""
+      volume["savingsCurrency"] = ""
+      volume["total_savings"] = 0.0
+      volume["tags"] = tags.join(', ')
+      volume["age"] = parseFloat(daysDifference)
+      // Handle volumes that have no iops
+      // This can happen with "standard" volume types
+      if (volume["iops"] == "") {
+        volume["iops"] = 0
+      } else {
+        volume["iops"] = parseInt(volume["iops"])
+      }
+      volume["resourceName"] = name
+      result.push(volume)
+    }
+  })
+EOS
+end
+
+datasource "ds_metricdataqueries_iops_utilization" do
+  run_script $js_metricdataqueries_iops_utilization, $ds_volumes_map, $param_stats_threshold
+end
+
+script "js_metricdataqueries_iops_utilization", type: "javascript" do
+  parameters "ds_volumes_map", "param_stats_threshold"
+  result "result"
+  code <<-EOS
+  queries = {}
+
+  _.each(ds_volumes_map, function(resource) {
+    _.each(["VolumeReadOps", "VolumeWriteOps"], function(metric) {
+      _.each([param_stats_threshold], function(statistic) {
+        query = {
+          // Replace `-` with `_` in the Id to avoid CloudWatch API error
+          "Id": resource['volume_id'].replace(/\-/g, '_') + "_" + metric + "_" + statistic,
+          "Label": resource['volume_id'] + " " + metric + " " + statistic,
+          "MetricStat": {
+            "Metric": {
+              "Namespace": "AWS/EBS",
+              "MetricName": metric,
+              "Dimensions": [
+                { "Name": "VolumeId", "Value": resource['volume_id'] }
+              ]
+            },
+            "Period": 2592000,
+            "Stat": statistic
+          },
+          "ReturnData": true
+        }
+
+        if (queries[resource['region']] == undefined || queries[resource['region']] == null) {
+          queries[resource['region']] = []
+        }
+
+        queries[resource['region']].push(query)
+      })
+    })
+  })
+
+  result = []
+
+  end_date = parseInt(new Date().getTime() / 1000)
+  start_date = parseInt(new Date(new Date().setDate(new Date().getDate() - 30)).getTime() / 1000)
+
+  chunk_size = 500
+
+  // Chunk MetricDataQueries to iterate and collect all with multiple requests
+  _.each(Object.keys(queries), function(region) {
+    for (i = 0; i < queries[region].length; i += chunk_size) {
+      chunk = queries[region].slice(i, i + chunk_size)
+
+      result.push({
+        'MetricDataQueries': chunk,
+        'region': region
+      })
+    }
+  })
+EOS
+end
+
+datasource "ds_cloudwatch_getmetricdata_iops_utilization" do
+  iterate $ds_metricdataqueries_iops_utilization
+  request do
+    run_script $js_cloudwatch_getmetricdata_iops_utilization, val(iter_item, "region"), val(iter_item, "MetricDataQueries"), $param_unused_days
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "MetricDataResults[*]") do
+      field "region", val(iter_item, "region")
+      field "id", jmes_path(col_item, "Id")
+      field "label", jmes_path(col_item, "Label")
+      field "values", jmes_path(col_item, "Values")
+    end
+  end
+end
+
+script "js_cloudwatch_getmetricdata_iops_utilization", type: "javascript" do
+  parameters "region", "MetricDataQueries", "param_unused_days"
+  result "request"
+  code <<-EOS
+  // Slow down rate of requests to prevent throttling
+  api_wait = 5
+  var now = new Date().getTime()
+  while(new Date().getTime() < now + (api_wait * 1000)) { /* Do nothing */ }
+
+  end_date = parseInt(new Date().getTime() / 1000)
+  start_date = parseInt(new Date(new Date().setDate(new Date().getDate() - param_unused_days)).getTime() / 1000)
+
+  var request = {
+    auth: "auth_aws",
+    host: "monitoring." + region + ".amazonaws.com",
+    verb: "POST",
+    path: "/",
+    pagination: "pagination_aws_getmetricdata",
+    headers: {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json",
+      "x-amz-target": "GraniteServiceVersion20100801.GetMetricData",
+      "Accept": "application/json",
+      "Content-Encoding": "amz-1.0"
+    }
+    query_params: {
+      "Action": "GetMetricData",
+      "Version": "2010-08-01"
+    },
+    body: JSON.stringify({
+      "StartTime": start_date,
+      "EndTime": end_date,
+      "MetricDataQueries": MetricDataQueries
+    })
+  }
+EOS
+end
+
+datasource "ds_idle_volumes" do
+  run_script $js_idle_volumes, $ds_volumes_map, $ds_cloudwatch_getmetricdata_iops_utilization, $param_stats_threshold
+end
+
+script "js_idle_volumes", type: "javascript" do
+  parameters "ds_volumes_map", "ds_cloudwatch_getmetricdata_iops_utilization", "param_stats_threshold"
+  result "result"
+  code <<-EOS
+  result = {
+    // "Idle" is defined as having no read/write operations for the specified number of days
+    "idle": [],
+    // "Nonidle" is anything that is not identified as idle
+    // We will look through nonidle next to find potentially underutilized volumes
+    "nonidle": []
+  }
+
+  _.each(ds_volumes_map, function(volume) {
+    read_label = volume['volume_id'] + ' VolumeReadOps '+param_stats_threshold
+    write_label = volume['volume_id'] + ' VolumeWriteOps '+param_stats_threshold
+
+    volume_metrics = _.filter(ds_cloudwatch_getmetricdata_iops_utilization, function(item) {
+      values_exist = true
+
+      // This is to handle scenarios that we consider "zero activity"
+      if (item['values'].length == 0) {
+        // No values exist means there's no activity
+        values_exist = false
+      } else if (item['values'].length == 1 && item['values'][0] == 0) {
+        // If there is only one value and it is 0, we will consider it as not having any activity
+        values_exist = false
+      }
+      // Return a metrics match if values_exist=true AND the label matches the read or write label
+      return values_exist && (item['label'] == read_label || item['label'] == write_label)
+    })
+
+    // volume["metrics"] = volume_metrics
+    volume["savings"] = 0.0
+    volume["read_ops"] = 0.0
+    volume["write_ops"] = 0.0
+    volume["utilized_ops"] = 0.0
+    volume["utilized_ops_percent"] = 0.0
+
+    _.each(volume_metrics, function(volume_metric) {
+      // For each volume metrics
+      if (volume_metric["label"] == read_label) {
+        volume["read_ops"] = parseInt(volume_metric["values"][0].toFixed(0))
+      }
+      if (volume_metric["label"] == write_label) {
+        volume["write_ops"] = parseInt(volume_metric["values"][0].toFixed(0))
+      }
+    })
+    volume["utilized_ops"] = parseInt((volume["read_ops"] + volume["write_ops"]).toFixed(0))
+    // Check that volume["iops"] is not 0 to avoid division by 0
+    // This can happen with "standard" volume types
+    if (volume["iops"] != "" && parseInt(volume["iops"]) != 0) {
+      volume["utilized_ops_percent"] = parseFloat(((volume["utilized_ops"] / parseInt(volume['iops'])) *100).toFixed(2))
+    }
+
+    // If the volume has no metrics, we will consider it idle
+    if (volume_metrics.length == 0) {
+      volume["message"] = "Zero read/write operations detected during lookback period."
+      result["idle"].push(volume)
+    } else {
+      // Else we will add it to the active list to check for potential underutilization
+      result["nonidle"].push(volume)
+    }
+  })
+EOS
+end
+
+datasource "ds_underutilized_volumes" do
+  run_script $js_underutilized_volumes, $ds_idle_volumes, $ds_cloudwatch_getmetricdata_iops_utilization, $param_utilization_threshold, $param_stats_threshold
+end
+
+script "js_underutilized_volumes", type: "javascript" do
+  parameters "ds_idle_volumes", "ds_cloudwatch_getmetricdata_iops_utilization", "param_utilization_threshold", "param_stats_threshold"
+  result "result"
+  code <<-EOS
+  result = {
+    // "Idle" is defined as having no read/write operations or is unattached for the specified number of days
+    "underutilized": [],
+    // "Active" is anything that is not identified as idle or underutilized
+    "active": []
+  }
+
+  nonidle_volumes = ds_idle_volumes["nonidle"]
+  _.each(nonidle_volumes, function(volume) {
+    read_label  = [volume['volume_id'], "VolumeReadOps", param_stats_threshold].join(' ')
+    write_label = [volume['volume_id'], "VolumeWriteOps", param_stats_threshold].join(' ')
+
+    volume_metrics = _.filter(ds_cloudwatch_getmetricdata_iops_utilization, function(item) {
+      values_exist = true
+
+      // This is to handle scenarios where a value exists but is 0
+      // since this is effectively the same as having no actual activity
+      if (item['values'].length == 0) {
+        values_exist = false
+      } else {
+        if (item['values'].length == 1 && item['values'][0] == 0) {
+          values_exist = false
+        }
+      }
+
+      return values_exist && (item['label'] == read_label || item['label'] == write_label)
+    })
+    // volume["metrics"] = volume_metrics
+    volume["savings"] = 0.0
+    volume["read_ops"] = 0.0
+    volume["write_ops"] = 0.0
+    volume["utilized_ops"] = 0.0
+    volume["utilized_ops_percent"] = 0.0
+
+    _.each(volume_metrics, function(volume_metric) {
+      // For each volume metrics
+      if (volume_metric["label"] == read_label) {
+        volume["read_ops"] = parseInt(volume_metric["values"][0].toFixed(2))
+      }
+      if (volume_metric["label"] == write_label) {
+        volume["write_ops"] = parseInt(volume_metric["values"][0].toFixed(2))
+      }
+    })
+    // Add calculated utilized_ops and utilized_ops_percent values
+    volume["utilized_ops"] = parseInt((volume["read_ops"] + volume["write_ops"]).toFixed(2))
+    if (volume["iops"] != "" && parseInt(volume["iops"]) > 0) {
+      volume["utilized_ops_percent"] = parseInt(((volume["utilized_ops"] / parseInt(volume['iops'])) *100).toFixed(2))
+    }
+
+    // Check that volume is not gp2, which has IOPS defined by volume size (and can't be rightsized for iops)
+    // AND
+    // Check if the volume configured for more than minimum iops (and can't be rightsized for iops)
+    // AND
+    // Check if the volume's utilized_ops_percent is less than the threshold
+    if (volume["volume_type"] != "gp2" && parseInt(volume["iops"]) > volume["volume_type_iops_min"] && volume["utilized_ops_percent"] < parseInt(param_utilization_threshold)) {
+      // Calculate recommended IOPS based on utilization threshold and current utilized IOPS
+      // The results in current IOPS being around the param_utilization_threshold after the rightsize
+      // Assuming (param_utilization_threshold/100) * new_iops == utilized_ops
+      // then
+      // new_iops = utilized_ops / (param_utilization_threshold/100)
+      volume["new_iops"] = parseInt((volume["utilized_ops"] / (param_utilization_threshold/100)).toFixed(2))
+      // If the new iops is less than the volume type minimum, set recommended new iops value to the minimum allowed
+      if (volume["new_iops"] < volume["volume_type_iops_min"]) {
+        volume["new_iops"] = volume["volume_type_iops_min"]
+      }
+      // Calculate the percent change in IOPS for the recommendation
+      // This will be helpful in calculating the potential savings
+      // Can only be calculated if the volume has existing IOPS to adjust
+      if (volume["iops"] > 0) {
+        volume["new_iops_percent_change"] = parseFloat((((volume["new_iops"] - parseInt(volume['iops'])) / parseInt(volume['iops'])) * 100).toFixed(2))
+      }
+      volume["message"] = volume["utilized_ops_percent"].toString()+"% utilization of read/write operations detected during lookback period which is below the threshold of "+param_utilization_threshold+"%."
+      volume["message"] += " Recommended IOPS: "+volume["new_iops"]+" ("+volume["new_iops_percent_change"]+"% change)."
+      // newResourceType is a key=value pair string separated by commas
+      // each key represents a different configuration for the resource
+      volume["newResourceType"] = [
+        "type="+volume["volume_type"],
+        "iops="+volume["new_iops"]
+      ].join(",")
+      result["underutilized"].push(volume)
+    } else {
+      // Else the volume's utilized_ops_percent is greater than the threshold
+      // OR
+      // The volume is already configured to minimum iops
+      volume["message"] = volume["utilized_ops_percent"].toString()+"% utilization of read/write operations detected during lookback period which is above the threshold of "+param_utilization_threshold+"%."
+      result["active"].push(volume)
+    }
+  }) // end for each volume
+EOS
+end
+
+datasource "ds_volume_costs" do
+  request do
+    run_script $js_volume_costs, $ds_aws_account, $ds_top_level_bcs, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "resourceId", jmes_path(col_item, "dimensions.resource_id")
+      field "vendorAccountName", jmes_path(col_item, "dimensions.vendor_account_name")
+      field "resourceType", jmes_path(col_item, "dimensions.resource_type")
+      field "dimensions", jmes_path(col_item, "dimensions")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_blended_adj")
+    end
+  end
+end
+
+script "js_volume_costs", type: "javascript" do
+  parameters "ds_aws_account", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split('T')[0]
+
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
+    body_fields: {
+      "dimensions": ["resource_id", "vendor_account_name", "resource_type"],
+      "granularity": "day",
+      "start_at": start_date,
+      "end_at": end_date,
+      "metrics": ["cost_amortized_blended_adj"],
+      "billing_center_ids": ds_top_level_bcs,
+      "limit": 100000,
+      "filter": {
+        "type": "and",
+        "expressions": [
+          {
+            "dimension": "service",
+            "type": "equal",
+            "value": "AmazonEC2"
+          },
+          {
+            type: "or",
+            expressions: [
+              // service=AmazonEC2 && resource_type="Storage" is how volumes storage is provided by AWS
+              {
+                "dimension": "resource_type",
+                "type": "equal",
+                "value": "Storage"
+              },
+              // service=AmazonEC2 && resource_type="System Operation" Provisioned IOPS usage is provided by AWS
+              {
+                "dimension": "resource_type",
+                "type": "equal",
+                "value": "System Operation"
+              }
+            ]
+          },
+          {
+            "dimension": "vendor_account",
+            "type": "equal",
+            "value": ds_aws_account['id']
+          },
+          {
+            type: "not",
+            expression: {
+              dimension: "adjustment_name",
+              type: "substring",
+              substring: "Shared"
+            }
+          }
+        ]
+      }
+    },
+    headers: {
+      "User-Agent": "RS Policies",
+      "Api-Version": "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
+datasource "ds_volume_costs_grouped" do
+  run_script $js_volume_costs_grouped, $ds_volume_costs
+end
+
+script "js_volume_costs_grouped", type: "javascript" do
+  parameters "ds_volume_costs"
+  result "result"
+  code <<-EOS
+  // Multiple a single day's cost by the average number of days in a month.
+  // The 0.25 is to account for leap years for extra precision.
+  cost_multiplier = 365.25 / 12
+
+  // Group by resourceId
+  grouped = _.groupBy(ds_volume_costs, function(volume){
+    return volume["resourceId"].toLowerCase();
+  });
+
+  // Group cost data by resourceId for later use
+  result = {}
+  _.each(_.keys(grouped), function(group) {
+    // Initialize the group in the result object
+    result[group] = {
+      "cost": 0.0,
+      "iops_cost": 0.0,
+      "storage_cost": 0.0,
+      "rows": []
+    }
+    // Sum the total costs for the rows
+    _.each(grouped[group], function(item) {
+      result[group]["cost"] += item['cost'] * cost_multiplier
+      if (item['resourceType'] == "System Operation") {
+        result[group]["iops_cost"] += item['cost'] * cost_multiplier
+      } else {
+        result[group]["storage_cost"] += item['cost'] * cost_multiplier
+      }
+      result[group]["rows"].push(item)
+    })
+  });
+EOS
+end
+
+datasource "ds_volume_cost_mapping" do
+  run_script $js_volume_cost_mapping, $ds_idle_volumes, $ds_underutilized_volumes, $ds_volumes_tag_filtered, $ds_volume_costs_grouped, $ds_currency, $ds_aws_account, $ds_applied_policy, $param_unused_days, $param_include_status, $param_min_savings
+end
+
+script "js_volume_cost_mapping", type:"javascript" do
+  parameters "ds_idle_volumes", "ds_underutilized_volumes", "ds_volumes_tag_filtered", "ds_volume_costs_grouped", "ds_currency", "ds_aws_account", "ds_applied_policy", "param_unused_days", "param_include_status", "param_min_savings"
+  result "result"
+  code <<-'EOS'
+  // Used for formatting numbers to look pretty
+  function formatNumber(number, separator){
+    numString = number.toString()
+    values = numString.split(".")
+    formatted_number = ''
+
+    while (values[0].length > 3) {
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      formatted_number = separator + chunk + formatted_number
+    }
+
+    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
+    if (values[1] == undefined) { return formatted_number }
+
+    return formatted_number + "." + values[1]
+  }
+
+  // Grab just the lists of volumes we need from the datasource results
+  ds_underutilized_volumes = ds_underutilized_volumes["underutilized"]
+  ds_idle_volumes = ds_idle_volumes["idle"]
+
+  result = {
+    "idle": [],
+    "underutilized": []
+  }
+
+  var total_savings = 0.0
+
+  _.each(ds_underutilized_volumes, function(volume) {
+    volume_id = volume['volume_id'].toLowerCase()
+    volume["costs"] = ds_volume_costs_grouped[volume_id]
+
+    var savings = 0.0
+    if (ds_volume_costs_grouped[volume_id] != undefined) {
+      if (ds_volume_costs_grouped[volume_id]["iops_cost"] >= 0  && (-1*volume["new_iops_percent_change"]) > 0) {
+        // Take the original ds_volume_costs_grouped[volume_id]["iops_cost"] and the savings are the new_iops_percent_change (negative) to get a positive savings value
+        savings = parseFloat((ds_volume_costs_grouped[volume_id]["iops_cost"] * ((-1*volume["new_iops_percent_change"] / 100))).toFixed(3))
+      }
+    }
+
+    if (savings >= param_min_savings) {
+      total_savings += savings
+
+      recommendationDetails = [
+        "Modify volume ", volume['volume_id'], " ",
+        "in AWS Account ", ds_aws_account['name'], " ",
+        "(", ds_aws_account['id'], "). ", volume["message"]
+      ].join('')
+
+      // Map Account Values
+      volume["accountID"] = ds_aws_account['id']
+      volume["accountName"] = ds_aws_account['name']
+      // Format some values
+      volume["size"] = parseFloat(volume["size"])
+      volume["read_ops"] = parseFloat(volume["read_ops"])
+      volume["write_ops"] = parseFloat(volume["write_ops"])
+      volume["utilized_ops"] = parseFloat(volume["utilized_ops"])
+      volume["utilized_ops_percent"] = parseFloat(volume["utilized_ops_percent"])
+      volume["iops"] = parseFloat(volume["iops"])
+      volume["age"] = parseFloat(volume["age"].toFixed(2))
+      volume["savings"] = parseFloat(savings.toFixed(3))
+      volume["savingsCurrency"] = ds_currency['symbol']
+      volume["service"] = "EBS"
+      volume["recommendationDetails"] = recommendationDetails
+      volume["lookbackPeriod"] = param_unused_days
+      volume["message"] = ""
+      volume["policy_name"] = ""
+      // Add the volume to the underutilized list
+      result["underutilized"].push(volume)
+    }
+  })
+
+  _.each(ds_idle_volumes, function(volume) {
+    volume_id = volume['volume_id'].toLowerCase()
+    volume["costs"] = ds_volume_costs_grouped[volume_id]
+
+    var savings = 0.0
+    if (ds_volume_costs_grouped[volume_id] != undefined) {
+      if (ds_volume_costs_grouped[volume_id]["cost"] > 0 ) {
+        savings = parseFloat(ds_volume_costs_grouped[volume_id]["cost"].toFixed(3))
+      }
+    }
+
+    if (savings >= param_min_savings) {
+      total_savings += savings
+
+      recommendationDetails = [
+        "Delete volume ", volume['volume_id'], " ",
+        "in AWS Account ", ds_aws_account['name'], " ",
+        "(", ds_aws_account['id'], "). ", volume["message"]
+      ].join('')
+
+      // Map Account Values
+      volume["accountID"] = ds_aws_account['id']
+      volume["accountName"] = ds_aws_account['name']
+      // Format some values
+      volume["size"] = parseFloat(volume["size"])
+      volume["read_ops"] = parseFloat(volume["read_ops"])
+      volume["write_ops"] = parseFloat(volume["write_ops"])
+      volume["utilized_ops"] = parseFloat(volume["utilized_ops"])
+      volume["utilized_ops_percent"] = parseFloat(volume["utilized_ops_percent"])
+      volume["iops"] = parseFloat(volume["iops"])
+      volume["age"] = parseFloat(volume["age"].toFixed(2))
+      volume["savings"] = parseFloat(savings.toFixed(3))
+      volume["savingsCurrency"] = ds_currency['symbol']
+      volume["service"] = "EBS"
+      volume["recommendationDetails"] = recommendationDetails
+      volume["lookbackPeriod"] = param_unused_days
+      volume["message"] = ""
+      volume["policy_name"] = ""
+      // Add the volume to the idle list
+      result["idle"].push(volume)
+    }
+  })
+
+  // Loop through each result type -- idle, underutilized
+  _.each(_.keys(result), function(key) {
+    // Sort by descending order of savings value
+    result[key] = _.sortBy(result[key], function(item) { return item['savings'] * -1 })
+    if (result[key].length > 0) {
+      // Message for incident output
+      total_volumes = (ds_volumes_tag_filtered.length).toString()
+      total_unused_volumes = result[key].length.toString()
+      unused_volumes_percentage = "0%"
+      if (ds_volumes_tag_filtered.length > 0) {
+        unused_volumes_percentage = (result[key].length / ds_volumes_tag_filtered.length * 100).toFixed(2).toString() + '%'
+      }
+
+      recommended_action = "modification"
+      recommended_condition = "have had read/write activity below desired threshold"
+      if (key == "idle") {
+        recommended_action = "deletion"
+        recommended_condition = "have had zero read/write activity"
+      }
+
+      findings = [
+        "Out of ", total_volumes, " volumes analyzed, ",
+        total_unused_volumes, " (", unused_volumes_percentage, ") ",
+        "are ", key, " and recommended for ", recommended_action, ". "
+      ].join('')
+
+      days_noun = "day"
+      if (param_unused_days != 1) { days_noun += 's' }
+
+      if (param_include_status == 'Unattached Volumes') {
+        settings = [
+          "Volumes are considered ", key, " if they are unattached ",
+          "and have ", recommended_condition, " for at least ",
+          param_unused_days, " ", days_noun, ".\n\n"
+        ].join('')
+      }
+
+      if (param_include_status == 'Attached Volumes') {
+        settings = [
+          "Volumes are considered ", key, " if they are attached ",
+          "and have ", recommended_condition, " for at least ",
+          param_unused_days, " ", days_noun, ".\n\n"
+        ].join('')
+      }
+
+      if (param_include_status == 'All Volumes') {
+        settings = [
+          "Volumes are considered ", key, " if they ",
+          "have ", recommended_condition, " for at least ",
+          param_unused_days, " ", days_noun, ".\n\n"
+        ].join('')
+      }
+
+      disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+
+      summary_total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['separator'])
+
+      // We need to return a list of objects for the resource count to be correct on the incident
+      // We also need to store a total savings and message for the whole list
+      //
+      // For now, using the first object in the list to store this,
+      // and these values are only used in the reports, not the exported data
+      result[key][0]['summary_message'] = findings + settings + disclaimer
+      result[key][0]['summary_total_savings'] = summary_total_savings
+      result[key][0]['total_savings'] = total_savings
+      result[key][0]['summary_policy_name'] = ds_applied_policy['name']
+    }
+  })
+EOS
+end
+
+datasource "ds_idle_volumes_result" do
+  run_script $js_idle_volumes_result, $ds_volume_cost_mapping
+end
+
+script "js_idle_volumes_result", type: "javascript" do
+  parameters "ds_volume_cost_mapping"
+  result "result"
+  code <<-EOS
+  result = ds_volume_cost_mapping["idle"]
+EOS
+end
+
+datasource "ds_underutilized_volumes_result" do
+  run_script $js_underutilized_volumes_result, $ds_volume_cost_mapping
+end
+
+script "js_underutilized_volumes_result", type: "javascript" do
+  parameters "ds_volume_cost_mapping"
+  result "result"
+  code <<-EOS
+  result = ds_volume_cost_mapping["underutilized"]
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_unused_volumes" do
+  validate_each $ds_idle_volumes_result do
+    summary_template "{{ with index data 0 }}{{ .summary_policy_name }}{{ end }}: {{ len data }} Idle Volumes Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .summary_total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .summary_message }}{{ end }}
+    EOS
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    escalate $esc_delete_volumes
+    escalate $esc_modify_volumes
+    hash_exclude "age", "message", "total_savings", "tags", "savings", "savingsCurrency"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+        path "volume_id"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "age" do
+        label "Age (Days)"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "resourceType" do
+        label "Resource Type"
+        path "volume_type"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "size" do
+        label "Size (GB)"
+      end
+      field "iops" do
+        label "IOPS"
+      end
+      field "readOps" do
+        label "Read Operations"
+        path "read_ops"
+      end
+      field "writeOps" do
+        label "Write Operations"
+        path "write_ops"
+      end
+      field "utilizedOps" do
+        label "Utilized Operations"
+        path "utilized_ops"
+      end
+      field "utilizedOpsPercent" do
+        label "Utilized Operations Percent"
+        path "utilized_ops_percent"
+      end
+      field "state" do
+        label "Status"
+        path "status"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "lookbackPeriod" do
+        label "Lookback Period (Days)"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "ID"
+        path "volume_id"
+      end
+    end
+  end
+  validate_each $ds_underutilized_volumes_result do
+    summary_template "{{ with index data 0 }}{{ .summary_policy_name }}{{ end }}: {{ len data }} Underutilized Volumes Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .summary_total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .summary_message }}{{ end }}
+    EOS
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    escalate $esc_delete_volumes
+    escalate $esc_modify_volumes
+    hash_exclude "age", "message", "total_savings", "tags", "savings", "savingsCurrency"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+        path "volume_id"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "age" do
+        label "Age (Days)"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "resourceType" do
+        label "Resource Type"
+        path "volume_type"
+      end
+      field "newResourceType" do
+        label "New Resource Type"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "size" do
+        label "Size (GB)"
+      end
+      field "iops" do
+        label "IOPS"
+      end
+      field "readOps" do
+        label "Read Operations"
+        path "read_ops"
+      end
+      field "writeOps" do
+        label "Write Operations"
+        path "write_ops"
+      end
+      field "utilizedOps" do
+        label "Utilized Operations"
+        path "utilized_ops"
+      end
+      field "utilizedOpsPercent" do
+        label "Utilized Operations Percent"
+        path "utilized_ops_percent"
+      end
+      field "newIops" do
+        label "Recommended IOPS"
+        path "new_iops"
+      end
+      field "newIopsPercentChange" do
+        label "Recommended IOPS (Percent Change)"
+        path "new_iops_percent_change"
+      end
+      field "state" do
+        label "Status"
+        path "status"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "lookbackPeriod" do
+        label "Lookback Period (Days)"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "ID"
+        path "volume_id"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_delete_volumes" do
+  automatic contains($param_automatic_action, "Delete Volumes")
+  label "Delete Volumes"
+  description "Approval to delete all volumes"
+  run "delete_volumes", data, $param_take_snapshot
+end
+
+escalation "esc_modify_volumes" do
+  automatic contains($param_automatic_action, "Modify Volumes")
+  label "Modify Volumes"
+  description "Approval to modify all volumes"
+  parameter "param_esc_modify_volumes_iops" do
+    type "string" # Using string so we can have default value of "". Really should be a number
+    category "Actions"
+    label "Volume IOPS (GB)"
+    description "Volume IOPS to change to.  Use value 0 to leave Volume IOPS unmodified."
+    default ""
+  end
+  parameter "param_esc_modify_volumes_volumetype" do
+    type "string"
+    category "Actions"
+    label "Volume Type"
+    description "Volume Type to change to.  Leave empty to do leave Volume Type unmodified."
+    allowed_values "gp2", "gp3", "io1", "io2", "standard", ""
+    default ""
+  end
+  run "modify_volumes", data, $param_esc_modify_volumes_volumetype, $param_esc_modify_volumes_iops
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define delete_volumes($data, $param_take_snapshot) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      $snapshot_status_code = 200
+      $detach_status_code = 200
+
+      if $instance["state"] == "in-use" || $instance["status"] == "in-use"
+        call detach_volume($instance) retrieve $detach_response, $detach_status_code
+        $$all_responses << $detach_response
+      end
+
+      if $param_take_snapshot == "Yes"
+        call create_snapshot($instance) retrieve $snapshot_response, $snapshot_status_code
+        $$all_responses << $snapshot_response
+      end
+
+      if $snapshot_status_code == 200 && $detach_status_code == 200
+        call delete_volume($instance) retrieve $delete_response
+        $$all_responses << $delete_response
+      end
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define detach_volume($instance) return $response, $status_code do
+  $host = "ec2." + $instance["region"] + ".amazonaws.com"
+  $href = "/"
+  $params = "?Action=DetachVolume&Version=2016-11-15&VolumeId=" + $instance["id"]
+  $url = $host + $href + $params
+  task_label("GET " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "get",
+    host: $host,
+    href: $href,
+    query_strings: {
+      "Action": "DetachVolume",
+      "Version": "2016-11-15",
+      "VolumeId": $instance["id"]
+    }
+  )
+
+  $status_code = $response["code"]
+
+  task_label("Get AWS Volume response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
+
+  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
+    raise "Unexpected response getting AWS Volume: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Get AWS Volume successful: " + $instance["id"])
+
+    $status = $response["body"]["DetachVolumeResponse"]["status"]
+
+    while $status !~ "available" do
+      sleep(30)
+      call get_volume_status($instance) retrieve $status_response, $status
+    end
+  end
+end
+
+define get_volume_status($instance) return $response, $status do
+  $host = "ec2." + $instance["region"] + ".amazonaws.com"
+  $href = "/"
+  $params = "?Action=DescribeVolumes&Version=2016-11-15&VolumeId.1=" + $instance["id"]
+  $url = $host + $href + $params
+  task_label("GET " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "get",
+    host: $host,
+    href: $href,
+    query_strings: {
+      "Action": "DescribeVolumes",
+      "Version": "2016-11-15",
+      "VolumeId.1": $instance["id"]
+    }
+  )
+
+  $status = $response["body"]["DescribeVolumesResponse"]["volumeSet"]["item"]["status"]
+
+  task_label("Get AWS Volume response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
+
+  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
+    raise "Unexpected response getting AWS Volume: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Get AWS Volume successful: " + $instance["id"])
+  end
+end
+
+define create_snapshot($instance) return $response, $status_code do
+  $host = "ec2." + $instance["region"] + ".amazonaws.com"
+  $href = "/"
+  $params = "?Action=CreateSnapshot&Version=2016-11-15&VolumeId=" + $instance["id"]
+  $url = $host + $href + $params
+  task_label("GET " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "get",
+    href: $href,
+    host: $host,
+    query_strings: {
+      "Action": "CreateSnapshot",
+      "Version": "2016-11-15",
+      "VolumeId": $instance["id"]
+    }
+  )
+
+  $status_code = $response["code"]
+
+  task_label("Get AWS Volume response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
+
+  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
+    raise "Unexpected response getting AWS Volume: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Get AWS Volume successful: " + $instance["id"])
+
+    $status = $response["body"]["CreateSnapshotResponse"]["status"]
+    $snapshot_id = to_s($response["body"]["CreateSnapshotResponse"]["snapshotId"])
+
+    while $status !~ "completed" do
+      sleep(30)
+      call get_snapshot_status($snapshot_id, $instance["region"]) retrieve $status_response, $status
+    end
+  end
+end
+
+define get_snapshot_status($snapshot_id, $region) return $response, $status do
+  $host = "ec2." + $region + ".amazonaws.com"
+  $href = "/"
+  $params = "?Action=DescribeSnapshots&Version=2016-11-15&SnapshotId=" + $snapshot_id
+  $url = $host + $href + $params
+  task_label("GET " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "get",
+    host: $host,
+    href: $href,
+    query_strings: {
+      "Action": "DescribeSnapshots",
+      "Version": "2016-11-15",
+      "SnapshotId": $snapshot_id
+    }
+  )
+
+  $status = $response["body"]["DescribeSnapshotsResponse"]["snapshotSet"]["item"]["status"]
+
+  task_label("Get AWS EC2 Snapshot response: " + $snapshot_id + " " + to_json($response))
+  $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
+
+  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
+    raise "Unexpected response getting AWS EC2 Snapshot: "+ $snapshot_id + " " + to_json($response)
+  else
+    task_label("Get AWS EC2 Snapshot successful: " + $snapshot_id)
+  end
+end
+
+define delete_volume($instance) return $response do
+  $host = "ec2." + $instance["region"] + ".amazonaws.com"
+  $href = "/"
+  $params = "?Action=DeleteVolume&Version=2016-11-15&VolumeId=" + $instance["id"]
+  $url = $host + $href + $params
+  task_label("GET " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "get",
+    host: $host,
+    href: $href,
+    query_strings: {
+      "Action": "DeleteVolume",
+      "Version": "2016-11-15",
+      "VolumeId": $instance["id"]
+    }
+  )
+
+  task_label("Get AWS Volume response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
+
+  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
+    raise "Unexpected response getting AWS Volume: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Get AWS Volume successful: " + $instance["id"])
+  end
+end
+
+define modify_volumes($data, $VolumeType, $Iops) return $all_responses do
+  $$all_responses = []
+
+  # Check that the parameters provided have at least one user provided input
+  if $VolumeType == "" && $Iops == ""
+    raise "No parameter values provided for modifying volumes. Please provide at least one of the following: Volume Type, IOPS"
+  else
+    # Else we have at least one parameter to modify
+    foreach $volume in $data do
+      sub on_error: handle_error() do
+        call aws_ec2_modify_volume($volume, $VolumeType, $Iops) retrieve $modify_response
+      end
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define aws_ec2_modify_volume($volume, $VolumeType, $Iops) return $response do
+  $upgrade_url = "https://ec2." + $volume['region'] + ".amazonaws.com/?Action=ModifyVolume&Version=2016-11-15&VolumeType=gp3&VolumeId=" + $volume["resourceID"]
+  task_label("POST " + $upgrade_url)
+
+  $query_strings = {
+    "Action": "ModifyVolume",
+    "Version": "2016-11-15",
+    "VolumeId": $volume["resourceID"]
+  }
+
+  if $VolumeType != ""
+    $query_strings["VolumeType"] = $VolumeType
+  end
+  if $Iops != ""
+    $query_strings["Iops"] = to_n($Iops)
+  end
+  # if $Size != ""
+  #   $query_strings["Size"] = $Size
+  # end
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    href: "/",
+    host: "ec2." + $volume['region'] + ".amazonaws.com",
+    query_strings: $query_strings
+  )
+
+  task_label("Post AWS volume response: " + $volume["resourceID"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $upgrade_url, "resp": $response})
+
+  if $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response attempting to ec2:ModifyVolume "+ $volume["resourceID"] + " " + to_json($response)
+  else
+    task_label("Post AWS volume successful: " + $volume["resourceID"])
+  end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
+end

@@ -1,5 +1,21 @@
 # Changelog
 
+## v5.3.0
+
+- Modified internal names for incident fields for more accurate scraping into Optimization dashboard
+
+## v5.2.1
+
+- Fixed a bug causing $0 recommendations
+
+## v5.2.0
+
+- New fields added to incident output: `Last Accessed` and `Status`
+
+## v5.1.1
+
+- Unused SQL Databases incident now includes a `Recommended Capacity` field with a value of `Delete Instance` for ease of analyzing recommendations from the Flexera Optimization dashboard
+
 ## v5.1
 
 - Updated policy to use new source for currency information. Policy functionality is unchanged.

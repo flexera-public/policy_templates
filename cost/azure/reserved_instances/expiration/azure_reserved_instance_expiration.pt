@@ -1,41 +1,54 @@
 name "Azure Expiring Reserved Instances"
 rs_pt_ver 20180301
 type "policy"
-short_description "**Deprecated: This policy is no longer being updated.**  A policy that sends email notifications when an Azure Reserved Instance are about to expire. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/reserved_instances/expiration) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Reports on Azure Reserved Instances that have or will soon expire. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/reserved_instances/expiration) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
-severity "low"
 category "Cost"
-tenancy "single"
+severity "medium"
 default_frequency "daily"
 info(
-  version: "2.2",
-  provider: "Flexera Optima",
-  service: "",
-  policy_set: ""
+  version: "3.0.0",
+  provider: "Azure",
+  service: "Compute",
+  policy_set: "Reserved Instances"
 )
-
-###############################################################################
-# Permissions
-###############################################################################
-
-permission "optima" do
-  label "Access Optima Resources"
-  resources "rs_optima.aws_reserved_instances"
-  actions "rs_optima.index"
-end
 
 ###############################################################################
 # Parameters
 ###############################################################################
 
-parameter "param_days_expiration" do
-  type "number"
-  label "Number of days to prior to expiration date to trigger incident"
-end
-
 parameter "param_email" do
   type "list"
-  label "Email addresses of the recipients you wish to notify"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify when new incidents are created."
+  default []
+end
+
+parameter "param_days_expiration" do
+  type "number"
+  category "Policy Settings"
+  label "Days Until Expiration"
+  description "The number of days until expiration to include a Reservation in the report. Set to '0' to only report expired Reservations."
+  min_value 0
+  default 15
+end
+
+parameter "param_bc_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Billing Centers"
+  description "Allow or Deny entered Billing Centers."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_billing_centers" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Billing Center List"
+  description "A list of allowed or denied Billing Center names/IDs. Leave blank to report on Reservations in all Billing Centers."
+  default []
 end
 
 ###############################################################################
@@ -44,86 +57,248 @@ end
 
 credentials "auth_flexera" do
   schemes "oauth2"
-  label "flexera"
+  label "Flexera"
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
 
 ###############################################################################
-# Pagination
+# Datasources & Scripts
 ###############################################################################
 
-###############################################################################
-# Datasources
-###############################################################################
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
 
-datasource "ds_reservations" do
+datasource "ds_billing_centers" do
   request do
     auth $auth_flexera
     host rs_optima_host
-    path join(["/reserved_instances/orgs/",rs_org_id,"/clouds/azure/summary"])
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
   end
   result do
     encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "account_name", jmes_path(col_item,"account_name")
-      field "arm_sku_name", jmes_path(col_item,"arm_sku_name")
-      field "expiration_date", jmes_path(col_item,"expiration_date")
-      field "purchasing_subscription_name", jmes_path(col_item,"purchasing_subscription_name")
-      field "purchasing_subscription_guid", jmes_path(col_item,"purchasing_subscription_guid")
-      field "quantity", jmes_path(col_item,"quantity")
-      field "region", jmes_path(col_item,"region")
-      field "reservation_id", jmes_path(col_item,"reservation_id")
-      field "reservation_order_id", jmes_path(col_item,"reservation_order_id")
-      field "reservation_order_name", jmes_path(col_item,"reservation_order_name")
-      field "term", jmes_path(col_item,"term")
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
     end
   end
 end
 
-datasource "ds_filtered_reservations" do
-  run_script $js_filtered_reservations, $ds_reservations, $param_days_expiration
+datasource "ds_billing_centers_filtered" do
+  run_script $js_billing_centers_filtered, $ds_billing_centers, $param_bc_allow_or_deny, $param_billing_centers
 end
 
-###############################################################################
-# Scripts
-###############################################################################
-
-script "js_filtered_reservations", type: "javascript" do
-  parameters "reservations","param_days_expiration"
-  result "content"
+script "js_billing_centers_filtered", type: "javascript" do
+  parameters "ds_billing_centers", "param_bc_allow_or_deny", "param_billing_centers"
+  result "result"
   code <<-EOS
-    var content=[];
-    var now = new Date();
-    var now_ms = now.getTime();
-    var one_day=1000*60*60*24;
-    var date1_ms = now.getTime();
+  allow_deny_test = { "Allow": true, "Deny": false }
 
-    for (var i = 0; i < reservations.length ; i++) {
-      reservation = reservations[i]
-      var date2_ms = (new Date(reservation['expiration_date'])).getTime();
-      var difference_ms = date2_ms - date1_ms;
-      var daysLeft = Math.round(difference_ms/one_day);
+  if (param_billing_centers.length > 0) {
+    billing_centers = _.filter(ds_billing_centers, function(item) {
+      id_found = _.contains(param_billing_centers, item['id']) == allow_deny_test[param_bc_allow_or_deny]
+      name_found = _.contains(param_billing_centers, item['name']) == allow_deny_test[param_bc_allow_or_deny]
+      return id_found || name_found
+    })
 
-      if (daysLeft <= param_days_expiration && now_ms <= date2_ms) {
-        content.push({
-          account_name: reservation['account_name'],
-          arm_sku_name: reservation['arm_sku_name'],
-          expiration_date: reservation['expiration_date'],
-          purchasing_subscription_name: reservation['purchasing_subscription_name'],
-          purchasing_subscription_guid: reservation['purchasing_subscription_guid'],
-          quantity: reservation['quantity'],
-          region: reservation['region'],
-          reservation_id: reservation['reservation_id'],
-          reservation_order_id: reservation['reservation_order_id'],
-          reservation_order_name: reservation['reservation_order_name'],
-          term: reservation['term'],
-          daysExpiration: daysLeft
-        })
-      }
+    // Check for conflicting parents/children and remove children if present
+    bc_ids = _.compact(_.pluck(billing_centers, 'id'))
+    bad_children = _.filter(ds_billing_centers, function(bc) { return _.contains(bc_ids, bc['parent_id']) })
+    bad_children_ids = _.pluck(bad_children, 'id')
+
+    // Create final result with the bad children removed
+    final_list = _.reject(billing_centers, function(bc) { return _.contains(bad_children_ids, bc['id']) })
+  } else {
+    // If we're not filtering at all, just grab all of the top level billing centers
+    final_list = _.filter(ds_billing_centers, function(bc) {
+      return bc['parent_id'] == null || bc['parent_id'] == undefined
+    })
+  }
+
+  result = _.compact(_.pluck(final_list, 'id'))
+EOS
+end
+
+datasource "ds_accounts_by_billing_center" do
+  request do
+    run_script $js_accounts_by_billing_center, $ds_billing_centers_filtered, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+      field "billing_center_id", jmes_path(col_item, "dimensions.billing_center_id")
+      field "vendor_account_id", jmes_path(col_item, "dimensions.vendor_account")
+      field "vendor_account_name", jmes_path(col_item, "dimensions.vendor_account_name")
+      field "timestamp", jmes_path(col_item, "timestamp")
+    end
+  end
+end
+
+script "js_accounts_by_billing_center", type: "javascript" do
+  parameters "ds_billing_centers_filtered", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  start_date = new Date().toISOString()
+  start_date = start_date.split('-')[0] + '-' + start_date.split('-')[1]
+
+  end_year = Number(start_date.split('-')[0])
+  end_month = Number(start_date.split('-')[1]) + 1
+  if (end_month == 13) { end_month = 1; end_year++ }
+  if (end_month < 10) { end_month = '0' + end_month.toString() }
+  end_date = end_year.toString() + '-' + end_month.toString()
+
+  var request = {
+    auth: "auth_flexera",
+    verb: "POST",
+    host: rs_optima_host,
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
+    body_fields: {
+      "dimensions": [ "billing_center_id", "vendor_account", "vendor_account_name" ],
+      "granularity": "month",
+      "metrics": [ "cost_amortized_unblended_adj" ],
+      "billing_center_ids": ds_billing_centers_filtered,
+      "start_at": start_date,
+      "end_at": end_date
     }
-    content = _.sortBy(content, 'reservation_id');
-    content = _.sortBy(content, 'reservation_order_id');
+  }
+EOS
+end
+
+datasource "ds_azure_reservations" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/reserved_instances/orgs/", rs_org_id, "/clouds/azure"])
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "account_name", jmes_path(col_item, "account_name")
+      field "amount", jmes_path(col_item, "amount")
+      field "arm_sku_name", jmes_path(col_item, "arm_sku_name")
+      field "billing_frequency", jmes_path(col_item, "billing_frequency")
+      field "cost_center", jmes_path(col_item, "cost_center")
+      field "currency", jmes_path(col_item, "currency")
+      field "current_enrollment", jmes_path(col_item, "current_enrollment")
+      field "department_name", jmes_path(col_item, "department_name")
+      field "description", jmes_path(col_item, "description")
+      field "event_date", jmes_path(col_item, "event_date")
+      field "event_type", jmes_path(col_item, "event_type")
+      field "expiration_date", jmes_path(col_item, "expiration_date")
+      field "monthly_cost", jmes_path(col_item, "monthly_cost")
+      field "purchased_quantity", jmes_path(col_item, "purchased_quantity")
+      field "purchasing_enrollment", jmes_path(col_item, "purchasing_enrollment")
+      field "purchasing_subscription_guid", jmes_path(col_item, "purchasing_subscription_guid")
+      field "purchasing_subscription_name", jmes_path(col_item, "purchasing_subscription_name")
+      field "quantity", jmes_path(col_item, "quantity")
+      field "region", jmes_path(col_item, "region")
+      field "remaining_quantity", jmes_path(col_item, "remaining_quantity")
+      field "reservation_order_id", jmes_path(col_item, "reservation_order_id")
+      field "reservation_order_name", jmes_path(col_item, "reservation_order_name")
+      field "term", jmes_path(col_item, "term")
+      field "util_avg_percentage", jmes_path(col_item, "utilization.avg_utilization_percentage")
+      field "util_max_percentage", jmes_path(col_item, "utilization.max_utilization_percentage")
+      field "util_min_percentage", jmes_path(col_item, "utilization.min_utilization_percentage")
+      field "util_reservation_id", jmes_path(col_item, "utilization.reservation_id")
+      field "util_reserved_hours", jmes_path(col_item, "utilization.reserved_hours")
+      field "util_sku_name", jmes_path(col_item, "utilization.sku_name")
+      field "util_usage_date", jmes_path(col_item, "utilization.usage_date")
+      field "util_used_hours", jmes_path(col_item, "utilization.used_hours")
+    end
+  end
+end
+
+datasource "ds_filtered_azure_reservations" do
+  run_script $js_filtered_azure_reservations, $ds_accounts_by_billing_center, $ds_azure_reservations
+end
+
+script "js_filtered_azure_reservations", type: "javascript" do
+  parameters "ds_accounts_by_billing_center", "ds_azure_reservations"
+  result "result"
+  code <<-EOS
+  bc_account_ids = _.uniq(_.pluck(ds_accounts_by_billing_center, "vendor_account_id"))
+
+  result = _.filter(ds_azure_reservations, function(ri) {
+    return _.contains(bc_account_ids, ri['purchasing_subscription_guid'])
+  })
+EOS
+end
+
+datasource "ds_account_list" do
+  run_script $js_account_list, $ds_accounts_by_billing_center, $ds_billing_centers
+end
+
+script "js_account_list", type: "javascript" do
+  parameters "ds_accounts_by_billing_center", "ds_billing_centers"
+  result "result"
+  code <<-EOS
+  bc_object = {}
+
+  _.each(ds_billing_centers, function(bc) { bc_object[bc['id']] = bc['name'] })
+
+  result = {}
+
+  _.each(ds_accounts_by_billing_center, function(account) {
+    if (result[account['vendor_account_id']] == undefined) {
+      result[account['vendor_account_id']] = []
+    }
+
+    result[account['vendor_account_id']].push(bc_object[account['billing_center_id']])
+  })
+EOS
+end
+
+datasource "ds_expiring_azure_reservations" do
+  run_script $js_expiring_azure_reservations, $ds_filtered_azure_reservations, $ds_account_list, $ds_applied_policy, $param_days_expiration
+end
+
+script "js_expiring_azure_reservations", type: "javascript" do
+  parameters "ds_filtered_azure_reservations", "ds_account_list", "ds_applied_policy", "param_days_expiration"
+  result "result"
+  code <<-'EOS'
+  result = []
+  today = new Date()
+
+  _.each(ds_filtered_azure_reservations, function(ri) {
+    expiration_date = new Date(ri['expiration_date'])
+    days_until_expiry = (expiration_date - today) / 1000 / 60 / 60 / 24
+    if (days_until_expiry < 0) { days_until_expiry = 0 }
+
+    if (days_until_expiry < param_days_expiration || days_until_expiry == 0) {
+      billing_centers = ""
+
+      if (ds_account_list[ri['purchasing_subscription_guid']] != undefined) {
+        billing_centers = ds_account_list[ri['purchasing_subscription_guid']].join(', ')
+      }
+
+      result.push({
+        accountID: ri["purchasing_subscription_guid"],
+        accountName: ri["purchasing_subscription_name"],
+        instanceType: ri["util_sku_name"],
+        instanceCount: Math.round(ri["amount"]),
+        resourceID: ri["util_reservation_id"],
+        region: ri["region"],
+        term: ri["term"],
+        expiration_date: expiration_date.toISOString().substring(0, 10),
+        days_until_expiry: Math.round(days_until_expiry),
+        billing_centers: billing_centers,
+        policy_name: ds_applied_policy["name"]
+      })
+    }
+  })
 EOS
 end
 
@@ -131,43 +306,46 @@ end
 # Policy
 ###############################################################################
 
-policy "ri_expiration" do
-  validate $ds_filtered_reservations do
-    summary_template "{{ rs_org_name }} (Org ID: {{ rs_org_id }}): {{ len data }} Reserved Instance(s) in Microsoft Azure Expiring"
-    escalate $report_expiring_reserved_instances
-    check eq(size(data),0)
+policy "pol_ri_expiration" do
+  validate_each $ds_expiring_azure_reservations do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: Azure Expiring Reservations Found"
+    check eq(val(item, "resourceID"), "")
+    escalate $esc_email
     export do
       resource_level true
-      field "id" do
-        label "Reservation Id"
-        path "reservation_id"
+      field "accountID" do
+        label "Subscription ID"
       end
-      field "reservation_order_id" do
-        label "Reservation Order Id"
-      end
-      field "reservation_order_name" do
-        label "Reservation Order Name"
-      end
-      field "purchasing_subscription_name" do
+      field "accountName" do
         label "Subscription Name"
       end
-      field "purchasing_subscription_guid" do
-        label "Subscription GUID"
+      field "billing_centers" do
+        label "Associated Billing Center(s)"
       end
       field "region" do
-        label "Location"
+        label "Region"
       end
-      field "arm_sku_name" do
-        label "ARM SKU"
+      field "term" do
+        label "Term"
       end
-      field "quantity" do
-        label "Quantity"
+      field "resourceID" do
+        label "Lease ID"
+      end
+      field "instanceType" do
+        label "Instance Type"
+      end
+      field "instanceCount" do
+        label "Instance Count"
       end
       field "expiration_date" do
         label "Expiration Date"
       end
-      field "daysExpiration" do
+      field "days_until_expiry" do
         label "Days Until Expiration"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
       end
     end
   end
@@ -177,7 +355,7 @@ end
 # Escalations
 ###############################################################################
 
-escalation "report_expiring_reserved_instances" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"

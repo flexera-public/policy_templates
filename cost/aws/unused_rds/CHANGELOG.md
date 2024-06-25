@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.5.1
+
+- Added `deprecated` field to policy metadata. Functionality is unchanged.
+
 ## v6.5
 
 - Updated policy to use new source for currency information. Policy functionality is unchanged.

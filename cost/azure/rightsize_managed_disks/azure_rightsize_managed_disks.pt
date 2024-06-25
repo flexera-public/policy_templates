@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "monthly"
 info(
-  version: "2.0",
+  version: "2.0.3",
   provider: "Azure",
   service: "Managed Disks",
   policy_set: "Rightsize Storage",
@@ -138,9 +138,9 @@ parameter "param_stats_lookback" do
   category "Statistics"
   label "Lookback period"
   description "How many days back to look at disk IOPS and throughput data. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days."
-  default 30
   min_value 1
   max_value 90
+  default 30
 end
 
 ###############################################################################
@@ -498,7 +498,7 @@ script "js_azure_virtual_machines_with_metrics", type: "javascript" do
       "metricnames": "OS Disk IOPS Consumed Percentage,OS Disk Bandwidth Consumed Percentage,Data Disk IOPS Consumed Percentage,Data Disk Bandwidth Consumed Percentage",
       "timespan": timespan,
       "$filter": "LUN eq '*'",
-      "aggregation": "Average,Maximum",
+      "aggregation": "Average, Maximum",
       "interval": "FULL",
     },
     headers: {
@@ -686,11 +686,11 @@ datasource "ds_azure_md_pricing" do
 end
 
 datasource "ds_disk_rightsizing_recommendations" do
-  run_script $js_disk_rightsizing_recommendations, $ds_azure_disks_with_metrics_thresholds_filtered, $ds_azure_md_tier_types, $ds_azure_md_pricing, $param_stats_lookback, $param_min_savings, $param_min_used_disk_iops_pct, $param_min_used_disk_throughput_pct, $ds_min_used_disk_space_pct, $param_stats_aggregation_for_disk_iops, $param_stats_aggregation_for_disk_throughput, $ds_applied_policy
+  run_script $js_disk_rightsizing_recommendations, $ds_azure_disks_with_metrics_thresholds_filtered, $ds_azure_md_tier_types, $ds_azure_md_pricing, $ds_applied_policy, $ds_min_used_disk_space_pct, $param_stats_lookback, $param_min_savings, $param_min_used_disk_iops_pct, $param_min_used_disk_throughput_pct, $param_stats_aggregation_for_disk_iops, $param_stats_aggregation_for_disk_throughput
 end
 
 script "js_disk_rightsizing_recommendations", type: "javascript" do
-  parameters "ds_azure_disks_with_metrics_thresholds_filtered", "ds_azure_md_tier_types", "ds_azure_md_pricing", "param_stats_lookback", "param_min_savings", "param_min_used_disk_iops_pct", "param_min_used_disk_throughput_pct", "ds_min_used_disk_space_pct", "param_stats_aggregation_for_disk_iops", "param_stats_aggregation_for_disk_throughput", "ds_applied_policy"
+  parameters "ds_azure_disks_with_metrics_thresholds_filtered", "ds_azure_md_tier_types", "ds_azure_md_pricing", "ds_applied_policy", "ds_min_used_disk_space_pct", "param_stats_lookback", "param_min_savings", "param_min_used_disk_iops_pct", "param_min_used_disk_throughput_pct", "param_stats_aggregation_for_disk_iops", "param_stats_aggregation_for_disk_throughput"
   result "result"
   code <<-'EOS'
   var hddDiskSizes = [32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32767]
@@ -727,10 +727,11 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
   }
 
   function findDiskName(diskTier, diskSizeGB) {
-    diskTier = diskTier.split("_")[0]
     try {
+      diskTier = diskTier.split("_")[0]
       diskSizeGB = findDiskSize(diskTier, diskSizeGB)
     } catch (err) {
+      console.log("Error inside findDiskName for "+diskTier +" "+diskSizeGB)
       return undefined
     }
     for (diskName in ds_azure_md_tier_types) {
@@ -758,7 +759,14 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
     var premSsdV2Pricing = ds_azure_md_pricing[diskRegion]
     if (premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY === undefined) { return }
     if (currentUsedIops <= 3000 && currentUsedThroughput <= 3000) {
-      return premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY.pricePerUnit * 720 * currentUsedGB
+      return {
+        pricePerUnit: Math.round( premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY.pricePerUnit * 720 * currentUsedGB ),
+        currencyCode: premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY.currencyCode,
+        sizeGiB: currentUsedGB,
+        IOPS: currentUsedIops,
+        throughput: currentUsedThroughput,
+        unitOfMeasure: premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY.unitOfMeasure
+      }
     }
     var diskIopsAndThroughputDontFitInDiskSize = true
     var suggestedDiskSize = currentUsedGB
@@ -779,7 +787,7 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
         + (premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_THROUGHPUT_MBPS.pricePerUnit * 720 * currentUsedThroughput)
       ),
       currencyCode: premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY.currencyCode,
-      sizeGB: suggestedDiskSize,
+      sizeGiB: suggestedDiskSize,
       IOPS: maxIops,
       throughput: maxThroughput,
       unitOfMeasure: premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY.unitOfMeasure,
@@ -800,7 +808,7 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
       sizeGB: diskSize,
       IOPS: currentUsedIops,
       throughput: currentUsedThroughput,
-      unitOfMeasure: ultraPricing.PREMIUM_LRS_PROVISIONED_CAPACITY.unitOfMeasure,
+      unitOfMeasure: ultraPricing.ULTRA_LRS_PROVISIONED_CAPACITY.unitOfMeasure,
     }
   }
 
@@ -834,7 +842,10 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
   for (i in ds_azure_disks_with_metrics_thresholds_filtered) {
     var disk = ds_azure_disks_with_metrics_thresholds_filtered[i]
     var currentDiskName = findDiskName(disk.tier, disk.diskSizeGB)
-    if (currentDiskName === undefined) continue;
+    if (currentDiskName === undefined) {
+     console.log("Current disk name is undefined ", JSON.stringify(disk));
+     continue;
+    }
     var currentDiskData = ds_azure_md_tier_types[currentDiskName]
 
     var currentUsedIops = disk.iopsConsumedPctMax * currentDiskData.IOPS / 100
@@ -848,6 +859,7 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
       var currentDiskPrice = findDiskPrice(currentDiskName, currentDiskRedundancy, disk.region)
       var fittingDiskPrice = findDiskPrice(fittingDiskName, currentDiskRedundancy, disk.region)
     } catch (err) {
+      console.log("Error while calculating the currentDiskPrice or fittingDiskPrice ", JSON.stringify(disk), JSON.stringify(currentDiskData));
       if (currentDiskData.tier != "Ultra") {
         continue
       }
@@ -869,7 +881,7 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
 
     }
     // Righsizing from Premium SSD to Premium SSD v2
-    else if (currentDiskData.tier === "StandardSSD" && premSsdV2Price != undefined && premSsdV2Price.pricePerUnit < fittingDiskPrice.pricePerUnit) {
+    else if ((currentDiskData.tier === "StandardSSD" || currentDiskData.tier === "Premium") && premSsdV2Price != undefined && premSsdV2Price.pricePerUnit < fittingDiskPrice.pricePerUnit) {
       monthlySavings = currentDiskPrice.pricePerUnit - premSsdV2Price.pricePerUnit
       newResourceType = "Premium SSD v2"
       newResourceTypeRedundancy = "LRS"
@@ -897,10 +909,12 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
     }
 
     tags = []
-    if (typeof(disk.tags) == 'object') {
-      _.each(Object.keys(disk.tags), function(key) {
-        tags.push([key, "=", disk.tags[key]].join(''))
-      })
+    if(disk.tags){
+      if (typeof(disk.tags) == 'object') {
+        _.each(Object.keys(disk.tags), function(key) {
+          tags.push([key, "=", disk.tags[key]].join(''))
+        })
+      }
     }
 
     recommendations.push({
@@ -945,7 +959,6 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
   }
 
   if (recommendations.length > 0) {
-    monthlySavings = monthlySavings.toFixed(2)
 
     recommendations[0].message = "Oversized disks are those that meet the following conditions within the last " + param_stats_lookback + " day(s):\n\n"
     if (param_min_used_disk_iops_pct != -1) {
@@ -979,7 +992,6 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
   ])
 EOS
 end
-
 
 ###############################################################################
 # Policy
@@ -1132,7 +1144,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
     header "Api-Version", "1.0"
   end
   result do

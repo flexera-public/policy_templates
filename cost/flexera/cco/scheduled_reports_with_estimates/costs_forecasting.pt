@@ -1,7 +1,7 @@
 name "Scheduled Report With Estimates"
 rs_pt_ver 20180301
 type "policy"
-short_description "This policy allows you to set up scheduled reports with estimates for the next 3 months that will provide summaries of cloud cost across all resources in the billing centers you specify, delivered to any email addresses you specify. The policy will report the following:
+short_description "**Deprecated: This policy is no longer being updated.** This policy allows you to set up scheduled reports with estimates for the next 3 months that will provide summaries of cloud cost across all resources in the billing centers you specify, delivered to any email addresses you specify. The policy will report the following:
 
 Chart of the previous 6 months of utilization based on [category](https://docs.rightscale.com/optima/reference/rightscale_dimensions.html#category).
 Daily average cost across the last week and last month.
@@ -15,33 +15,33 @@ _Note 2: The account you apply the policy to is unimportant as Optima metrics ar
 
 See [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/scheduled_reports_with_estimates) for more details"
 long_description ""
-severity "low"
 category "Cost"
-tenancy "single"
+severity "low"
 default_frequency "monthly"
 info(
-  version: "1.6",
+  version: "2.0.1",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization",
-  publish: "false"
+  publish: "false",
+  deprecated: "true"
 )
+
+###############################################################################
+# Parameters
+###############################################################################
 
 parameter "param_email" do
   type "list"
   label "Email List"
+  category "Policy Settings"
   description "Email addresses of the recipients you wish to notify"
-end
-
-parameter "param_billing_centers" do
-  type "list"
-  label "Billing Center List"
-  description "List of Billing Center names you want to report on.  Leave blank to select all top level Billing Centers."
 end
 
 parameter "param_cost_metric" do
   type "string"
   label "Cost Metric"
+  category "Policy Settings"
   allowed_values "Unamortized Unblended", "Amortized Unblended", "Unamortized Blended", "Amortized Blended"
   default "Unamortized Unblended"
   description "Select the cost metric for your report.  See the README file for more details"
@@ -50,12 +50,33 @@ end
 parameter "param_graph_dimension" do
   type "string"
   label "Graph Dimension"
+  category "Policy Settings"
   allowed_values "Category", "Instance Type", "Region", "Resource Group", "Resource Type", "Service", "Usage Type", "Usage Unit", "Cloud Vendor", "Cloud Vendor Account", "Cloud Vendor Account Name"
   default "Category"
   description "Select which dimension you'd like to be broken out on the graph in the report."
 end
 
-auth "auth_rs", type: "rightscale"
+parameter "param_billing_centers" do
+  type "list"
+  label "Billing Center List"
+  category "Filters"
+  description "List of Billing Center names you want to report on.  Leave blank to select all top level Billing Centers."
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
 
 datasource "ds_currency_reference" do
   request do
@@ -67,7 +88,7 @@ end
 
 datasource "ds_currency_code" do
   request do
-    auth $auth_rs
+    auth $auth_flexera
     host rs_optima_host
     path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
     header "Api-Version", "0.1"
@@ -82,7 +103,7 @@ end
 
 datasource "ds_billing_centers" do
   request do
-    auth $auth_rs
+    auth $auth_flexera
     host rs_optima_host
     path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
     header "Api-Version", "1.0"
@@ -104,12 +125,12 @@ end
 
 datasource "ds_current_week_costs" do
   request do
-    run_script $js_current_week_cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $ds_billing_centers
+    run_script $js_current_week_costs, $ds_billing_centers, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host
   end
 end
 
-script "js_current_week_cost_request", type: "javascript" do
-  parameters "param_billing_centers", "param_cost_metric", "rs_org_id", "rs_optima_host", "ds_billing_centers"
+script "js_current_week_costs", type: "javascript" do
+  parameters "ds_billing_centers", "param_billing_centers", "param_cost_metric", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
     var range = "daily";
@@ -179,7 +200,7 @@ script "js_current_week_cost_request", type: "javascript" do
     }
 
     var request = {
-      auth:  'auth_rs',
+      auth:  'auth_flexera',
       host:  rs_optima_host,
       scheme: 'https',
       verb: 'POST',
@@ -195,12 +216,12 @@ end
 
 datasource "ds_previous_week_costs" do
   request do
-    run_script $js_previous_week_cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $ds_billing_centers
+    run_script $js_previous_week_costs, $ds_billing_centers, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host
   end
 end
 
-script "js_previous_week_cost_request", type: "javascript" do
-  parameters "param_billing_centers", "param_cost_metric", "rs_org_id", "rs_optima_host", "ds_billing_centers"
+script "js_previous_week_costs", type: "javascript" do
+  parameters "ds_billing_centers", "param_billing_centers", "param_cost_metric", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
     var range = "daily";
@@ -270,7 +291,7 @@ script "js_previous_week_cost_request", type: "javascript" do
     }
 
     var request = {
-      auth:  'auth_rs',
+      auth:  'auth_flexera',
       host:  rs_optima_host,
       scheme: 'https',
       verb: 'POST',
@@ -286,12 +307,12 @@ end
 
 datasource "ds_current_month_costs" do
   request do
-    run_script $js_current_month_cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $ds_billing_centers
+    run_script $js_current_month_costs, $ds_billing_centers, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host
   end
 end
 
-script "js_current_month_cost_request", type: "javascript" do
-  parameters "param_billing_centers", "param_cost_metric", "rs_org_id", "rs_optima_host", "ds_billing_centers"
+script "js_current_month_costs", type: "javascript" do
+  parameters "ds_billing_centers", "param_billing_centers", "param_cost_metric", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
     var range = "monthly";
@@ -360,7 +381,7 @@ script "js_current_month_cost_request", type: "javascript" do
     }
 
     var request = {
-      auth:  'auth_rs',
+      auth:  'auth_flexera',
       host:  rs_optima_host,
       scheme: 'https',
       verb: 'POST',
@@ -376,12 +397,12 @@ end
 
 datasource "ds_previous_month_costs" do
   request do
-    run_script $js_previous_month_cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $ds_billing_centers
+    run_script $js_previous_month_costs, $ds_billing_centers, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host
   end
 end
 
-script "js_previous_month_cost_request", type: "javascript" do
-  parameters "param_billing_centers", "param_cost_metric", "rs_org_id", "rs_optima_host", "ds_billing_centers"
+script "js_previous_month_costs", type: "javascript" do
+  parameters "ds_billing_centers", "param_billing_centers", "param_cost_metric", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
     var range = "monthly";
@@ -450,7 +471,7 @@ script "js_previous_month_cost_request", type: "javascript" do
     }
 
     var request = {
-      auth:  'auth_rs',
+      auth:  'auth_flexera',
       host:  rs_optima_host,
       scheme: 'https',
       verb: 'POST',
@@ -465,11 +486,11 @@ script "js_previous_month_cost_request", type: "javascript" do
 end
 
 datasource "ds_report" do
-  run_script $js_report, $ds_current_week_costs, $ds_previous_week_costs, $ds_current_month_costs, $ds_previous_month_costs, $param_cost_metric, $ds_currency_code, $ds_currency_reference
+  run_script $js_report, $ds_current_week_costs, $ds_previous_week_costs, $ds_current_month_costs, $ds_previous_month_costs, $ds_currency_code, $ds_currency_reference, $param_cost_metric
 end
 
 script "js_report", type: "javascript" do
-  parameters "ds_current_week_costs", "ds_previous_week_costs", "ds_current_month_costs", "ds_previous_month_costs", "param_cost_metric", "ds_currency_code", "ds_currency_reference"
+  parameters "ds_current_week_costs", "ds_previous_week_costs", "ds_current_month_costs", "ds_previous_month_costs", "ds_currency_code", "ds_currency_reference", "param_cost_metric"
   result "report"
   code <<-EOS
     // create a map to use in the request metric field.
@@ -594,12 +615,12 @@ end
 
 datasource "ds_previous_six_month_costs" do
   request do
-    run_script $js_six_month_cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $ds_billing_centers, $param_graph_dimension
+    run_script $js_previous_six_month_costs, $ds_billing_centers, $param_graph_dimension, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host
   end
 end
 
-script "js_six_month_cost_request", type: "javascript" do
-  parameters "param_billing_centers", "param_cost_metric", "rs_org_id", "rs_optima_host", "ds_billing_centers", "param_graph_dimension"
+script "js_previous_six_month_costs", type: "javascript" do
+  parameters "ds_billing_centers", "param_graph_dimension", "param_billing_centers", "param_cost_metric", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
     // format the date for the `monthly` API
@@ -669,7 +690,7 @@ script "js_six_month_cost_request", type: "javascript" do
     }
 
     var request = {
-      auth:  'auth_rs',
+      auth:  'auth_flexera',
       host:  rs_optima_host,
       scheme: 'https',
       verb: 'POST',
@@ -684,11 +705,11 @@ script "js_six_month_cost_request", type: "javascript" do
 end
 
 datasource "ds_generated_report" do
-  run_script $js_generate_report, $ds_previous_six_month_costs, $param_cost_metric, $param_billing_centers, $ds_report, $param_graph_dimension, $ds_currency_code, $ds_currency_reference
+  run_script $js_generate_report, $ds_previous_six_month_costs, $ds_report, $ds_currency_code, $ds_currency_reference, $param_graph_dimension, $param_cost_metric, $param_billing_centers
 end
 
 script "js_generate_report", type: "javascript" do
-  parameters "ds_previous_six_month_costs", "param_cost_metric", "param_billing_centers", "ds_report", "param_graph_dimension", "ds_currency_code", "ds_currency_reference"
+  parameters "ds_previous_six_month_costs", "ds_report", "ds_currency_code", "ds_currency_reference", "param_graph_dimension", "param_cost_metric", "param_billing_centers"
   result "report"
   code <<-EOS
     // format the date for the `monthly` API
@@ -968,11 +989,12 @@ script "js_generate_report_with_estimates", type: "javascript" do
   report = newreport
 EOS
 end
-escalation "escalation_send_email" do
-  email $param_email
-end
 
-policy "policy_scheduled_report" do
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_scheduled_report" do
   validate $ds_generated_report_with_estimates do
     summary_template "{{ rs_org_name }} (Org ID: {{ rs_org_id }}): Full Cost Scheduled Report with Estimated Cost"
     detail_template <<-EOS
@@ -983,7 +1005,7 @@ policy "policy_scheduled_report" do
 ### Chart Dimension: {{ parameters.param_graph_dimension }}
 ### Bill Currency: {{ data.currencyCode }}
 
-![Spending Overview Chart](https://image-charts.com/chart?{{ data.chartType }}&{{ data.chartSize }}&{{ data.chartTitle }}&{{ data.chartAxis }}&{{ data.chartXAxis }}&{{ data.chartAxisFormat }}&{{ data.chartData }}&{{ data.chartCategories }}&{{ data.chartColors }}&{{ data.chartKeyLocation }}&{{ data.chartExtension }} "Spending Overview Chart")
+![Spending Overview Chart](https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id={{ rs_org_id }}&rs_project_id={{ rs_project_id }}&{{ data.chartType }}&{{ data.chartSize }}&{{ data.chartTitle }}&{{ data.chartAxis }}&{{ data.chartXAxis }}&{{ data.chartAxisFormat }}&{{ data.chartData }}&{{ data.chartCategories }}&{{ data.chartColors }}&{{ data.chartKeyLocation }}&{{ data.chartExtension }} "Spending Overview Chart")
 
 |Range|Daily Average|Previous|Current (incomplete)|
 |:---:|------------:|-------:|-------------------:|
@@ -997,7 +1019,18 @@ For more information on this report, please view the [README](https://github.com
 ___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }}
 EOS
-    escalate $escalation_send_email
     check eq(0, 1)
+    escalate $esc_email
   end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
 end

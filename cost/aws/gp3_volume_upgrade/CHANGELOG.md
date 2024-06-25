@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.4.2
+
+- Added `deprecated` field to policy metadata. Functionality is unchanged.
+
 ## v4.4.1
 
 - Added default value for parameters that do not require user input

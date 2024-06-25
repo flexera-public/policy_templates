@@ -1,4 +1,8 @@
-# Google Rightsize VM Recommender
+# Changelog
+
+## v3.1.1
+
+- Idle VM Instances incident now includes a `Recommended Resource Type` field with a value of `Delete VM Instance` for ease of analyzing recommendations from the Flexera Optimization dashboard
 
 ## v3.1
 

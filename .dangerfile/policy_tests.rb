@@ -5,6 +5,78 @@
 # Methods: Policy
 ###############################################################################
 
+### Deprecated test
+# Utility method. Returns true if policy is deprecated and false if it isn't
+def policy_deprecated?(file)
+  pp = PolicyParser.new
+  pp.parse(file)
+
+  info = pp.parsed_info
+
+  deprecated = false
+
+  if !info[:deprecated].nil?
+    deprecated = true if info[:deprecated].downcase == "true"
+  end
+
+  return true if deprecated
+  return false
+end
+
+### Deprecated without info flag test
+# Returns true if policy is described as deprecated in short_description
+# but lacks deprecated field in info() block
+def policy_missing_deprecated_field?(file)
+  pp = PolicyParser.new
+  pp.parse(file)
+
+  info = pp.parsed_info
+  short_description = pp.parsed_short_description
+
+  fail_message = ""
+
+  if short_description.downcase.include?("deprecated")
+    if info[:deprecated].nil?
+      fail_message = "Policy is deprecated but has no `deprecated` field in the info() block. Please add the following line to the info() block: deprecated: \"true\""
+    elsif info[:deprecated].downcase != "true"
+      fail_message = "Policy is deprecated but `deprecated` field in the info() block is not set to `true`. Please set this field to `true`."
+    end
+  else
+    if !info[:deprecated].nil?
+      if info[:deprecated].downcase == "true"
+        fail_message = "Policy is deprecated does not mention this in the `short_description`. Please add the following to the `short_description`:\n\n`**Deprecated: This policy is no longer being updated.**`"
+      end
+    end
+  end
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### Nested directory test
+# Return false if policy is correctly sorted within the directory structure
+def policy_bad_directory?(file)
+  fail_message = ""
+  parts = file.split('/')
+
+  valid_base_dirs = ["automation", "compliance", "cost", "operational", "saas", "security", "tools"]
+
+  if !valid_base_dirs.include?(parts[0])
+    fail_message += "Policy is not located in a valid base directory. All policies should be in one of the following directories: " + valid_base_dirs.join(', ') + "\n\n"
+  end
+
+  if (parts[1].include?('.pt') || parts[2].include?('.pt')) && parts[0] != "tools"
+    fail_message += "Policy is not located within a subdirectory specific to the cloud provider or service it is applicable for. For example, AWS cost policies should be in the `/cost/aws` subdirectory, Azure operational policies in the `/operational/azure` subdirectory, etc.\n\n"
+  end
+
+  if (parts[1] == 'flexera' && parts[3].include?('.pt')) && parts[0] != "tools"
+    fail_message += "Flexera policy is not contained in a subdirectory specific to the Flexera service it is for. For example, Flexera CCO cost policies should be in the `/cost/flexera/cco` subdirectory.\n\n"
+  end
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
 ### Unmodified README test
 # Verify that .pt file also has an updated README
 def policy_unmodified_readme?(file, changed_readme_files)
@@ -47,11 +119,19 @@ end
 
 ### Policy syntax error test
 # Return false if no syntax errors are found using fpt.
-def policy_fpt_syntax_error?(file)
+def policy_fpt_syntax_error?(file, meta_policy = "child")
+  fail_message = ""
   fpt = `[ -x ./fpt ] && ./fpt check #{file} | grep -v Checking`
 
-  # Return errors if any are found. Otherwise, return false
-  return "fpt has detected errors:\n\n#{fpt}" if !fpt.empty?
+  if !fpt.empty?
+    if meta_policy == "meta"
+      fail_message = "fpt has detected errors in meta policy. Please fix the issues in the child policy or in the meta policy generation tools that are causing these errors:\n\n#{fpt}"
+    else
+      fail_message = "fpt has detected errors in policy:\n\n#{fpt}"
+    end
+  end
+
+  return fail_message.strip if !fail_message.empty?
   return false
 end
 
@@ -132,7 +212,7 @@ def policy_name_changed?(file)
 
   diff.patch.each_line do |line|
     if line.start_with?('-name "')
-      fail_message = "Policy's name has been changed. Please ensure that this is intentional and that the README has been updated accordingly. Once this change is merged, the old version of the policy may need to be manually removed from the public catalog."
+      fail_message = "Policy's name has been changed. Please ensure that this is intentional and that the README has been updated accordingly."
       break
     end
   end
@@ -156,7 +236,8 @@ def policy_bad_indentation?(file)
   define_block = false
 
   policy_code.each_line.with_index do |line, index|
-    break if line.strip.start_with?('# Meta Policy [alpha]')
+    break if line.strip.start_with?('# Meta Policy [alpha]') # Break out of definition when enounter meta policy code at the bottom
+    next if line.strip.start_with?('#') # Skip comment lines
 
     line_number = index + 1
     indentation = line.match(/\A\s*/).to_s.length
@@ -405,7 +486,7 @@ def policy_readme_missing_credentials?(file)
       pol_flexera_credential = true if line.include?("flexera")
       pol_aws_credential = true if line.include?("aws")
       pol_aws_credential = true if line.include?("amazon")
-      pol_azure_credential = true if line.include?("azure")
+      pol_azure_credential = true if line.include?("azure") && !line.include?("china")
       pol_google_credential = true if line.include?("google")
       pol_google_credential = true if line.include?("gcp")
       pol_google_credential = true if line.include?("gce")
@@ -432,13 +513,13 @@ def policy_readme_missing_credentials?(file)
 
     readme_flexera_credential = true if line.strip.match?(flexera_regex)
     readme_aws_credential = true if line.strip.match?(aws_regex)
-    readme_azure_credential = true if line.strip.match?(azure_regex)
+    readme_azure_credential = true if line.strip.match?(azure_regex) && !line.include?("Azure China")
     readme_google_credential = true if line.strip.match?(google_regex)
     readme_oracle_credential = true if line.strip.match?(oracle_regex)
   end
 
   # Check for mismatches between policy and README.md
-  if pol_flexera_credential && !readme_flexera_credential && !file.start_with("saas/fsm/")
+  if pol_flexera_credential && !readme_flexera_credential && !file.start_with?("saas/fsm/")
     fail_message += "Policy contains Flexera credential but this credential either missing from or incorrectly formatted in the associated `README.md` file.\n\n"
   end
 
@@ -850,6 +931,7 @@ def policy_ds_js_name_mismatch?(file)
   ds_name = nil
   js_name = nil
   line_number = nil
+  found_mismatches = []
 
   policy_code.each_line.with_index do |line, index|
     # Stop doing the check once we hit the Meta Policy section
@@ -867,7 +949,13 @@ def policy_ds_js_name_mismatch?(file)
 
       if ds_name != nil && js_name != nil
         if ds_name[3..-1] != js_name[3..-1]
-          fail_message += "Line #{line_number.to_s}: #{ds_name} / #{js_name}\n"
+          found_mismatches << {
+            line_number: line_number,
+            ds_name: ds_name[3..-1],
+            js_name: js_name[3..-1]
+          }
+
+          #fail_message += "Line #{line_number.to_s}: #{ds_name} / #{js_name}\n"
         end
       end
 
@@ -876,6 +964,19 @@ def policy_ds_js_name_mismatch?(file)
       js_name = nil
       line_number = nil
     end
+  end
+
+  # Filter out mismatches where the javascript block is referenced by multiple datasources
+  js_name_counts = found_mismatches.each_with_object(Hash.new(0)) do |item, counts|
+    counts[item[:js_name]] += 1
+  end
+
+  filtered_mismatches = found_mismatches.reject do |item|
+    js_name_counts[item[:js_name]] > 1
+  end
+
+  filtered_mismatches.each do |mismatch|
+    fail_message += "Line #{mismatch[:line_number]}: ds_#{mismatch[:ds_name]} / js_#{mismatch[:js_name]}\n"
   end
 
   fail_message = "Datasources and scripts with mismatched names found. These names should match; for example, a datasource named ds_currency should be paired with a script named js_currency. This convention should only be ignored when the same script is called by multiple datasources. The following datasource/script pairs have mismatched names:\n\n" + fail_message if !fail_message.empty?
@@ -897,7 +998,7 @@ def policy_run_script_incorrect_order?(file)
     line_number = index + 1
 
     # Stop doing the check if we've reached the meta policy section
-    break if line.strip.start_with?('# Meta Policy [alpha]')
+    break if line.strip.start_with?('# Meta Policy [alpha]') # Break out of definition when enounter meta policy code at the bottom
 
     if line.strip.start_with?("datasource ") && line.strip.end_with?('do')
       name_test = line.match(/"([^"]*)"/)
@@ -905,7 +1006,7 @@ def policy_run_script_incorrect_order?(file)
     end
 
     disordered = false
-    iter_index = -5
+    val_index = -5
 
     if line.strip.start_with?("run_script")
       # Store a list of all of the parameters for the run_script
@@ -914,18 +1015,18 @@ def policy_run_script_incorrect_order?(file)
       # Remove the first item because it's just the name of the script itself
       script_name = parameters.shift
 
-      iter_found = false      # Whether we've found a val(iter_item, "") parameter
+      val_found = false       # Whether we've found a iter_item or val() parameter
       ds_found = false        # Whether we've found a datasource parameter
       param_found = false     # Whether we've found a parameter parameter
       constant_found = false  # Whether we've found a constant, like rs_org_id
       value_found = false     # Whether we've found a raw value, like a number or string
 
       parameters.each_with_index do |parameter, index|
-        if parameter.start_with?("val(") && parameter.include?("iter_item")
-          iter_found = true
-          iter_index = index
+        if parameter.include?("iter_item") || parameter.include?("val(")
+          val_found = true
+          val_index = index
           disordered = true if ds_found || param_found || constant_found || value_found
-        elsif index == iter_index + 1
+        elsif index == val_index + 1
           # Do nothing, since splitting by , is going to split functions like val() into two entries
         elsif parameter.start_with?('$ds')
           ds_found = true
@@ -938,7 +1039,7 @@ def policy_run_script_incorrect_order?(file)
           disordered = true if value_found
         else # Assume a raw value, like a number or string, if none of the above
           value_found = true
-          iter_index = index if parameter.start_with?("val(")
+          val_index = index if parameter.start_with?("val(")
         end
       end
     end
@@ -994,7 +1095,7 @@ def policy_block_fields_incorrect_order?(file, block_type)
       policy_code.each_line.with_index do |line, index|
         line_number = index + 1
 
-        break if line.strip.start_with?('# Meta Policy [alpha]')
+        break if line.strip.start_with?('# Meta Policy [alpha]') # Break out of definition when enounter meta policy code at the bottom
 
         policy_id = line.split('"')[1] if line.start_with?("policy ")
 
@@ -1062,7 +1163,7 @@ def policy_missing_recommendation_fields?(file, field_type)
   end
 
   if field_type == "recommended"
-    required_fields = [ "resourceType", "resourceName", "region", "tags" ]
+    required_fields = [ "resourceName", "region", "tags" ]
   end
 
   if !info[:recommendation_type].nil?
@@ -1132,7 +1233,7 @@ def policy_bad_comma_spacing?(file)
   policy_code.each_line.with_index do |line, index|
     line_number = index + 1
 
-    if line.include?(",") && !line.include?("allowed_pattern") && !line.include?('= ","') && !line.include?("(',')") && !line.include?('(",")')
+    if line.include?(",") && !line.include?("allowed_pattern") && !line.include?('= ","') && !line.include?("(',')") && !line.include?('(",")') && !line.include?("jq(")
       if line.strip.match(/,\s{2,}/) || line.strip.match(/\s,/) || line.strip.match(/,[^\s]/)
         fail_message += "Line #{line_number.to_s}: Possible invalid spacing between comma-separated items found.\nComma separated items should be organized as follows, with a single space following each comma: apple, banana, pear\n\n"
       end
@@ -1145,9 +1246,9 @@ def policy_bad_comma_spacing?(file)
   return false
 end
 
-### Github Source File Test
-# Return false if all datasources pointed to assets at raw.githubusercontent.com are valid
-def policy_bad_github_datasources?(file)
+### Outdated Links
+# Return false if no outdated links are found
+def policy_outdated_links?(file)
   # Store contents of file for direct analysis
   policy_code = File.read(file)
 
@@ -1159,6 +1260,10 @@ def policy_bad_github_datasources?(file)
 
   policy_code.each_line.with_index do |line, index|
     line_number = index + 1
+
+    if line.include?("https://image-charts.com")
+      fail_message += "Line #{line_number.to_s}: Direct link to `image-charts.com` found. Please replace `https://image-charts.com/chart?` with `https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id={{ rs_org_id }}&rs_project_id={{ rs_project_id }}&`.\n\n"
+    end
 
     if line.start_with?("datasource ")
       within_datasource = true
@@ -1189,7 +1294,7 @@ def policy_bad_github_datasources?(file)
     end
   end
 
-  fail_message = "Invalid file paths found in datasources:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "Invalid links found:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false

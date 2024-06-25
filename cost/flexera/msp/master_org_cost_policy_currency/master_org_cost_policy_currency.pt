@@ -8,15 +8,15 @@ Total cost during previous full week (Monday-Sunday) and previous full month.
 Total cost during current (incomplete) week and month.
 We recommend running this policy on a weekly cadence and applying it to your master account.
 _Note 1: The last 3 days of data in the current week or month will contain incomplete data._
-_Note 2: The account you apply the policy to is unimportant as Optima metrics are scoped to the Org._
+_Note 2: The account you apply the policy to is unimportant as Flexera CCO metrics are scoped to the Org._
 _Note 3: Exchange rates are calculated at execution time using [https://exchangeratesapi.io/](https://exchangeratesapi.io/)._
 See [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/msp/master_org_cost_policy_currency) for more details"
 long_description ""
 severity "low"
 category "Cost"
-tenancy "single"
+default_frequency "weekly"
 info(
-  version: "1.5",
+  version: "2.0.0",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Managed Service Provider",
@@ -24,73 +24,78 @@ info(
 )
 
 ###############################################################################
-# Permissions
-###############################################################################
-
-###############################################################################
 # Parameters
 ###############################################################################
+
 parameter "param_email" do
   type "list"
+  category "Policy Settings"
   label "Email List"
   description "Email addresses of the recipients you wish to notify"
+  default []
 end
 
 parameter "param_exclude_organizations" do
   type "list"
+  category "Filters"
   label "Excluded Organizations"
-  description "Names of organizations to exclude"
+  description "Names of organizations to exclude."
+  default []
 end
 
 parameter "param_cost_metric" do
   type "string"
+  category "Policy Settings"
   label "Cost Metric"
-  allowed_values "Unamortized Unblended","Amortized Unblended","Unamortized Blended","Amortized Blended"
-  default "Unamortized Unblended"
   description "Select the cost metric for your report.  See the README file for more details"
+  allowed_values "Unamortized Unblended", "Amortized Unblended", "Unamortized Blended", "Amortized Blended"
+  default "Unamortized Unblended"
 end
 
 parameter "param_graph_dimension" do
   type "string"
+  category "Policy Settings"
   label "Graph Dimension"
-  allowed_values "Category","Instance Type","Region","Resource Group","Resource Type","Service","Usage Type","Usage Unit","Cloud Vendor","Cloud Vendor Account","Cloud Vendor Account Name"
-  default "Category"
   description "Select which dimension you'd like to be broken out on the graph in the report."
+  allowed_values "Category", "Instance Type", "Region", "Resource Group", "Resource Type", "Service", "Usage Type", "Usage Unit", "Cloud Vendor", "Cloud Vendor Account", "Cloud Vendor Account Name"
+  default "Category"
 end
 
 parameter "param_final_currency" do
   type "string"
+  category "Policy Settings"
   label "Currency"
+  description "Select the currency to convert all values to"
   allowed_values "USD", "EUR", "GBP", "JPY", "CHF", "CAD", "AUD", "NZD", "ZAR", "CNY"
   default "USD"
-  description "Select the currency to convert all values to"
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-auth "auth_rs", type: "rightscale"
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
 
 ###############################################################################
-# Resources
-###############################################################################
-
-###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
 datasource "ds_session" do
   request do
-    auth $auth_rs
+    auth $auth_flexera
     verb "GET"
     host rs_cm_host
     path "/api/sessions"
-    header "X-Api-Version", "1.5"
     query "view", "whoami"
+    header "X-Api-Version", "1.5"
   end
   result do
-    field "userid", join(["/grs/users/",last(split(first(jmes_path(response, "links[?rel == 'user'].href")),'/'))])
+    field "userid", join(["/grs/users/", last(split(first(jmes_path(response, "links[?rel == 'user'].href")), '/'))])
   end
 end
 
@@ -101,193 +106,50 @@ datasource "ds_current_user_organizations" do
   result do
     collect jmes_path(response, "orgs") do
       field "href", jmes_path(col_item, "href")
-      field "org_id", last(split(jmes_path(col_item, "href"),"/"))
+      field "org_id", last(split(jmes_path(col_item, "href"), "/"))
       field "name", jmes_path(col_item, "name")
       field "cluster", jmes_path(col_item, "starts_with(legacy.account_url, 'https://us-3') && '3' || starts_with(legacy.account_url, 'https://us-4') && '4'")
     end
   end
 end
 
-datasource "ds_filtered_rejected_organizations" do
-  run_script $js_filter_rejected_organizations, $ds_current_user_organizations, $param_exclude_organizations
-end
-
-datasource "ds_filtered_user_organizations" do
-  run_script $js_filter_organizations, $ds_filtered_rejected_organizations, $ds_currency_code, $ds_currency_conversion
-end
-
-datasource "ds_currency_reference" do
-  request do
-    host "raw.githubusercontent.com"
-    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
-    header "User-Agent", "RS Policies"
-  end
-end
-
-datasource "ds_currency_conversion" do
-  request do
-    host "api.exchangeratesapi.io"
-    path "/latest"
-    header "User-Agent", "RS Policies"
-    query "base", $param_final_currency
-  end
-end
-
-datasource "ds_currency_code" do
-  iterate $ds_filtered_rejected_organizations
-  request do
-    auth $auth_rs
-    host rs_optima_host
-    path join(["/bill-analysis/orgs/",val(iter_item,"org_id"),"/settings/currency_code"])
-    header "Api-Version", "0.1"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "json"
-    field "org_id", val(iter_item,"org_id")
-    field "org_name", val(iter_item, "name")
-    field "id", jmes_path(response,"id")
-    field "value", jmes_path(response,"value")
-  end
-end
-
-datasource "ds_billing_centers" do
-  iterate $ds_filtered_user_organizations
-  request do
-    auth $auth_rs
-    host rs_optima_host
-    path join(["/analytics/orgs/",val(iter_item,"org_id"),"/billing_centers"])
-    header "Api-Version", "1.0"
-    header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "org_id", val(iter_item,"org_id")
-      field "href", jmes_path(col_item,"href")
-      field "id", jmes_path(col_item,"id")
-      field "name", jmes_path(col_item,"name")
-      field "parent_id", jmes_path(col_item,"parent_id")
-      field "ancestor_ids", jmes_path(col_item,"ancestor_ids")
-      field "allocation_table", jmes_path(col_item,"allocation_table")
-    end
-  end
-end
-
-datasource "ds_current_week_costs" do
-  iterate $ds_filtered_user_organizations
-  request do
-    run_script $js_current_week_cost_request, $param_cost_metric, val(iter_item,"org_id"), rs_optima_host, $ds_billing_centers
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"rows[*]") do
-      field "metrics", jmes_path(col_item,"metrics")
-      field "org_id", val(iter_item,"org_id")
-    end
-  end
-end
-
-datasource "ds_previous_week_costs" do
-  iterate $ds_filtered_user_organizations
-  request do
-    run_script $js_previous_week_cost_request, $param_cost_metric, val(iter_item,"org_id"), rs_optima_host, $ds_billing_centers
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"rows[*]") do
-      field "metrics", jmes_path(col_item,"metrics")
-      field "org_id", val(iter_item,"org_id")
-    end
-  end
-end
-
-datasource "ds_current_month_costs" do
-  iterate $ds_filtered_user_organizations
-  request do
-    run_script $js_current_month_cost_request, $param_cost_metric, val(iter_item,"org_id"), rs_optima_host, $ds_billing_centers
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"rows[*]") do
-      field "metrics", jmes_path(col_item,"metrics")
-      field "org_id", val(iter_item,"org_id")
-    end
-  end
-end
-
-datasource "ds_previous_month_costs" do
-  iterate $ds_filtered_user_organizations
-  request do
-    run_script $js_previous_month_cost_request, $param_cost_metric, val(iter_item,"org_id"), rs_optima_host, $ds_billing_centers
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"rows[*]") do
-      field "metrics", jmes_path(col_item,"metrics")
-      field "org_id", val(iter_item,"org_id")
-    end
-  end
-end
-
-datasource "ds_report" do
-  run_script $js_report, $ds_current_week_costs, $ds_previous_week_costs, $ds_current_month_costs, $ds_previous_month_costs, $param_cost_metric, $ds_currency_code, $ds_currency_reference, $ds_currency_conversion, $ds_filtered_user_organizations, $param_final_currency
-end
-
-datasource "ds_previous_six_month_costs" do
-  iterate $ds_filtered_user_organizations
-  request do
-    run_script $js_six_month_cost_request, $param_cost_metric, val(iter_item,"org_id"), rs_optima_host, $ds_billing_centers, $param_graph_dimension
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"rows[*]") do
-      field "dimensions", jmes_path(col_item,"dimensions")
-      field "metrics", jmes_path(col_item,"metrics")
-      field "timestamp", jmes_path(col_item,"timestamp")
-      field "org_id", val(iter_item,"org_id")
-    end
-  end
-end
-
-datasource "ds_generated_report" do
-  run_script $js_generate_report, $ds_previous_six_month_costs, $param_cost_metric, $ds_report, $param_graph_dimension, $ds_currency_code, $ds_currency_reference, $ds_currency_conversion, $ds_filtered_user_organizations, $param_final_currency
-end
-
-
-###############################################################################
-# Scripts
-###############################################################################
 script "js_current_user_organizations", type: "javascript" do
   parameters "ds_session"
   result "request"
-  code <<-EOF
+  code <<-EOS
     var request = {
-      "auth": "auth_rs",
+      "auth": "auth_flexera",
       "verb": "GET",
       "host": "governance.rightscale.com",
       "path": ds_session["userid"],
       "headers": {"X-Api-Version": "2.0" },
       "query_params":{"view":"extended"}
     }
-  EOF
+  EOS
 end
 
-script "js_filter_rejected_organizations", type: "javascript" do
+datasource "ds_filtered_rejected_organizations" do
+  run_script $js_filtered_rejected_organizations, $ds_current_user_organizations, $param_exclude_organizations
+end
+
+script "js_filtered_rejected_organizations", type: "javascript" do
   parameters "ds_current_user_organizations", "param_exclude_organizations"
   result "results"
-  code <<-EOF
+  code <<-EOS
     var results = _.reject(ds_current_user_organizations, function(org){
       return _.contains(param_exclude_organizations, org["name"])
     })
-  EOF
+  EOS
 end
 
-script "js_filter_organizations", type: "javascript" do
-  parameters "ds_filtered_rejected_organizations","ds_currency_code","ds_currency_conversion"
+datasource "ds_filtered_user_organizations" do
+  run_script $js_filtered_user_organizations, $ds_filtered_rejected_organizations, $ds_currency_code, $ds_currency_conversion
+end
+
+script "js_filtered_user_organizations", type: "javascript" do
+  parameters "ds_filtered_rejected_organizations", "ds_currency_code", "ds_currency_conversion"
   result "results"
-  code <<-EOF
+  code <<-EOS
     var results = [];
     _.each(ds_filtered_rejected_organizations, function(org){
       var org_id = org["org_id"]
@@ -307,11 +169,84 @@ script "js_filter_organizations", type: "javascript" do
         conversion_rate: conversion_rate
       })
     })
-  EOF
+  EOS
 end
 
-script "js_current_week_cost_request", type: "javascript" do
-  parameters "param_cost_metric", "rs_org_id", "rs_optima_host", "ds_billing_centers"
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_conversion" do
+  request do
+    host "api.exchangeratesapi.io"
+    path "/latest"
+    query "base", $param_final_currency
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  iterate $ds_filtered_rejected_organizations
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", val(iter_item, "org_id"), "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    field "org_id", val(iter_item, "org_id")
+    field "org_name", val(iter_item, "name")
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_billing_centers" do
+  iterate $ds_filtered_user_organizations
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", val(iter_item, "org_id"), "/billing_centers"])
+    query "view", "allocation_table"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "org_id", val(iter_item, "org_id")
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+      field "ancestor_ids", jmes_path(col_item, "ancestor_ids")
+      field "allocation_table", jmes_path(col_item, "allocation_table")
+    end
+  end
+end
+
+datasource "ds_current_week_costs" do
+  iterate $ds_filtered_user_organizations
+  request do
+    run_script $js_current_week_costs, val(iter_item, "org_id"), $ds_billing_centers, $param_cost_metric, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "metrics", jmes_path(col_item, "metrics")
+      field "org_id", val(iter_item, "org_id")
+    end
+  end
+end
+
+script "js_current_week_costs", type: "javascript" do
+  parameters "rs_org_id", "ds_billing_centers", "param_cost_metric", "rs_optima_host"
   result "request"
   code <<-EOS
     var range = "daily";
@@ -345,10 +280,10 @@ script "js_current_week_cost_request", type: "javascript" do
 
     // create a map to use in the request metric field.
     var cost_metric = {
-      "Unamortized Unblended":"cost_nonamortized_unblended_adj",
-      "Amortized Unblended":"cost_amortized_unblended_adj",
+      "Unamortized Unblended": "cost_nonamortized_unblended_adj",
+      "Amortized Unblended": "cost_amortized_unblended_adj",
       "Unamortized Blended": "cost_nonamortized_blended_adj",
-      "Amortized Blended":"cost_amortized_blended_adj"
+      "Amortized Blended": "cost_amortized_blended_adj"
     }
 
     var start_at = "";
@@ -357,7 +292,7 @@ script "js_current_week_cost_request", type: "javascript" do
     // start_at beginning of week
     start_at = getFormattedDailyDate(getMonday(new Date()))
     // end_at to end of week
-    end_at = getFormattedDailyDate(addDays(new Date(now.setDate((now.getDate() + (6 + (8 - now.getDay())) % 7))),1))
+    end_at = getFormattedDailyDate(addDays(new Date(now.setDate((now.getDate() + (6 + (8 - now.getDay())) % 7))), 1))
 
     var billing_center_ids = []
     var org_billing_centers = _.filter(ds_billing_centers, function(bc){ return bc.org_id == rs_org_id })
@@ -365,16 +300,16 @@ script "js_current_week_cost_request", type: "javascript" do
     billing_center_ids = _.map(top_billing_centers, function(value, key){ return value.id });
 
     var body = {
-      "dimensions":[]
-      "granularity":"day",
-      "start_at": start_at ,
-      "end_at": end_at
-      "metrics":[cost_metric[param_cost_metric]],
+      "dimensions": [],
+      "granularity": "day",
+      "start_at": start_at,
+      "end_at": end_at,
+      "metrics": [cost_metric[param_cost_metric]],
       "billing_center_ids": billing_center_ids
     }
 
     var request = {
-      auth:  'auth_rs',
+      auth:  'auth_flexera',
       host:  rs_optima_host,
       scheme: 'https',
       verb: 'POST',
@@ -388,8 +323,22 @@ script "js_current_week_cost_request", type: "javascript" do
   EOS
 end
 
-script "js_previous_week_cost_request", type: "javascript" do
-  parameters "param_cost_metric", "rs_org_id", "rs_optima_host", "ds_billing_centers"
+datasource "ds_previous_week_costs" do
+  iterate $ds_filtered_user_organizations
+  request do
+    run_script $js_previous_week_costs, val(iter_item, "org_id"), $ds_billing_centers, $param_cost_metric, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "metrics", jmes_path(col_item, "metrics")
+      field "org_id", val(iter_item, "org_id")
+    end
+  end
+end
+
+script "js_previous_week_costs", type: "javascript" do
+  parameters "rs_org_id", "ds_billing_centers", "param_cost_metric", "rs_optima_host"
   result "request"
   code <<-EOS
     var range = "daily";
@@ -423,17 +372,17 @@ script "js_previous_week_cost_request", type: "javascript" do
 
     // create a map to use in the request metric field.
     var cost_metric = {
-      "Unamortized Unblended":"cost_nonamortized_unblended_adj",
-      "Amortized Unblended":"cost_amortized_unblended_adj",
+      "Unamortized Unblended": "cost_nonamortized_unblended_adj",
+      "Amortized Unblended": "cost_amortized_unblended_adj",
       "Unamortized Blended": "cost_nonamortized_blended_adj",
-      "Amortized Blended":"cost_amortized_blended_adj"
+      "Amortized Blended": "cost_amortized_blended_adj"
     }
 
     var start_at = "";
     var end_at = "";
     var now = new Date();
     // end_at to end of last week and set time to sunday
-    end_at = getFormattedDailyDate(addDays(new Date(now.setDate(now.getDate() - now.getDay())),1))
+    end_at = getFormattedDailyDate(addDays(new Date(now.setDate(now.getDate() - now.getDay())), 1))
     // start_at beginning of last week, get sunday(end_at) and subtract 6
     start_at = getFormattedDailyDate(new Date(now.setDate(now.getDate() - 6)))
 
@@ -445,14 +394,14 @@ script "js_previous_week_cost_request", type: "javascript" do
     var body = {
       "dimensions":[]
       "granularity":"day",
-      "start_at": start_at ,
+      "start_at": start_at,
       "end_at": end_at
       "metrics":[cost_metric[param_cost_metric]],
       "billing_center_ids": billing_center_ids
     }
 
     var request = {
-      auth:  'auth_rs',
+      auth:  'auth_flexera',
       host:  rs_optima_host,
       scheme: 'https',
       verb: 'POST',
@@ -466,8 +415,22 @@ script "js_previous_week_cost_request", type: "javascript" do
   EOS
 end
 
-script "js_current_month_cost_request", type: "javascript" do
-  parameters "param_cost_metric", "rs_org_id", "rs_optima_host", "ds_billing_centers"
+datasource "ds_current_month_costs" do
+  iterate $ds_filtered_user_organizations
+  request do
+    run_script $js_current_month_costs, val(iter_item, "org_id"), $ds_billing_centers, $param_cost_metric, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "metrics", jmes_path(col_item, "metrics")
+      field "org_id", val(iter_item, "org_id")
+    end
+  end
+end
+
+script "js_current_month_costs", type: "javascript" do
+  parameters "rs_org_id", "ds_billing_centers", "param_cost_metric", "rs_optima_host"
   result "request"
   code <<-EOS
     var range = "monthly";
@@ -501,10 +464,10 @@ script "js_current_month_cost_request", type: "javascript" do
 
     // create a map to use in the request metric field.
     var cost_metric = {
-      "Unamortized Unblended":"cost_nonamortized_unblended_adj",
-      "Amortized Unblended":"cost_amortized_unblended_adj",
+      "Unamortized Unblended": "cost_nonamortized_unblended_adj",
+      "Amortized Unblended": "cost_amortized_unblended_adj",
       "Unamortized Blended": "cost_nonamortized_blended_adj",
-      "Amortized Blended":"cost_amortized_blended_adj"
+      "Amortized Blended": "cost_amortized_blended_adj"
     }
 
     var start_at = "";
@@ -513,7 +476,7 @@ script "js_current_month_cost_request", type: "javascript" do
     // start_at from beginning of this month
     start_at = getFormattedDailyDate(new Date(now.getFullYear(), now.getMonth(), 1))
     // end_at to end of this month
-    end_at = getFormattedDailyDate(addDays(new Date(now.getFullYear(), now.getMonth() + 1, 0),1))
+    end_at = getFormattedDailyDate(addDays(new Date(now.getFullYear(), now.getMonth() + 1, 0), 1))
 
     var billing_center_ids = []
     var org_billing_centers = _.filter(ds_billing_centers, function(bc){ return bc.org_id == rs_org_id })
@@ -523,14 +486,14 @@ script "js_current_month_cost_request", type: "javascript" do
     var body = {
       "dimensions":[]
       "granularity":"day",
-      "start_at": start_at ,
+      "start_at": start_at,
       "end_at": end_at
       "metrics":[cost_metric[param_cost_metric]],
       "billing_center_ids": billing_center_ids
     }
 
     var request = {
-      auth:  'auth_rs',
+      auth:  'auth_flexera',
       host:  rs_optima_host,
       scheme: 'https',
       verb: 'POST',
@@ -544,8 +507,22 @@ script "js_current_month_cost_request", type: "javascript" do
   EOS
 end
 
-script "js_previous_month_cost_request", type: "javascript" do
-  parameters "param_cost_metric", "rs_org_id", "rs_optima_host", "ds_billing_centers"
+datasource "ds_previous_month_costs" do
+  iterate $ds_filtered_user_organizations
+  request do
+    run_script $js_previous_month_costs, val(iter_item, "org_id"), $ds_billing_centers, $param_cost_metric, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "metrics", jmes_path(col_item, "metrics")
+      field "org_id", val(iter_item, "org_id")
+    end
+  end
+end
+
+script "js_previous_month_costs", type: "javascript" do
+  parameters "rs_org_id", "ds_billing_centers", "param_cost_metric", "rs_optima_host"
   result "request"
   code <<-EOS
     var range = "monthly";
@@ -579,18 +556,19 @@ script "js_previous_month_cost_request", type: "javascript" do
 
     // create a map to use in the request metric field.
     var cost_metric = {
-      "Unamortized Unblended":"cost_nonamortized_unblended_adj",
-      "Amortized Unblended":"cost_amortized_unblended_adj",
+      "Unamortized Unblended": "cost_nonamortized_unblended_adj",
+      "Amortized Unblended": "cost_amortized_unblended_adj",
       "Unamortized Blended": "cost_nonamortized_blended_adj",
-      "Amortized Blended":"cost_amortized_blended_adj"
+      "Amortized Blended": "cost_amortized_blended_adj"
     }
+
     var start_at = "";
     var end_at = "";
     var now = new Date();
     // start_at from beginning of last month
     start_at = getFormattedDailyDate(new Date(now.getFullYear(), now.getMonth() - 1, 1))
     // end_at to end of last month
-    end_at = getFormattedDailyDate(addDays(new Date(now.setDate(0)),1))
+    end_at = getFormattedDailyDate(addDays(new Date(now.setDate(0)), 1))
 
     var billing_center_ids = []
     var org_billing_centers = _.filter(ds_billing_centers, function(bc){ return bc.org_id == rs_org_id })
@@ -598,16 +576,16 @@ script "js_previous_month_cost_request", type: "javascript" do
     billing_center_ids = _.map(top_billing_centers, function(value, key){ return value.id });
 
     var body = {
-      "dimensions":[]
-      "granularity":"day",
-      "start_at": start_at ,
+      "dimensions": []
+      "granularity": "day",
+      "start_at": start_at,
       "end_at": end_at
-      "metrics":[cost_metric[param_cost_metric]],
+      "metrics": [cost_metric[param_cost_metric]],
       "billing_center_ids": billing_center_ids
     }
 
     var request = {
-      auth:  'auth_rs',
+      auth:  'auth_flexera',
       host:  rs_optima_host,
       scheme: 'https',
       verb: 'POST',
@@ -621,8 +599,12 @@ script "js_previous_month_cost_request", type: "javascript" do
   EOS
 end
 
+datasource "ds_report" do
+  run_script $js_report, $ds_current_week_costs, $ds_previous_week_costs, $ds_current_month_costs, $ds_previous_month_costs, $ds_currency_code, $ds_currency_reference, $ds_currency_conversion, $ds_filtered_user_organizations, $param_final_currency, $param_cost_metric
+end
+
 script "js_report", type: "javascript" do
-  parameters "ds_current_week_costs","ds_previous_week_costs","ds_current_month_costs","ds_previous_month_costs","param_cost_metric","ds_currency_code","ds_currency_reference","ds_currency_conversion","ds_filtered_user_organizations", "param_final_currency"
+  parameters "ds_current_week_costs", "ds_previous_week_costs", "ds_current_month_costs", "ds_previous_month_costs", "ds_currency_code", "ds_currency_reference", "ds_currency_conversion", "ds_filtered_user_organizations", "param_final_currency", "param_cost_metric"
   result "report"
   code <<-EOS
     function formatNumber(number, separator)
@@ -644,10 +626,10 @@ script "js_report", type: "javascript" do
 
     // create a map to use in the request metric field.
     var cost_metric = {
-      "Unamortized Unblended":"cost_nonamortized_unblended_adj",
-      "Amortized Unblended":"cost_amortized_unblended_adj",
+      "Unamortized Unblended": "cost_nonamortized_unblended_adj",
+      "Amortized Unblended": "cost_amortized_unblended_adj",
       "Unamortized Blended": "cost_nonamortized_blended_adj",
-      "Amortized Blended":"cost_amortized_blended_adj"
+      "Amortized Blended": "cost_amortized_blended_adj"
     }
 
     var metric = cost_metric[param_cost_metric]
@@ -755,8 +737,24 @@ script "js_report", type: "javascript" do
   EOS
 end
 
-script "js_six_month_cost_request", type: "javascript" do
-  parameters "param_cost_metric", "rs_org_id", "rs_optima_host", "ds_billing_centers", "param_graph_dimension"
+datasource "ds_previous_six_month_costs" do
+  iterate $ds_filtered_user_organizations
+  request do
+    run_script $js_previous_six_month_costs, val(iter_item, "org_id"), $ds_billing_centers, $param_graph_dimension, $param_cost_metric, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "dimensions", jmes_path(col_item, "dimensions")
+      field "metrics", jmes_path(col_item, "metrics")
+      field "timestamp", jmes_path(col_item, "timestamp")
+      field "org_id", val(iter_item, "org_id")
+    end
+  end
+end
+
+script "js_previous_six_month_costs", type: "javascript" do
+  parameters "rs_org_id", "ds_billing_centers", "param_graph_dimension", "param_cost_metric", "rs_optima_host"
   result "request"
   code <<-EOS
     // format the date for the `monthly` API
@@ -779,10 +777,10 @@ script "js_six_month_cost_request", type: "javascript" do
 
     // create a map to use in the request metric field.
     var cost_metric = {
-      "Unamortized Unblended":"cost_nonamortized_unblended_adj",
-      "Amortized Unblended":"cost_amortized_unblended_adj",
+      "Unamortized Unblended": "cost_nonamortized_unblended_adj",
+      "Amortized Unblended": "cost_amortized_unblended_adj",
       "Unamortized Blended": "cost_nonamortized_blended_adj",
-      "Amortized Blended":"cost_amortized_blended_adj"
+      "Amortized Blended": "cost_amortized_blended_adj"
     }
 
     var graph_dimension = {
@@ -808,16 +806,16 @@ script "js_six_month_cost_request", type: "javascript" do
     billing_center_ids = _.map(top_billing_centers, function(value, key){ return value.id });
 
     var body = {
-      "dimensions":[graph_dimension[param_graph_dimension]]
-      "granularity":"month",
-      "start_at": start_at ,
+      "dimensions": [graph_dimension[param_graph_dimension]]
+      "granularity": "month",
+      "start_at": start_at,
       "end_at": end_at
-      "metrics":[cost_metric[param_cost_metric]],
+      "metrics": [cost_metric[param_cost_metric]],
       "billing_center_ids": billing_center_ids
     }
 
     var request = {
-      auth:  'auth_rs',
+      auth:  'auth_flexera',
       host:  rs_optima_host,
       scheme: 'https',
       verb: 'POST',
@@ -831,8 +829,12 @@ script "js_six_month_cost_request", type: "javascript" do
   EOS
 end
 
-script "js_generate_report", type: "javascript" do
-  parameters "ds_previous_six_month_costs","param_cost_metric","ds_report","param_graph_dimension","ds_currency_code","ds_currency_reference","ds_currency_conversion","ds_filtered_user_organizations","param_final_currency"
+datasource "ds_generated_report" do
+  run_script $js_generated_report, $ds_previous_six_month_costs, $ds_report, $ds_currency_code, $ds_currency_reference, $ds_currency_conversion, $ds_filtered_user_organizations, $param_final_currency, $param_cost_metric, $param_graph_dimension
+end
+
+script "js_generated_report", type: "javascript" do
+  parameters "ds_previous_six_month_costs", "ds_report", "ds_currency_code", "ds_currency_reference", "ds_currency_conversion", "ds_filtered_user_organizations", "param_final_currency", "param_cost_metric", "param_graph_dimension"
   result "report"
   code <<-EOS
     // format the date for the `monthly` API
@@ -848,11 +850,11 @@ script "js_generate_report", type: "javascript" do
 
     // create a map to use in the request metric field.
     var cost_metric = {
-      "Unamortized Unblended":"cost_nonamortized_unblended_adj",
-      "Amortized Unblended":"cost_amortized_unblended_adj",
+      "Unamortized Unblended": "cost_nonamortized_unblended_adj",
+      "Amortized Unblended": "cost_amortized_unblended_adj",
       "Unamortized Blended": "cost_nonamortized_blended_adj",
-      "Amortized Blended":"cost_amortized_blended_adj"
-    };
+      "Amortized Blended": "cost_amortized_blended_adj"
+    }
 
     var graph_dimension = {
       "Category": "category",
@@ -874,9 +876,9 @@ script "js_generate_report", type: "javascript" do
     var current_month_totals = [];
     var metric = cost_metric[param_cost_metric];
     var dimension = graph_dimension[param_graph_dimension];
-    var colorArray = ['D05A5A','F78741','FCC419','007D76','37AA77','92DA71','0F77B3','7BACD1','BCC7E1','B80C83','E06C96','FBB3BB','5F3DC4','00A2F3','99E9F2','5C940D','8EBF45','C0EB75'];
-    var longMonthNames = ["None","January","February","March","April","May","June","July","August","September","October","November","December"];
-    var shortMonthNames = ["None","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    var colorArray = ['D05A5A', 'F78741', 'FCC419', '007D76', '37AA77', '92DA71', '0F77B3', '7BACD1', 'BCC7E1', 'B80C83', 'E06C96', 'FBB3BB', '5F3DC4', '00A2F3', '99E9F2', '5C940D', '8EBF45', 'C0EB75'];
+    var longMonthNames = ["None", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    var shortMonthNames = ["None", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     var currentMonth = getFormattedMonthlyDate(now);
     var currentMonthName = longMonthNames[parseInt(currentMonth.split('-')[1])];
 
@@ -896,7 +898,7 @@ script "js_generate_report", type: "javascript" do
     })
 
     // get unique top 10 categories
-    var topValues = _.last(_.sortBy(_.filter(collated_data, function(x){ return x.yearMonth==currentMonth}),'cost'),10);
+    var topValues = _.last(_.sortBy(_.filter(collated_data, function(x) { return x.yearMonth==currentMonth}),'cost'), 10);
     var categories = _.map(topValues, function(line) {return line.category});
 
     // Get all of the data that is not in the top categories and sum it up by month
@@ -905,8 +907,8 @@ script "js_generate_report", type: "javascript" do
     _.each(nonTopData, function(d, k){
       total = _.reduce(d, function(total, el) {
         return total + el.cost;
-      },0);
-      otherData.push({yearMonth:k,cost:total});
+      }, 0);
+      otherData.push({yearMonth:k, cost:total});
     })
 
     // get unique dates
@@ -948,13 +950,13 @@ script "js_generate_report", type: "javascript" do
       chartDataArray.push(seriesData.join())
     }
     var chartData = "chd=a:" + chartDataArray.join('|')
-    var encodedCategories = encodeURIComponent(categories.join('|')).replace(/[(]/gi,'%28').replace(/[)]/gi,'%29');
+    var encodedCategories = encodeURIComponent(categories.join('|')).replace(/[(]/gi, '%28').replace(/[)]/gi, '%29');
     if ( encodedCategories.length < 1) {
       var chartCategories = "chdl=Unknown"
     } else {
       var chartCategories = "chdl=" + encodedCategories
     }
-    var chartColors = "chco=" + colorArray.slice(0,categories.length).join();
+    var chartColors = "chco=" + colorArray.slice(0, categories.length).join();
     var chartXAxis = "chxl=0:|" + stringMonths.join('|')
 
     var billingCenters = "All";
@@ -988,7 +990,7 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_scheduled_report" do
+policy "pol_scheduled_report" do
   validate $ds_generated_report do
     summary_template "Multi-Organization Full Cost Scheduled Report"
     detail_template <<-EOS
@@ -997,15 +999,15 @@ policy "policy_scheduled_report" do
       ### Cost Metric: {{ parameters.param_cost_metric }}
       ### Chart Dimension: {{ parameters.param_graph_dimension }}
       ### Currency Converted to: {{ parameters.param_final_currency }}*
-      ![Spending Overview Chart](https://image-charts.com/chart?{{ data.chartType }}&{{ data.chartSize }}&{{ data.chartTitle }}&{{ data.chartAxis }}&{{ data.chartXAxis }}&{{ data.chartAxisFormat }}&{{ data.chartData }}&{{ data.chartCategories }}&{{ data.chartColors }}&{{ data.chartKeyLocation }}&{{ data.chartExtension }} "Spending Overview Chart")
-      ### For more detailed cost information, visit [Optima](https://analytics.rightscale.com/orgs/{{ rs_org_id }}/dashboard).
+      ![Spending Overview Chart](https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id={{ rs_org_id }}&rs_project_id={{ rs_project_id }}&{{ data.chartType }}&{{ data.chartSize }}&{{ data.chartTitle }}&{{ data.chartAxis }}&{{ data.chartXAxis }}&{{ data.chartAxisFormat }}&{{ data.chartData }}&{{ data.chartCategories }}&{{ data.chartColors }}&{{ data.chartKeyLocation }}&{{ data.chartExtension }} "Spending Overview Chart")
+      ### For more detailed cost information, visit [Flexera CCO](https://app.flexera.com/orgs/{{ rs_org_id }}/dashboard).
       For more information on this report, please view the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/msp/master_org_cost_policy_currency).<br>
       *Exchange rates are calculated at execution time from [https://exchangeratesapi.io/](https://exchangeratesapi.io/)
       ___
       ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
     EOS
-    escalate $escalation_send_email
-    check eq(0,1)
+    check eq(0, 1)
+    escalate $esc_email
     export "reportData" do
       field "range" do
         label "Range"
@@ -1027,13 +1029,9 @@ end
 # Escalations
 ###############################################################################
 
-escalation "escalation_send_email" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
   email $param_email
 end
-
-###############################################################################
-# Cloud Workflow
-###############################################################################

@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "5.1",
+  version: "5.3.0",
   provider: "Azure",
   service: "SQL",
   policy_set: "Rightsize Database Instances",
@@ -49,8 +49,8 @@ parameter "param_minimum_age" do
   category "Policy Settings"
   label "Minimum Age (Days)"
   description "The minimum age, in days, since a SQL database was created to produce recommendations for it. Set to 0 to ignore age entirely."
-  default 0
   min_value 0
+  default 0
 end
 
 parameter "param_subscriptions_allow_or_deny" do
@@ -128,9 +128,9 @@ parameter "param_stats_lookback" do
   category "Statistics"
   label "Statistic Lookback Period"
   description "How many days back to look at instance metrics to determine if an instance is underutilized or unused. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days."
-  default 30
   min_value 1
   max_value 90
+  default 30
 end
 
 parameter "param_automatic_action" do
@@ -194,7 +194,6 @@ datasource "ds_billing_centers" do
     path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
     ignore_status [403]
   end
   result do
@@ -327,18 +326,44 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
 EOS
 end
 
-datasource "ds_azure_sql_databases" do
+datasource "ds_azure_sql_servers" do
   iterate $ds_azure_subscriptions_filtered
   request do
     auth $auth_azure
     pagination $pagination_azure
     host $param_azure_endpoint
-    path join(["/subscriptions/", val(iter_item, "id"), "/resources"])
-    query "api-version", "2019-08-01"
-    query "$filter", "resourceType eq 'Microsoft.Sql/servers/databases'"
-    query "$expand", "createdTime"
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Sql/servers"])
+    query "api-version", "2022-02-01-preview"
     header "User-Agent", "RS Policies"
-    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value") do
+      field "id", jmes_path(col_item, "id")
+      field "kind", jmes_path(col_item, "kind")
+      field "region", jmes_path(col_item, "location")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+      field "fqdn", jmes_path(col_item, "properties.fullyQualifiedDomainName")
+      field "state", jmes_path(col_item, "properties.state")
+      field "version", jmes_path(col_item, "properties.version")
+      field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
+      field "subscriptionID", val(iter_item, "id")
+      field "subscriptionName", val(iter_item, "name")
+    end
+  end
+end
+
+datasource "ds_azure_sql_databases" do
+  iterate $ds_azure_sql_servers
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join([val(iter_item, "id"), "/databases"])
+    query "api-version", "2022-02-01-preview"
+    header "User-Agent", "RS Policies"
     ignore_status [400, 403, 404]
   end
   result do
@@ -346,15 +371,23 @@ datasource "ds_azure_sql_databases" do
     collect jmes_path(response, "value") do
       field "id", jmes_path(col_item, "id")
       field "name", jmes_path(col_item, "name")
-      field "region", jmes_path(col_item, "location")
       field "type", jmes_path(col_item, "type")
       field "kind", jmes_path(col_item, "kind")
-      field "sku" , jmes_path(col_item, "sku")
+      field "sku", jmes_path(col_item, "sku")
       field "tags", jmes_path(col_item, "tags")
-      field "createdTime", jmes_path(col_item, "createdTime")
-      field "resourceGroup", get(4, split(jmes_path(col_item,"id"), "/"))
-      field "subscriptionId",val(iter_item, "id")
-      field "subscriptionName",val(iter_item, "name")
+      field "createdTime", jmes_path(col_item, "properties.creationDate")
+      field "status", jmes_path(col_item, "properties.status")
+      field "region", val(iter_item, "region")
+      field "serverId", val(iter_item, "id")
+      field "serverKind", val(iter_item, "kind")
+      field "serverName", val(iter_item, "name")
+      field "serverTags", val(iter_item, "tags")
+      field "serverFQDN", val(iter_item, "fqdn")
+      field "serverState", val(iter_item, "state")
+      field "serverVersion", val(iter_item, "version")
+      field "resourceGroup", val(iter_item, "resourceGroup")
+      field "subscriptionID", val(iter_item, "subscriptionID")
+      field "subscriptionName", val(iter_item, "subscriptionName")
     end
   end
 end
@@ -503,20 +536,29 @@ end
 datasource "ds_azure_sql_database_metrics" do
   iterate $ds_azure_sql_databases_region_filtered
   request do
-    run_script $js_azure_sql_database_metrics, val(iter_item,"id"), $param_azure_endpoint, $param_stats_lookback
+    run_script $js_azure_sql_database_metrics, val(iter_item, "id"), $param_azure_endpoint, $param_stats_lookback
   end
   result do
     encoding "json"
     field "value", jmes_path(response, "value")
     field "id", val(iter_item, "id")
-    field "region", val(iter_item, "region")
     field "name", val(iter_item, "name")
-    field "kind", val(iter_item, "kind")
     field "type", val(iter_item, "type")
-    field "sku" , val(iter_item, "sku")
+    field "kind", val(iter_item, "kind")
+    field "sku", val(iter_item, "sku")
     field "tags", val(iter_item, "tags")
+    field "createdTime", val(iter_item, "createdTime")
+    field "status", val(iter_item, "status")
+    field "region", val(iter_item, "region")
+    field "serverId", val(iter_item, "serverId")
+    field "serverKind", val(iter_item, "serverKind")
+    field "serverName", val(iter_item, "serverName")
+    field "serverTags", val(iter_item, "serverTags")
+    field "serverFQDN", val(iter_item, "serverFQDN")
+    field "serverState", val(iter_item, "serverState")
+    field "serverVersion", val(iter_item, "serverVersion")
     field "resourceGroup", val(iter_item, "resourceGroup")
-    field "subscriptionId", val(iter_item, "subscriptionId")
+    field "subscriptionID", val(iter_item, "subscriptionID")
     field "subscriptionName", val(iter_item, "subscriptionName")
   end
 end
@@ -566,7 +608,7 @@ datasource "ds_azure_sql_resize_map" do
   request do
     verb "GET"
     host "raw.githubusercontent.com"
-    path "/flexera/policy_templates/master/data/azure/sql_service_tier_types.json"
+    path "/flexera-public/policy_templates/master/data/azure/sql_service_tier_types.json"
     header "User-Agent", "RS Policies"
   end
 end
@@ -582,11 +624,11 @@ script "js_merged_metrics", type: "javascript" do
   result = []
 
   _.each(ds_azure_sql_database_metrics, function(db) {
-    db_tags = []
+    tags = []
 
     if (typeof(db['tags']) == 'object') {
       _.each(Object.keys(db['tags']), function(key) {
-        db_tags.push([key, "=", db['tags'][key]].join(''))
+        tags.push([key, "=", db['tags'][key]].join(''))
       })
     }
 
@@ -597,10 +639,12 @@ script "js_merged_metrics", type: "javascript" do
       kind: db['kind'],
       type: db['type'],
       sku: db['sku'],
-      tags: db_tags.join(', '),
-      createdTime: db['createdTime'],
+      tags: tags.join(', '),
+      createdTime: new Date(db['createdTime']).toISOString(),
+      lastAccessed: "> " + param_stats_lookback + " Days Ago",
+      status: db['status'],
       resourceGroup: db['resourceGroup'],
-      subscriptionId: db['subscriptionId'],
+      subscriptionID: db['subscriptionID'],
       subscriptionName: db['subscriptionName'],
       lookbackPeriod: param_stats_lookback,
       threshold: param_stats_underutil_threshold_cpu_value,
@@ -620,6 +664,13 @@ script "js_merged_metrics", type: "javascript" do
       }
     })
 
+    connections = _.filter(connection_metrics, function(metric) { return metric['count'] != 0 })
+    timeStamps = _.pluck(_.sortBy(connections, 'timeStamp').reverse(), 'timeStamp')
+
+    if (timeStamps.length > 0) {
+      instance['lastAccessed'] = new Date(timeStamps[0]).toISOString().split('T')[0]
+    }
+
     if (connection_metrics != null && param_unused_or_underutilized != "Underutilized") {
       total_connections = 0
 
@@ -634,7 +685,7 @@ script "js_merged_metrics", type: "javascript" do
         instance["recommendationDetails"] = [
           "Delete Azure SQL database ", instance["name"], " ",
           "in Azure Subscription ", instance["subscriptionName"], " ",
-          "(", instance["subscriptionId"], ")"
+          "(", instance["subscriptionID"], ")"
         ].join('')
       }
     }
@@ -663,7 +714,7 @@ script "js_merged_metrics", type: "javascript" do
                 instance["recommendationDetails"] = [
                   "Downsize Azure SQL database ", instance["name"], " ",
                   "in Azure Subscription ", instance["subscriptionName"], " ",
-                  "(", instance["subscriptionId"], ") ",
+                  "(", instance["subscriptionID"], ") ",
                   "from ", instance['sku']['capacity'], " capacity ",
                   "to ", instance["newResourceType"], " capacity"
                 ].join('')
@@ -689,7 +740,7 @@ script "js_cost_subscriptions", type: "javascript" do
   parameters "ds_merged_metrics"
   result "result"
   code <<-EOS
-  result = _.compact(_.uniq(_.pluck(ds_merged_metrics, 'subscriptionId')))
+  result = _.compact(_.uniq(_.pluck(ds_merged_metrics, 'subscriptionID')))
 EOS
 end
 
@@ -708,7 +759,7 @@ datasource "ds_sql_costs" do
 end
 
 script "js_sql_costs", type:"javascript" do
-  parameters "subscriptionId", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
+  parameters "subscriptionID", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
   start_date = new Date()
@@ -753,7 +804,7 @@ script "js_sql_costs", type:"javascript" do
           {
             "dimension": "vendor_account",
             "type": "equal",
-            "value": subscriptionId
+            "value": subscriptionID
           },
           {
             "type": "not",
@@ -851,12 +902,15 @@ script "js_downsize_sql_incident", type: "javascript" do
         region: db['region'],
         resourceName: db['name'],
         resourceKind: db['kind'],
-        resourceType: db['type'],
+        type: db['type'],
         sku: db['sku'],
+        resourceType: db['sku']['capacity'],
         tags: db['tags'],
         createdTime: db['createdTime'],
+        status: db['status'],
+        lastAccessed: db['lastAccessed'],
         resourceGroup: db['resourceGroup'],
-        accountID: db['subscriptionId'],
+        accountID: db['subscriptionID'],
         accountName: db['subscriptionName'],
         recommendationType: db['recommendationType'],
         recommendationDetails: db['recommendationDetails'],
@@ -889,7 +943,7 @@ script "js_downsize_sql_incident", type: "javascript" do
   if (total_underutilized_dbs > 1) { db_verb = "are" }
 
   findings = [
-    "Out of ", total_dbs , " Azure SQL ", db_message, " analyzed, ",
+    "Out of ", total_dbs, " Azure SQL ", db_message, " analyzed, ",
     total_underutilized_dbs, " (", underutilized_dbs_percentage,
     ") ", db_verb, " underutilized and recommended for downsizing. "
   ].join('')
@@ -927,14 +981,33 @@ script "js_downsize_sql_incident", type: "javascript" do
 
   // Dummy entry to ensure validation runs at least once
   result.push({
-    id: "",                 region: "",                resourceName: "",
-    resourceKind: "",       resourceType: "",          sku: "",
-    tags: "",               resourceGroup: "",         accountID: "",
-    accountName: "",        recommendationType: "",    recommendationDetails: "",
-    newResourceType: "",    cpuAverage: "",            lookbackPeriod: "",
-    threshold: "",          policy_name: "",           savings: "",
-    savingsCurrency: "",    service: "",               platform: "",
-    createdTime: "",        total_savings: "",         message: ""
+    id: "",
+    region: "",
+    resourceName: "",
+    resourceKind: "",
+    type: "",
+    resourceType: "",
+    sku: "",
+    tags: "",
+    resourceGroup: "",
+    accountID: "",
+    accountName: "",
+    recommendationType: "",
+    recommendationDetails: "",
+    newResourceType: "",
+    cpuAverage: "",
+    lookbackPeriod: "",
+    threshold: "",
+    policy_name: "",
+    savings: "",
+    savingsCurrency: "",
+    service: "",
+    platform: "",
+    createdTime: "",
+    status: "",
+    lastAccessed: "",
+    total_savings: "",
+    message: ""
   })
 
   result[0]['total_savings'] = savings_message
@@ -993,12 +1066,15 @@ script "js_unused_sql_incident", type: "javascript" do
         region: db['region'],
         resourceName: db['name'],
         resourceKind: db['kind'],
-        resourceType: db['type'],
+        type: db['type'],
         sku: db['sku'],
+        resourceType: db['sku']['capacity'],
         tags: db['tags'],
         createdTime: db['createdTime'],
+        status: db['status'],
+        lastAccessed: db['lastAccessed'],
         resourceGroup: db['resourceGroup'],
-        accountID: db['subscriptionId'],
+        accountID: db['subscriptionID'],
         accountName: db['subscriptionName'],
         recommendationType: db['recommendationType'],
         recommendationDetails: db['recommendationDetails'],
@@ -1007,6 +1083,7 @@ script "js_unused_sql_incident", type: "javascript" do
         policy_name: db['policy_name'],
         savings: parseFloat(savings.toFixed(3)),
         savingsCurrency: ds_currency['symbol'],
+        newResourceType: "Delete Instance",
         service: "Microsoft.Sql",
         platform: "Azure SQL Database",
         total_savings: "",
@@ -1029,7 +1106,7 @@ script "js_unused_sql_incident", type: "javascript" do
   if (total_unused_dbs > 1) { db_verb = "are" }
 
   findings = [
-    "Out of ", total_dbs , " Azure SQL ", db_message, " analyzed, ",
+    "Out of ", total_dbs, " Azure SQL ", db_message, " analyzed, ",
     total_unused_dbs, " (", unused_dbs_percentage,
     ") ", db_verb, " unused and recommended for deletion. "
   ].join('')
@@ -1058,13 +1135,30 @@ script "js_unused_sql_incident", type: "javascript" do
 
   // Dummy entry to ensure validation runs at least once
   result.push({
-    id: "",                region: "",                resourceName: "",
-    resourceKind: "",      resourceType: "",          sku: "",
-    tags: "",              resourceGroup: "",         accountID: "",
-    accountName: "",       recommendationType: "",    recommendationDetails: "",
-    lookbackPeriod: "",    threshold: "",             policy_name: "",
-    savings: "",           savingsCurrency: "",       service: "",
-    platform: "",          createdTime: "",           total_savings: "",
+    id: "",
+    region: "",
+    resourceName: "",
+    resourceKind: "",
+    type: "",
+    resourceType: "",
+    sku: "",
+    tags: "",
+    resourceGroup: "",
+    accountID: "",
+    accountName: "",
+    recommendationType: "",
+    recommendationDetails: "",
+    lookbackPeriod: "",
+    threshold: "",
+    policy_name: "",
+    savings: "",
+    savingsCurrency: "",
+    service: "",
+    platform: "",
+    createdTime: "",
+    status: "",
+    lastAccessed: "",
+    total_savings: "",
     message: ""
   })
 
@@ -1104,18 +1198,24 @@ policy "pol_azure_sql_utilization" do
       field "resourceName" do
         label "Resource Name"
       end
+      field "resourceID" do
+        label "Resource ID"
+        path "id"
+      end
       field "tags" do
         label "Resource Tags"
       end
       field "createdTime" do
         label "Created At"
       end
+      field "lastAccessed" do
+        label "Last Accessed"
+      end
       field "recommendationDetails" do
         label "Recommendation"
       end
-      field "skuCapacity" do
+      field "resourceType" do
         label "Current Capacity"
-        path "sku.capacity"
       end
       field "newResourceType" do
         label "Recommended Capacity"
@@ -1128,14 +1228,17 @@ policy "pol_azure_sql_utilization" do
         label "SKU - Tier"
         path "sku.tier"
       end
-      field "resourceType" do
-        label "Resource Type"
+      field "type" do
+        label "Type"
       end
       field "resourceKind" do
-        label "Resource Kind"
+        label "Kind"
       end
       field "region" do
         label "Region"
+      end
+      field "status" do
+        label "Status"
       end
       field "savings" do
         label "Estimated Monthly Savings"
@@ -1189,16 +1292,23 @@ policy "pol_azure_sql_utilization" do
       field "resourceName" do
         label "Resource Name"
       end
+      field "resourceID" do
+        label "Resource ID"
+        path "id"
+      end
       field "tags" do
         label "Resource Tags"
       end
       field "createdTime" do
         label "Created At"
       end
+      field "lastAccessed" do
+        label "Last Accessed"
+      end
       field "recommendationDetails" do
         label "Recommendation"
       end
-      field "resourceType" do
+      field "type" do
         label "Type"
       end
       field "resourceKind" do
@@ -1206,6 +1316,9 @@ policy "pol_azure_sql_utilization" do
       end
       field "region" do
         label "Region"
+      end
+      field "status" do
+        label "Status"
       end
       field "skuName" do
         label "SKU - Name"
@@ -1215,9 +1328,11 @@ policy "pol_azure_sql_utilization" do
         label "SKU - Tier"
         path "sku.tier"
       end
-      field "skuCapacity" do
+      field "resourceType" do
         label "SKU - Capacity"
-        path "sku.capacity"
+      end
+      field "newResourceType" do
+        label "Recommended Capacity"
       end
       field "savings" do
         label "Estimated Monthly Savings"
@@ -1274,13 +1389,15 @@ define downsize_instances($data, $param_azure_endpoint) return $all_responses do
   $$all_responses = []
 
   foreach $instance in $data do
-    sub on_error: handle_error() do
-      call downsize_instance($instance, $param_azure_endpoint) retrieve $downsize_response
+    if $instance["newResourceType"] != "Delete Instance"
+      sub on_error: handle_error() do
+        call downsize_instance($instance, $param_azure_endpoint) retrieve $downsize_response
+      end
     end
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -1331,7 +1448,7 @@ define delete_instances($data, $param_azure_endpoint) return $all_responses do
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -1387,7 +1504,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
     header "Api-Version", "1.0"
   end
   result do

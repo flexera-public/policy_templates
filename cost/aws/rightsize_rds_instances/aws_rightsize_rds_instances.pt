@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "5.3",
+  version: "5.3.1",
   provider: "AWS",
   service: "RDS",
   policy_set: "Rightsize Database Instances",
@@ -213,7 +213,7 @@ datasource "ds_aws_instance_size_map" do
   request do
     verb "GET"
     host "raw.githubusercontent.com"
-    path "/flexera/policy_templates/master/data/aws/instance_types.json"
+    path "/flexera-public/policy_templates/master/data/aws/instance_types.json"
     header "User-Agent", "RS Policies"
   end
 end
@@ -375,9 +375,9 @@ datasource "ds_instance_costs" do
   end
   result do
     encoding "json"
-    collect jmes_path(response,"rows[*]") do
+    collect jmes_path(response, "rows[*]") do
       field "id", jmes_path(col_item, "dimensions.resource_id")
-      field "cost", jmes_path(col_item,"metrics.cost_amortized_blended_adj")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_blended_adj")
     end
   end
 end
@@ -502,7 +502,7 @@ end
 datasource "ds_rds_instances_set" do
   iterate $ds_regions
   request do
-    run_script $js_rds_instances_set, val(iter_item,"region")
+    run_script $js_rds_instances_set, val(iter_item, "region")
   end
   result do
     encoding "xml"
@@ -1371,6 +1371,7 @@ script "js_rds_idle_incident", type: "javascript" do
         savings: parseFloat(savings.toFixed(3)),
         savingsCurrency: ds_currency['symbol'],
         lookbackPeriod: param_stats_lookback,
+        newResourceType: "Terminate RDS Instance",
         service: "AmazonRDS",
         policy_name: ds_applied_policy['name'],
         // Dummy values to ensure hash_exclude works properly
@@ -1728,6 +1729,9 @@ policy "pol_rightsize_rds" do
       field "resourceType" do
         label "Resource Type"
       end
+      field "newResourceType" do
+        label "Recommended Resource Type"
+      end
       field "databaseEngine" do
         label "Database Engine"
       end
@@ -1793,13 +1797,15 @@ define downsize_rds_instances($data, $param_downsize_timeframe) return $all_resp
   $$all_responses = []
 
   foreach $instance in $data do
-    sub on_error: handle_error() do
-      call downsize_instance($instance, $param_downsize_timeframe) retrieve $downsize_response
+    if $instance["newResourceType"] != "Terminate RDS Instance"
+      sub on_error: handle_error() do
+        call downsize_instance($instance, $param_downsize_timeframe) retrieve $downsize_response
+      end
     end
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -1813,7 +1819,7 @@ define terminate_rds_instances($data) return $all_responses do
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -1909,7 +1915,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
     header "Api-Version", "1.0"
   end
   result do

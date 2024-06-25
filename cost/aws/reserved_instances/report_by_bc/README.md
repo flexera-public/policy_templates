@@ -1,6 +1,8 @@
 # Reserved Instances Report by Billing Center
 
-**As a best practice, this policy should only be applied to the Master Account, and not to each individual RightScale Account.**
+## Deprecated
+
+This policy is no longer being updated.
 
 ## What it does
 

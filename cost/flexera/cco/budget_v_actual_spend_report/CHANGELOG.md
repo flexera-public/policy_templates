@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.5.2
+
+- Enhanced policy functionality to display data cumulatively or monthly (in both chart and table format) based on a new "report type" parameter.
+
+## v2.5.1
+
+- Updated policy to use internal Flexera API for generating charts. Policy functionality is unchanged.
+
 ## v2.5
 
 - Updated policy metadata to make it more clear what Flexera service the policy is for

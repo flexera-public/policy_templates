@@ -1,0 +1,338 @@
+name "AWS Expiring Reserved Instances"
+rs_pt_ver 20180301
+type "policy"
+short_description "Reports on AWS Reserved Instances that have or will soon expire. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/reserved_instances/expiration) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+category "Cost"
+severity "medium"
+default_frequency "daily"
+info(
+  version: "3.0.0",
+  provider: "AWS",
+  service: "Compute",
+  policy_set: "Reserved Instances"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify when new incidents are created."
+  default []
+end
+
+parameter "param_days_expiration" do
+  type "number"
+  category "Policy Settings"
+  label "Days Until Expiration"
+  description "The number of days until expiration to include a Reservation in the report. Set to '0' to only report expired Reservations."
+  min_value 0
+  default 15
+end
+
+parameter "param_bc_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Billing Centers"
+  description "Allow or Deny entered Billing Centers."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_billing_centers" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Billing Center List"
+  description "A list of allowed or denied Billing Center names/IDs. Leave blank to report on Reservations in all Billing Centers."
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+datasource "ds_billing_centers_filtered" do
+  run_script $js_billing_centers_filtered, $ds_billing_centers, $param_bc_allow_or_deny, $param_billing_centers
+end
+
+script "js_billing_centers_filtered", type: "javascript" do
+  parameters "ds_billing_centers", "param_bc_allow_or_deny", "param_billing_centers"
+  result "result"
+  code <<-EOS
+  allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_billing_centers.length > 0) {
+    billing_centers = _.filter(ds_billing_centers, function(item) {
+      id_found = _.contains(param_billing_centers, item['id']) == allow_deny_test[param_bc_allow_or_deny]
+      name_found = _.contains(param_billing_centers, item['name']) == allow_deny_test[param_bc_allow_or_deny]
+      return id_found || name_found
+    })
+
+    // Check for conflicting parents/children and remove children if present
+    bc_ids = _.compact(_.pluck(billing_centers, 'id'))
+    bad_children = _.filter(ds_billing_centers, function(bc) { return _.contains(bc_ids, bc['parent_id']) })
+    bad_children_ids = _.pluck(bad_children, 'id')
+
+    // Create final result with the bad children removed
+    final_list = _.reject(billing_centers, function(bc) { return _.contains(bad_children_ids, bc['id']) })
+  } else {
+    // If we're not filtering at all, just grab all of the top level billing centers
+    final_list = _.filter(ds_billing_centers, function(bc) {
+      return bc['parent_id'] == null || bc['parent_id'] == undefined
+    })
+  }
+
+  result = _.compact(_.pluck(final_list, 'id'))
+EOS
+end
+
+datasource "ds_accounts_by_billing_center" do
+  request do
+    run_script $js_accounts_by_billing_center, $ds_billing_centers_filtered, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+      field "billing_center_id", jmes_path(col_item, "dimensions.billing_center_id")
+      field "vendor_account_id", jmes_path(col_item, "dimensions.vendor_account")
+      field "vendor_account_name", jmes_path(col_item, "dimensions.vendor_account_name")
+      field "timestamp", jmes_path(col_item, "timestamp")
+    end
+  end
+end
+
+script "js_accounts_by_billing_center", type: "javascript" do
+  parameters "ds_billing_centers_filtered", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  start_date = new Date().toISOString()
+  start_date = start_date.split('-')[0] + '-' + start_date.split('-')[1]
+
+  end_year = Number(start_date.split('-')[0])
+  end_month = Number(start_date.split('-')[1]) + 1
+  if (end_month == 13) { end_month = 1; end_year++ }
+  if (end_month < 10) { end_month = '0' + end_month.toString() }
+  end_date = end_year.toString() + '-' + end_month.toString()
+
+  var request = {
+    auth: "auth_flexera",
+    verb: "POST",
+    host: rs_optima_host,
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
+    body_fields: {
+      "dimensions": [ "billing_center_id", "vendor_account", "vendor_account_name" ],
+      "granularity": "month",
+      "metrics": [ "cost_amortized_unblended_adj" ],
+      "billing_center_ids": ds_billing_centers_filtered,
+      "start_at": start_date,
+      "end_at": end_date
+    }
+  }
+EOS
+end
+
+datasource "ds_aws_reservations" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/reserved_instances/orgs/", rs_org_id, "/clouds/aws"])
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "end_date", jmes_path(col_item, "end_datetime")
+      field "start_date", jmes_path(col_item, "start_datetime")
+      field "account_name", jmes_path(col_item, "account_name")
+      field "account_id", jmes_path(col_item, "account_id")
+      field "lease_id", jmes_path(col_item, "lease_id")
+      field "region", jmes_path(col_item, "region")
+      field "instance_type", jmes_path(col_item, "instance_type")
+      field "number_of_instances", jmes_path(col_item, "number_of_instances")
+      field "scope", jmes_path(col_item, "scope")
+      field "tenancy", jmes_path(col_item, "tenancy")
+      field "offering_type", jmes_path(col_item, "offering_type")
+    end
+  end
+end
+
+datasource "ds_filtered_aws_reservations" do
+  run_script $js_filtered_aws_reservations, $ds_accounts_by_billing_center, $ds_aws_reservations
+end
+
+script "js_filtered_aws_reservations", type: "javascript" do
+  parameters "ds_accounts_by_billing_center", "ds_aws_reservations"
+  result "result"
+  code <<-EOS
+  bc_account_ids = _.uniq(_.pluck(ds_accounts_by_billing_center, "vendor_account_id"))
+
+  result = _.filter(ds_aws_reservations, function(ri) {
+    return _.contains(bc_account_ids, ri['account_id'])
+  })
+EOS
+end
+
+datasource "ds_account_list" do
+  run_script $js_account_list, $ds_accounts_by_billing_center, $ds_billing_centers
+end
+
+script "js_account_list", type: "javascript" do
+  parameters "ds_accounts_by_billing_center", "ds_billing_centers"
+  result "result"
+  code <<-EOS
+  bc_object = {}
+
+  _.each(ds_billing_centers, function(bc) { bc_object[bc['id']] = bc['name'] })
+
+  result = {}
+
+  _.each(ds_accounts_by_billing_center, function(account) {
+    if (result[account['vendor_account_id']] == undefined) {
+      result[account['vendor_account_id']] = []
+    }
+
+    result[account['vendor_account_id']].push(bc_object[account['billing_center_id']])
+  })
+EOS
+end
+
+datasource "ds_expiring_aws_reservations" do
+  run_script $js_expiring_aws_reservations, $ds_filtered_aws_reservations, $ds_account_list, $ds_applied_policy, $param_days_expiration
+end
+
+script "js_expiring_aws_reservations", type: "javascript" do
+  parameters "ds_filtered_aws_reservations", "ds_account_list", "ds_applied_policy", "param_days_expiration"
+  result "result"
+  code <<-'EOS'
+  result = []
+  today = new Date()
+
+  _.each(ds_filtered_aws_reservations, function(ri) {
+    expiration_date = new Date(ri['end_date'])
+    days_until_expiry = (expiration_date - today) / 1000 / 60 / 60 / 24
+    if (days_until_expiry < 0) { days_until_expiry = 0 }
+
+    if (days_until_expiry < param_days_expiration || days_until_expiry == 0) {
+      billing_centers = ""
+
+      if (ds_account_list[ri['account_id']] != undefined) {
+        billing_centers = ds_account_list[ri['account_id']].join(', ')
+      }
+
+      result.push({
+        accountID: ri["account_id"],
+        accountName: ri["account_name"],
+        instanceType: ri["instance_type"],
+        instanceCount: ri["number_of_instances"],
+        resourceID: ri["lease_id"],
+        region: ri["region"],
+        expiration_date: expiration_date.toISOString().substring(0, 10),
+        days_until_expiry: Math.round(days_until_expiry),
+        billing_centers: billing_centers,
+        policy_name: ds_applied_policy["name"]
+      })
+    }
+  })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_ri_expiration" do
+  validate_each $ds_expiring_aws_reservations do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: AWS Expiring Reservations Found"
+    check eq(val(item, "resourceID"), "")
+    escalate $esc_email
+    export do
+      resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "billing_centers" do
+        label "Associated Billing Center(s)"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "resourceID" do
+        label "Lease ID"
+      end
+      field "instanceType" do
+        label "Instance Type"
+      end
+      field "instanceCount" do
+        label "Instance Count"
+      end
+      field "expiration_date" do
+        label "Expiration Date"
+      end
+      field "days_until_expiry" do
+        label "Days Until Expiration"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end

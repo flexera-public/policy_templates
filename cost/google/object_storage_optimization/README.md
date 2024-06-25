@@ -1,51 +1,58 @@
-
 # Google Object Storage Optimization
 
-## What it does
+## What It Does
 
-This Policy checks Google buckets for older objects and can move old object to 'nearline' or 'coldline' after a given period of time. The user can choose to delete old object by enabling 'delete action' option as mentioned in Enable delete action section below.
-
-## Functional Details
-
-- If APIs & Services are not enabled for a project, the policy will skip that particular project. On the next run if APIs & Services are enabled, then the project will be considered for execution.
-- This policy identifies all Google storage objects last updated outside of the specified timeframe
-- For all objects identified as old, the user can choose to move the object to 'nearline' or 'coldline' after the specified timeframe.
-- The user can also choose to delete old object.
+This policy template checks Google buckets for older objects and produces recommendations to move these objects to the 'nearline' or 'coldline' class after a given period of time. Optionally, an email report is sent of these objects and the user can change their class or delete them.
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
-
-- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
-- *Move to Nearline after days last modified* - leave blank to skip moving
-- *Move to coldline after days last modified* - leave blank to skip moving
-- *Exclude Tag* - exclude object with the included tags
+- *Email Addresses* - A list of email addresses to notify.
+- *New Storage Class* - Whether to move objects to `nearline` or `coldline` if they meet the specified.age thresholds. Select `Both` to consider moving objects to either one based on the specified age thresholds.
+- *Nearline Class Age Threshold (Days)* - Time in days since object was last modified to change storage tier to `nearline`. Not applicable if `Coldline` is selected for New Storage Class.
+- *Coldline Class Age Threshold (Days)* - Time in days since object was last modified to change storage tier to `coldline`. Not applicable if `Nearline` is selected for New Storage Class.
+- *Storage Bucket List* - A list of Google Object Storage Buckets to assess objects in. Leave blank to assess objects in all buckets.
+- *Allow/Deny Projects* - Whether to treat Allow/Deny Projects List parameter as allow or deny list. Has no effect if Allow/Deny Projects List is left empty.
+- *Allow/Deny Projects List* - Filter results by project ID/name, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all projects.
+- *Exclusion Labels* - The policy will filter resources containing the specified labels from the results. The following formats are supported:
+  - `Key` - Filter all resources with the specified label key.
+  - `Key==Value` - Filter all resources with the specified label key:value pair.
+  - `Key!=Value` - Filter all resources missing the specified label key:value pair. This will also filter all resources missing the specified label key.
+  - `Key=~/Regex/` - Filter all resources where the value for the specified key matches the specified regex string.
+  - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified label key.
+- *Exclusion Labels: Any / All* - Whether to filter instances containing any of the specified labels or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Labels` field.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
 Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
-For example if a user selects the "Update Bucket storage" action while applying the policy, all the identified old resources will be moved to 'nearline' or 'coldline'.
+For example if a user selects the "Update Objects Storage Class" action while applying the policy, all the identified objects will be moved to `nearline` or `coldline`.
+
+## Policy Actions
+
+- Send an email report
+- Change object storage class after approval
+- Delete object after approval
 
 ## Prerequisites
 
-This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
-### Credential configuration
+- [**Google Cloud Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1121577) (*provider=gce*) which has the following:
+  - `resourcemanager.projects.get`
+  - `storage.buckets.list`
+  - `storage.objects.list`
+  - `storage.objects.create`*
+  - `storage.objects.delete`*
 
-For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
+  \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
 
-Provider tag value to match this policy: `gce`
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - `billing_center_viewer`
 
-Required permissions in the provider:
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
-- The `storage.buckets.list` permission
-- The `storage.buckets.getIamPolicy2` permission
-- The `storage.objects.list` permission
-- The `storage.objects.getIamPolicy2` permission
-- The `storage.objects.create` (for the destination bucket) permission
-- The `storage.objects.delete` (for the destination bucket)4 permission
-- The `storage.objects.get` (for the source bucket) permission
-- The `storage.objects.delete` permission
-- The `resourcemanager.projects.get` permission
+Additionally, this Policy Template requires that several APIs be enabled in your Google Cloud environment:
+
+- [Cloud Resource Manager API](https://console.cloud.google.com/flows/enableapi?apiid=cloudresourcemanager.googleapis.com)
+- [Cloud Storage API](https://console.cloud.google.com/flows/enableapi?apiid=storage.googleapis.com)
 
 ## Supported Clouds
 
