@@ -33,11 +33,28 @@ parameter "param_orgs" do
   # No default value, user input required
 end
 
+parameter "param_repos_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny GitHub Repositories"
+  description "Allow or Deny entered Github repositories. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_repos_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny GitHub Repositories List"
+  description "A list of allowed or denied Github repositories. See the README for more details."
+  default []
+end
+
 parameter "param_repo_regex" do
   type "string"
   category "Policy Settings"
-  label ""
-  description "Regex for whitelisted repository name"
+  label "Repository Name Regex"
+  description "Regex that GitHub repository names must conform to."
   default "^[a-z\\-]+$"
 end
 
@@ -86,56 +103,119 @@ datasource "ds_applied_policy" do
   end
 end
 
-datasource "ds_orgs_array" do
-  run_script $js_orgs_array, $param_orgs
+datasource "ds_org_list" do
+  run_script $js_org_list, $param_orgs
 end
 
-script "js_orgs_array", type: "javascript" do
+script "js_org_list", type: "javascript" do
   parameters "param_orgs"
-  result "orgs_array"
-  code <<-EOS
-var orgs_array = param_orgs;
-EOS
+  result "result"
+  code "result = param_orgs"
 end
 
-datasource "ds_org_repos" do
-  iterate $ds_orgs_array
+datasource "ds_github_orgs" do
+  iterate $ds_org_list
   request do
     auth $auth_github
     pagination $pagination_github
     host "api.github.com"
-    path join(["/orgs/",iter_item,"/repos"])
+    path join(["/orgs/", iter_item])
+    header "X-GitHub-Api-Version", "2022-11-28"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "login")
+      field "company", jmes_path(col_item, "company")
+      field "blog", jmes_path(col_item, "blog")
+      field "location", jmes_path(col_item, "location")
+      field "email", jmes_path(col_item, "email")
+      field "html_url", jmes_path(col_item, "html_url")
+      field "created_at", jmes_path(col_item, "created_at")
+      field "type", jmes_path(col_item, "type")
+    end
+  end
+end
+
+datasource "ds_github_org_repos" do
+  iterate $ds_github_orgs
+  request do
+    auth $auth_github
+    pagination $pagination_github
+    host "api.github.com"
+    path join(["/orgs/", val(iter_item, "name"), "/repos"])
+    header "X-GitHub-Api-Version", "2022-11-28"
   end
   result do
     encoding "json"
     collect jmes_path(response, "[*]") do
       field "id", jmes_path(col_item, "id")
       field "name", jmes_path(col_item, "name")
-      field "repo_name", jmes_path(col_item, "name")
-      field "repo_org", jmes_path(col_item, "owner.login")
       field "full_name", jmes_path(col_item, "full_name")
-      end
+      field "html_url", jmes_path(col_item, "html_url")
+      field "description", jmes_path(col_item, "description")
+      field "default_branch", jmes_path(col_item, "default_branch")
+      field "created_at", jmes_path(col_item, "created_at")
+      field "org_id", val(iter_item, "id")
+      field "org_name", val(iter_item, "name")
+      field "org_company", val(iter_item, "company")
+      field "org_blog", val(iter_item, "blog")
+      field "org_location", val(iter_item, "location")
+      field "org_email", val(iter_item, "email")
+      field "org_url", val(iter_item, "html_url")
+      field "org_created_at", val(iter_item, "created_at")
+    end
   end
 end
 
+datasource "ds_github_org_repos_filtered" do
+  run_script $js_github_org_repos_filtered, $ds_github_org_repos, $param_repos_allow_or_deny, $param_repos_list
+end
+
+script "js_github_org_repos_filtered", type: "javascript" do
+  parameters "ds_github_org_repos", "param_repos_allow_or_deny", "param_repos_list"
+  result "result"
+  code <<-EOS
+  if (param_repos_list.length > 0) {
+    result = _.filter(ds_github_org_repos, function(repo) {
+      include_repo = _.contains(param_repos_list, repo['name'])
+      if (param_regions_allow_or_deny == "Deny") { include_repo = !include_repo }
+      return include_repo
+    })
+  } else {
+    result = ds_github_org_repos
+  }
+EOS
+end
+
 datasource "ds_invalid_repos" do
-    run_script $js_invalid_repos, $ds_org_repos, $param_repo_regex
+  run_script $js_invalid_repos, $ds_github_org_repos_filtered, $ds_applied_policy, $param_repo_regex
 end
 
 script "js_invalid_repos", type: "javascript" do
-    parameters "org_repos","param_repo_regex"
-    result "invalid_org_repos"
-    code <<-EOS
-var invalid_org_repos = [];
-for (var index = 0; index < org_repos.length; index++) {
-    var repo = org_repos[index];
-    // exclude white listed names
-    if( !repo.repo_name.match(param_repo_regex) ){
-        repo["repositoryFullName"] = "["+repo.repo_name+"](https://github.com/"+repo.full_name+")";
-        repo["auditLogFullName"] = "[Audit Log](https://github.com/organizations/"+repo.repo_org+"/settings/audit-log?utf8=%E2%9C%93&q=repo%3A"+repo.repo_org+"%2F"+repo.repo_name+")";
-        invalid_org_repos.push(repo)
+  parameters "ds_github_org_repos_filtered", "ds_applied_policy", "param_repo_regex"
+  result "result"
+  code <<-'EOS'
+  invalid_repos = _.reject(ds_github_org_repos_filtered, function(repo) {
+    return repo['name'].match(param_repo_regex)
+  })
+
+  result = _.map(invalid_repos, function(repo) {
+    org_name = encodeURI(repo['org_name'])
+    q_param = encodeURI("repo:" + repo["org_name"] + "/" + repo["name"])
+    audit_log_url = "https://github.com/organizations/" + org_name + "/settings/audit-log?utf8=%E2%9C%93&q=" + q_param
+
+    return {
+      id: repo['id'],
+      name: repo['name'],
+      description: repo['description'],
+      created_at: repo['created_at'],
+      org_name: repo['org_name'],
+      policy_name: ds_applied_policy['name'],
+      audit_log: "Audit Log||" + audit_log_url
     }
-}
+  })
 EOS
 end
 
@@ -144,25 +224,30 @@ end
 ###############################################################################
 
 policy "pol_invalid_repos" do
-  validate $ds_invalid_repos do
-    summary_template "GitHub.com Repository Naming Report"
-    check eq(size(data), 0)
+  validate_each $ds_invalid_repos do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} GitHub Repositories With Unpermitted Names Found"
+    check eq(val(item, "id"), "")
     escalate $esc_email
-    #### Policy Organization(s): {{  parameters.param_orgs }}
-    #### Policy Whitelisted Repo Names: {{  parameters.param_repo_regex }}
     export do
       resource_level true
-      field "repo_org" do
-        label "Organization"
-      end
-      field "repositoryFullName" do
-        label "Repository"
-      end
-      field "auditLogFullName" do
-        label "Audit Log Link"
-      end
       field "id" do
         label "ID"
+      end
+      field "name" do
+        label "Name"
+      end
+      field "description" do
+        label "Description"
+      end
+      field "created_at" do
+        label "Created At"
+      end
+      field "org_name" do
+        label "Organization"
+      end
+      field "audit_log" do
+        label "Audit Log"
+        format "link-external"
       end
     end
   end

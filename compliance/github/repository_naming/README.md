@@ -2,13 +2,15 @@
 
 ## What It Does
 
-This Policy Template gets all the repositories under GitHub.com Organization(s) and creates an incident if any do not match the whitelisted naming schema(s).
+This policy template reports any GitHub repositories under the user-specified GitHub.com organizations whose names don't conform to a user-specified [regex](https://en.wikipedia.org/wiki/Regular_expression) string. Optionally, it emails this report.
 
 ## Input Parameters
 
-1. GitHub.com Organizations to check - Example: `flexera`
-1. Whitelisted Repository Regex - Example: `^[a-z\-]+$`
-1. Email address to send escalation emails to - Example: `noreply@example.com`
+- *Email Addresses* - A list of email addresses to notify.
+- *GitHub.com Organizations* - A list of GitHub.com Organizations to check.
+- *Allow/Deny GitHub Repositories* - Whether to treat Allow/Deny GitHub Repositories List parameter as allow or deny list. Has no effect if Allow/Deny GitHub Repositories List is left empty.
+- *Allow/Deny GitHub Repositories List* - Filter results by GitHub repository, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all the GitHub repositories in the specified organizations.
+- *Repository Name Regex* - Regex that GitHub repository names must conform to.
 
 ## Policy Actions
 
