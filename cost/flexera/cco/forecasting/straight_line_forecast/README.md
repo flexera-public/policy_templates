@@ -1,8 +1,23 @@
-# Cloud Spend Forecast - Straight-Line (Linear Regression Model)
+# Cloud Spend Forecast - Straight-Line
 
-## What it does
+## What It Does
 
-This Policy uses Optima to determine a cloud spend forecast for a Billing Center or the entire Organization. The policy uses the specified previous number of months, not including the current month to to determine a straight-line forecast using a linear regression model.
+This policy template produces a forecast for monthly cloud spend based on cost data stored in Flexera Cloud Cost Optimization (CCO) and presents this forecast as a chart and table. The user can specify the number of months to look back, the number of months to forecast, the formula used for producing the forecast, and the Flexera CCO dimension to split costs by in the chart. Optionally, this forecast can be emailed.
+
+## Input Parameters
+
+- *Email Addresses* - Email addresses of the recipients you wish to send the report to.
+- *Cost Metric* - The cost metric to use when calculating the forecast.
+- *Allow/Deny Billing Centers* - Allow or Deny entered Billing Centers.
+- *Allow/Deny Billing Center List* - A list of allowed or denied Billing Center names/IDs. Leave blank to produce forecast for entire Flexera organization.
+- *Look Back Months (#)* - Number of months into the past to use for generating forecast.
+- *Forecast Months (#)* - Number of months in the future to forecast.
+- *Forecast Formula* - Formula to use when projecting costs.
+- *Dimension* - The name or ID of the Flexera dimension you want to split costs by in the chart. Enter `Billing Center` to split costs by Billing Center. Leave blank to not split costs by any dimension.
+
+## Policy Actions
+
+- Send an email report
 
 ## Prerequisites
 
@@ -13,28 +28,9 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
-## Functional Details
-
-- This policy supports a group of Billing Centers or the entire Organization.
-- This policy uses the last month before current to guarantee full data.
-- This policy supports different dimensions to break down costs by, such as Category, Service and Region.
-- This policy produces a straight-line forecast by calculating a line of best fit (linear regression line) from the historical dataset and then extrapolating this to calculate forecasted costs.
-- This policy omits costs for Commitments, as refunds are difficult to forecast.
-
-### Input Parameters
-
-This policy has the following input parameters required when launching the policy.
-
-- *Billing Center Name* - List of Billing Center Names to check
-- *Lookback Months* - Number of months to lookback to generate forecast
-- *Months to forecast* - Number of months in the future to forecast
-- *Cost Metric* - specify options for amortized blended or amortized unblended costs
-- *Dimension* - Select dimension, leave blank for no dimensions
-- *Email addresses* - A list of email addresses to notify
-
 ## Supported Clouds
 
-- All configured clouds
+- Flexera
 
 ## Cost
 
