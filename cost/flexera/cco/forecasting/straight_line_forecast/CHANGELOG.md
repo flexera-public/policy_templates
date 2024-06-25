@@ -1,5 +1,14 @@
 # Changelog
 
+## v4.0.0
+
+- Fixed issue where graph would not render if dimension name contains an ampersand
+- Several parameters altered to be more descriptive and human-readable
+- Added support for both simple and linear regression models via parameter
+- Added support for splitting cost by any arbitrary dimension
+- Added ability to filter by Billing Center via an allow or deny list
+- Streamlined code for better readability and faster execution
+
 ## v3.7
 
 - Updated policy metadata to make it more clear what Flexera service the policy is for
