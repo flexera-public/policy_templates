@@ -1,7 +1,7 @@
 name "GitHub.com Unpermitted Repository Names"
 rs_pt_ver 20180301
 type "policy"
-short_description "Gets the names of all repositories under GitHub.com Organization(s) and creates incidents for any that do not match any of the whitelisted regex strings.  See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/github/repository_naming) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Reports on repositories under the specified Github.com organizations whose names don't conform to convention. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/github/repository_naming) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "low"
 category "Compliance"
@@ -25,17 +25,20 @@ parameter "param_email" do
   default []
 end
 
-parameter "param_repo_allowlist" do
-  type "string"
-  label "Regex for whitelisted repository name"
-  default "^[a-z\\-]+$"
-end
-
 parameter "param_orgs" do
   type "list"
   category "Policy Settings"
   label "GitHub.com Organizations"
   description "A list of GitHub.com Organizations to check."
+  # No default value, user input required
+end
+
+parameter "param_repo_regex" do
+  type "string"
+  category "Policy Settings"
+  label ""
+  description "Regex for whitelisted repository name"
+  default "^[a-z\\-]+$"
 end
 
 ###############################################################################
@@ -116,18 +119,18 @@ datasource "ds_org_repos" do
 end
 
 datasource "ds_invalid_repos" do
-    run_script $js_invalid_repos, $ds_org_repos, $param_repo_allowlist
+    run_script $js_invalid_repos, $ds_org_repos, $param_repo_regex
 end
 
 script "js_invalid_repos", type: "javascript" do
-    parameters "org_repos","param_repo_allowlist"
+    parameters "org_repos","param_repo_regex"
     result "invalid_org_repos"
     code <<-EOS
 var invalid_org_repos = [];
 for (var index = 0; index < org_repos.length; index++) {
     var repo = org_repos[index];
     // exclude white listed names
-    if( !repo.repo_name.match(param_repo_allowlist) ){
+    if( !repo.repo_name.match(param_repo_regex) ){
         repo["repositoryFullName"] = "["+repo.repo_name+"](https://github.com/"+repo.full_name+")";
         repo["auditLogFullName"] = "[Audit Log](https://github.com/organizations/"+repo.repo_org+"/settings/audit-log?utf8=%E2%9C%93&q=repo%3A"+repo.repo_org+"%2F"+repo.repo_name+")";
         invalid_org_repos.push(repo)
@@ -146,7 +149,7 @@ policy "pol_invalid_repos" do
     check eq(size(data), 0)
     escalate $esc_email
     #### Policy Organization(s): {{  parameters.param_orgs }}
-    #### Policy Whitelisted Repo Names: {{  parameters.param_repo_allowlist }}
+    #### Policy Whitelisted Repo Names: {{  parameters.param_repo_regex }}
     export do
       resource_level true
       field "repo_org" do
