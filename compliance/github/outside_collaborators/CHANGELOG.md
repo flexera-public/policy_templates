@@ -3,6 +3,7 @@
 ## v3.0.0
 
 - Several parameters altered to be more descriptive and human-readable
+- Added ability to filter results by repository
 - Normalized incident export to be consistent with other policies
 - Streamlined code for better readability and faster execution
 - Policy now requires a valid Flexera credential

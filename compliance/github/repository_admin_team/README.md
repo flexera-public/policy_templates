@@ -2,12 +2,14 @@
 
 ## What It Does
 
-This Policy Template gets all the repositories under GitHub.com Organization(s) and creates an incident if any do not have at least 1 Team assigned with `admin` role.  When this requirement is in place, it's easy to identify the responsible owners / team for any given repository.
+This policy template reports on any repositories under the user-specified GitHub.com organizations that do not have any associated teams with the `admin` role. Optionally, it emails this report.
 
 ## Input Parameters
 
-1. GitHub.com Organizations to check - Example: `flexera`
-1. Email address to send escalation emails to - Example: `noreply@example.com`
+- *Email Addresses* - A list of email addresses to notify.
+- *GitHub.com Organizations* - A list of GitHub.com Organizations to check.
+- *Allow/Deny GitHub Repositories* - Whether to treat Allow/Deny GitHub Repositories List parameter as allow or deny list. Has no effect if Allow/Deny GitHub Repositories List is left empty.
+- *Allow/Deny GitHub Repositories List* - Filter results by GitHub repository, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all the GitHub repositories in the specified organizations.
 
 ## Policy Actions
 

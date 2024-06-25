@@ -32,6 +32,23 @@ parameter "param_orgs" do
   description "A list of GitHub.com Organizations to check."
 end
 
+parameter "param_repos_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny GitHub Repositories"
+  description "Allow or Deny entered Github repositories. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_repos_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny GitHub Repositories List"
+  description "A list of allowed or denied Github repositories. See the README for more details."
+  default []
+end
+
 parameter "param_user_allowlist" do
   type "list"
   category "Filters"
@@ -102,10 +119,11 @@ datasource "ds_github_orgs" do
     pagination $pagination_github
     host "api.github.com"
     path join(["/orgs/", iter_item])
+    header "X-GitHub-Api-Version", "2022-11-28"
   end
   result do
     encoding "json"
-    collect jmes_path(response, "[@]") do
+    collect jmes_path(response, "[*]") do
       field "id", jmes_path(col_item, "id")
       field "name", jmes_path(col_item, "login")
       field "company", jmes_path(col_item, "company")
@@ -126,6 +144,7 @@ datasource "ds_github_org_repos" do
     pagination $pagination_github
     host "api.github.com"
     path join(["/orgs/", val(iter_item, "name"), "/repos"])
+    header "X-GitHub-Api-Version", "2022-11-28"
   end
   result do
     encoding "json"
@@ -149,14 +168,35 @@ datasource "ds_github_org_repos" do
   end
 end
 
+datasource "ds_github_org_repos_filtered" do
+  run_script $js_github_org_repos_filtered, $ds_github_org_repos, $param_repos_allow_or_deny, $param_repos_list
+end
+
+script "js_github_org_repos_filtered", type: "javascript" do
+  parameters "ds_github_org_repos", "param_repos_allow_or_deny", "param_repos_list"
+  result "result"
+  code <<-EOS
+  if (param_repos_list.length > 0) {
+    result = _.filter(ds_github_org_repos, function(repo) {
+      include_repo = _.contains(param_repos_list, repo['name'])
+      if (param_regions_allow_or_deny == "Deny") { include_repo = !include_repo }
+      return include_repo
+    })
+  } else {
+    result = ds_github_org_repos
+  }
+EOS
+end
+
 datasource "ds_github_org_collaborators" do
-  iterate $ds_github_org_repos
+  iterate $ds_github_org_repos_filtered
   request do
     auth $auth_github
     pagination $pagination_github
     host "api.github.com"
     path join(["/repos/", val(iter_item, "org_name"), "/", val(iter_item, "name"), "/collaborators"])
     query "affiliation", "outside"
+    header "X-GitHub-Api-Version", "2022-11-28"
   end
   result do
     encoding "json"

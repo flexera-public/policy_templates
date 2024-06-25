@@ -1,7 +1,7 @@
 name "GitHub.com Repositories without Admin Team"
 rs_pt_ver 20180301
 type "policy"
-short_description "Gets the repositories under a GitHub.com Organization and creates incidents for any that do not have at least 1 Team assigned with `admin` role.  See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/github/repository_admin_team) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Reports on repositories under the specified Github.com organizations that don't have at least one team assigned with the `admin` role. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/github/repository_admin_team) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "medium"
 category "Compliance"
@@ -30,6 +30,23 @@ parameter "param_orgs" do
   category "Policy Settings"
   label "GitHub.com Organizations"
   description "A list of GitHub.com Organizations to check."
+end
+
+parameter "param_repos_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny GitHub Repositories"
+  description "Allow or Deny entered Github repositories. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_repos_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny GitHub Repositories List"
+  description "A list of allowed or denied Github repositories. See the README for more details."
+  default []
 end
 
 ###############################################################################
@@ -77,84 +94,180 @@ datasource "ds_applied_policy" do
   end
 end
 
-datasource "ds_orgs_array" do
-  run_script $js_orgs_array, $param_orgs
+datasource "ds_org_list" do
+  run_script $js_org_list, $param_orgs
 end
 
-script "js_orgs_array", type: "javascript" do
+script "js_org_list", type: "javascript" do
   parameters "param_orgs"
-  result "orgs_array"
-  code <<-EOS
-var orgs_array = param_orgs;
-EOS
+  result "result"
+  code "result = param_orgs"
 end
 
-datasource "ds_org_repos" do
-  iterate $ds_orgs_array
+datasource "ds_github_orgs" do
+  iterate $ds_org_list
   request do
     auth $auth_github
     pagination $pagination_github
     host "api.github.com"
-    path join(["/orgs/",iter_item,"/repos"])
+    path join(["/orgs/", iter_item])
+    header "X-GitHub-Api-Version", "2022-11-28"
   end
   result do
     encoding "json"
     collect jmes_path(response, "[*]") do
-      field "repo_name", jmes_path(col_item, "name")
-      field "repo_org", jmes_path(col_item, "owner.login")
-      end
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "login")
+      field "company", jmes_path(col_item, "company")
+      field "blog", jmes_path(col_item, "blog")
+      field "location", jmes_path(col_item, "location")
+      field "email", jmes_path(col_item, "email")
+      field "html_url", jmes_path(col_item, "html_url")
+      field "created_at", jmes_path(col_item, "created_at")
+      field "type", jmes_path(col_item, "type")
+    end
   end
 end
 
-datasource "ds_org_repos_teams" do
-  iterate $ds_org_repos
+datasource "ds_github_org_repos" do
+  iterate $ds_github_orgs
   request do
     auth $auth_github
     pagination $pagination_github
     host "api.github.com"
-    path join(["/repos/",val(iter_item,"repo_org"),"/",val(iter_item,"repo_name"),"/teams"])
+    path join(["/orgs/", val(iter_item, "name"), "/repos"])
+    header "X-GitHub-Api-Version", "2022-11-28"
   end
   result do
     encoding "json"
-    collect jmes_path(response,"[@]") do
-      field "id", jmes_path(iter_item, "id")
-      field "repo_name", jmes_path(iter_item, "repo_name")
-      field "repo_org", jmes_path(iter_item, "repo_org")
-      field "teams", col_item
-      end
+    collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "full_name", jmes_path(col_item, "full_name")
+      field "html_url", jmes_path(col_item, "html_url")
+      field "description", jmes_path(col_item, "description")
+      field "default_branch", jmes_path(col_item, "default_branch")
+      field "created_at", jmes_path(col_item, "created_at")
+      field "org_id", val(iter_item, "id")
+      field "org_name", val(iter_item, "name")
+      field "org_company", val(iter_item, "company")
+      field "org_blog", val(iter_item, "blog")
+      field "org_location", val(iter_item, "location")
+      field "org_email", val(iter_item, "email")
+      field "org_url", val(iter_item, "html_url")
+      field "org_created_at", val(iter_item, "created_at")
+    end
+  end
+end
+
+datasource "ds_github_org_repos_filtered" do
+  run_script $js_github_org_repos_filtered, $ds_github_org_repos, $param_repos_allow_or_deny, $param_repos_list
+end
+
+script "js_github_org_repos_filtered", type: "javascript" do
+  parameters "ds_github_org_repos", "param_repos_allow_or_deny", "param_repos_list"
+  result "result"
+  code <<-EOS
+  if (param_repos_list.length > 0) {
+    result = _.filter(ds_github_org_repos, function(repo) {
+      include_repo = _.contains(param_repos_list, repo['name'])
+      if (param_regions_allow_or_deny == "Deny") { include_repo = !include_repo }
+      return include_repo
+    })
+  } else {
+    result = ds_github_org_repos
+  }
+EOS
+end
+
+datasource "ds_org_repos_teams" do
+  iterate $ds_github_org_repos_filtered
+  request do
+    auth $auth_github
+    pagination $pagination_github
+    host "api.github.com"
+    path join(["/repos/", val(iter_item, "org_name"), "/", val(iter_item, "name"), "/teams"])
+    header "X-GitHub-Api-Version", "2022-11-28"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "description", jmes_path(col_item, "description")
+      field "privacy", jmes_path(col_item, "privacy")
+      field "permission", jmes_path(col_item, "permission")
+      field "html_url", jmes_path(col_item, "html_url")
+      field "repo_id", val(iter_item, "id")
+      field "repo_name", val(iter_item, "name")
+      field "repo_full_name", val(iter_item, "full_name")
+      field "repo_url", val(iter_item, "html_url")
+      field "repo_description", val(iter_item, "description")
+      field "repo_default_branch", val(iter_item, "default_branch")
+      field "repo_created_at", val(iter_item, "created_at")
+      field "org_id", val(iter_item, "id")
+      field "org_name", val(iter_item, "org_name")
+      field "org_company", val(iter_item, "org_company")
+      field "org_blog", val(iter_item, "org_blog")
+      field "org_location", val(iter_item, "org_location")
+      field "org_email", val(iter_item, "org_email")
+      field "org_url", val(iter_item, "org_url")
+      field "org_created_at", val(iter_item, "org_created_at")
+    end
   end
 end
 
 datasource "ds_invalid_repos" do
-    run_script $js_invalid_repos, $ds_org_repos_teams
+  run_script $js_invalid_repos, $ds_org_repos_teams, $ds_github_org_repos, $ds_applied_policy
 end
 
 script "js_invalid_repos", type: "javascript" do
-    parameters "org_repos_teams"
-    result "invalid_org_repos"
-    code <<-EOS
-var invalid_org_repos = [];
-for (var index = 0; index < org_repos_teams.length; index++) {
-    admin_count = 0;
-    var repo = org_repos_teams[index];
-    if( repo.teams.length == 0 ){
-      repo.failure_reason = "No Team(s) added on repo";
-      invalid_org_repos.push(repo);
-    } else {
-      for (var t_index = 0; t_index < repo.teams.length; t_index++) {
-        var team = repo.teams[t_index];
-        if (team.permission == "admin") {
-          admin_count++;
-        }
-      }
-      if (admin_count == 0) {
-        repo.failure_reason = "No Team(s) have the Admin role on repo";
-        repo["fullRepositoryName"] = "["+repo.repo_org+"/"+repo.repo_name+"](https://github.com/"+repo.repo_org+"/"+repo.repo_name+"/settings/collaboration)"
-        repo["fullAuditLogName"] = "[Audit Log](https://github.com/organizations/"+repo_org+"/settings/audit-log?utf8=%E2%9C%93&q=repo%3A"+repo.repo_org+"%2F"+repo.repo_name+")"
-        invalid_org_repos.push(repo);
-      }
+  parameters "ds_org_repos_teams", "ds_github_org_repos", "ds_applied_policy"
+  result "result"
+  code <<-EOS
+  teams_by_repo = _.groupBy(ds_org_repos_teams, function(team) {
+    return team['org_name'] + '/' + team['repo_name']
+  })
+
+  repos_without_teams = _.reject(ds_github_org_repos, function(repo) {
+    return _.contains(_.keys(teams_by_repo), repo['org_name'] + '/' + repo['name'])
+  })
+
+  result = _.map(repos_without_teams, function(repo) {
+    org_name = encodeURI(repo['org_name'])
+    q_param = encodeURI("repo:" + repo["org_name"] + "/" + repo["name"])
+    audit_log_url = "https://github.com/organizations/" + org_name + "/settings/audit-log?utf8=%E2%9C%93&q=" + q_param
+
+    return {
+      id: repo['id'],
+      name: repo['name'],
+      description: repo['description'],
+      created_at: repo['created_at'],
+      org_name: repo['org_name'],
+      policy_name: ds_applied_policy['name'],
+      audit_log: "Audit Log||" + audit_log_url,
+      reason: "No teams associated with repository"
     }
-}
+  })
+
+  _.each(_.keys(teams_by_repo), function(repo) {
+    if (_.contains(_.pluck(teams_by_repo[repo], 'permission'), 'admin') == false) {
+      org_name = encodeURI(teams_by_repo[repo][0]['org_name'])
+      q_param = encodeURI("repo:" + repo)
+      audit_log_url = "https://github.com/organizations/" + org_name + "/settings/audit-log?utf8=%E2%9C%93&q=" + q_param
+
+      result.push({
+        id: teams_by_repo[repo][0]['repo_id'],
+        name: teams_by_repo[repo][0]['repo_name'],
+        description: teams_by_repo[repo][0]['repo_description'],
+        created_at: teams_by_repo[repo][0]['repo_created_at'],
+        org_name: teams_by_repo[repo][0]['org_name'],
+        policy_name: ds_applied_policy['name'],
+        audit_log: "Audit Log||" + audit_log_url,
+        reason: "No teams with 'admin' role"
+      })
+    }
+  })
 EOS
 end
 
@@ -163,24 +276,33 @@ end
 ###############################################################################
 
 policy "pol_invalid_repos" do
-  validate $ds_invalid_repos do
-    summary_template "GitHub.com Repository Ownership Report"
-    check eq(size(data), 0)
+  validate_each $ds_invalid_repos do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} GitHub Repositories Without Admin Team Found"
+    check eq(val(item, "id"), "")
     escalate $esc_email
-    #### Policy Organization(s): {{  parameters.param_orgs }}
     export do
       resource_level true
-      field "fullRepositoryName" do
-        label "Organization / Repository"
-      end
-      field "fullAuditLogName" do
-        label "Audit Log Link"
-      end
-      field "failure_reason" do
-        label "Reason for Non-Compliance"
-      end
       field "id" do
         label "ID"
+      end
+      field "name" do
+        label "Name"
+      end
+      field "description" do
+        label "Description"
+      end
+      field "created_at" do
+        label "Created At"
+      end
+      field "org_name" do
+        label "Organization"
+      end
+      field "reason" do
+        label "Issue"
+      end
+      field "audit_log" do
+        label "Audit Log"
+        format "link-external"
       end
     end
   end
