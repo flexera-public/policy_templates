@@ -1,6 +1,6 @@
 # GitHub.com Top-Level Teams
 
-## What it does
+## What It Does
 
 This Policy Template gets the top-level / parent Teams for a GitHub.com Org and creates an incident if any do not match the whitelisted values.
 

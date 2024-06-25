@@ -1,6 +1,6 @@
 # GitHub.com Unpermitted Outside Collaborators
 
-## What it does
+## What It Does
 
 This Policy Template will get all the Outside Collaborators (User that have been granted access to a repository, but are not a Member of the repository owner's Organization) under GitHub.com Organization(s) and creates an incident for each that are not included in the specified username whitelist.
 

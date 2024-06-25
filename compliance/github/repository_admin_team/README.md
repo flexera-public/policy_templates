@@ -1,6 +1,6 @@
 # GitHub.com Repositories without Admin Team
 
-## What it does
+## What It Does
 
 This Policy Template gets all the repositories under GitHub.com Organization(s) and creates an incident if any do not have at least 1 Team assigned with `admin` role.  When this requirement is in place, it's easy to identify the responsible owners / team for any given repository.
 

@@ -1,6 +1,6 @@
 # GitHub.com Repository Branches without Protection
 
-## What it does
+## What It Does
 
 Gets the repositories under a list of GitHub.com Organizations and creates incidents for any that do not have protection enabled for their default branch.
 

@@ -1,22 +1,31 @@
 name "GitHub.com Unpermitted Repository Names"
 rs_pt_ver 20180301
+type "policy"
 short_description "Gets the names of all repositories under GitHub.com Organization(s) and creates incidents for any that do not match any of the whitelisted regex strings.  See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/github/repository_naming) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "low"
 category "Compliance"
+default_frequency "weekly"
 info(
-  version: "2.4",
+  version: "3.0.0",
   provider: "GitHub",
-  service: "",
+  service: "Git",
   policy_set: ""
 )
 
+###############################################################################
+# Parameters
+###############################################################################
+
 parameter "param_email" do
-  label "Email addresses of the recipients you wish to notify"
   type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
 end
 
-parameter "param_whitelist" do
+parameter "param_repo_allowlist" do
   type "string"
   label "Regex for whitelisted repository name"
   default "^[a-z\\-]+$"
@@ -24,8 +33,14 @@ end
 
 parameter "param_orgs" do
   type "list"
-  label "Organizations on GitHub.com to scan"
+  category "Policy Settings"
+  label "GitHub.com Organizations"
+  description "A list of GitHub.com Organizations to check."
 end
+
+###############################################################################
+# Authentication
+###############################################################################
 
 credentials "auth_github" do
   schemes "api_key"
@@ -34,12 +49,37 @@ credentials "auth_github" do
   tags "provider=github"
 end
 
-pagination "github_pagination" do
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_github" do
   get_page_marker do
     header "Link"
   end
   set_page_marker do
     uri true
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
   end
 end
 
@@ -55,11 +95,11 @@ var orgs_array = param_orgs;
 EOS
 end
 
-datasource "org_repos" do
+datasource "ds_org_repos" do
   iterate $ds_orgs_array
   request do
     auth $auth_github
-    pagination $github_pagination
+    pagination $pagination_github
     host "api.github.com"
     path join(["/orgs/",iter_item,"/repos"])
   end
@@ -75,19 +115,19 @@ datasource "org_repos" do
   end
 end
 
-datasource "invalid_repos" do
-    run_script $js_invalid_repos, $org_repos, $param_whitelist
+datasource "ds_invalid_repos" do
+    run_script $js_invalid_repos, $ds_org_repos, $param_repo_allowlist
 end
 
 script "js_invalid_repos", type: "javascript" do
-    parameters "org_repos","param_whitelist"
+    parameters "org_repos","param_repo_allowlist"
     result "invalid_org_repos"
     code <<-EOS
 var invalid_org_repos = [];
 for (var index = 0; index < org_repos.length; index++) {
     var repo = org_repos[index];
     // exclude white listed names
-    if( !repo.repo_name.match(param_whitelist) ){
+    if( !repo.repo_name.match(param_repo_allowlist) ){
         repo["repositoryFullName"] = "["+repo.repo_name+"](https://github.com/"+repo.full_name+")";
         repo["auditLogFullName"] = "[Audit Log](https://github.com/organizations/"+repo.repo_org+"/settings/audit-log?utf8=%E2%9C%93&q=repo%3A"+repo.repo_org+"%2F"+repo.repo_name+")";
         invalid_org_repos.push(repo)
@@ -96,13 +136,17 @@ for (var index = 0; index < org_repos.length; index++) {
 EOS
 end
 
-policy "invalid_repos" do
-  validate $invalid_repos do
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_invalid_repos" do
+  validate $ds_invalid_repos do
     summary_template "GitHub.com Repository Naming Report"
     check eq(size(data), 0)
-    escalate $report_repositories
+    escalate $esc_email
     #### Policy Organization(s): {{  parameters.param_orgs }}
-    #### Policy Whitelisted Repo Names: {{  parameters.param_whitelist }}
+    #### Policy Whitelisted Repo Names: {{  parameters.param_repo_allowlist }}
     export do
       resource_level true
       field "repo_org" do
@@ -121,7 +165,11 @@ policy "invalid_repos" do
   end
 end
 
-escalation "report_repositories" do
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"

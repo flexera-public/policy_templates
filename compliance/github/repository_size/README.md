@@ -1,6 +1,6 @@
 # GitHub.com Unpermitted Sized Repositories
 
-## What it does
+## What It Does
 
 This Policy Template gets all the repositories under GitHub.com Organization(s) and creates an incident if any are smaller than the minimum repo size and older than the minimium repo age set by the policy.
 

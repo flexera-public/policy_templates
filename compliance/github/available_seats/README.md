@@ -1,6 +1,6 @@
 # GitHub.com Available Seats
 
-## What it does
+## What It Does
 
 This Policy Template will get the total used/available seats for a GitHub.com Organization and create an incident if the number of available seats fall outside the policy's min and max parameters.
 

@@ -1,24 +1,35 @@
 name "GitHub.com Repository Branches without Protection"
 rs_pt_ver 20180301
+type "policy"
 short_description "Gets the repositories under a list of GitHub.com Organizations and creates incidents for any that do not have protection enabled for selected branches.  See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/github/repository_branch_protection) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "medium"
 category "Compliance"
+default_frequency "weekly"
 info(
-  version: "2.5",
+  version: "3.0.0",
   provider: "GitHub",
-  service: "",
+  service: "Git",
   policy_set: ""
 )
 
+###############################################################################
+# Parameters
+###############################################################################
+
 parameter "param_email" do
   type "list"
-  label "Email addresses of the recipients you wish to notify"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
 end
 
 parameter "param_orgs" do
   type "list"
-  label "Organizations on GitHub.com to scan"
+  category "Policy Settings"
+  label "GitHub.com Organizations"
+  description "A list of GitHub.com Organizations to check."
 end
 
 parameter "param_branches" do
@@ -34,7 +45,7 @@ parameter "param_include_default_branch" do
   allowed_values ["false","true"]
 end
 
-parameter "param_whitelist" do
+parameter "param_orgrepo_allowlist" do
   type "list"
   label "Git org/repo(s) that are whitelisted from this policy"
 end
@@ -61,6 +72,10 @@ parameter "param_automatic_action" do
   default []
 end
 
+###############################################################################
+# Authentication
+###############################################################################
+
 credentials "auth_github" do
   schemes "api_key"
   label "GitHub"
@@ -68,12 +83,37 @@ credentials "auth_github" do
   tags "provider=github"
 end
 
-pagination "github_pagination" do
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_github" do
   get_page_marker do
-    body_path jq(response, 'if .data.search.pageInfo.hasNextPage then "{ \"currentCursor\" :\"" + .data.search.pageInfo.endCursor + "\" }" else null end')
+    header "Link"
   end
   set_page_marker do
-    body_field "variables"
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
   end
 end
 
@@ -149,7 +189,7 @@ datasource "ds_github_repos" do
   request do
     auth $auth_github
     verb "POST"
-    pagination $github_pagination
+    pagination $pagination_github
     host "api.github.com"
     path "graphql"
     body_field "query", iter_item
@@ -169,17 +209,17 @@ datasource "ds_github_repos" do
 end
 
 datasource "ds_invalid_repo_branches" do
-    run_script $js_invalid_repo_branches, $ds_github_repos, $param_whitelist, $param_branches, $param_include_default_branch
+    run_script $js_invalid_repo_branches, $ds_github_repos, $param_orgrepo_allowlist, $param_branches, $param_include_default_branch
 end
 
 script "js_invalid_repo_branches", type: "javascript" do
-    parameters "repos", "param_whitelist", "branches", "include_default_branch"
+    parameters "repos", "param_orgrepo_allowlist", "branches", "include_default_branch"
     result "invalid_repos_branches"
     code <<-EOS
 var invalid_repos_branches = [];
 
 _.each(repos, function(repo) {
-  if(!_.contains(param_whitelist, repo.full_name)) {
+  if(!_.contains(param_orgrepo_allowlist, repo.full_name)) {
     if (include_default_branch == "true" && repo.default_branch != null && repo.branch_protection_rule == null) {
       var i_repo = {};
       i_repo.id = repo.id;
@@ -213,11 +253,15 @@ _.each(repos, function(repo) {
 EOS
 end
 
-policy "invalid_repos" do
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_invalid_repos" do
   validate $ds_invalid_repo_branches do
     summary_template "GitHub.com Unprotected Branches Report"
     check eq(size(data), 0)
-    escalate $email_report
+    escalate $esc_email
     escalate $github_repos_branch_add_protection
     #### Policy Organization(s): {{  parameters.param_orgs }}
     #### Policy Branches: {{  parameters.param_branches }}
@@ -242,7 +286,11 @@ policy "invalid_repos" do
   end
 end
 
-escalation "email_report" do
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
@@ -255,6 +303,10 @@ escalation "github_repos_branch_add_protection" do
   description "All selected branches will be updated with protection rules"
   run "github_repos_branch_add_protection", data, $param_enforce_admins, $param_required_pull_request_reviews
 end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
 
 define github_repos_branch_add_protection($data, $param_enforce_admins, $param_required_pull_request_reviews) do
   foreach $item in $data do

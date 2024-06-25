@@ -1,6 +1,6 @@
 # GitHub.com Unpermitted Repository Names
 
-## What it does
+## What It Does
 
 This Policy Template gets all the repositories under GitHub.com Organization(s) and creates an incident if any do not match the whitelisted naming schema(s).
 
