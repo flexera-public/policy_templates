@@ -1,4 +1,4 @@
-# GitHub.com Unpermitted Sized Repositories
+# GitHub.com Undersized Repositories
 
 ## What It Does
 
