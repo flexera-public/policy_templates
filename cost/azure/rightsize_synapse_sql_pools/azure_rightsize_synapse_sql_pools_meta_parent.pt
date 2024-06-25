@@ -111,19 +111,50 @@ parameter "param_exclusion_tags_boolean" do
   default "Any"
 end
 
+parameter "param_filter_stats" do
+  type "string"
+  category "Filters"
+  label "Threshold Statistic"
+  description "Statistic to use when determining if an instance is underutilized."
+  allowed_values "Average", "Maximum", "P90", "P95", "P99"
+  default "Average"
+end
+
 parameter "param_stats_threshold" do
   type "number"
   category "Statistics"
-  label "DWU used Threshold (%)"
-  description "Threshold to use when determining if a pool is underutilized."
+  label "DWU Used Threshold (%)"
+  description "The DWU threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing."
+  min_value 1
+  max_value 100
   default 20
 end
 
-parameter "param_stats_lookback" do
+parameter "param_terminate_lookback" do
   type "number"
   category "Statistics"
-  label "Statistic Lookback Period"
-  description "How many days back to look at metrics. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days."
+  label "Terminate Lookback Period (Days)"
+  description "How many days back to look at metrics to consider a pool idle for termination. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days."
+  min_value 1
+  max_value 90
+  default 30
+end
+
+parameter "param_pause_lookback" do
+  type "number"
+  category "Statistics"
+  label "Pause Lookback Period (Days)"
+  description "How many days back to look at metrics to consider a pool idle for pausing. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days."
+  min_value 1
+  max_value 90
+  default 30
+end
+
+parameter "param_downsize_lookback" do
+  type "number"
+  category "Statistics"
+  label "Downsize Lookback Period (Days)"
+  description "How many days back to look at metrics to consider a pool underutilized for downsizing. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days."
   min_value 1
   max_value 90
   default 30
@@ -149,23 +180,12 @@ parameter "param_min_savings" do
 end
 
 parameter "param_automatic_pause" do
-  type "list"
+  type "string"
   category "Actions"
   label "Enable Automatic Pausing"
-  description "When this value is set, this policy will automatically pause the selected underutilized Synapse SQL Pools."
-  allowed_values ["Yes", "No"]
-  default ["No"] 
-  end
-
-###############################################################################
-# Authentication
-###############################################################################
-
-credentials "auth_azure" do
-  schemes "oauth2"
-  label "Azure"
-  description "Select the Azure Resource Manager Credential from the list."
-  tags "provider=azure_rm"
+  description "When this value is set to Yes, this policy will automatically pause the selected idle Synapse SQL Pools."
+  allowed_values "Yes", "No"
+  default "No"
 end
 
 ###############################################################################
@@ -838,6 +858,28 @@ datasource "ds_child_incident_details" do
   end
 end
 
+datasource "ds_azure_synapse_terminate_pools_combined_incidents" do
+  run_script $js_ds_azure_synapse_terminate_pools_combined_incidents, $ds_child_incident_details
+end
+
+script "js_ds_azure_synapse_terminate_pools_combined_incidents", type: "javascript" do
+  parameters "ds_child_incident_details"
+  result "result"
+  code <<-EOS
+  result = []
+  _.each(ds_child_incident_details, function(incident) {
+    s = incident["summary"];
+    // If the incident summary contains "Azure Idle for termination Synapse SQL pools found" then include it in the filter result
+    if (s.indexOf("Azure Idle for termination Synapse SQL pools found") > -1) {
+      _.each(incident["violation_data"], function(violation) {
+        violation["incident_id"] = incident["id"];
+        result.push(violation);
+      });
+    }
+  });
+EOS
+end
+
 datasource "ds_azure_synapse_idle_pools_combined_incidents" do
   run_script $js_ds_azure_synapse_idle_pools_combined_incidents, $ds_child_incident_details
 end
@@ -849,8 +891,8 @@ script "js_ds_azure_synapse_idle_pools_combined_incidents", type: "javascript" d
   result = []
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
-    // If the incident summary contains "Azure Idle Synapse SQL pools found" then include it in the filter result
-    if (s.indexOf("Azure Idle Synapse SQL pools found") > -1) {
+    // If the incident summary contains "Azure Idle for pausing Synapse SQL pools found" then include it in the filter result
+    if (s.indexOf("Azure Idle for pausing Synapse SQL pools found") > -1) {
       _.each(incident["violation_data"], function(violation) {
         violation["incident_id"] = incident["id"];
         result.push(violation);
@@ -883,6 +925,16 @@ EOS
 end
 
 
+# Escalation for Pause Underutilized Instances
+escalation "esc_pause_instances" do
+  automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
+  label "Pause Underutilized Instances"
+  description "Automatically pause the dedicated Synapse SQL Pool in the Test MCA subscription"
+  run "esc_pause_instances", data, rs_governance_host, rs_project_id
+end
+define esc_pause_instances($data, $governance_host, $rs_project_id) do
+  call child_run_action($data, $governance_host, $rs_project_id, "Pause Underutilized Instances")
+end
 
 
 # Summary and a conditional incident which will show up if any policy is being applied, updated or deleted.
@@ -891,9 +943,82 @@ end
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
-    # Consolidated incident for Azure Idle Synapse SQL pools found
+    # Consolidated incident for Azure Idle for termination Synapse SQL pools found
+  validate $ds_azure_synapse_terminate_pools_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} Azure Idle for termination Synapse SQL pools found"
+    escalate $esc_email
+    escalate $esc_pause_instances
+    check eq(size(data), 0)
+    export do
+      resource_level true
+      field "accountID" do
+        label "Subscription ID"
+      end
+      field "accountName" do
+        label "Subscription Name"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "newResourceType" do
+        label "Recommended Resource Type"
+      end
+      field "resourceKind" do
+        label "Resource Kind"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "status" do
+        label "Status"
+      end
+      field "creationDate" do
+        label "Creation Date"
+      end
+      field "provisioningState" do
+        label "Provisioning State"
+      end
+      field "storageAccountType" do
+        label "Storage Account Type"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "Connections" do
+        label "Connections Utilization (Maximum)"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "ID"
+      end
+      field "recommendationDetails" do
+        label "Recommend
+      field "incident_id" do
+        label "Child Incident ID"
+      end
+    end
+  end
+
+  # Consolidated incident for Azure Idle for pausing Synapse SQL pools found
   validate $ds_azure_synapse_idle_pools_combined_incidents do
-    summary_template "Consolidated Incident: {{ len data }} Azure Idle Synapse SQL pools found"
+    summary_template "Consolidated Incident: {{ len data }} Azure Idle for pausing Synapse SQL pools found"
     escalate $esc_email
     escalate $esc_pause_instances
     check eq(size(data), 0)
@@ -945,34 +1070,31 @@ policy "policy_scheduled_report" do
         label "Savings Currency"
       end
       field "DWUavgUsed" do
-        label "DWU AVG Utilization"
+        label "DWU Utilization (Average)"
       end
       field "DWUavgUsedPercent" do
-        label "DWU AVG Utilization %"
+        label "DWU Utilization % (Average)"
       end
       field "DWUUsed" do
-        label "DWU Max Utilization"
+        label "DWU Utilization (Maximum)"
       end
       field "DWUUsedPercent" do
-        label "DWU Max Utilization %"
-      end
-      field "ConnectionsAverage" do
-        label "Connections AVG Utilization"
+        label "DWU Utilization % (Maximum)"
       end
       field "Connections" do
-        label "Connections Max Utilization"
+        label "Connections Utilization (Maximum)"
       end
       field "cpuAverage" do
-        label "CPU AVG utilization %"
+        label "CPU Utilization % (Average)"
       end
       field "cpuMaximum" do
-        label "CPU Max utilization %"
+        label "CPU Utilization % (Maximum)"
       end
       field "memAverage" do
-        label "Memory AVG utilization %"
+        label "Memory Utilization % (Average)"
       end
       field "memMaximum" do
-        label "Memory Max utilization %"
+        label "Memory Utilization % (Maximum)"
       end
       field "lookbackPeriod" do
         label "Look Back Period (Days)"
@@ -1045,37 +1167,43 @@ policy "policy_scheduled_report" do
         label "Savings Currency"
       end
       field "DWUavgUsed" do
-        label "DWU AVG Utilization"
+        label "DWU Utilization (Average)"
       end
       field "DWUavgUsedPercent" do
-        label "DWU AVG Utilization %"
+        label "DWU Utilization % (Average)"
       end
       field "DWUUsed" do
-        label "DWU Max Utilization"
+        label "DWU Utilization (Maximum)"
       end
       field "DWUUsedPercent" do
-        label "DWU Max Utilization %"
+        label "DWU Utilization % (Maximum)"
+      end
+      field "DWUP90" do
+        label "DWU Utilization % (P90)"
+      end
+      field "DWUP95" do
+        label "DWU Utilization % (P95)"
+      end
+      field "DWUP99" do
+        label "DWU Utilization % (P99)"
       end
       field "threshold" do
         label "Threshold"
       end
-      field "ConnectionsAverage" do
-        label "Connections AVG Utilization"
-      end
       field "Connections" do
-        label "Connections Max Utilization"
+        label "Connections Utilization (Maximum)"
       end
       field "cpuAverage" do
-        label "CPU AVG utilization %"
+        label "CPU Utilization % (Average)"
       end
       field "cpuMaximum" do
-        label "CPU Max utilization %"
+        label "CPU Utilization % (Maximum)"
       end
       field "memAverage" do
-        label "Memory AVG utilization %"
+        label "Memory Utilization % (Average)"
       end
       field "memMaximum" do
-        label "Memory Max utilization %"
+        label "Memory Utilization % Maximum"
       end
       field "lookbackPeriod" do
         label "Look Back Period (Days)"
