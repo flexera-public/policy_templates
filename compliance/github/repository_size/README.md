@@ -2,14 +2,16 @@
 
 ## What It Does
 
-This Policy Template gets all the repositories under GitHub.com Organization(s) and creates an incident if any are smaller than the minimum repo size and older than the minimium repo age set by the policy.
+This policy template reports any GitHub repositories under the user-specified GitHub.com organizations whose size is below a user-specified number of bytes. Optionally, it emails this report.
 
 ## Input Parameters
 
-1. GitHub.com Organizations to check - Example: `flexera`
-1. Minimum Repo Age in days - Example: `7`
-1. Minimum Repo Size in bytes - Example: `0`
-1. Email address to send escalation emails to - Example: `noreply@example.com`
+- *Email Addresses* - A list of email addresses to notify.
+- *GitHub.com Organizations* - A list of GitHub.com Organizations to check.
+- *Allow/Deny GitHub Repositories* - Whether to treat Allow/Deny GitHub Repositories List parameter as allow or deny list. Has no effect if Allow/Deny GitHub Repositories List is left empty.
+- *Allow/Deny GitHub Repositories List* - Filter results by GitHub repository, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all the GitHub repositories in the specified organizations.
+- *Minimum Age (Days)* - Required minimum age of repository in days to include it in the results. Set to `0` to not filter results by repository age.
+- *Minimum Size (Bytes)* - Required minimum size of repository in bytes.
 
 ## Policy Actions
 
