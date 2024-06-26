@@ -71,7 +71,7 @@ parameter "param_enforce_admins" do
   type "string"
   category "Actions"
   label "Enforce Restrictions On Admins"
-  description "When protecting branches, whether to enforce all configured restrictions for administrators. Set to 'true' to enforce required status checks for repository administrators."
+  description "When protecting branches, whether to enforce all configured restrictions for administrators."
   allowed_values ["True", "False"]
   default "False"
 end
@@ -79,11 +79,29 @@ end
 parameter "param_required_reviews" do
   type "number"
   category "Actions"
-  label "Enforce Restrictions On Admins"
+  label "Required Reviews (#)"
   description "When protecting branches, number of approving reviews to require on a pull request before merging. Set to '0' to disable this requirement."
   min_value 0
   max_value 5
   default 1
+end
+
+parameter "param_require_owner_review" do
+  type "string"
+  category "Actions"
+  label "Require Code Owner Review"
+  description "When protecting branches, whether to require the code owner perform a review before merging."
+  allowed_values ["True", "False"]
+  default "False"
+end
+
+parameter "param_dismiss_stale_reviews" do
+  type "string"
+  category "Actions"
+  label "Dismiss Stale Reviews"
+  description "When protecting branches, whether to dismiss stale reviews."
+  allowed_values ["True", "False"]
+  default "False"
 end
 
 parameter "param_automatic_action" do
@@ -138,6 +156,16 @@ datasource "ds_applied_policy" do
     path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
     header "Api-Version", "1.0"
   end
+end
+
+datasource "ds_org_list" do
+  run_script $js_org_list, $param_orgs
+end
+
+script "js_org_list", type: "javascript" do
+  parameters "param_orgs"
+  result "result"
+  code "result = param_orgs"
 end
 
 datasource "ds_github_orgs" do
@@ -429,59 +457,90 @@ escalation "esc_protect_branches" do
   automatic contains($param_automatic_action, "Protect Branches")
   label "Protect Branches"
   description "Approval to enable protection rules for all selected branches"
-  run "protect_branches", data, $param_enforce_admins, $param_required_reviews
+  run "protect_branches", data, $param_enforce_admins, $param_required_reviews, $param_require_owner_review, $param_dismiss_stale_reviews
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define github_repos_branch_add_protection($data, $param_enforce_admins, $param_required_reviews) do
-  foreach $item in $data do
-    task_label( join(["Updating branch protection for ",$item['repo_org'],"/",$item['repo_name'],":",$item['default_branch']]) )
-    call github_repo_branch_protection_update($item['repo_org'],$item['repo_name'],$item['default_branch'],$param_enforce_admins, $param_required_reviews) retrieve $github_repo_branch_protection_update_response
+define protect_branches($data, $param_enforce_admins, $param_required_reviews, $param_require_owner_review, $param_dismiss_stale_reviews) return $all_responses do
+  $$all_responses = []
+
+  foreach $branch in $data do
+    sub on_error: handle_error() do
+      call protect_branch($branch, $param_enforce_admins, $param_required_reviews, $param_require_owner_review, $param_dismiss_stale_reviews) retrieve $protect_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
   end
 end
 
-define github_repo_branch_protection_update($owner, $repo, $branch, $enforce_admins, $required_pull_request_reviews) return $response do
-  $enforce_admins = to_b($enforce_admins)
-  if $required_pull_request_reviews == "null"
-    $required_pull_request_reviews = null
-  else
-    $required_pull_request_reviews = to_n($required_pull_request_reviews)
+define protect_branch($branch, $param_enforce_admins, $param_required_reviews, $param_require_owner_review, $param_dismiss_stale_reviews) return $response do
+  $host = "api.github.com"
+  $full_id = $branch["org_name"] + "/" + $branch["repo_name"] + "/branches/" + $branch["id"]
+  $href = "/repos/" + $full_id + "/protection"
+  $url = $host + $href
+  task_label("PUT " + $url)
+
+  $enforce_admins = false
+  if $param_enforce_admins == "True"
+    $enforce_admins = true
   end
 
-  $attempt_count = 0
-  $response = { "code": 0 }
-  while $response["code"] != 200 && $attempt_count < 5 do
-    sleep($attempt_count * 1)
-    task_label("Attempting update branch protection for "+ join(["/repos/",$owner,"/",$repo,"/branches/",$branch,"/protection"]))
-    $response = http_request(
-      auth: $$auth_github,
-      https: true,
-      verb: "put",
-      host: "api.github.com",
-      href: join(["/repos/",$owner,"/",$repo,"/branches/",$branch,"/protection"]),
-      headers: {
-        "Accept": "application/vnd.github.luke-cage-preview+json"
+  $required_reviews = $param_required_reviews
+  if $required_reviews == 0
+    $required_reviews = null
+  end
+
+  $require_owner_review = false
+  if $param_require_owner_review == "True"
+    $require_owner_review = true
+  end
+
+  $dismiss_stale_reviews = false
+  if $param_dismiss_stale_reviews == "True"
+    $dismiss_stale_reviews = true
+  end
+
+  $response = http_request(
+    auth: $$auth_github,
+    https: true,
+    verb: "put",
+    host: $host,
+    href: $href,
+    headers: { "X-GitHub-Api-Version": "2022-11-28" },
+    body: {
+      "required_status_checks": null,
+      "enforce_admins": $enforce_admins,
+      "required_pull_request_reviews": {
+        "dismissal_restrictions": {},
+        "dismiss_stale_reviews": $dismiss_stale_reviews,
+        "require_code_owner_reviews": $require_owner_review,
+        "required_approving_review_count": $required_reviews
       },
-      body: {
-        "required_status_checks":         null,
-        "enforce_admins":                 $enforce_admins,
-        "required_pull_request_reviews":  {
-          "dismissal_restrictions":           {},
-          "dismiss_stale_reviews":            false,
-          "require_code_owner_reviews":       false,
-          "required_approving_review_count":  $required_pull_request_reviews
-        },
-        "restrictions":                   null
-      }
-    )
-    $attempt_count = $attempt_count +1
-  end
-  if $response["code"] == 200
-    task_label("Completed update branch protection for "+ join(["/repos/",$owner,"/",$repo,"/branches/",$branch,"/protection"]))
+      "restrictions": null
+    }
+  )
+
+  task_label("Put GitHub Branch response: " + $full_id + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response putting GitHub Branch: "+ $full_id + " " + to_json($response)
   else
-    raise "unexpected response code trying update branch protection for "+join(["/repos/",$owner,"/",$repo,"/branches/",$branch,"/protection"])+": "+to_json($response)
+    task_label("Put GitHub Branch successful: " + $full_id)
   end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
 end
