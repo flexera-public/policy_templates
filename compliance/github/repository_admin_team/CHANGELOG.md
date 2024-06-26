@@ -21,7 +21,7 @@
 
 - Modified escalation label and description for consistency
 
-## 2.1
+## v2.1
 
 - Adding incident resource table
 
