@@ -23,9 +23,6 @@ if (pt_files.length != 0)
 
     # Exclude Meta Parent Policies
     if file.include?("meta_parent") then next end
-
-    # Exclude Policies that are no longer being updated
-    if open(file).grep(/This policy is no longer being updated/).length > 0 then next end
     ## End Policy Exclusions ##
 
     # After all exclusions, we can assume the policy should be in the output
