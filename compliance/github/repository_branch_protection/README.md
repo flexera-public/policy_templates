@@ -1,12 +1,12 @@
-# GitHub.com Repository Branches without Protection
+# GitHub Repository Branches without Protection
 
 ## What It Does
 
-Gets the repositories under a list of GitHub.com Organizations and creates incidents for any that do not have protection enabled for their default branch.
+Gets the repositories under a list of GitHub Organizations and creates incidents for any that do not have protection enabled for their default branch.
 
 ## Input Parameters
 
-1. GitHub.com Organizations to check - Example: `flexera`
+1. GitHub Organizations to check - Example: `flexera`
 1. Branches that should be protected - Example: `master`
 1. Include default branch regardless of branches list.
 1. Repositories that are whitelisted from the policy - Example: `flexera/repository-name`

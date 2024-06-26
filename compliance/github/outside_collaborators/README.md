@@ -1,16 +1,16 @@
-# GitHub.com Unpermitted Outside Collaborators
+# GitHub Unpermitted Outside Collaborators
 
 ## What It Does
 
-This policy template reports on any [outside collaborators](https://docs.github.com/en/organizations/managing-user-access-to-your-organizations-repositories/managing-outside-collaborators/adding-outside-collaborators-to-repositories-in-your-organization) under the user-specified GitHub.com organizations, ignoring the users in the `User Allow List` parameter. Optionally, it emails this report.
+This policy template reports on any [outside collaborators](https://docs.github.com/en/organizations/managing-user-access-to-your-organizations-repositories/managing-outside-collaborators/adding-outside-collaborators-to-repositories-in-your-organization) under the user-specified GitHub organizations, ignoring the users in the `User Allow List` parameter. Optionally, it emails this report.
 
 ## Input Parameters
 
 - *Email Addresses* - A list of email addresses to notify.
-- *GitHub.com Organizations* - A list of GitHub.com Organizations to check.
+- *GitHub Organizations* - A list of GitHub Organizations to check.
 - *Allow/Deny GitHub Repositories* - Whether to treat Allow/Deny GitHub Repositories List parameter as allow or deny list. Has no effect if Allow/Deny GitHub Repositories List is left empty.
 - *Allow/Deny GitHub Repositories List* - Filter results by GitHub repository, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all the GitHub repositories in the specified organizations.
-- *User Allow List* - GitHub.com user accounts to exclude from the results.
+- *User Allow List* - GitHub user accounts to exclude from the results.
 
 ## Policy Actions
 

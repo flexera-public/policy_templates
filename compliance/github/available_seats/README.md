@@ -1,13 +1,13 @@
-# GitHub.com Available Seats
+# GitHub Available Seats
 
 ## What It Does
 
-This policy template checks the user-specified GitHub.com organizations and reports any that are outside of the user-specified thresholds for available seats. Optionally, these reports can be emailed.
+This policy template checks the user-specified GitHub organizations and reports any that are outside of the user-specified thresholds for available seats. Optionally, these reports can be emailed.
 
 ## Input Parameters
 
 - *Email Addresses* - A list of email addresses to notify.
-- *GitHub.com Organizations* - A list of GitHub.com Organizations to check.
+- *GitHub Organizations* - A list of GitHub Organizations to check.
 - *Minimum Available Seats Required* - The minimum number of available seats to require. Set to `0` to not require any minimum.
 - *Maximum Available Seats Allowed* - The maximum number of available seats to allow. Set to `-1` to have no maximum.
 

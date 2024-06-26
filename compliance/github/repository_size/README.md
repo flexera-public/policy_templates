@@ -1,13 +1,13 @@
-# GitHub.com Undersized Repositories
+# GitHub Undersized Repositories
 
 ## What It Does
 
-This policy template reports any GitHub repositories under the user-specified GitHub.com organizations whose size is below a user-specified number of bytes. Optionally, it emails this report.
+This policy template reports any GitHub repositories under the user-specified GitHub organizations whose size is below a user-specified number of bytes. Optionally, it emails this report.
 
 ## Input Parameters
 
 - *Email Addresses* - A list of email addresses to notify.
-- *GitHub.com Organizations* - A list of GitHub.com Organizations to check.
+- *GitHub Organizations* - A list of GitHub Organizations to check.
 - *Allow/Deny GitHub Repositories* - Whether to treat Allow/Deny GitHub Repositories List parameter as allow or deny list. Has no effect if Allow/Deny GitHub Repositories List is left empty.
 - *Allow/Deny GitHub Repositories List* - Filter results by GitHub repository, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all the GitHub repositories in the specified organizations.
 - *Minimum Age (Days)* - Required minimum age of repository in days to include it in the results. Set to `0` to not filter results by repository age.

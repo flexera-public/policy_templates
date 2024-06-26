@@ -1,13 +1,13 @@
-# GitHub.com Repositories without Admin Team
+# GitHub Repositories without Admin Team
 
 ## What It Does
 
-This policy template reports on any repositories under the user-specified GitHub.com organizations that do not have any associated teams with the `admin` role. Optionally, it emails this report.
+This policy template reports on any repositories under the user-specified GitHub organizations that do not have any associated teams with the `admin` role. Optionally, it emails this report.
 
 ## Input Parameters
 
 - *Email Addresses* - A list of email addresses to notify.
-- *GitHub.com Organizations* - A list of GitHub.com Organizations to check.
+- *GitHub Organizations* - A list of GitHub Organizations to check.
 - *Allow/Deny GitHub Repositories* - Whether to treat Allow/Deny GitHub Repositories List parameter as allow or deny list. Has no effect if Allow/Deny GitHub Repositories List is left empty.
 - *Allow/Deny GitHub Repositories List* - Filter results by GitHub repository, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all the GitHub repositories in the specified organizations.
 

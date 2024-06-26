@@ -1,13 +1,13 @@
-# GitHub.com Top-Level Teams
+# GitHub Top-Level Teams
 
 ## What It Does
 
-This policy template reports any GitHub teams under the user-specified GitHub.com organizations that are top-level (have no parent) and are not on a user-specified list of permitted top-level teams. Optionally, it emails this report.
+This policy template reports any GitHub teams under the user-specified GitHub organizations that are top-level (have no parent) and are not on a user-specified list of permitted top-level teams. Optionally, it emails this report.
 
 ## Input Parameters
 
 - *Email Addresses* - A list of email addresses to notify.
-- *GitHub.com Organizations* - A list of GitHub.com Organizations to check.
+- *GitHub Organizations* - A list of GitHub Organizations to check.
 - *Allowed Top-Level Teams* - Teams that are permitted to be top-level and should not be included in the results.
 
 ## Policy Actions
