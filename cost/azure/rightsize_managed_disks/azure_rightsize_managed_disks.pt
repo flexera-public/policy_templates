@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "monthly"
 info(
-  version: "2.0.3",
+  version: "2.1.0",
   provider: "Azure",
   service: "Managed Disks",
   policy_set: "Rightsize Storage",
@@ -92,6 +92,14 @@ parameter "param_regions_list" do
   category "Filters"
   label "Allow/Deny Regions List"
   description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+parameter "param_sku_ignore_list" do
+  type "list"
+  category "Filters"
+  label "SKU Ignore List"
+  description "A list of disk SKUs to ignore and not include in the results. To remove HDDs from the results, add 'Standard_LRS' and 'Standard_ZRS' to this list. Leave blank to produce recommendations for all SKUs."
   default []
 end
 
@@ -280,16 +288,34 @@ datasource "ds_azure_disks" do
   end
 end
 
+datasource "ds_azure_disks_sku_filtered" do
+  run_script $js_azure_disks_sku_filtered, $ds_azure_disks, $param_sku_ignore_list
+end
+
+script "js_azure_disks_sku_filtered", type: "javascript" do
+  parameters "ds_azure_disks", "param_sku_ignore_list"
+  result "result"
+  code <<-EOS
+  if (param_sku_ignore_list.length > 0) {
+    result = _.reject(ds_azure_disks, function(disk) {
+      return _.contains(param_sku_ignore_list, disk['tier'])
+    })
+  } else {
+    result = ds_azure_disks
+  }
+EOS
+end
+
 datasource "ds_azure_disks_region_filtered" do
-  run_script $js_azure_disks_region_filtered, $ds_azure_disks, $param_regions_allow_or_deny, $param_regions_list
+  run_script $js_azure_disks_region_filtered, $ds_azure_disks_sku_filtered, $param_regions_allow_or_deny, $param_regions_list
 end
 
 script "js_azure_disks_region_filtered", type: "javascript" do
-  parameters "ds_azure_disks", "param_regions_allow_or_deny", "param_regions_list"
+  parameters "ds_azure_disks_sku_filtered", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-EOS
   if (param_regions_list.length > 0) {
-    result = _.filter(ds_azure_disks, function(disk) {
+    result = _.filter(ds_azure_disks_sku_filtered, function(disk) {
       include_disk = _.contains(param_regions_list, disk['region'])
 
       if (param_regions_allow_or_deny == "Deny") {
@@ -299,7 +325,7 @@ script "js_azure_disks_region_filtered", type: "javascript" do
       return include_disk
     })
   } else {
-    result = ds_azure_disks
+    result = ds_azure_disks_sku_filtered
   }
 EOS
 end

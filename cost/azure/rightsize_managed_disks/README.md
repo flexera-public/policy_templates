@@ -1,10 +1,12 @@
 # Azure Rightsize Managed Disks
 
-## What it does
+## What It Does
 
-This policy checks managed disks in Azure subscriptions and identifies underutilized disks based on disk performance metrics over a lookback period and a threshold specified by the user; if underutilized disks are found, then disk type downgrade is recommended. An email will be sent to the user-specified email addresses.
+This policy template checks managed disks in Azure subscriptions and identifies underutilized disks based on disk performance metrics over a lookback period and a threshold specified by the user; if underutilized disks are found, then disk type downgrade is recommended. An email will be sent to the user-specified email addresses.
 
 Note: It is preferred to keep the disk LUN number constant when detaching and re-attaching a data disk to a virtual machine. LUN number is used to retrieve disk performance metrics (IOPs and throughput).
+
+Note: This policy template does not currently produce recommendations or reporting on used disk space. This is because disk space usage is not something that can easily be assessed for managed disks. Disk space usage is contextual based on how the disk is partitioned and used by an operating system and can't meaningfully be assessed outside of that context.
 
 ### Policy Saving Details
 
@@ -29,6 +31,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Allow/Deny Subscriptions List* - A list of allowed or denied Subscription IDs/names. If empty, no filtering will occur and recommendations will be produced for all subscriptions.
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
 - *Allow/Deny Regions List* - Filter results by region, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all the regions.
+- *SKU Ignore List* - A list of disk SKUs to ignore and not include in the results. To remove HDDs from the results, add `Standard_LRS` and `Standard_ZRS` to this list. Leave blank to produce recommendations for all SKUs.
 - *IOPS Threshold (%)* - The IOPS threshold percentage at which to consider a managed disk to be underutilized.
 - *IOPS Threshold Statistic* - Statistic to use for IOPS when determining if a managed disk is underutilized.
 - *Throughput Threshold (%)* - The throughput threshold at which to consider a managed disk to be underutilized.
