@@ -17,6 +17,7 @@ Please contact sales@flexera.com to learn more.
 - [Optimization](#policy-templates-for-optimization)
 - [Compliance](#policy-templates-for-compliance)
 - [Cost](#policy-templates-for-cost)
+- [Meta](#policy-templates-for-meta)
 - [Operational](#policy-templates-for-operational)
 - [SaaS Management](#policy-templates-for-saas-management)
 - [Security](#policy-templates-for-security)
@@ -40,6 +41,20 @@ These templates can generate savings estimates for your environment.
 - [AWS Untagged Resources](./compliance/aws/untagged_resources)
 - [AWS Unused Classic Load Balancers](./cost/aws/unused_clbs)
 - [AWS Unused IP Addresses](./cost/aws/unused_ip_addresses)
+- [Meta Parent: AWS GP3 Upgradeable Volumes](./cost/aws/gp3_volume_upgrade)
+- [Meta Parent: AWS Idle Compute Instances](./cost/aws/idle_compute_instances)
+- [Meta Parent: AWS Idle NAT Gateways](./cost/aws/idle_nat_gateways)
+- [Meta Parent: AWS Old Snapshots](./cost/aws/old_snapshots)
+- [Meta Parent: AWS Rightsize EBS Volumes](./cost/aws/rightsize_ebs_volumes)
+- [Meta Parent: AWS Rightsize EC2 Instances](./cost/aws/rightsize_ec2_instances)
+- [Meta Parent: AWS Rightsize RDS Instances](./cost/aws/rightsize_rds_instances)
+- [Meta Parent: AWS Superseded EBS Volumes](./cost/aws/superseded_ebs_volumes)
+- [Meta Parent: AWS Superseded EC2 Instances](./cost/aws/superseded_instances)
+- [Meta Parent: AWS Untagged Resources](./compliance/aws/untagged_resources)
+- [Meta Parent: AWS Unused Classic Load Balancers](./cost/aws/unused_clbs)
+- [Meta Parent: AWS Unused IP Addresses](./cost/aws/unused_ip_addresses)
+- [Meta Parent: AWS Unused RDS Instances](./cost/aws/unused_rds)
+- [Meta Parent: AWS Unused Volumes](./cost/aws/unused_volumes)
 - [Turbonomic Allocate Virtual Machine Recommendations AWS](./cost/turbonomics/allocate_virtual_machines_recommendations/aws)
 - [Turbonomic Buy Reserved Instances Recommendations AWS](./cost/turbonomics/buy_reserved_instances_recommendations/aws)
 - [Turbonomic Delete Unattached Volumes Recommendations AWS](./cost/turbonomics/delete_unattached_volumes/aws)
@@ -63,6 +78,21 @@ These templates can generate savings estimates for your environment.
 - [Azure Unused Firewalls](./cost/azure/unused_firewalls)
 - [Azure Unused IP Addresses](./cost/azure/unused_ip_addresses)
 - [Azure Unused Volumes](./cost/azure/unused_volumes)
+- [Meta Parent: Azure Databricks Rightsize Compute Instances](./cost/azure/databricks/rightsize_compute)
+- [Meta Parent: Azure Hybrid Use Benefit for Windows Server](./cost/azure/hybrid_use_benefit)
+- [Meta Parent: Azure Idle Compute Instances](./cost/azure/idle_compute_instances)
+- [Meta Parent: Azure Old Snapshots](./cost/azure/old_snapshots)
+- [Meta Parent: Azure Reserved Instances Recommendations](./cost/azure/reserved_instances/recommendations)
+- [Meta Parent: Azure Rightsize Compute Instances](./cost/azure/rightsize_compute_instances)
+- [Meta Parent: Azure Rightsize Managed Disks](./cost/azure/rightsize_managed_disks)
+- [Meta Parent: Azure Rightsize NetApp Files](./cost/azure/rightsize_netapp_files)
+- [Meta Parent: Azure Rightsize SQL Database Storage](./cost/azure/rightsize_sql_storage)
+- [Meta Parent: Azure Rightsize SQL Databases](./cost/azure/rightsize_sql_instances)
+- [Meta Parent: Azure Superseded Compute Instances](./cost/azure/superseded_instances)
+- [Meta Parent: Azure Unused Firewalls](./cost/azure/unused_firewalls)
+- [Meta Parent: Azure Unused IP Addresses](./cost/azure/unused_ip_addresses)
+- [Meta Parent: Azure Unused SQL Databases](./cost/azure/unused_sql_databases)
+- [Meta Parent: Azure Unused Volumes](./cost/azure/unused_volumes)
 - [Turbonomic Allocate Virtual Machine Recommendations Azure](./cost/turbonomics/allocate_virtual_machines_recommendations/azure)
 - [Turbonomic Buy Reserved Instances Recommendations Azure](./cost/turbonomics/buy_reserved_instances_recommendations/azure)
 - [Turbonomic Delete Unattached Volumes Recommendations Azure](./cost/turbonomics/delete_unattached_volumes/azure)
@@ -83,6 +113,13 @@ These templates can generate savings estimates for your environment.
 - [Google Old Snapshots](./cost/google/old_snapshots)
 - [Google Recommenders](./cost/google/recommender)
 - [Google Rightsize VM Recommender](./cost/google/rightsize_vm_recommendations)
+- [Meta Parent: Google Committed Use Discount Recommender](./cost/google/cud_recommendations)
+- [Meta Parent: Google Idle Cloud SQL Instance Recommender](./cost/google/cloud_sql_idle_instance_recommendations)
+- [Meta Parent: Google Idle IP Address Recommender](./cost/google/idle_ip_address_recommendations)
+- [Meta Parent: Google Idle Persistent Disk Recommender](./cost/google/idle_persistent_disk_recommendations)
+- [Meta Parent: Google Old Snapshots](./cost/google/old_snapshots)
+- [Meta Parent: Google Recommenders](./cost/google/recommender)
+- [Meta Parent: Google Rightsize VM Recommender](./cost/google/rightsize_vm_recommendations)
 - [Turbonomic Allocate Virtual Machine Recommendations Google](./cost/turbonomics/allocate_virtual_machines_recommendations/google)
 - [Turbonomic Delete Unattached Volumes Recommendations Google](./cost/turbonomics/delete_unattached_volumes/google)
 - [Turbonomic Rightsize Virtual Machines Recommendations Google](./cost/turbonomics/scale_virtual_machines_recommendations/google)
@@ -108,9 +145,9 @@ These templates can generate savings estimates for your environment.
 
   - [AWS IAM Role Audit](./compliance/aws/iam_role_audit)
 
-- Org
+- Organization
 
-  - [AWS Service Control Policy Audit](./compliance/aws/scp_audit)
+  - [AWS Accounts Missing Service Control Policies](./compliance/aws/missing_scps)
 
 #### Azure
 
@@ -371,6 +408,103 @@ These templates can generate savings estimates for your environment.
 
   - [Oracle Cloud Common Bill Ingestion](./cost/oracle/oracle_cbi)
 
+### Policy Templates for Meta
+
+#### AWS
+
+- [Meta Parent: AWS Burstable EC2 Instances](./cost/aws/burstable_ec2_instances)
+- [Meta Parent: AWS Disallowed Regions](./compliance/aws/disallowed_regions)
+- [Meta Parent: AWS EC2 Instances Time Stopped Report](./operational/aws/ec2_stopped_report)
+- [Meta Parent: AWS EC2 Instances not running FlexNet Inventory Agent](./compliance/aws/instances_without_fnm_agent)
+- [Meta Parent: AWS EKS Clusters Without Spot Instances](./cost/aws/eks_without_spot)
+- [Meta Parent: AWS GP3 Upgradeable Volumes](./cost/aws/gp3_volume_upgrade)
+- [Meta Parent: AWS IAM Role Audit](./compliance/aws/iam_role_audit)
+- [Meta Parent: AWS Idle Compute Instances](./cost/aws/idle_compute_instances)
+- [Meta Parent: AWS Idle NAT Gateways](./cost/aws/idle_nat_gateways)
+- [Meta Parent: AWS Lambda Functions With High Error Rate](./operational/aws/lambda_functions_with_high_error_rate)
+- [Meta Parent: AWS Long Running Instances](./operational/aws/long_running_instances)
+- [Meta Parent: AWS Long Stopped EC2 Instances](./compliance/aws/long_stopped_instances)
+- [Meta Parent: AWS Missing Regions](./automation/aws/aws_missing_regions)
+- [Meta Parent: AWS Object Storage Optimization](./cost/aws/object_storage_optimization)
+- [Meta Parent: AWS Old Snapshots](./cost/aws/old_snapshots)
+- [Meta Parent: AWS Open S3 Buckets](./security/aws/public_buckets)
+- [Meta Parent: AWS Oversized S3 Buckets](./cost/aws/s3_bucket_size)
+- [Meta Parent: AWS Publicly Accessible RDS Instances](./security/aws/rds_publicly_accessible)
+- [Meta Parent: AWS RDS Instances](./cost/aws/rds_instance_license_info)
+- [Meta Parent: AWS Rightsize EBS Volumes](./cost/aws/rightsize_ebs_volumes)
+- [Meta Parent: AWS Rightsize EC2 Instances](./cost/aws/rightsize_ec2_instances)
+- [Meta Parent: AWS Rightsize RDS Instances](./cost/aws/rightsize_rds_instances)
+- [Meta Parent: AWS S3 Buckets Without Intelligent Tiering](./cost/aws/s3_storage_policy)
+- [Meta Parent: AWS Schedule Instance](./cost/aws/schedule_instance)
+- [Meta Parent: AWS Scheduled EC2 Events](./operational/aws/scheduled_ec2_events)
+- [Meta Parent: AWS Superseded EBS Volumes](./cost/aws/superseded_ebs_volumes)
+- [Meta Parent: AWS Superseded EC2 Instances](./cost/aws/superseded_instances)
+- [Meta Parent: AWS Tag Cardinality Report](./operational/aws/tag_cardinality)
+- [Meta Parent: AWS Unencrypted Volumes](./security/aws/ebs_unencrypted_volumes)
+- [Meta Parent: AWS Untagged Resources](./compliance/aws/untagged_resources)
+- [Meta Parent: AWS Unused Classic Load Balancers](./cost/aws/unused_clbs)
+- [Meta Parent: AWS Unused ECS Clusters](./compliance/aws/ecs_unused)
+- [Meta Parent: AWS Unused IP Addresses](./cost/aws/unused_ip_addresses)
+- [Meta Parent: AWS Unused RDS Instances](./cost/aws/unused_rds)
+- [Meta Parent: AWS Unused Volumes](./cost/aws/unused_volumes)
+
+#### Azure
+
+- [Meta Parent: AKS Node Pools Without Autoscaling](./operational/azure/aks_nodepools_without_autoscaling)
+- [Meta Parent: AKS Node Pools Without Zero Autoscaling](./operational/azure/aks_nodepools_without_zero_autoscaling)
+- [Meta Parent: Azure AHUB Utilization with Manual Entry](./compliance/azure/ahub_manual)
+- [Meta Parent: Azure Blob Storage Optimization](./cost/azure/blob_storage_optimization)
+- [Meta Parent: Azure Compute Instances Time Powered Off Report](./operational/azure/compute_poweredoff_report)
+- [Meta Parent: Azure Databricks Rightsize Compute Instances](./cost/azure/databricks/rightsize_compute)
+- [Meta Parent: Azure Disallowed Regions](./compliance/azure/azure_disallowed_regions)
+- [Meta Parent: Azure Expiring Certificates](./operational/azure/azure_certificates)
+- [Meta Parent: Azure Hybrid Use Benefit for Linux Server](./cost/azure/hybrid_use_benefit_linux)
+- [Meta Parent: Azure Hybrid Use Benefit for SQL](./cost/azure/hybrid_use_benefit_sql)
+- [Meta Parent: Azure Hybrid Use Benefit for Windows Server](./cost/azure/hybrid_use_benefit)
+- [Meta Parent: Azure Idle Compute Instances](./cost/azure/idle_compute_instances)
+- [Meta Parent: Azure Instances not running FlexNet Inventory Agent](./compliance/azure/instances_without_fnm_agent)
+- [Meta Parent: Azure Long Running Instances](./operational/azure/azure_long_running_instances)
+- [Meta Parent: Azure Long Stopped Compute Instances](./compliance/azure/azure_long_stopped_instances)
+- [Meta Parent: Azure Old Snapshots](./cost/azure/old_snapshots)
+- [Meta Parent: Azure Policy Audit](./compliance/azure/azure_policy_audit)
+- [Meta Parent: Azure Regulatory Compliance](./compliance/azure/compliance_score)
+- [Meta Parent: Azure Reserved Instances Recommendations](./cost/azure/reserved_instances/recommendations)
+- [Meta Parent: Azure Rightsize Compute Instances](./cost/azure/rightsize_compute_instances)
+- [Meta Parent: Azure Rightsize Managed Disks](./cost/azure/rightsize_managed_disks)
+- [Meta Parent: Azure Rightsize NetApp Files](./cost/azure/rightsize_netapp_files)
+- [Meta Parent: Azure Rightsize SQL Database Storage](./cost/azure/rightsize_sql_storage)
+- [Meta Parent: Azure Rightsize SQL Databases](./cost/azure/rightsize_sql_instances)
+- [Meta Parent: Azure SQL Servers Without Elastic Pools](./cost/azure/sql_servers_without_elastic_pool)
+- [Meta Parent: Azure Schedule Instance](./cost/azure/schedule_instance)
+- [Meta Parent: Azure Storage Accounts without Lifecycle Management Policies](./cost/azure/storage_account_lifecycle_management)
+- [Meta Parent: Azure Superseded Compute Instances](./cost/azure/superseded_instances)
+- [Meta Parent: Azure Tag Cardinality Report](./operational/azure/tag_cardinality)
+- [Meta Parent: Azure Untagged Resources](./compliance/azure/azure_untagged_resources)
+- [Meta Parent: Azure Untagged Virtual Machines](./compliance/azure/azure_untagged_vms)
+- [Meta Parent: Azure Unused Firewalls](./cost/azure/unused_firewalls)
+- [Meta Parent: Azure Unused IP Addresses](./cost/azure/unused_ip_addresses)
+- [Meta Parent: Azure Unused SQL Databases](./cost/azure/unused_sql_databases)
+- [Meta Parent: Azure Unused Volumes](./cost/azure/unused_volumes)
+- [Meta Parent: Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks)
+- [Meta Parent: Azure Web Apps With Unoptimized Scaling](./cost/azure/unoptimized_web_app_scaling)
+
+#### Google
+
+- [Meta Parent: Google Committed Use Discount Recommender](./cost/google/cud_recommendations)
+- [Meta Parent: Google Committed Use Discount Report](./cost/google/cud_report)
+- [Meta Parent: Google Expiring Committed Use Discounts (CUD)](./cost/google/cud_expiration)
+- [Meta Parent: Google Idle Cloud SQL Instance Recommender](./cost/google/cloud_sql_idle_instance_recommendations)
+- [Meta Parent: Google Idle IP Address Recommender](./cost/google/idle_ip_address_recommendations)
+- [Meta Parent: Google Idle Persistent Disk Recommender](./cost/google/idle_persistent_disk_recommendations)
+- [Meta Parent: Google Long Stopped VM Instances](./compliance/google/long_stopped_instances)
+- [Meta Parent: Google Object Storage Optimization](./cost/google/object_storage_optimization)
+- [Meta Parent: Google Old Snapshots](./cost/google/old_snapshots)
+- [Meta Parent: Google Open Buckets](./security/google/public_buckets)
+- [Meta Parent: Google Recommenders](./cost/google/recommender)
+- [Meta Parent: Google Rightsize VM Recommender](./cost/google/rightsize_vm_recommendations)
+- [Meta Parent: Google Schedule Instance](./cost/google/schedule_instance)
+- [Meta Parent: Google Unlabeled Resources](./compliance/google/unlabeled_resources)
+
 ### Policy Templates for Operational
 
 #### AWS
@@ -615,12 +749,13 @@ These templates can generate savings estimates for your environment.
 :categories:
   Compliance: 32
   Cost: 101
+  Meta: 86
   Operational: 19
   SaaS Management: 12
   Security: 74
-:optimization_count: 52
+:optimization_count: 88
 :policy_sets:
-  '': 41
+  '': 127
   AWS Config: 1
   Allocate VMs: 3
   Automation: 1
@@ -679,21 +814,21 @@ These templates can generate savings estimates for your environment.
   Unused Volumes: 6
   Usage Report: 3
 :providers:
-  AWS: 84
-  Azure: 85
+  AWS: 119
+  Azure: 122
   Azure China: 1
   Flexera: 36
   Flexera Optima: 1
   GCE: 1
   GitHub: 7
-  Google: 17
+  Google: 31
   Kubecost: 2
   Microsoft: 1
   Okta: 1
   Oracle: 1
   ServiceNow: 1
 :services:
-  '': 12
+  '': 98
   AKS: 2
   All: 2
   App Service: 1
@@ -720,7 +855,7 @@ These templates can generate savings estimates for your environment.
   Network: 3
   Network Security Group: 2
   Office 365: 1
-  Org: 1
+  Organization: 1
   PaaS: 3
   PostgreSQL: 4
   RDS: 4
@@ -734,7 +869,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 238
+:total_count: 324
 -->
 <!-- End Policy Template Stats -->
 
