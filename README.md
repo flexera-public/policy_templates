@@ -345,9 +345,9 @@ These templates can generate savings estimates for your environment.
   - [Budget vs Actual Spend Report](./cost/flexera/cco/budget_v_actual_spend_report)
   - [Cheaper Regions](./cost/flexera/cco/cheaper_regions)
   - [Cloud Cost Anomaly Alerts](./cost/flexera/cco/cloud_cost_anomaly_alerts)
-  - [Cloud Spend Forecast - Moving Average](./cost/flexera/cco/forecasting/moving_average)
   - [Cloud Spend Forecast - Straight-Line (Linear Regression Model)](./cost/flexera/cco/forecasting/straight_line_forecast/linear_regression)
   - [Cloud Spend Forecast - Straight-Line (Simple Model)](./cost/flexera/cco/forecasting/straight_line_forecast/simple)
+  - [Cloud Spend Moving Average Report](./cost/flexera/cco/moving_average)
   - [Currency Conversion](./cost/flexera/cco/currency_conversion)
   - [Email Cost Optimization Recommendations](./cost/flexera/cco/email_recommendations)
   - [Flexera FOCUS Report](./cost/flexera/cco/focus_report)
@@ -755,7 +755,7 @@ These templates can generate savings estimates for your environment.
   Security: 74
 :optimization_count: 88
 :policy_sets:
-  '': 127
+  '': 128
   AWS Config: 1
   Allocate VMs: 3
   Automation: 1
@@ -770,7 +770,7 @@ These templates can generate savings estimates for your environment.
   Deprecated Resources: 1
   Disallowed Regions: 2
   Expiring Certificates: 1
-  Forecasting: 4
+  Forecasting: 3
   Hybrid Use Benefit: 5
   IT Asset Management: 5
   Identity & Access Management: 3
