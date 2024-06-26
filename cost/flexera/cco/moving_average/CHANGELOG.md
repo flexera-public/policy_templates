@@ -1,5 +1,14 @@
 # Changelog
 
+## v4.0.0
+
+- Renamed policy template and updated description to better reflect functionality
+- Added ability to filter by Billing Center as an allow list or a deny list
+- Added logic to ensure redundant Billing Centers don't skew results
+- Improvements made to moving average calculation for better accuracy
+- Incident table now used to display the moving average data used in the chart
+- Streamlined code for better readability and faster execution
+
 ## v3.4
 
 - Updated policy metadata to make it more clear what Flexera service the policy is for
