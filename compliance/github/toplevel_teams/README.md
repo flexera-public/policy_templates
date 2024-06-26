@@ -1,4 +1,4 @@
-# GitHub Top-Level Teams
+# GitHub Unpermitted Top-Level Teams
 
 ## What It Does
 
