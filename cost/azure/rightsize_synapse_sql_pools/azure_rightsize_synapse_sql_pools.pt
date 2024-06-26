@@ -340,19 +340,21 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
   result "result"
   code <<-EOS
   if (param_subscriptions_list.length > 0) {
-    result = _.filter(ds_azure_subscriptions, function(subscription) {
-      include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
+    if (param_subscriptions_allow_or_deny == "Deny") {
+        result = _.filter(ds_azure_subscriptions, function (s) {
+            return !_.contains(param_subscriptions_list, s.id) && !_.contains(param_subscriptions_list, s.name)
+        })
+    }
 
-      if (param_subscriptions_allow_or_deny == "Deny") {
-        include_subscription = !include_subscription
-      }
-
-      return include_subscription
-    })
+    if (param_subscriptions_allow_or_deny == "Allow") {
+        result = _.filter(ds_azure_subscriptions, function(s) {
+            return _.contains(param_subscriptions_list, s.id) || _.contains(param_subscriptions_list, s.name)
+        })
+    }
   } else {
-    result = ds_azure_subscriptions
+      result = ds_azure_subscriptions
   }
-EOS
+  EOS
 end
 
 datasource "ds_azure_synapse_workspaces" do
@@ -604,8 +606,8 @@ script "js_azure_synapse_sql_pool_metrics", type: "javascript" do
   result "request"
   code <<-EOS
   // We use this approach since ".dangerfile/policy_test.rb" returns an error when we put comma directly as string.
-  metricnames = metricnames.replace(/\|/g, ",")
-  aggregation = aggregation.replace(/\|/g, ",")
+  metricnames = metricnames.split('|').join(',')
+  aggregation = aggregation.split('|').join(',')
 
   var end_date = new Date()
   end_date.setMilliseconds(999)
@@ -615,11 +617,10 @@ script "js_azure_synapse_sql_pool_metrics", type: "javascript" do
 
   var start_date = new Date()
   start_date.setDate(start_date.getDate() - param_lookback)
-
   var creation_date = new Date(creationDate)
 
-  if (start_date.getDate() < creation_date.getDate()) {
-      start_date.setDate(creation_date.getDate())
+  if (start_date < creation_date) {
+      start_date = creation_date
   }
 
   start_date.setMilliseconds(0)
@@ -792,10 +793,6 @@ script "js_azure_synapse_sql_pool_costs_grouped", type: "javascript" do
     }
     result[id].cost += item["cost"] * cost_multiplier;
   });
-
-  _.each(result, function(item, key) {
-      console.log("grouped", "key:", key, "cost:", item.cost)
-  })
 EOS
 end
 
@@ -833,11 +830,9 @@ script "js_azure_synapse_underutil_and_idle_pools", type: "javascript" do
   }
 
   function percentile(sortedArray, p) {
-    console.log("Entering percentile:", sortedArray, "Percentile:", p)
     if (sortedArray.length === 0) return 0
     var index = (p / 100) * sortedArray.length
     var result = sortedArray[Math.ceil(index) - 1]
-    console.log("Result of percentile:", result)
     return result
   }
 
@@ -888,7 +883,7 @@ script "js_azure_synapse_underutil_and_idle_pools", type: "javascript" do
     } else {
       return
     }
-
+    
     var metrics = {}
     var values = item['value']
 
@@ -1008,8 +1003,6 @@ script "js_azure_synapse_underutil_and_idle_pools", type: "javascript" do
 
     var sortedArray = sortArray(all_measurements)
 
-    console.log("Calculate percentile for:", id, "all_measurements:", sortedArray)
-
     arr_percentile[id + "90"] = percentile(all_measurements, 90).toFixed(3)
     arr_percentile[id + "95"] = percentile(all_measurements, 95).toFixed(3)
     arr_percentile[id + "99"] = percentile(all_measurements, 99).toFixed(3)
@@ -1019,11 +1012,6 @@ script "js_azure_synapse_underutil_and_idle_pools", type: "javascript" do
     if (sortedArray.length > 0) {
       arr_percentile[id + "maximum"] = sortedArray[sortedArray.length - 1]
     }
-
-    console.log("Calculated percentiles for:", id, "P90:", arr_percentile[id + "90"])
-    console.log("Calculated percentiles for:", id, "P95:", arr_percentile[id + "95"])
-    console.log("Calculated percentiles for:", id, "P99:", arr_percentile[id + "99"])
-    console.log("Calculated percentiles for:", id, "maximum:", arr_percentile[id + "maximum"])
   })
 
   // Min Active Metrics for Downsizing
@@ -1053,8 +1041,6 @@ script "js_azure_synapse_underutil_and_idle_pools", type: "javascript" do
       return
     }
 
-    console.log("Days Active: " + daysUsed[id] + ", resourceId: " + item['resourceId'])
-
     var notEnoughDaysActive = false
     if (daysUsed[id] != null && daysUsed[id] != undefined && daysUsed[id] < param_min_active) { notEnoughDaysActive = true }
 
@@ -1073,7 +1059,9 @@ script "js_azure_synapse_underutil_and_idle_pools", type: "javascript" do
       return
     }
 
-    console.log("Downsize Instances", "id:", id, "total_cost:", total_cost)
+    if (!item["resourceType"]) {
+      return
+    }
 
     metrics = {}
     values = item['value']
