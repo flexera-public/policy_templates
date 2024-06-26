@@ -3,7 +3,11 @@
 ## v3.0.0
 
 - Several parameters altered to be more descriptive and human-readable
+- Added ability to filter results by repository
 - Normalized incident export to be consistent with other policies
+- Added additional fields to incident table for more context
+- Added ability to require owner reviews when protecting branches
+- Added ability to dismiss stale reviews when protecting branches
 - Streamlined code for better readability and faster execution
 - Policy now requires a valid Flexera credential
 
