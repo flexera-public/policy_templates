@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.3.0
+
+- Added support for p90, p95, and p99 metrics for both CPU and memory.
+
 ## v5.2.0
 
 - New `Exclude Stopped Virtual Machines` parameter to filter stopped virtual machines from results
