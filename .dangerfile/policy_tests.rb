@@ -1410,7 +1410,7 @@ def policy_console_log?(file)
 
   policy_code.each_line.with_index do |line, index|
     line_number = index + 1
-    fail_message += "Line #{blank_line_number.to_s}\n" if line.include?("console.log")
+    fail_message += "Line #{line_number.to_s}\n" if line.include?("console.log")
   end
 
   fail_message = "Policy Template has console.log() statements. These are used for debugging and should not be present in catalog policy templates:\n\n" + fail_message if !fail_message.empty?
