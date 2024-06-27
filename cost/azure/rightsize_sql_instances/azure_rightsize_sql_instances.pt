@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "5.3.0",
+  version: "5.4.0",
   provider: "Azure",
   service: "SQL",
   policy_set: "Rightsize Database Instances",
@@ -121,6 +121,15 @@ parameter "param_stats_underutil_threshold_cpu_value" do
   min_value 0
   max_value 100
   default 60
+end
+
+parameter "param_stats_threshold" do
+  type "string"
+  category "Statistics"
+  label "Threshold Statistic"
+  description "Statistic to use when determining if a SQL instance is underutilized."
+  allowed_values "Average", "Maximum", "p99", "p95", "p90"
+  default "Average"
 end
 
 parameter "param_stats_lookback" do
@@ -592,8 +601,8 @@ script "js_azure_sql_database_metrics", type: "javascript" do
       "api-version": "2018-01-01",
       "timespan": timespan,
       "metricnames": "cpu_percent,connection_successful",
-      "aggregation": "Average,count",
-      "interval":  "P1D"
+      "aggregation": "Average,Minimum,Maximum,count",
+      "interval": "P1D"
     },
     headers: {
       "User-Agent": "RS Policies"
@@ -614,13 +623,25 @@ datasource "ds_azure_sql_resize_map" do
 end
 
 datasource "ds_merged_metrics" do
-  run_script $js_merged_metrics, $ds_azure_sql_database_metrics, $ds_azure_sql_resize_map, $ds_applied_policy, $param_stats_underutil_threshold_cpu_value, $param_stats_lookback, $param_unused_or_underutilized
+  run_script $js_merged_metrics, $ds_azure_sql_database_metrics, $ds_azure_sql_resize_map, $ds_applied_policy, $param_stats_underutil_threshold_cpu_value, $param_stats_lookback, $param_unused_or_underutilized, $param_stats_threshold
 end
 
 script "js_merged_metrics", type: "javascript" do
-  parameters "ds_azure_sql_database_metrics", "ds_azure_sql_resize_map", "ds_applied_policy", "param_stats_underutil_threshold_cpu_value", "param_stats_lookback", "param_unused_or_underutilized"
+  parameters "ds_azure_sql_database_metrics", "ds_azure_sql_resize_map", "ds_applied_policy", "param_stats_underutil_threshold_cpu_value", "param_stats_lookback", "param_unused_or_underutilized", "param_stats_threshold"
   result "result"
   code <<-EOS
+  // Function to calculate percentiles from metrics
+  function percentile(arr, p) {
+    // array needs to be sorted to select based on percentile
+    arr.sort(function(a, b) { return a - b })
+
+    // Get the index using desired percentile and array length
+    index = (p / 100) * arr.length
+
+    // Round index value to nearest integer and return the value of that element in sorted array arr
+    return arr[Math.ceil(index) - 1]
+  }
+
   result = []
 
   _.each(ds_azure_sql_database_metrics, function(db) {
@@ -692,15 +713,44 @@ script "js_merged_metrics", type: "javascript" do
 
     if (cpu_metrics != null && instance['recommendationType'] != 'Delete' && param_unused_or_underutilized != "Unused") {
       if (cpu_metrics.length > 0) {
+        minimums = _.pluck(cpu_metrics, 'minimum')
+        maximums = _.pluck(cpu_metrics, 'maximum')
         averages = _.pluck(cpu_metrics, 'average')
+
+        cpu_minimum = 0
+        cpu_maximum = 0
         cpu_average = 0
+        cpu_p90 = 0
+        cpu_p95 = 0
+        cpu_p99 = 0
+
+        if (minimums.length > 0) { cpu_minimum = _.min(minimums) }
+        if (maximums.length > 0) { cpu_maximum = _.max(maximums) }
 
         if (averages.length > 0) {
           cpu_average = _.reduce(averages, function(memo, num) { return memo + num }, 0) / averages.length
         }
 
-        if (cpu_average <= param_stats_underutil_threshold_cpu_value) {
+        if (minimums.length + maximums.length + averages.length > 0) {
+          cpu_p90 = percentile(minimums.concat(maximums, averages), 90)
+          cpu_p95 = percentile(minimums.concat(maximums, averages), 95)
+          cpu_p99 = percentile(minimums.concat(maximums, averages), 99)
+        }
+
+        if (param_stats_threshold == "Average") { cpu_test_value = cpu_average }
+        if (param_stats_threshold == "Maximum") { cpu_test_value = cpu_maximum }
+        if (param_stats_threshold == "p90") { cpu_test_value = cpu_p90 }
+        if (param_stats_threshold == "p95") { cpu_test_value = cpu_p95 }
+        if (param_stats_threshold == "p99") { cpu_test_value = cpu_p99 }
+
+        if (cpu_test_value <= param_stats_underutil_threshold_cpu_value) {
+          instance['cpu_minimum'] = cpu_minimum
+          instance['cpu_maximum'] = cpu_maximum
           instance['cpu_average'] = cpu_average
+          instance['cpu_p90'] = cpu_p90
+          instance['cpu_p95'] = cpu_p95
+          instance['cpu_p99'] = cpu_p99
+          instance['thresholdType'] = param_stats_threshold
           instance['recommendationType'] = 'Downsize'
 
           tier = instance['sku']['tier']
@@ -915,11 +965,17 @@ script "js_downsize_sql_incident", type: "javascript" do
         recommendationType: db['recommendationType'],
         recommendationDetails: db['recommendationDetails'],
         newResourceType: db['newResourceType'],
-        cpuAverage: parseFloat(db['cpu_average'].toFixed(2)),
+        cpuAverage: Math.round(db['cpu_average'] * 100) / 100,
+        cpuMinimum: Math.round(db['cpu_minimum'] * 100) / 100,
+        cpuMaximum: Math.round(db['cpu_maximum'] * 100) / 100,
+        cpuP90: Math.round(db['cpu_p90'] * 100) / 100,
+        cpuP95: Math.round(db['cpu_p95'] * 100) / 100,
+        cpuP99: Math.round(db['cpu_p99'] * 100) / 100,
+        thresholdType: db['thresholdType'],
         lookbackPeriod: db['lookbackPeriod'],
         threshold: db['threshold'],
         policy_name: db['policy_name'],
-        savings: parseFloat(savings.toFixed(3)),
+        savings: Math.round(savings * 1000) / 1000,
         savingsCurrency: ds_currency['symbol'],
         service: "Microsoft.Sql",
         platform: "Azure SQL Database",
@@ -1246,8 +1302,23 @@ policy "pol_azure_sql_utilization" do
       field "savingsCurrency" do
         label "Savings Currency"
       end
+      field "cpuMaximum" do
+        label "CPU Maximum %"
+      end
+      field "cpuMinimum" do
+        label "CPU Minimum %"
+      end
       field "cpuAverage" do
         label "CPU Average %"
+      end
+      field "cpuP90" do
+        label "CPU p90"
+      end
+      field "cpuP95" do
+        label "CPU p95"
+      end
+      field "cpuP99" do
+        label "CPU p99"
       end
       field "service" do
         label "Service"
@@ -1257,6 +1328,9 @@ policy "pol_azure_sql_utilization" do
       end
       field "id" do
         label "Resource ID"
+      end
+      field "thresholdType" do
+        label "Threshold Statistic"
       end
       field "threshold" do
         label "CPU Threshold"
