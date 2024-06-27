@@ -1,37 +1,37 @@
-# GitHub.com Unpermitted Outside Collaborators
+# GitHub Unpermitted Outside Collaborators
 
-## What it does
+## What It Does
 
-This Policy Template will get all the Outside Collaborators (User that have been granted access to a repository, but are not a Member of the repository owner's Organization) under GitHub.com Organization(s) and creates an incident for each that are not included in the specified username whitelist.
+This policy template reports on any [outside collaborators](https://docs.github.com/en/organizations/managing-user-access-to-your-organizations-repositories/managing-outside-collaborators/adding-outside-collaborators-to-repositories-in-your-organization) under the user-specified GitHub organizations, ignoring the users in the `User Allow List` parameter. Optionally, it emails this report.
 
 ## Input Parameters
 
-1. GitHub.com Organizations to check - Example: flexera
-1. Whitelisted Outside Collaborators - Example: flexera-ci
-1. Email address to send escalation emails to - Example: noreply@example.com
+- *Email Addresses* - A list of email addresses to notify.
+- *GitHub Organizations* - A list of GitHub Organizations to check.
+- *Allow/Deny GitHub Repositories* - Whether to treat Allow/Deny GitHub Repositories List parameter as allow or deny list. Has no effect if Allow/Deny GitHub Repositories List is left empty.
+- *Allow/Deny GitHub Repositories List* - Filter results by GitHub repository, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all the GitHub repositories in the specified organizations.
+- *User Allow List* - GitHub user accounts to exclude from the results.
 
 ## Policy Actions
 
-The following policy actions are taken on any resources found to be out of compliance.
-
-- Send an email report
+- Sends an email notification.
 
 ## Prerequisites
 
-This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm)
-for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no
-credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
-### Credential configuration
+- [**GitHub Credential**](https://docs.flexera.com/flexera/EN/Automation/GenericCredentials.htm#automationadmin_1982464505_1121389) (*provider=github*) which has the following permissions:
+  - `admin:org`
 
-For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - `billing_center_viewer`
 
-Provider tag value to match this policy: `github`
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
-Required permissions in the provider:
+## Supported Clouds
 
-This policy requires permissions to access GitHub.com API as the Owner of the Organization(s).
+- GitHub
 
 ## Cost
 
-This Policy Template does not launch any instances, and so does not incur any cloud costs.
+This Policy Template does not incur any cloud costs.

@@ -1,40 +1,86 @@
-name "GitHub.com Unpermitted Repository Names"
+name "GitHub Unpermitted Repository Names"
 rs_pt_ver 20180301
-short_description "Gets the names of all repositories under GitHub.com Organization(s) and creates incidents for any that do not match any of the whitelisted regex strings.  See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/github/repository_naming) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+type "policy"
+short_description "Reports on repositories under the specified Github.com organizations whose names don't conform to convention. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/github/repository_naming) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "low"
 category "Compliance"
+default_frequency "weekly"
 info(
-  version: "2.4",
+  version: "3.0.0",
   provider: "GitHub",
-  service: "",
+  service: "Git",
   policy_set: ""
 )
 
-parameter "param_email" do
-  label "Email addresses of the recipients you wish to notify"
-  type "list"
-end
+###############################################################################
+# Parameters
+###############################################################################
 
-parameter "param_whitelist" do
-  type "string"
-  label "Regex for whitelisted repository name"
-  default "^[a-z\\-]+$"
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
 end
 
 parameter "param_orgs" do
   type "list"
-  label "Organizations on GitHub.com to scan"
+  category "Policy Settings"
+  label "GitHub Organizations"
+  description "A list of GitHub Organizations to check."
+  # No default value, user input required
 end
+
+parameter "param_repos_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny GitHub Repositories"
+  description "Allow or Deny entered Github repositories. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_repos_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny GitHub Repositories List"
+  description "A list of allowed or denied Github repositories. See the README for more details."
+  default []
+end
+
+parameter "param_repo_regex" do
+  type "string"
+  category "Policy Settings"
+  label "Repository Name Regex"
+  description "Regex that GitHub repository names must conform to."
+  default "^[a-z\\-]+$"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
 
 credentials "auth_github" do
   schemes "api_key"
   label "GitHub"
-  description "Select the Github Credential from the list."
+  description "Select the GitHub Credential from the list."
   tags "provider=github"
 end
 
-pagination "github_pagination" do
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_github" do
   get_page_marker do
     header "Link"
   end
@@ -43,85 +89,182 @@ pagination "github_pagination" do
   end
 end
 
-datasource "ds_orgs_array" do
-  run_script $js_orgs_array, $param_orgs
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
 end
 
-script "js_orgs_array", type: "javascript" do
+datasource "ds_org_list" do
+  run_script $js_org_list, $param_orgs
+end
+
+script "js_org_list", type: "javascript" do
   parameters "param_orgs"
-  result "orgs_array"
-  code <<-EOS
-var orgs_array = param_orgs;
-EOS
+  result "result"
+  code "result = param_orgs"
 end
 
-datasource "org_repos" do
-  iterate $ds_orgs_array
+datasource "ds_github_orgs" do
+  iterate $ds_org_list
   request do
     auth $auth_github
-    pagination $github_pagination
+    pagination $pagination_github
     host "api.github.com"
-    path join(["/orgs/",iter_item,"/repos"])
+    path join(["/orgs/", iter_item])
+    header "X-GitHub-Api-Version", "2022-11-28"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "name", jmes_path(response, "login")
+    field "company", jmes_path(response, "company")
+    field "blog", jmes_path(response, "blog")
+    field "location", jmes_path(response, "location")
+    field "email", jmes_path(response, "email")
+    field "html_url", jmes_path(response, "html_url")
+    field "created_at", jmes_path(response, "created_at")
+    field "type", jmes_path(response, "type")
+  end
+end
+
+datasource "ds_github_org_repos" do
+  iterate $ds_github_orgs
+  request do
+    auth $auth_github
+    pagination $pagination_github
+    host "api.github.com"
+    path join(["/orgs/", val(iter_item, "name"), "/repos"])
+    header "X-GitHub-Api-Version", "2022-11-28"
   end
   result do
     encoding "json"
     collect jmes_path(response, "[*]") do
       field "id", jmes_path(col_item, "id")
       field "name", jmes_path(col_item, "name")
-      field "repo_name", jmes_path(col_item, "name")
-      field "repo_org", jmes_path(col_item, "owner.login")
       field "full_name", jmes_path(col_item, "full_name")
-      end
+      field "html_url", jmes_path(col_item, "html_url")
+      field "description", jmes_path(col_item, "description")
+      field "default_branch", jmes_path(col_item, "default_branch")
+      field "created_at", jmes_path(col_item, "created_at")
+      field "org_id", val(iter_item, "id")
+      field "org_name", val(iter_item, "name")
+      field "org_company", val(iter_item, "company")
+      field "org_blog", val(iter_item, "blog")
+      field "org_location", val(iter_item, "location")
+      field "org_email", val(iter_item, "email")
+      field "org_url", val(iter_item, "html_url")
+      field "org_created_at", val(iter_item, "created_at")
+    end
   end
 end
 
-datasource "invalid_repos" do
-    run_script $js_invalid_repos, $org_repos, $param_whitelist
+datasource "ds_github_org_repos_filtered" do
+  run_script $js_github_org_repos_filtered, $ds_github_org_repos, $param_repos_allow_or_deny, $param_repos_list
 end
 
-script "js_invalid_repos", type: "javascript" do
-    parameters "org_repos","param_whitelist"
-    result "invalid_org_repos"
-    code <<-EOS
-var invalid_org_repos = [];
-for (var index = 0; index < org_repos.length; index++) {
-    var repo = org_repos[index];
-    // exclude white listed names
-    if( !repo.repo_name.match(param_whitelist) ){
-        repo["repositoryFullName"] = "["+repo.repo_name+"](https://github.com/"+repo.full_name+")";
-        repo["auditLogFullName"] = "[Audit Log](https://github.com/organizations/"+repo.repo_org+"/settings/audit-log?utf8=%E2%9C%93&q=repo%3A"+repo.repo_org+"%2F"+repo.repo_name+")";
-        invalid_org_repos.push(repo)
-    }
-}
+script "js_github_org_repos_filtered", type: "javascript" do
+  parameters "ds_github_org_repos", "param_repos_allow_or_deny", "param_repos_list"
+  result "result"
+  code <<-EOS
+  if (param_repos_list.length > 0) {
+    result = _.filter(ds_github_org_repos, function(repo) {
+      include_repo = _.contains(param_repos_list, repo['name'])
+      if (param_repos_allow_or_deny == "Deny") { include_repo = !include_repo }
+      return include_repo
+    })
+  } else {
+    result = ds_github_org_repos
+  }
 EOS
 end
 
-policy "invalid_repos" do
-  validate $invalid_repos do
-    summary_template "GitHub.com Repository Naming Report"
-    check eq(size(data), 0)
-    escalate $report_repositories
-    #### Policy Organization(s): {{  parameters.param_orgs }}
-    #### Policy Whitelisted Repo Names: {{  parameters.param_whitelist }}
+datasource "ds_invalid_repos" do
+  run_script $js_invalid_repos, $ds_github_org_repos_filtered, $ds_applied_policy, $param_repo_regex
+end
+
+script "js_invalid_repos", type: "javascript" do
+  parameters "ds_github_org_repos_filtered", "ds_applied_policy", "param_repo_regex"
+  result "result"
+  code <<-'EOS'
+  invalid_repos = _.reject(ds_github_org_repos_filtered, function(repo) {
+    return repo['name'].match(param_repo_regex)
+  })
+
+  result = _.map(invalid_repos, function(repo) {
+    org_name = encodeURI(repo['org_name'])
+    q_param = encodeURI("repo:" + repo["org_name"] + "/" + repo["name"])
+    audit_log_url = "https://github.com/organizations/" + org_name + "/settings/audit-log?utf8=%E2%9C%93&q=" + q_param
+
+    return {
+      id: repo['id'],
+      name: repo['name'],
+      description: repo['description'],
+      created_at: repo['created_at'],
+      org_name: repo['org_name'],
+      policy_name: ds_applied_policy['name'],
+      audit_log: "Audit Log||" + audit_log_url,
+      repo_link: "Repository||" + repo['html_url'],
+      regex: param_repo_regex
+    }
+  })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_invalid_repos" do
+  validate_each $ds_invalid_repos do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} GitHub Repositories With Unpermitted Names Found"
+    check eq(val(item, "id"), "")
+    escalate $esc_email
     export do
       resource_level true
-      field "repo_org" do
-        label "Organization"
-      end
-      field "repositoryFullName" do
-        label "Repository"
-      end
-      field "auditLogFullName" do
-        label "Audit Log Link"
-      end
       field "id" do
         label "ID"
+      end
+      field "name" do
+        label "Name"
+      end
+      field "description" do
+        label "Description"
+      end
+      field "created_at" do
+        label "Created At"
+      end
+      field "org_name" do
+        label "Organization"
+      end
+      field "regex" do
+        label "Regex"
+      end
+      field "audit_log" do
+        label "Audit Log"
+        format "link-external"
+      end
+      field "repo_link" do
+        label "Link"
+        format "link-external"
       end
     end
   end
 end
 
-escalation "report_repositories" do
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
