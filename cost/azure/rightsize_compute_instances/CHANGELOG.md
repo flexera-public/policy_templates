@@ -3,6 +3,7 @@
 ## v5.3.0
 
 - Added support for p90, p95, and p99 metrics for both CPU and memory.
+- Improved calculations for `Minimum` and `Maximum` for both CPU and memory.
 
 ## v5.2.0
 
