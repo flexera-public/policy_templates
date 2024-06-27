@@ -16,8 +16,8 @@ This policy checks for Synapse Dedicated SQL Pools instances that have inefficie
 The policy includes the estimated monthly savings. The estimated monthly savings is recognized for idle resources if the resource is paused, and for underutilized resources if the resource is downsized.
 
 - The `Estimated Monthly Savings` is calculated by multiplying the amortized cost of the resource for 1 day by 30.44, which is the average number of days in a month.
-- For idle resources, the savings is the full cost of the resource. For underutilized resources, the savings is the difference between the current cost and the cost after downsizing.
-- The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
+- For idle resources, the savings are the full cost of the resource. For underutilized resources, the savings is the difference between the current cost and the cost after downsizing.
+- The incident message details include the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
 - Both `Estimated Monthly Savings` and `Potential Monthly Savings` will be reported in the currency of the Flexera organization the policy is applied in.
 
 ## Input Parameters
@@ -31,7 +31,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Allow/Deny Regions List* - Filter results by region, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all regions.
 - *Threshold* - Threshold to use when determining if a pool is underutilized.
 - *Statistic Lookback Period* - How many days back to look at metrics. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days.
-- *Minimum Time Active (Days)* - Only include pools in the results if they have not been paused for at least the number of specified days. Set to '0' to disable this filter and not consider minimum time active in the results.
+- *Minimum Time Active (Days)* - Only include pools in the results if they have not been paused for at least the number of specified days. Set to '0' to disable this filter and not consider the minimum time active in the results.
 - *Exclusion Tags* - Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported.
 - *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
 - *Enable Automatic Pausing* - When this value is set, this policy will automatically pause the selected underutilized Synapse SQL Pools.
@@ -69,4 +69,4 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ## Cost
 
-This Policy Template does not incur any cloud costs
+This Policy Template does not incur any cloud costs.
