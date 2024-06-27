@@ -4,7 +4,7 @@
 
 This policy template gathers spend, sliced by the user-specified cost dimension and going back the user-specified number of days, and reports on any values for that dimension whose spend is below a user-specified threshold. Optionally, the report can be emailed.
 
-The intended use of this policy template is to enable the user to quickly identify vendor accounts, services, Billing Centers, etc. whose low usage may indicate that it was being used for testing or other temporary purposes. For example, if the `Vendor Account Name` dimension is used, the report will contain a list of cloud vendor accounts (AWS accounts, Azure subscriptions, etc.) with low spend. In such cases, destroying the relevant resources may result in cost savings.
+The intended use of this policy template is to enable the user to quickly identify vendor accounts, services, Billing Centers, etc. whose low usage may indicate that it was being used for testing or other temporary purposes. For example, if the `Cloud Vendor Account Name` dimension is used, the report will contain a list of cloud vendor accounts (AWS accounts, Azure subscriptions, etc.) with low spend. In such cases, destroying the relevant resources may result in cost savings.
 
 ## Input Parameters
 
@@ -15,7 +15,7 @@ The intended use of this policy template is to enable the user to quickly identi
 - *Allow/Deny Billing Center List* - A list of allowed or denied Billing Center names/IDs. Leave blank to run report across entire Flexera organization.
 - *Low Account Spend Threshold* - Threshold to consider the user-specified dimension to be low spend. Only values with spend lower than this number will be reported.
 - *Minimum Spend Threshold* - Threshold to consider the user-specified dimension to be worth actioning on. Only values with spend higher than this number will be reported.
-- *Dimension* - The name or ID of the Flexera dimension whose values you want to check for low usage; for example, `Vendor Account Name`. Enter `Billing Center` to split costs by Billing Center.
+- *Dimension* - The name or ID of the Flexera dimension whose values you want to check for low usage; for example, `Cloud Vendor Account Name`. Enter `Billing Center` to split costs by Billing Center.
 
 ## Policy Actions
 
