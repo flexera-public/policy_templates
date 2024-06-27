@@ -1,5 +1,15 @@
 # Changelog
 
+## v3.0.0
+
+- Policy template renamed to `Low Usage Report`
+- Costs can now be sliced against any cost dimension rather than just vendor account
+- Costs can now be assessed based on various cost metrics
+- Costs are gathered for a user-specified number of days rather than across the current month
+- Costs can be filtered by Billing Center as either an allow list or a deny list
+- Incident table now provides additional contextual data
+- Streamlined code for better readability and faster execution
+
 ## v2.6
 
 - Updated policy metadata to make it more clear what Flexera service the policy is for
