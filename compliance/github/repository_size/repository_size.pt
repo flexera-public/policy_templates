@@ -1,46 +1,96 @@
-name "GitHub.com Unpermitted Sized Repositories"
+name "GitHub Undersized Repositories"
 rs_pt_ver 20180301
-short_description "Gets all repositories under GitHub.com Organization(s) and creates incidents for any that were created longer than a specified number of days ago, and are smaller than a specified size.  See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/github/repository_size) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+type "policy"
+short_description "Reports on repositories under the specified Github.com organizations that were created more than a user-specified number of days ago and are smaller than a user-specified size. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/github/repository_size) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "low"
 category "Compliance"
+default_frequency "weekly"
 info(
-  version: "2.4",
+  version: "3.0.0",
   provider: "GitHub",
-  service: "",
+  service: "Git",
   policy_set: ""
 )
 
+###############################################################################
+# Parameters
+###############################################################################
+
 parameter "param_email" do
-  label "Email addresses of the recipients you wish to notify"
   type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
 end
 
 parameter "param_orgs" do
   type "list"
-  label "Organizations on GitHub.com to scan"
+  category "Policy Settings"
+  label "GitHub Organizations"
+  description "A list of GitHub Organizations to check."
+  # No default value, user input required
+end
+
+parameter "param_repos_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny GitHub Repositories"
+  description "Allow or Deny entered Github repositories. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_repos_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny GitHub Repositories List"
+  description "A list of allowed or denied Github repositories. See the README for more details."
+  default []
 end
 
 parameter "param_repo_age" do
-  type "string"
-  label "Required minimum age of repository in days"
-  default "7"
+  type "number"
+  category "Policy Settings"
+  label "Minimum Age (Days)"
+  description "Required minimum age of repository in days to include it in the results. Set to '0' to not filter results by repository age."
+  min_value 0
+  default 7
 end
 
 parameter "param_repo_size" do
-  type "string"
-  label "Required minimum size of repository in bytes"
-  default "1"
+  type "number"
+  category "Policy Settings"
+  label "Minimum Size (Bytes)"
+  description "Required minimum size of repository in bytes."
+  min_value 1
+  default 1
 end
+
+###############################################################################
+# Authentication
+###############################################################################
 
 credentials "auth_github" do
   schemes "api_key"
   label "GitHub"
-  description "Select the Github Credential from the list."
+  description "Select the GitHub Credential from the list."
   tags "provider=github"
 end
 
-pagination "github_pagination" do
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_github" do
   get_page_marker do
     header "Link"
   end
@@ -49,97 +99,196 @@ pagination "github_pagination" do
   end
 end
 
-datasource "ds_orgs_array" do
-  run_script $js_orgs_array, $param_orgs
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
 end
 
-script "js_orgs_array", type: "javascript" do
+datasource "ds_org_list" do
+  run_script $js_org_list, $param_orgs
+end
+
+script "js_org_list", type: "javascript" do
   parameters "param_orgs"
-  result "orgs_array"
-  code <<-EOS
-var orgs_array = param_orgs;
-EOS
+  result "result"
+  code "result = param_orgs"
 end
 
-datasource "org_repos" do
-  iterate $ds_orgs_array
+datasource "ds_github_orgs" do
+  iterate $ds_org_list
   request do
     auth $auth_github
-    pagination $github_pagination
+    pagination $pagination_github
     host "api.github.com"
-    path join(["/orgs/",iter_item,"/repos"])
+    path join(["/orgs/", iter_item])
+    header "X-GitHub-Api-Version", "2022-11-28"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "name", jmes_path(response, "login")
+    field "company", jmes_path(response, "company")
+    field "blog", jmes_path(response, "blog")
+    field "location", jmes_path(response, "location")
+    field "email", jmes_path(response, "email")
+    field "html_url", jmes_path(response, "html_url")
+    field "created_at", jmes_path(response, "created_at")
+    field "type", jmes_path(response, "type")
+  end
+end
+
+datasource "ds_github_org_repos" do
+  iterate $ds_github_orgs
+  request do
+    auth $auth_github
+    pagination $pagination_github
+    host "api.github.com"
+    path join(["/orgs/", val(iter_item, "name"), "/repos"])
+    header "X-GitHub-Api-Version", "2022-11-28"
   end
   result do
     encoding "json"
     collect jmes_path(response, "[*]") do
       field "id", jmes_path(col_item, "id")
       field "name", jmes_path(col_item, "name")
-      field "repo_name", jmes_path(col_item, "name")
-      field "repo_org", jmes_path(col_item, "owner.login")
-      field "repo_size", jmes_path(col_item, "size")
-      field "repo_created_at", jmes_path(col_item, "created_at")
-      field "repo_updated_at", jmes_path(col_item, "updated_at")
-      field "repo_pushed_at", jmes_path(col_item, "pushed_at")
-      end
+      field "full_name", jmes_path(col_item, "full_name")
+      field "html_url", jmes_path(col_item, "html_url")
+      field "description", jmes_path(col_item, "description")
+      field "default_branch", jmes_path(col_item, "default_branch")
+      field "created_at", jmes_path(col_item, "created_at")
+      field "size", jmes_path(col_item, "size")
+      field "org_id", val(iter_item, "id")
+      field "org_name", val(iter_item, "name")
+      field "org_company", val(iter_item, "company")
+      field "org_blog", val(iter_item, "blog")
+      field "org_location", val(iter_item, "location")
+      field "org_email", val(iter_item, "email")
+      field "org_url", val(iter_item, "html_url")
+      field "org_created_at", val(iter_item, "created_at")
+    end
   end
 end
 
-datasource "invalid_repos" do
-    run_script $js_invalid_repos, $org_repos, $param_repo_size, $param_repo_age
+datasource "ds_github_org_repos_filtered" do
+  run_script $js_github_org_repos_filtered, $ds_github_org_repos, $param_repos_allow_or_deny, $param_repos_list
 end
 
-script "js_invalid_repos", type: "javascript" do
-    parameters "org_repos","param_repo_size","param_repo_age"
-    result "invalid_org_repos"
-    code <<-EOS
-var invalid_org_repos = [];
-for (var index = 0; index < org_repos.length; index++) {
-  var repo = org_repos[index];
-  repo_age = (new Date().getTime()) - (new Date(repo.repo_created_at).getTime());
-  param_repo_age_ms =  (param_repo_age * 60*60*24 * 1000);
-  // exclude repos that are younger than number of days specified in param_repo_age
-  if (repo_age >= param_repo_age_ms && repo.repo_size <= param_repo_size) {
-    repo["fullRepositoryName"] = "["+repo.repo_name+"](https://github.com/"+repo.repo_name+")"
-    repo["fullAuditLogLink"] = "[Audit Log](https://github.com/organizations/"+repo.repo_org+"/settings/audit-log?utf8=%E2%9C%93&q=repo%3A"+repo.repo_org+"%2F"+repo.repo_name+")"
-    invalid_org_repos.push(repo);
+script "js_github_org_repos_filtered", type: "javascript" do
+  parameters "ds_github_org_repos", "param_repos_allow_or_deny", "param_repos_list"
+  result "result"
+  code <<-EOS
+  if (param_repos_list.length > 0) {
+    result = _.filter(ds_github_org_repos, function(repo) {
+      include_repo = _.contains(param_repos_list, repo['name'])
+      if (param_repos_allow_or_deny == "Deny") { include_repo = !include_repo }
+      return include_repo
+    })
+  } else {
+    result = ds_github_org_repos
   }
-}
 EOS
 end
 
-policy "invalid_repos" do
-  validate $invalid_repos do
-    summary_template "GitHub.com Empty Repository Report"
-    check eq(size(data), 0)
-    escalate $report_repositories
-    #### Policy Organization(s): {{  parameters.param_orgs }}
-    #### Policy Minimum Repository Age: {{  parameters.param_repo_age }} day(s)
-    #### Policy Minimum Repository Size: {{  parameters.param_repo_size }} byte(s)
+datasource "ds_invalid_repos" do
+  run_script $js_invalid_repos, $ds_github_org_repos_filtered, $ds_applied_policy, $param_repo_age, $param_repo_size
+end
+
+script "js_invalid_repos", type: "javascript" do
+  parameters "ds_github_org_repos_filtered", "ds_applied_policy", "param_repo_age", "param_repo_size"
+  result "result"
+  code <<-'EOS'
+  today = new Date()
+
+  invalid_repos = _.filter(ds_github_org_repos_filtered, function(repo) {
+    age = (today - new Date(repo['created_at'])) / 1000 / 60 / 60 / 24
+    return Number(repo['size']) < param_repo_size && age >= param_repo_age
+  })
+
+  result = _.map(invalid_repos, function(repo) {
+    org_name = encodeURI(repo['org_name'])
+    q_param = encodeURI("repo:" + repo["org_name"] + "/" + repo["name"])
+    audit_log_url = "https://github.com/organizations/" + org_name + "/settings/audit-log?utf8=%E2%9C%93&q=" + q_param
+
+    return {
+      id: repo['id'],
+      name: repo['name'],
+      description: repo['description'],
+      created_at: repo['created_at'],
+      org_name: repo['org_name'],
+      policy_name: ds_applied_policy['name'],
+      audit_log: "Audit Log||" + audit_log_url,
+      repo_link: "Repository||" + repo['html_url'],
+      age: Math.round((today - new Date(repo['created_at'])) / 1000 / 60 / 60 / 24),
+      size: Number(repo['size']),
+      size_mb: Math.round(Number(repo['size']) / 1024 / 1024 * 100) / 100,
+      param_repo_age: param_repo_age,
+      param_repo_size: param_repo_size
+    }
+  })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_invalid_repos" do
+  validate_each $ds_invalid_repos do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Undersized GitHub Repositories Found"
+    check eq(val(item, "id"), "")
+    escalate $esc_email
     export do
       resource_level true
-      field "repo_org" do
+      field "id" do
+        label "ID"
+      end
+      field "name" do
+        label "Name"
+      end
+      field "description" do
+        label "Description"
+      end
+      field "created_at" do
+        label "Created At"
+      end
+      field "age" do
+        label "Age (Days)"
+      end
+      field "size" do
+        label "Size (Bytes)"
+      end
+      field "size_mb" do
+        label "Size (MiB)"
+      end
+      field "org_name" do
         label "Organization"
       end
-      field "fullRepositoryName" do
-        label "Repository"
+      field "audit_log" do
+        label "Audit Log"
+        format "link-external"
       end
-      field "repo_size" do
-        label "Repository Size In byte(s)"
-      end
-      field "repo_created_at" do
-        label "Repository Created At"
-      end
-      field "fullAuditLogLink" do
-        label "Audit Log Link"
-      end
-      field "id" do
-        label "Id"
+      field "repo_link" do
+        label "Link"
+        format "link-external"
       end
     end
   end
 end
 
-escalation "report_repositories" do
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"

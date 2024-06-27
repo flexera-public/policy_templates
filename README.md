@@ -158,13 +158,15 @@ These templates can generate savings estimates for your environment.
 
 #### GitHub
 
-- [GitHub.com Available Seats Report](./compliance/github/available_seats)
-- [GitHub.com Repositories without Admin Team](./compliance/github/repository_admin_team)
-- [GitHub.com Repository Branches without Protection](./compliance/github/repository_branch_protection)
-- [GitHub.com Unpermitted Outside Collaborators](./compliance/github/outside_collaborators)
-- [GitHub.com Unpermitted Repository Names](./compliance/github/repository_naming)
-- [GitHub.com Unpermitted Sized Repositories](./compliance/github/repository_size)
-- [GitHub.com Unpermitted Top-Level Teams](./compliance/github/toplevel_teams)
+- Git
+
+  - [GitHub Available Seats](./compliance/github/available_seats)
+  - [GitHub Repositories Without Admin Team](./compliance/github/repository_admin_team)
+  - [GitHub Repository Branches Without Protection](./compliance/github/repository_branch_protection)
+  - [GitHub Undersized Repositories](./compliance/github/repository_size)
+  - [GitHub Unpermitted Outside Collaborators](./compliance/github/outside_collaborators)
+  - [GitHub Unpermitted Repository Names](./compliance/github/repository_naming)
+  - [GitHub Unpermitted Top-Level Teams](./compliance/github/toplevel_teams)
 
 #### Google
 
@@ -729,7 +731,7 @@ These templates can generate savings estimates for your environment.
   Oracle: 1
   ServiceNow: 1
 :services:
-  '': 13
+  '': 6
   AKS: 2
   All: 2
   App Service: 1
@@ -744,6 +746,7 @@ These templates can generate savings estimates for your environment.
   EBS: 4
   ELB: 3
   FlexNet Manager: 1
+  Git: 7
   IAM: 20
   IT Asset Management: 6
   Identity & Access Management: 1
