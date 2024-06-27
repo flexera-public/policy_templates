@@ -2,7 +2,7 @@
 
 ## v5.4.0
 
-- Added `Threshold Statistic` parameter to assess utilization based on CPU maximum, p90, p95, or p99 metrics
+- Added `Threshold Statistic` parameter to assess utilization based on various CPU metrics
 - Added CPU minimum, maximum, p90, p95, and p99 metrics to incident table
 
 ## v5.3.0
