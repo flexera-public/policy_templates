@@ -1,0 +1,426 @@
+name "Alibaba Cloud Common Bill Ingestion daily"
+rs_pt_ver 20180301
+type "policy"
+short_description "Downloads cost reports from Alibaba Cloud using daily granularity and then uploads them to a Flexera CBI endpoint."
+long_description "This is to be used when daily granularity (multiple files) from Alibaba. Used when costs have been exported on a daily basis for consumption to OSS."
+severity "low"
+category "Cost"
+default_frequency "daily"
+info(
+  version: "0.1",
+  provider: "Alibaba",
+  service: "Common Bill Ingestion",
+  policy_set: "Common Bill Ingestion"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_billing_period" do
+  type "string"
+  label "Month To Ingest"
+  description "Month to process bills for."
+  default "Current Month"
+  allowed_values "Current Month", "Specific Month", "Previous Month"
+end
+
+parameter "param_specific_period" do
+  type "string"
+  label "Billing Period"
+  description "Billing period to process bills for in YYYY-MM format. Only relevant if Specific Month is selected for Month To Ingest."
+  default "2023-11"
+  allowed_pattern /^(19|20)\d\d-(0[1-9]|1[0-2])$/
+end
+
+parameter "param_cbi_endpoint" do
+  type "string"
+  label "Flexera CBI Endpoint"
+  description "Name of the Flexera CBI endpoint to use. Ex: cbi-oi-alibaba-alibabacloud"
+  default "cbi-oi-alibaba-alibabacloud"
+end
+
+parameter "param_account_id" do
+  type "string"
+  label "Alibaba Cloud Account ID"
+  description "Account ID for Alibaba Cloud Account"
+end
+
+parameter "param_region" do
+  type "string"
+  label "Alibaba Cloud Region"
+  description "Region of the Alibaba Cloud Object Storage bucket containing the cost and usage reports. Ex: oss-cn-shanghai"
+end
+
+parameter "param_bucket" do
+  type "string"
+  label "Alibaba Cloud Billing Report Bucket"
+  description "Alibaba Cloud Object Storage bucket containing the Billing reports. EX: flexera-billing-data"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws"
+  label "Alibaba"
+  description "Select the Alibaba Cloud Credential from the list."
+  tags "provider=aws"
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "flexera"
+  description "Select FlexeraOne OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+###############################################################################
+# Datasources
+###############################################################################
+
+#CALCULATE BILLING PERIOD FOR RETRIEVING ALIBABA CLOUD BILLING DATA
+datasource "ds_billing_period" do
+  run_script $js_billing_period, $param_billing_period, $param_specific_period
+end
+
+#GET RELEVANT DATES IN THE BILLING PERIOD (REQUIRED FOR BILLING DATA RETRIEVAL)
+datasource "ds_dates" do
+  run_script $js_dates, $ds_billing_period
+end
+
+#GET BILLING DATA FROM ALIBABA CLOUD OSS
+datasource "ds_billing_data" do
+  iterate $ds_dates
+  request do
+    auth $auth_aws
+    verb "GET"
+    host join([$param_bucket, ".", $param_region, ".aliyuncs.com"])
+    path join(["/", $param_account_id, "_BillingItemDetail_", val(iter_item, "billingPeriodDate")])
+  end
+  result do
+    encoding "text"
+  end
+end
+
+datasource "ds_existing_bill_uploads" do
+  request do
+    auth $auth_flexera
+    verb "GET"
+    host rs_optima_host
+    path join(["/optima/orgs/", rs_org_id, "/billUploads"])
+    header "User-Agent", "RS Policies"
+    header "allow_redirects", "False"
+    query "billConnectId", $param_cbi_endpoint
+    #query "billingPeriod", val($ds_dates, 'period')
+  end
+end
+
+# This datasource looks for any in-progress bill uploads that are broken
+# due to an in-progress file upload so that they can be aborted.
+datasource "ds_broken_bill_uploads" do
+  run_script $js_broken_bill_uploads, $ds_existing_bill_uploads
+end
+
+script "js_broken_bill_uploads", type: "javascript" do
+  parameters "ds_existing_bill_uploads"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_existing_bill_uploads, function(bill_upload) {
+    broken_files = false
+
+    if (typeof(bill_upload['files']) == 'object') {
+      _.each(bill_upload['files'], function(file) {
+        if (file['status'] != 'uploaded') {
+          broken_files = true
+        }
+      })
+    }
+
+    // Make sure we ignore any bill uploads that aren't actually in-progress
+    return bill_upload['status'] == 'in-progress'
+  })
+EOS
+end
+
+datasource "ds_abort_broken_uploads" do
+  iterate $ds_broken_bill_uploads
+  request do
+    run_script $js_abort_broken_uploads, rs_org_id, rs_optima_host, val(iter_item, 'id')
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+script "js_abort_broken_uploads", type: "javascript" do
+  parameters "rs_org_id", "rs_optima_host", "bill_upload_id"
+  result "request"
+  code <<-EOS
+  // Slow down rate of requests to prevent throttling
+  api_wait = 5
+  var now = new Date().getTime()
+  while(new Date().getTime() < now + (api_wait * 1000)) { /* Do nothing */ }
+
+  var request = {
+    auth: "auth_flexera",
+    verb: "POST",
+    host: rs_optima_host,
+    path: ['/optima/orgs/', rs_org_id, '/billUploads/', bill_upload_id, '/operations'].join(''),
+    headers: {
+      "User-Agent": "RS Policies",
+    },
+    body_fields: { "operation": "abort" }
+  }
+EOS
+end
+
+datasource "ds_bill_upload_check" do
+  run_script $js_bill_upload_check, $ds_existing_bill_uploads, $ds_abort_broken_uploads
+end
+
+script "js_bill_upload_check", type: "javascript" do
+  parameters "ds_existing_bill_uploads", "ds_abort_broken_uploads"
+  result "result"
+  code <<-EOS
+  result = [1]
+  broken_upload_ids = _.pluck(ds_abort_broken_uploads, 'id')
+
+  in_progress_uploads = _.filter(ds_existing_bill_uploads, function(bill_upload) {
+    return bill_upload['status'] == 'in-progress' && _.contains(broken_upload_ids, bill_upload['id']) == false
+  })
+
+  if (in_progress_uploads.length > 0) { result = [] }
+EOS
+end
+
+datasource "ds_bill_upload_request" do
+  request do
+    run_script $js_bill_upload_request, $ds_bill_upload_check, rs_org_id, rs_optima_host, $param_cbi_endpoint, $ds_dates, val($ds_billing_period, 'billingPeriod')
+  end
+end
+
+#ADD BILL UPLOAD FILE TO CBI BILL UPLOAD VIA BILL UPLOAD FILE API
+datasource "ds_bill_upload_file" do
+  iterate $ds_billing_data
+  request do
+    run_script $js_bill_upload_file, iter_item, val($ds_bill_upload_request, "id"), $ds_dates, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "billUploadId", jmes_path(response, "billUploadId")
+    field "createdAt", jmes_path(response, "createdAt")
+    field "length", jmes_path(response, "length")
+    field "md5", jmes_path(response, "md5")
+    field "status", jmes_path(response, "status")
+    field "updatedAt", jmes_path(response, "updatedAt")
+  end
+end
+
+#COMMIT CBI BILL UPLOAD VIA BILL UPLOAD OPERATIONS API
+datasource "ds_bill_commit" do
+  request do
+    run_script $js_bill_commit, val($ds_bill_upload_request, "id"), $ds_bill_upload_file, rs_org_id, rs_optima_host
+  end
+end
+
+
+###############################################################################
+# Scripts
+###############################################################################
+script "js_dates", type: "javascript" do
+  parameters "ds_billing_period"
+  result "result"
+  code <<-EOS
+
+    //Function for PadStart as this function is not natively supported for JS version
+    function padStart(string, target_length, pad_char) {
+      string = String(string)
+      pad_char = String(pad_char)
+
+      while(string.length < target_length) {
+        string = pad_char + string
+      }
+
+      return string
+    }
+
+    //Get Billing Period
+    var period = ds_billing_period.billingPeriod
+
+    //Get the Dates in the Billing Period (required for making API call to get Alibaba Billing Data)
+    var days_in_month = []
+
+    var year = period.split("-")[0]
+    var month = period.split("-")[1]
+    console.log("Year:", year, "Month:", month)
+
+    //Get first day of month (and yesterday in case it is the current month)
+    var date = new Date(year, month - 1, 1)
+    var yesterday = new Date()
+    yesterday.setDate(yesterday.getDate() - 1)
+    console.log("Date:", date.toISOString())
+
+    //Loop through each day of the month
+    while (date.getMonth() === month - 1 && date <= yesterday) {
+
+      //Get the year, month, and day
+      var current_year = date.getFullYear()
+      var current_month = padStart( String(date.getMonth() + 1), 2, '0' )
+      var current_day = padStart( String(date.getDate()), 2, '0' )
+
+      //Format the date as 'YYYYMMDD' and add it to the array
+      var formatted_date = current_year + current_month + current_day
+      days_in_month.push({
+        "billingPeriodDate": formatted_date,
+        "billingPeriod": period
+      })
+
+      //Move to the next day
+      date.setDate(date.getDate() + 1)
+    }
+
+    result = days_in_month
+  EOS
+end
+
+script "js_billing_period", type: "javascript" do
+  parameters "param_billing_period", "param_specific_period"
+  result "result"
+  code <<-EOS
+  //Get Billing Period
+  var period = ""
+  if (param_billing_period == "Specific Month" && param_specific_period != "") {
+    period = param_specific_period
+  } 
+  if (param_billing_period == 'Previous Month' && param_specific_period != "") {
+    var current_date = new Date()
+    current_date.setMonth(current_date.getMonth() - 1)
+    year = current_date.toISOString().split('-')[0]
+    month = current_date.toISOString().split('-')[1]
+    period = year + '-' + month
+  } 
+  if (param_billing_period == 'Current Month' && param_specific_period != "") {
+    var current_date = new Date()
+    current_date.setDate(current_date.getDate() - 2)
+    period = current_date.toISOString().split("-")[0] + "-" + current_date.toISOString().split("-")[1]
+  }
+
+  console.log(period)
+  result = {
+    "billingPeriod": period
+  }
+  EOS
+end
+
+script "js_bill_upload_request", type: "javascript" do
+  parameters "ds_bill_upload_check", "org_id", "optima_host", "bill_connect_id", "dates", "ds_billing_period"
+  result "request"
+  code <<-EOS
+    var request = {
+      auth: "auth_flexera",
+      verb: "POST",
+      host: optima_host,
+      path: "/optima/orgs/" + org_id + "/billUploads",
+      body_fields: {
+        "billConnectId": bill_connect_id,
+        "billingPeriod": ds_billing_period
+      },
+      headers: {
+        "User-Agent": "RS Policies",
+        "allow_redirects": "False",
+      }
+    }
+
+  EOS
+end
+
+
+
+script "js_bill_upload_file", type: "javascript" do
+  parameters "ds_billing_data", "ds_bill_upload_request", "ds_dates", "org_id", "optima_host"
+  result "request"
+  code <<-EOS
+  // Slow down rate of requests to prevent throttling
+  api_wait = 5
+  var now = new Date().getTime()
+  while(new Date().getTime() < now + (api_wait * 1000)) { /* Do nothing */ }
+
+    var request = {
+      auth: "auth_flexera",
+      verb: "POST",
+      host: optima_host,
+      path: ["/optima/orgs/", org_id, "/billUploads/", ds_bill_upload_request, '/files/alibaba-cloud_', Math.random().toString().split('.')[1], '_', ds_dates['period'], '.csv'].join(""),
+      headers: {
+        "User-Agent": "RS Policies",
+      },
+      body: ds_billing_data
+    }
+  EOS
+end
+
+script "js_bill_commit", type: "javascript" do
+  parameters "ds_bill_upload_request", "bill_upload_file", "org_id", "optima_host"
+  result "request"
+  code <<-EOS
+
+  // Slow down rate of requests to prevent throttling
+  api_wait = 5
+  var now = new Date().getTime()
+  while(new Date().getTime() < now + (api_wait * 1000)) { /* Do nothing */ }
+
+    var request = {
+      auth: "auth_flexera",
+      verb: "POST",
+      host: optima_host,
+      path: ["/optima/orgs/" , org_id, "/billUploads/", ds_bill_upload_request, "/operations"].join(''),
+      headers: {
+        "User-Agent": "RS Policies",
+      },
+      body_fields: { "operation": "commit" }
+    }
+  EOS
+  end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_alibaba_bill_ingestion" do
+  validate $ds_bill_commit do
+    summary_template "Alibaba Daily import completed."
+    detail_template ""
+    check eq(0, 1)
+    export do
+      resource_level false
+      field "usageStartTime" do
+        label "Usage Date"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "accountId" do
+        label "Account ID"
+      end
+      field "productType" do
+        label "Product Type"
+      end
+      field "preTaxGrossAmount" do
+        label "Cost (Pre-Tax)"
+      end
+      field "currency" do
+        label "Currency"
+      end
+      field "region" do
+        label "Region"
+      end
+    end
+  end
+end
