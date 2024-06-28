@@ -294,6 +294,7 @@ These templates can generate savings estimates for your environment.
   - [Azure Hybrid Use Benefit for SQL](./cost/azure/hybrid_use_benefit_sql)
   - [Azure Rightsize SQL Database Storage](./cost/azure/rightsize_sql_storage)
   - [Azure Rightsize SQL Databases](./cost/azure/rightsize_sql_instances)
+  - [Azure Rightsize Synapse SQL Pools](./cost/azure/rightsize_synapse_sql_pools)
   - [Azure SQL Servers Without Elastic Pools](./cost/azure/sql_servers_without_elastic_pool)
   - [Azure Unused SQL Databases](./cost/azure/unused_sql_databases)
 
@@ -650,11 +651,11 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 33
-  Cost: 114
+  Cost: 115
   Operational: 27
   SaaS Management: 12
   Security: 74
-:optimization_count: 59
+:optimization_count: 60
 :policy_sets:
   '': 45
   AWS Config: 1
@@ -701,6 +702,7 @@ These templates can generate savings estimates for your environment.
   Rightsize Database Instances: 5
   Rightsize Database Services: 1
   Rightsize Storage: 2
+  Rightsize Synapse SQL Pools: 1
   Rightsize Volumes: 2
   Savings Plans: 4
   Savings Realized: 1
@@ -719,7 +721,7 @@ These templates can generate savings estimates for your environment.
   Usage Report: 10
 :providers:
   AWS: 95
-  Azure: 93
+  Azure: 94
   Azure China: 1
   Flexera: 37
   Flexera Optima: 1
@@ -765,7 +767,7 @@ These templates can generate savings estimates for your environment.
   PostgreSQL: 4
   RDS: 6
   S3: 6
-  SQL: 17
+  SQL: 18
   SaaS Manager: 9
   Security: 3
   Storage: 23
@@ -774,7 +776,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 260
+:total_count: 261
 -->
 <!-- End Policy Template Stats -->
 
