@@ -20,9 +20,7 @@ This policy template injects a fixed cost with the user-specified metadata into 
 - *Resource Type* - The value the fixed cost should have for the `Resource Type` dimension in Flexera CBI. Leave blank to have no value for this dimension.
 - *Instance Type* - The value the fixed cost should have for the `Instance Type` dimension in Flexera CBI. Leave blank to have no value for this dimension.
 - *Line Item Type* - The value the fixed cost should have for the `Line Item Type` dimension in Flexera CBI. `Usage` is recommended for most cases.
-- *Tag 1* - A tag value to attach to the line items in the Flexera platform in Key=Value format. Leave blank to not include a tag.
-- *Tag 2* - A tag value to attach to the line items in the Flexera platform in Key=Value format. Leave blank to not include a tag.
-- *Tag 3* - A tag value to attach to the line items in the Flexera platform in Key=Value format. Leave blank to not include a tag.
+- *Tags* - Tag values to attach to the line items in the Flexera platform in Key=Value format. Leave blank to not include any tag values.
 
 ## Policy Actions
 

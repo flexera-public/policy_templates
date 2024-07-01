@@ -133,28 +133,12 @@ parameter "param_metadata_lineitemtype" do
   default "Usage"
 end
 
-parameter "param_metadata_tagvalue_a" do
-  type "string"
+parameter "param_metadata_tags" do
+  type "list"
   category "Cost Metadata"
-  label "Tag 1"
-  description "A tag value to attach to the line items in the Flexera platform in Key=Value format. Leave blank to not include a tag."
-  default ""
-end
-
-parameter "param_metadata_tagvalue_b" do
-  type "string"
-  category "Cost Metadata"
-  label "Tag 2"
-  description "A tag value to attach to the line items in the Flexera platform in Key=Value format. Leave blank to not include a tag."
-  default ""
-end
-
-parameter "param_metadata_tagvalue_c" do
-  type "string"
-  category "Cost Metadata"
-  label "Tag 3"
-  description "A tag value to attach to the line items in the Flexera platform in Key=Value format. Leave blank to not include a tag."
-  default ""
+  label "Tags"
+  description "Tag values to attach to the line items in the Flexera platform in Key=Value format. Leave blank to not include any tag values."
+  default []
 end
 
 ###############################################################################
@@ -294,11 +278,11 @@ EOS
 end
 
 datasource "ds_cost_csv" do
-  run_script $js_cost_csv, $ds_dates, $ds_currency, $param_cost_amount, $param_metadata_cloud_vendor_account_id, $param_metadata_cloud_vendor_account_name, $param_metadata_category, $param_metadata_service, $param_metadata_region, $param_metadata_resourcetype, $param_metadata_instancetype, $param_metadata_lineitemtype, $param_metadata_tagvalue_a, $param_metadata_tagvalue_b, $param_metadata_tagvalue_c
+  run_script $js_cost_csv, $ds_dates, $ds_currency, $param_cost_amount, $param_metadata_cloud_vendor_account_id, $param_metadata_cloud_vendor_account_name, $param_metadata_category, $param_metadata_service, $param_metadata_region, $param_metadata_resourcetype, $param_metadata_instancetype, $param_metadata_lineitemtype, $param_metadata_tags
 end
 
 script "js_cost_csv", type: "javascript" do
-  parameters "ds_dates", "ds_currency", "param_cost_amount", "param_metadata_cloud_vendor_account_id", "param_metadata_cloud_vendor_account_name", "param_metadata_category", "param_metadata_service", "param_metadata_region", "param_metadata_resourcetype", "param_metadata_instancetype", "param_metadata_lineitemtype", "param_metadata_tagvalue_a", "param_metadata_tagvalue_b", "param_metadata_tagvalue_c"
+  parameters "ds_dates", "ds_currency", "param_cost_amount", "param_metadata_cloud_vendor_account_id", "param_metadata_cloud_vendor_account_name", "param_metadata_category", "param_metadata_service", "param_metadata_region", "param_metadata_resourcetype", "param_metadata_instancetype", "param_metadata_lineitemtype", "param_metadata_tags"
   result "result"
   code <<-'EOS'
   // Set static field values. These will be the same for every entry in the CSV file
@@ -319,27 +303,15 @@ script "js_cost_csv", type: "javascript" do
   InvoiceID = ds_dates['period'].replace(/-/g, '_')
 
   // Generate the Tags value if user provided tags
-  Tags = ""
   tag_strings = []
 
-  if (param_metadata_tagvalue_a.trim() != "" && param_metadata_tagvalue_a.split('=')[1] != undefined && param_metadata_tagvalue_a.split('=')[1] != '') {
-    key = param_metadata_tagvalue_a.split('=')[0].trim()
-    value = param_metadata_tagvalue_a.split('=')[1].trim()
-    tag_strings.push("\"\"" + key + "\"\": \"\"" + value + "\"\"")
-  }
+  _.each(param_metadata_tags, function(item) {
+    if (item.split('=')[1] != undefined && item.split('=')[1] != "") {
+      tag_strings.push("\"\"" + item.split('=')[0].trim() + "\"\": \"\"" + item.split('=')[1].trim() + "\"\"")
+    }
+  })
 
-  if (param_metadata_tagvalue_b.trim() != "" && param_metadata_tagvalue_b.split('=')[1] != undefined && param_metadata_tagvalue_b.split('=')[1] != '') {
-    key = param_metadata_tagvalue_b.split('=')[0].trim()
-    value = param_metadata_tagvalue_b.split('=')[1].trim()
-    tag_strings.push("\"\"" + key + "\"\": \"\"" + value + "\"\"")
-  }
-
-  if (param_metadata_tagvalue_c.trim() != "" && param_metadata_tagvalue_c.split('=')[1] != undefined && param_metadata_tagvalue_c.split('=')[1] != '') {
-    key = param_metadata_tagvalue_c.split('=')[0].trim()
-    value = param_metadata_tagvalue_c.split('=')[1].trim()
-    tag_strings.push("\"\"" + key + "\"\": \"\"" + value + "\"\"")
-  }
-
+  Tags = ""
   if (tag_strings.length > 0) { Tags = '"{' + tag_strings.join(',') + '}"' }
 
   // Determine the number of days in the current month for cost splitting
