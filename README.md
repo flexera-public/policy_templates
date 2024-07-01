@@ -343,6 +343,10 @@ These templates can generate savings estimates for your environment.
   - [Superseded Instances](./cost/flexera/cco/superseded_instance)
   - [Vendor Commitment Forecast](./cost/flexera/cco/forecasting/commitment_forecast)
 
+- Common Bill Ingestion
+
+  - [Fixed Cost Common Bill Ingestion](./cost/flexera/cco/fixed_cost_cbi)
+
 #### Flexera Optima
 
 - [Scheduled Report for Unallocated Costs](./cost/flexera/cco/scheduled_report_unallocated)
@@ -651,7 +655,7 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 33
-  Cost: 115
+  Cost: 116
   Operational: 27
   SaaS Management: 12
   Security: 74
@@ -666,7 +670,7 @@ These templates can generate savings estimates for your environment.
   CIS: 61
   Cloud Cost Optimization: 15
   Committed Use Discount: 2
-  Common Bill Ingestion: 2
+  Common Bill Ingestion: 3
   Database Services: 1
   Databricks: 1
   Deprecated Resources: 1
@@ -723,7 +727,7 @@ These templates can generate savings estimates for your environment.
   AWS: 95
   Azure: 94
   Azure China: 1
-  Flexera: 37
+  Flexera: 38
   Flexera Optima: 1
   GCE: 2
   GitHub: 7
@@ -741,7 +745,7 @@ These templates can generate savings estimates for your environment.
   Automation: 1
   Cloud Cost Optimization: 19
   CloudTrail: 7
-  Common Bill Ingestion: 2
+  Common Bill Ingestion: 3
   Compute: 76
   Config: 1
   DBS: 1
@@ -776,7 +780,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 261
+:total_count: 262
 -->
 <!-- End Policy Template Stats -->
 
