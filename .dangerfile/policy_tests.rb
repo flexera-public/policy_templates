@@ -1398,3 +1398,23 @@ def policy_new_datasource?(file, permissions_yaml)
   return fail_message.strip if !fail_message.empty?
   return false
 end
+
+### Console.log test
+# Return false if the console.log function is never invoked in the policy template
+def policy_console_log?(file)
+  # Store contents of file for direct analysis
+  policy_code = File.read(file)
+
+  # Message to return of test fails
+  fail_message = ""
+
+  policy_code.each_line.with_index do |line, index|
+    line_number = index + 1
+    fail_message += "Line #{line_number.to_s}\n" if line.include?("console.log")
+  end
+
+  fail_message = "Policy Template has console.log() statements. These are used for debugging and should not be present in catalog policy templates:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
