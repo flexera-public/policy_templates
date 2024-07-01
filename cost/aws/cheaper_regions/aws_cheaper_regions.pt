@@ -1,0 +1,434 @@
+name "AWS Cheaper Regions"
+rs_pt_ver 20180301
+type "policy"
+short_description "Reports on AWS regions whose resources could be moved to less expensive regions. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/cheaper_regions/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+category "Cost"
+severity "low"
+default_frequency "weekly"
+info(
+  version: "1.0.0",
+  provider: "AWS",
+  service: "All",
+  policy_set: "Cheaper Regions"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_cost_metric" do
+  type "string"
+  category "Policy Settings"
+  label "Cost Metric"
+  description "The cost metric to use for per-region spend in the report."
+  allowed_values "Unamortized Unblended", "Amortized Unblended", "Unamortized Blended", "Amortized Blended"
+  default "Unamortized Unblended"
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. Both region IDs, such as 'us-east-1', and names, such as 'US East (N. Virginia)', are accepted. Leave blank to check all regions."
+  default []
+end
+
+parameter "param_bc_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Billing Centers"
+  description "Allow or Deny entered Billing Centers."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_bc_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Billing Center List"
+  description "A list of allowed or denied Billing Center names/IDs. Leave blank to check all Billing Centers."
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
+end
+
+datasource "ds_aws_regions_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/aws/regions.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+datasource "ds_billing_centers_filtered" do
+  run_script $js_billing_centers_filtered, $ds_billing_centers, $param_bc_allow_or_deny, $param_bc_list
+end
+
+script "js_billing_centers_filtered", type: "javascript" do
+  parameters "ds_billing_centers", "param_bc_allow_or_deny", "param_bc_list"
+  result "result"
+  code <<-EOS
+  allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_bc_list.length > 0) {
+    billing_centers = _.filter(ds_billing_centers, function(item) {
+      id_found = _.contains(param_bc_list, item['id']) == allow_deny_test[param_bc_allow_or_deny]
+      name_found = _.contains(param_bc_list, item['name']) == allow_deny_test[param_bc_allow_or_deny]
+      return id_found || name_found
+    })
+
+    // Check for conflicting parents/children and remove children if present
+    bc_ids = _.compact(_.pluck(billing_centers, 'id'))
+    bad_children = _.filter(ds_billing_centers, function(bc) { return _.contains(bc_ids, bc['parent_id']) })
+    bad_children_ids = _.pluck(bad_children, 'id')
+
+    // Create final result with the bad children removed
+    result = _.reject(billing_centers, function(bc) { return _.contains(bad_children_ids, bc['id']) })
+  } else {
+    // If we're not filtering at all, just grab all of the top level billing centers
+    result = _.filter(ds_billing_centers, function(bc) {
+      return bc['parent_id'] == null || bc['parent_id'] == undefined
+    })
+  }
+EOS
+end
+
+datasource "ds_costs" do
+  request do
+    run_script $js_costs, $ds_billing_centers_filtered, $param_cost_metric, rs_optima_host, rs_org_id
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "billing_center_id", jmes_path(col_item, "dimensions.billing_center_id")
+      field "region", jmes_path(col_item, "dimensions.region")
+      field "service", jmes_path(col_item, "dimensions.service")
+      field "vendor_account", jmes_path(col_item, "dimensions.vendor_account")
+      field "vendor_account_name", jmes_path(col_item, "dimensions.vendor_account_name")
+      field "costs", jmes_path(col_item, "metrics")
+    end
+  end
+end
+
+script "js_costs", type: "javascript" do
+  parameters "ds_billing_centers_filtered", "param_cost_metric", "rs_optima_host", "rs_org_id"
+  result "request"
+  code <<-EOS
+  cost_metric_table = {
+    "Unamortized Unblended": "cost_nonamortized_unblended_adj",
+    "Amortized Unblended": "cost_amortized_unblended_adj",
+    "Unamortized Blended": "cost_nonamortized_blended_adj",
+    "Amortized Blended": "cost_amortized_blended_adj"
+  }
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 2)
+  start_date = start_date.toISOString().substring(0, 7)
+
+  end_year = Number(start_date.split('-')[0])
+  end_month = Number(start_date.split('-')[1]) + 1
+  if (end_month == 13) { end_month = 1; end_year++ }
+  if (end_month < 10) { end_month = '0' + end_month.toString() }
+  end_date = end_year.toString() + '-' + end_month.toString()
+
+  var request = {
+    auth: "auth_flexera",
+    verb: "POST",
+    host: rs_optima_host,
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
+    headers: { "Api-Version": "1.0", "User-Agent": "RS Policies" },
+    body_fields: {
+      "dimensions": [ "vendor_account", "vendor_account_name", "region", "billing_center_id", "service" ],
+      "granularity": "month",
+      "limit": 100000,
+      "metrics": [ cost_metric_table[param_cost_metric] ],
+      "billing_center_ids": _.pluck(ds_billing_centers_filtered, "id"),
+      "start_at": start_date,
+      "end_at": end_date,
+      "filter": { "dimension": "vendor", "type": "equal", "value": "AWS" }
+    }
+  }
+EOS
+end
+
+datasource "ds_regions_sorted" do
+  run_script $js_regions_sorted, $ds_costs, $ds_aws_regions_reference, $ds_billing_centers_filtered, $ds_currency, $ds_applied_policy, $param_cost_metric
+end
+
+script "js_regions_sorted", type: "javascript" do
+  parameters "ds_costs", "ds_aws_regions_reference", "ds_billing_centers_filtered", "ds_currency", "ds_applied_policy", "param_cost_metric"
+  result "result"
+  code <<-'EOS'
+  cost_metric_table = {
+    "Unamortized Unblended": "cost_nonamortized_unblended_adj",
+    "Amortized Unblended": "cost_amortized_unblended_adj",
+    "Unamortized Blended": "cost_nonamortized_blended_adj",
+    "Amortized Blended": "cost_amortized_blended_adj"
+  }
+
+  region_table = {}
+
+  _.each(ds_aws_regions_reference, function(region) {
+    region_table[region['name']] = region
+    region_table[region['region']] = region
+  })
+
+  bc_table = {}
+
+  _.each(ds_billing_centers_filtered, function(bc) {
+    bc_table[bc['id']] = bc['name']
+  })
+
+  regions = {}
+
+  _.each(ds_costs, function(item) {
+    if (regions[item['region']] = undefined) {
+      regions[item['region']] = {
+        id: region_table[item['region']]['region'],
+        name: region_table[item['region']]['name'],
+        cheaper: region_table[item['region']]['cheaper'],
+        billing_centers: [],
+        services: [],
+        account_ids: [],
+        account_names: [],
+        spend: 0.0
+      }
+    }
+
+    regions[item['region']]['spend'] += item['costs'][cost_metric_table[param_cost_metric]]
+    regions[item['region']]['billing_centers'].push(bc_table[item['billing_center_id']])
+
+    if (item['service'].toLowerCase() != 'none') {
+      regions[item['region']]['services'].push(item['service'])
+    }
+
+    if (item['vendor_account'].toLowerCase() != 'none') {
+      regions[item['region']]['account_ids'].push(item['vendor_account'])
+    }
+
+    if (item['vendor_account_name'].toLowerCase() != 'none') {
+      regions[item['region']]['account_names'].push(item['vendor_account_name'])
+    }
+  })
+
+  billing_period = new Date()
+  billing_period.setDate(billing_period.getDate() - 2)
+  billing_period = billing_period.toISOString().substring(0, 7)
+
+  result = _.map(_.keys(regions), function(key) {
+    return {
+      id: regions[key]['id'],
+      name: regions[key]['name'],
+      cheaper: regions[key]['cheaper'],
+      billing_centers: _.uniq(regions[key]['billing_centers']).join(', '),
+      services: _.uniq(regions[key]['services']).join(', '),
+      account_ids: _.uniq(regions[key]['account_ids']).join(', '),
+      account_names: _.uniq(regions[key]['account_names']).join(', '),
+      spend: Math.round(regions[key]['spend'] * 1000) / 1000,
+      currency: ds_currency['symbol'],
+      policy_name: ds_applied_policy['name'],
+      metric: param_cost_metric,
+      all_billing_centers: _.pluck(ds_billing_centers_filtered, 'name').join(', '),
+      billing_period: billing_period
+    }
+  })
+EOS
+end
+
+datasource "ds_cheaper_regions" do
+  run_script $js_cheaper_regions, $ds_regions_sorted, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_cheaper_regions", type: "javascript" do
+  parameters "ds_regions_sorted", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-'EOS'
+  result = _.filter(ds_regions_sorted, function(item) {
+    return typeof(item['cheaper']) == 'string' && item['cheaper'] != ''
+  })
+
+  if (param_regions_list.length > 0) {
+    result = _.filter(result, function(item) {
+      if (param_regions_allow_or_deny == "Allow") {
+        return _.contains(param_regions_list, item['id']) || _.contains(param_regions_list, item['name'])
+      } else {
+        return _.contains(param_regions_list, item['id']) == false && _.contains(param_regions_list, item['name']) == false
+      }
+    })
+  }
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_cheaper_regions" do
+  validate_each $ds_cheaper_regions do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Cheaper Regions Found"
+    detail_template <<-EOS
+### Billing Period: {{ with index data 0 }}{{ .billing_period }}{{ end }}
+### Billing Centers: {{ with index data 0 }}{{ .all_billing_centers }}{{ end }}
+EOS
+    check eq(val(item, "id"), "")
+    escalate $esc_email
+    export do
+      resource_level true
+      field "id" do
+        label "Region ID"
+      end
+      field "name" do
+        label "Region Name"
+      end
+      field "cheaper" do
+        label "Recommended Region"
+      end
+      field "spend" do
+        label "Total Spend"
+      end
+      field "currency" do
+        label "Currency"
+      end
+      field "metric" do
+        label "Spend Metric"
+      end
+      field "billing_centers" do
+        label "Associated Billing Centers"
+      end
+      field "account_ids" do
+        label "Associated Account IDs"
+      end
+      field "account_names" do
+        label "Associated Account Names"
+      end
+      field "services" do
+        label "Associated Services"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
