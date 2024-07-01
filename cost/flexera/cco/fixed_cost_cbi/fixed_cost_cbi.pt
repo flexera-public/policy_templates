@@ -55,7 +55,7 @@ parameter "param_cbi_endpoint" do
   category "Policy Settings"
   label "CBI (Common Bill Ingestion) Endpoint ID"
   description "The ID of CBI endpoint to create/use when injecting the fixed cost. Leave blank to have this generated and managed automatically. Ex: cbi-oi-optima-laborcosts"
-  allowed_pattern /^cbi-oi-optima-[a-z]+$/
+  allowed_pattern /^(cbi-oi-optima-[a-z]+|)$/
   default ""
 end
 
@@ -391,7 +391,7 @@ datasource "ds_cbi_endpoint_id" do
 end
 
 script "js_cbi_endpoint_id", type: "javascript" do
-  parameters "param_billing_period", "param_cbi_endpoint", "param_cbi_cloud_vendor"
+  parameters "param_cbi_endpoint", "param_cbi_cloud_vendor"
   result "result"
   code <<-EOS
   result = param_cbi_endpoint
@@ -504,8 +504,8 @@ datasource "ds_cbi_create_bill_upload" do
     host rs_optima_host
     path join(["/optima/orgs/", rs_org_id, "/billUploads"])
     header "User-Agent", "RS Policies"
-    body_field "billConnectId", val(ds_cbi_endpoint, "id")
-    body_field "billingPeriod", val(ds_dates, "period")
+    body_field "billConnectId", val($ds_cbi_endpoint, "id")
+    body_field "billingPeriod", val($ds_dates, "period")
   end
   result do
     encoding "json"
@@ -523,9 +523,9 @@ datasource "ds_cbi_upload_file" do
     auth $auth_flexera
     verb "POST"
     host rs_optima_host
-    path join(["/optima/orgs/", rs_org_id, "/billUploads/", val(ds_create_bill_upload, "id"), "/files/cost-", val(ds_dates, "period"), ".csv"])
+    path join(["/optima/orgs/", rs_org_id, "/billUploads/", val($ds_cbi_create_bill_upload, "id"), "/files/cost-", val($ds_dates, "period"), ".csv"])
     header "User-Agent", "RS Policies"
-    body val(ds_cost_csv, "csv")
+    body val($ds_cost_csv, "csv")
   end
   result do
     encoding "json"
@@ -597,15 +597,28 @@ end
 
 policy "pol_fixed_cost" do
   validate_each $ds_incident do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Underutilized EC2 Instances Found"
-    check logic_or($ds_parent_policy_terminated, ne(val(item, "recommendationType"), "Downsize"))
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ with index data 0 }}{{ .billingPeriod }}{{ end }}"
+    check eq(0, 1)
     escalate $esc_email
-    escalate $esc_downsize_instances
-    hash_exclude "underutil_message", "idle_message", "underutil_total_savings", "idle_total_savings", "tags", "savings", "savingsCurrency", "cpu_maximum", "cpu_minimum", "cpu_average", "cpu_p99", "cpu_p95", "cpu_p90", "mem_maximum", "mem_minimum", "mem_average", "mem_p99", "mem_p95", "mem_p90"
     export do
       resource_level true
-      field "accountID" do
-        label "Account ID"
+      field "billingPeriod" do
+        label "Billing Period"
+      end
+      field "cloud_vendor" do
+        label "Cloud Vendor"
+      end
+      field "cost_amount" do
+        label "Monthly Cost"
+      end
+      field "id" do
+        label "Bill Upload ID"
+      end
+      field "createdAt" do
+        label "Bill Upload Date"
+      end
+      field "status" do
+        label "Bill Upload Status"
       end
     end
   end
