@@ -6,6 +6,124 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#2261](https://github.com/flexera-public/policy_templates/pull/2261): FOPTS-3684 Azure Synapse SQL Pools
+
+#### Description
+
+> Policy to get optimization recommendations for Azure Synapse service to realize more savings.
+>
+> ### Issues Resolved
+>
+> Policy can recommend rightsizing dedicated pool compute resources or recommend to pause them to result in substantial potential savings.
+>
+
+#### Metadata
+
+- **Policies**: [Azure Rightsize Synapse SQL Pools](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_synapse_sql_pools/README.md), [Meta Parent: Azure Rightsize Synapse SQL Pools](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_synapse_sql_pools/README.md)
+- **Merged At**: 2024-06-27 22:32:04 UTC
+
+---
+
+### PR [#2354](https://github.com/flexera-public/policy_templates/pull/2354): POL-1270 GitHub Policy Revamps
+
+#### Description
+
+> This is a revamp of all of the GitHub policy templates. Additionally, the policy master permission automation has been updated to handle GitHub.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2354) for these details.
+- **Merged At**: 2024-06-27 12:05:44 UTC
+
+---
+
+### PR [#2345](https://github.com/flexera-public/policy_templates/pull/2345): POL-1260 Cloud Spend Forecast - Straight-Line Revamp
+
+#### Description
+
+> NOTE: Errors are false positives from files being moved around.
+>
+> This is a revamp of the `Cloud Spend Forecast - Straight-Line` policy template. From the CHANGELOG:
+>
+> - Fixed issue where graph would not render if dimension name contains an ampersand
+> - Several parameters altered to be more descriptive and human-readable
+> - Added support for both simple and linear regression models via parameter
+> - Added support for splitting cost by any arbitrary dimension
+> - Added ability to filter by Billing Center via an allow or deny list
+> - Streamlined code for better readability and faster execution
+>
+> Additionally, the `Cloud Spend Forecast - Straight-Line (Simple Model)` policy template has been deprecated. Its functionality has been folded into this policy template instead.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2345) for these details.
+- **Merged At**: 2024-06-26 15:17:34 UTC
+
+---
+
+### PR [#2336](https://github.com/flexera-public/policy_templates/pull/2336): POL-1259 Cloud Spend Moving Average Report Revamp
+
+#### Description
+
+> This is a revamp of the previously-named `Cloud Spend Forecast - Moving Average` policy template. It is now named `Cloud Spend Moving Average Report`. I did a fair bit of investigating into the history of this policy, and from what I can tell, it has never been a forecasting policy template, and a moving average is not a formula one can meaningfully use to forecast future cost. The policy template was originally named `Moving Average` and did not claim to provide a forecast, but this was changed at some point without any forecasting functionality being added to the policy template.
+>
+> From the CHANGELOG:
+>
+> - Renamed policy template and updated description to better reflect functionality
+> - Added ability to filter by Billing Center as an allow list or a deny list
+> - Added logic to ensure redundant Billing Centers don't skew results
+> - Improvements made to moving average calculation for better accuracy
+> - Incident table now used to display the moving average data used in the chart
+> - Streamlined code for better readability and faster execution
+>
+
+#### Metadata
+
+- **Policies**: [Cloud Spend Moving Average Report](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/moving_average/README.md)
+- **Merged At**: 2024-06-26 12:08:07 UTC
+
+---
+
+### PR [#2339](https://github.com/flexera-public/policy_templates/pull/2339): POL-1269 Publish Meta Parent Policies
+
+#### Description
+
+> This makes several changes to add meta parent policies to the catalog:
+>
+> - Removes the `publish: false` flag from meta parent policies.
+> - Changes their names to start with "Meta Parent: " to reduce risk of confusion with regular policies.
+> - Changes their category to "Meta" to reduce risk of confusion with regular policies.
+> - Policy description now contains information about meta policies and directs user to the meta policy README.
+> - The meta policy README has been updated to better guide users on the functionality.
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2339) for these details.
+- **Merged At**: 2024-06-25 20:58:16 UTC
+
+---
+
+### PR [#2334](https://github.com/flexera-public/policy_templates/pull/2334): POL-1267 AWS Accounts Missing Service Control Policies Revamp
+
+#### Description
+
+> This is a revamp of the `AWS Accounts Missing Service Control Policies` policy. From the CHANGELOG:
+>
+> - Changed policy template name to `AWS Accounts Missing Service Control Policies` to better reflect its functionality
+> - Added ability to audit for multiple Service Control Policies in a single execution
+> - Streamlined code for better readability and faster execution
+> - Policy template now requires a valid Flexera credential
+>
+
+#### Metadata
+
+- **Policies**: [AWS Accounts Missing Service Control Policies](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/missing_scps/README.md)
+- **Merged At**: 2024-06-24 17:13:54 UTC
+
+---
+
 ### PR [#2335](https://github.com/flexera-public/policy_templates/pull/2335): POL-1268 AWS/Azure Expiring Reserved Instances Revamp
 
 #### Description
@@ -180,7 +298,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 #### Metadata
 
-- **Policies**: [Azure Rightsize Managed Disks](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_disks/README.md)
+- **Policies**: [Azure Rightsize Managed Disks](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_disks/README.md), [Meta Parent: Azure Rightsize Managed Disks](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_disks/README.md)
 - **Merged At**: 2024-06-10 23:17:48 UTC
 
 ---
@@ -241,7 +359,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 #### Metadata
 
-- **Policies**: [Azure Rightsize Managed Disks](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_disks/README.md)
+- **Policies**: [Azure Rightsize Managed Disks](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_disks/README.md), [Meta Parent: Azure Rightsize Managed Disks](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_disks/README.md)
 - **Merged At**: 2024-06-04 21:36:34 UTC
 
 ---
@@ -304,7 +422,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 #### Metadata
 
-- **Policies**: [AWS Idle NAT Gateways](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/idle_nat_gateways/README.md)
+- **Policies**: [AWS Idle NAT Gateways](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/idle_nat_gateways/README.md), [Meta Parent: AWS Idle NAT Gateways](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/idle_nat_gateways/README.md)
 - **Merged At**: 2024-06-04 13:33:11 UTC
 
 ---
@@ -427,7 +545,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 #### Metadata
 
-- **Policies**: [Azure Rightsize Managed Disks](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_disks/README.md)
+- **Policies**: [Azure Rightsize Managed Disks](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_disks/README.md), [Meta Parent: Azure Rightsize Managed Disks](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_disks/README.md)
 - **Merged At**: 2024-05-29 20:31:07 UTC
 
 ---
@@ -512,7 +630,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 #### Metadata
 
-- **Policies**: [Azure Web Apps With Unoptimized Scaling](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/unoptimized_web_app_scaling/README.md)
+- **Policies**: [Azure Web Apps With Unoptimized Scaling](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/unoptimized_web_app_scaling/README.md), [Meta Parent: Azure Web Apps With Unoptimized Scaling](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/unoptimized_web_app_scaling/README.md)
 - **Merged At**: 2024-05-22 14:08:06 UTC
 
 ---
@@ -582,7 +700,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 #### Metadata
 
-- **Policies**: [Azure SQL Servers Without Elastic Pools](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/sql_servers_without_elastic_pool/README.md)
+- **Policies**: [Azure SQL Servers Without Elastic Pools](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/sql_servers_without_elastic_pool/README.md), [Meta Parent: Azure SQL Servers Without Elastic Pools](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/sql_servers_without_elastic_pool/README.md)
 - **Merged At**: 2024-05-20 12:18:05 UTC
 
 ---
@@ -607,7 +725,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 #### Metadata
 
-- **Policies**: [AWS Scheduled EC2 Events](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/scheduled_ec2_events/README.md)
+- **Policies**: [AWS Scheduled EC2 Events](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/scheduled_ec2_events/README.md), [Meta Parent: AWS Scheduled EC2 Events](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/scheduled_ec2_events/README.md)
 - **Merged At**: 2024-05-20 12:17:50 UTC
 
 ---
@@ -621,7 +739,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 #### Metadata
 
-- **Policies**: [AWS EC2 Instances Time Stopped Report](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/ec2_stopped_report/README.md)
+- **Policies**: [AWS EC2 Instances Time Stopped Report](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/ec2_stopped_report/README.md), [Meta Parent: AWS EC2 Instances Time Stopped Report](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/ec2_stopped_report/README.md)
 - **Merged At**: 2024-05-20 12:17:35 UTC
 
 ---
@@ -796,7 +914,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 #### Metadata
 
-- **Policies**: [Azure Rightsize SQL Databases](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_sql_instances/README.md)
+- **Policies**: [Azure Rightsize SQL Databases](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_sql_instances/README.md), [Meta Parent: Azure Rightsize SQL Databases](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_sql_instances/README.md)
 - **Merged At**: 2024-05-10 15:54:23 UTC
 
 ---
@@ -835,7 +953,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 #### Metadata
 
-- **Policies**: [Google Expiring Committed Use Discounts (CUD)](https://github.com/flexera-public/policy_templates/tree/master/cost/google/cud_expiration/README.md)
+- **Policies**: [Google Expiring Committed Use Discounts (CUD)](https://github.com/flexera-public/policy_templates/tree/master/cost/google/cud_expiration/README.md), [Meta Parent: Google Expiring Committed Use Discounts (CUD)](https://github.com/flexera-public/policy_templates/tree/master/cost/google/cud_expiration/README.md)
 - **Merged At**: 2024-05-10 12:28:06 UTC
 
 ---
@@ -855,7 +973,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 #### Metadata
 
-- **Policies**: [Google Committed Use Discount Report](https://github.com/flexera-public/policy_templates/tree/master/cost/google/cud_report/README.md)
+- **Policies**: [Google Committed Use Discount Report](https://github.com/flexera-public/policy_templates/tree/master/cost/google/cud_report/README.md), [Meta Parent: Google Committed Use Discount Report](https://github.com/flexera-public/policy_templates/tree/master/cost/google/cud_report/README.md)
 - **Merged At**: 2024-05-10 12:27:47 UTC
 
 ---
@@ -874,7 +992,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 #### Metadata
 
-- **Policies**: [AWS Untagged Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/untagged_resources/README.md)
+- **Policies**: [AWS Untagged Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/untagged_resources/README.md), [Meta Parent: AWS Untagged Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/untagged_resources/README.md)
 - **Merged At**: 2024-05-10 12:27:27 UTC
 
 ---
@@ -898,7 +1016,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 #### Metadata
 
-- **Policies**: [Google Object Storage Optimization](https://github.com/flexera-public/policy_templates/tree/master/cost/google/object_storage_optimization/README.md)
+- **Policies**: [Google Object Storage Optimization](https://github.com/flexera-public/policy_templates/tree/master/cost/google/object_storage_optimization/README.md), [Meta Parent: Google Object Storage Optimization](https://github.com/flexera-public/policy_templates/tree/master/cost/google/object_storage_optimization/README.md)
 - **Merged At**: 2024-05-09 14:10:32 UTC
 
 ---
@@ -961,7 +1079,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 #### Metadata
 
-- **Policies**: [AWS EKS Clusters Without Spot Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/eks_without_spot/README.md)
+- **Policies**: [AWS EKS Clusters Without Spot Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/eks_without_spot/README.md), [Meta Parent: AWS EKS Clusters Without Spot Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/eks_without_spot/README.md)
 - **Merged At**: 2024-05-08 12:12:52 UTC
 
 ---
@@ -977,7 +1095,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 #### Metadata
 
-- **Policies**: [Azure Rightsize SQL Databases](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_sql_instances/README.md)
+- **Policies**: [Azure Rightsize SQL Databases](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_sql_instances/README.md), [Meta Parent: Azure Rightsize SQL Databases](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_sql_instances/README.md)
 - **Merged At**: 2024-05-07 12:15:23 UTC
 
 ---
@@ -996,7 +1114,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 #### Metadata
 
-- **Policies**: [Google Recommenders](https://github.com/flexera-public/policy_templates/tree/master/cost/google/recommender/README.md)
+- **Policies**: [Google Recommenders](https://github.com/flexera-public/policy_templates/tree/master/cost/google/recommender/README.md), [Meta Parent: Google Recommenders](https://github.com/flexera-public/policy_templates/tree/master/cost/google/recommender/README.md)
 - **Merged At**: 2024-05-06 17:48:38 UTC
 
 ---
@@ -1035,7 +1153,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 #### Metadata
 
-- **Policies**: [AWS Lambda Functions With High Error Rate](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/lambda_functions_with_high_error_rate/README.md)
+- **Policies**: [AWS Lambda Functions With High Error Rate](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/lambda_functions_with_high_error_rate/README.md), [Meta Parent: AWS Lambda Functions With High Error Rate](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/lambda_functions_with_high_error_rate/README.md)
 - **Merged At**: 2024-05-02 15:53:13 UTC
 
 ---
@@ -1067,7 +1185,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 #### Metadata
 
-- **Policies**: [Google Recommenders](https://github.com/flexera-public/policy_templates/tree/master/cost/google/recommender/README.md)
+- **Policies**: [Google Recommenders](https://github.com/flexera-public/policy_templates/tree/master/cost/google/recommender/README.md), [Meta Parent: Google Recommenders](https://github.com/flexera-public/policy_templates/tree/master/cost/google/recommender/README.md)
 - **Merged At**: 2024-05-02 13:14:04 UTC
 
 ---
@@ -1107,7 +1225,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 #### Metadata
 
-- **Policies**: [AWS Untagged Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/untagged_resources/README.md)
+- **Policies**: [AWS Untagged Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/untagged_resources/README.md), [Meta Parent: AWS Untagged Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/untagged_resources/README.md)
 - **Merged At**: 2024-05-02 12:04:34 UTC
 
 ---
@@ -1132,7 +1250,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 #### Metadata
 
-- **Policies**: [Azure Expiring Certificates](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/azure_certificates/README.md)
+- **Policies**: [Azure Expiring Certificates](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/azure_certificates/README.md), [Meta Parent: Azure Expiring Certificates](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/azure_certificates/README.md)
 - **Merged At**: 2024-05-02 12:04:20 UTC
 
 ---
@@ -1155,7 +1273,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 #### Metadata
 
-- **Policies**: [Azure VMs Not Using Managed Disks](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/vms_without_managed_disks/README.md)
+- **Policies**: [Azure VMs Not Using Managed Disks](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/vms_without_managed_disks/README.md), [Meta Parent: Azure VMs Not Using Managed Disks](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/vms_without_managed_disks/README.md)
 - **Merged At**: 2024-05-02 12:04:06 UTC
 
 ---
@@ -1177,7 +1295,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 #### Metadata
 
-- **Policies**: [Azure Regulatory Compliance](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/compliance_score/README.md)
+- **Policies**: [Azure Regulatory Compliance](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/compliance_score/README.md), [Meta Parent: Azure Regulatory Compliance](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/compliance_score/README.md)
 - **Merged At**: 2024-05-02 12:03:30 UTC
 
 ---
@@ -1199,7 +1317,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 #### Metadata
 
-- **Policies**: [Azure Policy Audit](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/azure_policy_audit/README.md)
+- **Policies**: [Azure Policy Audit](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/azure_policy_audit/README.md), [Meta Parent: Azure Policy Audit](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/azure_policy_audit/README.md)
 - **Merged At**: 2024-05-02 12:03:17 UTC
 
 ---
@@ -1241,7 +1359,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 #### Metadata
 
-- **Policies**: [AWS IAM Role Audit](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/iam_role_audit/README.md)
+- **Policies**: [AWS IAM Role Audit](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/iam_role_audit/README.md), [Meta Parent: AWS IAM Role Audit](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/iam_role_audit/README.md)
 - **Merged At**: 2024-05-02 12:02:22 UTC
 
 ---
@@ -1263,7 +1381,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 #### Metadata
 
-- **Policies**: [Google Unlabeled Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/google/unlabeled_resources/README.md)
+- **Policies**: [Google Unlabeled Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/google/unlabeled_resources/README.md), [Meta Parent: Google Unlabeled Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/google/unlabeled_resources/README.md)
 - **Merged At**: 2024-05-01 15:43:31 UTC
 
 ---
@@ -1282,7 +1400,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 #### Metadata
 
-- **Policies**: [Google Old Snapshots](https://github.com/flexera-public/policy_templates/tree/master/cost/google/old_snapshots/README.md)
+- **Policies**: [Google Old Snapshots](https://github.com/flexera-public/policy_templates/tree/master/cost/google/old_snapshots/README.md), [Meta Parent: Google Old Snapshots](https://github.com/flexera-public/policy_templates/tree/master/cost/google/old_snapshots/README.md)
 - **Merged At**: 2024-04-30 16:26:22 UTC
 
 ---
@@ -1340,7 +1458,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 #### Metadata
 
-- **Policies**: [Azure Unused Firewalls](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/unused_firewalls/README.md)
+- **Policies**: [Azure Unused Firewalls](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/unused_firewalls/README.md), [Meta Parent: Azure Unused Firewalls](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/unused_firewalls/README.md)
 - **Merged At**: 2024-04-30 14:09:12 UTC
 
 ---
@@ -1422,7 +1540,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 #### Metadata
 
-- **Policies**: [Azure Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances/README.md)
+- **Policies**: [Azure Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances/README.md), [Meta Parent: Azure Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances/README.md)
 - **Merged At**: 2024-04-22 14:50:00 UTC
 
 ---
@@ -1443,7 +1561,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 #### Metadata
 
-- **Policies**: [AWS Unused IP Addresses](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/unused_ip_addresses/README.md)
+- **Policies**: [AWS Unused IP Addresses](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/unused_ip_addresses/README.md), [Meta Parent: AWS Unused IP Addresses](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/unused_ip_addresses/README.md)
 - **Merged At**: 2024-04-22 14:01:04 UTC
 
 ---
@@ -1464,7 +1582,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 #### Metadata
 
-- **Policies**: [AWS Unused ECS Clusters](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/ecs_unused/README.md)
+- **Policies**: [AWS Unused ECS Clusters](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/ecs_unused/README.md), [Meta Parent: AWS Unused ECS Clusters](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/ecs_unused/README.md)
 - **Merged At**: 2024-04-22 13:02:52 UTC
 
 ---
@@ -1478,7 +1596,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 #### Metadata
 
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2100) for details about unpublished policies.
+- **Policies**: [Meta Parent: AWS Missing Regions](https://github.com/flexera-public/policy_templates/tree/master/automation/aws/aws_missing_regions/README.md)
 - **Merged At**: 2024-04-19 20:56:22 UTC
 
 ---
@@ -1681,7 +1799,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 #### Metadata
 
-- **Policies**: [AWS Untagged Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/untagged_resources/README.md)
+- **Policies**: [AWS Untagged Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/untagged_resources/README.md), [Meta Parent: AWS Untagged Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/untagged_resources/README.md)
 - **Merged At**: 2024-04-15 20:39:22 UTC
 
 ---
@@ -1701,7 +1819,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 #### Metadata
 
-- **Policies**: [Azure Storage Accounts without Lifecycle Management Policies](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/storage_account_lifecycle_management/README.md)
+- **Policies**: [Azure Storage Accounts without Lifecycle Management Policies](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/storage_account_lifecycle_management/README.md), [Meta Parent: Azure Storage Accounts without Lifecycle Management Policies](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/storage_account_lifecycle_management/README.md)
 - **Merged At**: 2024-04-15 14:07:22 UTC
 
 ---
@@ -1721,7 +1839,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 #### Metadata
 
-- **Policies**: [AWS S3 Buckets Without Intelligent Tiering](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_storage_policy/README.md)
+- **Policies**: [AWS S3 Buckets Without Intelligent Tiering](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_storage_policy/README.md), [Meta Parent: AWS S3 Buckets Without Intelligent Tiering](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_storage_policy/README.md)
 - **Merged At**: 2024-04-15 14:07:10 UTC
 
 ---
@@ -1805,7 +1923,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 #### Metadata
 
-- **Policies**: [AWS Oversized S3 Buckets](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_bucket_size/README.md)
+- **Policies**: [AWS Oversized S3 Buckets](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_bucket_size/README.md), [Meta Parent: AWS Oversized S3 Buckets](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_bucket_size/README.md)
 - **Merged At**: 2024-04-10 13:13:30 UTC
 
 ---
@@ -1862,108 +1980,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2022) for these details.
 - **Merged At**: 2024-04-08 12:24:02 UTC
-
----
-
-### PR [#2020](https://github.com/flexera-public/policy_templates/pull/2020): POL-1191 Azure Hybrid Use Benefit Policy for SQL Revamp
-
-#### Description
-
-> This is a revamp of the Azure Hybrid Use Benefit Policy for SQL. From the CHANGELOG:
->
-> - Fixed bug where databases ineligible for AHUB would appear in incident
-> - Added support for Elastic Pool recommendations, including automated actions
-> - Several parameters altered to be more descriptive and human-readable
-> - Added improved subscription, region, and tag filtering for results
-> - Normalized incident export to be consistent with other policies
-> - Added human-readable recommendation to incident export
-> - Streamlined code for better readability and faster execution
->
-> I also made a minor tweak to the Dangerfile's comma-separation test based on a false positive generated by this policy.
->
-
-#### Metadata
-
-- **Policies**: [Azure Hybrid Use Benefit for SQL](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/hybrid_use_benefit_sql/README.md)
-- **Merged At**: 2024-04-05 13:35:00 UTC
-
----
-
-### PR [#1958](https://github.com/flexera-public/policy_templates/pull/1958): feat: Add params for github repo for Policy Sync PT
-
-#### Description
-
-> Added parameters for the Policy Template Github Repo to enable this to be used for other repos without modifying Policy Template
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1958) for details about unpublished policies.
-- **Merged At**: 2024-04-04 12:08:05 UTC
-
----
-
-### PR [#1960](https://github.com/flexera-public/policy_templates/pull/1960): SQ-7195 Spelling errors within 'ignored_recent_inventory_dates' policy template
-
-#### Description
-
-> There are spelling typos in our policy template that has been found by a customer.
->
-> ### Issues Resolved
->
-> Corrected typos in policy short description and parameter description
->
-
-#### Metadata
-
-- **Policies**: [ITAM Ignored Recent Inventory Dates](https://github.com/flexera-public/policy_templates/tree/master/compliance/flexera/fnms/ignored_recent_inventory_dates/README.md)
-- **Merged At**: 2024-04-02 17:59:01 UTC
-
----
-
-### PR [#1997](https://github.com/flexera-public/policy_templates/pull/1997): POL-1159 Update Flexera Policy Metadata
-
-#### Description
-
-> This updates the metadata for all of the dedicated Flexera policies to more clearly indicate what Flexera service they are for, and to consistently flag them as "Flexera" for the `provider` field. This also removes references to dated terminology for products/services in this metadata, such as RISC and Optima.
->
-> Note: There are a large number of warnings/errors due to the large number of policies touched, but it is not feasible to update every policy to pass the modernized linting. Those policies can be updated as they get touched organically for other reasons.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/1997) for these details.
-- **Merged At**: 2024-04-02 15:37:07 UTC
-
----
-
-### PR [#1999](https://github.com/flexera-public/policy_templates/pull/1999): POL-1157 Add Region Filtering to AWS/Azure Tag Cardinality Policies
-
-#### Description
-
-> This adds region filtering to the AWS and Azure Tag Cardinality policy. The main impetus for this change is to ensure the policy can work as expected for AWS estates with SCP protections enabled. Azure policy was updated to ensure both policies have parity in terms of their functionality.
->
-
-#### Metadata
-
-- **Policies**: [AWS Tag Cardinality Report](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/tag_cardinality/README.md), [Azure Tag Cardinality Report](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/tag_cardinality/README.md)
-- **Merged At**: 2024-04-01 17:13:44 UTC
-
----
-
-### PR [#1968](https://github.com/flexera-public/policy_templates/pull/1968): POL-1183 AWS Old Snapshots RDS Duplicate Fix
-
-#### Description
-
-> The AWS API endpoint for gathering RDS snapshots will return a value for each instance of an iterative snapshot of a single RDS resource. This means a snapshot for a single RDS resource that only appears in the bill once would be returned by the API several times, even though each instance returned by the API was just a version of a single snapshot.
->
-> This fix adds new logic to account for this. When these iterative snapshots are found, only the most recent one is considered during the analysis instead of all of them. As a result, if someone has a daily backup of an RDS instance, the same instance with the same dollar value in the bill doesn't appear several times in the results, greatly inflating them. This also means that such snapshots will not be reported erroneously simply because their oldest iteration is > 30 days.
->
-
-#### Metadata
-
-- **Policies**: [AWS Old Snapshots](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/old_snapshots/README.md)
-- **Merged At**: 2024-03-29 19:27:52 UTC
 
 ---
 
