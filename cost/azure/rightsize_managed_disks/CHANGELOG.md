@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.1.0
+
+- Added ability to filter results by disk SKU
+
 ## v2.0.3
 
 - Fixed a bug related to the Premium ssd price calculation with low throughput

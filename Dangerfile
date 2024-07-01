@@ -443,6 +443,9 @@ changed_pt_files.each do |file|
 
     # Raise warning if improper spacing between comma-separated items found
     test = policy_bad_comma_spacing?(file); warnings << test if test
+
+    # Raise error if policy has console.log() statements
+    test = policy_console_log?(file); failures << test if test
   end
 
   # Output final list of failures and warnings
