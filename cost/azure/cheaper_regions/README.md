@@ -4,6 +4,12 @@
 
 This policy template uses billing data stored in Flexera Cloud Cost Optimization (CCO) to report on Microsoft Azure regions with spend in the current month that have less expensive alternatives. In such cases, there is potential for savings by migrating resources to the cheaper region. Optionally, this report can be emailed.
 
+## How It Works
+
+- This policy template gathers aggregated cost data for Microsoft Azure for the current month from Flexera CCO via the [Flexera Bill Analysis API](https://reference.rightscale.com/bill_analysis/#). The previous month is used if the policy template executes during the first two days of a month, since it is possible that there will not be any useful data for the current month.
+- This data is sorted by region with any region-less costs being filtered out.
+- The above data is then filtered just for regions with a cheaper available region. The source of truth for cheaper regions is the [Azure Regions JSON file in the GitHub repository](https://github.com/flexera-public/policy_templates/blob/master/data/azure/regions.json).
+
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
