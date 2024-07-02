@@ -34,6 +34,7 @@ default_child_policy_template_files = [
   "../../operational/aws/ec2_stopped_report/aws_ec2_stopped_report.pt",
   "../../operational/aws/lambda_functions_with_high_error_rate/lambda_functions_with_high_error_rate.pt",
   "../../operational/aws/long_running_instances/long_running_instances.pt",
+  "../../operational/aws/rds_backup/aws_rds_backup.pt",
   "../../operational/aws/scheduled_ec2_events/aws_scheduled_ec2_events.pt",
   "../../operational/aws/tag_cardinality/aws_tag_cardinality.pt",
   "../../security/aws/ebs_unencrypted_volumes/aws_unencrypted_volumes.pt",
