@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "5.2.0",
+  version: "5.3.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -167,7 +167,7 @@ parameter "param_stats_threshold" do
   category "Statistics"
   label "Threshold Statistic"
   description "Statistic to use when determining if an instance is idle/underutilized."
-  allowed_values "Average", "Maximum"
+  allowed_values "Average", "Maximum", "p99", "p95", "p90"
   default "Average"
 end
 
@@ -737,6 +737,18 @@ script "js_azure_instances_metrics_organized", type: "javascript" do
   parameters "ds_azure_instances_metrics", "ds_azure_sku_memory"
   result "result"
   code <<-EOS
+  // Function to calculate percentiles from metrics
+  function percentile(arr, p) {
+    // array needs to be sorted to select based on percentile
+    arr.sort(function(a, b) { return a - b })
+
+    // Get the index using desired percentile and array length
+    index = (p / 100) * arr.length
+
+    // Round index value to nearest integer and return the value of that element in sorted array arr
+    return arr[Math.ceil(index) - 1]
+  }
+
   result = []
 
   _.each(ds_azure_instances_metrics, function(vm) {
@@ -756,43 +768,55 @@ script "js_azure_instances_metrics_organized", type: "javascript" do
     })
 
     // Default to 0 in case there are no stats because instance is not powered on
-    cpu_min = 0
+    // Minimum defaults to "null" to ensure comparisons work. It's adjusted to 0 later if needed.
+    cpu_min = null
     cpu_max = 0
     cpu_avg = 0
-    cpu_min_count = 0
-    cpu_max_count = 0
+    cpu_p90 = 0
+    cpu_p95 = 0
+    cpu_p99 = 0
     cpu_avg_count = 0
+    cpu_all_stats = []
 
     if (cpu_stats != null && cpu_stats != undefined) {
       _.each(cpu_stats, function(item) {
         if (item["average"] != undefined && item["average"] != null) {
+          cpu_all_stats.push(item["average"])
           cpu_avg += item["average"]
           cpu_avg_count += 1
         }
 
         if (item["minimum"] != undefined && item["minimum"] != null) {
-          cpu_min += item["minimum"]
-          cpu_min_count += 1
+          cpu_all_stats.push(item["minimum"])
+          if (item["minimum"] < cpu_min || cpu_min == null) { cpu_min = item["minimum"] }
         }
 
         if (item["maximum"] != undefined && item["maximum"] != null) {
-          cpu_max += item["maximum"]
-          cpu_max_count += 1
+          cpu_all_stats.push(item["maximum"])
+          if (item["maximum"] > cpu_max) { cpu_max = item["maximum"] }
         }
       })
     }
 
-    if (cpu_min_count != 0) { cpu_min = cpu_min / cpu_min_count }
-    if (cpu_max_count != 0) { cpu_max = cpu_max / cpu_max_count }
+    if (cpu_min == null) { cpu_min = 0 }
     if (cpu_avg_count != 0) { cpu_avg = cpu_avg / cpu_avg_count }
 
+    if (cpu_all_stats.length > 0) {
+      cpu_p90 = percentile(cpu_all_stats, 90)
+      cpu_p95 = percentile(cpu_all_stats, 95)
+      cpu_p99 = percentile(cpu_all_stats, 99)
+    }
+
     // Default to 0 in case there are no stats because instance is not powered on
-    mem_min = 0
+    // Minimum defaults to "null" to ensure comparisons work. It's adjusted to 0 later if needed.
+    mem_min = null
     mem_max = 0
     mem_avg = 0
-    mem_min_count = 0
-    mem_max_count = 0
+    mem_p90 = 0
+    mem_p95 = 0
+    mem_p99 = 0
     mem_avg_count = 0
+    mem_all_stats = []
 
     total_memory = ds_azure_sku_memory[vm['resourceType'].toLowerCase()]
 
@@ -803,25 +827,34 @@ script "js_azure_instances_metrics_organized", type: "javascript" do
         // the maximum available memory is equivalent to the minumum
         // memory used.
         if (item["average"] != undefined && item["average"] != null) {
-          mem_avg += (total_memory - item["average"]) / total_memory
+          average = (total_memory - item["average"]) / total_memory
+          mem_all_stats.push(average)
+          mem_avg += average
           mem_avg_count += 1
         }
 
         if (item["minimum"] != undefined && item["minimum"] != null) {
-          mem_max += (total_memory - item["minimum"]) / total_memory
-          mem_max_count += 1
+          maximum = (total_memory - item["minimum"]) / total_memory
+          mem_all_stats.push(maximum)
+          if (maximum > mem_max) { mem_max = maximum }
         }
 
         if (item["maximum"] != undefined && item["maximum"] != null) {
-          mem_min += (total_memory - item["maximum"]) / total_memory
-          mem_min_count += 1
+          minimum = (total_memory - item["maximum"]) / total_memory
+          mem_all_stats.push(minimum)
+          if (minimum < mem_min || mem_min == null) { mem_min = minimum }
         }
       })
     }
 
-    if (mem_min_count != 0) { mem_min = mem_min / mem_min_count * 100 }
-    if (mem_max_count != 0) { mem_max = mem_max / mem_max_count * 100 }
+    if (mem_min == null) { mem_min = 0 }
     if (mem_avg_count != 0) { mem_avg = mem_avg / mem_avg_count * 100 }
+
+    if (mem_all_stats.length > 0) {
+      mem_p90 = percentile(mem_all_stats, 90)
+      mem_p95 = percentile(mem_all_stats, 95)
+      mem_p99 = percentile(mem_all_stats, 99)
+    }
 
     vm_tags = []
 
@@ -850,12 +883,18 @@ script "js_azure_instances_metrics_organized", type: "javascript" do
       accountName: vm['subscriptionName'],
       tags: vm_tags.join(', '),
       state: state,
-      cpu_minimum: parseFloat(cpu_min.toFixed(2)),
-      cpu_maximum: parseFloat(cpu_max.toFixed(2)),
-      cpu_average: parseFloat(cpu_avg.toFixed(2)),
-      mem_minimum: parseFloat(mem_min.toFixed(2)),
-      mem_maximum: parseFloat(mem_max.toFixed(2)),
-      mem_average: parseFloat(mem_avg.toFixed(2)),
+      cpu_minimum: Math.round(cpu_min * 100) / 100,
+      cpu_maximum: Math.round(cpu_max * 100) / 100,
+      cpu_average: Math.round(cpu_avg * 100) / 100,
+      cpu_p90: Math.round(cpu_p90 * 100) / 100,
+      cpu_p95: Math.round(cpu_p95 * 100) / 100,
+      cpu_p99: Math.round(cpu_p99 * 100) / 100,
+      mem_minimum: Math.round(mem_min * 100) / 100,
+      mem_maximum: Math.round(mem_max * 100) / 100,
+      mem_average: Math.round(mem_avg * 100) / 100,
+      mem_p90: Math.round(mem_p90 * 100) / 100,
+      mem_p95: Math.round(mem_p95 * 100) / 100,
+      mem_p99: Math.round(mem_p99 * 100) / 100,
       service: "Microsoft.Compute",
       underutil_message: "",
       idle_message: "",
@@ -1410,6 +1449,18 @@ policy "pol_utilization" do
         label "CPU Average %"
         path "cpu_average"
       end
+      field "cpuP90" do
+        label "CPU p90"
+        path "cpu_p90"
+      end
+      field "cpuP95" do
+        label "CPU p95"
+        path "cpu_p95"
+      end
+      field "cpuP99" do
+        label "CPU p99"
+        path "cpu_p99"
+      end
       field "memMaximum" do
         label "Memory Maximum %"
         path "mem_maximum"
@@ -1421,6 +1472,18 @@ policy "pol_utilization" do
       field "memAverage" do
         label "Memory Average %"
         path "mem_average"
+      end
+      field "memP90" do
+        label "Memory p90"
+        path "mem_p90"
+      end
+      field "memP95" do
+        label "Memory p95"
+        path "mem_p95"
+      end
+      field "memP99" do
+        label "Memory p99"
+        path "mem_p99"
       end
       field "thresholdType" do
         label "Threshold Statistic"
@@ -1524,6 +1587,18 @@ policy "pol_utilization" do
         label "CPU Average %"
         path "cpu_average"
       end
+      field "cpuP90" do
+        label "CPU p90"
+        path "cpu_p90"
+      end
+      field "cpuP95" do
+        label "CPU p95"
+        path "cpu_p95"
+      end
+      field "cpuP99" do
+        label "CPU p99"
+        path "cpu_p99"
+      end
       field "memMaximum" do
         label "Memory Maximum %"
         path "mem_maximum"
@@ -1535,6 +1610,18 @@ policy "pol_utilization" do
       field "memAverage" do
         label "Memory Average %"
         path "mem_average"
+      end
+      field "memP90" do
+        label "Memory p90"
+        path "mem_p90"
+      end
+      field "memP95" do
+        label "Memory p95"
+        path "mem_p95"
+      end
+      field "memP99" do
+        label "Memory p99"
+        path "mem_p99"
       end
       field "thresholdType" do
         label "Threshold Statistic"
