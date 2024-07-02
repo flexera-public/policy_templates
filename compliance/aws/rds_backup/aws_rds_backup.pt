@@ -68,11 +68,20 @@ parameter "param_exclusion_tags_boolean" do
   default "Any"
 end
 
+parameter "param_backup_settings" do
+  type "string"
+  category "Policy Settings"
+  label "Backup Settings"
+  description "Whether to report AWS RDS instances with invalid backup retention periods, invalid backup windows, or both."
+  allowed_values "Both", "Backup Retention Period", "Backup Window"
+  default "Both"
+end
+
 parameter "param_backup_retention_period" do
   type "number"
   category "Policy Settings"
   label "Backup Retention Period (Days)"
-  description "The backup retention period, in days, that AWS RDS instances should be configured with."
+  description "The backup retention period, in days, that AWS RDS instances should be configured with. Has no effect if `Backup Window` is selected for the Backup Settings parameter."
   min_value 1
   # No default value, user input required
 end
@@ -81,8 +90,8 @@ parameter "param_backup_window" do
   type "string"
   category "Policy Settings"
   label "Backup Window (HH:MM-HH:MM)"
-  description "The backup window, in HH:MM-HH:MM format, that AWS RDS instances should be configured with. Ex: '08:00-08:30'"
-  allowed_pattern /^\d{2}:\d{2}-\d{2}:\d{2}$/
+  description "The backup window, in HH:MM-HH:MM format, that AWS RDS instances should be configured with. Has no effect if 'Backup Retention Period' is selected for the Backup Settings parameter. Ex: '08:00-08:30'"
+  allowed_pattern /^(\d{2}:\d{2}-\d{2}:\d{2})?$/
   # No default value, user input required
 end
 
@@ -333,11 +342,11 @@ datasource "ds_resource_tags" do
 end
 
 datasource "ds_rds_instances" do
-  run_script $js_rds_instances, $ds_rds_instances_set, $ds_resource_tags, $ds_aws_instance_size_map, $ds_aws_account, $ds_applied_policy, $param_exclusion_tags, $param_exclusion_tags_boolean, $param_backup_retention_period, $param_backup_window
+  run_script $js_rds_instances, $ds_rds_instances_set, $ds_resource_tags, $ds_aws_instance_size_map, $ds_aws_account, $ds_applied_policy, $param_exclusion_tags, $param_exclusion_tags_boolean, $param_backup_retention_period, $param_backup_window, $param_backup_settings
 end
 
 script "js_rds_instances", type: "javascript" do
-  parameters "ds_rds_instances_set", "ds_resource_tags", "ds_aws_instance_size_map", "ds_aws_account", "ds_applied_policy", "param_exclusion_tags", "param_exclusion_tags_boolean", "param_backup_retention_period", "param_backup_window"
+  parameters "ds_rds_instances_set", "ds_resource_tags", "ds_aws_instance_size_map", "ds_aws_account", "ds_applied_policy", "param_exclusion_tags", "param_exclusion_tags_boolean", "param_backup_retention_period", "param_backup_window", "param_backup_settings"
   result "result"
   code <<-EOS
   comparators = _.map(param_exclusion_tags, function(item) {
@@ -463,6 +472,7 @@ script "js_rds_instances", type: "javascript" do
         vcpus: vcpus,
         tags: tag_string,
         policy_name: ds_applied_policy['name'],
+        required_backup_settings: param_backup_settings,
         required_retention_period: param_backup_retention_period,
         required_backup_window: param_backup_window,
         service: "AmazonRDS"
@@ -480,8 +490,53 @@ script "js_unapproved_rds", type: "javascript" do
   parameters "ds_rds_instances"
   result "result"
   code <<-EOS
-  result = _.filter(ds_rds_instances, function(db) {
-    return db['backupRetentionPeriod'] != db['required_retention_period'] || db['preferredBackupWindow'] != db['required_backup_window']
+  bad_rds = _.filter(ds_rds_instances, function(db) {
+    mismatched_retention = false
+    mismatched_window = false
+
+    if (db['required_backup_settings'] != 'Backup Window') {
+      mismatched_retention = db['backupRetentionPeriod'] != db['required_retention_period']
+    }
+
+    if (db['required_backup_settings'] != 'Backup Retention Period') {
+      mismatched_window = db['preferredBackupWindow'] != db['required_backup_window']
+    }
+
+    return mismatched_retention || mismatched_window
+  })
+
+  result = _.map(bad_rds, function(db) {
+    required_retention_period = db['required_retention_period']
+    required_backup_window = db['required_backup_window']
+    if (db['required_backup_settings'] == 'Backup Window') { required_retention_period = "N/A" }
+    if (db['required_backup_settings'] == 'Backup Retention Period') { required_backup_window = "N/A" }
+
+    return {
+      accountID: db['accountID'],
+      accountName: db['accountName'],
+      resourceID: db['resourceID'],
+      arn: db['arn'],
+      resourceType: db['resourceType'],
+      resourceName: db['resourceName'],
+      state: db['state'],
+      databaseEngine: db['databaseEngine'],
+      platform: db['platform'],
+      engineVersion: db['engineVersion'],
+      privateDnsName: db['privateDnsName'],
+      region: db['region'],
+      availabilityZone: db['availabilityZone'],
+      licenseModel: db['licenseModel'],
+      processorFeatures: db['processorFeatures'],
+      backupRetentionPeriod: db['backupRetentionPeriod'],
+      preferredBackupWindow: db['preferredBackupWindow'],
+      vcpus: db['vcpus'],
+      tags: db['tags'],
+      policy_name: db['policy_name'],
+      required_backup_settings: db['required_backup_settings'],
+      required_retention_period: required_retention_period,
+      required_backup_window: required_backup_window,
+      service: db['service']
+    }
   })
 EOS
 end

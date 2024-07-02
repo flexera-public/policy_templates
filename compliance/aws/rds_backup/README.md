@@ -19,8 +19,9 @@ This policy has the following input parameters required when launching the polic
   - `Key=~/Regex/` - Filter all resources where the value for the specified key matches the specified regex string.
   - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified tag key.
 - *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
-- *Backup Retention Period (Days)* - The backup retention period, in days, that AWS RDS instances should be configured with.
-- *Backup Window (HH:MM-HH:MM)* - The backup window, in HH:MM-HH:MM format, that AWS RDS instances should be configured with. Example value: `08:00-08:30`
+- *Backup Settings* - Whether to report AWS RDS instances with invalid backup retention periods, invalid backup windows, or both.
+- *Backup Retention Period (Days)* - The backup retention period, in days, that AWS RDS instances should be configured with. Has no effect if `Backup Window` is selected for the Backup Settings parameter.
+- *Backup Window (HH:MM-HH:MM)* - The backup window, in HH:MM-HH:MM format, that AWS RDS instances should be configured with. Has no effect if `Backup Retention Period` is selected for the Backup Settings parameter. Example value: `08:00-08:30`
 
 ## Policy Actions
 
