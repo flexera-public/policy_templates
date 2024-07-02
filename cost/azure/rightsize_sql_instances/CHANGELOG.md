@@ -1,5 +1,11 @@
 # Changelog
 
+## v5.4.0
+
+- Added ability to set metrics granularity when gathering resource metrics from Azure
+- Added `Threshold Statistic` parameter to assess utilization based on various CPU metrics
+- Added CPU minimum, maximum, p90, p95, and p99 metrics to incident table
+
 ## v5.3.0
 
 - Modified internal names for incident fields for more accurate scraping into Optimization dashboard
