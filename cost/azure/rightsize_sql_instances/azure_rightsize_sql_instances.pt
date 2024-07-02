@@ -132,6 +132,15 @@ parameter "param_stats_threshold" do
   default "Average"
 end
 
+parameter "param_stats_interval" do
+  type "string"
+  category "Statistics"
+  label "Statistic Interval"
+  description "The interval to use when gathering Azure metrics data. Smaller intervals produce more accurate results at the expense of policy memory usage and completion time due to larger data sets."
+  allowed_values "1 Minute", "5 Minutes", "15 Minutes", "30 Minutes", "1 Hour", "6 Hours", "12 Hours", "1 Day"
+  default "15 Minutes"
+end
+
 parameter "param_stats_lookback" do
   type "number"
   category "Statistics"
@@ -283,6 +292,33 @@ script "js_currency", type:"javascript" do
   result = {
     symbol: symbol,
     separator: separator
+  }
+EOS
+end
+
+datasource "ds_stats_interval" do
+  run_script $js_stats_interval, $param_stats_interval
+end
+
+script "js_stats_interval", type: "javascript" do
+  parameters "param_stats_interval"
+  result "result"
+  code <<-EOS
+  // Tables to convert human-readable parameter values to their API equivalents
+  interval_table = {
+    "1 Minute": "PT1M",
+    "5 Minutes": "PT5M",
+    "15 Minutes": "PT15M",
+    "30 Minutes": "PT30M",
+    "1 Hour": "PT1H",
+    "6 Hours": "PT6H",
+    "12 Hours": "PT12H",
+    "1 Day": "P1D"
+  }
+
+  result = {
+    pretty: param_stats_interval,
+    api: interval_table[param_stats_interval]
   }
 EOS
 end
@@ -545,7 +581,7 @@ end
 datasource "ds_azure_sql_database_metrics" do
   iterate $ds_azure_sql_databases_region_filtered
   request do
-    run_script $js_azure_sql_database_metrics, val(iter_item, "id"), $param_azure_endpoint, $param_stats_lookback
+    run_script $js_azure_sql_database_metrics, val(iter_item, "id"), $ds_stats_interval, $param_azure_endpoint, $param_stats_lookback
   end
   result do
     encoding "json"
@@ -574,7 +610,7 @@ end
 
 # https://learn.microsoft.com/en-us/azure/azure-monitor/reference/supported-metrics/microsoft-sql-servers-databases-metrics
 script "js_azure_sql_database_metrics", type: "javascript" do
-  parameters "resource_id", "param_azure_endpoint", "param_stats_lookback"
+  parameters "resource_id", "ds_stats_interval", "param_azure_endpoint", "param_stats_lookback"
   result "request"
   code <<-EOS
   end_date = new Date()
@@ -602,7 +638,7 @@ script "js_azure_sql_database_metrics", type: "javascript" do
       "timespan": timespan,
       "metricnames": "cpu_percent,connection_successful",
       "aggregation": "Average,Minimum,Maximum,count",
-      "interval": "P1D"
+      "interval": ds_stats_interval["api"]
     },
     headers: {
       "User-Agent": "RS Policies"
@@ -910,11 +946,11 @@ EOS
 end
 
 datasource "ds_downsize_sql_incident" do
-  run_script $js_downsize_sql_incident, $ds_merged_metrics, $ds_azure_sql_databases_region_filtered, $ds_sql_costs_grouped, $ds_currency, $param_min_savings, $param_stats_lookback, $param_stats_underutil_threshold_cpu_value, $param_unused_or_underutilized, $param_minimum_age, $param_stats_threshold
+  run_script $js_downsize_sql_incident, $ds_merged_metrics, $ds_azure_sql_databases_region_filtered, $ds_sql_costs_grouped, $ds_currency, $ds_stats_interval, $param_min_savings, $param_stats_lookback, $param_stats_underutil_threshold_cpu_value, $param_unused_or_underutilized, $param_minimum_age, $param_stats_threshold
 end
 
 script "js_downsize_sql_incident", type: "javascript" do
-  parameters "ds_merged_metrics", "ds_azure_sql_databases_region_filtered", "ds_sql_costs_grouped", "ds_currency", "param_min_savings", "param_stats_lookback", "param_stats_underutil_threshold_cpu_value", "param_unused_or_underutilized", "param_minimum_age", "param_stats_threshold"
+  parameters "ds_merged_metrics", "ds_azure_sql_databases_region_filtered", "ds_sql_costs_grouped", "ds_currency", "ds_stats_interval", "param_min_savings", "param_stats_lookback", "param_stats_underutil_threshold_cpu_value", "param_unused_or_underutilized", "param_minimum_age", "param_stats_threshold"
   result "result"
   code <<-'EOS'
   // Function for formatting currency numbers later
@@ -1020,13 +1056,15 @@ script "js_downsize_sql_incident", type: "javascript" do
     context_message = [
       "An Azure SQL Database is considered underutilized if it has a CPU usage " + param_stats_threshold.toLowerCase() + " below ",
       param_stats_underutil_threshold_cpu_value, "% for the last ", param_stats_lookback, " ", day_message,
-      ", regardless of whether it has had any connections to it in that same time period. "
+      ", regardless of whether it has had any connections to it in that same time period. ",
+      "CPU metrics were gathered at a granularity of '", ds_stats_interval['pretty'], "'.\n\n"
     ].join('')
   } else {
     context_message = [
       "An Azure SQL Database is considered underutilized if it has had at least one connection to it ",
       "in the last ", param_stats_lookback, " ", day_message, " but has an average CPU usage below ",
-      param_stats_underutil_threshold_cpu_value, "% for that same time period. "
+      param_stats_underutil_threshold_cpu_value, "% for that same time period. ",
+      "These metrics were gathered at a granularity of '", ds_stats_interval['pretty'], "'.\n\n"
     ].join('')
   }
 

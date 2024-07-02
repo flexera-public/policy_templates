@@ -171,6 +171,15 @@ parameter "param_stats_threshold" do
   default "Average"
 end
 
+parameter "param_stats_interval" do
+  type "string"
+  category "Statistics"
+  label "Statistic Interval"
+  description "The interval to use when gathering Azure metrics data. Smaller intervals produce more accurate results at the expense of policy memory usage and completion time due to larger data sets."
+  allowed_values "1 Minute", "5 Minutes", "15 Minutes", "30 Minutes", "1 Hour", "6 Hours", "12 Hours", "1 Day"
+  default "15 Minutes"
+end
+
 parameter "param_stats_lookback" do
   type "number"
   category "Statistics"
@@ -331,6 +340,33 @@ script "js_currency", type:"javascript" do
   result = {
     symbol: symbol,
     separator: separator
+  }
+EOS
+end
+
+datasource "ds_stats_interval" do
+  run_script $js_stats_interval, $param_stats_interval
+end
+
+script "js_stats_interval", type: "javascript" do
+  parameters "param_stats_interval"
+  result "result"
+  code <<-EOS
+  // Tables to convert human-readable parameter values to their API equivalents
+  interval_table = {
+    "1 Minute": "PT1M",
+    "5 Minutes": "PT5M",
+    "15 Minutes": "PT15M",
+    "30 Minutes": "PT30M",
+    "1 Hour": "PT1H",
+    "6 Hours": "PT6H",
+    "12 Hours": "PT12H",
+    "1 Day": "P1D"
+  }
+
+  result = {
+    pretty: param_stats_interval,
+    api: interval_table[param_stats_interval]
   }
 EOS
 end
@@ -667,7 +703,7 @@ end
 datasource "ds_azure_instances_metrics" do
   iterate $ds_azure_instances_status_filtered
   request do
-    run_script $js_azure_instances_metrics, val(iter_item, "resourceID"), $param_azure_endpoint, $param_stats_lookback
+    run_script $js_azure_instances_metrics, val(iter_item, "resourceID"), $ds_stats_interval, $param_azure_endpoint, $param_stats_lookback
   end
   result do
     encoding "json"
@@ -690,7 +726,7 @@ datasource "ds_azure_instances_metrics" do
 end
 
 script "js_azure_instances_metrics", type: "javascript" do
-  parameters "resourceID", "param_azure_endpoint", "param_stats_lookback"
+  parameters "resourceID", "ds_stats_interval", "param_azure_endpoint", "param_stats_lookback"
   result "request"
   code <<-EOS
   end_date = new Date()
@@ -716,7 +752,7 @@ script "js_azure_instances_metrics", type: "javascript" do
     query_params: {
       "api-version": "2018-01-01",
       "timespan": timespan,
-      "interval": "P1D",
+      "interval": ds_stats_interval["api"],
       "metricnames": "Percentage CPU,Available Memory Bytes",
       "aggregation": "average,maximum,minimum"
     },
@@ -1021,11 +1057,11 @@ datasource "ds_azure_instance_size_map" do
 end
 
 datasource "ds_idle_and_underutil_instances" do
-  run_script $js_idle_and_underutil_instances, $ds_azure_instances_region_filtered, $ds_azure_instances_metrics_organized, $ds_instance_costs_grouped, $ds_azure_instance_size_map, $ds_currency, $ds_applied_policy, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_min_savings, $param_stats_lookback, $param_exclude_databricks
+  run_script $js_idle_and_underutil_instances, $ds_azure_instances_region_filtered, $ds_azure_instances_metrics_organized, $ds_instance_costs_grouped, $ds_azure_instance_size_map, $ds_stats_interval, $ds_currency, $ds_applied_policy, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_min_savings, $param_stats_lookback, $param_exclude_databricks
 end
 
 script "js_idle_and_underutil_instances", type:"javascript" do
-  parameters "ds_azure_instances_region_filtered", "ds_azure_instances_metrics_organized", "ds_instance_costs_grouped", "ds_azure_instance_size_map", "ds_currency", "ds_applied_policy", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_min_savings", "param_stats_lookback", "param_exclude_databricks"
+  parameters "ds_azure_instances_region_filtered", "ds_azure_instances_metrics_organized", "ds_instance_costs_grouped", "ds_azure_instance_size_map", "ds_stats_interval", "ds_currency", "ds_applied_policy", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_min_savings", "param_stats_lookback", "param_exclude_databricks"
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
@@ -1220,7 +1256,9 @@ script "js_idle_and_underutil_instances", type:"javascript" do
 
       lookback_message = [
         "CPU and memory usage was analyzed over the last ",
-        param_stats_lookback.toString(), " days.\n\n"
+        param_stats_lookback.toString(), " days. ",
+        "These metrics were gathered at a granularity of '",
+        ds_stats_interval['pretty'], "'.\n\n"
       ].join('')
     }
 
@@ -1241,7 +1279,9 @@ script "js_idle_and_underutil_instances", type:"javascript" do
 
       lookback_message = [
         "CPU usage was analyzed over the last ",
-        param_stats_lookback.toString() + " days.\n\n"
+        param_stats_lookback.toString() + " days. ",
+        "CPU metrics were gathered at a granularity of '",
+        ds_stats_interval['pretty'], "'.\n\n"
       ].join('')
     }
 
@@ -1262,7 +1302,9 @@ script "js_idle_and_underutil_instances", type:"javascript" do
 
       lookback_message = [
         "Memory usage was analyzed over the last ",
-        param_stats_lookback.toString() + " days.\n\n"
+        param_stats_lookback.toString() + " days. ",
+        "Memory metrics were gathered at a granularity of '",
+        ds_stats_interval['pretty'], "'.\n\n"
       ].join('')
     }
 
