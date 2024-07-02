@@ -1233,7 +1233,7 @@ def policy_bad_comma_spacing?(file)
   policy_code.each_line.with_index do |line, index|
     line_number = index + 1
 
-    if line.include?(",") && !line.include?("allowed_pattern") && !line.include?('= ","') && !line.include?("(',')") && !line.include?('(",")') && !line.include?("jq(")
+    if line.include?(",") && !line.include?("allowed_pattern") && !line.include?('= ","') && !line.include?("(',')") && !line.include?('(",")') && !line.include?("jq(") && !line.include?("/,/")
       if line.strip.match(/,\s{2,}/) || line.strip.match(/\s,/) || line.strip.match(/,[^\s]/)
         fail_message += "Line #{line_number.to_s}: Possible invalid spacing between comma-separated items found.\nComma separated items should be organized as follows, with a single space following each comma: apple, banana, pear\n\n"
       end
@@ -1394,6 +1394,26 @@ def policy_new_datasource?(file, permissions_yaml)
     # If the PT file has been manually validated, but there are new datasources, then print a warning message
     fail_message = "Detected new request datasource(s) in Policy Template file. Please verify the README.md has any new permissions that may be required."
   end
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### Console.log test
+# Return false if the console.log function is never invoked in the policy template
+def policy_console_log?(file)
+  # Store contents of file for direct analysis
+  policy_code = File.read(file)
+
+  # Message to return of test fails
+  fail_message = ""
+
+  policy_code.each_line.with_index do |line, index|
+    line_number = index + 1
+    fail_message += "Line #{line_number.to_s}\n" if line.include?("console.log")
+  end
+
+  fail_message = "Policy Template has console.log() statements. These are used for debugging and should not be present in catalog policy templates:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false

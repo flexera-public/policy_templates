@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.2.1
+
+- Deprecated: This policy is no longer being updated.
+
 ## v2.2
 
 - Updated policy metadata to make it more clear what Flexera service the policy is for

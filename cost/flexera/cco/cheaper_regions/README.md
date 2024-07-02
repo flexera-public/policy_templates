@@ -1,5 +1,13 @@
 # Cheaper Regions Policy
 
+## Deprecated
+
+This policy is no longer being updated. Cloud-specific policies now exist for this functionality and should be used instead:
+
+- [AWS Cheaper Regions](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/cheaper_regions/)
+- [Azure Cheaper Regions](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/cheaper_regions/)
+- [Google Cheaper Regions](https://github.com/flexera-public/policy_templates/tree/master/cost/google/cheaper_regions/)
+
 ## What It Does
 
 This Policy Template determines which regions have cheaper alternatives by specifying the expensive region name and the cheaper region name for analysis

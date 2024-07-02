@@ -63,6 +63,7 @@ These templates can generate savings estimates for your environment.
 - [Azure Rightsize NetApp Files](./cost/azure/rightsize_netapp_files)
 - [Azure Rightsize SQL Database Storage](./cost/azure/rightsize_sql_storage)
 - [Azure Rightsize SQL Databases](./cost/azure/rightsize_sql_instances)
+- [Azure Rightsize Synapse SQL Pools](./cost/azure/rightsize_synapse_sql_pools)
 - [Azure Savings Plan Recommendations](./cost/azure/savings_plan/recommendations)
 - [Azure Superseded Compute Instances](./cost/azure/superseded_instances)
 - [Azure Unused Firewalls](./cost/azure/unused_firewalls)
@@ -181,6 +182,7 @@ These templates can generate savings estimates for your environment.
 
 - All
 
+  - [AWS Cheaper Regions](./cost/aws/cheaper_regions)
   - [AWS Resources Under Extended Support](./cost/aws/extended_support)
 
 - Compute
@@ -244,6 +246,10 @@ These templates can generate savings estimates for your environment.
 
 #### Azure
 
+- All
+
+  - [Azure Cheaper Regions](./cost/azure/cheaper_regions)
+
 - Compute
 
   - [Azure Compute Instances Time Powered Off Report](./operational/azure/compute_poweredoff_report)
@@ -293,6 +299,7 @@ These templates can generate savings estimates for your environment.
   - [Azure Hybrid Use Benefit for SQL](./cost/azure/hybrid_use_benefit_sql)
   - [Azure Rightsize SQL Database Storage](./cost/azure/rightsize_sql_storage)
   - [Azure Rightsize SQL Databases](./cost/azure/rightsize_sql_instances)
+  - [Azure Rightsize Synapse SQL Pools](./cost/azure/rightsize_synapse_sql_pools)
   - [Azure SQL Servers Without Elastic Pools](./cost/azure/sql_servers_without_elastic_pool)
   - [Azure Unused SQL Databases](./cost/azure/unused_sql_databases)
 
@@ -334,12 +341,16 @@ These templates can generate savings estimates for your environment.
   - [Currency Conversion](./cost/flexera/cco/currency_conversion)
   - [Email Cost Optimization Recommendations](./cost/flexera/cco/email_recommendations)
   - [Flexera FOCUS Report](./cost/flexera/cco/focus_report)
-  - [Low Account Usage](./cost/flexera/cco/low_account_usage)
   - [Low Service Usage](./cost/flexera/cco/low_service_usage)
+  - [Low Usage Report](./cost/flexera/cco/low_usage)
   - [New Service Usage](./cost/flexera/cco/new_service_usage)
   - [Scheduled Report](./cost/flexera/cco/scheduled_reports)
   - [Superseded Instances](./cost/flexera/cco/superseded_instance)
   - [Vendor Commitment Forecast](./cost/flexera/cco/forecasting/commitment_forecast)
+
+- Common Bill Ingestion
+
+  - [Fixed Cost Common Bill Ingestion](./cost/flexera/cco/fixed_cost_cbi)
 
 #### Flexera Optima
 
@@ -359,6 +370,7 @@ These templates can generate savings estimates for your environment.
 
 - All
 
+  - [Google Cheaper Regions](./cost/google/cheaper_regions)
   - [Google Recommenders](./cost/google/recommender)
 
 - Compute
@@ -649,11 +661,11 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 33
-  Cost: 114
+  Cost: 119
   Operational: 27
   SaaS Management: 12
   Security: 74
-:optimization_count: 59
+:optimization_count: 60
 :policy_sets:
   '': 45
   AWS Config: 1
@@ -662,9 +674,10 @@ These templates can generate savings estimates for your environment.
   Autoscaling: 1
   Burstable Compute Instances: 1
   CIS: 61
+  Cheaper Regions: 3
   Cloud Cost Optimization: 15
   Committed Use Discount: 2
-  Common Bill Ingestion: 2
+  Common Bill Ingestion: 3
   Database Services: 1
   Databricks: 1
   Deprecated Resources: 1
@@ -700,6 +713,7 @@ These templates can generate savings estimates for your environment.
   Rightsize Database Instances: 5
   Rightsize Database Services: 1
   Rightsize Storage: 2
+  Rightsize Synapse SQL Pools: 1
   Rightsize Volumes: 2
   Savings Plans: 4
   Savings Realized: 1
@@ -717,14 +731,14 @@ These templates can generate savings estimates for your environment.
   Unused Volumes: 7
   Usage Report: 10
 :providers:
-  AWS: 95
-  Azure: 93
+  AWS: 96
+  Azure: 95
   Azure China: 1
-  Flexera: 37
+  Flexera: 38
   Flexera Optima: 1
   GCE: 2
   GitHub: 7
-  Google: 18
+  Google: 19
   Kubecost: 2
   Microsoft: 1
   Okta: 1
@@ -733,12 +747,12 @@ These templates can generate savings estimates for your environment.
 :services:
   '': 6
   AKS: 2
-  All: 2
+  All: 5
   App Service: 1
   Automation: 1
   Cloud Cost Optimization: 19
   CloudTrail: 7
-  Common Bill Ingestion: 2
+  Common Bill Ingestion: 3
   Compute: 76
   Config: 1
   DBS: 1
@@ -764,7 +778,7 @@ These templates can generate savings estimates for your environment.
   PostgreSQL: 4
   RDS: 6
   S3: 6
-  SQL: 17
+  SQL: 18
   SaaS Manager: 9
   Security: 3
   Storage: 23
@@ -773,7 +787,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 260
+:total_count: 265
 -->
 <!-- End Policy Template Stats -->
 
