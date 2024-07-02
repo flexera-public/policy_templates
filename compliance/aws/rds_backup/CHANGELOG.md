@@ -2,6 +2,7 @@
 
 ## v3.0.0
 
+- Policy template category changed to `Compliance`
 - Resources can be filtered via region using either an allow or deny list
 - Resources can now be filtered by tag
 - Added additional incident fields to add context
