@@ -182,6 +182,7 @@ These templates can generate savings estimates for your environment.
 
 - All
 
+  - [AWS Cheaper Regions](./cost/aws/cheaper_regions)
   - [AWS Resources Under Extended Support](./cost/aws/extended_support)
 
 - Compute
@@ -244,6 +245,10 @@ These templates can generate savings estimates for your environment.
   - [Turbonomic Rightsize Virtual Volumes Recommendations AWS](./cost/turbonomics/rightsize_virtual_volumes_recommendations/aws)
 
 #### Azure
+
+- All
+
+  - [Azure Cheaper Regions](./cost/azure/cheaper_regions)
 
 - Compute
 
@@ -365,6 +370,7 @@ These templates can generate savings estimates for your environment.
 
 - All
 
+  - [Google Cheaper Regions](./cost/google/cheaper_regions)
   - [Google Recommenders](./cost/google/recommender)
 
 - Compute
@@ -655,7 +661,7 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 33
-  Cost: 116
+  Cost: 119
   Operational: 27
   SaaS Management: 12
   Security: 74
@@ -668,6 +674,7 @@ These templates can generate savings estimates for your environment.
   Autoscaling: 1
   Burstable Compute Instances: 1
   CIS: 61
+  Cheaper Regions: 3
   Cloud Cost Optimization: 15
   Committed Use Discount: 2
   Common Bill Ingestion: 3
@@ -724,14 +731,14 @@ These templates can generate savings estimates for your environment.
   Unused Volumes: 7
   Usage Report: 10
 :providers:
-  AWS: 95
-  Azure: 94
+  AWS: 96
+  Azure: 95
   Azure China: 1
   Flexera: 38
   Flexera Optima: 1
   GCE: 2
   GitHub: 7
-  Google: 18
+  Google: 19
   Kubecost: 2
   Microsoft: 1
   Okta: 1
@@ -740,7 +747,7 @@ These templates can generate savings estimates for your environment.
 :services:
   '': 6
   AKS: 2
-  All: 2
+  All: 5
   App Service: 1
   Automation: 1
   Cloud Cost Optimization: 19
@@ -780,7 +787,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 262
+:total_count: 265
 -->
 <!-- End Policy Template Stats -->
 
