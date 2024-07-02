@@ -1,4 +1,20 @@
-# Google Rightsize VM Recommender
+# Changelog
+
+## v3.1.1
+
+- Idle VM Instances incident now includes a `Recommended Resource Type` field with a value of `Delete VM Instance` for ease of analyzing recommendations from the Flexera Optimization dashboard
+
+## v3.1
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
+## v3.0
+
+- Added support for regex when filtering resources by label
+
+## v2.2
+
+- Fixed issue where currency conversion would sometimes not work as expected.
 
 ## v2.1
 

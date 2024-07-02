@@ -1,5 +1,21 @@
 # Changelog
 
+## v6.5.1
+
+- Added `deprecated` field to policy metadata. Functionality is unchanged.
+
+## v6.5
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
+## v6.4
+
+- Deprecated: This policy is no longer being updated. Please see policy README for more information.
+
+## v6.3
+
+- Corrected API issue when executing policy in APAC
+
 ## v6.2
 
 - Updated description of `Account Number` parameter

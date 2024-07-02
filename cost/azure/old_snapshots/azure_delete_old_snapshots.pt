@@ -2,20 +2,21 @@ name "Azure Old Snapshots"
 rs_pt_ver 20180301
 type "policy"
 short_description "Checks for snapshots older than specified number of days and, optionally, deletes them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/old_snapshots) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
 severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "6.0",
+  version: "7.2.0",
   provider: "Azure",
   service: "Storage",
   policy_set: "Old Snapshots",
   recommendation_type: "Usage Reduction"
 )
 
-##############################################################################
+###############################################################################
 # Parameters
-##############################################################################
+###############################################################################
 
 parameter "param_email" do
   type "list"
@@ -89,10 +90,18 @@ end
 parameter "param_exclusion_tags" do
   type "list"
   category "Filters"
-  label "Exclusion Tags (Key:Value)"
-  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:*"
-  allowed_pattern /(^$)|[\w]*\:.*/
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
   default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
 end
 
 parameter "param_automatic_action" do
@@ -101,6 +110,7 @@ parameter "param_automatic_action" do
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action."
   allowed_values ["Delete Snapshots"]
+  default []
 end
 
 ###############################################################################
@@ -153,9 +163,9 @@ datasource "ds_billing_centers" do
     auth $auth_flexera
     host rs_optima_host
     path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
     ignore_status [403]
   end
   result do
@@ -189,7 +199,7 @@ end
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
     header "User-Agent", "RS Policies"
   end
 end
@@ -246,11 +256,13 @@ datasource "ds_azure_subscriptions" do
     pagination $pagination_azure
     host $param_azure_endpoint
     path "/subscriptions/"
-    query "api-version","2020-01-01"
+    query "api-version", "2020-01-01"
     header "User-Agent", "RS Policies"
     # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
     # Forces `ds_is_deleted` datasource to run first during policy execution
     header "Meta-Flexera", val($ds_is_deleted, "path")
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
@@ -303,7 +315,7 @@ datasource "ds_azure_snapshots" do
       field "resourceID", jmes_path(col_item, "id")
       field "resourceName", jmes_path(col_item, "name")
       field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
-      field "resourceType", jmes_path(col_item, "type")
+      field "type", jmes_path(col_item, "type")
       field "region", jmes_path(col_item, "location")
       field "tags", jmes_path(col_item, "tags")
       field "timeCreated", jmes_path(col_item, "properties.timeCreated")
@@ -315,33 +327,75 @@ datasource "ds_azure_snapshots" do
 end
 
 datasource "ds_azure_snapshots_tag_filtered" do
-  run_script $js_azure_snapshots_tag_filtered, $ds_azure_snapshots, $param_exclusion_tags
+  run_script $js_azure_snapshots_tag_filtered, $ds_azure_snapshots, $param_exclusion_tags, $param_exclusion_tags_boolean
 end
 
 script "js_azure_snapshots_tag_filtered", type: "javascript" do
-  parameters "ds_azure_snapshots", "param_exclusion_tags"
+  parameters "ds_azure_snapshots", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-EOS
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
   if (param_exclusion_tags.length > 0) {
-    result = _.reject(ds_azure_snapshots, function(snapshot) {
-      snapshot_tags = []
+    result = _.reject(ds_azure_snapshots, function(resource) {
+      resource_tags = {}
+      if (typeof(resource['tags']) == 'object') { resource_tags = resource['tags'] }
 
-      if (typeof(snapshot['tags']) == 'object') {
-        _.each(Object.keys(snapshot['tags']), function(key) {
-          snapshot_tags.push([key, ":", snapshot['tags'][key]].join(''))
-          snapshot_tags.push([key, ":*"].join(''))
-        })
-      }
+      // Store a list of found tags
+      found_tags = []
 
-      exclude_snapshot = false
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_tag = resource_tags[comparator['key']]
 
-      _.each(param_exclusion_tags, function(exclusion_tag) {
-        if (_.contains(snapshot_tags, exclusion_tag)) {
-          exclude_snapshot = true
+        if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+        if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+        if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_tag == undefined) { found_tags.push(string) }
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
         }
       })
 
-      return exclude_snapshot
+      all_tags_found = found_tags.length == comparators.length
+      any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+      return all_tags_found || any_tags_found
     })
   } else {
     result = ds_azure_snapshots
@@ -395,12 +449,12 @@ script "js_azure_old_snapshots", type: "javascript" do
     snapshotTime = Date.parse(snapshot['timeCreated'])
     age = Math.round((new Date().getTime() - new Date(snapshotTime).getTime()) / (1000 * 3600 * 24))
 
-    service = snapshot['resourceType'].split("/")[0]
+    service = snapshot['type'].split("/")[0]
 
     if (age > param_snapshot_age) {
       result.push({
         resourceID: snapshot['resourceID'],
-        resourceType: snapshot['resourceType'],
+        type: snapshot['type'],
         resourceName: snapshot['resourceName'],
         region: snapshot['region'],
         resourceGroup: snapshot['resourceGroup'],
@@ -582,7 +636,7 @@ script "js_azure_snapshots_incident", type:"javascript" do
         resourceID: snapshot['resourceID'],
         resourceName: snapshot['resourceName'],
         resourceGroup: snapshot['resourceGroup'],
-        resourceType: snapshot['resourceType'],
+        type: snapshot['type'],
         region: snapshot['region'],
         age: snapshot['age'],
         tags: snapshot['tags'],
@@ -681,6 +735,9 @@ policy "pol_azure_old_snapshots" do
       field "size" do
         label "Size (GB)"
       end
+      field "type" do
+        label "Type"
+      end
       field "service" do
         label "Service"
       end
@@ -695,9 +752,6 @@ policy "pol_azure_old_snapshots" do
       end
       field "savingsCurrency" do
         label "Savings Currency"
-      end
-      field "resourceType" do
-        label "Resource Type"
       end
       field "lookbackPeriod" do
         label "Snapshot Age Threshold (Days)"
@@ -728,79 +782,60 @@ escalation "esc_delete_snapshot" do
   automatic contains($param_automatic_action, "Delete Snapshots")
   label "Delete Snapshots"
   description "Approval to delete all selected snapshots"
-  run "delete_snapshots", data, $param_azure_endpoint, rs_optima_host
+  run "delete_snapshots", data, $param_azure_endpoint
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define delete_snapshots($data, $$param_azure_endpoint, $$rs_optima_host) return $all_responses do
-  # Change "No" to "Yes" to enable CWF debug logging
-  $log_to_cm_audit_entries = "No"
+define delete_snapshots($data, $param_azure_endpoint) return $all_responses do
+  $$all_responses = []
 
-  $$debug = $log_to_cm_audit_entries == "Yes"
-  $$errors = []
-  $status_code = ''
-  $all_responses = []
-
-  foreach $item in $data do
-    sub on_error: skip do
-      call delete_snapshot($item['resourceID'])
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call delete_snapshot($instance, $param_azure_endpoint) retrieve $delete_response
     end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
   end
 end
 
-define delete_snapshot($resourceID) do
-  $syslog_subject = "Azure delete old snapshots API response: "
+define delete_snapshot($instance, $param_azure_endpoint) return $response do
+  $host = $param_azure_endpoint
+  $href = $instance["id"]
+  $params = "?api-version=2019-07-01"
+  $url = $host + $href + $params
+  task_label("DELETE " + $url)
 
   $response = http_request(
     auth: $$auth_azure,
-    verb: "DELETE",
-    host: $$param_azure_endpoint,
     https: true,
-    href: $resourceID,
-    query_strings: {
-      "api-version": "2019-07-01"
-    }
+    verb: "delete",
+    host: $host,
+    href: $href,
+    query_strings: { "api-version": "2019-07-01" }
   )
 
-  if $delete_status != 202
-    call sys_log($syslog_subject, to_s($response))
+  task_label("Delete Azure snapshot response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response deleting Azure snapshot: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Delete Azure snapshot successful: " + $instance["id"])
   end
 end
 
-define sys_log($subject, $detail) do
-  # Create empty errors array if doesn't already exist
+define handle_error() do
   if !$$errors
     $$errors = []
   end
-  # Check if debug is enabled
-  if $$debug
-    # Append to global $$errors
-    # This is the suggested way to capture errors
-    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
-    # If Flexera NAM Zone, create audit_entries [to be deprecated]
-    # This is the legacy method for capturing errors and only supported on Flexera NAM
-    if $$rs_optima_host == "api.optima.flexeraeng.com"
-      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
-      $task_label = "Creating audit entry for " + $subject
-      sub task_label: $task, on_error: skip_error_and_append($task) do
-        rs_cm.audit_entries.create(
-          notify: "None",
-          audit_entry: {
-            auditee_href: @@account,
-            summary: $subject,
-            detail: $detail
-          }
-        )
-      end # End sub on_error
-    end # End if rs_optima_host
-  end # End if debug is enabled
-end
-
-define skip_error_and_append($subject) do
-  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
   $_error_behavior = "skip"
 end
 
@@ -816,7 +851,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
     header "Api-Version", "1.0"
   end
   result do
@@ -824,7 +859,6 @@ datasource "ds_get_policy" do
     field "id", jmes_path(response, "id")
   end
 end
-
 
 datasource "ds_parent_policy_terminated" do
   run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id

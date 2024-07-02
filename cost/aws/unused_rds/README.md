@@ -1,5 +1,9 @@
 # AWS Unused RDS Instances
 
+## Deprecated
+
+This policy is no longer being updated. The [AWS Rightsize RDS Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_rds_instances/) policy now includes this functionality and is the recommended policy for getting unused RDS instance recommendations.
+
 ## What It Does
 
 This policy template checks for Unused RDS instances by reviewing CloudWatch DBconnections and terminates them after user approval.

@@ -1,5 +1,33 @@
 # Changelog
 
+## v5.1.0
+
+- Modified internal names for incident fields for more accurate scraping into Optimization dashboard
+
+## v5.0.0
+
+- Added estimated savings based on Google's Cloud Billing API
+- Added `Minimum Savings Threshold` parameter to filter results
+- Added support for automatic currency conversion for savings
+- To facilitate the above, policy template now requires additional permissions
+
+## v4.0
+
+- Added support for regex when filtering resources by label
+
+## v3.0
+
+- Several parameters altered to be more descriptive and human-readable
+- Removed deprecated "Log to CM Audit Entries" parameter
+- Added ability to filter resources by project
+- Added ability to use wildcards when filtering resources by label
+- Added additional context to incident description
+- Normalized incident export to be consistent with other policies
+- Added human-readable recommendation to incident export
+- Added additional fields to incident export
+- Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera One credential
+
 ## v2.12
 
 - Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM

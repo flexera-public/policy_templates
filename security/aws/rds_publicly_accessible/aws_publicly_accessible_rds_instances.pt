@@ -7,7 +7,7 @@ category "Security"
 severity "high"
 default_frequency "hourly"
 info(
-  version: "4.1",
+  version: "4.2.1",
   provider: "AWS",
   service: "RDS",
   policy_set: "Public Database Access"
@@ -19,6 +19,7 @@ info(
 
 parameter "param_allowed_regions_allow_or_deny" do
   type "string"
+  category "Policy Settings"
   label "Allow/Deny Regions"
   description "Allow or Deny entered regions. See the README for more details"
   allowed_values "Allow", "Deny"
@@ -27,15 +28,19 @@ end
 
 parameter "param_allowed_regions" do
   type "list"
+  category "Policy Settings"
   label "Regions"
-  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   description "A list of allowed or denied regions. See the README for more details"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  default []
 end
 
 parameter "param_email" do
   type "list"
+  category "Policy Settings"
   label "Email addresses to notify"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
+  default []
 end
 
 parameter "param_aws_account_number" do
@@ -48,15 +53,19 @@ end
 
 parameter "param_exclude_tags" do
   type "list"
+  category "Policy Settings"
   label "Tags to ignore"
-  description "List of tags that will exclude resources from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'"
+  description "List of tags that will exclude resources from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test, env=dev'"
+  default []
 end
 
 parameter "param_automatic_action" do
   type "list"
+  category "Policy Settings"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
   allowed_values ["Update RDS Instances"]
+  default []
 end
 
 ###############################################################################
@@ -65,7 +74,7 @@ end
 
 #AUTHENTICATE WITH AWS
 credentials "auth_aws" do
-  schemes "aws","aws_sts"
+  schemes "aws", "aws_sts"
   label "AWS"
   description "Select the AWS Credential from the list"
   tags "provider=aws"
@@ -84,7 +93,7 @@ end
 # Pagination
 ###############################################################################
 
-pagination "rds_pagination" do
+pagination "pagination_rds" do
   get_page_marker do
     body_path "DescribeDBInstancesResult.NextMarker"
   end
@@ -94,7 +103,7 @@ pagination "rds_pagination" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
 # ds_region_list is a list of regions that are opted-in or opt-in-not-required
@@ -124,73 +133,11 @@ end
 
 # Get only SCP enabled regions
 datasource "ds_regions" do
-  run_script $js_regions, $param_allowed_regions, $ds_regions_list, $param_allowed_regions_allow_or_deny
+  run_script $js_regions, $ds_regions_list, $param_allowed_regions, $param_allowed_regions_allow_or_deny
 end
-
-#To get list of All RDS Instances.
-datasource "ds_rds_instances_list" do
-  iterate $ds_regions
-  request do
-    run_script $js_rds_list, val(iter_item,"region")
-  end
-  result do
-  encoding "json"
-    collect jmes_path(response, "DescribeDBInstancesResponse.DescribeDBInstancesResult.DBInstances[*]") do
-      field "db_instance_arn", jmes_path(col_item, "DBInstanceArn")
-      field "db_instance_identifier", jmes_path(col_item, "DBInstanceIdentifier")
-      field "publicly_accessible", jmes_path(col_item, "PubliclyAccessible")
-      field "storage_encrypted", jmes_path(col_item, "StorageEncrypted")
-      field "db_engine_name", jmes_path(col_item, "Engine")
-      field "delete_protection", jmes_path(col_item, "DeletionProtection")
-      field "availability_zone", jmes_path(col_item, "AvailabilityZone")
-      field "sec_availability_zone", jmes_path(col_item, "SecondaryAvailabilityZone")
-      field "db_instance_status", jmes_path(col_item,"DBInstanceStatus")
-      field "region", val(iter_item,"region")
-      field "db_cluster_identifier", jmes_path(col_item,"DBClusterIdentifier")
-    end
-  end
-end
-
-#Get respective tags for all RDS instances
-datasource "ds_rds_list_with_tags" do
-  iterate $ds_rds_instances_list
-  request do
-    run_script $js_rds_list_with_tags, val(iter_item,"region"), val(iter_item, "db_instance_arn")
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "ListTagsForResourceResponse.ListTagsForResourceResult") do
-      field "tags" do
-        collect jmes_path(col_item, "TagList") do
-          field "tagKey", jmes_path(col_item, "Key")
-          field "tagValue", jmes_path(col_item, "Value")
-        end
-      end
-      field "db_instance_arn", val(iter_item, "db_instance_arn")
-      field "db_instance_identifier", val(iter_item, "db_instance_identifier")
-      field "publicly_accessible", val(iter_item, "publicly_accessible")
-      field "storage_encrypted", val(iter_item, "storage_encrypted")
-      field "delete_protection", val(iter_item, "delete_protection")
-      field "region", val(iter_item,"region")
-      field "db_engine_name", val(iter_item,"db_engine_name")
-      field "availability_zone", val(iter_item, "availability_zone")
-      field "sec_availability_zone", val(iter_item, "sec_availability_zone")
-      field "db_instance_status", val(iter_item,"db_instance_status")
-      field "db_cluster_identifier", val(iter_item,"db_cluster_identifier")
-    end
-  end
-end
-
-datasource "ds_rds_publicly_accessible_instance_map" do
-  run_script $js_rds_filter_map, $ds_rds_list_with_tags, $param_exclude_tags
-end
-
-###############################################################################
-# Scripts
-###############################################################################
 
 script "js_regions", type:"javascript" do
-  parameters "user_entered_regions", "all_regions", "regions_allow_or_deny"
+  parameters "all_regions", "user_entered_regions", "regions_allow_or_deny"
   result "regions"
   code <<-EOS
     if(_.isEmpty(user_entered_regions)){
@@ -226,8 +173,32 @@ script "js_regions", type:"javascript" do
   EOS
 end
 
+#To get list of All RDS Instances.
+datasource "ds_rds_instances_list" do
+  iterate $ds_regions
+  request do
+    run_script $js_rds_instances_list, val(iter_item, "region")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "DescribeDBInstancesResponse.DescribeDBInstancesResult.DBInstances[*]") do
+      field "db_instance_arn", jmes_path(col_item, "DBInstanceArn")
+      field "db_instance_identifier", jmes_path(col_item, "DBInstanceIdentifier")
+      field "publicly_accessible", jmes_path(col_item, "PubliclyAccessible")
+      field "storage_encrypted", jmes_path(col_item, "StorageEncrypted")
+      field "db_engine_name", jmes_path(col_item, "Engine")
+      field "delete_protection", jmes_path(col_item, "DeletionProtection")
+      field "availability_zone", jmes_path(col_item, "AvailabilityZone")
+      field "sec_availability_zone", jmes_path(col_item, "SecondaryAvailabilityZone")
+      field "db_instance_status", jmes_path(col_item, "DBInstanceStatus")
+      field "region", val(iter_item, "region")
+      field "db_cluster_identifier", jmes_path(col_item, "DBClusterIdentifier")
+    end
+  end
+end
+
 #https://docs.aws.amazon.com/AmazonRDS/latest/APIReference/API_DescribeDBInstances.html
-script "js_rds_list", type: "javascript" do
+script "js_rds_instances_list", type: "javascript" do
   parameters "region"
   result "results"
   code <<-EOS
@@ -235,7 +206,7 @@ script "js_rds_list", type: "javascript" do
       auth: 'auth_aws',
       host: 'rds.'+region+'.amazonaws.com',
       path: '/',
-      pagination: "rds_pagination",
+      pagination: "pagination_rds",
       query_params: {
         "Action": "DescribeDBInstances",
         "Version": "2014-10-31",
@@ -245,6 +216,36 @@ script "js_rds_list", type: "javascript" do
       }
     }
   EOS
+end
+
+#Get respective tags for all RDS instances
+datasource "ds_rds_list_with_tags" do
+  iterate $ds_rds_instances_list
+  request do
+    run_script $js_rds_list_with_tags, val(iter_item, "region"), val(iter_item, "db_instance_arn")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "ListTagsForResourceResponse.ListTagsForResourceResult") do
+      field "tags" do
+        collect jmes_path(col_item, "TagList") do
+          field "tagKey", jmes_path(col_item, "Key")
+          field "tagValue", jmes_path(col_item, "Value")
+        end
+      end
+      field "db_instance_arn", val(iter_item, "db_instance_arn")
+      field "db_instance_identifier", val(iter_item, "db_instance_identifier")
+      field "publicly_accessible", val(iter_item, "publicly_accessible")
+      field "storage_encrypted", val(iter_item, "storage_encrypted")
+      field "delete_protection", val(iter_item, "delete_protection")
+      field "region", val(iter_item, "region")
+      field "db_engine_name", val(iter_item, "db_engine_name")
+      field "availability_zone", val(iter_item, "availability_zone")
+      field "sec_availability_zone", val(iter_item, "sec_availability_zone")
+      field "db_instance_status", val(iter_item, "db_instance_status")
+      field "db_cluster_identifier", val(iter_item, "db_cluster_identifier")
+    end
+  end
 end
 
 #https://docs.aws.amazon.com/AmazonRDS/latest/APIReference/API_ListTagsForResource.html
@@ -269,8 +270,12 @@ script "js_rds_list_with_tags", type: "javascript" do
   EOS
 end
 
+datasource "ds_rds_publicly_accessible_instance_map" do
+  run_script $js_rds_publicly_accessible_instance_map, $ds_rds_list_with_tags, $param_exclude_tags
+end
+
 #Process the response data, check for the tags and generate a list of RDS instances that are publicly accessible
-script "js_rds_filter_map", type: "javascript" do
+script "js_rds_publicly_accessible_instance_map", type: "javascript" do
   parameters "ds_rds_list_with_tags", "param_exclude_tags"
   result "content"
   code <<-EOS
@@ -294,24 +299,24 @@ script "js_rds_filter_map", type: "javascript" do
         }
         // Constructing tags with comma separated to display in detail_template
         if((tag['tagValue']).length > 0){
-          tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
-        }else{
-          tagKeyValue = tagKeyValue + ', '+ tag['tagKey']
-        }
+          tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
+        } else {
+          tagKeyValue = tagKeyValue + ', '+ tag['tagKey']
+        }
       }
 
       var storage_encrypted = rds['storage_encrypted'];
-      if(storage_encrypted === true){
-        storage_encrypted = 'Yes';
-      }else{
-        storage_encrypted = 'No';
-      }
-      var delete_protection = rds['delete_protection'];
-      if(delete_protection === true){
+      if(storage_encrypted === true){
+        storage_encrypted = 'Yes';
+      } else {
+        storage_encrypted = 'No';
+      }
+      var delete_protection = rds['delete_protection'];
+      if(delete_protection === true){
         delete_protection = 'Yes';
-      }else{
-        delete_protection = 'No';
-      }
+      } else {
+        delete_protection = 'No';
+      }
 
       //If the RDS instance tag does not match with entered param_exclude_tags, then check if RDS instance is Publicly Accessible
       if(!(isTagMatched) && (rds['publicly_accessible']) === true){
@@ -339,14 +344,14 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_rds_instance_list" do
+policy "pol_rds_instance_list" do
   validate_each $ds_rds_publicly_accessible_instance_map do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Publicly Accessible RDS Instances Found in AWS"
-    escalate $report_publicly_accessible_RDS_instances
-    escalate $modify_publicly_accessible_RDS_instance_approval
-    escalate $delete_publicly_accessible_RDS_instances_approval
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
-    check logic_or($ds_parent_policy_terminated, logic_or(eq(val(item, "delete_protection"), "YES"),ne(val(item, "db_instance_status"), "available")))
+    check logic_or($ds_parent_policy_terminated, logic_or(eq(val(item, "delete_protection"), "YES"), ne(val(item, "db_instance_status"), "available")))
+    escalate $esc_email
+    escalate $esc_modify
+    escalate $esc_delete
     export do
       resource_level true
       field "region" do
@@ -385,24 +390,24 @@ policy "policy_rds_instance_list" do
 end
 
 ###############################################################################
-# Escalation
+# Escalations
 ###############################################################################
 
-escalation "report_publicly_accessible_RDS_instances" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
   email $param_email
 end
 
-escalation "modify_publicly_accessible_RDS_instance_approval" do
+escalation "esc_modify" do
   automatic contains($param_automatic_action, "Update RDS Instances")
   label "Update Instance"
   description "Approve selected RDS public access rule configuration change"
   run "remove_public_access_RDS", data, rs_optima_host
 end
 
-escalation "delete_publicly_accessible_RDS_instances_approval" do
+escalation "esc_delete" do
   automatic false
   label "Delete Instance"
   description "Delete selected publicly accessible RDS-instances"
@@ -433,7 +438,7 @@ define remove_public_access_RDS($data, $$rs_optima_host) return $all_responses d
         }
       )
       $all_responses << $response
-      call sys_log('RDS instance config change response',to_s($response))
+      call sys_log('RDS instance config change response', to_s($response))
     end
   end
 end
@@ -516,7 +521,7 @@ define delete_publicly_acessible_RDS_instances($data, $$rs_optima_host) return $
         )
       end
       $all_responses << $response
-      call sys_log('RDS instance delete response',to_s($response))
+      call sys_log('RDS instance delete response', to_s($response))
     end
   end
 end
@@ -567,7 +572,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
     header "Api-Version", "1.0"
   end
   result do
@@ -575,7 +580,6 @@ datasource "ds_get_policy" do
     field "id", jmes_path(response, "id")
   end
 end
-
 
 datasource "ds_parent_policy_terminated" do
   run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id

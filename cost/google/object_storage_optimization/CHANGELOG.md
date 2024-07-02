@@ -1,4 +1,16 @@
-# Change log
+# Changelog
+
+## v3.0.0
+
+- Several parameters altered to be more descriptive and human-readable
+- Added ability to filter resources by project
+- Added ability to use wildcards and regex when filtering resources by label
+- Added additional context to incident description
+- Normalized incident export to be consistent with other policies
+- Added human-readable recommendation to incident export
+- Added additional fields to incident export
+- Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera One credential
 
 ## v2.7
 

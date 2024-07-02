@@ -1,5 +1,13 @@
 # Changelog
 
+## v4.2
+
+- Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.
+
+## v4.1
+
+- Changed internal name of escalation code to ensure "Meta Policy" works as expected
+
 ## v4.0
 
 - Renamed Subscription List parameter for consistency and accuracy

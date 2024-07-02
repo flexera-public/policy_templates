@@ -1,0 +1,280 @@
+name "Cloud Bill Processing Error Notification"
+rs_pt_ver 20180301
+type "policy"
+short_description "Reports on any Flexera Cloud Cost Optimization bill connections that are in an error state. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/bill_processing_errors_notification/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+category "Operational"
+severity "high"
+default_frequency "daily"
+info(
+  version: "2.3.0",
+  provider: "Flexera",
+  service: "Cloud Cost Optimization",
+  policy_set: "Cloud Cost Optimization"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify if bill processing errors are found."
+  default []
+end
+
+parameter "param_processing_limit" do
+  type "number"
+  category "Policy Settings"
+  label "Processing Time (Hours)"
+  description "Amount of time in hours to consider a bill connection in an error state if it has failed to complete processing of a bill."
+  default 24
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_bill_connections" do
+  request do
+    auth $auth_flexera
+    verb "GET"
+    host rs_optima_host
+    path join(["/api/onboarding/orgs/", rs_org_id, "/bill_connects"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "href", jmes_path(col_item, "href")
+      field "created_at", jmes_path(col_item, "created_at")
+      field "updated_at", jmes_path(col_item, "updated_at")
+      field "cloud_vendor_id", jmes_path(col_item, "cloud_vendor_id")
+      field "cbi_bill_identifier", jmes_path(col_item, "cbi_bill_identifier")
+      field "cbi_integration_id", jmes_path(col_item, "cbi_integration_id")
+      field "cbi_name", jmes_path(col_item, "cbi_name")
+      field "cbi_params", jmes_path(col_item, "cbi_params")
+    end
+  end
+end
+
+datasource "ds_bill_connections_valid" do
+  request do
+    auth $auth_flexera
+    verb "GET"
+    host rs_optima_host
+    path join(["/api/onboarding/orgs/", rs_org_id, "/bill_connects/validate"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "bill_id", jmes_path(col_item, "bill_id")
+      field "error", jmes_path(col_item, "error")
+      field "href", jmes_path(col_item, "href")
+      field "valid", jmes_path(col_item, "valid")
+    end
+  end
+end
+
+datasource "ds_bill_status_errors" do
+  request do
+    auth $auth_flexera
+    verb "GET"
+    host rs_optima_host
+    path join(["/api/status/orgs/", rs_org_id, "/bill-status-errors"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  # Response format for reference. Each bill connection has its own key.
+  # {
+  #   "cbi-bill-connection-id": {
+  #       "count": 0,
+  #       "errors": [],
+  #       "supported": true
+  #   }
+  # }
+end
+
+datasource "ds_bill_import_history" do
+  iterate $ds_bill_connections
+  request do
+    auth $auth_flexera
+    verb "GET"
+    host rs_optima_host
+    path join(["/api/status/orgs/", rs_org_id, "/bill_id/", val(iter_item, "id"), "/import-history"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "billing_period", jmes_path(col_item, "billing_period")
+      field "downloaded_at", jmes_path(col_item, "downloaded_at")
+      field "status", jmes_path(col_item, "status")
+      field "source_id", jmes_path(col_item, "source_id")
+      field "id", val(iter_item, "id")
+    end
+  end
+end
+
+datasource "ds_bill_connections_combined" do
+  run_script $js_bill_connections_combined, $ds_bill_connections, $ds_bill_connections_valid, $ds_bill_status_errors, $ds_bill_import_history, $ds_applied_policy, $param_processing_limit
+end
+
+script "js_bill_connections_combined", type: "javascript" do
+  parameters "ds_bill_connections", "ds_bill_connections_valid", "ds_bill_status_errors", "ds_bill_import_history", "ds_applied_policy", "param_processing_limit"
+  result "result"
+  code <<-'EOS'
+  today = new Date()
+
+  connection_metadata = _.groupBy(ds_bill_connections, "id")
+  import_history = _.groupBy(ds_bill_import_history, "id")
+
+  result = _.map(ds_bill_connections_valid, function(item) {
+    id = item["bill_id"]
+
+    created_at = ""
+    updated_at = ""
+    cbi_name = ""
+    cbi_params = {}
+    vendor_name = ""
+
+    if (connection_metadata[id] != undefined) {
+      if (connection_metadata[id][0] != undefined) {
+        created_at = new Date(connection_metadata[id][0]["created_at"]).toISOString()
+        updated_at = new Date(connection_metadata[id][0]["updated_at"]).toISOString()
+        cbi_name = connection_metadata[id][0]["cbi_name"]
+        cbi_params = connection_metadata[id][0]["cbi_params"]
+      }
+    }
+
+    if (typeof(cbi_params) == 'object') {
+      if (typeof(cbi_params["vendor_name"]) == 'string') {
+        vendor_name = cbi_params["vendor_name"]
+      }
+    }
+
+    errors = []
+
+    if (item["error"] != null && item["error"] != undefined) { errors.push(item["error"]) }
+
+    if (ds_bill_status_errors[id] != undefined) {
+      errors = errors.concat(ds_bill_status_errors[id]["errors"])
+    }
+
+    if (import_history[id] != undefined) {
+      _.each(import_history[id], function(entry) {
+        downloaded_at = new Date(entry["downloaded_at"])
+        hours_diff = (today - downloaded_at) / 1000 / 60 / 60
+
+        if (hours_diff > param_processing_limit && entry["status"] != "completed"  && entry["status"] != "aborted") {
+          errors.push("Bill: " + id + "-" + entry["billing_period"] + " processing longer than " + param_processing_limit + " hours")
+        }
+      })
+    }
+
+    return {
+      id: id,
+      name: cbi_name,
+      vendor_name: vendor_name,
+      created_at: created_at,
+      updated_at: updated_at,
+      href: item["href"],
+      valid: item["valid"],
+      errors: errors.join(" | "),
+      connection_metadata: connection_metadata[id][0],
+      status_errors: ds_bill_status_errors[id],
+      import_history: import_history[id],
+      policy_name: ds_applied_policy["name"]
+    }
+  })
+EOS
+end
+
+datasource "ds_bad_bill_connections" do
+  run_script $js_bad_bill_connections, $ds_bill_connections_combined
+end
+
+script "js_bad_bill_connections", type: "javascript" do
+  parameters "ds_bill_connections_combined"
+  result "result"
+  code <<-'EOS'
+  result = _.reject(ds_bill_connections_combined, function(item) {
+    return item["valid"] && item["errors"] == ""
+  })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_bill_processing_errors" do
+  validate_each $ds_bad_bill_connections do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Failed Bill Connects"
+    check eq(val(item, "id"), "")
+    escalate $esc_email
+    export do
+      resource_level true
+      field "id" do
+        label "Connection ID"
+      end
+      field "name" do
+        label "Connection Name"
+      end
+      field "vendor_name" do
+        label "Cloud Vendor"
+      end
+      field "created_at" do
+        label "Created At"
+      end
+      field "updated_at" do
+        label "Updated At"
+      end
+      field "valid" do
+        label "Credential Valid"
+      end
+      field "errors" do
+        label "Errors"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end

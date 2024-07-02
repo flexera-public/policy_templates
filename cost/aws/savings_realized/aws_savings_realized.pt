@@ -1,16 +1,16 @@
-name "AWS Savings Realized from Reservations"
+name "AWS Savings Realized From Rate Reduction Purchases"
 rs_pt_ver 20180301
 type "policy"
-short_description "This policy calculates savings realized by Reserved Instance, Savings Plan, and Spot Instance purchases for AWS. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/savings_realized/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Reports savings realized from AWS rate reduction purchases, such as Reserved Instances, Savings Plan, and Spot Instance purchases. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/savings_realized/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
-default_frequency "monthly"
 severity "low"
 category "Cost"
+default_frequency "monthly"
 info(
-  version: "3.4",
-  provider: "Flexera",
-  service: "All",
-  policy_set: "N/A"
+  version: "4.0.0",
+  provider: "AWS",
+  service: "Compute",
+  policy_set: "Reserved Instance"
 )
 
 ###############################################################################
@@ -19,80 +19,130 @@ info(
 
 parameter "param_email" do
   type "list"
-  label "Email addresses"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to send the report to."
+  default []
 end
 
-parameter "param_billing_centers" do
-  label "Billing Center Name"
-  description "List of Billing Center Names to check Savings Realized for. Leave blank for whole Organization view."
-  type "list"
-end
-
-parameter "param_period_start" do
-  type "string"
-  label "Period Start Date"
-  description 'The starting month of the historical data to analyze (in YYYY-MM format e.g., "2021-10")'
-  allowed_pattern /20[2-9][0-9]-[0-1][0-9]/
-end
-
-parameter "param_period_end" do
-  type "string"
-  label "Period End Date"
-  description "The ending month of the historical data to analyze (in YYYY-MM format)"
-  allowed_pattern /20[2-9][0-9]-[0-1][0-9]/
+parameter "param_months_back" do
+  type "number"
+  category "Policy Settings"
+  label "Months Back"
+  description "How many months to go back in the report. For example, set this to '6' to report on the previous 6 months."
+  min_value 1
+  max_value 12
+  default 6
 end
 
 parameter "param_chart_type" do
   type "string"
+  category "Policy Settings"
   label "Chart Type"
-  description "The type of bar chart to view savings realized data by"
+  description "The type of bar chart to use in the report."
   allowed_values "Grouped Bar Chart", "Stacked Bar Chart"
   default "Grouped Bar Chart"
+end
+
+parameter "param_bc_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Billing Centers"
+  description "Allow or Deny entered Billing Centers."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_bc_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Billing Center List"
+  description "A list of allowed or denied Billing Center names/IDs. Leave blank to report on the entire Flexera organization."
+  default []
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-#AUTHENTICATE WITH FLEXERA/OPTIMA
 credentials "auth_flexera" do
   schemes "oauth2"
-  label "flexera"
+  label "Flexera"
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
 
 ###############################################################################
-# Datasources and Scripts
+# Datasources & Scripts
 ###############################################################################
 
-#GET BILLING CENTERS FOR ORG
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
 datasource "ds_billing_centers" do
   request do
     auth $auth_flexera
     host rs_optima_host
-    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
   end
   result do
     encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "href", jmes_path(col_item,"href")
-      field "id", jmes_path(col_item,"id")
-      field "name", jmes_path(col_item,"name")
-      field "parent_id", jmes_path(col_item,"parent_id")
-      field "ancestor_ids", jmes_path(col_item,"ancestor_ids")
-      field "allocation_table", jmes_path(col_item,"allocation_table")
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
     end
   end
 end
 
-#GET ALL COSTS (IGNORING COSTS NOT ASSOCIATED WITH AN INSTANCE TYPE)
+datasource "ds_billing_centers_filtered" do
+  run_script $js_billing_centers_filtered, $ds_billing_centers, $param_bc_allow_or_deny, $param_bc_list
+end
+
+script "js_billing_centers_filtered", type: "javascript" do
+  parameters "ds_billing_centers", "param_bc_allow_or_deny", "param_bc_list"
+  result "result"
+  code <<-EOS
+  allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_bc_list.length > 0) {
+    billing_centers = _.filter(ds_billing_centers, function(item) {
+      id_found = _.contains(param_bc_list, item['id']) == allow_deny_test[param_bc_allow_or_deny]
+      name_found = _.contains(param_bc_list, item['name']) == allow_deny_test[param_bc_allow_or_deny]
+      return id_found || name_found
+    })
+
+    // Check for conflicting parents/children and remove children if present
+    bc_ids = _.compact(_.pluck(billing_centers, 'id'))
+    bad_children = _.filter(ds_billing_centers, function(bc) { return _.contains(bc_ids, bc['parent_id']) })
+    bad_children_ids = _.pluck(bad_children, 'id')
+
+    // Create final result with the bad children removed
+    final_list = _.reject(billing_centers, function(bc) { return _.contains(bad_children_ids, bc['id']) })
+  } else {
+    // If we're not filtering at all, just grab all of the top level billing centers
+    final_list = _.filter(ds_billing_centers, function(bc) {
+      return bc['parent_id'] == null || bc['parent_id'] == undefined
+    })
+  }
+
+  result = _.compact(_.pluck(final_list, 'id'))
+EOS
+end
+
 datasource "ds_aggregated_costs" do
   request do
-    run_script $js_get_aggregated_costs, $ds_billing_centers, $param_period_start, $param_period_end, $param_billing_centers, rs_org_id, rs_optima_host
+    run_script $js_aggregated_costs, $ds_billing_centers_filtered, $param_months_back, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -105,232 +155,194 @@ datasource "ds_aggregated_costs" do
   end
 end
 
-script "js_get_aggregated_costs", type: "javascript" do
-  parameters "ds_billing_centers", "start_date", "end_date", "param_billing_centers", "org_id", "optima_host"
+script "js_aggregated_costs", type: "javascript" do
+  parameters "ds_billing_centers_filtered", "param_months_back", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
+  // Get Start and End dates
+  start_date = new Date()
+  start_date.setMonth(start_date.getMonth() - param_months_back)
+  start_date = start_date.toISOString().split('-')[0] + '-' + start_date.toISOString().split('-')[1]
 
-  //Get billing centers. If user specifies no billing centers, retrieve all top level billing centers. Else get array of billing centers that match the names stated in BC param
-  var billing_center_ids = []
-  if (param_billing_centers.length === 0){
-    var top_billing_centers = _.reject(ds_billing_centers, function(bc){ return bc.parent_id != null });
-    billing_center_ids = _.map(top_billing_centers, function(value, key){ return value.id });
-  } else {
-    billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
-    billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
-  }
-
-  var payload = {
-    "billing_center_ids": billing_center_ids,
-    "filter": {
-      "type": "and",
-      "expressions": [
-        { "dimension": "vendor", "type": "equal", "value": "AWS" },
-        {
-          "type": "not",
-          "expression": { "dimension": "purchase_option", "type": "equal", "value": "On Demand (Non-Discountable)" }
-        }
-      ]
-    },
-    "dimensions": [
-      "purchase_option"
-    ],
-    "granularity": "month",
-    "metrics": [
-      "cost_amortized_unblended_adj",
-      "savings_rate_reduction_amortized_adj",
-    ]
-    "end_at": end_date,
-    "start_at": start_date
-  }
+  end_date = new Date()
+  end_date = end_date.toISOString().split('-')[0] + '-' + end_date.toISOString().split('-')[1]
 
   var request = {
     auth: "auth_flexera",
-    host: optima_host,
-    path: "/bill-analysis/orgs/" + org_id + "/costs/aggregated",
+    host: rs_optima_host,
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
     verb: "POST",
-    body_fields: payload,
-    headers: {
-      "User-Agent": "RS Policies"
+    headers: { "User-Agent": "RS Policies" },
+    body_fields: {
+      "billing_center_ids": ds_billing_centers_filtered,
+      "dimensions": [ "purchase_option" ],
+      "granularity": "month",
+      "metrics": [ "cost_amortized_unblended_adj", "savings_rate_reduction_amortized_adj" ],
+      "start_at": start_date,
+      "end_at": end_date,
+      "filter": {
+        "type": "and",
+        "expressions": [
+          { "dimension": "vendor", "type": "equal", "value": "AWS" },
+          {
+            "type": "not",
+            "expression": {
+              "dimension": "purchase_option",
+              "type": "equal",
+              "value": "On Demand (Non-Discountable)"
+            }
+          }
+        ]
+      }
     }
   }
-  EOS
+EOS
 end
 
-#CALCULATE SAVINGS REALIZED FOR EACH INSTANCE TYPE, FOR EACH REGION
 datasource "ds_savings_realized" do
-  run_script $js_get_savings_realized, $ds_aggregated_costs
+  run_script $js_savings_realized, $ds_aggregated_costs
 end
 
-script "js_get_savings_realized", type: "javascript" do
-  parameters "all_costs"
-  result "savings_realized_data"
+script "js_savings_realized", type: "javascript" do
+  parameters "ds_aggregated_costs"
+  result "result"
   code <<-'EOS'
-  var savings_realized_data = []
+  result = []
 
-  //Get arrays for Purchase Option
-  ri_costs = _.filter(all_costs, function(cost){ return cost.purchase_option == "Reserved" })
-  sp_costs = _.filter(all_costs, function(cost){ return cost.purchase_option == "Savings Plan" })
-  spot_costs = _.filter(all_costs, function(cost){ return cost.purchase_option == "Spot" })
+  // Get list of Months
+  months = _.uniq(_.pluck(ds_aggregated_costs, "month"))
 
-  //Get list of Months
-  months = _.pluck( _.uniq(all_costs, function(all){ return all.month }), "month" )
+  // Calculate total cost for each month
+  _.each(months, function(month) {
+    month_costs = _.filter(ds_aggregated_costs, function(item) { return item['month'] == month })
+    total_month_cost = _.reduce(_.pluck(month_costs, 'cost'), function(memo, num){ return memo + num }, 0)
 
-  //calculate total cost for each month
-  _.each(months, function(mo){
-    total_month_cost = 0
-    _.each(all_costs, function(all){
-      if(all.month == mo){ total_month_cost += all.cost }
+    result.push({
+      month: month.substring(0, 7),
+      cost: total_month_cost,
+      dimension: "Total Actual Spend On Discountable Compute"
     })
-    savings_realized_data.push({ "month": mo, "cost": total_month_cost, "dimension": "Total Actual Spend On Discountable Compute" })
   })
 
-  var temp_result = []
+  // Group by Purchase Option
+  option_table = { "Reserved": "Reservations", "Savings Plan": "Savings Plans", "Spot": "Spot Instances" }
 
-  //Reserved Instance savings
-  _.each(ri_costs, function(ri){
-    temp_result.push(
-      {
-        "month": ri.month,
-        "savings_realized": ri.savings,
-        "purchase_option": "Reservations"
-      }
-    )
+  temp_result = _.map(ds_aggregated_costs, function(item) {
+    return {
+      month: item["month"],
+      savings_realized: item["savings"],
+      purchase_option: option_table[item["purchase_option"]]
+    }
   })
 
-  //Savings Plan savings
-  _.each(sp_costs, function(sp){
-    temp_result.push(
-      {
-        "month": sp.month,
-        "savings_realized": sp.savings,
-        "purchase_option": "Savings Plans"
-      }
-    )
-  })
+  // Clean out anything that isn't a rate reduction purchase
+  temp_result = _.reject(temp_result, function(item) { return item['purchase_option'] == undefined })
 
-  //Spot Instance savings
-  _.each(spot_costs, function(spot){
-    temp_result.push(
-      {
-        "month": spot.month,
-        "savings_realized": spot.savings,
-        "purchase_option": "Spot Instances"
-      }
-    )
-  })
+  // Aggregate SAVINGS REALIZED costs for same purchase option for same month
+  purchase_options = _.compact(_.uniq(_.pluck(temp_result, "purchase_option"))).sort()
 
-  //reduce list - aggregate SAVINGS REALIZED costs for same purchase option for same month
-  purchase_options = _.pluck( _.sortBy( _.uniq( temp_result, function(data){ return data.purchase_option }), "purchase_option" ), "purchase_option" )
-  console.log(purchase_options)
-  _.each(purchase_options, function(po){
-    _.each(months, function(mo){
-      savings_realized = 0
-      _.each(temp_result, function(res){
-        if(po == res.purchase_option && mo == res.month){
-          savings_realized += res.savings_realized
-        }
+  _.each(purchase_options, function(purchase_option) {
+    _.each(months, function(month) {
+      relevant_entries = _.filter(temp_result, function(item) {
+        return item["purchase_option"] == purchase_option && item["month"] == month
       })
-      savings_realized_data.push({ "month": mo, "cost": savings_realized, "dimension": "Savings Realized On Compute " + po })
+
+      relevant_costs = _.pluck(relevant_entries, 'savings_realized')
+      savings_realized = _.reduce(relevant_costs, function(memo, num){ return memo + num }, 0)
+
+      result.push({
+        "month": month.substring(0, 7),
+        "cost": savings_realized,
+        "dimension": "Savings Realized On Compute " + purchase_option
+      })
     })
   })
 
-  //sort by month
-  savings_realized_data = _.sortBy(savings_realized_data, "month")
-  EOS
+  // Sort by month
+  result = _.sortBy(result, "month")
+EOS
 end
 
-#CHART CREATION
 datasource "ds_chart_data" do
-  run_script $js_create_chart_data, $ds_savings_realized, $param_chart_type
+  run_script $js_chart_data, $ds_savings_realized, $ds_applied_policy, $param_chart_type
 end
 
-script "js_create_chart_data", type: "javascript" do
-  parameters "savings_realized_data", "param_chart_type"
-  result "report"
+script "js_chart_data", type: "javascript" do
+  parameters "ds_savings_realized", "ds_applied_policy", "param_chart_type"
+  result "result"
   code <<-EOS
+  result = []
 
-  //Get months
-  var months = _.pluck( _.uniq(savings_realized_data, function(data){ return data.month }), "month" )
+  // Get months
+  months = _.uniq(_.pluck(ds_savings_realized, "month"))
 
-  //Create report data (Concatenate savings realized and total costs into one object/row of data)
-  var report = []
-  _.each(months, function(mo){
-    savings_realized_ri = 0; savings_realized_sp = 0; savings_realized_spot = 0
-    total_spend = 0
-    _.each(savings_realized_data, function(data){
-      if(mo == data.month && data.dimension == "Savings Realized On Compute Reservations"){
-        savings_realized_ri = data.cost
-      }
-      if(mo == data.month && data.dimension == "Savings Realized On Compute Savings Plans"){
-        savings_realized_sp = data.cost
-      }
-      if(mo == data.month && data.dimension == "Savings Realized On Compute Spot Instances"){
-        savings_realized_spot = data.cost
-      }
-      if(mo == data.month && data.dimension == "Total Actual Spend On Discountable Compute"){
-        total_spend = data.cost
-      }
+  // Create report data
+  // (Concatenate savings realized and total costs into one object/row of data)
+  _.each(months, function(month) {
+    savings_realized_ri = 0.0
+    savings_realized_sp = 0.0
+    savings_realized_spot = 0.0
+    total_spend = 0.0
+
+    ri_entry = _.find(ds_savings_realized, function(item) {
+      return item['dimension'] == "Savings Realized On Compute Reservations" && item['month'] == month
     })
-    report.push({
-      "month": mo,
-      "total_spend": parseFloat(total_spend).toFixed(2),
-      "savings_realized_ri": parseFloat(savings_realized_ri).toFixed(2),
-      "savings_realized_sp": parseFloat(savings_realized_sp).toFixed(2),
-      "savings_realized_spot": parseFloat(savings_realized_spot).toFixed(2),
-      "percentage_ri": parseFloat((savings_realized_ri/(total_spend + savings_realized_ri))*100).toFixed(0).toString() + "%",
-      "percentage_sp": parseFloat((savings_realized_sp/(total_spend + savings_realized_sp))*100).toFixed(0).toString() + "%",
-      "percentage_spot": parseFloat((savings_realized_spot/(total_spend + savings_realized_spot))*100).toFixed(0).toString() + "%"
+
+    sp_entry = _.find(ds_savings_realized, function(item) {
+      return item['dimension'] == "Savings Realized On Compute Savings Plans" && item['month'] == month
+    })
+
+    spot_entry = _.find(ds_savings_realized, function(item) {
+      return item['dimension'] == "Savings Realized On Compute Spot Instances" && item['month'] == month
+    })
+
+    total_spend_entry = _.find(ds_savings_realized, function(item) {
+      return item['dimension'] == "Total Actual Spend On Discountable Compute" && item['month'] == month
+    })
+
+    if (ri_entry != undefined) { savings_realized_ri = ri_entry['cost'] }
+    if (sp_entry != undefined) { savings_realized_sp = sp_entry['cost'] }
+    if (spot_entry != undefined) { savings_realized_spot = spot_entry['cost'] }
+    if (total_spend_entry != undefined) { total_spend = total_spend_entry['cost'] }
+
+    result.push({
+      "month": month,
+      "total_spend": Math.round(total_spend * 100) / 100,
+      "savings_realized_ri": Math.round(savings_realized_ri * 100) / 100,
+      "savings_realized_sp": Math.round(savings_realized_sp * 100) / 100,
+      "savings_realized_spot": Math.round(savings_realized_spot * 100) / 100,
+      "percentage_ri": Math.round((savings_realized_ri / (total_spend + savings_realized_ri)) * 100).toString() + "%",
+      "percentage_sp": Math.round((savings_realized_sp / (total_spend + savings_realized_sp)) * 100).toString() + "%",
+      "percentage_spot": Math.round((savings_realized_spot / (total_spend + savings_realized_spot)) * 100).toString() + "%"
     })
   })
 
-  //Group data by Cost Dimension
-  group_by_dimension =
-  _.groupBy(savings_realized_data, function(data){ return data.dimension })
+  // Group data by Cost Dimension
+  group_by_dimension = _.groupBy(ds_savings_realized, 'dimension')
 
-  //Determine chart type
-  chart_type = "cht="
-  if (param_chart_type == "Grouped Bar Chart") { chart_type += "bvg" }
-  else if (param_chart_type == "Stacked Bar Chart" ) { chart_type += "bvs" }
+  // Determine chart type
+  chart_type = "cht=bvs"
+  if (param_chart_type == "Grouped Bar Chart") { chart_type = "cht=bvg" }
 
-  //Create chart axis labels
-  chart_axis_labels =
-  ("chxl=1:," +
-    _.uniq(savings_realized_data, function(sr) { return sr.month })
-    .map(function(sr){ return sr.month.substring(0,7) })
-  ).split(",").join("|")
+  // Create chart axis labels
+  chart_axis_labels = "chxl=1:|" + months.join('|')
 
-  //Create legend
-  chart_legend = "chdl="
-  var i = 0
-  for (var key in group_by_dimension) {
-    chart_legend += key
-    i++
-    if (i < _.size(group_by_dimension)) { chart_legend += "|" }
-  }
-  //chart_legend = "chdl=Savings%20Realized%20For%20Organization"
+  // Create legend
+  chart_legend = "chdl=" + _.keys(group_by_dimension).join('|')
 
-  //calculate scale
-  //chart_range = ("chxr=0," +
-  max = (Math.max.apply(Math, savings_realized_data.map(function(sr){ return sr.savings_realized }))*1.1).toFixed(2)
-  min = (Math.min.apply(Math, savings_realized_data.map(function(sr){ return sr.savings_realized }))*0.9).toFixed(2)
-  chart_range = "chxr=0," + min + "," + max
+  // Calculate scale
+  max = (_.pluck(ds_savings_realized, 'savings_realized').sort().reverse()[0] * 1.1).toFixed(2)
+  min = (_.pluck(ds_savings_realized, 'savings_realized').sort()[0] * 0.9).toFixed(2)
+  chart_range = ["chxr=0", min, max].join(',')
 
-  //Create chart dataset
-  chart_data = "chd=t:"
-  var count_1 = 0
-  _.each(group_by_dimension, function(o){
-    var count_2 = 0
-    _.each(o, function(p){
-      chart_data = chart_data + p.cost
-      count_2++
-      if (count_2 < _.size(o)){ chart_data = chart_data + "," }
-    })
-    count_1++
-    if (count_1 < _.size(group_by_dimension)){ chart_data = chart_data + "|" }
+  // Create chart dataset
+  data_parts = _.map(group_by_dimension, function(dimension_list) {
+    return _.pluck(dimension_list, 'cost').join(',')
   })
 
-  //Whole Chart object
+  chart_data = "chd=t:" + data_parts.join('|')
+
+  // Whole Chart object
   chart = {
     chart_type: encodeURI(chart_type),
     chart_size: encodeURI("chs=999x500"),
@@ -348,36 +360,25 @@ script "js_create_chart_data", type: "javascript" do
     chart_legend_position: encodeURI("chdlp=b")
   }
 
-  report[0]["chart_dimensions"] = chart
-  EOS
-end
-
-###############################################################################
-# Escalations
-###############################################################################
-
-escalation "esc_savings_realized_report" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
+  result[0]["chart_dimensions"] = chart
+  result[0]["policy_name"] = ds_applied_policy['name']
+EOS
 end
 
 ###############################################################################
 # Policy
 ###############################################################################
 
-policy "policy_purchase_option_by_inst_type_and_region" do
+policy "pol_savings_realized" do
   validate_each $ds_chart_data do
-    summary_template "AWS Savings Realized from Reservations"
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}"
     detail_template <<-EOS
 # Rate Reduction Savings Report
 ![Rate Reduction Savings Chart](https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id={{ rs_org_id }}&rs_project_id={{ rs_project_id }}&{{ with index data 0 }}{{ .chart_dimensions.chart_data }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_type }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_image }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_title }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_y_axis }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_label }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_style }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_color }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_data_scale }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_format }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend_position }}{{ end }})
 EOS
-    escalate $esc_savings_realized_report
-    check eq(0,1)
+    check eq(0, 1)
+    escalate $esc_email
     export do
-      # no actions so resource_level can be false
       resource_level false
       field "month" do
         label "Month"
@@ -405,4 +406,15 @@ EOS
       end
     end
   end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
 end

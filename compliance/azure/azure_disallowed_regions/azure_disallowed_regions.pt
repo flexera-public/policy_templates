@@ -1,13 +1,13 @@
 name "Azure Disallowed Regions"
 rs_pt_ver 20180301
 type "policy"
-short_description "Check for instances that are in a disallowed region with the option to terminate them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/azure_disallowed_regions) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Check for instances that are outside of an allowed region with the option to power off or delete them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/azure_disallowed_regions) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
-severity "medium"
 category "Compliance"
-default_frequency "daily"
+severity "low"
+default_frequency "weekly"
 info(
-  version: "3.0",
+  version: "4.1",
   provider: "Azure",
   service: "Compute",
   policy_set: "Disallowed Regions"
@@ -19,33 +19,80 @@ info(
 
 parameter "param_email" do
   type "list"
-  label "Email addresses of the recipients you wish to notify"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
 end
 
 parameter "param_azure_endpoint" do
   type "string"
+  category "Policy Settings"
   label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
   allowed_values "management.azure.com", "management.chinacloudapi.cn"
   default "management.azure.com"
 end
 
-parameter "param_subscription_allowed_list" do
-  label "Subscription Allowed List"
+parameter "param_exclusion_tags" do
   type "list"
-  description "Allowed Subscriptions, if empty, all subscriptions will be checked"
+  category "Filters"
+  label "Exclusion Tags (Key:Value)"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:*"
+  allowed_pattern /(^$)|[\w]*\:.*/
+  default []
 end
 
-parameter "param_approved_region" do
+parameter "param_subscriptions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Subscriptions"
+  description "Allow or Deny entered Subscriptions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_subscriptions_list" do
   type "list"
-  label "Approved Azure Region(s)"
-  category "Azure"
+  category "Filters"
+  label "Allow/Deny Subscriptions List"
+  description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_regions_disallow_or_allow" do
+  type "string"
+  category "Filters"
+  label "Disallow/Allow Regions"
+  description "Disallow or Allow entered regions. See the README for more details."
+  allowed_values "Disallow", "Allow"
+  default "Disallow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Disallow/Allow Regions List"
+  description "A list of disallowed or allowed regions. See the README for more details."
+  default []
 end
 
 parameter "param_automatic_action" do
   type "list"
+  category "Actions"
   label "Automatic Actions"
-  description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Terminate Instances"]
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Power Off Instances", "Delete Instances"]
+  default []
+end
+
+parameter "param_skipshutdown" do
+  type "string"
+  category "Actions"
+  label "Power Off Type"
+  description "Whether to perform a graceful shutdown or a forced shutdown when powering off idle instances. Only applicable when taking action against instances."
+  allowed_values "Graceful", "Forced"
+  default "Graceful"
 end
 
 ###############################################################################
@@ -70,7 +117,7 @@ end
 # Pagination
 ###############################################################################
 
-pagination "azure_pagination" do
+pagination "pagination_azure" do
   get_page_marker do
     body_path "nextLink"
   end
@@ -80,149 +127,287 @@ pagination "azure_pagination" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
-datasource "ds_subscriptions" do
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_azure_subscriptions" do
   request do
     auth $auth_azure
-    pagination $azure_pagination
+    pagination $pagination_azure
     host $param_azure_endpoint
     path "/subscriptions/"
-    query "api-version","2019-06-01"
+    query "api-version", "2020-01-01"
     header "User-Agent", "RS Policies"
     # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
     # Forces `ds_is_deleted` datasource to run first during policy execution
     header "Meta-Flexera", val($ds_is_deleted, "path")
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "value[*]") do
-      field "subscriptionId", jmes_path(col_item,"subscriptionId")
-      field "displayName", jmes_path(col_item,"displayName")
-      field "state", jmes_path(col_item,"state")
-    end
-  end
-end
-
-datasource "ds_filtered_subscriptions" do
-  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_allowed_list
-end
-
-datasource "azure_resources" do
-  iterate $ds_filtered_subscriptions
-  request do
-    auth $auth_azure
-    pagination $azure_pagination
-    host $param_azure_endpoint
-    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/resources"])
-    query "api-version","2018-02-01"
-    header "User-Agent", "RS Policies"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-    ignore_status [400,403,404]
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "id", jmes_path(col_item,"id")
-      field "region", jmes_path(col_item,"location")
-      field "name", jmes_path(col_item,"name")
-      field "managedBy",jmes_path(col_item,"managedBy")
-      field "subscriptionId",val(iter_item,"subscriptionId")
-      field "subscriptionName",val(iter_item,"displayName")
+      field "id", jmes_path(col_item, "subscriptionId")
+      field "name", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
     end
   end
 end
 
-datasource "filtered_resources" do
-  run_script $js_filter_resources, $azure_resources, $param_approved_region
+datasource "ds_azure_subscriptions_filtered" do
+  run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
 end
 
-###############################################################################
-# Scripts
-###############################################################################
-
-script "js_filtered_subscriptions", type: "javascript" do
-  parameters "ds_subscriptions", "param_subscription_allowed_list"
-  result "results"
+script "js_azure_subscriptions_filtered", type: "javascript" do
+  parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
+  result "result"
   code <<-EOS
-  var results = []
-  if ( param_subscription_allowed_list.length != 0){
-    results = []
-    _.each(param_subscription_allowed_list, function(sub){
-      var found = _.find(ds_subscriptions, function(item){
-        return item.subscriptionId == sub || item.displayName.toLowerCase() == sub.toLowerCase();
-      })
-      results.push(found)
+  if (param_subscriptions_list.length > 0) {
+    result = _.filter(ds_azure_subscriptions, function(subscription) {
+      include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
+
+      if (param_subscriptions_allow_or_deny == "Deny") {
+        include_subscription = !include_subscription
+      }
+
+      return include_subscription
     })
   } else {
-    results = ds_subscriptions
+    result = ds_azure_subscriptions
   }
 EOS
 end
 
-script "js_filter_resources", type: "javascript" do
-  parameters "azure_resources", "param_approved_region"
+datasource "ds_azure_instances" do
+  iterate $ds_azure_subscriptions_filtered
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Compute/virtualMachines"])
+    query "api-version", "2019-03-01"
+    header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "resourceID", jmes_path(col_item, "id")
+      field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
+      field "resourceKind", jmes_path(col_item, "type")
+      field "name", jmes_path(col_item, "name")
+      field "region", jmes_path(col_item, "location")
+      field "osType", jmes_path(col_item, "properties.storageProfile.osDisk.osType")
+      field "resourceType", jmes_path(col_item, "properties.hardwareProfile.vmSize")
+      field "tags", jmes_path(col_item, "tags")
+      field "subscriptionId",val(iter_item, "id")
+      field "subscriptionName",val(iter_item, "name")
+    end
+  end
+end
+
+datasource "ds_azure_instances_tag_filtered" do
+  run_script $js_azure_instances_tag_filtered, $ds_azure_instances, $param_exclusion_tags
+end
+
+script "js_azure_instances_tag_filtered", type: "javascript" do
+  parameters "ds_azure_instances", "param_exclusion_tags"
   result "result"
   code <<-EOS
-    var result = [];
+  if (param_exclusion_tags.length > 0) {
+    result = _.reject(ds_azure_instances, function(vm) {
+      vm_tags = []
 
-    // Iterate through all resources
-    _.each(azure_resources, function(ar){
-      console.log(ar.name)
-      if (_.contains(param_approved_region, ar.region)) {
-
-      } else {
-        if(ar.managedBy==null){
-          result.push({
-            id: ar["id"],
-            region: ar["region"],
-            name: ar["name"],
-            subscriptionName: ar["subscriptionName"],
-            managedBy: "NA"
-          })
-        }else{
-          result.push({
-            id: ar["id"],
-            region: ar["region"],
-            name: ar["name"],
-            subscriptionName: ar["subscriptionName"],
-            managedBy: ar["managedBy"]
-          })
-        }
+      if (typeof(vm['tags']) == 'object') {
+        _.each(Object.keys(vm['tags']), function(key) {
+          vm_tags.push([key, ":", vm['tags'][key]].join(''))
+          vm_tags.push([key, ":*"].join(''))
+        })
       }
+
+      exclude_vm = false
+
+      _.each(param_exclusion_tags, function(exclusion_tag) {
+        if (_.contains(vm_tags, exclusion_tag)) {
+          exclude_vm = true
+        }
+      })
+
+      return exclude_vm
     })
-    result = _.sortBy(result, 'subscriptionName');
-    result = _.sortBy(result, 'region');
-  EOS
+  } else {
+    result = ds_azure_instances
+  }
+EOS
+end
+
+datasource "ds_azure_instances_region_filtered" do
+  run_script $js_azure_instances_region_filtered, $ds_azure_instances_tag_filtered, $param_regions_disallow_or_allow, $param_regions_list
+end
+
+script "js_azure_instances_region_filtered", type: "javascript" do
+  parameters "ds_azure_instances_tag_filtered", "param_regions_disallow_or_allow", "param_regions_list"
+  result "result"
+  code <<-EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_azure_instances_tag_filtered, function(vm) {
+      include_vm = _.contains(param_regions_list, vm['region'])
+
+      if (param_regions_disallow_or_allow == "Allow") {
+        include_vm = !include_vm
+      }
+
+      return include_vm
+    })
+  } else {
+    result = ds_azure_instances_tag_filtered
+  }
+EOS
+end
+
+datasource "ds_instances_in_bad_regions" do
+  run_script $js_instances_in_bad_regions, $ds_azure_instances_region_filtered, $ds_applied_policy, $param_regions_disallow_or_allow, $param_regions_list
+end
+
+script "js_instances_in_bad_regions", type: "javascript" do
+  parameters "ds_azure_instances_region_filtered", "ds_applied_policy", "param_regions_disallow_or_allow", "param_regions_list"
+  result "result"
+  code <<-'EOS'
+  result = []
+  today = new Date()
+
+  _.each(ds_azure_instances_region_filtered, function(instance) {
+    recommendationDetails = [
+      "Delete Azure virtual machine ", instance["name"], " ",
+      "in Azure Subscription ", instance["subscriptionName"], " ",
+      "(", instance["subscriptionId"], ")"
+    ].join('')
+
+    instance_tags = []
+
+    if (typeof(instance['tags']) == 'object') {
+      _.each(Object.keys(instance['tags']), function(key) {
+        instance_tags.push(key + '=' + instance['tags'][key])
+      })
+    }
+
+    result.push({
+      accountID: instance['subscriptionId'],
+      accountName: instance['subscriptionName'],
+      resourceGroup: instance['resourceGroup'],
+      resourceName: instance['name'],
+      resourceID: instance['resourceID'],
+      resourceType: instance['resourceType'],
+      resourceKind: instance['resourceKind'],
+      region: instance['region'],
+      osType: instance['osType'],
+      policy_name: ds_applied_policy['name'],
+      tags: instance_tags.join(', '),
+      recommendationDetails: recommendationDetails,
+      service: 'Microsoft.Compute',
+      message: ''
+    })
+  })
+
+  total_instances = result.length
+
+  instance_phrase = "virtual machines were"
+  if (total_instances == 1) { instance_phrase = "virtual machine was" }
+
+  region_phrase = "in"
+  if (param_regions_disallow_or_allow == 'Allow') { region_phrase = "outside of" }
+
+  region_adj = "disallowed"
+  if (param_regions_disallow_or_allow == 'Allow') { region_adj = "allowed" }
+
+  findings = [
+    total_instances, " Azure ", instance_phrase,
+    " found ", region_phrase, " the following ", region_adj,
+    " regions: ", param_regions_list.join(', '), ".\n\n"
+  ].join('')
+
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+
+  // Add a dummy entry to ensure that the policy's check statement executes at least once
+  result.push({
+    accountID: "",         accountName: "",              resourceGroup: "",
+    resourceName: "",      resourceID: "",               resourceType: "",
+    resourceKind: "",      region: "",                   osType: "",
+    policy_name: "",       tags: "",                     time_stopped: "",
+    lookbackPeriod: "",    recommendationDetails: "",    service: "",
+    message: ""
+  })
+
+  result[0]['message'] = findings + disclaimer
+EOS
 end
 
 ###############################################################################
 # Policy
 ###############################################################################
 
-policy "azure_resource_policy" do
-  validate $filtered_resources do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure Resources out of compliance"
-    escalate $email
-    escalate $delete_resources
-    check logic_or($ds_parent_policy_terminated, eq(size(data), 0))
+policy "pol_disallowed_regions" do
+  validate_each $ds_instances_in_bad_regions do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Virtual Machines In Disallowed Regions Found"
+    detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
+    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    escalate $esc_poweroff_instances
+    escalate $esc_delete_instances
+    hash_exclude "message", "tags"
     export do
       resource_level true
-      field "subscriptionName" do
+      field "accountID" do
+        label "Subscription ID"
+      end
+      field "accountName" do
         label "Subscription Name"
       end
-      field "name" do
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "resourceName" do
         label "Resource Name"
       end
-      field "region" do
-        label "Location"
-      end
-      field "id" do
+      field "resourceID" do
         label "Resource ID"
       end
-      field "managedBy" do
-        label "Managed By"
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "resourceType" do
+        label "Instance Size"
+      end
+      field "resourceKind" do
+        label "Resource Kind"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "osType" do
+        label "Operating System"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
       end
     end
   end
@@ -232,119 +417,125 @@ end
 # Escalations
 ###############################################################################
 
-escalation "email" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
   email $param_email
 end
 
-escalation "delete_resources" do
-  automatic contains($param_automatic_action, "Terminate Instances")
-  label "Delete Resource"
-  description "Delete the selected instance"
-  run "delete_resources", data, rs_optima_host
+escalation "esc_poweroff_instances" do
+  automatic contains($param_automatic_action, "Power Off Instances")
+  label "Power Off Instances"
+  description "Approval to power off all selected instances"
+  run "poweroff_instances", data, $param_azure_endpoint, $param_skipshutdown
+end
+
+escalation "esc_delete_instances" do
+  automatic contains($param_automatic_action, "Delete Instances")
+  label "Delete Instances"
+  description "Approval to delete all selected instances"
+  run "delete_instances", data, $param_azure_endpoint
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define delete_resources($data, $$rs_optima_host) return $all_responses do
-  $all_responses = []
-  foreach $item in $data do
-    sub on_error: reporterror($item) do
-      if($item["managedBy"]=="NA")
-        $resourceName = $item["name"]
-        $response = http_request(
-          verb: "delete",
-          host: "management.azure.com",
-          auth: $$auth_azure,
-          https: true,
-          href: $item["id"],
-          query_strings: {
-            "api-version": "2019-07-01"
-          },
-          headers: {
-            "cache-control": "no-cache",
-            "content-type": "application/json"
-          }
-        )
-        $statusCode=to_s($response["code"])
-        if(!($statusCode=="200"||$statusCode=="202"||$statusCode=="204"))
-          $errorMessage=$response["body"]
-          call sys_log('Error:Failed to delete the resource ',to_s($errorMessage))
-        end
-        $all_responses << $response
-        call sys_log('Azure Disallowed Regions ',to_s($response))
-      end
+define poweroff_instances($data, $param_azure_endpoint, $param_skipshutdown) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call poweroff_instance($instance, $param_azure_endpoint, $param_skipshutdown) retrieve $poweroff_response
     end
   end
-  foreach $item in $data do
-    sub on_error: reporterror($item) do
-      if($item["managedBy"]!="NA")
-        $resourceName = $item["name"]
-        $response = http_request(
-          verb: "delete",
-          host: "management.azure.com",
-          auth: $$auth_azure,
-          https: true,
-          href: $item["id"],
-          query_strings: {
-            "api-version": "2019-07-01"
-          },
-          headers: {
-            "cache-control": "no-cache",
-            "content-type": "application/json"
-          }
-        )
-        $statusCode=to_s($response["code"])
-        if(!($statusCode=="200"||$statusCode=="202"||$statusCode=="204"))
-          $errorMessage=$response["body"]
-          call sys_log('Error:Failed to delete the resource ',to_s($errorMessage))
-        end
-        $all_responses << $response
-        call sys_log('Azure Disallowed Regions ',to_s($response))
-      end
-    end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
   end
 end
 
-define reporterror($item) do
-    call sys_log('Error:Failed to delete the resource ',to_s($item['id']))
+define poweroff_instance($instance, $param_azure_endpoint, $param_skipshutdown) return $response do
+  $host = $param_azure_endpoint
+  $href = $instance["id"] + "/powerOff"
+  $params = "?api-version=2023-07-01"
+  $url = $host + $href + $params
+  task_label("POST " + $url)
+
+  $query_strings = { "api-version": "2023-07-01" }
+
+  if $param_skipshutdown == "Forced"
+    $query_strings["skipShutdown"] = "true"
+    $params = $params + "&skipShutdown=true"
+  end
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "post",
+    host: $host,
+    href: $href,
+    query_strings: $query_strings
+  )
+
+  task_label("Power off Azure VM instance response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response powering off Azure VM instance: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Power off Azure VM instance successful: " + $instance["id"])
+  end
 end
 
-define sys_log($subject, $detail) do
-  # Create empty errors array if doesn't already exist
+define delete_instances($data, $param_azure_endpoint) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call delete_instance($instance, $param_azure_endpoint) retrieve $delete_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+define delete_instance($instance, $param_azure_endpoint) return $response do
+  $host = $param_azure_endpoint
+  $href = $instance["id"]
+  $params = "?api-version=2023-07-01"
+  $url = $host + $href + $params
+  task_label("DELETE " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "delete",
+    host: $host,
+    href: $href,
+    query_strings: { "api-version": "2023-07-01" }
+  )
+
+  task_label("Delete Azure VM instance response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response deleting Azure VM instance: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Delete Azure VM instance successful: " + $instance["id"])
+  end
+end
+
+define handle_error() do
   if !$$errors
     $$errors = []
   end
-  # Check if debug is enabled
-  if $$debug
-    # Append to global $$errors
-    # This is the suggested way to capture errors
-    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
-    # If Flexera NAM Zone, create audit_entries [to be deprecated]
-    # This is the legacy method for capturing errors and only supported on Flexera NAM
-    if $$rs_optima_host == "api.optima.flexeraeng.com"
-      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
-      $task_label = "Creating audit entry for " + $subject
-      sub task_label: $task, on_error: skip_error_and_append($task) do
-        rs_cm.audit_entries.create(
-          notify: "None",
-          audit_entry: {
-            auditee_href: @@account,
-            summary: $subject,
-            detail: $detail
-          }
-        )
-      end # End sub on_error
-    end # End if rs_optima_host
-  end # End if debug is enabled
-end
-
-define skip_error_and_append($subject) do
-  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
   $_error_behavior = "skip"
 end
 
@@ -368,7 +559,6 @@ datasource "ds_get_policy" do
     field "id", jmes_path(response, "id")
   end
 end
-
 
 datasource "ds_parent_policy_terminated" do
   run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id

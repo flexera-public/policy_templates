@@ -7,10 +7,11 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.19",
+  version: "2.20.1",
   provider: "Azure",
   service: "Compute",
-  policy_set: "Inefficient Instance Usage"
+  policy_set: "Inefficient Instance Usage",
+  deprecated: "true"
   )
 
 ###############################################################################
@@ -67,6 +68,7 @@ parameter "param_automatic_action" do
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
   allowed_values ["Downsize Instances"]
+  default []
 end
 
 parameter "param_log_to_cm_audit_entries" do
@@ -127,8 +129,10 @@ datasource "ds_subscriptions" do
     pagination $azure_pagination
     host "management.azure.com"
     path "/subscriptions/"
-    query "api-version","2019-06-01"
+    query "api-version", "2019-06-01"
     header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
@@ -153,10 +157,10 @@ datasource "ds_azure_skus" do
       pagination $azure_pagination
       host "management.azure.com"
       path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/skus"])
-      query "api-version","2017-09-01"
+      query "api-version", "2017-09-01"
       header "User-Agent", "RS Policies"
       # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-      ignore_status [400,403,404]
+      ignore_status [400, 403, 404]
     end
     result do
       encoding "json"
@@ -183,10 +187,10 @@ datasource "ds_azure_instances" do
       pagination $azure_pagination
       host "management.azure.com"
       path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/virtualMachines"])
-      query "api-version","2018-10-01"
+      query "api-version", "2018-10-01"
       header "User-Agent", "RS Policies"
       # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-      ignore_status [400,403,404]
+      ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
@@ -206,10 +210,10 @@ datasource "ds_azure_instances_view" do
     pagination $azure_pagination
     host "management.azure.com"
     path val(iter_item, "id")
-    query "api-version","2018-10-01"
+    query "api-version", "2018-10-01"
     header "User-Agent", "RS Policies"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-    ignore_status [400,403,404]
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
@@ -240,8 +244,8 @@ datasource "ds_la_instances_utilization" do
     path join(["/v1/workspaces/", val(iter_item,"workspaceId"), "/query"])
     query "timespan",val($ds_timespan_mapping,"timespan")
     header "User-Agent", "RS Policies"
-    ignore_status [403, 404]
     body_field "query", join(['Perf | where _ResourceId == tolower("',val(iter_item,"id"),'") | where CounterName == "% Processor Time" or CounterName == "Available MBytes Memory" or CounterName == "% Committed Bytes In Use" | summarize ["avg"] = avg(CounterValue), ["max"] = max(CounterValue), ["min"] = min(CounterValue) by _ResourceId,CounterName'])
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "json"

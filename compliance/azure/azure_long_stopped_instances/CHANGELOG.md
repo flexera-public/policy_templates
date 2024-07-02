@@ -1,5 +1,24 @@
 # Changelog
 
+## v5.0
+
+- Added support for regex when filtering resources by tag
+
+## v4.1
+
+- Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.
+
+## v4.0
+
+- Several parameters altered to be more descriptive and human-readable
+- Added more robust ability to filter resources by subscription
+- Added ability to filter resources by region
+- Added ability to filter resources by multiple tag key:value pairs
+- Added additional context to incident description
+- Normalized incident export to be consistent with other policies
+- Added human-readable recommendation to incident export
+- Streamlined code for better readability and faster execution
+
 ## v3.0
 
 - Added logic required for "Meta Policy" use-cases

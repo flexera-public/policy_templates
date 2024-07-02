@@ -1,5 +1,42 @@
 # Changelog
 
+## v9.1.0
+
+- Modified internal names for incident fields for more accurate scraping into Optimization dashboard
+
+## v9.0.0
+
+- Fixed issue where policy would fail during execution due to changes in AWS Price List API
+
+## v8.1
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
+## v8.0
+
+- Updated AWS Pricing API parameter to be more descriptive and user-friendly
+
+## v7.0
+
+- Added support for regex when filtering resources by tag
+
+## v6.9
+
+- Fixed issue where currency conversion would sometimes not work as expected.
+
+## v6.8
+
+- Policy action error logging modernized and now works as expected in EU/APAC
+- Updated description of AWS Pricing API Endpoint parameter
+
+## v6.7
+
+- Added parameter to override the AWS Pricing API Endpoint
+
+## v6.6
+
+- Corrected API issue when executing policy in APAC
+
 ## v6.5
 
 - Updated description of `Account Number` parameter
@@ -35,7 +72,7 @@
 - Policy no longer raises new escalations if savings data changed but nothing else has
 - Streamlined code for better readability and faster execution
 
-## 5.2
+## v5.2
 
 - Added `Resource Name` incident field
 
@@ -104,8 +141,7 @@
 ## v2.14
 
 - Improve error handling and debug logging so that errors from taking action are actually surfaced
-- Add a `param_log_to_cm_audit_entries` parameter to control whether action debug logging is sent to CM Audit
-  Entries; this should be left set to No on Flexera EU
+- Add a `param_log_to_cm_audit_entries` parameter to control whether action debug logging is sent to CM Audit Entries; this should be left set to No on Flexera EU
 
 ## v2.13
 
@@ -130,8 +166,7 @@
 
 ## v2.8
 
-- Use `DescribeAddresses` instead of `DescribeRegions` to more accurately check if the call is enabled by the
-  Service Control Policy in each region
+- Use `DescribeAddresses` instead of `DescribeRegions` to more accurately check if the call is enabled by the Service Control Policy in each region
 
 ## v2.7
 

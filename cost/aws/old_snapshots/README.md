@@ -25,7 +25,13 @@ This policy has the following input parameters required when launching the polic
 - *Exclusion Service Types* - Exclude the selected services (EC2 or RDS). If left blank, all services will be analyzed.
 - *Exclusion EC2 Snapshot Description* - Exclude EC2 snapshots with the provided descriptions. If left blank, all EC2 snapshots will be analyzed. This setting has no effect on RDS snapshots.
 - *Exclusion RDS Snapshot Types* - Exclude the selected RDS snapshot types. If left blank, all types will be analyzed. This setting has no effect on EC2 snapshots.
-- *Exclusion Tags (Key:Value)* - Cloud native tags to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:\* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:\*
+- *Exclusion Tags* - The policy will filter resources containing the specified tags from the results. The following formats are supported:
+  - `Key` - Filter all resources with the specified tag key.
+  - `Key==Value` - Filter all resources with the specified tag key:value pair.
+  - `Key!=Value` - Filter all resources missing the specified tag key:value pair. This will also filter all resources missing the specified tag key.
+  - `Key=~/Regex/` - Filter all resources where the value for the specified key matches the specified regex string.
+  - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified tag key.
+- *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
 - *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation.
 - *Snapshot Age* - The number of days since the snapshot was created to consider it old.
 - *Include Snapshots with AMI* - Whether or not to produce recommendations for snapshots with an associated registered AMI (Amazon Machine Image).
@@ -75,7 +81,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
                   "ec2:DescribeImages",
                   "ec2:DescribeSnapshots",
                   "ec2:DeregisterImage",
-                  "ec2:DeleteSnapshot"
+                  "ec2:DeleteSnapshot",
                   "rds:DescribeDBInstances",
                   "rds:DescribeDBSnapshots",
                   "rds:DescribeDBClusters",
@@ -102,4 +108,4 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ## Cost
 
-This Policy Template does not launch any instances, and so does not incur any cloud costs.
+This Policy Template does not incur any cloud costs.

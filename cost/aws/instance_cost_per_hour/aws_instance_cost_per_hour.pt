@@ -1,0 +1,480 @@
+name "AWS Cost Report - EC2 Instance Cost Per Hour"
+rs_pt_ver 20180301
+type "policy"
+short_description "Creates a Unit Economics report showing AWS EC2 instance cost per hour normalized to NFUs. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/instance_cost_per_hour) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "low"
+category "Cost"
+default_frequency "monthly"
+info(
+  version: "0.1.0",
+  provider: "AWS",
+  service: "Compute",
+  policy_set: "Unit Economics",
+  publish: "false"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_months_back" do
+  type "number"
+  category "Policy Settings"
+  label "Months Back"
+  description "Number of previous months to include in the report"
+  min_value 1
+  default 12
+end
+
+parameter "param_group_by" do
+  type "string"
+  category "Policy Settings"
+  label "Aggregation"
+  description "Whether to report the entire organization in aggregate or by Billing Center"
+  allowed_values "Aggregate", "Per Billing Center"
+  default "Per Billing Center"
+end
+
+parameter "param_bc_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Billing Centers"
+  description "Allow or Deny entered Billing Centers."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_bc_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Billing Center List"
+  description "A list of allowed or denied Billing Center names/IDs. Leave blank to check all Billing Centers."
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+datasource "ds_billing_centers_filtered" do
+  run_script $js_billing_centers_filtered, $ds_billing_centers, $param_bc_allow_or_deny, $param_bc_list
+end
+
+script "js_billing_centers_filtered", type: "javascript" do
+  parameters "ds_billing_centers", "param_bc_allow_or_deny", "param_bc_list"
+  result "result"
+  code <<-EOS
+  allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_bc_list.length > 0) {
+    billing_centers = _.filter(ds_billing_centers, function(item) {
+      id_found = _.contains(param_bc_list, item['id']) == allow_deny_test[param_bc_allow_or_deny]
+      name_found = _.contains(param_bc_list, item['name']) == allow_deny_test[param_bc_allow_or_deny]
+      return id_found || name_found
+    })
+
+    // Check for conflicting parents/children and remove children if present
+    bc_ids = _.compact(_.pluck(billing_centers, 'id'))
+    bad_children = _.filter(ds_billing_centers, function(bc) { return _.contains(bc_ids, bc['parent_id']) })
+    bad_children_ids = _.pluck(bad_children, 'id')
+
+    // Create final result with the bad children removed
+    result = _.reject(billing_centers, function(bc) { return _.contains(bad_children_ids, bc['id']) })
+  } else {
+    // If we're not filtering at all, just grab all of the top level billing centers
+    result = _.filter(ds_billing_centers, function(bc) {
+      return bc['parent_id'] == null || bc['parent_id'] == undefined
+    })
+  }
+EOS
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-'EOS'
+  symbol = "$"
+  separator = ","
+  code = "USD"
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+      code = ds_currency_code['value']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator,
+    code: code
+  }
+EOS
+end
+
+datasource "ds_past_month_list" do
+  run_script $js_past_month_list, $param_months_back
+end
+
+script "js_past_month_list", type: "javascript" do
+  parameters "param_months_back"
+  result "result"
+  code <<-EOS
+  result = []
+
+  previous_month = new Date()
+  previous_month.setMonth(previous_month.getMonth() - 1)
+
+  for (var i = 0; i < param_months_back; i++) {
+    start_date = new Date(previous_month)
+    start_date.setMonth(start_date.getMonth() - i)
+    start_date = start_date.toISOString().split("T")[0]
+    start_month = start_date.split("-")[0] + "-" + start_date.split("-")[1]
+
+    end_date = new Date(previous_month)
+    end_date.setMonth(end_date.getMonth() - i + 1)
+    end_date = end_date.toISOString().split("T")[0]
+    end_month = end_date.split("-")[0] + "-" + end_date.split("-")[1]
+
+    result.push({ start_date: start_month, end_date: end_month })
+  }
+EOS
+end
+
+datasource "ds_instance_types" do
+  iterate $ds_past_month_list
+  request do
+    run_script $js_instance_types, val(iter_item, 'start_date'), val(iter_item, 'end_date'), $ds_billing_centers_filtered, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows") do
+      field "billing_center_id", jmes_path(col_item, "dimensions.billing_center_id")
+      field "instance_type", jmes_path(col_item, "dimensions.instance_type")
+      field "usage_unit", jmes_path(col_item, "dimensions.usage_unit")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+      field "usage_amount", jmes_path(col_item, "metrics.usage_amount")
+      field "date", jmes_path(col_item, "timestamp")
+    end
+  end
+end
+
+script "js_instance_types", type: "javascript" do
+  parameters "start_date", "end_date", "ds_billing_centers_filtered", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  var request = {
+    auth: "auth_flexera",
+    verb: "POST",
+    host: rs_optima_host,
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
+    headers: { "Api-Version": "1.0", "User-Agent": "RS Policies" },
+    body_fields: {
+      "billing_center_ids": _.pluck(ds_billing_centers_filtered, 'id'),
+      "dimensions": [ "vendor", "billing_center_id", "usage_unit", "instance_type" ],
+      "metrics": [ "usage_amount", "cost_amortized_unblended_adj" ],
+      "granularity": "month",
+      "start_at": start_date,
+      "end_at": end_date,
+      "filter": {
+        "type": "and",
+        "expressions": [
+          { "dimension": "category", "type": "equal", "value": "Compute" },
+          { "dimension": "resource_type", "type": "equal", "value": "Compute Instance" },
+          { "dimension": "vendor", "type": "equal", "value": "AWS" }
+        ]
+      }
+    }
+  }
+EOS
+end
+
+datasource "ds_aws_instance_size_map" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/aws/instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_normalized_cost_instance_hour_data" do
+  run_script $js_normalized_cost_instance_hour_data, $ds_instance_types, $ds_aws_instance_size_map, $ds_billing_centers_filtered, $param_group_by
+end
+
+script "js_normalized_cost_instance_hour_data", type: "javascript" do
+  parameters "ds_instance_types", "ds_aws_instance_size_map", "ds_billing_centers_filtered", "param_group_by"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  // Apply normalization factor to costs based on instance size and calculate NFU total
+  normalized_instance_types = _.map(ds_instance_types, function(data) {
+    billing_center_name = ""
+    matching_bc = _.find(ds_billing_centers_filtered, function(name) { return name['id'] == data['billing_center_id'] })
+    if (matching_bc != undefined) { billing_center_name = matching_bc['name'] }
+
+    normalized_usage_amount = null
+    normalization_factor = 1
+    instance_metadata = ds_aws_instance_size_map[data['instance_type']]
+
+    if (instance_metadata != undefined && instance_metadata != null) {
+      if (instance_metadata['nfu'] != undefined && instance_metadata['nfu'] != null) {
+        normalization_factor = Number(instance_metadata['nfu'])
+      }
+    }
+
+    normalized_usage_amount = data['usage_amount'] * normalization_factor
+
+    return {
+      billing_center_id: data['billing_center_id']
+      instance_type: data['instance_type'],
+      usage_unit: data['usage_unit'],
+      cost: data['cost'],
+      usage_amount: data['usage_amount'],
+      date: data['date'],
+      billing_center_name: billing_center_name,
+      normalized_usage_amount: normalized_usage_amount,
+      normalization_factor: normalization_factor
+    }
+  })
+
+  months = _.uniq(_.pluck(normalized_instance_types, "date"))
+
+  if (param_group_by == "Aggregate") {
+    sorted_types = _.groupBy(normalized_instance_types, 'date')
+
+    // Group by Date only (All BCs)
+    _.each(months, function(month) {
+      costs = _.compact(_.pluck(sorted_types[month], 'cost'))
+      usage_amounts = _.compact(_.pluck(sorted_types[month], 'normalized_usage_amount'))
+
+      cost_total = _.reduce(costs, function(memo, num) { return memo + num }, 0)
+      normalized_usage_amount_total = _.reduce(usage_amounts, function(memo, num) { return memo + num }, 0)
+
+      normalized_cost_instance_hr = 0
+      if (normalized_usage_amount_total > 0) {
+        normalized_cost_instance_hr = cost_total / normalized_usage_amount_total
+      }
+
+      result.push({
+        "billing_center": "Aggregated",
+        "vendor": "AWS",
+        "avg_normalized_cost_instance_hr": Math.round(normalized_cost_instance_hr * 10000) / 10000,
+        "date": month.substring(0, 7)
+      })
+    })
+  } else {
+    bc_names = _.compact(_.uniq(_.pluck(normalized_instance_types, "billing_center_name")))
+
+    sorted_types = _.groupBy(normalized_instance_types, function(data) {
+      return data['date'] + data['billing_center_name']
+    })
+
+    // Group by Date and Billing Center
+    _.each(months, function(month) {
+      _.each(bc_names, function(bc) {
+        costs = _.compact(_.pluck(sorted_types[month + bc], 'cost'))
+        usage_amounts = _.compact(_.pluck(sorted_types[month + bc], 'normalized_usage_amount'))
+
+        cost_total = _.reduce(costs, function(memo, num) { return memo + num }, 0)
+        normalized_usage_amount_total = _.reduce(usage_amounts, function(memo, num) { return memo + num }, 0)
+
+        normalized_cost_instance_hr = 0
+        if (normalized_usage_amount_total > 0) {
+          normalized_cost_instance_hr = cost_total / normalized_usage_amount_total
+        }
+
+        result.push({
+          "billing_center": bc,
+          "vendor": "AWS",
+          "avg_normalized_cost_instance_hr": Math.round(normalized_cost_instance_hr * 10000) / 10000,
+          "date": month.substring(0, 7)
+        })
+      })
+    })
+  }
+
+  // Sort data on month (Ascending Order)
+  result = _.sortBy(result, "date")
+EOS
+end
+
+datasource "ds_chart_creation" do
+  run_script $js_chart_creation, $ds_normalized_cost_instance_hour_data, $ds_applied_policy, $ds_currency
+end
+
+script "js_chart_creation", type: "javascript" do
+  parameters "ds_normalized_cost_instance_hour_data", "ds_applied_policy", "ds_currency"
+  result "result"
+  code <<-EOS
+  // Group data by Billing Center
+  group_by_bc = _.groupBy(ds_normalized_cost_instance_hour_data, function(data) { return data['billing_center'] })
+
+  // Create chart axis labels
+  months = _.uniq(_.pluck(ds_normalized_cost_instance_hour_data, 'date'))
+  chart_axis_labels = "chxl=1:|" + months.join("|")
+
+  // Create legend - produce list of BC names
+  chart_legend = "chdl=" + _.keys(group_by_bc).join('|')
+
+  // Create chart dataset - produce list of BC values
+  data_parts = _.map(group_by_bc, function(bc_list) {
+    return _.pluck(bc_list, 'avg_normalized_cost_instance_hr').join(',')
+  })
+
+  chart_data = "chd=t:" + data_parts.join('|')
+
+  //Create chart scale
+  normalized_costs = _.pluck(ds_normalized_cost_instance_hour_data, 'avg_normalized_cost_instance_hr').sort()
+  min = Math.round(normalized_costs[0] * 0.9 * 1000) / 1000
+  max = Math.round(normalized_costs.reverse()[0] * 1.1 * 1000) / 1000
+  chart_range = "chxr=0," + min + "," + max
+
+  //Whole Chart Object/Report
+  chart = {
+    chartType: encodeURI("cht=lc"),
+    chartSize: encodeURI("chs=999x450"),
+    chartData: encodeURI(chart_data),
+    chartTitle: encodeURI("chtt=AWS Cost Report - Instance Cost Per Hour"),
+    chartImage: encodeURI("chof=.png"),
+    chartLegend: encodeURI(chart_legend),
+    chartLegendPosition: encodeURI("chdlp=r"),
+    chartAxis: encodeURI("chxt=y,x"),
+    chartAxisFormat: encodeURI("chxs=0N*c" + ds_currency['code'] + "2z*|1,min40"),
+    chartAxisLabel: encodeURI(chart_axis_labels),
+    chartScale: encodeURI(chart_range),
+    chartLineStyle: encodeURI("chls=2|2|2|2|2|2|2|2|2|2|2|2|2|2|2|2"),
+    chartLineColour: encodeURI("chco=6929c4,9f1853,198038,b28600,1192e8,009d9a,005d5d,007d79")
+  }
+
+  result = ds_normalized_cost_instance_hour_data
+  result[0]["chart_dimensions"] = chart
+  result[0]["policy_name"] = ds_applied_policy["name"]
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_instance_cost_hour" do
+  validate_each $ds_chart_creation do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}"
+    detail_template <<-EOS
+# AWS Cost Report for {{ rs_org_name }} - EC2 Instance Cost Per Hour
+![AWS Cost Report - EC2 Instance Cost Per Hour](https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id={{ rs_org_id }}&rs_project_id={{ rs_project_id }}&{{with index data 0}}{{ .chart_dimensions.chartData }}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartSize }}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartType }}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartLegend }}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartScale}}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartAxis }}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartAxisLabel }}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartLineStyle }}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartLineColour }}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartTitle }}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartLegendPosition }}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartAxisFormat }}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartImage }}{{end}})
+EOS
+    check eq(0, 1)
+    escalate $esc_email
+    export do
+      resource_level false
+      field "date" do
+        label "Month"
+      end
+      field "vendor" do
+        label "Cloud Vendor"
+      end
+      field "billing_center" do
+        label "Billing Center"
+      end
+      field "avg_normalized_cost_instance_hr" do
+        label "Average Normalized Cost of Instance per Hour"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end

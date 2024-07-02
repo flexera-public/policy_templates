@@ -2,11 +2,12 @@ name "Turbonomic Rightsize Virtual Machines Recommendations AWS"
 rs_pt_ver 20180301
 type "policy"
 short_description "Turbonomic policy for scaling virtual machines [README](https://github.com/flexera-public/policy_templates/tree/master/cost/turbonomics/scale_virtual_machines_recommendations/aws) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
 severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "0.5",
+  version: "0.6.1",
   provider: "AWS",
   source: "Turbonomic",
   service: "Compute",
@@ -14,54 +15,60 @@ info(
   recommendation_type: "Usage Reduction"
 )
 
-##################
-# Parameters   #
-##################
+###############################################################################
+# Parameters
+###############################################################################
 
 ## once functionality allows, this will contain "ALL", "AWS", "Azure Subscription", "GCP Project" and we will remove the policies from thier folders
 parameter "param_provider" do
   type "string"
+  category "Policy Settings"
   label "Cloud Vendor"
   description "Allows \"\", GCP Project, AWS, or Azure Subscription as a value"
   allowed_values "AWS"
   default "AWS"
 end
 
-parameter "auth_cookie" do
+parameter "param_turbonomic_audience" do
   type "string"
-  label "Authorization Cookie"
-  no_echo true
-  description "authorization cookie pulled from manual source"
+  category "Policy Settings"
+  label "Turbonomic instance audience"
+  description "Audience configured on the Turbonomic instance"
+  default "flexera"
 end
 
 parameter "param_email" do
   type "list"
+  category "Policy Settings"
   label "Email addresses to notify"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
+  # No default value, user input required
 end
 
 parameter "param_turbonomic_endpoint" do
   type "string"
-  label "Turbonomic endpoint"
-  description "Host of the Turbonomic endpoint"
+  category "Policy Settings"
+  label "Turbonomic Host"
+  description "Your Turbonomic host or IP."
+  # No default value, user input required
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-#authenticate with password and username - not implemented and needs work done
-#credentials "turbo_auth" do
-#  schemes "api_key"
-#  label "Turbonomics"
-#  description "Select the Turbonomic Basic Auth Credential from the list."
-#end
+credentials "auth_turbonomic" do
+  schemes "basic"
+  label "Turbonomic"
+  description "Select the Turbonomic Basic Auth Credential from the list."
+  tags "provider=turbonomic"
+end
 
 ###############################################################################
 # Pagination
 ###############################################################################
 
-pagination "turbonomic_vm_pagination_header" do
+pagination "pagination_turbonomic" do
   get_page_marker do
     header "x-next-cursor"
   end
@@ -71,13 +78,24 @@ pagination "turbonomic_vm_pagination_header" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
+
+#get turbonomic token
+datasource "ds_get_turbonomic_token" do
+  request do
+    run_script $js_get_turbonomic_token, $param_turbonomic_endpoint, $param_turbonomic_audience
+  end
+  result do
+    encoding "json"
+    field "access_token", jmes_path(response, "access_token")
+  end
+end
 
 #get turbonomic recommendation data
 datasource "ds_get_turbonomic_recommendations" do
   request do
-    run_script $js_get_turbonomic_recommendations, $param_turbonomic_endpoint, $auth_cookie
+    run_script $js_get_turbonomic_recommendations, $param_turbonomic_endpoint, val($ds_get_turbonomic_token, "access_token")
   end
   result do
     encoding "json"
@@ -105,7 +123,7 @@ end
 ##this will potentially be a lot of calls. how to make this more performant
 datasource "ds_get_action_details" do
   request do
-    run_script $js_get_action_details, $param_turbonomic_endpoint, $auth_cookie, $ds_get_turbonomic_recommendations
+    run_script $js_get_action_details, $ds_get_turbonomic_recommendations, $param_turbonomic_endpoint, val($ds_get_turbonomic_token, "access_token")
   end
   result do
     encoding "json"
@@ -116,7 +134,7 @@ end
 ##this will potentially be a lot of calls. how to make this more performant
 datasource "ds_get_business_units" do
   request do
-    run_script $js_get_business_units, $param_turbonomic_endpoint, $auth_cookie, $param_provider
+    run_script $js_get_business_units, $param_turbonomic_endpoint, $param_provider, val($ds_get_turbonomic_token, "access_token")
   end
   result do
     encoding "json"
@@ -135,7 +153,7 @@ end
 datasource "ds_get_stats" do
   iterate $ds_filtered_turbonomic_recommendations
   request do
-    run_script $js_get_stats, $param_turbonomic_endpoint, $auth_cookie, iter_item
+    run_script $js_get_stats, iter_item, $param_turbonomic_endpoint, val($ds_get_turbonomic_token, "access_token")
   end
   result do
     encoding "json"
@@ -151,20 +169,34 @@ datasource "ds_filtered_stats" do
   run_script $js_filtered_stats, $ds_get_stats, $ds_filtered_turbonomic_recommendations
 end
 
-###############################################################################
-# Scripts
-###############################################################################
+##script retrieves an OAuth2 token from the Turbonomic API
+script "js_get_turbonomic_token", type: "javascript" do
+  parameters "turbonomic_endpoint", "audience"
+  result "request"
+  code <<-EOS
+    var request = {
+      verb: "POST",
+      auth: "auth_turbonomic"
+      host: turbonomic_endpoint,
+      path: "/oauth2/token",
+      headers: {
+      "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: "grant_type=client_credentials" + "&audience=" + audience + "&scope=role:OBSERVER"
+
+    }
+EOS
+end
 
 ##script using a manually acquired turbonomic cookie and pulls hard coded scalable vm data
 script "js_get_turbonomic_recommendations", type: "javascript" do
+  parameters "turbonomic_endpoint", "access_token"
   result "request"
-  parameters "turbonomic_endpoint", "auth_cookie"
   code <<-EOS
-  //replace cookie every day this is run
   //up this limit value to 1000 etc when done with POC testing
     var request = {
       verb: "POST",
-      pagination: "turbonomic_vm_pagination_header",
+      pagination: "pagination_turbonomic",
       host: turbonomic_endpoint,
       path: "/api/v3/markets/Market/actions",
       body_fields: {
@@ -180,7 +212,7 @@ script "js_get_turbonomic_recommendations", type: "javascript" do
       },
       headers: {
         "Content-Type": "application/json"
-        "Cookie": auth_cookie
+        "Authorization": "Bearer " + access_token
       }
     }
 EOS
@@ -188,10 +220,9 @@ end
 
 ## verified that discovered is the only one we need
 script "js_get_business_units", type: "javascript" do
+  parameters "turbonomic_endpoint", "param_provider", "access_token"
   result "request"
-  parameters "turbonomic_endpoint", "auth_cookie", "param_provider"
   code <<-EOS
-  //replace cookie every day this is run
     var providers = {
       "AWS":"AWS",
       "Azure Subscription":"AZURE",
@@ -207,7 +238,7 @@ script "js_get_business_units", type: "javascript" do
       },
       headers: {
         "Content-Type": "application/json"
-        "Cookie": auth_cookie
+        "Authorization": "Bearer " + access_token
       }
     }
 EOS
@@ -215,10 +246,9 @@ end
 
 ##
 script "js_get_action_details", type: "javascript" do
+  parameters "ds_get_turbonomic_recommendations","turbonomic_endpoint", "access_token"
   result "request"
-  parameters "turbonomic_endpoint", "auth_cookie", "ds_get_turbonomic_recommendations"
   code <<-EOS
-  //replace cookie every day this is run
     var uuids = []
     _.each(ds_get_turbonomic_recommendations, function(instance){
       uuids.push(instance.uuid)
@@ -232,15 +262,15 @@ script "js_get_action_details", type: "javascript" do
       },
       headers: {
         "Content-Type": "application/json"
-        "Cookie": auth_cookie
+        "Authorization": "Bearer " + access_token
       }
     }
 EOS
 end
 
 script "js_filtered_turbonomic_recommendations", type: "javascript" do
-  result "result"
   parameters "ds_get_turbonomic_recommendations", "ds_get_action_details", "ds_get_business_units", "param_provider", "param_turbonomic_endpoint"
+  result "result"
   code <<-EOS
     var instances = []
     var monthlySavings = 0.0
@@ -318,7 +348,7 @@ script "js_filtered_turbonomic_recommendations", type: "javascript" do
         }
         vm.savings = (Math.round(vm.savings * 730 * 1000 * (vm.uptime/100)) / 1000)
         monthlySavings = monthlySavings + vm.savings
-        vm.url = "https://" + param_turbonomic_endpoint + "/app/index.html#/view/main/action/" + vm.urlUUID
+        vm.url = "System name: " + vm.resourceName  + " || https://" + param_turbonomic_endpoint + "/app/index.html#/view/main/action/" + vm.urlUUID
         vm.resourceType = vm.currentResourceType
         instances.push(vm)
       }
@@ -328,8 +358,8 @@ EOS
 end
 
 script "js_get_stats", type: "javascript" do
+  parameters "instance","turbonomic_endpoint", "access_token"
   result "request"
-  parameters "turbonomic_endpoint", "auth_cookie", "instance"
   code <<-EOS
     var startDate = new Date(Date.now())
     var endDate = new Date(Date.now() + (9*60*60*1000))
@@ -349,15 +379,15 @@ script "js_get_stats", type: "javascript" do
       },
       headers: {
         "Content-Type": "application/json"
-        "Cookie": auth_cookie
+        "Authorization": "Bearer " + access_token
       }
     }
   EOS
 end
 
 script "js_filtered_stats", type: "javascript" do
-  result "result"
   parameters "ds_get_stats", "ds_filtered_turbonomic_recommendations"
+  result "result"
   code <<-EOS
   var monthlySavings = 0.0
   function formatNumber(number, separator) {
@@ -548,6 +578,7 @@ EOS
       end
       field "url" do
         label "System Details URL"
+        format "link-external"
       end
     end
     escalate $esc_email

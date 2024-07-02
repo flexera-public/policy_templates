@@ -1,5 +1,19 @@
 # Changelog
 
+## v4.0
+
+- Fixed bug where databases ineligible for AHUB would appear in incident
+- Added support for Elastic Pool recommendations, including automated actions
+- Several parameters altered to be more descriptive and human-readable
+- Added improved subscription, region, and tag filtering for results
+- Normalized incident export to be consistent with other policies
+- Added human-readable recommendation to incident export
+- Streamlined code for better readability and faster execution
+
+## v3.1
+
+- Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.
+
 ## v3.0
 
 - Renamed Subscription List parameter for consistency and accuracy

@@ -1,10 +1,14 @@
 # Google Inefficient Instance Utilization using StackDriver
 
-## What it does
+## Deprecated
+
+This policy is no longer being updated. The [Google Rightsize VM Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_vm_recommendations) policy is the recommended policy for getting idle and rightsize VM recommendations.
+
+## What It Does
 
 This Policy Template gathers Google StackDriver utilization for instances on 30 day intervals and resizes them after user approval.
 
-## Functional Details
+## How It Works
 
 - If APIs & Services are not enabled for a project, the policy will skip that particular project. On the next run if APIs & Services are enabled, then the project will be considered for execution.
 - This policy uses the Google API to get a list of instances and Google StackDriver for metrics for instance performance and delivers a report. If you get an **N/A** in a field you will need to install the [StackDriver Agent](https://cloud.google.com/monitoring/agent/install-agent) on the instance to get those metrics.

@@ -1,0 +1,424 @@
+name "Turbonomic Delete Unattached Volumes Recommendations Google"
+rs_pt_ver 20180301
+type "policy"
+short_description "Turbonomics policy for deleting unattached volumes [README](https://github.com/flexera-public/policy_templates/tree/master/cost/turbonomics/delete_unattached_volumes/google) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "low"
+category "Cost"
+default_frequency "daily"
+info(
+  version: "0.6.1",
+  provider: "Google",
+  source: "Turbonomic",
+  service: "Storage",
+  policy_set: "Unused Volumes",
+  recommendation_type: "Usage Reduction"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+## once functionality allows, this will contain "ALL", "AWS", "Azure Subscription", "GCP Project" and we will remove the policies from thier folders
+parameter "param_provider" do
+  type "string"
+  category "Policy Settings"
+  label "Cloud Provider"
+  description "Specifies provider where you want to get recommendations"
+  # Once we can add multiple providers, allow: "All", "AWS", "Azure Subscription", "GCP Project"
+  allowed_values "GCP Project"
+  # Once we can add multiple providers change this default value
+  default "GCP Project"
+end
+
+parameter "param_days_unattached" do
+  type "number"
+  category "Policy Settings"
+  label "Days Unattached"
+  description "The number of days a volume has been unused. The days should be greater than zero"
+  min_value 1
+  default 30
+end
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+  # No default value, user input required
+end
+
+parameter "param_turbonomic_audience" do
+  type "string"
+  category "Policy Settings"
+  label "Turbonomic instance audience"
+  description "Audience configured on the Turbonomic instance"
+  default "flexera"
+end
+
+parameter "param_turbonomic_host" do
+  type "string"
+  category "Policy Settings"
+  label "Turbonomic API Host endpoint"
+  description "Host from your Turbonomic service"
+  # No default value, user input required
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_turbonomic" do
+  schemes "basic"
+  label "Turbonomic"
+  description "Select the Turbonomic Basic Auth Credential from the list."
+  tags "provider=turbonomic"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_turbonomic" do
+  get_page_marker do
+    header "x-next-cursor"
+  end
+  set_page_marker do
+    query "cursor"
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+#get turbonomic token
+datasource "ds_get_turbonomic_token" do
+  request do
+    run_script $js_get_turbonomic_token, $param_turbonomic_host, $param_turbonomic_audience
+  end
+  result do
+    encoding "json"
+    field "access_token", jmes_path(response, "access_token")
+  end
+end
+
+#get turbonomic recommendation data
+datasource "ds_get_turbonomics_recommendations" do
+  request do
+    run_script $js_get_turbonomics_recommendations, $param_turbonomic_host, val($ds_get_turbonomic_token, "access_token")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "businessUUID", jmes_path(col_item, "target.aspects.cloudAspect.businessAccount.uuid")
+      field "vendorIDValues", jmes_path(col_item, "target.aspects.virtualDisksAspect.virtualDisks[0].businessAccount.vendorIds")
+      field "resourceGroup", jmes_path(col_item, "target.aspects.cloudAspect.resourceGroup.displayName")
+      field "resourceID", jmes_path(col_item, "target.vendorIds")
+      field "resourceName", jmes_path(col_item, "target.displayName")
+      field "region", jmes_path(col_item, "target.aspects.virtualDisksAspect.virtualDisks[0].dataCenter.displayName")
+      field "resourceType", jmes_path(col_item, "target.aspects.virtualDisksAspect.virtualDisks[0].tier")
+      field "provider", jmes_path(col_item, "target.aspects.virtualDisksAspect.virtualDisks[0].businessAccount.discoveredBy.type")
+      field "details", jmes_path(col_item, "details")
+      field "tags", jmes_path(col_item, "target.tags")
+      field "createdTime", jmes_path(col_item, "createTime")
+      field "attachmentState", jmes_path(col_item, "target.aspects.virtualDisksAspect.virtualDisks[0].attachmentState")
+      field "daysUnattached", jmes_path(col_item, "target.aspects.virtualDisksAspect.virtualDisks[0].numDaysUnattached")
+      field "stats", jmes_path(col_item, "target.aspects.virtualDisksAspect.virtualDisks[0].stats")
+      field "savings", jmes_path(col_item, "stats[0].value")
+      field "savingsCurrency", jmes_path(col_item, "stats[0].units")
+      field "actionState", jmes_path(col_item, "actionState")
+      field "disruptiveness", jmes_path(col_item, "executionCharacteristics.disruptiveness")
+      field "reversibility", jmes_path(col_item, "executionCharacteristics.reversibility")
+      field "lastVm", jmes_path(col_item, "target.aspects.virtualDisksAspect.virtualDisks[0].lastAttachedVm")
+      field "uuid", jmes_path(col_item, "uuid")
+    end
+  end
+end
+
+##this will potentially be a lot of calls. how to make this more performant
+datasource "ds_get_business_units" do
+  request do
+    run_script $js_get_business_units, $param_provider, $param_turbonomic_host, val($ds_get_turbonomic_token, "access_token")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "uuid", jmes_path(col_item, "uuid")
+      field "accountID", jmes_path(col_item, "accountId")
+      field "displayName", jmes_path(col_item, "displayName")
+    end
+  end
+end
+
+datasource "ds_filtered_turbonomics_recommendations" do
+  run_script $js_filtered_turbonomics_recommendations, $ds_get_turbonomics_recommendations, $ds_get_business_units, $param_days_unattached, $param_provider, $param_turbonomic_host
+end
+
+##script retrieves an OAuth2 token from the Turbonomic API
+script "js_get_turbonomic_token", type: "javascript" do
+  parameters "turbonomic_endpoint", "audience"
+  result "request"
+  code <<-EOS
+    var request = {
+      verb: "POST",
+      auth: "auth_turbonomic"
+      host: turbonomic_endpoint,
+      path: "/oauth2/token",
+      headers: {
+      "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: "grant_type=client_credentials" + "&audience=" + audience + "&scope=role:OBSERVER"
+
+    }
+EOS
+end
+
+##script using acquired turbonomic token and pulls hard coded unused volume data
+script "js_get_turbonomics_recommendations", type: "javascript" do
+  parameters "param_turbonomic_host", "access_token"
+  result "request"
+  code <<-EOS
+    var request = {
+      verb: "POST",
+      pagination: "pagination_turbonomic",
+      host: param_turbonomic_host,
+      path: "/api/v3/markets/Market/actions",
+      body_fields: {
+        "actionStateList": ["READY", "ACCEPTED", "QUEUED", "IN_PROGRESS"],
+        "actionTypeList":["DELETE"],
+        "relatedEntityTypes":["VirtualVolume"],
+        "environmentType":"CLOUD",
+        "detailLevel":"EXECUTION",
+        "costType":"SAVING"
+      },
+      query_params: {
+        "limit": '100'
+      },
+      headers: {
+        "Content-Type": "application/json"
+        "Authorization": "Bearer " + access_token
+      }
+    }
+EOS
+end
+
+## verified that discovered is the only one we need
+script "js_get_business_units", type: "javascript" do
+  parameters "param_provider", "param_turbonomic_host", "access_token"
+  result "request"
+  code <<-EOS
+    var providers = {
+      "AWS":"AWS",
+      "Azure Subscription":"AZURE",
+      "GCP Project": "GCP",
+    }
+    var request = {
+      verb: "GET",
+      host: param_turbonomic_host,
+      path: "/api/v3/businessunits",
+      query_params: {
+        "cloud_type": providers[param_provider],
+        "type":"DISCOVERED"
+      },
+      headers: {
+        "Content-Type": "application/json"
+        "Authorization": "Bearer " + access_token
+      }
+    }
+EOS
+end
+
+script "js_filtered_turbonomics_recommendations", type: "javascript" do
+  parameters "ds_get_turbonomics_recommendations", "ds_get_business_units", "param_days_unattached", "param_provider", "param_turbonomic_host"
+  result "result"
+  code <<-EOS
+    instances = []
+    monthlySavings = 0.0
+    function formatNumber(number, separator){
+    var numString =number.toString()
+    var values=numString.split(".")
+    var result = ''
+    while (values[0].length > 3){
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      result = separator + chunk + result
+    }
+    if (values[0].length > 0){
+      result = values[0] + result
+    }
+    if(values[1]==undefined){
+      return result
+    }
+    return result+"."+values[1]
+    }
+    _.each(ds_get_business_units, function(businessUnit) {
+      _.each(ds_get_turbonomics_recommendations, function(volume, index){
+        if (volume.businessUUID === businessUnit.uuid) {
+          ds_get_turbonomics_recommendations[index].accountID = businessUnit.accountID
+          ds_get_turbonomics_recommendations[index].accountName = businessUnit.displayName
+        }
+      })
+    })
+    var provider_service = {
+      "AWS": "EBS",
+      "Azure Subscription": "Disk Storage",
+      "GCP Project": "Persistent Disk"
+    }
+    _.each(ds_get_turbonomics_recommendations, function(volume){
+      if (volume.attachmentState == "UNATTACHED" && volume.daysUnattached > param_days_unattached && (volume.provider === param_provider || param_provider === "ALL")) {
+        if (typeof volume.savingsCurrency != "undefined" && volume.savingsCurrency != null) {
+          if (volume.savingsCurrency.indexOf("$") != -1) {
+            volume.savingsCurrency = "$"
+          }
+        } else {
+          volume.savingsCurrency = "$"
+        }
+        _.each(volume.stats, function(stat){
+          if (stat.name === "StorageAmount") {
+            volume.size = stat.capacity.total
+          }
+          if(stat.name === "StorageAccess") {
+            volume.iops = stat.capacity.total
+          }
+        })
+        tags = []
+        if (typeof volume.tags === "undefined" || volume.tags === null){
+          volume.tags = tags
+        }else{
+          Object.keys(volume['tags']).forEach(function(key) {
+            tags.push(key+'='+volume['tags'][key][0])
+          });
+        }
+        volume.tags = tags
+        Object.keys(volume.resourceID).forEach(function(key) {
+          volume.resourceID = volume.resourceID[key]
+          return
+        });
+        volume.service = provider_service[volume.provider]
+        savingsString = ""
+        if (typeof volume.savings === "undefined" || volume.savings === null || volume.savings === "" || isNaN(volume.savings)) {
+          volume.savings = 0.0
+        }
+        volume.savings = (Math.round(volume.savings * 730 * 1000) / 1000)
+        monthlySavings = monthlySavings + volume.savings
+        volume.url = "System name: " + volume.resourceName  + " || https://" + param_turbonomic_host + "/app/index.html#/view/main/action/" + volume.uuid
+        instances.push(volume)
+      }
+    })
+    message = ""
+    if (instances.length != 0) {
+      pretty_savings = instances[0].savingsCurrency + ' ' + formatNumber(monthlySavings.toFixed(2), ",")
+      message = "The total estimated monthly savings are " + pretty_savings + '.'
+    }
+    result = {
+      'instances': instances,
+      'message': message
+    }
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_turbonomics_unused_volumes" do
+  validate $ds_filtered_turbonomics_recommendations do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} Turbonomic Unattached Volumes found"
+    detail_template <<-EOS
+## Turbonomic Unattached Volumes
+{{data.message}}
+EOS
+    check eq(size(val(data, "instances")), 0)
+    export "instances" do
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "savings" do
+        label "Savings"
+      end
+      field "details" do
+        label "Recommendation Details"
+      end
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "provider" do
+        label "Cloud Provider"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "tags" do
+        label "Tags"
+      end
+      field "actionCreatedTime" do
+        label "Action Created Time"
+        path "createdTime"
+      end
+      field "state" do
+        label "State"
+        path "attachmentState"
+      end
+      field "daysUnattached" do
+        label "Days Unattached"
+      end
+      field "id" do
+        label "Resource ID"
+        path "resourceID"
+      end
+      field "iops" do
+        label "Provisioned IOPs"
+      end
+      field "size" do
+        label "Size (GB)"
+      end
+      field "lastVm" do
+        label "Last VM"
+      end
+      field "actionState" do
+        label "Action State"
+      end
+      field "disruptiveness" do
+        label "Disruptiveness"
+      end
+      field "reversibility" do
+        label "Reversibility"
+      end
+      field "url" do
+        label "System Details URL"
+        format "link-external"
+      end
+    end
+    escalate $esc_email
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end

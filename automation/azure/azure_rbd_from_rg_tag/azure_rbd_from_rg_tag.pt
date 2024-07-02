@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "1.0",
+  version: "1.2",
   provider: "Flexera",
   service: "Optima",
   policy_set: "Automation",
@@ -22,6 +22,13 @@ parameter "param_tag_list" do
   type "list"
   label "Tag Keys"
   description "A list of Azure account tag keys to build Rule-Based Dimensions from"
+end
+
+parameter "param_name_list" do
+  type "list"
+  label "Dimension Names"
+  description "A list of names to give the Rule-Based Dimensions in the Flexera platform. Enter names in the same order as the tag keys in the 'Tag Keys' field. Dimension names will be derived from tag keys directly if this list is left empty."
+  default []
 end
 
 parameter "param_effective_date" do
@@ -99,8 +106,10 @@ datasource "ds_azure_subscriptions" do
     pagination $pagination_azure
     host "management.azure.com"
     path "/subscriptions/"
-    query "api-version","2018-06-01"
+    query "api-version", "2018-06-01"
     header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
@@ -118,8 +127,9 @@ datasource "ds_azure_subscriptions_with_tags" do
     pagination $pagination_azure
     host "management.azure.com"
     path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Resources/tags/default"])
-    query "api-version","2021-04-01"
+    query "api-version", "2021-04-01"
     header "User-Agent", "RS Policies"
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
@@ -167,6 +177,7 @@ datasource "ds_azure_resource_groups" do
     path join(["/subscriptions/", val(iter_item, "id"), "/resourcegroups"])
     query "api-version", "2021-04-01"
     header "User-Agent", "RS Policies"
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
@@ -212,21 +223,26 @@ EOS
 end
 
 datasource "ds_rbds" do
-  run_script $js_rbds, $ds_azure_resource_groups_normalized, $ds_azure_subscriptions_normalized, $ds_existing_rbds, $param_tag_list, $param_effective_date, $param_subscription_fallback
+  run_script $js_rbds, $ds_azure_resource_groups_normalized, $ds_azure_subscriptions_normalized, $ds_existing_rbds, $param_name_list, $param_tag_list, $param_effective_date, $param_subscription_fallback
 end
 
 script "js_rbds", type: "javascript" do
-  parameters "rgs", "accounts", "existing_rbds", "param_tag_list", "param_effective_date", "param_subscription_fallback"
+  parameters "rgs", "accounts", "existing_rbds", "param_name_list", "param_tag_list", "param_effective_date", "param_subscription_fallback"
   result "result"
   code <<-'EOS'
   result = []
 
   rbd_id_list = _.pluck(existing_rbds, 'id')
 
-  _.each(param_tag_list, function(tag) {
-    rbd_id = "rbd_" + tag.toLowerCase().replace(/\s+/g, '').replace(/\W/g, "").replace('.', '').replace('-', '').trim()
+  _.each(param_tag_list, function(tag, index) {
     rbd_name = tag.replace('.', ' ').replace('-', ' ')
     rbd_name = rbd_name.replace(/\W/g, " ").trim()
+
+    // Use user-specified name instead of user provided one
+    if (param_tag_list.length == param_name_list.length) { rbd_name = param_name_list[index] }
+
+    rbd_id = "rbd_" + rbd_name.toLowerCase().replace(/\s+/g, '').replace(/\W/g, "").replace('.', '').replace('-', '').trim()
+
     tag_key = tag.toLowerCase().trim()
     verb = "POST"
 

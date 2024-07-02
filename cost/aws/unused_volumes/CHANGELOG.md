@@ -1,5 +1,26 @@
 # Changelog
 
+## v8.2.0
+
+- Modified internal names for incident fields for more accurate scraping into Optimization dashboard
+- Deprecated: This policy is no longer being updated.
+
+## v8.1
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
+## v8.0
+
+- Added support for regex when filtering resources by tag
+
+## v7.4
+
+- Policy action error logging modernized and now works as expected in EU/APAC
+
+## v7.3
+
+- Corrected API issue when executing policy in APAC
+
 ## v7.2
 
 - Updated description of `Account Number` parameter
@@ -115,19 +136,16 @@
 
 ## v2.16
 
-- Increase the sleep time between calls to AWS for snapshot status in order to decrease the likelihood of hitting
-  a Cloud Workflow event limit
+- Increase the sleep time between calls to AWS for snapshot status in order to decrease the likelihood of hitting a Cloud Workflow event limit
 
 ## v2.15
 
 - Improve error handling and debug logging so that errors from taking action are actually surfaced
-- Add a `param_log_to_cm_audit_entries` parameter to control whether action debug logging is sent to CM Audit
-  Entries; this should be left set to No on Flexera EU
+- Add a `param_log_to_cm_audit_entries` parameter to control whether action debug logging is sent to CM Audit Entries; this should be left set to No on Flexera EU
 
 ## v2.14
 
-- Add a parameter to override the Flexera One org ID to use when querying Optima for cases when the project is not
-  in the same org where the AWS bill is registered in Optima
+- Add a parameter to override the Flexera One org ID to use when querying Optima for cases when the project is not in the same org where the AWS bill is registered in Optima
 
 ## v2.13
 
@@ -147,8 +165,7 @@
 
 ## v2.9
 
-- Use `DescribeVolumes` instead of `DescribeRegions` to more accurately check if the call is enabled by the
-  Service Control Policy in each region
+- Use `DescribeVolumes` instead of `DescribeRegions` to more accurately check if the call is enabled by the Service Control Policy in each region
 
 ## v2.8
 

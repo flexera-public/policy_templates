@@ -1,5 +1,38 @@
 # Changelog
 
+## v5.2.0
+
+- New `Exclude Stopped Virtual Machines` parameter to filter stopped virtual machines from results
+- New `Exclude Databricks` parameter to filter Azure Databricks virtual machines from results
+- `Power State` field added to results to indicate whether a virtual machine is running or stopped
+- Fields related to the image the virtual machine was created with added to results
+- Idle Virtual Machines incident now includes a `Recommended Instance Size` field with a value of `Delete Virtual Machine` for ease of analyzing recommendations from the Flexera Optimization dashboard
+- Added warning about invalid Databricks recommendations to incident description if `Exclude Databricks` parameter is set to `No`
+- Fixed issue that would cause downsize actions to fail
+
+## v5.1
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
+## v5.0
+
+- Added support for regex when filtering resources by tag
+
+## v4.1
+
+- Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.
+
+## v4.0
+
+- Fixed issue with resource count in incident subject being off by 1
+- Fixed minor grammar issue if results only include 1 item
+- Renamed policy actions to make it clear whether they are for underutilized or idle instances
+- Added ability to filter resources by tag key via wildcard
+- Added option to power off idle instances
+- Added ability to indicate whether to do a graceful or forced shutdown when powering off instances
+- Improved code related to incident export
+- Updated and improved code for policy actions
+
 ## v3.3
 
 - Added ability to filter resources by region

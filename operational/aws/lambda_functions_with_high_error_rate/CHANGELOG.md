@@ -1,5 +1,25 @@
 # Changelog
 
+## v5.0.0
+
+- Several parameters altered to be more descriptive and human-readable
+- Added ability to filter resources by multiple tag key:value pairs and using regex
+- Added ability to specify how many hours back to gather error data for
+- Policy now uses more efficient and modern method for gathering error data
+- Added additional context to incident description
+- Normalized incident export to be consistent with other policies
+- Added additional fields to incident export for added context
+- Policy no longer raises new escalations if inconsequential metadata has changed
+- Streamlined code for better readability and faster execution
+
+## v4.2.1
+
+- Added default value for parameters that do not require user input
+
+## v4.2
+
+- Changed internal name of escalation code to ensure "Meta Policy" works as expected
+
 ## v4.1
 
 - Updated description of `Account Number` parameter

@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.3.1
+
+- Added `deprecated` field to policy metadata. Functionality is unchanged.
+
+## v0.3
+
+- fixed link to README in policy description
+
 ## v0.2
 
 - Changed service metadata to "Compute" to ensure proper incident scraping

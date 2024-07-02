@@ -1,79 +1,245 @@
-name "GitHub.com Repository Branches without Protection"
+name "GitHub Repository Branches Without Protection"
 rs_pt_ver 20180301
-short_description "Gets the repositories under a list of GitHub.com Organizations and creates incidents for any that do not have protection enabled for selected branches.  See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/github/repository_branch_protection) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+type "policy"
+short_description "Gets the repositories under a list of GitHub Organizations and creates incidents for any that do not have protection enabled for selected branches.  See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/github/repository_branch_protection) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "medium"
 category "Compliance"
+default_frequency "weekly"
 info(
-  version: "2.5",
+  version: "3.0.0",
   provider: "GitHub",
-  service: "",
+  service: "Git",
   policy_set: ""
 )
 
+###############################################################################
+# Parameters
+###############################################################################
+
 parameter "param_email" do
   type "list"
-  label "Email addresses of the recipients you wish to notify"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
 end
 
 parameter "param_orgs" do
   type "list"
-  label "Organizations on GitHub.com to scan"
+  category "Policy Settings"
+  label "GitHub Organizations"
+  description "A list of GitHub Organizations to check."
+  # No default value, user input required
+end
+
+parameter "param_repos_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny GitHub Repositories"
+  description "Allow or Deny entered Github repositories. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_repos_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny GitHub Repositories List"
+  description "A list of allowed or denied Github repositories. See the README for more details."
+  default []
 end
 
 parameter "param_branches" do
   type "list"
-  label "Git branches that should be protected"
+  category "Policy Settings"
+  label "Protected Branches"
+  description "GitHub branches that should be protected."
   default ["master"]
 end
 
 parameter "param_include_default_branch" do
   type "string"
-  label "Protect default branch"
-  default "true"
-  allowed_values ["false","true"]
+  category "Policy Settings"
+  label "Protect Default Branch"
+  description "Whether the default branch should be protected or not."
+  allowed_values "Yes", "No"
+  default "Yes"
 end
 
-parameter "param_whitelist" do
-  type "list"
-  label "Git org/repo(s) that are whitelisted from this policy"
-end
-
-parameter "param_enforce_admins" do
+parameter "param_action_enforce_admins" do
   type "string"
-  label "Protection Option: Enforce all configured restrictions for administrators. Set to true to enforce required status checks for repository administrators. Set to null to disable."
-  default "false"
-  allowed_values ["false","true"]
+  category "Actions"
+  label "Enforce Restrictions On Admins"
+  description "When protecting branches, whether to enforce all configured restrictions for administrators."
+  allowed_values "Yes", "No"
+  default "No"
 end
 
-parameter "param_required_pull_request_reviews" do
+parameter "param_action_required_reviews" do
+  type "number"
+  category "Actions"
+  label "Required Reviews (#)"
+  description "When protecting branches, number of approving reviews to require on a pull request before merging. Set to '0' to disable this requirement."
+  min_value 0
+  max_value 5
+  default 1
+end
+
+parameter "param_action_require_owner_review" do
   type "string"
-  label "Protection Option: Require at least one approving review on a pull request, before merging. Set to null to disable."
-  default "1"
-  allowed_values ["1","2","3","4","5","null"]
+  category "Actions"
+  label "Require Code Owner Review"
+  description "When protecting branches, whether to require the code owner perform a review before merging."
+  allowed_values "Yes", "No"
+  default "No"
+end
+
+parameter "param_action_dismiss_stale_reviews" do
+  type "string"
+  category "Actions"
+  label "Dismiss Stale Reviews"
+  description "When protecting branches, whether to dismiss stale reviews."
+  allowed_values "Yes", "No"
+  default "No"
 end
 
 parameter "param_automatic_action" do
   type "list"
+  category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
   allowed_values ["Protect Branches"]
+  default []
 end
+
+###############################################################################
+# Authentication
+###############################################################################
 
 credentials "auth_github" do
   schemes "api_key"
   label "GitHub"
-  description "Select the Github Credential from the list."
+  description "Select the GitHub Credential from the list."
   tags "provider=github"
 end
 
-pagination "github_pagination" do
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_github" do
   get_page_marker do
-    body_path jq(response, 'if .data.search.pageInfo.hasNextPage then "{ \"currentCursor\" :\"" + .data.search.pageInfo.endCursor + "\" }" else null end')
+    header "Link"
   end
   set_page_marker do
-    body_field "variables"
+    uri true
   end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_org_list" do
+  run_script $js_org_list, $param_orgs
+end
+
+script "js_org_list", type: "javascript" do
+  parameters "param_orgs"
+  result "result"
+  code "result = param_orgs"
+end
+
+datasource "ds_github_orgs" do
+  iterate $ds_org_list
+  request do
+    auth $auth_github
+    pagination $pagination_github
+    host "api.github.com"
+    path join(["/orgs/", iter_item])
+    header "X-GitHub-Api-Version", "2022-11-28"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "name", jmes_path(response, "login")
+    field "company", jmes_path(response, "company")
+    field "blog", jmes_path(response, "blog")
+    field "location", jmes_path(response, "location")
+    field "email", jmes_path(response, "email")
+    field "html_url", jmes_path(response, "html_url")
+    field "created_at", jmes_path(response, "created_at")
+    field "type", jmes_path(response, "type")
+  end
+end
+
+datasource "ds_github_org_repos" do
+  iterate $ds_github_orgs
+  request do
+    auth $auth_github
+    pagination $pagination_github
+    host "api.github.com"
+    path join(["/orgs/", val(iter_item, "name"), "/repos"])
+    header "X-GitHub-Api-Version", "2022-11-28"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "full_name", jmes_path(col_item, "full_name")
+      field "html_url", jmes_path(col_item, "html_url")
+      field "description", jmes_path(col_item, "description")
+      field "default_branch", jmes_path(col_item, "default_branch")
+      field "created_at", jmes_path(col_item, "created_at")
+      field "org_id", val(iter_item, "id")
+      field "org_name", val(iter_item, "name")
+      field "org_company", val(iter_item, "company")
+      field "org_blog", val(iter_item, "blog")
+      field "org_location", val(iter_item, "location")
+      field "org_email", val(iter_item, "email")
+      field "org_url", val(iter_item, "html_url")
+      field "org_created_at", val(iter_item, "created_at")
+    end
+  end
+end
+
+datasource "ds_github_org_repos_filtered" do
+  run_script $js_github_org_repos_filtered, $ds_github_org_repos, $param_repos_allow_or_deny, $param_repos_list
+end
+
+script "js_github_org_repos_filtered", type: "javascript" do
+  parameters "ds_github_org_repos", "param_repos_allow_or_deny", "param_repos_list"
+  result "result"
+  code <<-EOS
+  if (param_repos_list.length > 0) {
+    result = _.filter(ds_github_org_repos, function(repo) {
+      include_repo = _.contains(param_repos_list, repo['name'])
+      if (param_repos_allow_or_deny == "Deny") { include_repo = !include_repo }
+      return include_repo
+    })
+  } else {
+    result = ds_github_org_repos
+  }
+EOS
 end
 
 datasource "ds_github_query" do
@@ -81,76 +247,69 @@ datasource "ds_github_query" do
 end
 
 script "js_github_query", type: "javascript" do
-  parameters "orgNames", "branches"
+  parameters "param_orgs", "param_branches"
   result "result"
   code <<-EOS
-  var query = 'query getRepositories($currentCursor: String) { \
-    search(query: "%orgNames% archived:false", type: REPOSITORY, first: 100, after: $currentCursor) { \
-      edges { \
-        node { \
-          ... on Repository { \
-            id \
-            name \
-            nameWithOwner \
-            owner { \
-              login \
-            } \
-            defaultBranchRef { \
-              ...brancheData \
-            } \
-            %branches% \
-          } \
-        } \
-      } \
-      pageInfo { \
-        endCursor \
-        hasNextPage \
-      } \
-    } \
-    rateLimit { \
-      limit \
-      cost \
-      remaining \
-      resetAt \
-    } \
-  } \
-  fragment brancheData on Ref { \
-    name \
-    branchProtectionRule { \
-      pattern \
-      isAdminEnforced \
-      requiredApprovingReviewCount \
-      dismissesStaleReviews \
-      requiresCodeOwnerReviews \
-    } \
-  }';
+  org_names = _.map(param_orgs, function(org) { return 'org:' + org }).join(' ')
 
-  var org_names_string = "";
-  _.each(orgNames, function(org) {
-    org_names_string = org_names_string + " org:" + org;
-  });
+  branch_names = _.map(param_branches, function(branch) {
+    return branch + ': refs(first: 100, refPrefix: "refs/heads/", query: "' + branch + '") { nodes { ...brancheData } }'
+  }).join(' ')
 
-  var branches_string = " ";
+  string = 'query getRepositories($currentCursor: String) { '
+  string += '  search(query: "' + org_names + ' archived:false", type: REPOSITORY, first: 100, after: $currentCursor) { '
+  string += '    edges { '
+  string += '      node { '
+  string += '        ... on Repository { '
+  string += '          id '
+  string += '          name '
+  string += '          nameWithOwner '
+  string += '          owner { '
+  string += '            login '
+  string += '          } '
+  string += '          defaultBranchRef { '
+  string += '            ...brancheData '
+  string += '          } '
+  string += '          ' + branch_names + ' '
+  string += '        } '
+  string += '      } '
+  string += '    } '
+  string += '    pageInfo { '
+  string += '      endCursor '
+  string += '      hasNextPage '
+  string += '    } '
+  string += '  } '
+  string += '  rateLimit { '
+  string += '    limit '
+  string += '    cost '
+  string += '    remaining '
+  string += '    resetAt '
+  string += '  } '
+  string += '} '
+  string += 'fragment brancheData on Ref { '
+  string += '  name '
+  string += '  branchProtectionRule { '
+  string += '    pattern '
+  string += '    isAdminEnforced '
+  string += '    requiredApprovingReviewCount '
+  string += '    dismissesStaleReviews '
+  string += '    requiresCodeOwnerReviews '
+  string += '  } '
+  string += '}'
 
-  var branch_template = ' %branch%: refs(first: 100, refPrefix: "refs/heads/", query: "%branch%") { nodes { ...brancheData } } ';
-
-  _.each(branches, function(branch) {
-    branches_string = branches_string + branch_template.replace("%branch%", branch).replace("%branch%", branch);
-  });
-
-  var result = [query.replace("%orgNames%", org_names_string).replace("%branches%", branches_string)]
-
+  result = [ string ]
 EOS
 end
 
-datasource "ds_github_repos" do
-  iterate $ds_github_query # always one item
+datasource "ds_github_queried_repos" do
+  iterate $ds_github_query
   request do
     auth $auth_github
+    pagination $pagination_github
     verb "POST"
-    pagination $github_pagination
     host "api.github.com"
-    path "graphql"
+    path "/graphql"
+    header "X-GitHub-Api-Version", "2022-11-28"
     body_field "query", iter_item
   end
   result do
@@ -167,140 +326,219 @@ datasource "ds_github_repos" do
   end
 end
 
-datasource "ds_invalid_repo_branches" do
-    run_script $js_invalid_repo_branches, $ds_github_repos, $param_whitelist, $param_branches, $param_include_default_branch
+datasource "ds_github_repos_combined" do
+  run_script $js_github_repos_combined, $ds_github_org_repos_filtered, $ds_github_queried_repos, $ds_applied_policy
 end
 
-script "js_invalid_repo_branches", type: "javascript" do
-    parameters "repos", "param_whitelist", "branches", "include_default_branch"
-    result "invalid_repos_branches"
-    code <<-EOS
-var invalid_repos_branches = [];
+script "js_github_repos_combined", type: "javascript" do
+  parameters "ds_github_org_repos_filtered", "ds_github_queried_repos", "ds_applied_policy"
+  result "result"
+  code <<-EOS
+  good_repo_object = _.groupBy(ds_github_org_repos_filtered, 'full_name')
 
-_.each(repos, function(repo) {
-  if(!_.contains(param_whitelist, repo.full_name)) {
-    if (include_default_branch == "true" && repo.default_branch != null && repo.branch_protection_rule == null) {
-      var i_repo = {};
-      i_repo.id = repo.id;
-      i_repo.full_name = repo.full_name;
-      i_repo.branch_name = repo.default_branch;
-      i_repo.repo_org = repo.owner;
-      i_repo.repo_name = repo.name;
+  good_queried_repos = _.filter(ds_github_queried_repos, function(repo) {
+    return _.contains(_.keys(good_repo_object), repo['full_name'])
+  })
 
-      invalid_repos_branches.push(i_repo);
+  result = _.map(good_queried_repos, function(repo) {
+    return {
+      org_id: good_repo_object[repo['full_name']][0]['org_id'],
+      org_name: good_repo_object[repo['full_name']][0]['org_name'],
+      org_company: good_repo_object[repo['full_name']][0]['org_company'],
+      org_blog: good_repo_object[repo['full_name']][0]['org_blog'],
+      org_location: good_repo_object[repo['full_name']][0]['org_location'],
+      org_email: good_repo_object[repo['full_name']][0]['org_email'],
+      org_url: good_repo_object[repo['full_name']][0]['org_url'],
+      org_created_at: good_repo_object[repo['full_name']][0]['org_created_at'],
+      repo_html_url: good_repo_object[repo['full_name']][0]['html_url'],
+      repo_description: good_repo_object[repo['full_name']][0]['description'],
+      repo_created_at: good_repo_object[repo['full_name']][0]['created_at'],
+      repo_id: repo['id'],
+      repo_name: repo['name'],
+      repo_full_name: repo['full_name'],
+      repo_default_branch: repo['default_branch'],
+      repo_owner: repo['owner'],
+      repo_branch_protection_rule: repo['branch_protection_rule'],
+      repo_full_data: repo['full_data'],
+      policy_name: ds_applied_policy['name']
     }
-
-    _.each(branches, function(branch) {
-      if(branch != repo.default_branch) {
-        _.each(repo.full_data[branch].nodes, function(item) {
-          if(item.name == branch && item.branchProtectionRule == null) {
-            var i_repo = {};
-            i_repo.id = repo.id;
-            i_repo.full_name = repo.full_name;
-            i_repo.branch_name = branch;
-            i_repo.repo_org = repo.owner;
-            i_repo.repo_name = repo.name;
-
-            invalid_repos_branches.push(i_repo);
-          }
-        });
-      }
-    });
-  }
-});
-
+  })
 EOS
 end
 
-policy "invalid_repos" do
-  validate $ds_invalid_repo_branches do
-    summary_template "GitHub.com Unprotected Branches Report"
-    check eq(size(data), 0)
-    escalate $email_report
-    escalate $github_repos_branch_add_protection
-    #### Policy Organization(s): {{  parameters.param_orgs }}
-    #### Policy Branches: {{  parameters.param_branches }}
+datasource "ds_invalid_repo_branches" do
+  run_script $js_invalid_repo_branches, $ds_github_repos_combined, $param_branches, $param_include_default_branch
+end
+
+script "js_invalid_repo_branches", type: "javascript" do
+  parameters "ds_github_repos_combined", "param_branches", "param_include_default_branch"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  _.each(ds_github_repos_combined, function(repo) {
+    if (param_include_default_branch == 'Yes' && repo['repo_default_branch'] != null && repo['repo_branch_protection_rule'] == null) {
+      invalid_branch = repo
+      invalid_branch['id'] = repo['repo_default_branch']
+      invalid_branch['default'] = 'True'
+      invalid_branch['branch_link'] = 'Branch||https://github.com/' + repo['full_name'] + '/tree/' + repo['repo_default_branch']
+      result.push(invalid_branch)
+    }
+
+    _.each(param_branches, function(branch) {
+      if (branch != repo['repo_default_branch'] && repo['repo_full_data'][branch] != undefined) {
+        _.each(repo['repo_full_data'][branch]['nodes'], function(item) {
+          if (item['name'] == branch && item['branchProtectionRule'] == null) {
+            invalid_branch = repo
+            invalid_branch['id'] = branch
+            invalid_branch['default'] = 'False'
+            invalid_branch['branch_link'] = 'Branch||https://github.com/' + repo['full_name'] + '/tree/' + branch
+            result.push(invalid_branch)
+          }
+        })
+      }
+    })
+  })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_invalid_repo_branches" do
+  validate_each $ds_invalid_repo_branches do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} GitHub Repository Branches Without Protection Found"
+    check eq(val(item, "id"), "")
+    escalate $esc_email
+    escalate $esc_protect_branches
     export do
       resource_level true
-      field "full_name" do
-        label "Organization / Repository"
-      end
-      field "branch_name" do
-        label "Unprotected Branch"
-      end
       field "id" do
-        label "Id"
-      end
-      field "repo_org" do
-        label "Repository Organization"
+        label "Branch"
       end
       field "repo_name" do
-        label "Repository Name"
+        label "Repository"
+      end
+      field "repo_description" do
+        label "Repository Description"
+      end
+      field "repo_owner" do
+        label "Repository Owner"
+      end
+      field "org_name" do
+        label "Organization"
+      end
+      field "default" do
+        label "Default Branch"
+      end
+      field "branch_link" do
+        label "Link"
+        format "link-external"
       end
     end
   end
 end
 
-escalation "email_report" do
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
   email $param_email
 end
 
-escalation "github_repos_branch_add_protection" do
+escalation "esc_protect_branches" do
   automatic contains($param_automatic_action, "Protect Branches")
-  label "Add Branch Protection"
-  description "All selected branches will be updated with protection rules"
-  run "github_repos_branch_add_protection", data, $param_enforce_admins, $param_required_pull_request_reviews
+  label "Protect Branches"
+  description "Approval to enable protection rules for all selected branches"
+  run "protect_branches", data, $param_action_enforce_admins, $param_action_required_reviews, $param_action_require_owner_review, $param_action_dismiss_stale_reviews
 end
 
-define github_repos_branch_add_protection($data, $param_enforce_admins, $param_required_pull_request_reviews) do
-  foreach $item in $data do
-    task_label( join(["Updating branch protection for ",$item['repo_org'],"/",$item['repo_name'],":",$item['default_branch']]) )
-    call github_repo_branch_protection_update($item['repo_org'],$item['repo_name'],$item['default_branch'],$param_enforce_admins, $param_required_pull_request_reviews) retrieve $github_repo_branch_protection_update_response
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define protect_branches($data, $param_action_enforce_admins, $param_action_required_reviews, $param_action_require_owner_review, $param_action_dismiss_stale_reviews) return $all_responses do
+  $$all_responses = []
+
+  foreach $branch in $data do
+    sub on_error: handle_error() do
+      call protect_branch($branch, $param_action_enforce_admins, $param_action_required_reviews, $param_action_require_owner_review, $param_action_dismiss_stale_reviews) retrieve $protect_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
   end
 end
 
-define github_repo_branch_protection_update($owner, $repo, $branch, $enforce_admins, $required_pull_request_reviews) return $response do
-  $enforce_admins = to_b($enforce_admins)
-  if $required_pull_request_reviews == "null"
-    $required_pull_request_reviews = null
-  else
-    $required_pull_request_reviews = to_n($required_pull_request_reviews)
+define protect_branch($branch, $param_action_enforce_admins, $param_action_required_reviews, $param_action_require_owner_review, $param_action_dismiss_stale_reviews) return $response do
+  $host = "api.github.com"
+  $full_id = $branch["org_name"] + "/" + $branch["repo_name"] + "/branches/" + $branch["id"]
+  $href = "/repos/" + $full_id + "/protection"
+  $url = $host + $href
+  task_label("PUT " + $url)
+
+  $enforce_admins = false
+  if $param_action_enforce_admins == "Yes"
+    $enforce_admins = true
   end
 
-  $attempt_count = 0
-  $response = { "code": 0 }
-  while $response["code"] != 200 && $attempt_count < 5 do
-    sleep($attempt_count * 1)
-    task_label("Attempting update branch protection for "+ join(["/repos/",$owner,"/",$repo,"/branches/",$branch,"/protection"]))
-    $response = http_request(
-      auth: $$auth_github,
-      https: true,
-      verb: "put",
-      host: "api.github.com",
-      href: join(["/repos/",$owner,"/",$repo,"/branches/",$branch,"/protection"]),
-      headers: {
-        "Accept": "application/vnd.github.luke-cage-preview+json"
+  $required_reviews = $param_action_required_reviews
+  if $required_reviews == 0
+    $required_reviews = null
+  end
+
+  $require_owner_review = false
+  if $param_action_require_owner_review == "Yes"
+    $require_owner_review = true
+  end
+
+  $dismiss_stale_reviews = false
+  if $param_action_dismiss_stale_reviews == "Yes"
+    $dismiss_stale_reviews = true
+  end
+
+  $response = http_request(
+    auth: $$auth_github,
+    https: true,
+    verb: "put",
+    host: $host,
+    href: $href,
+    headers: { "X-GitHub-Api-Version": "2022-11-28" },
+    body: {
+      "required_status_checks": null,
+      "enforce_admins": $enforce_admins,
+      "required_pull_request_reviews": {
+        "dismissal_restrictions": {},
+        "dismiss_stale_reviews": $dismiss_stale_reviews,
+        "require_code_owner_reviews": $require_owner_review,
+        "required_approving_review_count": $required_reviews
       },
-      body: {
-        "required_status_checks":         null,
-        "enforce_admins":                 $enforce_admins,
-        "required_pull_request_reviews":  {
-          "dismissal_restrictions":           {},
-          "dismiss_stale_reviews":            false,
-          "require_code_owner_reviews":       false,
-          "required_approving_review_count":  $required_pull_request_reviews
-        },
-        "restrictions":                   null
-      }
-    )
-    $attempt_count = $attempt_count +1
-  end
-  if $response["code"] == 200
-    task_label("Completed update branch protection for "+ join(["/repos/",$owner,"/",$repo,"/branches/",$branch,"/protection"]))
+      "restrictions": null
+    }
+  )
+
+  task_label("Put GitHub Branch response: " + $full_id + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response putting GitHub Branch: "+ $full_id + " " + to_json($response)
   else
-    raise "unexpected response code trying update branch protection for "+join(["/repos/",$owner,"/",$repo,"/branches/",$branch,"/protection"])+": "+to_json($response)
+    task_label("Put GitHub Branch successful: " + $full_id)
   end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
 end

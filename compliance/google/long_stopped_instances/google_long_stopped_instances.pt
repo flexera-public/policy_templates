@@ -1,14 +1,14 @@
-name "Google Long-stopped instances"
+name "Google Long Stopped VM Instances"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report on any google instances that have been stopped for a long time with the option to Terminate them. \n See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/google/long_stopped_instances) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Report on any Google VM instances that have been stopped for a long time with the option to delete them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/google/long_stopped_instances) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Compliance"
 severity "low"
-default_frequency "daily"
+default_frequency "weekly"
 info(
-  version: "2.7",
-  provider: "GCE",
+  version: "4.0",
+  provider: "Google",
   service: "Compute",
   policy_set: "Long Stopped Instances"
 )
@@ -19,34 +19,86 @@ info(
 
 parameter "param_email" do
   type "list"
-  label "Email List"
-  description "Email addresses of the recipients you wish to notify"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
 end
 
-parameter "param_exclude_tags" do
+parameter "param_projects_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Projects"
+  description "Allow or Deny entered Projects. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_projects_list" do
   type "list"
-  label "Tags to ignore"
-  description "List of tags(Key or Key, value mentioned in object metadata.) that will exclude objects from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'"
+  category "Filters"
+  label "Allow/Deny Projects List"
+  description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+parameter "param_exclusion_labels" do
+  type "list"
+  category "Filters"
+  label "Exclusion Labels"
+  description "Cloud native labels to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_labels_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Labels: Any / All"
+  description "Whether to filter instances containing any of the specified labels or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Labels' field."
+  allowed_values "Any", "All"
+  default "Any"
 end
 
 parameter "param_stopped_days" do
   type "number"
-  label "Stopped days"
-  description "Number of days an instance is stopped before it is added to the report"
+  category "Policy Settings"
+  label "Stopped Days"
+  description "The number of days a Google VM needs to be stopped to include it in the incident report."
+  default 7
+  min_value 1
+  max_value 90
 end
 
 parameter "param_automatic_action" do
   type "list"
+  category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Terminate Instances"]
+  allowed_values ["Delete VM Instances"]
+  default []
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-# authenticate with Google
 credentials "auth_google" do
   schemes "oauth2"
   label "Google"
@@ -54,7 +106,18 @@ credentials "auth_google" do
   tags "provider=gce"
 end
 
-pagination "google_pagination" do
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_google" do
   get_page_marker do
     body_path "nextPageToken"
   end
@@ -63,213 +126,536 @@ pagination "google_pagination" do
   end
 end
 
-#get all google project
-datasource "ds_google_project" do
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Table to derive region from zone
+datasource "ds_zone_to_region" do
+  run_script $js_zone_to_region
+end
+
+script "js_zone_to_region", type:"javascript" do
+  result "result"
+  code <<-EOS
+  result = {
+    "us-east1-b": "us-east1",
+    "us-east1-c": "us-east1",
+    "us-east1-d": "us-east1",
+    "us-east4-c": "us-east4",
+    "us-east4-b": "us-east4",
+    "us-east4-a": "us-east4",
+    "us-central1-c": "us-central1",
+    "us-central1-a": "us-central1",
+    "us-central1-f": "us-central1",
+    "us-central1-b": "us-central1",
+    "us-west1-b": "us-west1",
+    "us-west1-c": "us-west1",
+    "us-west1-a": "us-west1",
+    "europe-west4-a": "europe-west4",
+    "europe-west4-b": "europe-west4",
+    "europe-west4-c": "europe-west4",
+    "europe-west1-b": "europe-west1",
+    "europe-west1-d": "europe-west1",
+    "europe-west1-c": "europe-west1",
+    "europe-west3-c": "europe-west3",
+    "europe-west3-a": "europe-west3",
+    "europe-west3-b": "europe-west3",
+    "europe-west2-c": "europe-west2",
+    "europe-west2-b": "europe-west2",
+    "europe-west2-a": "europe-west2",
+    "asia-east1-b": "asia-east1",
+    "asia-east1-a": "asia-east1",
+    "asia-east1-c": "asia-east1",
+    "asia-southeast1-b": "asia-southeast1",
+    "asia-southeast1-a": "asia-southeast1",
+    "asia-southeast1-c": "asia-southeast1",
+    "asia-northeast1-b": "asia-northeast1",
+    "asia-northeast1-c": "asia-northeast1",
+    "asia-northeast1-a": "asia-northeast1",
+    "asia-south1-c": "asia-south1",
+    "asia-south1-b": "asia-south1",
+    "asia-south1-a": "asia-south1",
+    "australia-southeast1-b": "australia-southeast1",
+    "australia-southeast1-c": "australia-southeast1",
+    "australia-southeast1-a": "australia-southeast1",
+    "southamerica-east1-b": "southamerica-east1",
+    "southamerica-east1-c": "southamerica-east1",
+    "southamerica-east1-a": "southamerica-east1",
+    "asia-east2-a": "asia-east2",
+    "asia-east2-b": "asia-east2",
+    "asia-east2-c": "asia-east2",
+    "asia-northeast2-a": "asia-northeast2",
+    "asia-northeast2-b": "asia-northeast2",
+    "asia-northeast2-c": "asia-northeast2",
+    "asia-northeast3-a": "asia-northeast3",
+    "asia-northeast3-b": "asia-northeast3",
+    "asia-northeast3-c": "asia-northeast3",
+    "asia-south2-a": "asia-south2",
+    "asia-south2-b": "asia-south2",
+    "asia-south2-c": "asia-south2",
+    "asia-southeast2-a": "asia-southeast2",
+    "asia-southeast2-b": "asia-southeast2",
+    "asia-southeast2-c": "asia-southeast2",
+    "australia-southeast2-a": "australia-southeast2",
+    "australia-southeast2-b": "australia-southeast2",
+    "australia-southeast2-c": "australia-southeast2",
+    "europe-central2-a": "europe-central2",
+    "europe-central2-b": "europe-central2",
+    "europe-central2-c": "europe-central2",
+    "europe-north1-a": "europe-north1",
+    "europe-north1-b": "europe-north1",
+    "europe-north1-c": "europe-north1",
+    "europe-southwest1-a": "europe-southwest1",
+    "europe-southwest1-b": "europe-southwest1",
+    "europe-southwest1-c": "europe-southwest1",
+    "europe-west6-a": "europe-west6",
+    "europe-west6-b": "europe-west6",
+    "europe-west6-c": "europe-west6",
+    "northamerica-northeast1-a": "northamerica-northeast1",
+    "northamerica-northeast1-b": "northamerica-northeast1",
+    "northamerica-northeast1-c": "northamerica-northeast1",
+    "northamerica-northeast2-a": "northamerica-northeast2",
+    "northamerica-northeast2-b": "northamerica-northeast2",
+    "northamerica-northeast2-c": "northamerica-northeast2",
+    "us-west2-a": "us-west2",
+    "us-west2-b": "us-west2",
+    "us-west2-c": "us-west2",
+    "us-west3-a": "us-west3",
+    "us-west3-b": "us-west3",
+    "us-west3-c": "us-west3",
+    "us-west4-a": "us-west4",
+    "us-west4-b": "us-west4",
+    "us-west4-c": "us-west4",
+    "us-west5-a": "us-west5",
+    "us-west5-b": "us-west5",
+    "us-west5-c": "us-west5",
+    "us-west6-a": "us-west6",
+    "us-west6-b": "us-west6",
+    "us-west6-c": "us-west6",
+    "us-west7-a": "us-west7",
+    "us-west7-b": "us-west7",
+    "us-west7-c": "us-west7"
+  }
+EOS
+end
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_google_projects" do
   request do
     auth $auth_google
-    pagination $google_pagination
+    pagination $pagination_google
     host "cloudresourcemanager.googleapis.com"
     path "/v1/projects/"
-    query "filter", "lifecycleState=ACTIVE"
+    query "filter", "(lifecycleState:ACTIVE)"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
   end
   result do
     encoding "json"
     collect jmes_path(response, "projects[*]") do
-      field "projectNumber", jmes_path(col_item,"projectNumber")
-      field "projectId", jmes_path(col_item,"projectId")
+      field "number", jmes_path(col_item, "projectNumber")
+      field "id", jmes_path(col_item, "projectId")
+      field "name", jmes_path(col_item, "name")
     end
   end
 end
 
-#https://cloud.google.com/compute/docs/reference/rest/v1/zones/list
-datasource "ds_zone" do
-  iterate $ds_google_project
+datasource "ds_google_projects_filtered" do
+  run_script $js_google_projects_filtered, $ds_google_projects, $param_projects_allow_or_deny, $param_projects_list
+end
+
+script "js_google_projects_filtered", type: "javascript" do
+  parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list"
+  result "result"
+  code <<-EOS
+  if (param_projects_list.length > 0) {
+    result = _.filter(ds_google_projects, function(project) {
+      include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name']) || _.contains(param_projects_list, project['number'])
+
+      if (param_projects_allow_or_deny == "Deny") {
+        include_project = !include_project
+      }
+
+      return include_project
+    })
+  } else {
+    result = ds_google_projects
+  }
+EOS
+end
+
+datasource "ds_get_instances" do
+  iterate $ds_google_projects_filtered
   request do
     auth $auth_google
-    pagination $google_pagination
     host "compute.googleapis.com"
-    path join(["/compute/v1/projects/",val(iter_item, "projectId"),"/zones/"])
-    ignore_status [403,404]
+    path join(["/compute/v1/projects/", val(iter_item, 'id'), "/aggregated/instances"])
+    header "User-Agent", "RS Policies"
+    header "Content-Type", "application/json"
+    ignore_status [403, 404]
   end
   result do
     encoding "json"
-      collect jmes_path(response, "items[*]") do
-      field "zone", jmes_path(col_item, "name")
-      field "projectId", val(iter_item, "projectId")
-    end
+    field "instances", jq(response, "[ .items | to_entries | map_values(.value) | map(select(has(\"instances\"))) | .[].instances | .[] | {id,name,selfLink,status,tags,zone,kind,hostname,cpuPlatform,labels,description,machineType}]")
+    field "projectId", val(iter_item, "id")
+    field "projectName", val(iter_item, "name")
+    field "projectNumber", val(iter_item, "number")
   end
 end
 
-#https://cloud.google.com/compute/docs/reference/rest/v1/instances/list
+datasource "ds_instances" do
+  run_script $js_instances, $ds_get_instances, $ds_zone_to_region
+end
+
+script "js_instances", type: "javascript" do
+  parameters "ds_get_instances", "ds_zone_to_region"
+  result "result"
+  code <<-EOS
+  result = []
+
+  _.each(ds_get_instances, function(response) {
+    _.each(response['instances'], function(instance) {
+      zone = instance['zone'].split('/')[8]
+      region = ds_zone_to_region[zone]
+
+      result.push({
+        id: instance['id'],
+        name: instance['name'],
+        description: instance['description'],
+        status: instance['status'],
+        selfLink: instance['selfLink'],
+        cpuPlatform: instance['cpuPlatform'],
+        machineType: instance['machineType'],
+        kind: instance['kind'],
+        labels: instance['labels'],
+        projectId: response['projectId'],
+        projectName: response['projectName'],
+        projectNumber: response['projectNumber'],
+        zone: zone,
+        region: region
+      })
+    })
+  })
+EOS
+end
+
+datasource "ds_instances_label_filtered" do
+  run_script $js_instances_label_filtered, $ds_instances, $param_exclusion_labels, $param_exclusion_labels_boolean
+end
+
+script "js_instances_label_filtered", type: "javascript" do
+  parameters "ds_instances", "param_exclusion_labels", "param_exclusion_labels_boolean"
+  result "result"
+  code <<-EOS
+  comparators = _.map(param_exclusion_labels, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  if (param_exclusion_labels.length > 0) {
+    result = _.reject(ds_instances, function(resource) {
+      resource_labels = {}
+      if (typeof(resource['labels']) == 'object') { resource_labels = resource['labels'] }
+
+      // Store a list of found labels
+      found_labels = []
+
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_label = resource_labels[comparator['key']]
+
+        if (comparison == 'key' && resource_label != undefined) { found_labels.push(string) }
+        if (comparison == '==' && resource_label == value) { found_labels.push(string) }
+        if (comparison == '!=' && resource_label != value) { found_labels.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_label != undefined && value.test(resource_label)) { found_labels.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_label == undefined) { found_labels.push(string) }
+          if (resource_label != undefined && value.test(resource_label)) { found_labels.push(string) }
+        }
+      })
+
+      all_labels_found = found_labels.length == comparators.length
+      any_labels_found = found_labels.length > 0 && param_exclusion_labels_boolean == 'Any'
+
+      return all_labels_found || any_labels_found
+    })
+  } else {
+    result = ds_instances
+  }
+EOS
+end
+
+datasource "ds_instances_region_filtered" do
+  run_script $js_instances_region_filtered, $ds_instances_label_filtered, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_instances_region_filtered", type: "javascript" do
+  parameters "ds_instances_label_filtered", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_instances_label_filtered, function(instance) {
+      include_instance = _.contains(param_regions_list, instance['region'])
+
+      if (param_regions_allow_or_deny == "Deny") {
+        include_instance = !include_instance
+      }
+
+      return include_instance
+    })
+  } else {
+    result = ds_instances_label_filtered
+  }
+EOS
+end
+
 datasource "ds_stopped_instances" do
-  iterate $ds_zone
-  request do
-    auth $auth_google
-    pagination $google_pagination
-    host "compute.googleapis.com"
-    path join(["/compute/v1/projects/",val(iter_item, "projectId"),"/zones/",val(iter_item, "zone"),"/instances"])
-    query "filter", 'status="TERMINATED"'
-    ignore_status [403,404]
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "items[*]") do
-      field "instance_id", jmes_path(col_item, "id")
-      field "instance_name", jmes_path(col_item, "name")
-      field "status", jmes_path(col_item, "status")
-      field "zone", val(iter_item, "zone")
-      field "tags", jmes_path(col_item, "tags")
-      field "projectId", val(iter_item, "projectId")
-    end
-  end
+  run_script $js_stopped_instances, $ds_instances_region_filtered
 end
 
-datasource "ds_stopped_instances_req_list" do
-  run_script $js_stopped_instances_req_list, $ds_stopped_instances, $param_stopped_days
+script "js_stopped_instances", type: "javascript" do
+  parameters "ds_instances_region_filtered"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_instances_region_filtered, function(instance) {
+    return instance['status'] == "STOPPED" || instance['status'] == "TERMINATED"
+  })
+EOS
 end
 
-#https://cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.timeSeries/list
-datasource "ds_list_instances_with_uptime_in_window" do
-  iterate $ds_stopped_instances_req_list
+datasource "ds_instances_with_uptime" do
+  iterate $ds_stopped_instances
   request do
-    auth $auth_google
-    pagination $google_pagination
-    host "monitoring.googleapis.com"
-    path join(["/v3/projects/",val(iter_item, "projectId"),"/timeSeries/"])
-    query "filter", join(['metric.type = "compute.googleapis.com/instance/uptime" AND metric.labels.instance_name =', val(iter_item,"instance_name")])
-    query "interval.endTime", val(iter_item,"end_at")
-    query "interval.startTime", val(iter_item,"start_at")
-    ignore_status [403,404]
+    run_script $js_instances_with_uptime, val(iter_item, 'name'), val(iter_item, 'projectId'), $param_stopped_days
   end
   result do
     encoding "json"
     collect jmes_path(response, "timeSeries[*]") do
-      field "instance_name", val(iter_item,"instance_name")
-      field "instance_id", jmes_path(col_item, "resource.labels.instance_id")
+      field "name", val(iter_item, "name")
+      field "id", jmes_path(col_item, "resource.labels.instance_id")
       field "zone", jmes_path(col_item, "resource.labels.zone")
     end
   end
 end
 
-datasource "ds_report" do
-  run_script $js_report, $ds_stopped_instances, $ds_list_instances_with_uptime_in_window, $param_exclude_tags
-end
-
-###############################################################################
-# Scripts
-###############################################################################
-script "js_stopped_instances_req_list", type: "javascript" do
-  parameters "ds_stopped_instances", "param_stopped_days"
+script "js_instances_with_uptime", type: "javascript" do
+  parameters "name", "project_id", "param_stopped_days"
   result "request"
-  code <<-EOF
-  var request=[];
-  _.each(ds_stopped_instances, function(row){
-    if(row["instance_name"] != null){
-      var result = {
-        "start_at": new Date(new Date().setDate(new Date().getDate() - parseInt(param_stopped_days))).toISOString(),
-        "end_at": new Date().toISOString(),
-        "instance_name": row["instance_name"],
-        "projectId": row["projectId"]
-      }
-      request.push(result);
-    }
-  })
-EOF
+  code <<-EOS
+  filter = [
+    'metric.type = "compute.googleapis.com/instance/uptime" AND ',
+    'metric.labels.instance_name = ', name
+  ].join('')
+
+  end_time = new Date().toISOString()
+  start_time = new Date(new Date() - (param_stopped_days * 1000 * 60 * 60 * 24)).toISOString()
+
+  var request = {
+    auth: "auth_google",
+    pagination: "pagination_google",
+    host: "monitoring.googleapis.com",
+    path: "/v3/projects/" + project_id + "/timeSeries/",
+    query_params: {
+      "interval.endTime": end_time,
+      "interval.startTime": start_time,
+      "filter": filter
+    },
+    ignore_status: [ 403, 404 ]
+  }
+EOS
 end
 
-script "js_report", type: "javascript" do
-  parameters "ds_stopped_instances", "ds_list_instances_with_uptime_in_window", "param_exclude_tags"
+datasource "ds_long_stopped_instances" do
+  run_script $js_long_stopped_instances, $ds_stopped_instances, $ds_instances_with_uptime, $ds_applied_policy, $param_stopped_days
+end
+
+script "js_long_stopped_instances", type: "javascript" do
+  parameters "ds_stopped_instances", "ds_instances_with_uptime", "ds_applied_policy", "param_stopped_days"
   result "result"
-  code <<-EOF
-  var result=[];
-  var param_exclude_tags_lower=[];
+  code <<-'EOS'
+  unstopped_instance_ids = _.pluck(ds_instances_with_uptime, 'id')
 
-  for(var i=0; i < param_exclude_tags.length; i++){
-    param_exclude_tags_lower[i]=param_exclude_tags[i].toString().toLowerCase();
-  }
-  _.each(ds_stopped_instances, function(instance_stopped){
-    var tags = instance_stopped['tags'];
-    var isTagMatched=false
-    var tagKeyValue=""
-    if(typeof(tags) !== "undefined"){
-      var tagKeys = Object.keys(tags);
-      for (var j = 0; j < tagKeys.length; j++){
-        var tagKey = tagKeys[j];
-        var tagValue = tags[tagKey];
-        //Check, if the tag present in entered param_exclude_tags, ignore the google bucket object if the tag matches/present.
-        if((param_exclude_tags_lower.indexOf(tagKey.toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tagKey+'='+tagValue).toLowerCase()) !== -1)){
-          isTagMatched = true;
-        }
-        if(tagValue.length > 0){
-          tagKeyValue = tagKeyValue + ', '+ tagKey+'='+tagValue
-        }else{
-          tagKeyValue = tagKeyValue + ', '+ tagKey
-        }
-      }
-    }
+  stopped_instances = _.reject(ds_stopped_instances, function(instance) {
+    return _.contains(unstopped_instance_ids, instance['id'])
+  })
 
-    // If we find any uptime in the param_stopped_days this list will be greater than 0.
-    // If it's 0 we report on it.
-    var instance_in_uptime_list = _.filter(ds_list_instances_with_uptime_in_window, function(item){
-      return item.instance_id == instance_stopped.instance_id
-    })
+  result = _.map(stopped_instances, function(instance) {
+    recommendationDetails = [
+      "Delete Google VM ", instance["name"], " ",
+      "in Project ", instance['projectName'], " ",
+      "(", instance['projectId'], ")"
+    ].join('')
 
-    if( instance_in_uptime_list.length == 0 && !isTagMatched ){
-      result.push({
-        "name": instance_stopped["instance_name"],
-        "status": instance_stopped["status"],
-        "instance_id": instance_stopped["instance_id"],
-        "zone": instance_stopped["zone"],
-        "projectId": instance_stopped["projectId"],
-        "tagKeyValue":(tagKeyValue.slice(2))
+    labels = []
+
+    if (typeof(instance['labels']) == 'object') {
+      _.each(Object.keys(instance['labels']), function(key) {
+        labels.push(key + '=' + instance['labels'][key])
       })
     }
+
+    return {
+      resourceID: instance['id'],
+      resourceName: instance['name'],
+      description: instance['description'],
+      status: instance['status'],
+      selfLink: instance['selfLink'],
+      platform: instance['cpuPlatform'],
+      machineType: instance['machineType'],
+      kind: instance['kind'],
+      accountID: instance['projectId'],
+      accountName: instance['projectName'],
+      projectNumber: instance['projectNumber'],
+      zone: instance['zone'],
+      region: instance['region'],
+      policy_name: ds_applied_policy['name'],
+      tags: labels.join(', '),
+      lookbackPeriod: param_stopped_days,
+      recommendationDetails: recommendationDetails,
+      service: 'Compute Engine',
+      message: ''
+    }
   })
 
-  var result = _(result).chain()
-  .sortBy(function(item) {
-    return item.zone;
-  }).sortBy(function(item) {
-    return item.projectId;
-  }).value();
-EOF
+  instances_total = ds_stopped_instances.length.toString()
+  long_instances_total = result.length.toString()
+  long_instances_percentage = (long_instances_total / instances_total * 100).toFixed(2).toString() + '%'
+
+  instance_noun = "VM"
+  if (instances_total > 1) { instance_noun = "VMs" }
+
+  day_noun = "day"
+  if (param_stopped_days > 1) { day_noun = "days" }
+
+  has_verb = "has"
+  if (long_instances_total > 1) { has_verb = "have" }
+
+  findings = [
+    "Out of ", instances_total, " Google ", instance_noun, " analyzed, ",
+    long_instances_total, " (", long_instances_percentage,
+    ") ", has_verb, " been stopped for longer than ", param_stopped_days,
+    " ", day_noun, ".\n\n"
+  ].join('')
+
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+
+  // Add a dummy entry to ensure that the policy's check statement executes at least once
+  result.push({
+    resourceID: "",     resourceName: "",    description: "",
+    status: "",         selfLink: "",        platform: "",
+    machineType: "",    kind: "",            lookbackPeriod: "",
+    accountID: "",      accountName: "",     projectNumber: "",
+    zone: "",           region: "",          policy_name: "",
+    tags: "",           service: "",         recommendationDetails: "",
+    message: ""
+  })
+
+  result[0]['message'] = findings + disclaimer
+EOS
 end
 
 ###############################################################################
 # Policy
 ###############################################################################
 
-policy "pol_utilization" do
-  validate_each $ds_report do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} google cloud instances in Stopped State for Over {{parameters.param_stopped_days}} Day(s)"
-    check eq(0,1)
+policy "pol_long_stopped_instances" do
+  validate_each $ds_long_stopped_instances do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Google Underutilized VM Instances Found"
+    detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     escalate $esc_delete_instances
+    hash_exclude "tags", "message"
     export do
       resource_level true
-      field "projectId" do
+      field "accountID" do
         label "Project ID"
+      end
+      field "accountName" do
+        label "Project Name"
+      end
+      field "projectNumber" do
+        label "Project Number"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
       end
       field "zone" do
         label "Zone"
       end
-      field "id" do
-        label "Instance ID"
-        path "instance_id"
+      field "region" do
+        label "Region"
       end
-      field "name" do
-        label "Name"
+      field "platform" do
+        label "Platform"
+      end
+      field "tags" do
+        label "Labels"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
       end
       field "status" do
         label "Status"
       end
-      field "tagKeyValue" do
-        label "Tags"
+      field "selfLink" do
+        label "Resource Link"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
       end
     end
   end
 end
-
 
 ###############################################################################
 # Escalations
@@ -283,9 +669,9 @@ escalation "esc_email" do
 end
 
 escalation "esc_delete_instances" do
-  automatic contains($param_automatic_action, "Terminate Instances")
-  label "Delete Instances"
-  description "Terminate the stopped instances"
+  automatic contains($param_automatic_action, "Delete VM Instances")
+  label "Delete VM Instances"
+  description "Approval to delete all selected VM instances"
   run "delete_instances", data
 end
 
@@ -293,23 +679,138 @@ end
 # Cloud Workflow
 ###############################################################################
 
-#https://cloud.google.com/compute/docs/reference/rest/v1/instances/delete
 define delete_instances($data) return $all_responses do
-  $all_responses = []
-  foreach $item in $data do
-    sub on_error: skip do
-      $response = http_request(
-        auth: $$auth_google,
-        verb: "delete",
-        host: "compute.googleapis.com",
-        href: join(["/compute/v1/projects/", $item["projectId"], "/zones/", $item["zone"], "/instances/",$item["name"]]),
-        https: true,
-        headers: {
-          "cache-control": "no-cache",
-          "content-type": "application/json"
-        }
-      )
-      $all_responses << $response
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call delete_instance($instance) retrieve $delete_response
     end
   end
+
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+end
+
+define delete_instance($instance) return $response do
+  task_label("DELETE " + $instance['selfLink'])
+
+  $response = http_delete(
+    url: $instance['selfLink'],
+    auth: $$auth_google,
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json"
+    }
+  )
+
+  task_label("Delete Google VM instance response: " + $instance["resourceName"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $instance['selfLink'], "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response deleting Google VM instance: "+ $instance["resourceName"] + " " + to_json($response)
+  else
+    task_label("Delete Google VM instance successful: " + $instance["resourceName"])
+  end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
 end

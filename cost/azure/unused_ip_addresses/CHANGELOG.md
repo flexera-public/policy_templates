@@ -1,5 +1,27 @@
 # Changelog
 
+## v7.3.0
+
+- Modified internal names for incident fields for more accurate scraping into Optimization dashboard
+
+## v7.2
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
+## v7.1
+
+- Added IP allocation type (Dynamic or Static) to incident output
+- Added ability to filter results by allocation type via parameter
+- Added ability to filter results by minimum savings via parameter
+
+## v7.0
+
+- Added support for regex when filtering resources by tag
+
+## v6.3
+
+- Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.
+
 ## v6.2
 
 - Refactored code for Delete IP Address Action to improve debugging and error handling

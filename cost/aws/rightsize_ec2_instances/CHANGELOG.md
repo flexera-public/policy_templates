@@ -1,5 +1,21 @@
 # Changelog
 
+## v5.1.1
+
+- Idle EC2 Instances incident now includes a `Recommended Instance Size` field with a value of `Terminate EC2 Instance` for ease of analyzing recommendations from the Flexera Optimization dashboard
+
+## v5.1
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
+## v5.0
+
+- Added support for regex when filtering resources by tag
+
+## v4.5
+
+- Corrected API issue when executing policy in APAC
+
 ## v4.4
 
 - Added "Stop Instance" action for Idle resources

@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "3.0",
+  version: "4.2.0",
   provider:"Google",
   service: "Storage",
   policy_set: "Unused Volumes",
@@ -24,6 +24,16 @@ parameter "param_email" do
   label "Email Addresses"
   description "A list of email addresses to notify."
   default []
+end
+
+parameter "param_unattached_days" do
+  type "number"
+  category "Policy Settings"
+  label "Days Unattached"
+  description "The number of days since the disk was last attached to an instance to include it in the results. Cannot be set to less than 15 days because Google does not produce recommendations for disks that have been idle for < 15 days."
+  min_value 15
+  max_value 90
+  default 15
 end
 
 parameter "param_min_savings" do
@@ -72,10 +82,18 @@ end
 parameter "param_exclusion_labels" do
   type "list"
   category "Filters"
-  label "Exclusion Labels (Key:Value)"
-  description "Google labels to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific label key/value pairs, and Key:* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:*"
-  allowed_pattern /(^$)|[\w]*\:.*/
+  label "Exclusion Labels"
+  description "Cloud native labels to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
   default []
+end
+
+parameter "param_exclusion_labels_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Labels: Any / All"
+  description "Whether to filter instances containing any of the specified labels or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Labels' field."
+  allowed_values "Any", "All"
+  default "Any"
 end
 
 parameter "param_take_snapshot" do
@@ -83,15 +101,17 @@ parameter "param_take_snapshot" do
   category "Actions"
   label "Create Final Snapshot"
   description "Whether or not to take a final snapshot before deleting a disk."
-  default "Yes"
   allowed_values "Yes", "No"
+  default "Yes"
 end
 
 parameter "param_automatic_action" do
   type "list"
+  category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
   allowed_values ["Delete Disks"]
+  default []
 end
 
 ###############################################################################
@@ -253,7 +273,7 @@ end
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
     header "User-Agent", "RS Policies"
   end
 end
@@ -405,7 +425,7 @@ script "js_disks", type: "javascript" do
           projectId: response['projectId'],
           projectName: response['projectName'],
           projectNumber: response['projectNumber'],
-          age: age,
+          age: Math.round(age),
           zone: zone,
           region: region,
           type: type
@@ -417,33 +437,75 @@ EOS
 end
 
 datasource "ds_disks_label_filtered" do
-  run_script $js_disks_label_filtered, $ds_disks, $param_exclusion_labels
+  run_script $js_disks_label_filtered, $ds_disks, $param_exclusion_labels, $param_exclusion_labels_boolean
 end
 
 script "js_disks_label_filtered", type: "javascript" do
-  parameters "ds_disks", "param_exclusion_labels"
+  parameters "ds_disks", "param_exclusion_labels", "param_exclusion_labels_boolean"
   result "result"
   code <<-EOS
+  comparators = _.map(param_exclusion_labels, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
   if (param_exclusion_labels.length > 0) {
-    result = _.reject(ds_disks, function(disk) {
-      labels = []
+    result = _.reject(ds_disks, function(resource) {
+      resource_labels = {}
+      if (typeof(resource['labels']) == 'object') { resource_labels = resource['labels'] }
 
-      if (typeof(disk['labels']) == 'object') {
-        _.each(Object.keys(disk['labels']), function(key) {
-          labels.push([key, ":", disk['labels'][key]].join(''))
-          labels.push([key, ":*"].join(''))
-        })
-      }
+      // Store a list of found labels
+      found_labels = []
 
-      exclude_disk = false
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_label = resource_labels[comparator['key']]
 
-      _.each(param_exclusion_labels, function(exclusion_label) {
-        if (_.contains(labels, exclusion_label)) {
-          exclude_disk = true
+        if (comparison == 'key' && resource_label != undefined) { found_labels.push(string) }
+        if (comparison == '==' && resource_label == value) { found_labels.push(string) }
+        if (comparison == '!=' && resource_label != value) { found_labels.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_label != undefined && value.test(resource_label)) { found_labels.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_label == undefined) { found_labels.push(string) }
+          if (resource_label != undefined && value.test(resource_label)) { found_labels.push(string) }
         }
       })
 
-      return exclude_disk
+      all_labels_found = found_labels.length == comparators.length
+      any_labels_found = found_labels.length > 0 && param_exclusion_labels_boolean == 'Any'
+
+      return all_labels_found || any_labels_found
     })
   } else {
     result = ds_disks
@@ -547,6 +609,82 @@ script "js_recommendations", type: "javascript" do
 EOS
 end
 
+datasource "ds_recommendation_logs" do
+  iterate $ds_recommendations
+  request do
+    run_script $js_recommendation_logs, val(iter_item, 'projectId'), val(iter_item, 'resourceLink')
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "entries[*]") do
+      field "projectId", val(iter_item, "projectId")
+      field "resourceLink", val(iter_item, "resourceLink")
+      field "timestamp", jmes_path(col_item, "timestamp")
+    end
+  end
+end
+
+script "js_recommendation_logs", type: "javascript" do
+  parameters "projectId", "resourceLink"
+  result "request"
+  code <<-'EOS'
+  project_id = ['projects', projectId].join('/')
+  zone = resourceLink.split('/')[6]
+  name = resourceLink.split('/')[8]
+
+  startTime = new Date()
+  startTime.setDate(startTime.getDate() - 90)
+  startTime = startTime.toISOString()
+
+  filter = [
+    "\"", projectId, "\" AND ",
+    "\"", zone, "\" AND ",
+    "\"", name, "\" AND ",
+    "timestamp >= \"", startTime, "\" AND ",
+    "protoPayload.methodName = \"v1.compute.instances.detachDisk\""
+  ].join('')
+
+  var request = {
+    auth: "auth_google",
+    pagination: "pagination_google",
+    host: "logging.googleapis.com",
+    verb: "POST",
+    ignore_status: [400, 401, 402, 403, 404, 405, 406, 407, 408, 409, 410],
+    path: "v2/entries:list",
+    body_fields: {
+      "resourceNames": [ project_id ],
+      "filter": filter,
+      "pageSize": 1000
+    }
+  }
+EOS
+end
+
+datasource "ds_recommendation_logs_sorted" do
+  run_script $js_recommendation_logs_sorted, $ds_recommendation_logs
+end
+
+script "js_recommendation_logs_sorted", type: "javascript" do
+  parameters "ds_recommendation_logs"
+  result "result"
+  code <<-EOS
+  result = {}
+
+  _.each(ds_recommendation_logs, function(entry) {
+    resourceLink = entry['resourceLink'].replace("//compute.googleapis.com/", "")
+    resourceLink = "https://www.googleapis.com/compute/v1/" + resourceLink
+
+    timestamp = entry['timestamp']
+
+    if (result[resourceLink] == undefined) {
+      result[resourceLink] = timestamp
+    } else if (new Date(timestamp) > new Date(result[resourceLink])) {
+      result[resourceLink] = timestamp
+    }
+  })
+EOS
+end
+
 # Branching logic:
 # This datasource returns an empty array if the target currency is USD.
 # This prevents ds_currency_conversion from running if it's not needed.
@@ -604,11 +742,11 @@ script "js_currency", type:"javascript" do
   result = ds_currency_target
   result['exchange_rate'] = 1
 
-  if (ds_currency_conversion['to'] != undefined) {
+  if (ds_currency_conversion.length > 0) {
     currency_code = ds_currency_target['code']
     current_month = parseInt(new Date().toISOString().split('-')[1])
 
-    conversion_block = _.find(ds_currency_conversion['to'][currency_code], function(item) {
+    conversion_block = _.find(ds_currency_conversion[0]['to'][currency_code], function(item) {
       return item['month'] == current_month
     })
 
@@ -620,11 +758,11 @@ EOS
 end
 
 datasource "ds_recommendations_incident" do
-  run_script $js_recommendations_incident, $ds_disks_region_filtered, $ds_recommendations, $ds_currency, $ds_currency_conversion, $ds_applied_policy, $param_min_savings
+  run_script $js_recommendations_incident, $ds_disks_region_filtered, $ds_recommendations, $ds_recommendation_logs_sorted, $ds_currency, $ds_currency_conversion, $ds_applied_policy, $param_min_savings, $param_unattached_days
 end
 
 script "js_recommendations_incident", type:"javascript" do
-  parameters "ds_disks_region_filtered", "ds_recommendations", "ds_currency", "ds_currency_conversion", "ds_applied_policy", "param_min_savings"
+  parameters "ds_disks_region_filtered", "ds_recommendations", "ds_recommendation_logs_sorted", "ds_currency", "ds_currency_conversion", "ds_applied_policy", "param_min_savings", "param_unattached_days"
   result "result"
   code <<-'EOS'
   // Function for formatting currency numbers later
@@ -677,7 +815,17 @@ script "js_recommendations_incident", type:"javascript" do
         if (duration != 0) { savings = (costUnits + costNanos * Math.pow(10, -9)) / duration * ds_currency['exchange_rate'] }
       }
 
-      if (savings >= param_min_savings) {
+      detach_date = null
+      days_unattached = null
+
+      if (ds_recommendation_logs_sorted[disk['selfLink']] != undefined) {
+        detach_date = new Date(ds_recommendation_logs_sorted[disk['selfLink']])
+        today = new Date()
+        time_difference = today.getTime() - detach_date.getTime()
+        days_unattached = Math.round(time_difference / (1000 * 3600 * 24))
+      }
+
+      if (savings >= param_min_savings && (days_unattached == null || days_unattached >= param_unattached_days)) {
         total_savings += savings
 
         labels = []
@@ -692,7 +840,7 @@ script "js_recommendations_incident", type:"javascript" do
           resourceID: disk['id'],
           resourceName: disk['name'],
           kind: disk['kind'],
-          resourceType: disk['type'],
+          type: disk['type'],
           description: disk['description'],
           status: disk['status'],
           size: disk['sizeGb'],
@@ -711,6 +859,7 @@ script "js_recommendations_incident", type:"javascript" do
           recommenderSubtype: recommendation['recommenderSubtype'],
           state: recommendation['state'],
           policy_name: ds_applied_policy['name'],
+          days_unattached: days_unattached,
           tags: labels.join(', '),
           savings: parseFloat(savings.toFixed(3)),
           savingsCurrency: ds_currency['symbol'],
@@ -742,29 +891,56 @@ script "js_recommendations_incident", type:"javascript" do
   if (total_unused_disks > 1) { disk_verb = "are" }
 
   findings = [
-    "Out of ", total_disks , " ", disk_noun, " analyzed, ",
+    "Out of ", total_disks, " ", disk_noun, " analyzed, ",
     total_unused_disks, " (", unused_disks_percentage,
-    ") ", disk_verb, " idle and recommended for deletion.\n\n"
+    ") ", disk_verb, " idle and recommended for deletion. "
+  ].join('')
+
+  settings = [
+    "Disks detached or created less than ", param_unattached_days, " days ago ",
+    "are not included in the results. Disks with no value for the Days Unattached field ",
+    "have either never been attached to an instance or were detached > 90 days ago. ",
+    "This setting can be adjusted when editing or applying the policy.\n\n"
   ].join('')
 
   disclaimer = "Recommendations are generated by Google Cloud. Please refer to Google's documentation if different recommendations are desired."
 
   // Dummy item to ensure that the check statement in the policy executes at least once
   result.push({
-    resourceID: "",               resourceName: "",             kind: "",
-    resourceType: "",             description: "",              labels: "",
-    status: "",                   size: "",                     selfLink: "",
-    zone: "",                     region: "",                   creationTime: "",
-    accountID: "",                accountName: "",              projectNumber: "",
-    age: "",                      priority: "",                 primaryImpact: "",
-    primaryImpactCategory: "",    recommendationDetails: "",    recommenderSubtype: "",
-    state: "",                    policy_name: "",              tags: "",
-    savings: "",                  savingsCurrency: "",          service: "",
-    total_savings: "",            message: ""
+    resourceID: "",
+    resourceName: "",
+    kind: "",
+    type: "",
+    description: "",
+    labels: "",
+    status: "",
+    size: "",
+    selfLink: "",
+    zone: "",
+    region: "",
+    creationTime: "",
+    accountID: "",
+    accountName: "",
+    projectNumber: "",
+    age: "",
+    priority: "",
+    primaryImpact: "",
+    primaryImpactCategory: "",
+    recommendationDetails: "",
+    recommenderSubtype: "",
+    state: "",
+    policy_name: "",
+    tags: "",
+    savings: "",
+    savingsCurrency: "",
+    service: "",
+    total_savings: "",
+    message: "",
+    days_unattached: ""
   })
 
   result[0]['total_savings'] = savings_message
-  result[0]['message'] = findings + disclaimer
+  result[0]['message'] = findings + settings + disclaimer
 EOS
 end
 
@@ -772,7 +948,7 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_recommendations" do
+policy "pol_recommendations" do
   validate_each $ds_recommendations_incident do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Google Idle Persistent Disks Found"
     detail_template <<-'EOS'
@@ -801,8 +977,8 @@ policy "policy_recommendations" do
       field "resourceName" do
         label "Resource Name"
       end
-      field "resourceType" do
-        label "Resource Type"
+      field "type" do
+        label "Type"
       end
       field "zone" do
         label "Zone"
@@ -818,6 +994,9 @@ policy "policy_recommendations" do
       end
       field "creationTime" do
         label "Created At"
+      end
+      field "days_unattached" do
+        label "Days Unattached"
       end
       field "age" do
         label "Age (Days)"

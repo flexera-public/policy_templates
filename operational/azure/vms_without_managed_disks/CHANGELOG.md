@@ -1,5 +1,24 @@
 # Changelog
 
+## v4.0.0
+
+- Several parameters altered to be more descriptive and human-readable
+- Improved ability to filter resources by subscription
+- Added ability to filter resources by region
+- Added ability to filter resources by multiple tag key:value pairs
+- Added several fields to incident export to provide additional context
+- Normalized incident export to be consistent with other policies
+- Policy no longer raises new escalations for the same resource if incidental metadata has changed
+- Streamlined code for better readability and faster execution
+
+## v3.1.1
+
+- Added default value for parameters that do not require user input
+
+## v3.1
+
+- Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.
+
 ## v3.0
 
 - Renamed Subscription List parameter for consistency and accuracy

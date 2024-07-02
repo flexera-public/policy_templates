@@ -1,5 +1,21 @@
 # Changelog
 
+## v8.2.0
+
+- Modified internal names for incident fields for more accurate scraping into Optimization dashboard
+
+## v8.1
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
+## v8.0
+
+- Added support for regex when filtering resources by tag
+
+## v7.1
+
+- Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.
+
 ## v7.0
 
 - Policy now retrieves read/write stats to determine if a volume is unused
@@ -133,8 +149,7 @@
 
 ## v2.8
 
-- Added `and resourceProvider eq 'Microsoft.Compute' and resourceType eq 'Microsoft.Compute/VirtualMachines'` to event filter
-  to get smaller but more specific result set to help with ExecutionTimeout.
+- Added `and resourceProvider eq 'Microsoft.Compute' and resourceType eq 'Microsoft.Compute/VirtualMachines'` to event filter to get smaller but more specific result set to help with ExecutionTimeout.
 
 ## v2.7
 

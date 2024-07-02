@@ -1,75 +1,84 @@
 # Google Schedule Instance
 
-## What it does
+## What It Does
 
-This Policy Template allows you to schedule start and stop times for your Google instance, along with the option to terminate instance, update and delete schedule.
+This policy schedules Google VM instances to start and stop at specific times based on a configuration stored in the instance's labels. The user can also perform a variety of ad hoc actions on the instance from the incident page.
 
-## How to Use
+## How To Use
 
-This policy relies on a label with format 'schedule' to stop and start instances based on a schedule. The label value defines the schedule with a start time(start hour and start minute), stop time(stop hour and stop minute), days of the week and timezone. The start and stop time are in 24 hour format, and the days of the week are two character abbreviation for example: mo, tu, we. See full example below.. Use a Timezone TZ value to indicate a timezone to stop/start the instance(s)
+This policy uses the schedule label value (default key: schedule) for scheduling the instance. The appropriate value should be added to as a label to every instance you want to manage via this policy.
 
-## schedule Label Example
+This value is a string consisting of 3 underscore-separated substrings:
 
-Since google label supports only `-`, `_`, lowercase characters, numbers and International characters, The special characters in timezone should be replaced like `/` with `-`, `+` with `p` and `-`(minus) with `m` and all characters should be lowercase.
-For example, the timezone `Etc/Gmt+10` should be used as `etc-gmtp10`, `Etc/GMT-4` as `etc-gmtm4`, `America/North_Dakota/New_Salem` as `america-north_dakota-new_salem`, `America/Port-au-Prince` as `america-port-au-prince` etc.
+- *Hours* - Start and stop hours are in 4-digit 24-hour format without any colons or other separators. For example, a value of `0815-1730` will start instances at 8:15 and stop them at 17:30 (5:30 pm). If the minute field is left blank, the minute value of `00` will be assumed.
+- *Days of the Week* - Hyphen-separated list of days indicated by their two-letter abbreviation value from the following list: su,mo,tu,we,th,fr,sa. For example, a value of `mo-tu-we-th-fr` will start and stop the instances on weekdays but not on weekends.
+- *Timezone* - Timezone in [tz database format](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) with the `/` character replaced with a hyphen and all characters converted to lowercase. For example, a value of `america-new_york` would specify US Eastern Time. Defaults to UTC if no Timezone field is provided.
 
-Start and Stop time are 24 hour format: for example 0830-1715 is start at 8:30am, and stop at 5:15pm.
+**Example Value:** 0815-1730_mo-tu-we-th-fr_america-new_york
 
-Days of the week: su-mo-tu-we-th-fr-sa
+- Starts instances at 8:15am
+- Stops instance at 5:30pm
+- Monday - Friday, US Eastern Time.
 
-Timezone: Use the TZ database name from the [timezone list](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) in the above mentioned format.
-
-Example: schedule=0830-1715_mo-tu-we-th-fr_america-new_york. Stops instances at 5:15pm, starts instance at 8:30am, Monday - Friday, Eastern Time(America/New_York).
-Please note that `_` is being used for separating the start-stop time, days of the week and the timezone.
-
-Instances are off during the weekend and start back up on Monday morning at 8:30am and are off at 5:15pm every weekday. Times are UTC unless the Timezone field is provided.
-
-Note: Please note that for this policy to work, the time should be in 24 hour format and both hours and minutes must have 2 digits: `0800`for `8am` or `2130` for `9:30pm`.
-Please refer the [formatted timezones list](https://github.com/flexera-public/policy_templates/blob/master/data/tz_database/timezones_list.json) having timezone in the above mentioned format as key and corresponding TZ database timezone as value.
+In the above example, instances are off during the weekend and start back up on Monday morning at 8:15am and are off at 5:30pm every weekday. Times are UTC unless the Timezone field is provided.
 
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
-- *Email addresses* - A list of email addresses to notify
-- *Exclusion Tags* - A list of Google tags to ignore instances. Format: Key=Value.
-- *Automatic Action(s)* -(Optional) When this value is set, this policy will automatically take the selected action(s)
+- *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
+- *Schedule Label Key* - Label key that schedule information is stored in. Default is recommended for most use cases.
+- *Next Start Label Key* - Label key to use for scheduling instance to start. Default is recommended for most use cases.
+- *Next Stop Label Key* - Label key to use for scheduling instance to stop. Default is recommended for most use cases.
+- *Allow/Deny Projects* - Whether to treat Allow/Deny Projects List parameter as allow or deny list. Has no effect if Allow/Deny Projects List is left empty.
+- *Allow/Deny Projects List* - Filter results by project ID/name, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all projects
+- *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
+- *Allow/Deny Regions List* - Filter results by region, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all the regions.
+- *Exclusion Labels* - The policy will filter resources containing the specified labels from the results. The following formats are supported:
+  - `Key` - Filter all resources with the specified label key.
+  - `Key==Value` - Filter all resources with the specified label key:value pair.
+  - `Key!=Value` - Filter all resources missing the specified label key:value pair. This will also filter all resources missing the specified label key.
+  - `Key=~/Regex/` - Filter all resources where the value for the specified key matches the specified regex string.
+  - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified label key.
+- *Exclusion Labels: Any / All* - Whether to filter instances containing any of the specified labels or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Labels` field.
+- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
 ## Policy Actions
 
 The following policy actions are taken on any resources found to be out of compliance.
 
-- Send an email report
-- stop  - stop a selected instance
-- start - start a selected instance
-- terminate - terminates or deletes the selected instance.
-- update schedule - change existing schedule tag.  input to provide a new stop/start schedule
-- delete schedule - removes the schedule tag
+- Send an email report.
+- *Execute Schedules* - Start or stop the resources as needed based on their schedules
+- *Update Schedules* - Update the schedule tag on the resources with a new schedule
+- *Delete Schedules* - Delete all schedule tags from the resource so that it is no longer powered on or off by this policy
+- *Start Instances* - Start the resources if they are not currently running.
+- *Stop Instances* - Stop the resources if they are currently running.
+- *Delete Instances* - Delete the resources.
 
 ## Prerequisites
 
-### Schedule Label Format
+This Policy Template requires that several APIs be enabled in your Google Cloud environment:
 
-This policy uses `schedule` label value for scheduling the instance. The format should be like `0800-1715_mo-tu-we-th-fr_america-new_york`. Please refer to `Schedule Label Example` section for more details.
-Please note that for this policy to work, the time should be in 24 hour format and both hours and minutes must have 2 digits: `0800`for `8am` or `2130` for `9:30pm`.
+- [Cloud Resource Manager API](https://console.cloud.google.com/flows/enableapi?apiid=cloudresourcemanager.googleapis.com)
+- [Compute Engine API](https://console.cloud.google.com/flows/enableapi?apiid=compute.googleapis.com)
 
-This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the  cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If  there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential  that is compatible with this policy. The information below should be consulted when creating the credential.
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
-### Credential configuration
+- [**Google Cloud Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1121577) (*provider=gce*) which has the following:
+  - Permissions
+    - `compute.instances.list`
+    - `compute.instances.get`
+    - `compute.instances.delete`
+    - `compute.instances.setLabels`
+    - `compute.instances.start`
+    - `compute.instances.stop`
+    - `compute.zones.list`
+    - `resourcemanager.projects.get`
 
-For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - `billing_center_viewer`
 
-Provider tag value to match this policy: `gce`
-
-Required permissions in the provider:
-
-- The `compute.instances.list` permission
-- The `compute.instances.delete` permission
-- The `compute.instances.setLabels` permission
-- The `compute.instances.start` permission
-- The `compute.instances.stop` permission
-- The `resourcemanager.projects.get` permission
-- The `compute.zones.list` permission
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ## Supported Clouds
 

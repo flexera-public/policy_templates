@@ -1,18 +1,17 @@
 name "Azure VMs Not Using Managed Disks"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report any VMs that are not using managed disks in Azure. \n See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/vms_without_managed_disks) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Report any Azure virtual machines that are not using managed disks. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/vms_without_managed_disks) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Operational"
 severity "low"
-default_frequency "daily"
+default_frequency "weekly"
 info(
-  version: "3.0",
+  version: "4.0.0",
   provider: "Azure",
   service: "Compute",
   policy_set: ""
 )
-
 
 ###############################################################################
 # Parameters
@@ -20,27 +19,70 @@ info(
 
 parameter "param_email" do
   type "list"
-  label "Email addresses of the recipients you wish to notify"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
 end
 
 parameter "param_azure_endpoint" do
   type "string"
+  category "Policy Settings"
   label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
   allowed_values "management.azure.com", "management.chinacloudapi.cn"
   default "management.azure.com"
 end
 
-parameter "param_subscriptions_list" do
-  label "Subscription Allowed List"
-  type "list"
-  description "Allowed Subscriptions, if empty, all subscriptions will be checked"
+parameter "param_subscriptions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Subscriptions"
+  description "Allow or Deny entered Subscriptions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
 end
 
-parameter "param_exclusion_tag_key" do
-  category "User Inputs"
-  label "Exclusion Tag Key"
-  description "Azure-native instance tag to ignore instances that match the disallowed instance type. Only supply the tag key. The policy assumes that the tag value is irrelevant."
+parameter "param_subscriptions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Subscriptions List"
+  description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
   type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
 end
 
 ###############################################################################
@@ -56,7 +98,7 @@ end
 
 credentials "auth_flexera" do
   schemes "oauth2"
-  label "flexera"
+  label "Flexera"
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
@@ -78,53 +120,72 @@ end
 # Datasources & Scripts
 ###############################################################################
 
-datasource "ds_subscriptions" do
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_azure_subscriptions" do
   request do
     auth $auth_azure
     pagination $pagination_azure
     host $param_azure_endpoint
     path "/subscriptions/"
-    query "api-version", "2018-06-01"
+    query "api-version", "2020-01-01"
     header "User-Agent", "RS Policies"
     # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
     # Forces `ds_is_deleted` datasource to run first during policy execution
     header "Meta-Flexera", val($ds_is_deleted, "path")
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
       field "id", jmes_path(col_item, "subscriptionId")
       field "name", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
     end
   end
 end
 
-datasource "ds_filtered_subscriptions" do
-  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscriptions_list
+datasource "ds_azure_subscriptions_filtered" do
+  run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
 end
 
-script "js_filtered_subscriptions", type: "javascript" do
-  parameters "ds_subscriptions", "param_subscriptions_list"
+script "js_azure_subscriptions_filtered", type: "javascript" do
+  parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
   result "result"
   code <<-EOS
   if (param_subscriptions_list.length > 0) {
-    result = _.filter(ds_subscriptions, function(subscription) {
-      return _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
+    result = _.filter(ds_azure_subscriptions, function(subscription) {
+      include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
+
+      if (param_subscriptions_allow_or_deny == "Deny") {
+        include_subscription = !include_subscription
+      }
+
+      return include_subscription
     })
   } else {
-    result = ds_subscriptions
+    result = ds_azure_subscriptions
   }
 EOS
 end
 
-datasource "ds_azure_virtual_machines" do
-  iterate $ds_filtered_subscriptions
+datasource "ds_azure_instances" do
+  iterate $ds_azure_subscriptions_filtered
   request do
     auth $auth_azure
     pagination $pagination_azure
     host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Compute/virtualMachines"])
-    query "api-version", "2018-06-01"
+    query "api-version", "2024-03-01"
     header "User-Agent", "RS Policies"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
     ignore_status [400, 403, 404]
@@ -132,65 +193,182 @@ datasource "ds_azure_virtual_machines" do
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "id", jmes_path(col_item, "id")
-      field "type", jmes_path(col_item, "type")
-      field "location", jmes_path(col_item, "location")
+      field "resourceID", jmes_path(col_item, "id")
+      field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
+      field "resourceKind", jmes_path(col_item, "type")
       field "name", jmes_path(col_item, "name")
+      field "region", jmes_path(col_item, "location")
       field "osDisk", jmes_path(col_item, "properties.storageProfile.osDisk")
+      field "osType", jmes_path(col_item, "properties.storageProfile.osDisk.osType")
+      field "resourceType", jmes_path(col_item, "properties.hardwareProfile.vmSize")
       field "tags", jmes_path(col_item, "tags")
-      field "properties", jmes_path(col_item, "properties")
       field "subscriptionId", val(iter_item, "id")
       field "subscriptionName", val(iter_item, "name")
     end
   end
 end
 
-datasource "ds_filtered_virtual_machines" do
-  run_script $js_filter_virtual_machines, $ds_azure_virtual_machines, $param_exclusion_tag_key
+datasource "ds_azure_instances_tag_filtered" do
+  run_script $js_azure_instances_tag_filtered, $ds_azure_instances, $param_exclusion_tags, $param_exclusion_tags_boolean
 end
 
-script "js_filter_virtual_machines", type: "javascript" do
-  parameters "ds_azure_virtual_machines", "param_exclusion_tag_key"
+script "js_azure_instances_tag_filtered", type: "javascript" do
+  parameters "ds_azure_instances", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  result "result"
+  code <<-EOS
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  if (param_exclusion_tags.length > 0) {
+    result = _.reject(ds_azure_instances, function(resource) {
+      resource_tags = {}
+      if (typeof(resource['tags']) == 'object') { resource_tags = resource['tags'] }
+
+      // Store a list of found tags
+      found_tags = []
+
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_tag = resource_tags[comparator['key']]
+
+        if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+        if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+        if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_tag == undefined) { found_tags.push(string) }
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+      })
+
+      all_tags_found = found_tags.length == comparators.length
+      any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+      return all_tags_found || any_tags_found
+    })
+  } else {
+    result = ds_azure_instances
+  }
+EOS
+end
+
+datasource "ds_azure_instances_region_filtered" do
+  run_script $js_azure_instances_region_filtered, $ds_azure_instances_tag_filtered, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_azure_instances_region_filtered", type: "javascript" do
+  parameters "ds_azure_instances_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_azure_instances_tag_filtered, function(vm) {
+      include_vm = _.contains(param_regions_list, vm['region'])
+
+      if (param_regions_allow_or_deny == "Deny") {
+        include_vm = !include_vm
+      }
+
+      return include_vm
+    })
+  } else {
+    result = ds_azure_instances_tag_filtered
+  }
+EOS
+end
+
+datasource "ds_azure_instances_unmanaged_disk" do
+  run_script $js_azure_instances_unmanaged_disk, $ds_azure_instances_region_filtered, $ds_applied_policy
+end
+
+script "js_azure_instances_unmanaged_disk", type: "javascript" do
+  parameters "ds_azure_instances_region_filtered", "ds_applied_policy"
   result "result"
   code <<-'EOS'
-  // Dummy value to ensure validation runs at least once
-  vm_list = [{
-    subscriptionId: "",
-    subscriptionName: "",
-    name: "",
-    id: "",
-    resourceGroup: "",
-    location: "",
-    storageAccount: "",
-    osDisk: "",
-    tags: ""
-  }]
+  unmanaged_disk_vms = _.filter(ds_azure_instances_region_filtered, function(vm) {
+    return vm['osDisk']['vhd'] != null && vm['osDisk']['vhd'] != undefined
+  })
 
-  _.each(ds_azure_virtual_machines, function(vm) {
-    if (vm['osDisk']['vhd'] != null && vm['osDisk']['vhd'] != undefined) {
-      if (_.has(vm['tags'], param_exclusion_tag_key) == false) {
-        resourceGroup = vm['id'].split('/')[4]
-        storageAccount = vm['osDisk']['vhd']['uri'].split('/')[2].split('.')[0]
+  result = _.map(unmanaged_disk_vms, function(vm) {
+    vm_tags = []
 
-        vm_list.push({
-          subscriptionId: vm['subscriptionId'],
-          subscriptionName: vm['subscriptionName'],
-          name: vm['name'],
-          id: vm['id'],
-          resourceGroup: resourceGroup,
-          location: vm['location'],
-          storageAccount: storageAccount,
-          osDisk: vm['osDisk']['vhd']['uri'],
-          tags: JSON.stringify(vm["tags"])
-        })
-      }
+    if (typeof(vm['tags']) == 'object') {
+      _.each(Object.keys(vm['tags']), function(key) {
+        vm_tags.push(key + '=' + vm['tags'][key])
+      })
+    }
+
+    storageAccount = vm['osDisk']['vhd']['uri'].split('/')[2].split('.')[0]
+
+    return {
+      resourceName: vm['name'],
+      resourceID: vm['resourceID'],
+      resourceKind: vm['resourceKind'],
+      region: vm['region'],
+      osType: vm['osType'],
+      osDisk: vm['osDisk']['vhd']['uri'],
+      resourceType: vm['resourceType'],
+      resourceGroup: vm['resourceGroup'],
+      accountID: vm['subscriptionId'],
+      accountName: vm['subscriptionName'],
+      storageAccount: storageAccount,
+      tags: vm_tags.join(', '),
+      service: 'Microsoft.Compute',
+      policy_name: ds_applied_policy['name']
     }
   })
 
-  vm_list = _.sortBy(vm_list, 'subscriptionName')
-  vm_list = _.sortBy(vm_list, 'location')
+  result = _.sortBy(result, 'region')
+  result = _.sortBy(result, 'subscriptionId')
 
-  result = vm_list
+  // Dummy entry to ensure validation occurs at least once
+  result.push({
+    resourceName: "",
+    resourceID: "",
+    resourceKind: "",
+    region: "",
+    osType: "",
+    vhd: "",
+    resourceType: "",
+    resourceGroup: "",
+    accountID: "",
+    accountName: "",
+    tags: "",
+    service: "",
+    policy_name: ""
+  })
 EOS
 end
 
@@ -198,41 +376,53 @@ end
 # Policy
 ###############################################################################
 
-policy "pol_azure_resource_policy" do
-  validate_each $ds_filtered_virtual_machines do
-    summary_template "{{ len data }} Azure VMs without managed disks"
-    check logic_or($ds_parent_policy_terminated, eq(val(item, "name"), ""))
+policy "pol_azure_instances_unmanaged_disk" do
+  validate_each $ds_azure_instances_unmanaged_disk do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Virtual Machines Without Managed Disks Found"
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
+    hash_exclude "tags"
     export do
       resource_level true
       field "accountID" do
         label "Subscription ID"
-        path "subscriptionId"
       end
       field "accountName" do
         label "Subscription Name"
-        path "subscriptionName"
-      end
-      field "location" do
-        label "Location"
-      end
-      field "name" do
-        label "Resource Name"
-      end
-      field "id" do
-        label "Resource ID"
       end
       field "resourceGroup" do
         label "Resource Group"
       end
-      field "storageAccount" do
-        label "Storage Account"
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "resourceKind" do
+        label "Resource Kind"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "osType" do
+        label "Operating System"
       end
       field "osDisk" do
         label "osDisk VHD"
       end
-      field "tags" do
-        label "Tags"
+      field "storageAccount" do
+        label "Storage Account"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
       end
     end
   end
@@ -261,7 +451,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
     header "Api-Version", "1.0"
   end
   result do
@@ -338,4 +528,3 @@ script "js_check_deleted", type: "javascript" do
   result = {"path":"/"}
   EOS
 end
-

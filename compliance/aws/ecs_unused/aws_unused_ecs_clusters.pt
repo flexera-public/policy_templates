@@ -1,40 +1,28 @@
 name "AWS Unused ECS Clusters"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report and remediate any ECS clusters that are not currently in use. \n See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/ecs_unused) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Checks for unused ECS clusters and, optionally, deletes them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/ecs_unused) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
-category "Compliance"
 severity "low"
+category "Compliance"
+default_frequency "weekly"
 info(
-  version: "3.1",
+  version: "4.0.0",
   provider: "AWS",
-  service: "ECS",
-  policy_set: ""
+  service: "Compute",
+  policy_set: "Unused Containers"
 )
 
 ###############################################################################
 # Parameters
 ###############################################################################
 
-parameter "param_allowed_regions_allow_or_deny" do
-  type "string"
-  label "Allow/Deny Regions"
-  description "Allow or Deny entered regions. See the README for more details"
-  allowed_values "Allow", "Deny"
-  default "Allow"
-end
-
-parameter "param_allowed_regions" do
-  type "list"
-  label "Regions"
-  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
-  description "A list of allowed or denied regions. See the README for more details"
-end
-
 parameter "param_email" do
   type "list"
-  label "Email addresses to notify"
-  description "Email addresses of the recipients you wish to notify when new incidents are created"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
 end
 
 parameter "param_aws_account_number" do
@@ -45,39 +33,171 @@ parameter "param_aws_account_number" do
   default ""
 end
 
-parameter "param_exclude_tags" do
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details"
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
   type "list"
-  label "Tags to ignore"
-  description "List of tags that will exclude ECS Clusters from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  default []
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
 end
 
 parameter "param_automatic_action" do
   type "list"
+  category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Delete Clusters"]
+  allowed_values ["Delete Unused ECS Clusters"]
+  default []
 end
-
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
 credentials "auth_aws" do
-  schemes "aws","aws_sts"
+  schemes "aws", "aws_sts"
   label "AWS"
   description "Select the AWS Credential from the list"
   tags "provider=aws"
   aws_account_number $param_aws_account_number
 end
 
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
-# ds_region_list is a list of regions that are opted-in or opt-in-not-required
-datasource "ds_regions_list" do
-  # https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeRegions.html
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get AWS account info
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account", xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_get_caller_identity
+end
+
+script "js_aws_account", type:"javascript" do
+  parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+  result = _.find(ds_cloud_vendor_accounts, function(account) {
+    return account['id'] == ds_get_caller_identity[0]['account']
+  })
+
+  // This is in case the API does not return the relevant account info
+  if (result == undefined) {
+    result = {
+      id: ds_get_caller_identity[0]['account'],
+      name: "",
+      tags: {}
+    }
+  }
+EOS
+end
+
+datasource "ds_describe_regions" do
   request do
     auth $auth_aws
     verb "GET"
@@ -88,6 +208,9 @@ datasource "ds_regions_list" do
     query "Filter.1.Name", "opt-in-status"
     query "Filter.1.Value.1", "opt-in-not-required"
     query "Filter.1.Value.2", "opted-in"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
   end
   result do
     encoding "xml"
@@ -97,203 +220,257 @@ datasource "ds_regions_list" do
   end
 end
 
-# Get only SCP enabled regions
 datasource "ds_regions" do
-  run_script $js_regions, $param_allowed_regions, $ds_regions_list, $param_allowed_regions_allow_or_deny
+  run_script $js_regions, $ds_describe_regions, $param_regions_list, $param_regions_allow_or_deny
 end
 
-#To get list of All ESC Clusters.
-datasource "ds_aws_ecs_cluster_list" do
+script "js_regions", type:"javascript" do
+  parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
+  result "result"
+  code <<-EOS
+  allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_describe_regions, function(item) {
+      return _.contains(param_regions_list, item['region']) == allow_deny_test[param_regions_allow_or_deny]
+    })
+  } else {
+    result = ds_describe_regions
+  }
+EOS
+end
+
+datasource "ds_aws_ecs_cluster_lists" do
   iterate $ds_regions
   request do
-    run_script $js_aws_ecs_cluster_list, val(iter_item,"region")
+    auth $auth_aws
+    verb "POST"
+    host join(["ecs.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/"
+    header "X-Amz-Target", "AmazonEC2ContainerServiceV20141113.ListClusters"
+    header "Content-Type", "application/x-amz-json-1.1"
+    body_field "empty", "empty"
   end
   result do
     encoding "json"
-    field "region", val(iter_item,"region")
+    field "region", val(iter_item, "region")
     field "clusterArns", jmes_path(response, "clusterArns")
   end
 end
 
 #To get description of all clusters by passing array of cluster_name as input.
-datasource "ds_aws_ecs_cluster_description" do
-  iterate $ds_regions
+datasource "ds_aws_ecs_clusters_detailed" do
+  iterate $ds_aws_ecs_cluster_lists
   request do
-    run_script $js_aws_ecs_cluster_description, $ds_aws_ecs_cluster_list, val(iter_item,"region")
+    run_script $js_aws_ecs_clusters_detailed, val(iter_item, "clusterArns"), val(iter_item, "region")
   end
   result do
     encoding "json"
     collect jmes_path(response, "clusters[*]") do
-      field "cluster_Name", jmes_path(col_item, "clusterName")
-      field "active_Services_Count", jmes_path(col_item, "activeServicesCount")
-      field "running_Tasks_Count",  jmes_path(col_item, "runningTasksCount")
-      field "pending_Tasks_Count",  jmes_path(col_item, "pendingTasksCount")
-      field "registered_Container_Instances_Count", jmes_path(col_item, "registeredContainerInstancesCount")
-      field "status", jmes_path(col_item,"status")
-      field "region", val(iter_item,"region")
+      field "name", jmes_path(col_item, "clusterName")
+      field "arn", jmes_path(col_item, "clusterArn")
+      field "status", jmes_path(col_item, "status")
+      field "configuration", jmes_path(col_item, "configuration")
+      field "settings", jmes_path(col_item, "settings")
+      field "statistics", jmes_path(col_item, "statistics")
+      field "active_services_count", jmes_path(col_item, "activeServicesCount")
+      field "running_tasks_count", jmes_path(col_item, "runningTasksCount")
+      field "pending_tasks_count", jmes_path(col_item, "pendingTasksCount")
+      field "registered_container_instances_count", jmes_path(col_item, "registeredContainerInstancesCount")
       field "tags" do
-        collect jmes_path(col_item,"tags") do
-          field "tagKey", jmes_path(col_item,"key")
-          field "tagValue", jmes_path(col_item,"value")
+        collect jmes_path(col_item, "tags") do
+          field "key", jmes_path(col_item, "key")
+          field "value", jmes_path(col_item, "value")
         end
       end
+      field "region", val(iter_item, "region")
     end
   end
 end
 
-datasource "ds_unused_ecs_cluster_map" do
-  run_script $js_aws_ecs_cluster_filter_map, $ds_aws_ecs_cluster_description, $param_exclude_tags
+script "js_aws_ecs_clusters_detailed", type: "javascript" do
+  parameters "clusterArns", "region"
+  result "request"
+  code <<-EOS
+  var request = {
+    auth: "auth_aws",
+    host: 'ecs.' + region + '.amazonaws.com',
+    path: '/',
+    verb: 'POST',
+    headers: {
+      "X-Amz-Target": "AmazonEC2ContainerServiceV20141113.DescribeClusters",
+      "Content-Type": "application/x-amz-json-1.1",
+    },
+    body_fields: {
+      "clusters": clusterArns,
+      "include": [ "TAGS" ]
+    }
+  }
+EOS
 end
 
-###############################################################################
-# Scripts
-###############################################################################
-
-script "js_regions", type:"javascript" do
-  parameters "user_entered_regions", "all_regions", "regions_allow_or_deny"
-  result "regions"
-  code <<-EOS
-    if(_.isEmpty(user_entered_regions)){
-      regions = all_regions;
-    }else{
-      //Filter unique regions
-      var uniqueRegions = _.uniq(user_entered_regions);
-      var all_regions_list = [];
-      //Filter and remove denied regions from all_regions
-      if (regions_allow_or_deny == "Deny"){
-        var all_regions = all_regions.filter(function(obj){
-          return user_entered_regions.indexOf(obj.region) === -1;
-        });
-      }
-      all_regions.forEach(function(all_region){
-        all_regions_list.push(all_region.region)
-      })
-      //Filter valid regions
-      var valid_regions = [];
-      _.map(uniqueRegions, function(uniqueRegion){
-        if(all_regions_list.indexOf(uniqueRegion) > -1){
-          valid_regions.push({"region": uniqueRegion})
-        }
-      })
-
-      //Throw an error if no valid regions found
-      if (_.isEmpty(valid_regions)) {
-        regions = all_regions;
-      }else{
-        regions = valid_regions
-      }
-    }
-  EOS
+datasource "ds_aws_ecs_clusters_tag_filtered" do
+  run_script $js_aws_ecs_clusters_tag_filtered, $ds_aws_ecs_clusters_detailed, $param_exclusion_tags, $param_exclusion_tags_boolean
 end
 
-#https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_ListClusters.html
-script "js_aws_ecs_cluster_list", type: "javascript" do
-  parameters "region"
-  result "results"
+script "js_aws_ecs_clusters_tag_filtered", type: "javascript" do
+  parameters "ds_aws_ecs_clusters_detailed", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  result "result"
   code <<-EOS
-    results = {
-      auth: "auth_aws",
-      host: 'ecs.'+region+'.amazonaws.com',
-      path: '/',
-      verb: 'POST',
-      headers: {
-        "X-Amz-Target": "AmazonEC2ContainerServiceV20141113.ListClusters",
-        "Content-Type": "application/x-amz-json-1.1",
-      },
-      body_fields: {"empty": "empty"}
-    }
-  EOS
-end
-
-#https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_DescribeClusters.html
-script "js_aws_ecs_cluster_description", type: "javascript" do
-  parameters "ds_aws_ecs_cluster_list", "region"
-  result "results"
-  code <<-EOS
-    var clusterArns_map={}
-    for(var i=0; i<ds_aws_ecs_cluster_list.length; i++){
-      clusterArns_map[ds_aws_ecs_cluster_list[i].region] = ds_aws_ecs_cluster_list[i].clusterArns
-    }
-    results = {
-      auth: "auth_aws",
-      host: 'ecs.'+region+'.amazonaws.com',
-      path: '/',
-      verb: 'POST',
-      headers: {
-        "X-Amz-Target": "AmazonEC2ContainerServiceV20141113.DescribeClusters",
-        "Content-Type": "application/x-amz-json-1.1",
-      },
-      body_fields: {
-        "clusters": clusterArns_map[region],
-        "include": ["TAGS"]
-      }
-    }
-  EOS
-end
-
-#Process the response data and check for the tags and unused clusters
-script "js_aws_ecs_cluster_filter_map", type: "javascript" do
-  parameters "ds_aws_ecs_cluster_description", "param_exclude_tags"
-  result "content"
-  code <<-EOS
-    var content=[]
-    var param_exclude_tags_lower=[];
-    for(var j=0; j < param_exclude_tags.length; j++){
-      param_exclude_tags_lower[j]=param_exclude_tags[j].toString().toLowerCase();
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
     }
 
-    for(var i=0; i < ds_aws_ecs_cluster_description.length ; i++){
-      cluster=ds_aws_ecs_cluster_description[i]
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
 
-      var tags = cluster['tags']
-      var isTagMatched=false
-      var tagKeyValue=""
-      for(var j=0; j < tags.length; j++){
-        tag = tags[j]
-        //Check, if the tag present in entered param_exclude_tags, ignore the Cluster if the tag matches/present.
-        if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
-          isTagMatched = true;
-        }
-        // Constructing Tags of individual Cluster into key=value format and comma separated to display in detail_template
-        if((tag['tagValue']).length > 0){
-          tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
-        }else{
-          tagKeyValue = tagKeyValue + ', '+ tag['tagKey']
-        }
-      }
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
 
-      if(!(isTagMatched) && (Number(cluster['active_Services_Count']) == 0 && Number(cluster['running_Tasks_Count']) == 0 && Number(cluster['pending_Tasks_Count']) == 0 && Number(cluster['registered_Container_Instances_Count']) == 0)){
-        content.push({
-          id: cluster['cluster_Name'],
-          region: cluster['region'],
-          active_Services_Count: cluster['active_Services_Count'],
-          running_Tasks_Count: cluster['running_Tasks_Count'],
-          pending_Tasks_Count: cluster['pending_Tasks_Count'],
-          registered_Container_Instances_Count: cluster['registered_Container_Instances_Count'],
-          status: cluster['status']
-          tagKeyValue:(tagKeyValue.slice(2))
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  if (param_exclusion_tags.length > 0) {
+    result = _.reject(ds_aws_ecs_clusters_detailed, function(resource) {
+      resource_tags = {}
+
+      if (typeof(resource['tags']) == 'object') {
+        _.each(resource['tags'], function(tag) {
+          resource_tags[tag['key']] = tag['value']
         })
       }
+
+      // Store a list of found tags
+      found_tags = []
+
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_tag = resource_tags[comparator['key']]
+
+        if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+        if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+        if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_tag == undefined) { found_tags.push(string) }
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+      })
+
+      all_tags_found = found_tags.length == comparators.length
+      any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+      return all_tags_found || any_tags_found
+    })
+  } else {
+    result = ds_aws_ecs_clusters_detailed
+  }
+EOS
+end
+
+datasource "ds_aws_unused_ecs_clusters" do
+  run_script $js_aws_unused_ecs_clusters, $ds_aws_ecs_clusters_tag_filtered, $ds_aws_account, $ds_applied_policy
+end
+
+script "js_aws_unused_ecs_clusters", type: "javascript" do
+  parameters "ds_aws_ecs_clusters_tag_filtered", "ds_aws_account", "ds_applied_policy"
+  result "result"
+  code <<-'EOS'
+  unused_clusters = _.filter(ds_aws_ecs_clusters_tag_filtered, function(cluster) {
+    return cluster['active_services_count'] == 0 && cluster['running_tasks_count'] == 0 && cluster['pending_tasks_count'] == 0 && cluster['registered_container_instances_count'] == 0
+  })
+
+  result = _.map(unused_clusters, function(cluster) {
+    tags = []
+
+    if (typeof(cluster['tags']) == 'object') {
+      tags = _.map(cluster['tags'], function(tag) { return tag['key'] + '=' + tag['value'] })
     }
-  content = _.sortBy(content,'id')
-  content = _.sortBy(content,'region')
-  EOS
+
+    recommendationDetails = [
+      "Delete ECS cluster ", cluster['name'], " ",
+      "in AWS Account ", ds_aws_account['name'], " ",
+      "(", ds_aws_account['id'], ")"
+    ].join('')
+
+    return {
+      accountID: ds_aws_account['id'],
+      accountName: ds_aws_account['name'],
+      resourceID: cluster['arn'],
+      resourceName: cluster['name'],
+      region: cluster['region'],
+      status: cluster['status'],
+      tags: tags.join(', '),
+      recommendationDetails: recommendationDetails,
+      policy_name: ds_applied_policy['name']
+    }
+  })
+
+  // Dummy entry to ensure validation always occurs at least once
+  result.push({
+    accountID: "",
+    accountName: "",
+    resourceID: "",
+    resourceName: "",
+    region: "",
+    status: "",
+    tags: "",
+    recommendationDetails: "",
+    policy_name: ""
+  })
+EOS
 end
 
 ###############################################################################
 # Policy
 ###############################################################################
 
-policy "pol_ri_coverage" do
-  validate $ds_unused_ecs_cluster_map do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Unused ECS Clusters found in AWS."
-    escalate $report_unused_ECS_clusters
-    escalate $delete_clusters
-    check eq(size(data),0)
+policy "pol_aws_unused_ecs_clusters" do
+  validate_each $ds_aws_unused_ecs_clusters do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Unused AWS ECS Clusters Found"
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    escalate $esc_delete_clusters
+    hash_exclude "tags"
     export do
       resource_level true
-      field "id" do
-        label "Cluster Name"
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Resource ARN"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "tags" do
+        label "Resource Tags"
       end
       field "region" do
         label "Region"
@@ -301,8 +478,12 @@ policy "pol_ri_coverage" do
       field "status" do
         label "Status"
       end
-      field "tagKeyValue" do
-        label "Tags"
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
       end
     end
   end
@@ -312,80 +493,164 @@ end
 # Escalations
 ###############################################################################
 
-escalation "report_unused_ECS_clusters" do
+escalation "esc_email" do
   automatic true
-  label "Send Mail"
-  description "Sends incidents email"
+  label "Send Email"
+  description "Send incident email"
   email $param_email
 end
 
-escalation "delete_clusters" do
-  automatic contains($param_automatic_action, "Delete Clusters")
-  label "Delete Unused Clusters"
-  description "Delete selected clusters"
-  run "delete_clusters", data, rs_optima_host
+escalation "esc_delete_clusters" do
+  automatic contains($param_automatic_action, "Delete Unused ECS Clusters")
+  label "Delete Unused ECS Clusters"
+  description "Approval to delete all selected ECS clusters"
+  run "delete_clusters", data
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-#https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_DeleteCluster.html
-define delete_clusters($data, $$rs_optima_host) return $all_responses do
-  $$debug = "true"
-  $all_responses = []
-  foreach $item in $data do
-    sub on_error: skip do
-      $response = http_request(
-        verb: "post",
-        host: "ecs."+$item["region"]+".amazonaws.com",
-        https: true,
-    href: "/",
-        auth: $$auth_aws,
-        headers: {
-          "x-amz-target": "AmazonEC2ContainerServiceV20141113.DeleteCluster",
-          "content-type": "application/x-amz-json-1.1"
-        },
-        body: {
-          "cluster": $item["id"]
-        }
-      )
-      $all_responses << $response
-      call sys_log('all_responses', to_s($all_responses))
+define delete_clusters($data) do
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call delete_cluster($instance)
     end
+  end
+
+  # If we encountered any errors, use `raise` to mark the CWF process as errored
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
   end
 end
 
-define sys_log($subject, $detail) do
-  # Create empty errors array if doesn't already exist
+define delete_cluster($instance) return $response do
+  $host = "ecs." + $instance["region"] + ".amazonaws.com"
+  $href = "/"
+  $url = $host + $href
+  task_label("POST " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    host: $host,
+    href: $href,
+    headers: {
+      "x-amz-target": "AmazonEC2ContainerServiceV20141113.DeleteCluster",
+      "content-type": "application/x-amz-json-1.1"
+    },
+    body: {
+      "cluster": $instance["id"]
+    }
+  )
+
+  task_label("Post AWS ECS Cluster response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
+
+  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
+    raise "Unexpected response posting AWS ECS Cluster: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Post AWS ECS Cluster successful: " + $instance["id"])
+  end
+end
+
+define handle_error() do
   if !$$errors
     $$errors = []
   end
-  # Check if debug is enabled
-  if $$debug
-    # Append to global $$errors
-    # This is the suggested way to capture errors
-    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
-    # If Flexera NAM Zone, create audit_entries [to be deprecated]
-    # This is the legacy method for capturing errors and only supported on Flexera NAM
-    if $$rs_optima_host == "api.optima.flexeraeng.com"
-      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
-      $task_label = "Creating audit entry for " + $subject
-      sub task_label: $task, on_error: skip_error_and_append($task) do
-        rs_cm.audit_entries.create(
-          notify: "None",
-          audit_entry: {
-            auditee_href: @@account,
-            summary: $subject,
-            detail: $detail
-          }
-        )
-      end # End sub on_error
-    end # End if rs_optima_host
-  end # End if debug is enabled
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
 end
 
-define skip_error_and_append($subject) do
-  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
-  $_error_behavior = "skip"
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
 end

@@ -1,0 +1,665 @@
+name "Azure Bring-Your-Own-License (BYOL) Report"
+rs_pt_ver 20180301
+type "policy"
+short_description "Produces a report containing the number of Azure virtual machines per day that utilize Bring-Your-Own-License (BYOL). See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/byol_report) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "low"
+category "Operational"
+default_frequency "weekly"
+info(
+  version: "0.3",
+  provider: "Azure",
+  service: "Compute",
+  policy_set: "Hybrid Use Benefit"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_subscriptions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Subscriptions"
+  description "Allow or Deny entered Subscriptions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_subscriptions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Subscriptions List"
+  description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+parameter "param_lookback" do
+  type "number"
+  category "Policy Settings"
+  label "Look Back Period (Days)"
+  description "How far back, in days, to report on Azure virtual machines that utilize Bring-Your-Own-License (BYOL)."
+  default 10
+  min_value 4
+  max_value 31
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+    ignore_status [403]
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
+end
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-EOS
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
+end
+
+datasource "ds_azure_subscription_data" do
+  request do
+    run_script $js_azure_subscription_data, $ds_top_level_bcs, $param_lookback, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "vendor_account", jmes_path(col_item, "dimensions.vendor_account")
+      field "vendor_account_name", jmes_path(col_item, "dimensions.vendor_account_name")
+    end
+  end
+end
+
+script "js_azure_subscription_data", type: "javascript" do
+  parameters "ds_top_level_bcs", "param_lookback", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - param_lookback - 2)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var body = {
+    dimensions: [ "vendor_account", "vendor_account_name" ],
+    granularity: "day",
+    start_at: start_date,
+    end_at: end_date,
+    metrics: ["cost_amortized_unblended_adj"],
+    billing_center_ids: ds_top_level_bcs,
+    filter: {
+      "type": "or",
+      "expressions": [
+        { "type": "equal", "dimension": "vendor", "value": "Azure" },
+        { "type": "equal", "dimension": "vendor", "value": "azure" },
+        { "type": "equal", "dimension": "vendor", "value": "Microsoft Azure" },
+        { "type": "equal", "dimension": "vendor", "value": "microsoft azure" }
+      ]
+    }
+  }
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(body)
+  }
+EOS
+end
+
+datasource "ds_azure_subscriptions" do
+  run_script $js_azure_subscriptions, $ds_azure_subscription_data
+end
+
+script "js_azure_subscriptions", type:"javascript" do
+  parameters "ds_azure_subscription_data"
+  result "result"
+  code <<-EOS
+  result = []
+
+  _.each(ds_azure_subscription_data, function(sub) {
+    if (typeof(sub['vendor_account']) == 'string' && sub['vendor_account'] != "") {
+      if (_.contains(_.pluck(result, 'id'), sub['vendor_account']) == false) {
+        result.push({ id: sub['vendor_account'], name: sub['vendor_account_name'] })
+      }
+    }
+  })
+EOS
+end
+
+datasource "ds_azure_subscriptions_filtered" do
+  run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
+end
+
+script "js_azure_subscriptions_filtered", type: "javascript" do
+  parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
+  result "result"
+  code <<-EOS
+  if (param_subscriptions_list.length > 0) {
+    result = _.filter(ds_azure_subscriptions, function(subscription) {
+      include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
+
+      if (param_subscriptions_allow_or_deny == "Deny") {
+        include_subscription = !include_subscription
+      }
+
+      return include_subscription
+    })
+  } else {
+    result = ds_azure_subscriptions
+  }
+EOS
+end
+
+datasource "ds_cco_data" do
+  iterate $ds_azure_subscriptions_filtered
+  request do
+    run_script $js_cco_data, val(iter_item, 'id'), $ds_top_level_bcs, $param_lookback, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "timestamp", jmes_path(col_item, "timestamp")
+      field "resource_id", jmes_path(col_item, "dimensions.resource_id")
+      field "vendor_account", jmes_path(col_item, "dimensions.vendor_account")
+      field "vendor_account_name", jmes_path(col_item, "dimensions.vendor_account_name")
+      field "resource_group", jmes_path(col_item, "dimensions.resource_group")
+      field "region", jmes_path(col_item, "dimensions.region")
+      field "operating_system", jmes_path(col_item, "dimensions.operating_system")
+      field "cost_amortized_unblended_adj", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+    end
+  end
+end
+
+script "js_cco_data", type: "javascript" do
+  parameters "subscription_id", "ds_top_level_bcs", "param_lookback", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - param_lookback - 2)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
+    body_fields: {
+      dimensions: ["resource_id", "vendor_account", "vendor_account_name", "resource_group", "region", "operating_system"],
+      granularity: "day",
+      start_at: start_date,
+      end_at: end_date,
+      metrics: ["cost_amortized_unblended_adj"],
+      billing_center_ids: ds_top_level_bcs,
+      limit: 100000,
+      filter: {
+        "type": "and",
+        "expressions": [
+          {
+            "type": "or",
+            "expressions": [
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "Microsoft.Compute"
+              },
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "microsoft.compute"
+              }
+            ]
+          },
+          {
+            "dimension": "vendor_account",
+            "type": "equal",
+            "value": subscription_id
+          },
+          {
+            "type": "not",
+            "expression": {
+              "dimension": "instance_type",
+              "type": "equal",
+              "value": "None"
+            }
+          },
+          {
+            "type": "not",
+            "expression": {
+              "dimension": "adjustment_name",
+              "type": "substring",
+              "substring": "Shared"
+            }
+          }
+        ]
+      }
+    },
+    headers: {
+      'User-Agent': "RS Policies",
+      'Api-Version': "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
+datasource "ds_cco_data_region_filtered" do
+  run_script $js_cco_data_region_filtered, $ds_cco_data, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_cco_data_region_filtered", type: "javascript" do
+  parameters "ds_cco_data", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_cco_data, function(vm) {
+      include_vm = _.contains(param_regions_list, vm['region'])
+
+      if (param_regions_allow_or_deny == "Deny") {
+        include_vm = !include_vm
+      }
+
+      return include_vm
+    })
+  } else {
+    result = ds_cco_data
+  }
+EOS
+end
+
+datasource "ds_azure_virtual_machines" do
+  run_script $js_azure_virtual_machines, $ds_cco_data_region_filtered
+end
+
+script "js_azure_virtual_machines", type:"javascript" do
+  parameters "ds_cco_data_region_filtered"
+  result "result"
+  code <<-EOS
+  result = {}
+
+  _.each(ds_cco_data_region_filtered, function(item) {
+    date = item['timestamp'].split('T')[0]
+
+    if (result[date] == undefined) { result[date] = [] }
+
+    result[date].push({
+      resourceID: item["resource_id"],
+      accountID: item["vendor_account"],
+      accountName: item["vendor_account_name"],
+      resourceGroup: item["resource_group"],
+      region: item["region"],
+      osType: item["operating_system"],
+      cost: item["cost_amortized_unblended_adj"],
+      date: date
+    })
+  })
+EOS
+end
+
+datasource "ds_byol_report" do
+  run_script $js_byol_report, $ds_azure_virtual_machines, $ds_applied_policy, $param_lookback
+end
+
+script "js_byol_report", type:"javascript" do
+  parameters "ds_azure_virtual_machines", "ds_applied_policy", "param_lookback"
+  result "result"
+  code <<-'EOS'
+  byol_os_list = ["Red Hat BYOS", "SUSE BYOS", "Windows Server BYOL", "Windows Client BYOL"]
+
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - param_lookback - 2)
+  start_date = start_date.toISOString().split('T')[0]
+
+  result = []
+
+  peak_byol = 0
+  peak_byol_date = ''
+  peak_percentage = 0.00
+  peak_percentage_date = ''
+
+  _.each(_.keys(ds_azure_virtual_machines), function(date) {
+    all_vms = ds_azure_virtual_machines[date]
+    byol_vms = _.filter(all_vms, function(vm) { return _.contains(byol_os_list, vm['osType']) })
+    rh_vms = _.filter(all_vms, function(vm) { return vm['osType'] == "Red Hat BYOS" })
+    suse_vms = _.filter(all_vms, function(vm) { return vm['osType'] == "SUSE BYOS" })
+    win_vms = _.filter(all_vms, function(vm) { return vm['osType'] == "Windows Server BYOL" || vm['osType'] == "Windows Client BYOL" })
+
+    total_vms = all_vms.length
+    total_byol = byol_vms.length
+    total_rh = rh_vms.length
+    total_suse = suse_vms.length
+    total_win = win_vms.length
+    percentage = 0.00
+
+    if (total_vms != 0) { percentage = Number(((total_byol / total_vms) * 100).toFixed(2)) }
+
+    if (total_byol >= peak_byol) {
+      peak_byol = total_byol
+      peak_byol_date = date
+    }
+
+    if (percentage >= peak_percentage) {
+      peak_percentage = percentage
+      peak_percentage_date = date
+    }
+
+    result.push({
+      date: date,
+      total_vms: total_vms,
+      total_byol: total_byol,
+      total_rh: total_rh,
+      total_suse: total_suse,
+      total_win: total_win,
+      percentage: percentage,
+      start_date: start_date,
+      end_date: end_date,
+      policy_name: ds_applied_policy['name'],
+      message: '',
+      peak_byol: '',
+      peak_byol_date: '',
+      peak_percentage: '',
+      peak_percentage_date: ''
+    })
+  })
+
+  result = _.sortBy(result, 'date')
+
+  if (result.length > 0) {
+    result[0]['peak_byol'] = peak_byol
+    result[0]['peak_byol_date'] = peak_byol_date
+    result[0]['peak_percentage'] = peak_percentage
+    result[0]['peak_percentage_date'] = peak_percentage_date
+  }
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_byol_report" do
+  validate_each $ds_byol_report do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ with index data 0 }}{{ .start_date }}{{ end }} -> {{ with index data 0 }}{{ .end_date }}{{ end }}"
+    detail_template <<-'EOS'
+    **Date Range:** {{ with index data 0 }}{{ .start_date }}{{ end }} -> {{ with index data 0 }}{{ .end_date }}{{ end }}
+
+    **Peak Total BYOL Usage:** {{ with index data 0 }}{{ .peak_byol }}{{ end }} VMs on {{ with index data 0 }}{{ .peak_byol_date }}{{ end }}
+
+    **Peak Percentage BYOL Usage:** {{ with index data 0 }}{{ .peak_percentage }}{{ end }}% of VMs on {{ with index data 0 }}{{ .peak_percentage_date }}{{ end }}
+    EOS
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "date"), ""))
+    escalate $esc_email
+    export do
+      resource_level false
+      field "date" do
+        label "Date"
+      end
+      field "total_vms" do
+        label "Total VMs"
+      end
+      field "total_byol" do
+        label "BYOL VMs"
+      end
+      field "percentage" do
+        label "Percentage BYOL"
+      end
+      field "total_rh" do
+        label "BYOL Red Hat VMs"
+      end
+      field "total_suse" do
+        label "BYOL SuSE VMs"
+      end
+      field "total_win" do
+        label "BYOL Windows VMs"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
+end

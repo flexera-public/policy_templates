@@ -1,32 +1,37 @@
 name "SaaS Manager - User Status Change"
 rs_pt_ver 20180301
 type "policy"
-short_description "This policy will create an incident when Flexera SaaS Manager identifies users whose status in the HR roster changes to inactive. See the [README](https://github.com/flexera-public/policy_templates/tree/master/saas/fsm/user_status_change/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "**Deprecated: This policy is no longer being updated. Please see [README](https://github.com/flexera-public/policy_templates/tree/master/saas/fsm/user_status_change/) for more details.**  This policy will create an incident when Flexera SaaS Manager identifies users whose status in the HR roster changes to inactive. See the [README](https://github.com/flexera-public/policy_templates/tree/master/saas/fsm/user_status_change/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "medium"
 category "SaaS Management"
 default_frequency "daily"
 info(
-  version: "2.6",
-  provider: "Flexera SaaS Manager",
-  service: "",
-  policy_set: ""
+  version: "2.8.2",
+  provider: "Flexera",
+  service: "SaaS Manager",
+  policy_set: "",
+  publish: "false",
+  deprecated: "true"
 )
 
 ###############################################################################
-# User inputs
+# Parameters
 ###############################################################################
-
-parameter "param_days" do
-  type "number"
-  label "Number of Days Back"
-  description "If a user's status changes to inactive during this time period, those user accounts will raise an incident"
-end
 
 parameter "param_email" do
   type "list"
-  label "Email addresses to notify"
-  description "Email addresses of the recipients you wish to notify"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify when new incidents are created."
+  default []
+end
+
+parameter "param_days" do
+  type "number"
+  category "Policy Settings"
+  label "Number of Days Back"
+  description "If a user's status changes to inactive during this time period, those user accounts will raise an incident"
 end
 
 ###############################################################################
@@ -34,7 +39,7 @@ end
 ###############################################################################
 
 #authenticate with FSM
-credentials "fsm_auth" do
+credentials "auth_fsm" do
   schemes "oauth2"
   label "FSM"
   description "Select the FSM Resource Manager Credential from the list."
@@ -42,35 +47,33 @@ credentials "fsm_auth" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
 datasource "ds_num_users" do
   iterate $ds_get_host
   request do
-    auth $fsm_auth
-    host val(iter_item,"host")
+    auth $auth_fsm
     verb "GET"
-    scheme "https"
+    host val(iter_item, "host")
     path join(["/svc/orgs/", rs_org_id, "/customer-agents"])
-    header "content-type", "application/json"
     query "includeInactive", "true"
     query "property", "totalItems"
+    header "content-type", "application/json"
   end
   result do
     encoding "json"
     field "totalItems", jmes_path(response, "totalItems")
-    field "saas_host", val(iter_item,"host")
+    field "saas_host", val(iter_item, "host")
   end
 end
 
 datasource "ds_groups" do
   iterate $ds_get_host
   request do
-    auth $fsm_auth
-    host val(iter_item,"host")
+    auth $auth_fsm
     verb "GET"
-    scheme "https"
+    host val(iter_item, "host")
     path join(["/svc/orgs/", rs_org_id, "/customer-group"])
     header "content-type", "application/json"
   end
@@ -79,7 +82,7 @@ datasource "ds_groups" do
     collect jmes_path(response, "nodes[*]") do
       field "id", val(col_item, "id")
       field "groupName", val(col_item, "groupName")
-      field "saas_host", val(iter_item,"host")
+      field "saas_host", val(iter_item, "host")
     end
   end
 end
@@ -87,7 +90,7 @@ end
 datasource "ds_group_members" do
   iterate $ds_groups
   request do
-    run_script $js_group_members, val(iter_item, "id"), rs_org_id, val(iter_item, "saas_host")
+    run_script $js_group_members, val(iter_item, "id"), val(iter_item, "saas_host"), rs_org_id
   end
   result do
     encoding "json"
@@ -116,13 +119,13 @@ datasource "ds_users" do
 end
 
 datasource "ds_inactive_users" do
-  run_script $js_filter_users, $ds_users
+  run_script $js_inactive_users, $ds_users
 end
 
 datasource "ds_users_details" do
   iterate $ds_inactive_users
   request do
-    run_script $js_user_details, val(iter_item, "id"), rs_org_id, $ds_get_host
+    run_script $js_users_details, val(iter_item, "id"), $ds_get_host, rs_org_id
   end
   result do
     encoding "json"
@@ -145,10 +148,6 @@ datasource "ds_get_host" do
   run_script $js_get_host, rs_governance_host
 end
 
-###############################################################################
-# Scripts
-###############################################################################
-
 script "js_get_host", type: "javascript" do
   parameters "rs_governance_host"
   result "result"
@@ -163,11 +162,11 @@ script "js_get_host", type: "javascript" do
 end
 
 script "js_group_members", type: "javascript" do
-  parameters "group_id", "rs_org_id", "saas_host"
+  parameters "group_id", "saas_host", "rs_org_id"
   result "request"
   code <<-EOS
   request = {
-    auth: "fsm_auth",
+    auth: "auth_fsm",
     host: saas_host,
     verb: "GET",
     scheme: "https",
@@ -187,7 +186,7 @@ script "js_users", type: "javascript" do
   result "request"
   code <<-EOS
   request = {
-    auth: "fsm_auth",
+    auth: "auth_fsm",
     host: ds_num_users[0]["saas_host"],
     verb: "GET",
     scheme: "https",
@@ -204,7 +203,7 @@ script "js_users", type: "javascript" do
 EOS
 end
 
-script "js_filter_users", type: "javascript" do
+script "js_inactive_users", type: "javascript" do
   parameters "users"
   result "inactive_users"
   code <<-EOS
@@ -213,12 +212,12 @@ script "js_filter_users", type: "javascript" do
   EOS
 end
 
-script "js_user_details", type: "javascript" do
-  parameters "user", "rs_org_id", "ds_get_host"
+script "js_users_details", type: "javascript" do
+  parameters "user", "ds_get_host", "rs_org_id"
   result "request"
   code <<-EOS
   request = {
-    auth: "fsm_auth",
+    auth: "auth_fsm",
     host: ds_get_host[0]["host"],
     verb: "GET",
     scheme: "https",
@@ -272,25 +271,14 @@ EOS
 end
 
 ###############################################################################
-# Escalations
-###############################################################################
-
-escalation "report_summary" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
-end
-
-###############################################################################
 # Policy
 ###############################################################################
 
-policy "policy_fsm_inactive_users" do
+policy "pol_fsm_inactive_users" do
   validate $ds_cleanup_users do
     summary_template "{{ len data }} Inactive Users Found"
-    escalate $report_summary
     check eq(size(data), 0)
+    escalate $esc_email
     export do
       field "email" do
         label "Email"
@@ -312,4 +300,15 @@ policy "policy_fsm_inactive_users" do
       end
     end
   end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
 end

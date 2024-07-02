@@ -7,7 +7,7 @@ severity "medium"
 category "Compliance"
 default_frequency "weekly"
 info(
-  version: "4.0",
+  version: "4.2",
   provider: "Azure",
   service: "Compute",
   policy_set: "Instances not running FlexNet Inventory Agent"
@@ -102,11 +102,13 @@ datasource "ds_subscriptions" do
     pagination $pagination_azure
     host $param_azure_endpoint
     path "/subscriptions/"
-    query "api-version","2019-06-01"
+    query "api-version", "2019-06-01"
     header "User-Agent", "RS Policies"
     # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
     # Forces `ds_is_deleted` datasource to run first during policy execution
     header "Meta-Flexera", val($ds_is_deleted, "path")
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
@@ -148,10 +150,10 @@ datasource "ds_list_virtual_machines" do
     pagination $pagination_azure
     host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/virtualMachines"])
-    query "api-version","2018-06-01"
+    query "api-version", "2018-06-01"
     header "User-Agent", "RS Policies"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-    ignore_status [400,403,404]
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
@@ -225,7 +227,7 @@ end
 # Escalations
 ###############################################################################
 
-escalation "report_instances" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
@@ -239,7 +241,7 @@ end
 policy "policy_long_running_instances" do
   validate $ds_formatted_instances do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{len data }} is missing in FlexNet Manager."
-    escalate $report_instances
+    escalate $esc_email
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
     check logic_or($ds_parent_policy_terminated, eq(size(data), 0))
     export do

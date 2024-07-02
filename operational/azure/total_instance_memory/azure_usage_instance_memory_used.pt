@@ -1,0 +1,521 @@
+name "Azure Usage Report - Amount of Instance Memory Used"
+rs_pt_ver 20180301
+type "policy"
+short_description "**Deprecated: This policy is no longer being updated. Please see [README](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/total_instance_memory/) for more details.**  This policy produces a usage report showing the amount of memory (in Gigabytes (GiB)) used for each Azure Instance Family. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/total_instance_memory) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "low"
+category "Operational"
+default_frequency "monthly"
+info(
+  version: "2.1.3",
+  provider: "Azure",
+  service: "Compute",
+  policy_set: "Usage Report",
+  deprecated: "true"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. Example: 'US East'. Leave blank to check all regions."
+  default []
+end
+
+parameter "param_bc_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Billing Centers"
+  description "Allow or Deny entered Billing Centers."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_bc_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Billing Center List"
+  description "A list of allowed or denied Billing Center names/IDs. Leave blank to check all Billing Centers."
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+#AUTHENTICATE WITH FLEXERA
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+#GET BILLING CENTERS FOR ORG
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+      field "ancestor_ids", jmes_path(col_item, "ancestor_ids")
+      field "allocation_table", jmes_path(col_item, "allocation_table")
+    end
+  end
+end
+
+#FILTER USING BILLING CENTERS PARAMETER IF APPLICABLE
+datasource "ds_filtered_billing_centers" do
+  run_script $js_filtered_billing_centers, $ds_billing_centers, $param_bc_allow_or_deny, $param_bc_list
+end
+
+script "js_filtered_billing_centers", type: "javascript" do
+  parameters "ds_billing_centers", "param_bc_allow_or_deny", "param_bc_list"
+  result "result"
+  code <<-EOS
+
+  //Define Billing Center list if applicable
+  var allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_bc_list.length > 0) {
+
+    //Filter BC List based on BC List Parameter and whether to Allow/Deny
+    var billing_center_list = _.filter(ds_billing_centers, function(bc) {
+      if (param_bc_allow_or_deny == "Allow") {
+        return _.contains(param_bc_list, bc.id) == allow_deny_test[param_bc_allow_or_deny] || _.contains(param_bc_list, bc.name) == allow_deny_test[param_bc_allow_or_deny]
+      } else {
+        return _.contains(param_bc_list, bc.id) == allow_deny_test[param_bc_allow_or_deny] && _.contains(param_bc_list, bc.name) == allow_deny_test[param_bc_allow_or_deny]
+      }
+    })
+
+    //Check that there are no child billing centers specified that conflict with parent billing centers specified
+    var bc_ids = _.map(billing_center_list, function(bc) { return bc.id.toLowerCase() })
+
+    var conflicting_child_bcs = _.filter(billing_center_list, function(bc) {
+      if (!(bc.parent_id == null || bc.parent_id == undefined)) {
+        return _.contains(bc_ids, bc.parent_id.toLowerCase())
+      }
+    })
+
+    //If there are conflicting child/parent BCs then ignore the child BC and take the parent BC
+    if (conflicting_child_bcs != undefined) {
+      var conflicting_child_bc_ids = _.pluck(conflicting_child_bcs, "id")
+
+      var filtered_bc_list = _.reject(billing_center_list, function(bc) {
+        return _.contains(conflicting_child_bc_ids, bc.id)
+      })
+      result = _.compact(_.pluck(filtered_bc_list, 'id'))
+    } else {
+      result = _.compact(_.pluck(billing_center_list, 'id'))
+    }
+
+  } else {
+    var billing_center_list = _.filter(ds_billing_centers, function(bc) {
+      return bc['parent_id'] == null || bc['parent_id'] == undefined
+    })
+
+    result = _.compact(_.pluck(billing_center_list, 'id'))
+  }
+  EOS
+end
+
+#GET USAGE DATA FOR INSTANCE TYPES
+datasource "ds_usage_data" do
+  request do
+    run_script $js_usage_data, $ds_filtered_billing_centers, $param_regions_allow_or_deny, $param_regions_list, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows") do
+      field "billing_center_id", jmes_path(col_item, "dimensions.billing_center_id")
+      field "instance_type", jmes_path(col_item, "dimensions.instance_type")
+      field "usage_unit", jmes_path(col_item, "dimensions.usage_unit")
+      field "cost", jmes_path(col_item, "metrics.cost_nonamortized_unblended_adj")
+      field "usage_amount", jmes_path(col_item, "metrics.usage_amount")
+      field "month", jmes_path(col_item, "timestamp")
+    end
+  end
+end
+
+script "js_usage_data", type: "javascript" do
+  parameters "ds_filtered_billing_centers", "param_regions_allow_or_deny", "param_regions_list", "org_id", "optima_host"
+  result "request"
+  code <<-EOS
+  //Get Start and End dates
+  var start_date = new Date(), end_date = new Date()
+  start_date.setMonth(start_date.getMonth() - 12)
+  end_date.setMonth(end_date.getMonth())
+
+  //Define Billing Center list if applicable
+  var billing_center_ids = ds_filtered_billing_centers
+  var allow_deny_test = { "Allow": true, "Deny": false }
+
+  //Define Expressions for API Filter
+  var expressions = [
+    { "dimension": "category", "type": "equal", "value": "Compute" },
+    { "dimension": "resource_type", "type": "substring", "substring": "Virtual Machines" },
+    { "dimension": "vendor", "type": "substring", substring: "Azure" }, // Use a substring type to include both "Azure" (Azure EA) and "AzureMCA-Enterprise" (Azure MCA) subscriptions
+    {
+      "type": "not",
+      "expression": { "dimension": "instance_type", "type": "equal", "value": "None" }
+    }
+  ]
+
+  //Get Regions list if applicable
+  if (param_regions_list.length > 0) {
+
+    var regions_filter_list = []
+    _.each(param_regions_list, function(reg) {
+        var region_dimension = { "dimension": "region", "type": "equal", "value": reg }
+        regions_filter_list.push(region_dimension)
+    })
+
+    var region_filter_json = {}
+    if (param_regions_allow_or_deny == "Deny") {
+
+      region_filter_json = {
+        "type": "not",
+        "expression": {
+          "type": "or",
+          "expressions": regions_filter_list
+        }
+      }
+      expressions.push(region_filter_json)
+
+    } else {
+
+      region_filter_json = {
+        "type": "or",
+        "expressions": regions_filter_list
+      }
+      expressions.push(region_filter_json)
+
+    }
+  }
+
+  //POST JSON payload
+  payload = {
+    "billing_center_ids": billing_center_ids,
+    "filter": {
+      "type": "and",
+      "expressions": expressions
+    },
+    "dimensions": [
+      "billing_center_id",
+      "instance_type",
+      "usage_unit"
+    ],
+    "granularity": "month",
+    "metrics": [
+      "cost_nonamortized_unblended_adj",
+      "usage_amount"
+    ],
+    "end_at": end_date.toLocaleDateString("en-US").split("-")[0] + "-" + end_date.toLocaleDateString("en-US").split("-")[1]
+    "start_at": start_date.toLocaleDateString("en-US").split("-")[0] + "-" + start_date.toLocaleDateString("en-US").split("-")[1]
+  }
+
+  //Request
+  request = {
+    auth: "auth_flexera",
+    verb: "POST",
+    host: optima_host,
+    path: "/bill-analysis/orgs/" + org_id + "/costs/aggregated",
+    headers: {
+      "User-Agent": "RS Policies",
+    },
+    body_fields: payload
+  }
+  EOS
+end
+
+#GET DATA WITH NORMALIZATION FACTOR UNITS FOR INSTANCE TYPES
+datasource "ds_azure_instance_size_map" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/azure/instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+#GET DATA WITH INSTANCE FAMILY FOR INSTANCE TYPES
+datasource "ds_isf_ratio_csv" do
+  request do
+    host "aka.ms"
+    path "/isf"
+  end
+  result do
+    encoding "text"
+  end
+end
+
+#GROUP INSTANCE TYPES INTO INSTANCE FAMILIES AND CALCULATE INSTANCE MEMORY
+datasource "ds_instance_memory_per_fam" do
+  run_script $js_instance_memory_per_fam, $ds_azure_instance_size_map, $ds_isf_ratio_csv, $ds_usage_data
+end
+
+script "js_instance_memory_per_fam", type: "javascript" do
+  parameters "azure_instance_data", "azure_inst_fam", "usage_data"
+  result "result"
+  code <<-'EOS'
+  temp_result = []
+  result = []
+
+  //Convert Instance Family csv to json
+  var isf_ratio_array = azure_inst_fam.toString().split("\r\n")
+  var inst_families = []
+  _.each(isf_ratio_array, function(ratio) {
+    inst_families.push({
+      "instance_family": ratio.split(",")[0],
+      "instance_type": ratio.split(",")[1]
+    })
+  })
+
+  //Get Memory counts from Instance Data json and inject Instance Family
+  var instance_types = _.keys(azure_instance_data)
+  var memory_data = []
+  _.each(instance_types, function(inst) {
+    var instance_family = inst
+    var matched_inst_fam = _.find(inst_families, function(fam) {
+      return inst == fam.instance_type
+    })
+    if (!(matched_inst_fam == undefined || matched_inst_fam == null)) {
+      instance_family = matched_inst_fam.instance_family
+    }
+
+    var mem_count = 0
+    if (azure_instance_data[inst].memory) {
+      mem_count = azure_instance_data[inst].memory
+    }
+    memory_data.push({
+      "instance_type": inst,
+      "mem_count": mem_count,
+      "instance_family": instance_family
+    })
+  })
+
+  //Enrich current data with Instance Family, and then calculate Instance Memory
+  _.each(usage_data, function(data){
+    var matched_instance_data = _.find(memory_data, function(mem) {
+      return data.instance_type == mem.instance_type
+    })
+    if (matched_instance_data) {
+      data["mem_count"] = (data.usage_amount / 730) * matched_instance_data.mem_count
+      data["instance_family"] = matched_instance_data.instance_family
+    }
+  })
+
+  //For each month, sum Instance Memory for each Instance Family
+  var month = _.pluck(_.uniq(usage_data, function(data) { return data.month }), "month")
+  var inst_family = _.pluck(_.uniq(usage_data, function(data) { return data.instance_family }), "instance_family")
+
+  _.each(month, function(mo) {
+    _.each(inst_family, function(fam) {
+      var total_mem_count = 0
+      _.each(usage_data, function(data) {
+        if (data.month == mo && data.instance_family == fam) {
+          if (data.mem_count == null) {
+            data.mem_count = 0
+          }
+          total_mem_count += data.mem_count
+        }
+      })
+      temp_result.push({
+        "month": mo,
+        "instance_family": fam,
+        "total_mem_count": total_mem_count
+      })
+    })
+  })
+
+  //Get highest 8 Instance Families for Instance Hours used
+  var mem_totals_per_fam = []
+  _.each(inst_family, function(fam) {
+    var total_memory_12_months = 0
+    _.each(temp_result, function(data) {
+      if (data.instance_family == fam) {
+        total_memory_12_months += data.total_mem_count
+      }
+    })
+    mem_totals_per_fam.push({
+      "total_memory_12_months": total_memory_12_months,
+      "instance_family": fam
+    })
+  })
+
+  var top_8_inst_fams = _.last(_.pluck(_.sortBy(mem_totals_per_fam, "total_memory_12_months"), "instance_family"), [8])
+
+  //If Instance Family is not in 8 highest Memory used, then put into "Other" category
+  _.each(month, function(mo) {
+    var total_memory_other = 0
+    _.each(temp_result, function(data) {
+      if (data.month == mo) {
+        var exists = _.find(top_8_inst_fams, function(inst_fam) { return inst_fam == data.instance_family })
+        if (exists == null) {
+          total_memory_other += data.total_mem_count
+        } else {
+          result.push({
+            "month": data.month,
+            "instance_family": data.instance_family,
+            "total_mem_count": data.total_mem_count
+          })
+        }
+      }
+    })
+    result.push({
+      "month": mo,
+      "instance_family": "Other",
+      "total_mem_count": total_memory_other
+    })
+  })
+  EOS
+end
+
+#CHART CREATION
+datasource "ds_chart_creation" do
+  run_script $js_chart_creation, $ds_instance_memory_per_fam, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_chart_creation", type: "javascript" do
+  parameters "inst_memory_data", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-EOS
+
+  //Group data by Instance Family
+  var group_by_inst_fam =
+  _.groupBy(inst_memory_data, function(data) { return data.instance_family })
+  result = inst_memory_data
+
+  //Create chart axis labels
+  var chart_axis_labels =
+  ("chxl=1:," +
+    _.uniq(inst_memory_data, function(data) { return data.month })
+    .map(function(data) { return data.month.substring(0, 7) })
+  ).split(",").join("|")
+
+  //Create legend
+  var chart_legend = "chdl="
+  var i = 0
+  for (var key in group_by_inst_fam) {
+    chart_legend += key
+    i++
+    if (i < _.size(group_by_inst_fam)) { chart_legend += "|" }
+  }
+
+  //Create chart dataset
+  var chart_data = "chd=t:"
+  var count_1 = 0
+  _.each(group_by_inst_fam, function(o) {
+    var count_2 = 0
+    _.each(o, function(p) {
+      chart_data = chart_data + p.total_mem_count
+      count_2++
+      if (count_2 < _.size(o)) { chart_data = chart_data + "," }
+    })
+    count_1++
+    if (count_1 < _.size(group_by_inst_fam)) { chart_data = chart_data + "|" }
+  })
+
+  //Create Chart Title
+  var policy_title = "Total Instance Memory Used Per Instance Family"
+  var chart_title = "chtt=" + policy_title
+
+  //Whole Chart object
+  var chart = {
+    chart_type: encodeURI("cht=bvs"),
+    chart_size: encodeURI("chs=900x500"),
+    chart_data: encodeURI(chart_data),
+    chart_title: encodeURI(chart_title),
+    chart_image: encodeURI("chof=.png"),
+    chart_label_position: encodeURI("chdlp=b"),
+    chart_axis: encodeURI("chxt=y,x"),
+    chart_axis_label: encodeURI(chart_axis_labels),
+    chart_axis_format: encodeURI("chxs=0N*f" + "0sz* GiBs|1,min40"),
+    chart_line_style: encodeURI("chls=3|3|3|3|3|3|3|3|3|3|3"),
+    chart_line_color: encodeURI("chco=6929c4,9f1853,198038,b28600,1192e8,009d9a,005d5d,007d79"),
+    chart_data_scale: encodeURI("chds=a"),
+    chart_legend: encodeURI(chart_legend),
+    chart_legend_size: encodeURI("chdls=000000,10"),
+    policy_title: policy_title
+  }
+
+  result[0]["chart_dimensions"] = chart
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_inst_memory_per_inst_fam" do
+  validate_each $ds_chart_creation do
+    summary_template "Azure Usage Report - Amount of Instance Memory Used (Normalized - past 12 months)"
+    detail_template <<-EOS
+# Azure - {{ with index data 0 }}{{ .chart_dimensions.policy_title }}{{ end }} Report
+![Instance Memory Used Per Instance Family Chart](https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id={{ rs_org_id }}&rs_project_id={{ rs_project_id }}&{{ with index data 0 }}{{ .chart_dimensions.chart_data }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_type }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_image }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_title }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_label_position }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_label }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_style }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_color }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_data_scale }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_format }}{{ end }})
+___
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+    check eq(0, 1)
+    escalate $esc_email
+    export do
+      # no actions so resource_level can be false
+      resource_level false
+      field "month" do
+        label "Month"
+      end
+      field "instance_family" do
+        label "Instance Family"
+      end
+      field "total_mem_count" do
+        label "Memory Used in Gigabytes (GiB)"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end

@@ -1,5 +1,17 @@
 # Changelog
 
+## v3.0.0
+
+- Several parameters altered to be more descriptive and human-readable
+- Normalized incident export to be consistent with other policies
+- Added additional fields to incident export
+- Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera credential
+
+## v2.10
+
+- Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.
+
 ## v2.9
 
 - Replaced the term **whitelist** with **allowed list**.

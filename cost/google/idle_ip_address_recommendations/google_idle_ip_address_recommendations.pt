@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "3.0",
+  version: "4.2.0",
   provider: "Google",
   service: "Compute",
   policy_set: "Unused IP Addresses",
@@ -72,10 +72,18 @@ end
 parameter "param_exclusion_labels" do
   type "list"
   category "Filters"
-  label "Exclusion Labels (Key:Value)"
-  description "Google labels to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific label key/value pairs, and Key:* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:*"
-  allowed_pattern /(^$)|[\w]*\:.*/
+  label "Exclusion Labels"
+  description "Cloud native labels to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
   default []
+end
+
+parameter "param_exclusion_labels_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Labels: Any / All"
+  description "Whether to filter instances containing any of the specified labels or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Labels' field."
+  allowed_values "Any", "All"
+  default "Any"
 end
 
 parameter "param_automatic_action" do
@@ -136,7 +144,7 @@ end
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
     header "User-Agent", "RS Policies"
   end
 end
@@ -287,33 +295,75 @@ EOS
 end
 
 datasource "ds_ip_addresses" do
-  run_script $js_ip_addresses, $ds_ip_addresses_region_filtered, $param_exclusion_labels
+  run_script $js_ip_addresses, $ds_ip_addresses_region_filtered, $param_exclusion_labels, $param_exclusion_labels_boolean
 end
 
 script "js_ip_addresses", type: "javascript" do
-  parameters "ds_ip_addresses_region_filtered", "param_exclusion_labels"
+  parameters "ds_ip_addresses_region_filtered", "param_exclusion_labels", "param_exclusion_labels_boolean"
   result "result"
   code <<-EOS
+  comparators = _.map(param_exclusion_labels, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
   if (param_exclusion_labels.length > 0) {
-    result = _.reject(ds_ip_addresses_region_filtered, function(ip) {
-      ip_labels = []
+    result = _.reject(ds_ip_addresses_region_filtered, function(resource) {
+      resource_labels = {}
+      if (typeof(resource['labels']) == 'object') { resource_labels = resource['labels'] }
 
-      if (typeof(ip['labels']) == 'object') {
-        _.each(Object.keys(ip['labels']), function(key) {
-          ip_labels.push([key, ":", ip['labels'][key]].join(''))
-          ip_labels.push([key, ":*"].join(''))
-        })
-      }
+      // Store a list of found labels
+      found_labels = []
 
-      exclude_ip = false
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_label = resource_labels[comparator['key']]
 
-      _.each(param_exclusion_labels, function(exclusion_label) {
-        if (_.contains(ip_labels, exclusion_label)) {
-          exclude_ip = true
+        if (comparison == 'key' && resource_label != undefined) { found_labels.push(string) }
+        if (comparison == '==' && resource_label == value) { found_labels.push(string) }
+        if (comparison == '!=' && resource_label != value) { found_labels.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_label != undefined && value.test(resource_label)) { found_labels.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_label == undefined) { found_labels.push(string) }
+          if (resource_label != undefined && value.test(resource_label)) { found_labels.push(string) }
         }
       })
 
-      return exclude_ip
+      all_labels_found = found_labels.length == comparators.length
+      any_labels_found = found_labels.length > 0 && param_exclusion_labels_boolean == 'Any'
+
+      return all_labels_found || any_labels_found
     })
   } else {
     result = ds_ip_addresses_region_filtered
@@ -450,11 +500,11 @@ script "js_currency", type:"javascript" do
   result = ds_currency_target
   result['exchange_rate'] = 1
 
-  if (ds_currency_conversion['to'] != undefined) {
+  if (ds_currency_conversion.length > 0) {
     currency_code = ds_currency_target['code']
     current_month = parseInt(new Date().toISOString().split('-')[1])
 
-    conversion_block = _.find(ds_currency_conversion['to'][currency_code], function(item) {
+    conversion_block = _.find(ds_currency_conversion[0]['to'][currency_code], function(item) {
       return item['month'] == current_month
     })
 
@@ -541,7 +591,7 @@ script "js_recommendations_incident", type:"javascript" do
           ipAddress: address['address'],
           resourceName: address['name'],
           description: address['description'],
-          resourceType: address['type'],
+          type: address['type'],
           addressType: address['addressType'],
           networkTier: address['networkTier'],
           selfLink: address['selfLink'],
@@ -585,7 +635,7 @@ script "js_recommendations_incident", type:"javascript" do
   if (total_unused_ips > 1) { ip_verb = "are" }
 
   findings = [
-    "Out of ", total_ips , " IP ", ip_noun, " analyzed, ",
+    "Out of ", total_ips, " IP ", ip_noun, " analyzed, ",
     total_unused_ips, " (", unused_ips_percentage,
     ") ", ip_verb, " unused and recommended for deletion.\n\n"
   ].join('')
@@ -594,15 +644,32 @@ script "js_recommendations_incident", type:"javascript" do
 
   // Dummy item to ensure that the check statement in the policy executes at least once
   result.push({
-    id: "",                    ipAddress: "",          accountID: "",
-    projectNumber: "",         accountName: "",        region: "",
-    resourceID: "",            resourceName: "",       tags: "",
-    description: "",           resourceType: "",       selfLink: "",
-    status: "",                version: "",            description: "",
-    priority: "",              primaryImpact: "",      primaryImpactCategory: "",
-    recommenderSubtype: "",    state: "",              policy_name: "",
-    savings: "",               savingsCurrency: "",    service: "",
-    total_savings: "",         message: ""
+    id: "",
+    ipAddress: "",
+    accountID: "",
+    projectNumber: "",
+    accountName: "",
+    region: "",
+    resourceID: "",
+    resourceName: "",
+    tags: "",
+    description: "",
+    type: "",
+    selfLink: "",
+    status: "",
+    version: "",
+    description: "",
+    priority: "",
+    primaryImpact: "",
+    primaryImpactCategory: "",
+    recommenderSubtype: "",
+    state: "",
+    policy_name: "",
+    savings: "",
+    savingsCurrency: "",
+    service: "",
+    total_savings: "",
+    message: ""
   })
 
   result[0]['total_savings'] = savings_message
@@ -614,7 +681,7 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_recommendations" do
+policy "pol_recommendations" do
   validate_each $ds_recommendations_incident do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Google Idle IP Addresses Found"
     detail_template <<-'EOS'
@@ -646,8 +713,8 @@ policy "policy_recommendations" do
       field "resourceName" do
         label "Resource Name"
       end
-      field "resourceType" do
-        label "Resource Type"
+      field "type" do
+        label "Type"
       end
       field "region" do
         label "Region"

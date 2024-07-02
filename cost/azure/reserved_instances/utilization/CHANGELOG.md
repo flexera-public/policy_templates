@@ -1,5 +1,20 @@
 # Changelog
 
+## v3.1.1
+
+- Fixed Microsoft VM Size Flexibility URL which prevented the policy from completing without error. Policy functionality is unchanged.
+
+## v3.1
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
+## v3.0
+
+- Updated policy to move away from Azure Legacy EA API endpoints and use the Azure Modern API endpoints due to EA Key deprecation in 2024
+- Updated credential required for policy - it now requires an Azure Resource Manager credential due to EA Key deprecation in 2024
+- Removed "Enrollment ID" parameter as no longer required
+- Added "Reservation Expiration Date" field to policy incident
+
 ## v2.8
 
 - Added fix for "Reservation ID" to reflect the most recent Reservation ID for each Reservation Order

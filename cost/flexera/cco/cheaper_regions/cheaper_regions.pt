@@ -1,0 +1,409 @@
+name "Cheaper Regions"
+rs_pt_ver 20180301
+type "policy"
+short_description "**Deprecated: This policy is no longer being updated. Please see [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/cheaper_regions/) for more details.**  Specify which regions have cheaper alternatives by specifying the expensive region name and the cheaper region name for analysis. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/cheaper_regions/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "medium"
+category "Cost"
+default_frequency "daily"
+info(
+  version: "2.4.1",
+  provider: "Flexera",
+  service: "Cloud Cost Optimization",
+  policy_set: "Cloud Cost Optimization",
+  deprecated: "true"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_billing_centers" do
+  type "list"
+  category "Filters"
+  label "Billing Center Name"
+  description "List of billing centers to be filtered."
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_aws_regions_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/aws/regions.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_azure_regions_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/azure/regions.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_google_regions_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/google/regions.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+      field "ancestor_ids", jmes_path(col_item, "ancestor_ids")
+      field "allocation_table", jmes_path(col_item, "allocation_table")
+    end
+  end
+end
+
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/cloud_vendor_accounts"])
+    query "cloud_vendor", "aws"
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "vendor_name", jmes_path(col_item, "vendor_name")
+    end
+  end
+end
+
+datasource "ds_new_bc_costs" do
+  request do
+    run_script $js_new_bc_costs, $ds_billing_centers, $param_billing_centers, rs_optima_host, rs_org_id
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "billing_center_id", jmes_path(col_item, "dimensions.billing_center_id")
+      field "region", jmes_path(col_item, "dimensions.region")
+      field "service", jmes_path(col_item, "dimensions.service")
+      field "vendor", jmes_path(col_item, "dimensions.vendor")
+      field "instance_type", jmes_path(col_item, "dimensions.instance_type")
+      field "vendor_account_name", jmes_path(col_item, "dimensions.vendor_account_name")
+      field "resource_id", jmes_path(col_item, "dimensions.resource_id")
+    end
+  end
+end
+
+script "js_new_bc_costs", type: "javascript" do
+  parameters "ds_billing_centers", "param_billing_centers", "rs_optima_host", "org_id"
+  result "request"
+  code <<-EOS
+    var start_at = "";
+    var end_at = "";
+    var cost_metric = {
+      "Unamortized Unblended":"cost_nonamortized_unblended_adj",
+      "Amortized Unblended":"cost_nonamortized_blended_adj",
+      "Unamortized Blended": "cost_nonamortized_blended_adj",
+      "Amortized Blended":"cost_amortized_blended_adj"
+    }
+    // format the date for the `daily` API
+    // returns date formatted as string: YYYY-mm-dd
+    function getFormattedDailyDate(date) {
+      var year = date.getFullYear();
+      var month = (1 + date.getMonth()).toString();
+      month = month.length > 1 ? month : '0' + month;
+      var day = date.getDate().toString();
+      day = day.length > 1 ? day : '0' + day;
+      return year + '-' + month;
+    }
+    function getStartDate( date ) {
+      y = date.getFullYear()
+      m = date.getMonth();
+      start_date = new Date(y, m, 1);
+      return start_date;
+    }
+    function getEndDate( date ) {
+      y = date.getFullYear()
+      m = date.getMonth();
+      end_date = new Date(y, m + 1, 1);
+      return end_date;
+    }
+    start_at = getFormattedDailyDate(getStartDate(new Date()))
+    end_at = getFormattedDailyDate(getEndDate(new Date()))
+
+    var billing_center_ids = []
+    if (param_billing_centers.length === 0){
+      var top_billing_centers = _.reject(ds_billing_centers, function(bc){ return bc.parent_id != null });
+      billing_center_ids = _.map(top_billing_centers, function(value, key){ return value.id });
+    } else {
+      // get array of billing center id's that match the names in param_billing_centers.
+      billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
+      billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
+    }
+
+    var request = {
+      auth: "auth_flexera",
+      verb: "POST",
+      host: rs_optima_host,
+      path: "/bill-analysis/orgs/" + org_id + "/costs/select",
+      body_fields: {
+      "dimensions": [
+        "vendor",
+        "vendor_account",
+        "vendor_account_name",
+        "instance_type",
+        "region",
+        "resource_group",
+        "resource_type",
+        "billing_center_id",
+        "service",
+        "resource_id"
+      ],
+      "granularity": "month",
+      "limit": 100000,
+      "metrics": ["cost_nonamortized_blended_adj"],
+      "billing_center_ids": billing_center_ids,
+      "start_at": start_at,
+      "end_at": end_at,
+      "filter":
+        {"type": "or",
+          "expressions": [
+            {"type" : "and", "expressions" : [
+              {"dimension":"vendor", "type":"equal", "value":"Azure"},
+              {"dimension":"resource_type", "type":"substring", "substring":"Virtual Machines"}
+            ]},
+            {"type" : "and", "expressions" : [
+              {"dimension":"category", "type":"equal", "value":"Compute"},
+              {"dimension":"vendor", "type":"equal", "value":"AzureCSP"},
+              {"dimension":"resource_type", "type":"substring", "substring":"Virtual Machines"}
+            ]},
+            {"type" : "and", "expressions" : [
+              {"dimension":"category", "type":"equal", "value":"Compute"},
+              {"dimension":"vendor", "type":"equal", "value":"AWS"}
+            ]},
+            {"type" : "and", "expressions" : [
+             {"dimension":"category", "type":"equal", "value":"Compute"},
+             {"dimension":"vendor", "type":"equal", "value":"AzureMCA-Enterprise"},
+             {"dimension":"service", "type":"equal", value:"Microsoft.Compute"},
+             {"dimension":"resource_type", "type":"substring", "substring":"Virtual Machines"}
+            ]},
+            {"type" : "and", "expressions" : [
+             {"dimension":"category", "type":"equal", "value":"Compute"},
+             {"dimension":"vendor", "type":"equal", "value":"AzureMCA-CSP"},
+             {"dimension":"service", "type":"equal", value:"Microsoft.Compute"},
+             {"dimension":"resource_type", "type":"substring", "substring":"Virtual Machines"}
+            ]},
+            {"type" : "and", "expressions" : [
+             {"dimension":"vendor", "type":"equal", "value":"GCP"},
+             {"dimension":"service", "type":"equal", value:"Compute Engine"},
+             {"dimension":"resource_type", "type":"substring", "substring":"*running*"}
+            ]}
+          ]
+        }
+      },
+      headers: {
+        "Api-Version": "1.0",
+        "User-Agent": "RS Policies",
+      }
+    }
+  EOS
+end
+
+datasource "ds_new_bc_cost_name" do
+  run_script $js_new_bc_cost_name, $ds_new_bc_costs, $ds_billing_centers, $ds_cloud_vendor_accounts, $ds_aws_regions_reference, $ds_azure_regions_reference, $ds_google_regions_reference, $ds_applied_policy
+end
+
+script "js_new_bc_cost_name", type: "javascript" do
+  parameters "new_bc_costs", "billing_centers", "ds_cloud_vendor_accounts", "ds_aws_regions_reference", "ds_azure_regions_reference", "ds_google_regions_reference", "ds_applied_policy"
+  result "results"
+  code <<-EOS
+    var results = []
+    var azure_supported_regions = _.filter(ds_azure_regions_reference, function (item) {
+      return item.cheaper != null && item.cheaper != undefined;
+    });
+
+    var azure_cheaper_regions = { "regions": {} }
+
+    _.each(azure_supported_regions, function (supportedRegion) {
+        var region = _.findWhere(ds_azure_regions_reference, { region: supportedRegion.region })
+
+        var cheaperRegion = _.findWhere(ds_azure_regions_reference, { region: supportedRegion.cheaper })
+
+        if (region != undefined && cheaperRegion != undefined) {
+            azure_cheaper_regions["regions"][region.name] = cheaperRegion.name
+        }
+    })
+
+    var ec2_supported_regions = _.filter(ds_aws_regions_reference, function (item) {
+        return item.cheaper != null && item.cheaper != undefined;
+    })
+
+    var ec2_cheaper_regions = { "regions": {} }
+
+    _.each(ec2_supported_regions, function (supportedRegion) {
+        var region = _.findWhere(ds_aws_regions_reference, { region: supportedRegion.region })
+
+        var cheaperRegion = _.findWhere(ds_aws_regions_reference, { region: supportedRegion.cheaper })
+
+        if (region != undefined && cheaperRegion != undefined) {
+            ec2_cheaper_regions["regions"][region.name] = cheaperRegion.name
+        }
+    })
+
+    var google_supported_regions = _.filter(ds_google_regions_reference, function(item) {
+        return item.cheaper != null && item.cheaper != undefined;
+    });
+
+    var google_cheaper_regions = { "regions": {} }
+
+    _.each(google_supported_regions, function (supportedRegion) {
+        var region = _.findWhere(ds_google_regions_reference, { region: supportedRegion.region })
+
+        var cheaperRegion = _.findWhere(ds_google_regions_reference, { region: supportedRegion.cheaper })
+
+        if (region != undefined && cheaperRegion != undefined) {
+            google_cheaper_regions["regions"][region.region] = cheaperRegion.region
+        }
+    })
+
+    for (var i = 0; i < new_bc_costs.length; i++) {
+      var arr_bc_name = _.reject(billing_centers, function(bc){ return bc.id != new_bc_costs[i].billing_center_id });
+      var bc_name = arr_bc_name[0].name
+      var vendor = new_bc_costs[i].vendor
+      var instance_type = new_bc_costs[i].instance_type
+      if ( instance_type != "None" ){
+      if ( vendor == "AWS" ){
+        var new_region = ec2_cheaper_regions["regions"][new_bc_costs[i].region]
+        var account = _.reject(ds_cloud_vendor_accounts, function(ds_cloud_vendor_account){ return ds_cloud_vendor_account.id != new_bc_costs[i].vendor_account_name });
+        if ( account && account.length ){
+          var vendor_account_name = account[0].name
+        } else {
+          var vendor_account_name = ""
+        }
+      } else if ( vendor == "AzureCSP" || vendor == "Azure" || vendor =="AzureMCA-CSP" ) {
+        var new_region = azure_cheaper_regions["regions"][new_bc_costs[i].region]
+        var vendor_account_name = new_bc_costs[i].vendor_account_name
+      } else if ( vendor == "GCP "){
+        var new_region = google_cheaper_regions["regions"][new_bc_costs[i].region]
+        var vendor_account_name = new_bc_costs[i].vendor_account_name
+      }
+      if (new_region != null && new_region !== undefined ) {
+        results.push({
+          billing_center_name: bc_name,
+          billing_center_id: new_bc_costs[i].billing_center_id,
+          vendor_account_name: vendor_account_name,
+          region: new_bc_costs[i].region,
+          new_region: new_region,
+          service: new_bc_costs[i].service,
+          instance_type:new_bc_costs[i].instance_type,
+          vendor: vendor,
+          id: new_bc_costs[i].resource_id
+        })
+      }else{
+        continue
+      }
+      }
+    }
+
+    if (results.length > 0) {
+      results[0]['policy_name'] = ds_applied_policy['name']
+    }
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_cheaper_regions" do
+  validate $ds_new_bc_cost_name do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Instances With Cheaper Regions Found"
+    check eq(size(data), 0)
+    escalate $esc_email
+    export do
+      resource_level true
+      field "billing_center_name" do
+        label "Billing Center Name"
+      end
+      field "vendor_account_name" do
+        label "Account Name"
+      end
+      field "region" do
+        label "Region In Use"
+      end
+      field "new_region" do
+        label "Suggested Region"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "vendor" do
+        label "Vendor"
+      end
+      field "instance_type" do
+        label "Instance Type"
+      end
+      field "id" do
+        label "Resource ID"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end

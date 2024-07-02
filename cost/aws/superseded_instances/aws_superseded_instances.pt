@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "1.2",
+  version: "2.1",
   provider: "AWS",
   service: "Compute",
   policy_set: "Superseded Compute Instances",
@@ -55,10 +55,18 @@ end
 parameter "param_exclusion_tags" do
   type "list"
   category "Filters"
-  label "Exclusion Tags (Key:Value)"
-  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:*"
-  allowed_pattern /(^$)|[\w]*\:.*/
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
   default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
 end
 
 parameter "param_regions_allow_or_deny" do
@@ -171,9 +179,9 @@ script "js_flexera_api_hosts", type: "javascript" do
       flexera: "api.flexera.eu",
       fsm: "api.fsm-eu.flexeraeng.com"
     },
-    "api.optima-au.flexeraeng.com": {
+    "api.optima-apac.flexeraeng.com": {
       flexera: "api.flexera.au",
-      fsm: "api.fsm-au.flexeraeng.com"
+      fsm: "api.fsm-apac.flexeraeng.com"
     }
   }
 
@@ -282,7 +290,7 @@ end
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
     header "User-Agent", "RS Policies"
   end
 end
@@ -371,11 +379,11 @@ script "js_currency", type:"javascript" do
   result = ds_currency_target
   result['exchange_rate'] = 1
 
-  if (ds_currency_conversion['to'] != undefined) {
+  if (ds_currency_conversion.length > 0) {
     currency_code = ds_currency_target['code']
     current_month = parseInt(new Date().toISOString().split('-')[1])
 
-    conversion_block = _.find(ds_currency_conversion['to'][currency_code], function(item) {
+    conversion_block = _.find(ds_currency_conversion[0]['to'][currency_code], function(item) {
       return item['month'] == current_month
     })
 
@@ -467,36 +475,83 @@ datasource "ds_instance_sets" do
 end
 
 datasource "ds_instances" do
-  run_script $js_instances, $ds_instance_sets, $param_exclusion_tags
+  run_script $js_instances, $ds_instance_sets, $param_exclusion_tags, $param_exclusion_tags_boolean
 end
 
 script "js_instances", type: "javascript" do
-  parameters "ds_instance_sets", "param_exclusion_tags"
+  parameters "ds_instance_sets", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-EOS
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
   result = []
 
   _.each(ds_instance_sets, function(item) {
     if (param_exclusion_tags.length > 0) {
-      filtered_instances = _.reject(item['instances_set'], function(instance) {
-        instance_tags = []
+      filtered_instances = _.reject(item['instances_set'], function(resource) {
+        resource_tags = {}
 
-        if (instance['tags'] != null && instance['tags'] != undefined) {
-          _.each(instance['tags'], function(tag) {
-            instance_tags.push([tag['key'], tag['value']].join(':'))
-            instance_tags.push([tag['key'], '*'].join(':'))
+        if (typeof(resource['tags']) == 'object') {
+          _.each(resource['tags'], function(tag) {
+            resource_tags[tag['key']] = tag['value']
           })
         }
 
-        exclude_instance = false
+        // Store a list of found tags
+        found_tags = []
 
-        _.each(param_exclusion_tags, function(exclusion_tag) {
-          if (_.contains(instance_tags, exclusion_tag)) {
-            exclude_instance = true
+        _.each(comparators, function(comparator) {
+          comparison = comparator['comparison']
+          value = comparator['value']
+          string = comparator['string']
+          resource_tag = resource_tags[comparator['key']]
+
+          if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+          if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+          if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+          if (comparison == '=~') {
+            if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+          }
+
+          if (comparison == '!~') {
+            if (resource_tag == undefined) { found_tags.push(string) }
+            if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
           }
         })
 
-        return exclude_instance
+        all_tags_found = found_tags.length == comparators.length
+        any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+        return all_tags_found || any_tags_found
       })
 
       result = result.concat(filtered_instances)
@@ -506,7 +561,6 @@ script "js_instances", type: "javascript" do
   })
 EOS
 end
-
 
 datasource "ds_instance_costs" do
   request do

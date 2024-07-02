@@ -1,5 +1,41 @@
 # Changelog
 
+## v5.3.0
+
+- Modified internal names for incident fields for more accurate scraping into Optimization dashboard
+
+## v5.2.1
+
+- Fixed a bug causing $0 recommendations
+
+## v5.2.0
+
+- New fields added to incident output: `Last Accessed` and `Status`
+
+## v5.1.1
+
+- Unused SQL Databases incident now includes a `Recommended Capacity` field with a value of `Delete Instance` for ease of analyzing recommendations from the Flexera Optimization dashboard
+
+## v5.1
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
+## v5.0
+
+- Added support for regex when filtering resources by tag
+
+## v4.4
+
+- Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.
+
+## v4.3
+
+- Added optional `Minimum Age (Days)` parameter to filter results by age
+
+## v4.2
+
+- Policy action error logging modernized and now works as expected in EU/APAC
+
 ## v4.1
 
 - Fixed issue where policy would fail if databases were found with no SKU

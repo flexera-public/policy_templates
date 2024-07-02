@@ -7,7 +7,7 @@ severity "low"
 category "Operational"
 default_frequency "weekly"
 info(
-  version: "3.0",
+  version: "3.2",
   provider: "Azure",
   service: "Tags",
   policy_set: "Tag Cardinality"
@@ -19,21 +19,53 @@ info(
 
 parameter "param_email" do
   type "list"
-  label "Email addresses to notify"
-  description "Email addresses of the recipients you wish to notify"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
 end
 
 parameter "param_azure_endpoint" do
   type "string"
+  category "Policy Settings"
   label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
   allowed_values "management.azure.com", "management.chinacloudapi.cn"
   default "management.azure.com"
 end
 
+parameter "param_subscriptions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Subscriptions"
+  description "Allow or Deny entered Subscriptions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
 parameter "param_subscriptions_list" do
-  label "Subscription Allowed List"
   type "list"
-  description "Allowed Subscriptions, if empty, all subscriptions will be checked"
+  category "Filters"
+  label "Allow/Deny Subscriptions List"
+  description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
 end
 
 ###############################################################################
@@ -77,32 +109,41 @@ datasource "ds_azure_subscriptions_tagless" do
     pagination $pagination_azure
     host $param_azure_endpoint
     path "/subscriptions/"
-    query "api-version", "2018-06-01"
+    query "api-version", "2020-01-01"
     header "User-Agent", "RS Policies"
     # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
     # Forces `ds_is_deleted` datasource to run first during policy execution
     header "Meta-Flexera", val($ds_is_deleted, "path")
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
       field "id", jmes_path(col_item, "subscriptionId")
       field "name", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
     end
   end
 end
 
 datasource "ds_azure_subscriptions_tagless_filtered" do
-  run_script $js_azure_subscriptions_tagless_filtered, $ds_azure_subscriptions_tagless, $param_subscriptions_list
+  run_script $js_azure_subscriptions_tagless_filtered, $ds_azure_subscriptions_tagless, $param_subscriptions_allow_or_deny, $param_subscriptions_list
 end
 
 script "js_azure_subscriptions_tagless_filtered", type: "javascript" do
-  parameters "ds_azure_subscriptions_tagless", "param_subscriptions_list"
+  parameters "ds_azure_subscriptions_tagless", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
   result "result"
   code <<-EOS
   if (param_subscriptions_list.length > 0) {
     result = _.filter(ds_azure_subscriptions_tagless, function(subscription) {
-      return _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
+      include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
+
+      if (param_subscriptions_allow_or_deny == "Deny") {
+        include_subscription = !include_subscription
+      }
+
+      return include_subscription
     })
   } else {
     result = ds_azure_subscriptions_tagless
@@ -117,7 +158,7 @@ datasource "ds_azure_subscriptions" do
     pagination $pagination_azure
     host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Resources/tags/default"])
-    query "api-version","2021-04-01"
+    query "api-version", "2021-04-01"
     header "User-Agent", "RS Policies"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
     ignore_status [400, 403, 404]
@@ -137,7 +178,7 @@ datasource "ds_azure_resource_groups" do
     pagination $pagination_azure
     host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/resourcegroups"])
-    query "api-version","2021-04-01"
+    query "api-version", "2021-04-01"
     header "User-Agent", "RS Policies"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
     ignore_status [400, 403, 404]
@@ -162,7 +203,7 @@ datasource "ds_azure_resources" do
     pagination $pagination_azure
     host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/resources"])
-    query "api-version","2021-04-01"
+    query "api-version", "2021-04-01"
     header "User-Agent", "RS Policies"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
     ignore_status [400, 403, 404]
@@ -174,11 +215,35 @@ datasource "ds_azure_resources" do
       field "subscriptionId", val(iter_item, "id")
       field "id", jmes_path(col_item, "id")
       field "name", jmes_path(col_item, "name")
-      field "location", jmes_path(col_item, "location")
+      field "region", jmes_path(col_item, "location")
       field "type", jmes_path(col_item, "type")
       field "tags", jmes_path(col_item, "tags")
     end
   end
+end
+
+datasource "ds_azure_resources_region_filtered" do
+  run_script $js_azure_resources_region_filtered, $ds_azure_resources, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_azure_resources_region_filtered", type: "javascript" do
+  parameters "ds_azure_resources", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_azure_resources, function(vm) {
+      include_vm = _.contains(param_regions_list, vm['region'])
+
+      if (param_regions_allow_or_deny == "Deny") {
+        include_vm = !include_vm
+      }
+
+      return include_vm
+    })
+  } else {
+    result = ds_azure_resources
+  }
+EOS
 end
 
 datasource "ds_azure_subscriptions_tag_list" do
@@ -190,7 +255,7 @@ datasource "ds_azure_resource_groups_tag_list" do
 end
 
 datasource "ds_azure_resources_tag_list" do
-  run_script $js_tag_lister, $ds_azure_resources, "Resource"
+  run_script $js_tag_lister, $ds_azure_resources_region_filtered, "Resource"
 end
 
 script "js_tag_lister", type: "javascript" do
@@ -269,6 +334,7 @@ end
 ###############################################################################
 
 escalation "esc_email" do
+  automatic true
   label "Send Email"
   description "Send incident email"
   email $param_email
@@ -286,7 +352,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
     header "Api-Version", "1.0"
   end
   result do
@@ -363,4 +429,3 @@ script "js_check_deleted", type: "javascript" do
   result = {"path":"/"}
   EOS
 end
-

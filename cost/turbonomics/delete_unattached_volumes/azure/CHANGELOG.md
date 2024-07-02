@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.5.1
+
+- Switched from cookie-based authentication to token-based authentication
+
+## v0.5
+
+- Added Hyperlinks for `System Details URL` incident field.
+
 ## v0.4
 
 - Added `Provisioned IOPs` incident field.
