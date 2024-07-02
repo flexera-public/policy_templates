@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.4.1
+
+- Deprecated: This policy is no longer being updated.
+
 ## v2.4.0
 
 - Updated list of cheaper regions for Azure and AWS vendors.
