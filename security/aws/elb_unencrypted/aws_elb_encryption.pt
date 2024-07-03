@@ -1,12 +1,12 @@
 name "AWS Unencrypted ELB Listeners (ALB/NLB)"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report any AWS App/Network Load Balancers w/Internet-facing Unencrypted Listeners. \n See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/elb_unencrypted) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Report any AWS App/Network Load Balancers w/Internet-facing Unencrypted Listeners. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/elb_unencrypted) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Security"
 severity "medium"
 info(
-  version: "3.1",
+  version: "4.0.0",
   provider: "AWS",
   service: "ELB",
   policy_set: ""
@@ -16,25 +16,12 @@ info(
 # Parameters
 ###############################################################################
 
-parameter "param_allowed_regions_allow_or_deny" do
-  type "string"
-  label "Allow/Deny Regions"
-  description "Allow or Deny entered regions. See the README for more details"
-  allowed_values "Allow", "Deny"
-  default "Allow"
-end
-
-parameter "param_allowed_regions" do
-  type "list"
-  label "Regions"
-  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
-  description "A list of allowed or denied regions. See the README for more details"
-end
-
 parameter "param_email" do
   type "list"
-  label "Email Address"
-  description "Email addresses of the recipients you wish to notify"
+  category "Policy Settings"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+  default []
 end
 
 parameter "param_aws_account_number" do
@@ -43,6 +30,24 @@ parameter "param_aws_account_number" do
   label "Account Number"
   description "Leave blank; this is for automated use with Meta Policies. See README for more details."
   default ""
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details"
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  default []
 end
 
 parameter "param_exclude_tags" do
@@ -56,18 +61,25 @@ end
 ###############################################################################
 
 credentials "auth_aws" do
-  schemes "aws","aws_sts"
+  schemes "aws", "aws_sts"
   label "AWS"
   description "Select the AWS Credential from the list"
   tags "provider=aws"
   aws_account_number $param_aws_account_number
 end
 
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
 ###############################################################################
 # Pagination
 ###############################################################################
 
-pagination "elb_pagination" do
+pagination "pagination_aws_elb" do
   get_page_marker do
     body_path "DescribeLoadBalancersResult.NextMarker"
   end
@@ -76,7 +88,7 @@ pagination "elb_pagination" do
   end
 end
 
-pagination "listener_pagination" do
+pagination "pagination_aws_listener" do
   get_page_marker do
     body_path "DescribeListenersResponse.NextMarker"
   end
@@ -86,12 +98,107 @@ pagination "listener_pagination" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
-# ds_region_list is a list of regions that are opted-in or opt-in-not-required
-datasource "ds_regions_list" do
-  # https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeRegions.html
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get AWS account info
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account", xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_get_caller_identity
+end
+
+script "js_aws_account", type:"javascript" do
+  parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+  result = _.find(ds_cloud_vendor_accounts, function(account) {
+    return account['id'] == ds_get_caller_identity[0]['account']
+  })
+
+  // This is in case the API does not return the relevant account info
+  if (result == undefined) {
+    result = {
+      id: ds_get_caller_identity[0]['account'],
+      name: "",
+      tags: {}
+    }
+  }
+EOS
+end
+
+datasource "ds_describe_regions" do
   request do
     auth $auth_aws
     verb "GET"
@@ -102,6 +209,9 @@ datasource "ds_regions_list" do
     query "Filter.1.Name", "opt-in-status"
     query "Filter.1.Value.1", "opt-in-not-required"
     query "Filter.1.Value.2", "opted-in"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
   end
   result do
     encoding "xml"
@@ -111,9 +221,24 @@ datasource "ds_regions_list" do
   end
 end
 
-# Get only SCP enabled regions
 datasource "ds_regions" do
-  run_script $js_regions, $param_allowed_regions, $ds_regions_list, $param_allowed_regions_allow_or_deny
+  run_script $js_regions, $ds_describe_regions, $param_regions_list, $param_regions_allow_or_deny
+end
+
+script "js_regions", type:"javascript" do
+  parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
+  result "result"
+  code <<-EOS
+  allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_describe_regions, function(item) {
+      return _.contains(param_regions_list, item['region']) == allow_deny_test[param_regions_allow_or_deny]
+    })
+  } else {
+    result = ds_describe_regions
+  }
+EOS
 end
 
 #Get the list of all network and application load Balancers
@@ -133,6 +258,27 @@ datasource "ds_elb_list" do
       field "loadBalancerType", jmes_path(col_item, "Type")
     end
   end
+end
+
+script "js_elb_list", type: "javascript" do
+  parameters "region"
+  result "request"
+  code <<-EOS
+  request = {
+    auth: 'auth_aws',
+    pagination: 'pagination_aws_elb',
+    host: 'elasticloadbalancing.'+region+'.amazonaws.com',
+    path: '/',
+    verb: 'GET',
+    query_params: {
+      "Action": "DescribeLoadBalancers",
+      "Version": "2015-12-01"
+    },
+    headers: {
+      "Accept": "application/json"
+    }
+  }
+EOS
 end
 
 #Get respective tags for all load Balancers
@@ -160,95 +306,6 @@ datasource "ds_elb_list_with_tags" do
   end
 end
 
-datasource "ds_elb_listeners_with_tags" do
-  iterate $ds_elb_list_with_tags
-  request do
-    run_script $js_elb_listeners_with_tags, val(iter_item,"region"), val(iter_item, "loadBalancerArn")
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "DescribeListenersResponse.DescribeListenersResult.Listeners[*]") do
-      field "loadBalancerName", val(iter_item, "loadBalancerName")
-      field "region", val(iter_item,"region")
-      field "availabilityZones", val(iter_item, "availabilityZones")
-      field "tags", val(iter_item, "tags")
-      field "scheme",  val(iter_item,"scheme")
-      field "loadBalancerArn",  val(iter_item,"loadBalancerArn")
-      field "loadBalancerType", val(iter_item,"loadBalancerType")
-      field "listenerProtocol", jmes_path(col_item,"Protocol")
-      field "listenerPort", jmes_path(col_item,"Port")
-    end
-  end
-end
-
-datasource "ds_unencrypted_elb_map" do
-  run_script $js_elb_filter_map, $ds_elb_listeners_with_tags, $param_exclude_tags
-end
-
-###############################################################################
-# Script
-###############################################################################
-
-script "js_regions", type:"javascript" do
-  parameters "user_entered_regions", "all_regions", "regions_allow_or_deny"
-  result "regions"
-  code <<-EOS
-  if (_.isEmpty(user_entered_regions)) {
-    regions = all_regions;
-  } else {
-    //Filter unique regions
-    var uniqueRegions = _.uniq(user_entered_regions);
-    var all_regions_list = [];
-    //Filter and remove denied regions from all_regions
-    if (regions_allow_or_deny == "Deny"){
-      var all_regions = all_regions.filter(function(obj){
-        return user_entered_regions.indexOf(obj.region) === -1;
-      });
-    }
-    all_regions.forEach(function (all_region) {
-      all_regions_list.push(all_region.region)
-    })
-    //Filter valid regions
-    var valid_regions = [];
-    _.map(uniqueRegions, function (uniqueRegion) {
-      if (all_regions_list.indexOf(uniqueRegion) > -1) {
-        valid_regions.push({ "region": uniqueRegion })
-      }
-    })
-
-    //Throw an error if no valid regions found
-    if (_.isEmpty(valid_regions)) {
-      regions = all_regions;
-    } else {
-      regions = valid_regions
-    }
-  }
-EOS
-end
-
-#https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_DescribeLoadBalancers.html (Application or Network Load Balancer)
-script "js_elb_list", type: "javascript" do
-  parameters "region"
-  result "request"
-  code <<-EOS
-  request = {
-    auth: 'auth_aws',
-    pagination: 'elb_pagination',
-    host: 'elasticloadbalancing.'+region+'.amazonaws.com',
-    path: '/',
-    verb: 'GET',
-    query_params: {
-      "Action": "DescribeLoadBalancers",
-      "Version": "2015-12-01"
-    },
-    headers: {
-      "Accept": "application/json"
-    }
-  }
-EOS
-end
-
-#https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_DescribeTags.html (Application or Network Load Balancer)
 script "js_elb_list_with_tags", type: "javascript" do
   parameters "region", "loadBalancerName", "loadBalancerArn"
   result "request"
@@ -271,14 +328,34 @@ script "js_elb_list_with_tags", type: "javascript" do
   EOS
 end
 
-#https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_DescribeListeners.html (Application or Network Load Balancer)
+datasource "ds_elb_listeners_with_tags" do
+  iterate $ds_elb_list_with_tags
+  request do
+    run_script $js_elb_listeners_with_tags, val(iter_item,"region"), val(iter_item, "loadBalancerArn")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "DescribeListenersResponse.DescribeListenersResult.Listeners[*]") do
+      field "loadBalancerName", val(iter_item, "loadBalancerName")
+      field "region", val(iter_item,"region")
+      field "availabilityZones", val(iter_item, "availabilityZones")
+      field "tags", val(iter_item, "tags")
+      field "scheme",  val(iter_item,"scheme")
+      field "loadBalancerArn",  val(iter_item,"loadBalancerArn")
+      field "loadBalancerType", val(iter_item,"loadBalancerType")
+      field "listenerProtocol", jmes_path(col_item,"Protocol")
+      field "listenerPort", jmes_path(col_item,"Port")
+    end
+  end
+end
+
 script "js_elb_listeners_with_tags", type: "javascript" do
   parameters "region", "loadBalancerArn"
   result "request"
   code <<-EOS
     request = {
       auth: 'auth_aws',
-      pagination: 'listener_pagination',
+      pagination: 'pagination_aws_listener',
       host: 'elasticloadbalancing.'+region+'.amazonaws.com',
       path: '/',
       verb: 'GET',
@@ -294,7 +371,10 @@ script "js_elb_listeners_with_tags", type: "javascript" do
   EOS
 end
 
-#Process the response data, check for the tags and generate a list of internetfacing listeners
+datasource "ds_unencrypted_elb_map" do
+  run_script $js_elb_filter_map, $ds_elb_listeners_with_tags, $param_exclude_tags
+end
+
 script "js_elb_filter_map", type: "javascript" do
   parameters "ds_elb_listeners_with_tags", "param_exclude_tags"
   result "content"
@@ -367,11 +447,11 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_unencrypted_ALB_NLB" do
+policy "pol_unencrypted_ALB_NLB" do
   validate $ds_unencrypted_elb_map do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} AWS Unencrypted ELB Listeners (ALB/NLB)"
-    escalate $esc_unencrypted_lbs
-    check eq(size(data),0)
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Unencrypted ELB Listeners (ALB/NLB)"
+    check eq(size(data), 0)
+    escalate $esc_email
     export do
       resource_level true
       field "id" do
@@ -400,14 +480,99 @@ end
 # Escalations
 ###############################################################################
 
-escalation "esc_unencrypted_lbs" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
   email $param_email
 end
 
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
 
-###############################################################################
-# Cloud Workflow
-###############################################################################
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
+end
