@@ -1,12 +1,12 @@
 # AWS Ensure AWS Config Enabled In All Regions
 
-## What it does
+## What It Does
 
-This policy verifies that AWS Config is enabled and properly configured for all active regions.
+This policy template reports any AWS regions that do not have Config enabled or sufficiently configured. Optionally, this report can be emailed.
 
 ## Functional Details
 
-The AWS Config API is used to gather the AWS Config information for all regions. When a region is found that has no AWS Config settings, or the AWS Config recordingGroup has 'allSupported' or 'includeGlobalResourceTypes' set to 'false', that region and these settings are added to a list. An incident is raised if this list contains any regions.
+The AWS Config API is used to gather the AWS Config information for all regions. When a region is found that has no AWS Config settings, or the AWS Config recordingGroup has `allSupported` or `includeGlobalResourceTypes` set to 'false', that region and these settings are added to a list. An incident is raised if this list contains any regions.
 
 ## Input Parameters
 
