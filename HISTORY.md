@@ -6,6 +6,98 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#2360](https://github.com/flexera-public/policy_templates/pull/2360): POL-1167 p90/95/99 Support for Azure Rightsize Compute/SQL Policies
+
+#### Description
+
+> This adds support for p90/p95/p99 metrics to the `Azure Rightsize Compute Instances` and `Azure Rightsize SQL Databases` policy templates as well as some other changes outlined below:
+>
+> Azure Rightsize Compute Instances Changelog:
+> - Added support for p90, p95, and p99 metrics for both CPU and memory.
+> - Improved calculations for `Minimum` and `Maximum` for both CPU and memory.*
+>
+> Azure Rightsize SQL Databases Changelog:
+> - Added `Threshold Statistic` parameter to assess utilization based on various CPU metrics
+> - Added CPU minimum, maximum, p90, p95, and p99 metrics to incident table
+>
+> \* Previously, the policy was actually reporting the daily average minimum and maximum CPU usage, since it was averaging the daily metrics returned by the Azure API. It now reports the lowest minimum value and the highest maximum value from those data sets instead, which is more accurate and looks less strange next to the relevant p90/p95/p99 metrics.
+>
+
+#### Metadata
+
+- **Policies**: [Azure Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances/README.md), [Meta Parent: Azure Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances/README.md), [Azure Rightsize SQL Databases](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_sql_instances/README.md), [Meta Parent: Azure Rightsize SQL Databases](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_sql_instances/README.md)
+- **Merged At**: 2024-07-02 19:13:24 UTC
+
+---
+
+### PR [#2374](https://github.com/flexera-public/policy_templates/pull/2374): POL-1277 Cheaper Regions Revamp
+
+#### Description
+
+> This deprecates the `Cheaper Regions` policy template and replaces it with three new cloud-specific policy templates. This is more in keeping with how other similar policies work, and will make it easier to extend these policy templates with cloud-specific functionality in the future.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2374) for these details.
+- **Merged At**: 2024-07-02 14:45:36 UTC
+
+---
+
+### PR [#2361](https://github.com/flexera-public/policy_templates/pull/2361): POL-1275 Low Account Usage Revamp
+
+#### Description
+
+> This is a revamp of the `Low Account Usage` policy. From the CHANGELOG:
+>
+> - Policy template renamed to `Low Usage Report`
+> - Costs can now be sliced against any cost dimension rather than just vendor account
+> - Costs can now be assessed based on various cost metrics
+> - Costs are gathered for a user-specified number of days rather than across the current month
+> - Costs can be filtered by Billing Center as either an allow list or a deny list
+> - Incident table now provides additional contextual data
+> - Streamlined code for better readability and faster execution
+>
+> Additionally, this is a deprecation of the `Low Service Usage` policy. Its functionality is now rolled into this one.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2361) for these details.
+- **Merged At**: 2024-07-02 14:35:36 UTC
+
+---
+
+### PR [#2371](https://github.com/flexera-public/policy_templates/pull/2371): POL-1276 New Policy: Fixed Cost Common Bill Ingestion
+
+#### Description
+
+> This is a new policy template, `Fixed Cost Common Bill Ingestion`, that inserts fixed costs into Flexera CCO via CBI. It will automatically create the necessary CBI endpoint, if it does not already exist, generate the CSV, and upload it to the endpoint.
+>
+> This PR also includes a small tweak to the Dangerfile to avoid false positives for comma separation when a comma is being referenced inside of a replace statement, such as "/,/"
+>
+
+#### Metadata
+
+- **Policies**: [Fixed Cost Common Bill Ingestion](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/fixed_cost_cbi/README.md)
+- **Merged At**: 2024-07-01 15:07:25 UTC
+
+---
+
+### PR [#2355](https://github.com/flexera-public/policy_templates/pull/2355): POL-1271 Azure Rightsize Managed Disks: SKU Filtering
+
+#### Description
+
+> This update to the `Azure Rightsize Managed Disks` policy adds support for filtering by disk SKU so that certain disks, such as HDDs, can be omitted from the results.
+>
+
+#### Metadata
+
+- **Policies**: [Azure Rightsize Managed Disks](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_disks/README.md), [Meta Parent: Azure Rightsize Managed Disks](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_disks/README.md)
+- **Merged At**: 2024-07-01 12:35:05 UTC
+
+---
+
 ### PR [#2261](https://github.com/flexera-public/policy_templates/pull/2261): FOPTS-3684 Azure Synapse SQL Pools
 
 #### Description
@@ -1881,105 +1973,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2012) for these details.
 - **Merged At**: 2024-04-11 08:29:46 UTC
-
----
-
-### PR [#1970](https://github.com/flexera-public/policy_templates/pull/1970): POL-1179 Add Azure Usage Report - Amount of Instance Memory Used
-
-#### Description
-
-> <!-- Describe what this change achieves below -->
-> Adds Azure Usage Report showing the amount of instance memory in GiB used over a historical 12 month period.
->
-> ### Issues Resolved
->
-> <!-- List any existing issues this PR resolves below -->
-> Adds another variation of existing usage reports tracking Instance Hours Used and Instance vCPUs used.
->
-
-#### Metadata
-
-- **Policies**: [Azure Usage Report - Amount of Instance Memory Used](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/total_instance_memory/README.md)
-- **Merged At**: 2024-04-10 15:56:27 UTC
-
----
-
-### PR [#2033](https://github.com/flexera-public/policy_templates/pull/2033): POL-1076 AWS Bucket Size Revamp
-
-#### Description
-
-> This is a revamp of the AWS Bucket Size policy. From the CHANGELOG:
->
-> - Several parameters altered to be more descriptive and human-readable
-> - `Size Threshold (GiB)` parameter no longer expects user to specify size in bytes
-> - Added ability to filter buckets by region and tags
-> - Normalized incident export to be consistent with other policies
-> - Added additional fields to incident export
-> - Streamlined code for better readability and faster execution
-> - Policy now requires a valid Flexera credential
->
-> Additionally, the policy now has meta policy support.
->
-
-#### Metadata
-
-- **Policies**: [AWS Oversized S3 Buckets](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_bucket_size/README.md), [Meta Parent: AWS Oversized S3 Buckets](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_bucket_size/README.md)
-- **Merged At**: 2024-04-10 13:13:30 UTC
-
----
-
-### PR [#1969](https://github.com/flexera-public/policy_templates/pull/1969): POL-600 Add Azure Usage Report - Number of Instance vCPUs Used
-
-#### Description
-
-> <!-- Describe what this change achieves below -->
-> Adds Azure Usage Report showing the number of instance vCPUs used over a historical 12 month period.
->
-> ### Issues Resolved
->
-> <!-- List any existing issues this PR resolves below -->
-> Resolves cadence between AWS and Azure (AWS version of this policy already exists in the Catalog)
->
-
-#### Metadata
-
-- **Policies**: [Azure Usage Report - Number of Instance vCPUs Used](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/total_instance_vcpus/README.md)
-- **Merged At**: 2024-04-10 08:39:34 UTC
-
----
-
-### PR [#1961](https://github.com/flexera-public/policy_templates/pull/1961): POL-599 Add Azure Usage Report - Number of Instance Hours Used
-
-#### Description
-
-> <!-- Describe what this change achieves below -->
-> Adds Azure Usage Report showing the number of instance hours used over a historical 12 month period.
->
-> ### Issues Resolved
->
-> <!-- List any existing issues this PR resolves below -->
-> Resolves cadence between AWS and Azure (AWS version of this policy already exists in the Catalog)
->
-
-#### Metadata
-
-- **Policies**: [Azure Usage Report - Number of Instance Hours Used](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/total_instance_hours/README.md)
-- **Merged At**: 2024-04-09 14:16:40 UTC
-
----
-
-### PR [#2022](https://github.com/flexera-public/policy_templates/pull/2022): POL-1192 Policy Metadata Fixes
-
-#### Description
-
-> This corrects metadata in a large number of policies to align them with our general categorization schema. This should result in a cleaner list of policies in the global README. A lot of very minor stylistic changes (spacing, ordering of parameters, etc.) were also made to some of the affected policies based on feedback from the Dangerfile linter.
->
-> The Dangerfile was also updated to avoid some false positives, particularly around the SaaS Manager policies.
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2022) for these details.
-- **Merged At**: 2024-04-08 12:24:02 UTC
 
 ---
 
