@@ -2,31 +2,34 @@
 
 ## What it does
 
-This policy checks all Elastic Block Store (EBS) volumes in a given account and reports on any that are not encrypted.
-
-## Functional Details
-
-The policy leverages the AWS EC2 API to determine volume encryption settings.
+This policy template reports on all EBS (Elastic Block Storage) volumes in the AWS account that are not encrypted. Optionally, this report can be emailed.
 
 ## Input Parameters
 
-- *Allowed/Denied Regions* - Whether to treat regions parameter as allow or deny list.
-- *Regions* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
-- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
-- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [more](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
-- *Ignore tags* - EBS volumes with any of these tags will be ignored
+- *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
+- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
+- *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
+- *Allow/Deny Regions List* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled. See [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
+- *Exclusion Tags* - The policy will filter resources containing the specified tags from the results. The following formats are supported:
+  - `Key` - Filter all resources with the specified tag key.
+  - `Key==Value` - Filter all resources with the specified tag key:value pair.
+  - `Key!=Value` - Filter all resources missing the specified tag key:value pair. This will also filter all resources missing the specified tag key.
+  - `Key=~/Regex/` - Filter all resources where the value for the specified key matches the specified regex string.
+  - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified tag key.
+- *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
 
 ## Policy Actions
 
-- Send an email report
+- Sends an email notification.
 
 ## Prerequisites
 
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
 - [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
-  - `ec2:DescribeVolumes`
+  - `sts:GetCallerIdentity`
   - `ec2:DescribeRegions`
+  - `ec2:DescribeVolumes`
 
   Example IAM Permission Policy:
 
@@ -37,8 +40,9 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
           {
               "Effect": "Allow",
               "Action": [
-                  "ec2:DescribeVolumes",
-                  "ec2:DescribeRegions"
+                  "sts:GetCallerIdentity",
+                  "ec2:DescribeRegions",
+                  "ec2:DescribeVolumes"
               ],
               "Resource": "*"
           }

@@ -1,13 +1,13 @@
-name "AWS Unencrypted Volumes"
+name "AWS Unencrypted EBS Volumes"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report any Elastic Block Store (EBS) volumes in AWS that are unencrypted. \n See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/ebs_unencrypted_volumes) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Report any Elastic Block Store (EBS) volumes in AWS that are unencrypted. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/ebs_unencrypted_volumes) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Security"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "4.2.1",
+  version: "5.0.0",
   provider: "AWS",
   service: "EBS",
   policy_set: ""
@@ -17,29 +17,11 @@ info(
 # Parameters
 ###############################################################################
 
-parameter "param_allowed_regions_allow_or_deny" do
-  type "string"
-  category "Policy Settings"
-  label "Allow/Deny Regions"
-  description "Allow or Deny entered regions. See the README for more details"
-  allowed_values "Allow", "Deny"
-  default "Allow"
-end
-
-parameter "param_allowed_regions" do
-  type "list"
-  category "Policy Settings"
-  label "Regions"
-  description "A list of allowed or denied regions. See the README for more details"
-  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
-  default []
-end
-
 parameter "param_email" do
   type "list"
   category "Policy Settings"
-  label "Email addresses to notify"
-  description "Email addresses of the recipients you wish to notify when new incidents are created"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify."
   default []
 end
 
@@ -51,12 +33,39 @@ parameter "param_aws_account_number" do
   default ""
 end
 
-parameter "param_exclude_tags" do
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details"
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
   type "list"
-  category "Policy Settings"
-  label "Tags to ignore"
-  description "List of tags that will exclude resources from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test, env=dev'"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   default []
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
 end
 
 ###############################################################################
@@ -82,7 +91,7 @@ end
 # Pagination
 ###############################################################################
 
-pagination "pagination_aws_describevolumesresponse_xml" do
+pagination "pagination_aws_volumes" do
   get_page_marker do
     body_path "//DescribeVolumesResponse/nextToken"
   end
@@ -95,12 +104,106 @@ end
 # Datasources & Scripts
 ###############################################################################
 
-# ds_region_list is a list of regions that are opted-in or opt-in-not-required
-datasource "ds_regions_list" do
-  # https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeRegions.html
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get AWS account info
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+
+datasource "ds_get_caller_identity" do
   request do
     auth $auth_aws
     verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account", xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_get_caller_identity
+end
+
+script "js_aws_account", type:"javascript" do
+  parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+  result = _.find(ds_cloud_vendor_accounts, function(account) {
+    return account['id'] == ds_get_caller_identity[0]['account']
+  })
+
+  // This is in case the API does not return the relevant account info
+  if (result == undefined) {
+    result = {
+      id: ds_get_caller_identity[0]['account'],
+      name: "",
+      tags: {}
+    }
+  }
+EOS
+end
+
+datasource "ds_describe_regions" do
+  request do
+    auth $auth_aws
     host "ec2.amazonaws.com"
     path "/"
     query "Action", "DescribeRegions"
@@ -120,199 +223,238 @@ datasource "ds_regions_list" do
   end
 end
 
-# Get only SCP enabled regions
 datasource "ds_regions" do
-  run_script $js_regions, $ds_regions_list, $param_allowed_regions, $param_allowed_regions_allow_or_deny
+  run_script $js_regions, $ds_describe_regions, $param_regions_list, $param_regions_allow_or_deny
 end
 
 script "js_regions", type:"javascript" do
-  parameters "all_regions", "user_entered_regions", "regions_allow_or_deny"
-  result "regions"
+  parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
+  result "result"
   code <<-EOS
-    if(_.isEmpty(user_entered_regions)){
-      regions = all_regions;
-    }else{
-      //Filter unique regions
-      var uniqueRegions = _.uniq(user_entered_regions);
-      var all_regions_list = [];
-      //Filter and remove denied regions from all_regions
-      if (regions_allow_or_deny == "Deny"){
-        var all_regions = all_regions.filter(function(obj){
-          return user_entered_regions.indexOf(obj.region) === -1;
-        });
-      }
-      all_regions.forEach(function(all_region){
-        all_regions_list.push(all_region.region)
-      })
-      //Filter valid regions
-      var valid_regions = [];
-      _.map(uniqueRegions, function(uniqueRegion){
-        if(all_regions_list.indexOf(uniqueRegion) > -1){
-          valid_regions.push({"region": uniqueRegion})
-        }
-      })
+  allow_deny_test = { "Allow": true, "Deny": false }
 
-      //Throw an error if no valid regions found
-      if (_.isEmpty(valid_regions)) {
-        regions = all_regions;
-      }else{
-        regions = valid_regions
-      }
-    }
-  EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_describe_regions, function(item) {
+      return _.contains(param_regions_list, item['region']) == allow_deny_test[param_regions_allow_or_deny]
+    })
+  } else {
+    result = ds_describe_regions
+  }
+EOS
 end
 
-#To get list of All Unencrypted Volumes.
-datasource "ds_unencrypted_volume_list" do
+datasource "ds_unencrypted_volumes" do
   iterate $ds_regions
   request do
-    run_script $js_unencrypted_volume_list, val(iter_item, "region")
+    auth $auth_aws
+    pagination $pagination_aws_volumes
+    host join(["ec2.", val(iter_item, 'region'), ".amazonaws.com"])
+    path "/"
+    query "Action", "DescribeVolumes"
+    query "Filter.1.Name", "encrypted"
+    query "Filter.1.Value.1", "false"
+    query "Version", "2016-11-15"
+    header "User-Agent", "RS Policies"
   end
   result do
     encoding "xml"
     collect xpath(response, "//DescribeVolumesResponse/volumeSet/item", "array") do
       field "tags" do
         collect xpath(col_item, "tagSet/item") do
-          field "tagKey", xpath(col_item, "key")
-          field "tagValue", xpath(col_item, "value")
+          field "key", xpath(col_item, "key")
+          field "value", xpath(col_item, "value")
         end
       end
       field "attachments" do
         collect xpath(col_item, "attachmentSet/item") do
-          field "instance_Id", xpath(col_item, "instanceId")
+          field "instance_id", xpath(col_item, "instanceId")
+          field "attach_time", xpath(col_item, "attachTime")
+          field "device", xpath(col_item, "device")
         end
       end
-      field "volume_id", xpath(col_item, "volumeId")
+      field "id", xpath(col_item, "volumeId")
       field "availability_zone", xpath(col_item, "availabilityZone")
       field "snapshot_id", xpath(col_item, "snapshotId")
+      field "volume_type", xpath(col_item, "volumeType")
+      field "created_time", xpath(col_item, "createTime")
+      field "size", xpath(col_item, "size")
+      field "iops", xpath(col_item, "iops")
+      field "status", xpath(col_item, "status")
       field "encrypted", xpath(col_item, "encrypted")
-      field "vol_status", xpath(col_item, "status")
-      field "vol_type", xpath(col_item, "volumeType")
       field "region", val(iter_item, "region")
     end
   end
 end
 
-#https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeVolumes.html
-script "js_unencrypted_volume_list", type: "javascript" do
-  parameters "region"
-  result "results"
-  code <<-EOS
-    results = {
-      auth: "auth_aws",
-      host: 'ec2.'+region+'.amazonaws.com',
-      path: '/',
-      pagination: "pagination_aws_describevolumesresponse_xml",
-      query_params: {
-        "Action": "DescribeVolumes",
-        "Filter.1.Name": "encrypted",
-        "Filter.1.Value.1": "false",
-        "Version": "2016-11-15",
-      }
-    }
-  EOS
+datasource "ds_volumes_tag_filtered" do
+  run_script $js_volumes_tag_filtered, $ds_unencrypted_volumes, $param_exclusion_tags, $param_exclusion_tags_boolean
 end
 
-datasource "ds_unencrypted_volumes_map" do
-  run_script $js_unencrypted_volumes_map, $ds_unencrypted_volume_list, $param_exclude_tags
-end
-
-#Process the response data and check for the tags and unencrypted voulmes
-script "js_unencrypted_volumes_map", type: "javascript" do
-  parameters "ds_unencrypted_volume_list", "param_exclude_tags"
-  result "content"
+script "js_volumes_tag_filtered", type: "javascript" do
+  parameters "ds_unencrypted_volumes", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  result "result"
   code <<-EOS
-    var param_exclude_tags_lower=[];
-    for(var j=0; j < param_exclude_tags.length; j++){
-      param_exclude_tags_lower[j]=param_exclude_tags[j].toString().toLowerCase();
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
     }
 
-    var content=[]
-    for(var i=0; i<ds_unencrypted_volume_list.length; i++){
-      vol=ds_unencrypted_volume_list[i]
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
 
-      // Constructing IntanceIds with comma separated to display in detail_template
-      var instancesList = vol['attachments']
-      var instanceId=""
-      for(var j=0; j < instancesList.length; j++){
-        instanceId = instancesList[j]['instance_Id']
-      }
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
 
-      //Check, if the tag present in entered param_exclude_tags, ignore the Volume if the tag matches/present.
-      var tags = vol['tags']
-      var isTagMatched=false
-      var tagKeyValue=""
-      for(var j=0; j < tags.length; j++){
-        tag = tags[j]
-        if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
-          isTagMatched = true;
-        }
-        // Constructing tags with comma separated to display in detail_template
-        if((tag['tagValue']).length > 0){
-          tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
-        }else{
-          tagKeyValue = tagKeyValue + ', '+ tag['tagKey']
-        }
-      }
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
 
-      //If the volume tag does not match with entered param_exclude_tags
-      if(!(isTagMatched)){
-          content.push({
-          instanceId:instanceId,
-          tagKeyValue:(tagKeyValue.slice(2)),
-          id:vol['volume_id'],
-          availability_zone:vol['availability_zone'],
-          snapshot_id:vol['snapshot_id'],
-          encrypted:vol['encrypted'],
-          vol_status:vol['vol_status'],
-          vol_type:vol['vol_type'],
-          region:vol['region']
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  if (param_exclusion_tags.length > 0) {
+    result = _.reject(ds_unencrypted_volumes, function(resource) {
+      resource_tags = {}
+
+      if (typeof(resource['tags']) == 'object') {
+        _.each(resource['tags'], function(tag) {
+          resource_tags[tag['key']] = tag['value']
         })
       }
-    }
-  content = _.sortBy(content, 'id')
-  content = _.sortBy(content, 'region')
-  content = _.sortBy(content, 'availability_zone')
-  EOS
+
+      // Store a list of found tags
+      found_tags = []
+
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_tag = resource_tags[comparator['key']]
+
+        if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+        if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+        if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_tag == undefined) { found_tags.push(string) }
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+      })
+
+      all_tags_found = found_tags.length == comparators.length
+      any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+      return all_tags_found || any_tags_found
+    })
+  } else {
+    result = ds_unencrypted_volumes
+  }
+EOS
+end
+
+datasource "ds_unencrypted_volumes_incident" do
+  run_script $js_unencrypted_volumes_incident, $ds_volumes_tag_filtered, $ds_aws_account, $ds_applied_policy
+end
+
+script "js_unencrypted_volumes_incident", type: "javascript" do
+  parameters "ds_volumes_tag_filtered", "ds_aws_account", "ds_applied_policy"
+  result "result"
+  code <<-'EOS'
+  result = _.map(ds_volumes_tag_filtered, function(volume) {
+    tags = []
+    name = ""
+
+    _.each(volume['tags'], function(tag) {
+      tags.push(tag['key'] + '=' + tag['value'])
+
+      if (typeof tag['key'] == "string" && typeof tag['value'] == "string" && tag['key'].toLowerCase() == 'name') {
+        name = tag['value']
+      }
+    })
+
+    accountID: ds_aws_account['id'],
+    accountName: ds_aws_account['name'],
+    resourceID: volume['id'],
+    resourceType: volume['volume_type'],
+    region: volume['region'],
+    created: volume['created_time'],
+    size: volume['size'],
+    iops: volume['iops'],
+    state: volume['status'],
+    snapshotID: volume['snapshot_id'],
+    zone: volume['availability_zone'],
+    policy_name: ds_applied_policy['name'],
+    resourceName: name,
+    tags: tags.join(', '),
+    service: "EBS"
+  })
+EOS
 end
 
 ###############################################################################
 # Policy
 ###############################################################################
-policy "pol_unencrypted_volumes_list" do
-  validate $ds_unencrypted_volumes_map do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Unencrypted Volumes Found in AWS"
-    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
-    check logic_or($ds_parent_policy_terminated, eq(size(data), 0))
+
+policy "pol_unencrypted_volumes" do
+  validate_each $ds_unencrypted_volumes_incident do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Unencrypted EBS Volumes Found"
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
+    hash_exclude "tags"
     export do
       resource_level true
-      field "id" do
-        label "Volume Id"
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "resourceType" do
+        label "Resource Type"
       end
       field "region" do
         label "Region"
       end
-      field "availability_zone" do
-        label "Availability Zone"
+      field "size" do
+        label "Size (GB)"
       end
-      field "instanceId" do
-        label "Instance Id"
+      field "iops" do
+        label "IOPS"
       end
-      field "snapshot_id" do
-        label "Snaphot Id"
+      field "state" do
+        label "Status"
       end
-      field "encrypted" do
-        label "Encrypted"
+      field "service" do
+        label "Service"
       end
-      field "vol_status" do
-        label "Volume Status"
-      end
-      field "vol_type" do
-        label "Volume Type"
-      end
-      field "tagKeyValue" do
-        label "TAGs"
+      field "id" do
+        label "ID"
+        path "resourceID"
       end
     end
   end
