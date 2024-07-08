@@ -1,4 +1,4 @@
-name "AWS Unencrypted Volumes"
+name "AWS Unencrypted EBS Volumes"
 rs_pt_ver 20180301
 type "policy"
 short_description "Report any Elastic Block Store (EBS) volumes in AWS that are unencrypted. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/ebs_unencrypted_volumes) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
@@ -91,7 +91,7 @@ end
 # Pagination
 ###############################################################################
 
-pagination "pagination_aws_describevolumesresponse_xml" do
+pagination "pagination_aws_volumes" do
   get_page_marker do
     body_path "//DescribeVolumesResponse/nextToken"
   end
@@ -247,7 +247,7 @@ datasource "ds_unencrypted_volumes" do
   iterate $ds_regions
   request do
     auth $auth_aws
-    pagination $pagination_aws_describevolumesresponse_xml
+    pagination $pagination_aws_volumes
     host join(["ec2.", val(iter_item, 'region'), ".amazonaws.com"])
     path "/"
     query "Action", "DescribeVolumes"
@@ -378,12 +378,15 @@ script "js_unencrypted_volumes_incident", type: "javascript" do
   code <<-'EOS'
   result = _.map(ds_volumes_tag_filtered, function(volume) {
     tags = []
+    name = ""
 
-    if (typeof(resource['tags']) == 'object') {
-      _.each(resource['tags'], function(tag) {
-        resource_tags[tag['key']] = tag['value']
-      })
-    }
+    _.each(volume['tags'], function(tag) {
+      tags.push(tag['key'] + '=' + tag['value'])
+
+      if (typeof tag['key'] == "string" && typeof tag['value'] == "string" && tag['key'].toLowerCase() == 'name') {
+        name = tag['value']
+      }
+    })
 
     accountID: ds_aws_account['id'],
     accountName: ds_aws_account['name'],
@@ -393,10 +396,12 @@ script "js_unencrypted_volumes_incident", type: "javascript" do
     created: volume['created_time'],
     size: volume['size'],
     iops: volume['iops'],
-    status: volume['status'],
+    state: volume['status'],
     snapshotID: volume['snapshot_id'],
     zone: volume['availability_zone'],
     policy_name: ds_applied_policy['name'],
+    resourceName: name,
+    tags: tags.join(', '),
     service: "EBS"
   })
 EOS
@@ -406,40 +411,50 @@ end
 # Policy
 ###############################################################################
 
-policy "pol_unencrypted_volumes_list" do
-  validate $ds_unencrypted_volumes_map do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Unencrypted Volumes Found in AWS"
-    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
-    check logic_or($ds_parent_policy_terminated, eq(size(data), 0))
+policy "pol_unencrypted_volumes" do
+  validate_each $ds_unencrypted_volumes_incident do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Unencrypted EBS Volumes Found"
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
+    hash_exclude "tags"
     export do
       resource_level true
-      field "id" do
-        label "Volume Id"
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "resourceType" do
+        label "Resource Type"
       end
       field "region" do
         label "Region"
       end
-      field "availability_zone" do
-        label "Availability Zone"
+      field "size" do
+        label "Size (GB)"
       end
-      field "instanceId" do
-        label "Instance Id"
+      field "iops" do
+        label "IOPS"
       end
-      field "snapshot_id" do
-        label "Snaphot Id"
+      field "state" do
+        label "Status"
       end
-      field "encrypted" do
-        label "Encrypted"
+      field "service" do
+        label "Service"
       end
-      field "vol_status" do
-        label "Volume Status"
-      end
-      field "vol_type" do
-        label "Volume Type"
-      end
-      field "tagKeyValue" do
-        label "TAGs"
+      field "id" do
+        label "ID"
+        path "resourceID"
       end
     end
   end
