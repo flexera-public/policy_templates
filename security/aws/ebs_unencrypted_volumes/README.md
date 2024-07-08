@@ -1,6 +1,6 @@
 # AWS Unencrypted Volumes
 
-## What it does
+## What It Does
 
 This policy template reports on all EBS (Elastic Block Storage) volumes in the AWS account that are not encrypted. Optionally, this report can be emailed.
 
