@@ -1,63 +1,60 @@
 # AWS Unencrypted ELB Listeners (CLB)
 
-## What It Does
+## Deprecated
 
-This policy template reports any AWS Classic Load Balancers with internet-facing listeners (open ports) that are not encrypted. HTTPS and SSL listeners are not reported because they are encrypted. Optionally, this report can be emailed.
+This policy is no longer being updated. The [AWS Elastic Load Balancers With Unencrypted Listeners](https://github.com/flexera-public/policy_templates/tree/master/security/aws/elb_unencrypted/) policy now includes this functionality.
 
-Note: Elastic Load Balancing (ELB) supports three types of load balancers: Classic Load Balancers, Application Load Balancers, and Network Load Balancers. This policy template is specific to Classic Load Balancers.
+## What it does
+
+Checks for unecrypted listeners on Classic Load Balancers. If an internet-facing listener is using an unecrypted protocol (eg: NOT HTTPS, SSL, or TLS) an incident report will show for the listener and an email will be sent to the user-specified email address.
+
+Note: Elastic Load Balancing (ELB) supports three types of load balancers: Classic Load Balancers, Application Load Balancers, and Network Load Balancers. There is a separate policy for Application and Network Load Balancers with unencrypted internet-facing listeners.
+
+## Functional Details
+
+The policy leverages the AWS elasticloadbalancing API to examine listener details. When an unencrypted internet-facing listener is detected, an email action is triggered automatically to notify the specified users of the incident.
 
 ## Input Parameters
 
-- *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
-- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
-- *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
-- *Allow/Deny Regions List* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled. See [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
-- *Exclusion Tags* - The policy will filter resources containing the specified tags from the results. The following formats are supported:
-  - `Key` - Filter all resources with the specified tag key.
-  - `Key==Value` - Filter all resources with the specified tag key:value pair.
-  - `Key!=Value` - Filter all resources missing the specified tag key:value pair. This will also filter all resources missing the specified tag key.
-  - `Key=~/Regex/` - Filter all resources where the value for the specified key matches the specified regex string.
-  - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified tag key.
-- *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
+- *Allowed/Denied Regions* - Whether to treat regions parameter as allow or deny list.
+- *Regions* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
+- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
+- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [more](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
+- *Ignore tags* - CLB with any of these tags will be ignored
 
 ## Policy Actions
 
-- Sends an email notification.
+- Send an email report
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
 
-- [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
-  - `sts:GetCallerIdentity`
-  - `ec2:DescribeRegions`
-  - `elasticloadbalancing:DescribeLoadBalancers`
-  - `elasticloadbalancing:DescribeTags`
+### Credential configuration
 
-  Example IAM Permission Policy:
+For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
 
-  ```json
-  {
-      "Version": "2012-10-17",
-      "Statement": [
-          {
-              "Effect": "Allow",
-              "Action": [
-                  "sts:GetCallerIdentity",
-                  "ec2:DescribeRegions",
-                  "elasticloadbalancing:DescribeLoadBalancers",
-                  "elasticloadbalancing:DescribeTags"
-              ],
-              "Resource": "*"
-          }
-      ]
-  }
-  ```
+Provider tag value to match this policy: `aws` , `aws_sts`
 
-- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
-  - `billing_center_viewer`
+Required permissions in the provider:
 
-The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+```javascript
+{
+    "Version": "2012-10-17",
+    "Statement":[{
+    "Effect":"Allow",
+    "Action":["elasticloadbalancing:DescribeLoadBalancers",
+              "elasticloadbalancing:DescribeTags"],
+    "Resource":"*"
+    },
+    {
+      "Effect":"Allow",
+      "Action":["ec2:DescribeRegions"],
+      "Resource":"*"
+    }
+  ]
+}
+```
 
 ## Supported Clouds
 

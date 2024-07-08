@@ -1,14 +1,14 @@
-name "AWS Unencrypted ELB Listeners (ALB/NLB)"
+name "AWS Elastic Load Balancers With Unencrypted Listeners"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report any AWS App/Network Load Balancers w/Internet-facing Unencrypted Listeners. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/elb_unencrypted) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Report any AWS Elastic Load Balancers with internet-facing unencrypted listeners. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/clb_unencrypted) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Security"
 severity "medium"
 info(
   version: "4.0.0",
   provider: "AWS",
-  service: "ELB",
+  service: "Network",
   policy_set: ""
 )
 
@@ -20,7 +20,7 @@ parameter "param_email" do
   type "list"
   category "Policy Settings"
   label "Email Addresses"
-  description "Email addresses of the recipients you wish to notify."
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
   default []
 end
 
@@ -50,10 +50,30 @@ parameter "param_regions_list" do
   default []
 end
 
-parameter "param_exclude_tags" do
+parameter "param_exclusion_tags" do
   type "list"
-  label "Ignore Tags"
-  description "List of one or more Tags that will exclude Classic Load Balancer from actions being taken. Format: Key=Value"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
+parameter "param_loadbalancer_types" do
+  type "list"
+  category "Filters"
+  label "Load Balancer Types"
+  description "A list of Load Balancer types to report on. Any types not specified here will be ignored in the results."
+  allowed_values ["Application", "Network", "Gateway", "Classic"]
+  default ["Application", "Network", "Gateway", "Classic"]
 end
 
 ###############################################################################
@@ -73,28 +93,6 @@ credentials "auth_flexera" do
   label "Flexera"
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
-end
-
-###############################################################################
-# Pagination
-###############################################################################
-
-pagination "pagination_aws_elb" do
-  get_page_marker do
-    body_path "DescribeLoadBalancersResult.NextMarker"
-  end
-  set_page_marker do
-    query "Marker"
-  end
-end
-
-pagination "pagination_aws_listener" do
-  get_page_marker do
-    body_path "DescribeListenersResponse.NextMarker"
-  end
-  set_page_marker do
-    query "Marker"
-  end
 end
 
 ###############################################################################
@@ -241,205 +239,316 @@ script "js_regions", type:"javascript" do
 EOS
 end
 
-#Get the list of all network and application load Balancers
-datasource "ds_elb_list" do
+datasource "ds_clbs_without_tags" do
   iterate $ds_regions
   request do
-    run_script $js_elb_list, val(iter_item,"region")
+    auth $auth_aws
+    host join(["elasticloadbalancing.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/"
+    query "Action", "DescribeLoadBalancers"
+    # This API version used specifically to get classic LBs
+    query "Version", "2012-06-01"
+    header "Accept", "application/json"
   end
   result do
     encoding "json"
-    collect jmes_path(response, "DescribeLoadBalancersResponse.DescribeLoadBalancersResult.*[*][]") do
-      field "loadBalancerName", jmes_path(col_item, "LoadBalancerName")
-      field "region", val(iter_item,"region")
-      field "availabilityZones", jmes_path(col_item, "AvailabilityZones")
-      field "scheme",  jmes_path(col_item, "Scheme")
-      field "loadBalancerArn",  jmes_path(col_item, "LoadBalancerArn")
-      field "loadBalancerType", jmes_path(col_item, "Type")
+    collect jmes_path(response, "DescribeLoadBalancersResponse.DescribeLoadBalancersResult.LoadBalancerDescriptions[*]") do
+      field "name", jmes_path(col_item, "LoadBalancerName")
+      field "scheme", jmes_path(col_item, "Scheme")
+      field "created", jmes_path(col_item, "CreatedTime")
+      field "dns", jmes_path(col_item, "DNSName")
+      field "vpc", jmes_path(col_item, "VPCId")
+      field "zones", jmes_path(col_item, "AvailabilityZones")
+      field "instances", jmes_path(col_item, "Instances[*].InstanceId")
+      field "type", jmes_path(col_item, "Type")
+      field "arn",  jmes_path(col_item, "LoadBalancerArn")
+      field "region", val(iter_item, "region")
+      field "listenerDescriptions", jmes_path(col_item, "ListenerDescriptions")
     end
   end
 end
 
-script "js_elb_list", type: "javascript" do
-  parameters "region"
-  result "request"
-  code <<-EOS
-  request = {
-    auth: 'auth_aws',
-    pagination: 'pagination_aws_elb',
-    host: 'elasticloadbalancing.'+region+'.amazonaws.com',
-    path: '/',
-    verb: 'GET',
-    query_params: {
-      "Action": "DescribeLoadBalancers",
-      "Version": "2015-12-01"
-    },
-    headers: {
-      "Accept": "application/json"
-    }
-  }
-EOS
-end
-
-#Get respective tags for all load Balancers
-datasource "ds_elb_list_with_tags" do
-  iterate $ds_elb_list
+datasource "ds_clbs" do
+  iterate $ds_clbs_without_tags
   request do
-    run_script $js_elb_list_with_tags, val(iter_item,"region"), val(iter_item, "loadBalancerName"), val(iter_item, "loadBalancerArn")
+    auth $auth_aws
+    host join(["elasticloadbalancing.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/"
+    query "Action", "DescribeTags"
+    query "Version", "2012-06-01"
+    query "LoadBalancerNames.member.1", val(iter_item, "name")
   end
   result do
     encoding "json"
     collect jmes_path(response, "DescribeTagsResponse.DescribeTagsResult.TagDescriptions[*]") do
-      field "loadBalancerName", val(iter_item, "loadBalancerName")
-      field "region", val(iter_item,"region")
-      field "availabilityZones", val(iter_item, "availabilityZones")
       field "tags" do
-        collect jmes_path(col_item,"Tags") do
-          field "tagKey", jmes_path(col_item,"Key")
-          field "tagValue", jmes_path(col_item,"Value")
+        collect jmes_path(col_item, "Tags") do
+          field "key", jmes_path(col_item, "Key")
+          field "value", jmes_path(col_item, "Value")
         end
       end
-      field "scheme",  val(iter_item,"scheme")
-      field "loadBalancerArn",  val(iter_item,"loadBalancerArn")
-      field "loadBalancerType", val(iter_item,"loadBalancerType")
+      field "name", val(iter_item, "name")
+      field "scheme", val(iter_item, "scheme")
+      field "created", val(iter_item, "created")
+      field "dns", val(iter_item, "dns")
+      field "vpc", val(iter_item, "vpc")
+      field "zones", val(iter_item, "zones")
+      field "instances", val(iter_item, "instances")
+      field "region", val(iter_item, "region")
+      field "type", val(iter_item, "type")
+      field "listenerDescriptions", val(iter_item, "listenerDescriptions")
     end
   end
 end
 
-script "js_elb_list_with_tags", type: "javascript" do
-  parameters "region", "loadBalancerName", "loadBalancerArn"
-  result "request"
-  code <<-EOS
-    request = {
-      auth: 'auth_aws',
-      host: 'elasticloadbalancing.'+region+'.amazonaws.com',
-      path: '/',
-      verb: 'GET',
-      query_params: {
-        "Action": "DescribeTags",
-        "Version": "2015-12-01",
-        "LoadBalancerNames.member.1": loadBalancerName,
-        "ResourceArns.member.1": loadBalancerArn
-      },
-      headers: {
-        "Accept": "application/json"
-      }
-    }
-  EOS
+datasource "ds_elbs_without_tags" do
+  iterate $ds_regions
+  request do
+    auth $auth_aws
+    host join(["elasticloadbalancing.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/"
+    query "Action", "DescribeLoadBalancers"
+    # This API version used specifically to get non-classic LBs
+    query "Version", "2015-12-01"
+    header "Accept", "application/json"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "DescribeLoadBalancersResponse.DescribeLoadBalancersResult.LoadBalancerDescriptions[*]") do
+      field "name", jmes_path(col_item, "LoadBalancerName")
+      field "scheme", jmes_path(col_item, "Scheme")
+      field "created", jmes_path(col_item, "CreatedTime")
+      field "dns", jmes_path(col_item, "DNSName")
+      field "vpc", jmes_path(col_item, "VPCId")
+      field "zones", jmes_path(col_item, "AvailabilityZones")
+      field "instances", jmes_path(col_item, "Instances[*].InstanceId")
+      field "type", jmes_path(col_item, "Type")
+      field "arn",  jmes_path(col_item, "LoadBalancerArn")
+      field "region", val(iter_item, "region")
+    end
+  end
 end
 
-datasource "ds_elb_listeners_with_tags" do
-  iterate $ds_elb_list_with_tags
+datasource "ds_elbs" do
+  iterate $ds_elbs_without_tags
   request do
-    run_script $js_elb_listeners_with_tags, val(iter_item,"region"), val(iter_item, "loadBalancerArn")
+    auth $auth_aws
+    host join(["elasticloadbalancing.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/"
+    query "Action", "DescribeTags"
+    query "Version", "2015-12-01"
+    query "LoadBalancerNames.member.1", val(iter_item, "name")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "DescribeTagsResponse.DescribeTagsResult.TagDescriptions[*]") do
+      field "tags" do
+        collect jmes_path(col_item, "Tags") do
+          field "key", jmes_path(col_item, "Key")
+          field "value", jmes_path(col_item, "Value")
+        end
+      end
+      field "name", val(iter_item, "name")
+      field "scheme", val(iter_item, "scheme")
+      field "created", val(iter_item, "created")
+      field "dns", val(iter_item, "dns")
+      field "vpc", val(iter_item, "vpc")
+      field "zones", val(iter_item, "zones")
+      field "instances", val(iter_item, "instances")
+      field "region", val(iter_item, "region")
+      field "type", val(iter_item, "type")
+      field "arn", val(iter_item, "arn")
+    end
+  end
+end
+
+datasource "ds_elb_listeners" do
+  iterate $ds_elbs
+  request do
+    auth $auth_aws
+    host join(["elasticloadbalancing.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/"
+    query "Action", "DescribeListeners"
+    query "Version", "2015-12-01"
+    query "LoadBalancerArn", val(iter_item, "arn")
+    header "Accept", "application/json"
   end
   result do
     encoding "json"
     collect jmes_path(response, "DescribeListenersResponse.DescribeListenersResult.Listeners[*]") do
-      field "loadBalancerName", val(iter_item, "loadBalancerName")
-      field "region", val(iter_item,"region")
-      field "availabilityZones", val(iter_item, "availabilityZones")
-      field "tags", val(iter_item, "tags")
-      field "scheme",  val(iter_item,"scheme")
-      field "loadBalancerArn",  val(iter_item,"loadBalancerArn")
-      field "loadBalancerType", val(iter_item,"loadBalancerType")
-      field "listenerProtocol", jmes_path(col_item,"Protocol")
-      field "listenerPort", jmes_path(col_item,"Port")
+      field "protocol", jmes_path(col_item, "Protocol")
+      field "port", jmes_path(col_item, "Port")
+      field "arn", val(iter_item, "arn")
     end
   end
 end
 
-script "js_elb_listeners_with_tags", type: "javascript" do
-  parameters "region", "loadBalancerArn"
-  result "request"
-  code <<-EOS
-    request = {
-      auth: 'auth_aws',
-      pagination: 'pagination_aws_listener',
-      host: 'elasticloadbalancing.'+region+'.amazonaws.com',
-      path: '/',
-      verb: 'GET',
-      query_params: {
-        "Action": "DescribeListeners",
-        "Version": "2015-12-01",
-        "LoadBalancerArn": loadBalancerArn
-      },
-      headers: {
-        "Accept": "application/json"
-      }
-    }
-  EOS
+datasource "ds_lbs_tag_filtered" do
+  run_script $js_lbs_tag_filtered, $ds_clbs, $ds_elbs, $param_exclusion_tags, $param_exclusion_tags_boolean
 end
 
-datasource "ds_unencrypted_elb_map" do
-  run_script $js_elb_filter_map, $ds_elb_listeners_with_tags, $param_exclude_tags
+script "js_lbs_tag_filtered", type: "javascript" do
+  parameters "ds_clbs", "ds_elbs", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  result "result"
+  code <<-'EOS'
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  if (param_exclusion_tags.length > 0) {
+    result = _.reject(ds_clbs.concat(ds_elbs), function(resource) {
+      resource_tags = {}
+
+      if (typeof(resource['tags']) == 'object') {
+        _.each(resource['tags'], function(tag) {
+          resource_tags[tag['key']] = tag['value']
+        })
+      }
+
+      // Store a list of found tags
+      found_tags = []
+
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_tag = resource_tags[comparator['key']]
+
+        if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+        if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+        if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_tag == undefined) { found_tags.push(string) }
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+      })
+
+      all_tags_found = found_tags.length == comparators.length
+      any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+      return all_tags_found || any_tags_found
+    })
+  } else {
+    result = ds_clbs
+  }
+EOS
 end
 
-script "js_elb_filter_map", type: "javascript" do
-  parameters "ds_elb_listeners_with_tags", "param_exclude_tags"
-  result "content"
-  code <<-EOS
-  var param_exclude_tags_lower = [];
-  for (var j = 0; j < param_exclude_tags.length; j++) {
-    param_exclude_tags_lower[j] = param_exclude_tags[j].toString().toLowerCase();
-  }
+datasource "ds_lbs_type_filtered" do
+  run_script $js_lbs_type_filtered, $ds_lbs_tag_filtered, $param_loadbalancer_types
+end
 
-  var content = []
-  for (var i = 0; i < ds_elb_listeners_with_tags.length; i++) {
-    elb = ds_elb_listeners_with_tags[i]
+script "js_lbs_type_filtered", type: "javascript" do
+  parameters "ds_lbs_tag_filtered", "param_loadbalancer_types"
+  result "result"
+  code <<-'EOS'
+  lb_types = _.map(param_loadbalancer_types, function(type) { return type.toLowerCase() })
 
-    // Constructing availabilityZones with comma separated to display in detail_template
-    var availabilityZones = elb['availabilityZones']
-    var s_availabilityZones = ""
-    for (var j = 0; j < availabilityZones.length; j++) {
-      availabilityZone = availabilityZones[j]
-      s_availabilityZones = s_availabilityZones + ', ' + availabilityZone.ZoneName
+  result = _.filter(ds_lbs_tag_filtered, function(lb) {
+    type = "classic"
+    if (typeof(lb['type']) == 'string' && lb['type'] != '') { type = lb['type'] }
+    return _.contains(lb_types, type)
+  })
+EOS
+end
+
+datasource "ds_bad_lbs" do
+  run_script $js_bad_lbs, $ds_lbs_type_filtered, $ds_elb_listeners, $ds_aws_account, $ds_applied_policy
+end
+
+script "js_bad_lbs", type: "javascript" do
+  parameters "ds_lbs_type_filtered", "ds_elb_listeners", "ds_aws_account", "ds_applied_policy"
+  result "result"
+  code <<-'EOS'
+  listener_table = _.groupBy(ds_elb_listeners, 'arn')
+
+  result = []
+
+  _.each(ds_lbs_type_filtered, function(lb) {
+    bad_listeners = []
+
+    if (lb['listenerDescriptions'] != null && lb['listenerDescriptions'] != undefined) {
+      bad_listeners = _.filter(_.pluck(lb['listenerDescriptions'], 'Listener'), function(listener) {
+        return listener['Protocol'].toLowerCase() != 'https' && listener['Protocol'].toLowerCase() != 'ssl'
+      })
     }
 
-    //Constructing Tags of individual ELB into key=value format. Check, if the tag present in entered param_exclude_tags. Ignore the Load Balancer if the tag matches/present.
-    var tags = elb['tags']
-    var isTagMatched = false
-    var tagKeyValue = ""
-    for (var j = 0; j < tags.length; j++) {
-      tag = tags[j]
-      if ((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey'] + '=' + tag['tagValue']).toLowerCase()) !== -1)) {
-        isTagMatched = true;
-      }
-      // Constructing tags with comma separated to display in detail_template
-      if ((tag['tagValue']).length > 0) {
-        tagKeyValue = tagKeyValue + ', ' + tag['tagKey'] + '=' + tag['tagValue']
-      } else {
-        tagKeyValue = tagKeyValue + ', ' + tag['tagKey']
-      }
+    if (listener_table[lb['arn']] != undefined) {
+      bad_listeners = _.filter(listener_table[lb['arn']], function(listener) {
+        return listener['protocol'].toLowerCase() != 'https' && listener['protocol'].toLowerCase() != 'ssl'
+      })
     }
 
-    //If the Load Balancer tag does not match with entered param_exclude_tags, then check if Load Balancer is internet-facing and has HTTPS/TLS in use.
-    if (!(isTagMatched) && (elb['scheme']) === 'internet-facing') {
-      // check for HTTPS or TLS listeners
-      protocol = elb['listenerProtocol']
-      switch (protocol) {
-        case "HTTPS":
-          break
-        case "TLS":
-          break
-        default:
-          content.push({
-            id: elb['loadBalancerName'],
-            loadBalancerType: elb['loadBalancerType'],
-            loadBalancerProtocol: protocol,
-            loadBalancerPort: elb['listenerPort'],
-            region: elb['region'],
-            availabilityZones: (s_availabilityZones.slice(2)),
-            tagKeyValue: (tagKeyValue.slice(2)),
-            loadBalanceProtocolAndPort: protocol + " " + elb['listenerPort']
-          })
-      }
-    }
-  }
+    if (bad_listeners.length > 0) {
+      tags = []
 
-  content = _.sortBy(content, 'id')
-  content = _.sortBy(content, 'loadBalancerType')
-  content = _.sortBy(content, 'region')
+      _.each(lb['tags'], function(tag) {
+        tags.push(tag['key'] + '=' + tag['value'])
+      })
+
+      created = new Date(Math.round(lb['created'] * 1000)).toISOString()
+
+      bad_listener_list = _.map(bad_listeners, function(listener) {
+        if (listener['LoadBalancerPort'] != undefined) {
+          return listener['Protocol'] + ':' + listener['LoadBalancerPort']
+        } else {
+          return listener['protocol'] + ':' + listener['port']
+        }
+      })
+
+      type = "classic"
+      if (typeof(lb['type']) == 'string' && lb['type'] != '') { type = lb['type'] }
+
+      result.push({
+        accountID: ds_aws_account['id'],
+        accountName: ds_aws_account['name'],
+        resourceID: lb['name'],
+        scheme: lb['scheme'],
+        dns: lb['dns'],
+        vpc: lb['vpc'],
+        zones: lb['zones'].join(', '),
+        instances: lb['instances'].join(', '),
+        region: lb['region'],
+        policy_name: ds_applied_policy['name'],
+        created: created,
+        tags: tags.join(', '),
+        type: type,
+        listeners: bad_listener_list.join(', '),
+        service: "ELB"
+      })
+    }
+  })
 EOS
 end
 
@@ -447,30 +556,56 @@ end
 # Policy
 ###############################################################################
 
-policy "pol_unencrypted_ALB_NLB" do
-  validate $ds_unencrypted_elb_map do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Unencrypted ELB Listeners (ALB/NLB)"
-    check eq(size(data), 0)
+policy "pol_unencrypted_lbs" do
+  validate_each $ds_bad_lbs do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Elastic Load Balancers With Unencrypted Listeners Found"
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
+    hash_exclude "instances", "tags"
     export do
       resource_level true
-      field "id" do
-        label "LoadBalancer Name"
+      field "accountID" do
+        label "Account ID"
       end
-      field "loadBalancerType" do
-        label "Load Balancer Type"
+      field "accountName" do
+        label "Account Name"
       end
-      field "loadBalanceProtocolAndPort" do
-        label "Listener Protocol (Port)"
+      field "resourceID" do
+        label "Resource Name"
+      end
+      field "dns" do
+        label "DNS Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "type" do
+        label "Type"
       end
       field "region" do
         label "Region"
       end
-      field "availabilityZones" do
+      field "listeners" do
+        label "Unencrypted Listeners"
+      end
+      field "zones" do
         label "Availability Zones"
       end
-      field "tagKeyValue" do
-        label "TAGs"
+      field "instances" do
+        label "Attached Instances"
+      end
+      field "vpc" do
+        label "VPC"
+      end
+      field "created" do
+        label "Creation Date"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
       end
     end
   end
