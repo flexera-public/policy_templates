@@ -272,12 +272,7 @@ end
 datasource "ds_clbs" do
   iterate $ds_clbs_without_tags
   request do
-    auth $auth_aws
-    host join(["elasticloadbalancing.", val(iter_item, "region"), ".amazonaws.com"])
-    path "/"
-    query "Action", "DescribeTags"
-    query "Version", "2012-06-01"
-    query "LoadBalancerNames.member.1", val(iter_item, "name")
+    run_script $js_clbs, val(iter_item, 'region'), val(iter_item, 'name')
   end
   result do
     encoding "json"
@@ -302,6 +297,24 @@ datasource "ds_clbs" do
   end
 end
 
+script "js_clbs", type: "javascript" do
+  parameters "region", "name"
+  result "request"
+  code <<-EOS
+  var request = {
+    auth: "auth_aws",
+    host: "elasticloadbalancing." + region + ".amazonaws.com",
+    path: "/",
+    query_params: {
+      "Action": "DescribeTags",
+      "Version": "2012-06-01",
+      "LoadBalancerNames.member.1": encodeURI(name)
+    },
+    headers: { "Accept": "application/json" }
+  }
+EOS
+end
+
 datasource "ds_elbs_without_tags" do
   iterate $ds_regions
   request do
@@ -315,13 +328,18 @@ datasource "ds_elbs_without_tags" do
   end
   result do
     encoding "json"
-    collect jmes_path(response, "DescribeLoadBalancersResponse.DescribeLoadBalancersResult.LoadBalancerDescriptions[*]") do
+    collect jmes_path(response, "DescribeLoadBalancersResponse.DescribeLoadBalancersResult.LoadBalancers[*]") do
       field "name", jmes_path(col_item, "LoadBalancerName")
       field "scheme", jmes_path(col_item, "Scheme")
       field "created", jmes_path(col_item, "CreatedTime")
       field "dns", jmes_path(col_item, "DNSName")
-      field "vpc", jmes_path(col_item, "VPCId")
-      field "zones", jmes_path(col_item, "AvailabilityZones")
+      field "vpc", jmes_path(col_item, "VpcId")
+      field "elb_zones" do
+        collect jmes_path(col_item, "AvailabilityZones") do
+          field "subnetId", jmes_path(col_item, "SubnetId")
+          field "zoneName", jmes_path(col_item, "ZoneName")
+        end
+      end
       field "instances", jmes_path(col_item, "Instances[*].InstanceId")
       field "type", jmes_path(col_item, "Type")
       field "arn", jmes_path(col_item, "LoadBalancerArn")
@@ -333,12 +351,7 @@ end
 datasource "ds_elbs" do
   iterate $ds_elbs_without_tags
   request do
-    auth $auth_aws
-    host join(["elasticloadbalancing.", val(iter_item, "region"), ".amazonaws.com"])
-    path "/"
-    query "Action", "DescribeTags"
-    query "Version", "2015-12-01"
-    query "LoadBalancerNames.member.1", val(iter_item, "name")
+    run_script $js_elbs, val(iter_item, 'region'), val(iter_item, 'arn')
   end
   result do
     encoding "json"
@@ -354,13 +367,31 @@ datasource "ds_elbs" do
       field "created", val(iter_item, "created")
       field "dns", val(iter_item, "dns")
       field "vpc", val(iter_item, "vpc")
-      field "zones", val(iter_item, "zones")
+      field "elb_zones", val(iter_item, "elb_zones")
       field "instances", val(iter_item, "instances")
       field "region", val(iter_item, "region")
       field "type", val(iter_item, "type")
       field "arn", val(iter_item, "arn")
     end
   end
+end
+
+script "js_elbs", type: "javascript" do
+  parameters "region", "arn"
+  result "request"
+  code <<-EOS
+  var request = {
+    auth: "auth_aws",
+    host: "elasticloadbalancing." + region + ".amazonaws.com",
+    path: "/",
+    query_params: {
+      "Action": "DescribeTags",
+      "Version": "2015-12-01",
+      "ResourceArns.member.1": encodeURI(arn)
+    },
+    headers: { "Accept": "application/json" }
+  }
+EOS
 end
 
 datasource "ds_elb_listeners" do
@@ -461,7 +492,7 @@ script "js_lbs_tag_filtered", type: "javascript" do
       return all_tags_found || any_tags_found
     })
   } else {
-    result = ds_clbs
+    result = ds_clbs.concat(ds_elbs)
   }
 EOS
 end
@@ -531,6 +562,14 @@ script "js_bad_lbs", type: "javascript" do
       type = "classic"
       if (typeof(lb['type']) == 'string' && lb['type'] != '') { type = lb['type'] }
 
+      zones = lb['zones']
+      if (lb['elb_zones'] != undefined) { zones = _.uniq(_.pluck(lb['elb_zones'], 'zoneName')) }
+
+      instances = ""
+      if (typeof(lb['instances']) == 'object') {
+        instances = lb['instances'].join(', ')
+      }
+
       result.push({
         accountID: ds_aws_account['id'],
         accountName: ds_aws_account['name'],
@@ -538,11 +577,11 @@ script "js_bad_lbs", type: "javascript" do
         scheme: lb['scheme'],
         dns: lb['dns'],
         vpc: lb['vpc'],
-        zones: lb['zones'].join(', '),
-        instances: lb['instances'].join(', '),
         region: lb['region'],
         policy_name: ds_applied_policy['name'],
         created: created,
+        instances: instances,
+        zones: zones.join(', '),
         tags: tags.join(', '),
         type: type,
         listeners: bad_listener_list.join(', '),
