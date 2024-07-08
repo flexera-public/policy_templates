@@ -1,7 +1,7 @@
-name "AWS EBS Ensure Encryption By Default"
+name "AWS Regions Without Default EBS Encryption"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report if EBS volumes are not set to be encrypted by default. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/ebs_ensure_encryption_default) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Report any EBS volumes that are not set to be encrypted by default. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/ebs_ensure_encryption_default) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Security"
 severity "high"
@@ -90,6 +90,14 @@ datasource "ds_applied_policy" do
   end
 end
 
+datasource "ds_aws_regions_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/aws/regions.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -139,7 +147,6 @@ end
 datasource "ds_get_caller_identity" do
   request do
     auth $auth_aws
-    verb "GET"
     host "sts.amazonaws.com"
     path "/"
     query "Action", "GetCallerIdentity"
@@ -180,7 +187,6 @@ end
 datasource "ds_describe_regions" do
   request do
     auth $auth_aws
-    verb "GET"
     host "ec2.amazonaws.com"
     path "/"
     query "Action", "DescribeRegions"
@@ -224,7 +230,6 @@ datasource "ds_regions_encryption" do
   iterate $ds_regions
   request do
     auth $auth_aws
-    verb "GET"
     host join(["ec2.", val(iter_item, 'region'), ".amazonaws.com"])
     path "/"
     header "User-Agent", "RS Policies"
@@ -234,28 +239,37 @@ datasource "ds_regions_encryption" do
   result do
     encoding "xml"
     field "region", val(iter_item, 'region')
-    field "encrypt_response", response
+    field "encryption", response
   end
 end
 
 datasource "ds_regions_without_encryption" do
-  run_script $js_regions_without_encryption, $ds_regions_encryption
+  run_script $js_regions_without_encryption, $ds_regions_encryption, $ds_aws_regions_reference, $ds_aws_account, $ds_applied_policy
 end
 
 script "js_regions_without_encryption", type:"javascript" do
-  parameters "ds_regions_encryption"
+  parameters "ds_regions_encryption", "ds_aws_regions_reference", "ds_aws_account", "ds_applied_policy"
   result "result"
-  code <<-EOS
-    result = []
+  code <<-'EOS'
+  region_names = {}
 
-    _.each(ds_regions_encryption, function(region) {
-      if (region.encrypt_response.substring(region.encrypt_response.length - 6) == "false\\n") {
-        result.push({
-          id: region.region,
-          ebsEncryptionByDefault: "false"
-        })
-      }
-    })
+  _.each(ds_aws_regions_reference, function(region) {
+    region_names[region['region']] = region['name']
+  })
+
+  bad_regions = _.filter(ds_regions_encryption, function(region) {
+    return region['encryption'].toLowerCase().indexOf('false') != -1
+  })
+
+  result = _.map(bad_regions, function(region) {
+    return {
+      accountID: ds_aws_account['id'],
+      accountName: ds_aws_account['name'],
+      id: region['region'],
+      name: region_names[region['region']],
+      policy_name: ds_applied_policy['name']
+    }
+  })
 EOS
 end
 
@@ -264,17 +278,23 @@ end
 ###############################################################################
 
 policy "pol_regions_encryption" do
-  validate $ds_regions_without_encryption do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Regions Without EBS Encryption By Default"
-    check eq(size(data), 0)
+  validate_each $ds_regions_without_encryption do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Regions Without Default EBS Encryption Found"
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     export do
       resource_level true
-      field "id" do
-        label "Region"
+      field "accountID" do
+        label "Account ID"
       end
-      field "ebsEncryptionByDefault" do
-        label "ebsEncryptionByDefault"
+      field "accountName" do
+        label "Account Name"
+      end
+      field "id" do
+        label "Region ID"
+      end
+      field "name" do
+        label "Region Name"
       end
     end
   end
