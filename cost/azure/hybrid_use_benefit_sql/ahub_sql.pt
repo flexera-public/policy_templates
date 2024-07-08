@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "4.0",
+  version: "4.1.0",
   provider: "Azure",
   service: "SQL",
   policy_set: "Hybrid Use Benefit"
@@ -66,6 +66,24 @@ parameter "param_regions_list" do
   label "Allow/Deny Regions List"
   description "A list of allowed or denied regions. Leave blank to check all regions."
   default []
+end
+
+parameter "param_resource_types" do
+  type "list"
+  category "Filters"
+  label "SQL Resource Types"
+  description "A list of SQL resource types to report on. Resource types not listed here will be ignored."
+  allowed_values ["SQL Virtual Machines", "SQL Elastic Pools", "SQL Databases", "SQL Managed Instances"]
+  default ["SQL Virtual Machines", "SQL Elastic Pools", "SQL Databases", "SQL Managed Instances"]
+end
+
+parameter "param_vm_imageskus" do
+  type "list"
+  category "Filters"
+  label "SQL Virtual Machine Image SKUs"
+  description "A list of SQL Virtual Machine image SKUs to report on. SQL Virtual Machine resources without one of the SKUs specified here will be ignored."
+  allowed_values ["Developer", "Enterprise", "Express", "Standard", "Web"]
+  default ["Enterprise", "Standard", "Web"]
 end
 
 parameter "param_exclusion_tags" do
@@ -218,15 +236,15 @@ datasource "ds_sql_virtualmachines" do
 end
 
 datasource "ds_sql_virtualmachines_type_filtered" do
-  run_script $js_sql_virtualmachines_type_filtered, $ds_sql_virtualmachines
+  run_script $js_sql_virtualmachines_type_filtered, $ds_sql_virtualmachines, $param_vm_imageskus, $param_resource_types
 end
 
 script "js_sql_virtualmachines_type_filtered", type: "javascript" do
-  parameters "ds_sql_virtualmachines"
+  parameters "ds_sql_virtualmachines", "param_vm_imageskus", "param_resource_types"
   result "result"
   code <<-EOS
   result = _.filter(ds_sql_virtualmachines, function(vm) {
-    return vm['imageSku'] != "Developer" && vm['imageSku'] != "Express" && vm['licenseType'] != "AHUB"
+    return vm['licenseType'] != 'AHUB' && _.contains(param_vm_imageskus, vm['imageSku']) && _.contains(param_resource_types, "SQL Virtual Machines")
   })
 EOS
 end
@@ -289,15 +307,15 @@ datasource "ds_sql_elastic_pools" do
 end
 
 datasource "ds_sql_elastic_pools_type_filtered" do
-  run_script $js_sql_elastic_pools_type_filtered, $ds_sql_elastic_pools
+  run_script $js_sql_elastic_pools_type_filtered, $ds_sql_elastic_pools, $param_resource_types
 end
 
 script "js_sql_elastic_pools_type_filtered", type: "javascript" do
-  parameters "ds_sql_elastic_pools"
+  parameters "ds_sql_elastic_pools", "param_resource_types"
   result "result"
   code <<-EOS
   result = _.filter(ds_sql_elastic_pools, function(pool) {
-    return pool['licenseType'] != "BasePrice"
+    return pool['licenseType'] != "BasePrice" && _.contains(param_resource_types, "SQL Elastic Pools")
   })
 EOS
 end
@@ -335,17 +353,17 @@ datasource "ds_sql_databases" do
 end
 
 datasource "ds_sql_databases_type_filtered" do
-  run_script $js_sql_databases_type_filtered, $ds_sql_databases
+  run_script $js_sql_databases_type_filtered, $ds_sql_databases, $param_resource_types
 end
 
 script "js_sql_databases_type_filtered", type: "javascript" do
-  parameters "ds_sql_databases"
+  parameters "ds_sql_databases", "param_resource_types"
   result "result"
   code <<-EOS
   result = _.filter(ds_sql_databases, function(db) {
     not_system = db['kind'].split(',')[3] != "serverless" && db['skuTier'] != "System"
     not_elastic = db['elasticPoolId'] == null || db['elasticPoolId'] == undefined || db['elasticPoolId'] == ""
-    return not_system && not_elastic && db['licenseType'] != "BasePrice"
+    return not_system && not_elastic && db['licenseType'] != "BasePrice" && _.contains(param_resource_types, "SQL Databases")
   })
 EOS
 end
@@ -382,15 +400,15 @@ datasource "ds_sql_managed_instances" do
 end
 
 datasource "ds_sql_managed_instances_type_filtered" do
-  run_script $js_sql_managed_instances_type_filtered, $ds_sql_managed_instances
+  run_script $js_sql_managed_instances_type_filtered, $ds_sql_managed_instances, $param_resource_types
 end
 
 script "js_sql_managed_instances_type_filtered", type: "javascript" do
-  parameters "ds_sql_managed_instances"
+  parameters "ds_sql_managed_instances", "param_resource_types"
   result "result"
   code <<-EOS
   result = _.filter(ds_sql_managed_instances, function(db) {
-    return db['licenseType'] != "BasePrice"
+    return db['licenseType'] != "BasePrice" && _.contains(param_resource_types, "SQL Managed Instances")
   })
 EOS
 end
@@ -525,11 +543,11 @@ EOS
 end
 
 datasource "ds_ahub_recommendations" do
-  run_script $js_ahub_recommendations, $ds_resources_region_filtered, $ds_applied_policy
+  run_script $js_ahub_recommendations, $ds_resources_region_filtered, $ds_applied_policy, $param_resource_types
 end
 
 script "js_ahub_recommendations", type: "javascript" do
-  parameters "ds_resources_region_filtered", "ds_applied_policy"
+  parameters "ds_resources_region_filtered", "ds_applied_policy", "param_resource_types"
   result "result"
   code <<-EOS
   function incident_map(resource_list) {
@@ -577,6 +595,7 @@ script "js_ahub_recommendations", type: "javascript" do
   }
 
   result = incident_map(ds_resources_region_filtered['sql_virtualmachines']).concat(
+    incident_map(ds_resources_region_filtered['sql_elastic_pools']),
     incident_map(ds_resources_region_filtered['sql_databases']),
     incident_map(ds_resources_region_filtered['sql_managed_instances'])
   )
