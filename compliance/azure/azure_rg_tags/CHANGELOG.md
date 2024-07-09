@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.7.1
+
+- Deprecated: This policy is no longer being updated.
+- Changed `service` value in policy template metadata to `All`
+
 ## v2.7
 
 - fixed link to README in policy description
