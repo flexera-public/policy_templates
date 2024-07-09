@@ -123,7 +123,6 @@ These templates can generate savings estimates for your environment.
 #### Azure
 
 - [Azure Regulatory Compliance](./compliance/azure/compliance_score)
-- [Azure Tag Resources with Resource Group Name](./compliance/azure/azure_rg_tags)
 
 - Compute
 
@@ -660,14 +659,14 @@ These templates can generate savings estimates for your environment.
 <!--
 ---
 :categories:
-  Compliance: 33
+  Compliance: 32
   Cost: 119
   Operational: 27
   SaaS Management: 12
   Security: 74
 :optimization_count: 60
 :policy_sets:
-  '': 45
+  '': 44
   AWS Config: 1
   Allocate VMs: 3
   Automation: 1
@@ -732,7 +731,7 @@ These templates can generate savings estimates for your environment.
   Usage Report: 10
 :providers:
   AWS: 96
-  Azure: 95
+  Azure: 94
   Azure China: 1
   Flexera: 38
   Flexera Optima: 1
@@ -745,7 +744,7 @@ These templates can generate savings estimates for your environment.
   Oracle: 1
   ServiceNow: 1
 :services:
-  '': 6
+  '': 5
   AKS: 2
   All: 5
   App Service: 1
@@ -787,7 +786,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 265
+:total_count: 264
 -->
 <!-- End Policy Template Stats -->
 
