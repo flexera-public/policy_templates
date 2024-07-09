@@ -155,7 +155,7 @@ These templates can generate savings estimates for your environment.
 
 - Identity & Access Management
 
-  - [Flexera IAM Explicit User Roles](./compliance/flexera/iam/iam_explicit_user_roles)
+  - [Flexera Users With Explicit Roles](./compliance/flexera/iam/iam_explicit_user_roles)
 
 #### GitHub
 
