@@ -13,6 +13,10 @@ This policy has the following input parameters required when launching the polic
 - *Dimension Names* - A list of names to give the Rule-Based Dimensions in the Flexera platform. Enter names in the same order as the tag keys in the `Tag Keys` field. Dimension names will be derived from tag keys directly if this list is left empty.
 - *Subscription Fallback Rules* - Whether or not to create rules for Subscription tags as a fallback for untagged Resource Groups. These rules have the lowest priority; rules created for Resource Group tags will always take precedence.
 
+## Policy Actions
+
+- Create/update rule-based dimensions
+
 ## Prerequisites
 
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
@@ -23,8 +27,9 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   - `Microsoft.Resources/tags/read`
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
-  - `common:org:own`
-  - `optima:rule_based_dimension`
+  - `observer`
+  - `billing_center_viewer`
+  - `rule_based_dimensions_manager`
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 

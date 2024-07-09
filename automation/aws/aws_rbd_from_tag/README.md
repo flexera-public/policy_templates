@@ -12,13 +12,18 @@ This policy has the following input parameters required when launching the polic
 - *Tag Keys* - A list of AWS Account tag keys to create custom Rule-Based Dimensions for.
 - *Dimension Names* - A list of names to give the Rule-Based Dimensions in the Flexera platform. Enter names in the same order as the tag keys in the `Tag Keys` field. Dimension names will be derived from tag keys directly if this list is left empty.
 
+## Policy Actions
+
+- Create/update rule-based dimensions
+
 ## Prerequisites
 
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
-  - `common:org:own`
-  - `optima:rule_based_dimension`
+  - `observer`
+  - `billing_center_viewer`
+  - `rule_based_dimensions_manager`
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
