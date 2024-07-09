@@ -1,6 +1,6 @@
 # Azure Rule-Based Dimension From Subscription Tags
 
-## What it does
+## What It Does
 
 This policy creates and updates custom Rule-Based Dimensions that surface the specified Azure Subscription tag keys in the Flexera One platform. This allows costs to be sliced by the values of the tag keys in question.
 
@@ -14,14 +14,12 @@ This policy has the following input parameters required when launching the polic
 
 ## Prerequisites
 
-This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
-### Credential configuration
-
-- [**Azure Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4184813559_1121576) (*provider=azure_rm*) which has the following permissions:
-- Microsoft.Resources/subscriptions/resources/read
-- Microsoft.Resources/subscriptions/providers/read
-- Tag Contributor or Contributor [more details](https://docs.microsoft.com/en-us/azure/azure-resource-manager/management/tag-resources?tabs=json)
+- [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:
+  - `Microsoft.Resources/subscriptions/resources/read`
+  - `Microsoft.Resources/subscriptions/providers/read`
+  - `Microsoft.Resources/tags/read`
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `common:org:own`
