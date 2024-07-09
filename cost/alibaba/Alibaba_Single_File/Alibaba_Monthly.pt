@@ -1,0 +1,283 @@
+name "Alibaba Cloud Common Bill Ingestion Aggregate"
+rs_pt_ver 20180301
+type "policy"
+short_description "Downloads cost reports from Alibaba Cloud and then uploads them to a Flexera CBI endpoint."
+long_description "This is to be used when monthly (one file) granularity from Alibaba is present. Used when historic data is exported for consumption to OSS."
+severity "low"
+category "Cost"
+default_frequency "monthly"
+info(
+  version: "1.0",
+  provider: "Alibaba",
+  service: "Common Bill Ingestion",
+  policy_set: "Common Bill Ingestion"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_cbi_endpoint" do
+  type "string"
+  label "Bill Connect ID"
+  description "Bill Connect ID created in CBI API. Example: cbi-oi-alibaba-*"
+  default "cbi-oi-alibaba-alibabacloud"
+end
+
+parameter "param_bucket" do
+  type "string"
+  label "bucket"
+  description "Billing bucket name that was create in OSS to store the values. Ex: flexera-billing-data"
+end
+
+parameter "param_region" do
+  type "string"
+  label "Alibaba Cloud Region"
+  description "Region of the Alibaba Cloud Object Storage bucket containing the cost and usage reports. Ex: oss-cn-shanghai"
+end
+
+parameter "param_account_id" do
+  type "string"
+  label "ali account number"
+  description "Alicloud account number"
+end
+
+parameter "param_bill_period" do
+  type "string"
+  label "Month to pull cost data from"
+  description "Billing month to ingest cost. Ex:  2023-09"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws"
+  label "Alibaba"
+  description "Select the Alibaba Cloud Credential from the list."
+  tags "provider=aws"
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "flexera"
+  description "Select FlexeraOne OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources and Scripts
+###############################################################################
+
+#GET BILLING PERIOD
+datasource "ds_billing_period" do
+  run_script $js_get_billing_period, $param_bill_period
+end
+
+script "js_get_billing_period", type: "javascript" do
+  parameters "param_bill_period"
+  result "result"
+  code <<-EOS
+  var result = {
+    "billing_period": param_bill_period
+  }
+  EOS
+end
+
+datasource "ds_billing_period_ali_format" do
+  run_script $js_get_billing_period_ali, $param_bill_period
+end
+
+script "js_get_billing_period_ali", type: "javascript" do
+  parameters "param_bill_period"
+  result "result"
+  code <<-EOS
+  bp = param_bill_period.replace(/-/g,"");
+  var result = {
+    "billing_period": bp
+  }
+  EOS
+end
+
+datasource "ds_usage_data" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host join([$param_bucket, ".", $param_region, ".aliyuncs.com"])
+    path join(["/", $param_account_id, "_BillingItemDetail_", val($ds_billing_period_ali_format, 'billing_period')])
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "text"
+  end
+end
+
+# Get existing billing uploads to check for in-progress status
+datasource "ds_existing_bill_uploads" do
+  request do
+    auth $auth_flexera
+    verb "GET"
+    host rs_optima_host
+    path join(["/optima/orgs/", rs_org_id, "/billUploads"])
+    header "User-Agent", "RS Policies"
+    header "allow_redirects", "False"
+    query "billConnectId", $param_cbi_endpoint
+  end
+end
+
+# This datasource looks for any in-progress bill uploads that are broken
+# due to an in-progress file upload so that they can be aborted.
+datasource "ds_broken_bill_uploads" do
+  run_script $js_broken_bill_uploads, $ds_existing_bill_uploads
+end
+
+script "js_broken_bill_uploads", type: "javascript" do
+  parameters "ds_existing_bill_uploads"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_existing_bill_uploads, function(bill_upload) {
+    broken_files = false
+
+    if (typeof(bill_upload['files']) == 'object') {
+      _.each(bill_upload['files'], function(file) {
+        if (file['status'] != 'uploaded') {
+          broken_files = true
+        }
+      })
+    }
+
+    return bill_upload['status'] == 'in-progress'
+  })
+EOS
+end
+
+datasource "ds_abort_broken_uploads" do
+  iterate $ds_broken_bill_uploads
+  request do
+    run_script $js_abort_broken_uploads, rs_org_id, rs_optima_host, val(iter_item, 'id')
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+script "js_abort_broken_uploads", type: "javascript" do
+  parameters "rs_org_id", "rs_optima_host", "bill_upload_id"
+  result "request"
+  code <<-EOS
+  // Slow down rate of requests to prevent throttling
+  api_wait = 5
+  var now = new Date().getTime()
+  while(new Date().getTime() < now + (api_wait * 1000)) { /* Do nothing */ }
+
+  var request = {
+    auth: "auth_flexera",
+    verb: "POST",
+    host: rs_optima_host,
+    path: ['/optima/orgs/', rs_org_id, '/billUploads/', bill_upload_id, '/operations'].join(''),
+    headers: {
+      "User-Agent": "RS Policies",
+    },
+    body_fields: { "operation": "abort" }
+  }
+EOS
+end
+
+# This datasource contains an empty array if a bill upload is already in-progress.
+# Broken bill uploads aborted above are not considered in-progress.
+# Otherwise, it contains a single item for the next datasource to iterate over.
+datasource "ds_bill_upload_check" do
+  run_script $js_bill_upload_check, $ds_existing_bill_uploads, $ds_abort_broken_uploads
+end
+
+script "js_bill_upload_check", type: "javascript" do
+  parameters "ds_existing_bill_uploads", "ds_abort_broken_uploads"
+  result "result"
+  code <<-EOS
+  result = [1]
+  broken_upload_ids = _.pluck(ds_abort_broken_uploads, 'id')
+
+  in_progress_uploads = _.filter(ds_existing_bill_uploads, function(bill_upload) {
+    return bill_upload['status'] == 'in-progress' && _.contains(broken_upload_ids, bill_upload['id']) == false
+  })
+
+  if (in_progress_uploads.length > 0) { result = [] }
+EOS
+end
+
+#CREATE BILL UPLOAD
+datasource "ds_bill_upload" do
+  request do
+    auth $auth_flexera
+    verb "POST"
+    host rs_optima_host
+    path join(["/optima/orgs/", rs_org_id, "/billUploads"])
+    header "User-Agent", "RS-Policies"
+    header "allow_redirects", "False"
+    body_field "billConnectId", $param_cbi_endpoint
+    body_field "billingPeriod", val($ds_billing_period, "billing_period")
+  end
+end
+
+#PROCESS COST AND USAGE DATA INTO CSV FORMAT
+#CREATE BILL UPLOAD FILE
+datasource "ds_bill_upload_file" do
+  request do
+    run_script $js_create_bill_upload_file, $ds_bill_upload_check, $ds_usage_data, val($ds_bill_upload, "id"), $ds_billing_period, rs_org_id, rs_optima_host
+  end
+end
+
+script "js_create_bill_upload_file", type: "javascript" do
+  parameters "ds_bill_upload_check", "ds_usage_data", "bill_upload_id", "ds_billing_period_data", "org_id", "optima_host"
+  result "request"
+  code <<-EOS
+    var request = {
+      auth: "auth_flexera",
+      verb: "POST",
+      host: optima_host,
+      path: "/optima/orgs/" + org_id + "/billUploads/" + bill_upload_id + '/files/alibaba-cloud_' + ds_billing_period_data.billing_period + '.csv',
+      headers: {
+        "User-Agent": "RS Policies",
+      },
+      body: ds_usage_data
+    }
+  EOS
+end
+
+#COMMIT UPLOAD
+datasource "ds_bill_commit" do
+  request do
+    run_script $js_cbi_commit, $ds_bill_upload_file, val($ds_bill_upload, "id"), rs_org_id, rs_optima_host
+  end
+end
+
+script "js_cbi_commit", type: "javascript" do
+  parameters "bill_upload_file", "bill_upload_id", "org_id", "optima_host"
+  result "request"
+  code <<-EOS
+    var request = {
+      auth: "auth_flexera",
+      verb: "POST",
+      host: optima_host,
+      path: "/optima/orgs/" + org_id + "/billUploads/" + bill_upload_id + '/operations',
+      headers: {
+        "User-Agent": "RS Policies",
+      },
+      body_fields: { "operation": "commit" }
+    }
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_alibaba_bill_ingestion" do
+  validate $ds_bill_commit do
+    summary_template "Export Complete"
+    detail_template ""
+    check eq(0, 1)
+  end
+end
