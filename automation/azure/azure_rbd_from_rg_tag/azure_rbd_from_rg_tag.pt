@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "1.2",
+  version: "1.2.1",
   provider: "Flexera",
   service: "Optima",
   policy_set: "Automation",
@@ -80,6 +80,34 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
 
 datasource "ds_existing_rbds" do
   request do
@@ -326,22 +354,43 @@ script "js_rbds", type: "javascript" do
         id: rbd_id,
         name: rbd_name,
         verb: verb,
-        dated_rules: [
-          {
-            "effective_at": param_effective_date,
-            "rules": rules
-          }
-        ]
+        effective_at: param_effective_date,
+        rules: rules
       })
     }
   })
 EOS
 end
 
+datasource "ds_create_rbds" do
+  iterate $ds_rbds
+  request do
+    run_script $js_create_rbds, val(iter_item, "id"), val(iter_item, "verb"), val(iter_item, "name"), val($ds_flexera_api_hosts, "flexera"), rs_org_id
+  end
+  result do
+    encoding "text"
+  end
+end
+
+script "js_create_rbds", type: "javascript" do
+  parameters "rbd_id", "verb", "name", "api_host", "rs_org_id"
+  result "request"
+  code <<-EOS
+  var request = {
+    auth: "auth_flexera",
+    host: api_host,
+    path: ["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions/", rbd_id].join(''),
+    verb: verb,
+    body_fields: { name: name }
+  }
+EOS
+end
+
 datasource "ds_apply_rbds" do
   iterate $ds_rbds
   request do
-    run_script $js_apply_rbds, val(iter_item, "id"), val(iter_item, "verb"), val(iter_item, "name"), val(iter_item, "dated_rules"), rs_optima_host, rs_org_id
+    # ds_create_rbds is a parameter to ensure that it executes before ds_apply_rbds does
+    run_script $js_apply_rbds, val(iter_item, "id"), val(iter_item, "effective_at"), val(iter_item, "rules"), val($ds_flexera_api_hosts, "flexera"), $ds_create_rbds, rs_org_id
   end
   result do
     encoding "text"
@@ -349,22 +398,15 @@ datasource "ds_apply_rbds" do
 end
 
 script "js_apply_rbds", type: "javascript" do
-  parameters "id", "verb", "name", "dated_rules", "rs_optima_host", "rs_org_id"
+  parameters "rbd_id", "effective_at", "rules", "api_host", "ds_create_rbds", "rs_org_id"
   result "request"
   code <<-EOS
-  request = {
+  var request = {
     auth: "auth_flexera",
-    host: rs_optima_host,
-    path: ["/bill-analysis/orgs/", rs_org_id, "/settings/rule_based_dimensions/", id].join(''),
+    host: api_host,
+    path: ["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions/", rbd_id, "/rules/", effective_at].join(''),
     verb: verb,
-    headers: {
-      "Api-Version": "1.0",
-      "content-type": "application/json"
-    },
-    body_fields: {
-      "name": name,
-      "dated_rules": dated_rules
-    }
+    body_fields: { rules: rules }
   }
 EOS
 end
