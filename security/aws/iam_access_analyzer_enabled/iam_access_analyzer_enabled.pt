@@ -180,7 +180,6 @@ end
 datasource "ds_describe_regions" do
   request do
     auth $auth_aws
-    verb "GET"
     host "ec2.amazonaws.com"
     path "/"
     query "Action", "DescribeRegions"
@@ -188,9 +187,6 @@ datasource "ds_describe_regions" do
     query "Filter.1.Name", "opt-in-status"
     query "Filter.1.Value.1", "opt-in-not-required"
     query "Filter.1.Value.2", "opted-in"
-    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
-    # Forces `ds_is_deleted` datasource to run first during policy execution
-    header "Meta-Flexera", val($ds_is_deleted, "path")
   end
   result do
     encoding "xml"
@@ -220,54 +216,44 @@ script "js_regions", type:"javascript" do
 EOS
 end
 
-datasource "ds_list_analyzers" do
+datasource "ds_regions_with_analyzers" do
   iterate $ds_regions
   request do
     auth $auth_aws
-    verb "GET"
-    host join(["access-analyzer.",val(iter_item, "region") ,".amazonaws.com"])
+    host join(["access-analyzer.", val(iter_item, "region"), ".amazonaws.com"])
     path "/analyzer"
-    header "User-Agent", "RS Policies"
-    header "Accept", "application/json"
     query "Action", "GetCallerIdentity"
     query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
+    header "Accept", "application/json"
   end
   result do
     encoding "json"
-    field "region", iter_item
+    field "region", val(iter_item, "region")
     field "analyzers", jmes_path(response, "analyzers")
   end
 end
 
-datasource "ds_checked_analyzers" do
-  run_script $js_analyzers, $ds_get_caller_identity, $ds_list_analyzers
+datasource "ds_bad_regions" do
+  run_script $js_bad_regions, $ds_regions_with_analyzers, $ds_aws_account, $ds_applied_policy
 end
 
-# Script to combine ds_get_caller_identity and ds_iam_accesskeys into a single datasource
-script "js_analyzers", type:"javascript" do
-  parameters "ds_get_caller_identity", "ds_list_analyzers"
+script "js_bad_regions", type:"javascript" do
+  parameters "ds_regions_with_analyzers", "ds_aws_account", "ds_applied_policy"
   result "result"
   code <<-EOS
-    var regions=[]
+  bad_regions = _.reject(ds_regions_with_analyzers, function(region) {
+    return _.contains(_.pluck(region['analyzers'], 'status'), "ACTIVE")
+  })
 
-    _.each(ds_list_analyzers, function(item) {
-      region_bad = 1
-
-      _.each(item.analyzers, function(analyzer) {
-        if (analyzer.status == "ACTIVE") {
-          region_bad = 0
-        }
-      })
-
-      if (region_bad == 1) {
-        regions.push(item.region)
-      }
-    })
-
-    result={
-      id: ds_get_caller_identity[0]['account'],
-      regions: regions
+  result = _.map(bad_regions, function(region) {
+    return {
+      accountID: ds_aws_account['id'],
+      accountName: ds_aws_account['name'],
+      region: region['region'],
+      policy_name: ds_applied_policy['name']
     }
+  })
 EOS
 end
 
@@ -307,94 +293,4 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email
-end
-
-###############################################################################
-# Meta Policy [alpha]
-# Not intended to be modified or used by policy developers
-###############################################################################
-
-# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
-# if it is set we will look for the parent policy.
-datasource "ds_get_policy" do
-  request do
-    auth $auth_flexera
-    host rs_governance_host
-    ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
-    header "Api-Version", "1.0"
-  end
-  result do
-    encoding "json"
-    field "id", jmes_path(response, "id")
-  end
-end
-
-datasource "ds_parent_policy_terminated" do
-  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
-end
-
-# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
-# This information is used in two places:
-# - determining whether or not we make a delete call
-# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
-script "js_decide_if_self_terminate", type: "javascript" do
-  parameters "found", "self_policy_id", "meta_parent_policy_id"
-  result "result"
-  code <<-EOS
-  var result
-  if (meta_parent_policy_id != "" && found.id == undefined) {
-    result = true
-  } else {
-    result = false
-  }
-  EOS
-end
-
-# Two potentials ways to set this up:
-# - this way and make a unneeded 'get' request when not deleting
-# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
-script "js_make_terminate_request", type: "javascript" do
-  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
-  result "request"
-  code <<-EOS
-
-  var request = {
-    auth:  'auth_flexera',
-    host: rs_governance_host,
-    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
-    headers: {
-      "API-Version": "1.0",
-      "Content-Type":"application/json"
-    },
-  }
-
-  if (should_delete) {
-    request.verb = 'DELETE'
-  }
-  EOS
-end
-
-datasource "ds_terminate_self" do
-  request do
-    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
-  end
-end
-
-datasource "ds_is_deleted" do
-  run_script $js_check_deleted, $ds_terminate_self
-end
-
-# This is just a way to have the check delete request connect to the farthest leaf from policy.
-# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
-# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
-# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
-# would not have access to self-terminate
-# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
-script "js_check_deleted", type: "javascript" do
-  parameters "response"
-  result "result"
-  code <<-EOS
-  result = {"path":"/"}
-  EOS
 end
