@@ -59,7 +59,7 @@ default_child_policy_template_files = [
   "../../cost/azure/rightsize_netapp_files/azure_rightsize_netapp_files.pt",
   "../../cost/azure/rightsize_sql_instances/azure_rightsize_sql_instances.pt",
   "../../cost/azure/rightsize_sql_storage/azure_rightsize_sql_storage.pt",
-  "../../cost/azure/rightsize_synapse_sql_pools/azure_rightsize_synapse_sql_pools.pt",
+  #"../../cost/azure/rightsize_synapse_sql_pools/azure_rightsize_synapse_sql_pools.pt",
   "../../cost/azure/unoptimized_web_app_scaling/azure_unoptimized_web_app_scaling.pt",
   "../../cost/azure/sql_servers_without_elastic_pool/azure_sql_servers_without_elastic_pool.pt",
   "../../cost/azure/unused_firewalls/azure_unused_firewalls.pt",
