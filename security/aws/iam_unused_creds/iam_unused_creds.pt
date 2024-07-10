@@ -250,53 +250,41 @@ script "js_unused_credentials", type:"javascript" do
   now = new Date()
 
   _.each(report, function(user) {
-    last_accessed_date = null
+    if (user['user'] != "<root_account>") {
+      access_dates = []
 
-    if (user['user'] == "<root_account>") { user_bad = false }
-
-    if (user['password_enabled'] == "true") {
-      if (user['password_last_used'] == "No_Information") {
-        if (last_accessed_date == null || new Date(user['password_last_changed']) > last_accessed_date) {
-          last_accessed_date = new Date(user['password_last_changed'])
-        }
-      } else {
-        if (last_accessed_date == null || new Date(user['password_last_used']) > last_accessed_date) {
-          last_accessed_date = new Date(user['password_last_used'])
-        }
-      }
-    }
-
-    if (user['access_key_1_active'] == "true") {
-      if (user['access_key_1_last_used_date'] != "No_Information") {
-        if (last_accessed_date == null || new Date(user['access_key_1_last_used_date']) > last_accessed_date) {
-          last_accessed_date = new Date(user['access_key_1_last_used_date'])
-        }
-      }
-    }
-
-    if (user['access_key_2_active'] == "true") {
-      if (user['access_key_2_last_used_date'] != "No_Information") {
-        if (last_accessed_date == null || new Date(user['access_key_2_last_used_date']) > last_accessed_date) {
-          last_accessed_date = new Date(user['access_key_2_last_used_date'])
-        }
-      }
-    }
-
-    if (now - last_accessed_date) / 86400000 >= param_days_unused || last_accessed_date == null) {
-      if (last_accessed_date == null) {
-        last_accessed = "Unknown"
-      } else {
-        last_accessed = Math.round((now - last_accessed_date) / 86400000)
+      if (user['password_enabled'] == "true" && user['password_last_used'] == "No_Information") {
+        access_dates.push(new Date(user['password_last_changed']))
       }
 
-      result.push({
-        accountID: ds_aws_account['id'],
-        accountName: ds_aws_account['name'],
-        id: user['user'],
-        last_accessed: last_accessed,
-        threshold: param_days_unused,
-        policy_name: ds_applied_policy['name']
-      })
+      if (user['password_enabled'] == "true" && user['password_last_used'] != "No_Information") {
+        access_dates.push(new Date(user['password_last_used']))
+      }
+
+      if (user['access_key_1_active'] == "true" && user['access_key_1_last_used_date'] != "No_Information") {
+        access_dates.push(new Date(user['access_key_1_last_used_date']))
+      }
+
+      if (user['access_key_2_active'] == "true" && user['access_key_2_last_used_date'] != "No_Information") {
+        access_dates.push(new Date(user['access_key_2_last_used_date']))
+      }
+
+      last_accessed = "Unknown"
+
+      if (access_dates.length > 0) {
+        last_accessed = Math.round((now - access_dates.sort().reverse()[0]) / 86400000)
+      }
+
+      if (last_accessed == "Unknown" || last_accessed > param_days_unused) {
+        result.push({
+          accountID: ds_aws_account['id'],
+          accountName: ds_aws_account['name'],
+          id: user['user'],
+          last_accessed: last_accessed,
+          threshold: param_days_unused,
+          policy_name: ds_applied_policy['name']
+        })
+      }
     }
   })
 EOS
