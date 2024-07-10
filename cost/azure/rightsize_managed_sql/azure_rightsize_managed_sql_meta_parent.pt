@@ -1,13 +1,13 @@
-name "Meta Parent: Azure Compute Instances Time Powered Off Report"
+name "Meta Parent: Azure Rightsize SQL Managed Instances"
 rs_pt_ver 20180301
 type "policy"
-short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** Applies and manages \"child\" [Azure Compute Instances Time Powered Off Report](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/compute_poweredoff_report) Policies."
+short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** Applies and manages \"child\" [Azure Rightsize SQL Managed Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_sql) Policies."
 severity "low"
 category "Meta"
 default_frequency "15 minutes"
 info(
   provider: "Azure",
-  version: "0.1.1", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "0.1.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
 )
 
 ##############################################################################
@@ -60,7 +60,7 @@ end
 parameter "param_template_source" do
   type "string"
   label "Child Policy Template Source"
-  description "By default, will use the \"Azure Compute Instances Time Powered Off Report\" Policy Template from Catalog.  Optionally, you can use the \"Azure Compute Instances Time Powered Off Report\" Policy Template uploaded in the current Flexera Project."
+  description "By default, will use the \"Azure Rightsize SQL Managed Instances\" Policy Template from Catalog.  Optionally, you can use the \"Azure Rightsize SQL Managed Instances\" Policy Template uploaded in the current Flexera Project."
   default "Published Catalog Template"
   allowed_values "Published Catalog Template", "Uploaded Template"
 end
@@ -75,21 +75,13 @@ parameter "param_azure_endpoint" do
   default "management.azure.com"
 end
 
-parameter "param_exclusion_tags" do
-  type "list"
-  category "Filters"
-  label "Exclusion Tags"
-  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
-  default []
-end
-
-parameter "param_exclusion_tags_boolean" do
-  type "string"
-  category "Filters"
-  label "Exclusion Tags: Any / All"
-  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
-  allowed_values "Any", "All"
-  default "Any"
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation"
+  min_value 0
+  default 0
 end
 
 parameter "param_regions_allow_or_deny" do
@@ -109,70 +101,68 @@ parameter "param_regions_list" do
   default []
 end
 
-parameter "param_exclude_poweredoff" do
-  type "string"
+parameter "param_exclusion_tags" do
+  type "list"
   category "Filters"
-  label "Exclude Stopped Virtual Machines"
-  description "Whether or not to filter poweredoff virtual machines from the results. If set to \"Yes\", only running virtual machines will be included in the results."
-  allowed_values "Yes", "No"
-  default "No"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
 end
 
-parameter "param_exclude_databricks" do
+parameter "param_exclusion_tags_boolean" do
   type "string"
   category "Filters"
-  label "Exclude Databricks"
-  description "Whether or not to filter virtual machines used for Azure Databricks from the results. If set to \"Yes\", virtual machines for Azure Databricks will not be included in the results."
-  allowed_values "Yes", "No"
-  default "No"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
 end
 
-parameter "param_lookback" do
+parameter "param_stats_underutil_threshold_cpu_value" do
   type "number"
-  category "Policy Settings"
-  label "Look Back Period (Days)"
-  description "How many days back to look when assessing the amount of time a virtual machine is powered off for."
+  category "Statistics"
+  label "Underutilized Instance CPU Threshold (%)"
+  description "The CPU threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing."
+  min_value 0
+  max_value 100
+  default 40
+end
+
+parameter "param_stats_threshold" do
+  type "string"
+  category "Statistics"
+  label "Threshold Statistic"
+  description "Statistic to use when determining if a SQL instance is underutilized."
+  allowed_values "Average", "Maximum", "p99", "p95", "p90"
+  default "Average"
+end
+
+parameter "param_stats_interval" do
+  type "string"
+  category "Statistics"
+  label "Statistic Interval"
+  description "The interval to use when gathering Azure metrics data. Smaller intervals produce more accurate results at the expense of policy memory usage and completion time due to larger data sets."
+  allowed_values "1 Minute", "5 Minutes", "15 Minutes", "30 Minutes", "1 Hour", "6 Hours", "12 Hours", "1 Day"
+  default "15 Minutes"
+end
+
+parameter "param_stats_lookback" do
+  type "number"
+  category "Statistics"
+  label "Statistic Lookback Period"
+  description "How many days back to look at instance metrics to determine if an instance is underutilized or unused. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days."
   min_value 1
-  max_value 30
-  default 7
-end
-
-parameter "param_max_threshold" do
-  type "number"
-  category "Policy Settings"
-  label "Maximum Time Powered Off (%)"
-  description "Virtual machines that are powered off for more than the specified percentage will be included in the report. Set to '100' to not perform this assessment."
-  min_value 0
-  max_value 100
-  default 25
-end
-
-parameter "param_min_threshold" do
-  type "number"
-  category "Policy Settings"
-  label "Minimum Time Powered Off (%)"
-  description "Virtual machines that are powered off for less than the specified percentage will be included in the report. Set to '0' to not perform this assessment."
-  min_value 0
-  max_value 100
-  default 0
+  max_value 90
+  default 30
 end
 
 parameter "param_automatic_action" do
   type "list"
   category "Actions"
   label "Automatic Actions"
-  description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Power Off Instances", "Delete Instances"]
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Downsize Instances", "Delete Instances"]
   default []
-end
-
-parameter "param_skipshutdown" do
-  type "string"
-  category "Actions"
-  label "Power Off Type"
-  description "Whether to perform a graceful shutdown or a forced shutdown when powering off idle instances. Only applicable when taking action against instances."
-  allowed_values "Graceful", "Forced"
-  default "Graceful"
 end
 
 ###############################################################################
@@ -296,7 +286,7 @@ datasource "ds_published_child_policy_information" do
   result do
     encoding "json"
     # Select the published policy that is published by "support@flexera.com" and matches the name of the child policy template
-    collect jq(response, '.items[] | select(.name == "Azure Compute Instances Time Powered Off Report" and .created_by.email == "support@flexera.com")' ) do
+    collect jq(response, '.items[] | select(.name == "Azure Rightsize SQL Managed Instances" and .created_by.email == "support@flexera.com")' ) do
       field "name", jmes_path(col_item, "name")
       field "href", jmes_path(col_item, "href")
       field "short_description", jmes_path(col_item, "short_description")
@@ -315,7 +305,7 @@ datasource "ds_project_child_policy_information" do
   result do
     encoding "json"
     # Select the uploaded policy that matches the name of the child policy template
-    collect jq(response, '.items[] | select(.name == "Azure Compute Instances Time Powered Off Report")' ) do
+    collect jq(response, '.items[] | select(.name == "Azure Rightsize SQL Managed Instances")' ) do
       field "name", jmes_path(col_item, "name")
       field "href", jmes_path(col_item, "href")
       field "short_description", jmes_path(col_item, "short_description")
@@ -881,19 +871,19 @@ datasource "ds_child_incident_details" do
   end
 end
 
-datasource "ds_instances_poweredoff_report_combined_incidents" do
-  run_script $js_ds_instances_poweredoff_report_combined_incidents, $ds_child_incident_details
+datasource "ds_downsize_sql_incident_combined_incidents" do
+  run_script $js_ds_downsize_sql_incident_combined_incidents, $ds_child_incident_details
 end
 
-script "js_ds_instances_poweredoff_report_combined_incidents", type: "javascript" do
+script "js_ds_downsize_sql_incident_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-EOS
   result = []
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
-    // If the incident summary contains "Azure Virtual Machines Found" then include it in the filter result
-    if (s.indexOf("Azure Virtual Machines Found") > -1) {
+    // If the incident summary contains "Azure Underutilized SQL Managed Instances Found" then include it in the filter result
+    if (s.indexOf("Azure Underutilized SQL Managed Instances Found") > -1) {
       _.each(incident["violation_data"], function(violation) {
         violation["incident_id"] = incident["id"];
         result.push(violation);
@@ -904,18 +894,18 @@ EOS
 end
 
 
-# Escalation for Power Off Instances
-escalation "esc_poweroff_instances" do
+# Escalation for Downsize Instances
+escalation "esc_downsize_instances" do
   automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
-  label "Power Off Instances"
-  description "Approval to power off all selected instances"
+  label "Downsize Instances"
+  description "Approval to downsize all selected instances"
 
   # Run declaration should go at end, after any parameters that may exist
-  run "esc_poweroff_instances", data, rs_governance_host, rs_project_id
+  run "esc_downsize_instances", data, rs_governance_host, rs_project_id
 end
-define esc_poweroff_instances($data, $governance_host, $rs_project_id) do
+define esc_downsize_instances($data, $governance_host, $rs_project_id) do
   $actions_options = []
-  call child_run_action($data, $governance_host, $rs_project_id, "Power Off Instances", $action_options)
+  call child_run_action($data, $governance_host, $rs_project_id, "Downsize Instances", $action_options)
 end
 
 # Escalation for Delete Instances
@@ -939,11 +929,11 @@ end
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
-    # Consolidated incident for Azure Virtual Machines Found
-  validate $ds_instances_poweredoff_report_combined_incidents do
-    summary_template "Consolidated Incident: {{ len data }} Azure Virtual Machines Found"
+    # Consolidated incident for Azure Underutilized SQL Managed Instances Found
+  validate $ds_downsize_sql_incident_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} Azure Underutilized SQL Managed Instances Found"
     escalate $esc_email
-    escalate $esc_poweroff_instances
+    escalate $esc_downsize_instances
     escalate $esc_delete_instances
     check eq(size(data), 0)
     export do
@@ -966,53 +956,71 @@ policy "policy_scheduled_report" do
       field "tags" do
         label "Resource Tags"
       end
-      field "resourceType" do
-        label "Instance Size"
+      field "recommendationDetails" do
+        label "Recommendation"
       end
-      field "resourceKind" do
-        label "Resource Kind"
+      field "resourceType" do
+        label "Current Capacity"
+      end
+      field "newResourceType" do
+        label "Recommended Capacity"
+      end
+      field "skuName" do
+        label "SKU - Name"
+      end
+      field "skuTier" do
+        label "SKU - Tier"
+      end
+      field "type" do
+        label "Type"
       end
       field "region" do
         label "Region"
       end
-      field "osType" do
-        label "Operating System"
-      end
-      field "imagePublisher" do
-        label "Image Publisher"
-      end
-      field "imageOffer" do
-        label "Image Offer"
-      end
-      field "imageSKU" do
-        label "Image SKU"
-      end
       field "state" do
-        label "Power State"
+        label "State"
       end
-      field "usage_hours" do
-        label "Usage Hours"
+      field "savings" do
+        label "Estimated Monthly Savings"
       end
-      field "hours_poweredoff" do
-        label "Time Powered Off (Hours)"
+      field "savingsCurrency" do
+        label "Savings Currency"
       end
-      field "percentage_poweredoff" do
-        label "Time Powered Off (%)"
+      field "cpuMaximum" do
+        label "CPU Maximum %"
       end
-      field "min_threshold" do
-        label "Minimum Time Powered Off (%)"
+      field "cpuMinimum" do
+        label "CPU Minimum %"
       end
-      field "threshold" do
-        label "Maximum Time Powered Off (%)"
+      field "cpuAverage" do
+        label "CPU Average %"
       end
-      field "lookbackPeriod" do
-        label "Look Back Period (Days)"
+      field "cpuP90" do
+        label "CPU p90"
+      end
+      field "cpuP95" do
+        label "CPU p95"
+      end
+      field "cpuP99" do
+        label "CPU p99"
       end
       field "service" do
         label "Service"
       end
+      field "platform" do
+        label "Platform"
+      end
       field "id" do
-        label "ID"
+        label "Resource ID"
+      end
+      field "thresholdType" do
+        label "Threshold Statistic"
+      end
+      field "threshold" do
+        label "CPU Threshold"
+      end
+      field "lookbackPeriod" do
+        label "Lookback Period"
       end
       field "incident_id" do
         label "Child Incident ID"
