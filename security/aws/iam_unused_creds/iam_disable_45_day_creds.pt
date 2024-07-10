@@ -1,7 +1,7 @@
-name "AWS IAM Ensure Credentials Unused For >45 days Are Disabled"
+name "AWS Unused IAM Credentials"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report if credentials exist that have gone unused for 45 days or more. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/iam_disable_45_day_creds) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Reports IAM credentials that have gone unused for an extended period of time. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/iam_disable_45_day_creds) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Security"
 severity "high"
@@ -37,6 +37,15 @@ parameter "param_aws_account_number" do
   label "Account Number"
   description "Leave blank; this is for automated use with Meta Policies. See README for more details."
   default ""
+end
+
+parameter "param_days_unused" do
+  type "number"
+  category "Policy Settings"
+  label "Days Unused"
+  description "Number of days a credential needs to be unused to include it in the report."
+  min_value 1
+  default 45
 end
 
 ###############################################################################
@@ -162,7 +171,6 @@ end
 datasource "ds_generate_cred_report" do
   request do
     auth $auth_aws
-    verb "GET"
     host "iam.amazonaws.com"
     path "/"
     query "Action", "GenerateCredentialReport"
@@ -176,6 +184,7 @@ datasource "ds_generate_cred_report" do
   end
 end
 
+# Wait 2 minutes so that AWS has time to generate a report
 datasource "ds_sleep" do
   run_script $js_sleep, $ds_generate_cred_report
 end
@@ -184,18 +193,18 @@ script "js_sleep", type:"javascript" do
   parameters "ds_generate_cred_report"
   result "result"
   code <<-EOS
-    sleepDuration=60
-    var now = new Date().getTime();
-    while(new Date().getTime() < now + sleepDuration){ /* Do nothing */ }
-    var result = ds_generate_cred_report
+  sleepDuration = 120
+  now = new Date().getTime()
+  while(new Date().getTime() < now + sleepDuration){ /* Do nothing */ }
+
+  result = ds_generate_cred_report
 EOS
 end
 
-datasource "ds_get_cred_report" do
+datasource "ds_cred_report" do
   iterate $ds_sleep
   request do
     auth $auth_aws
-    verb "GET"
     host "iam.amazonaws.com"
     path "/"
     query "Action", "GetCredentialReport"
@@ -209,76 +218,87 @@ datasource "ds_get_cred_report" do
   end
 end
 
-datasource "ds_parse_cred_report" do
-  run_script $js_parse_cred_report, $ds_get_caller_identity, $ds_get_cred_report
+datasource "ds_unused_credentials" do
+  run_script $js_unused_credentials, $ds_cred_report, $ds_aws_account, $ds_applied_policy, $param_days_unused
 end
 
-script "js_parse_cred_report", type:"javascript" do
-  parameters "ds_get_caller_identity", "ds_get_cred_report"
+script "js_unused_credentials", type:"javascript" do
+  parameters "ds_cred_report", "ds_aws_account", "ds_applied_policy", "param_days_unused"
   result "result"
   code <<-EOS
-  var bad_users_list = [];
-  var now = new Date();
+  // Parse report
+  decoded = atob(ds_get_cred_report.credReportBase64).toString()
+  lines = decoded.split('\\n')
+  headers = lines[0].split(',')
 
-  var decoded = atob(ds_get_cred_report.credReportBase64);
-  var data = decoded.toString();
-  var arr = data.split('\\n');
-  var report = [];
-  var headers = arr[0].split(',');
+  report = []
 
-  for (var i=1; i < arr.length; i++) {
-    var data = arr[i].split(',');
-    var obj = {};
-    for(var j = 0; j < data.length; j++) {
-      obj[headers[j].trim()] = data[j].trim();
+  for (var line_index = 1; line_index < lines.length; line_index++) {
+    data = lines[line_index].split(',')
+
+    object = {}
+
+    for (var data_index = 0; data_index < data.length; data_index++) {
+      object[headers[data_index].trim()] = data[data_index].trim()
     }
-    report.push(obj);
+
+    report.push(object)
   }
 
-  _.each(report, function(user){
-    user_bad = 1;
+  // Find unused credentials
+  result = []
+  now = new Date()
 
-    if (user.user == "<root_account>") {
-      user_bad = 0;
-    }
+  _.each(report, function(user) {
+    last_accessed_date = null
 
-    if (user.password_enabled == "true") {
-      if (user.password_last_used == "No_Information") {
-        if (now - new Date(user.password_last_changed) < 86400000 * 45) {
-          user_bad = 0;
+    if (user['user'] == "<root_account>") { user_bad = false }
+
+    if (user['password_enabled'] == "true") {
+      if (user['password_last_used'] == "No_Information") {
+        if (last_accessed_date == null || new Date(user['password_last_changed']) > last_accessed_date) {
+          last_accessed_date = new Date(user['password_last_changed'])
         }
       } else {
-        if (now - new Date(user.password_last_used) < 86400000 * 45) {
-          user_bad = 0;
+        if (last_accessed_date == null || new Date(user['password_last_used']) > last_accessed_date) {
+          last_accessed_date = new Date(user['password_last_used'])
         }
       }
     }
 
-    if (user.access_key_1_active == "true") {
-      if (user.access_key_1_last_used_date != "No_Information") {
-        if (now - new Date(user.access_key_1_last_used_date) < 86400000 * 45) {
-          user_bad = 0;
+    if (user['access_key_1_active'] == "true") {
+      if (user['access_key_1_last_used_date'] != "No_Information") {
+        if (last_accessed_date == null || new Date(user['access_key_1_last_used_date']) > last_accessed_date) {
+          last_accessed_date = new Date(user['access_key_1_last_used_date'])
         }
       }
     }
 
-    if (user.access_key_2_active == "true") {
-      if (user.access_key_2_last_used_date != "No_Information") {
-        if (now - new Date(user.access_key_2_last_used_date) < 86400000 * 45) {
-          user_bad = 0;
+    if (user['access_key_2_active'] == "true") {
+      if (user['access_key_2_last_used_date'] != "No_Information") {
+        if (last_accessed_date == null || new Date(user['access_key_2_last_used_date']) > last_accessed_date) {
+          last_accessed_date = new Date(user['access_key_2_last_used_date'])
         }
       }
     }
 
-    if (user_bad == 1) {
-      bad_users_list.push(user.user);
+    if (now - last_accessed_date) / 86400000 >= param_days_unused || last_accessed_date == null) {
+      if (last_accessed_date == null) {
+        last_accessed = "Unknown"
+      } else {
+        last_accessed = Math.round((now - last_accessed_date) / 86400000)
+      }
+
+      result.push({
+        accountID: ds_aws_account['id'],
+        accountName: ds_aws_account['name'],
+        id: user['user'],
+        last_accessed: last_accessed,
+        threshold: param_days_unused,
+        policy_name: ds_applied_policy['name']
+      })
     }
   })
-
-  result={
-    id: ds_get_caller_identity[0]['account'],
-    bad_users_list: bad_users_list
-  }
 EOS
 end
 
@@ -286,28 +306,27 @@ end
 # Policy
 ###############################################################################
 
-policy "pol_disable_45_day_creds" do
-  validate $ds_parse_cred_report do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: Users Without MFA Found"
-    detail_template <<-EOS
-IAM user accounts found that have not been accessed for 45 days or longer.
-It is recommended that these user accounts be deleted.
-
-Affected Account ID: {{data.id}}
-Affected Users:
-{{- range $val := data.bad_users_list }}
-  {{ $val }}
-{{- end }}
-EOS
-    check eq(size(val(data, "bad_users_list")), 0)
+policy "pol_unused_credentials" do
+  validate_each $ds_unused_credentials do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: AWS Unused IAM Credentials Found"
+    check eq(val(item, "id"), "")
     escalate $esc_email
     export do
       resource_level true
-      field "id" do
-        label "id"
+      field "accountID" do
+        label "Account ID"
       end
-      field "bad_users_list" do
-        label "bad_users_list"
+      field "accountName" do
+        label "Account Name"
+      end
+      field "id" do
+        label "User"
+      end
+      field "last_accessed" do
+        label "Last Used (Days Ago)"
+      end
+      field "threshold" do
+        label "Last Used Threshold (Days)"
       end
     end
   end
