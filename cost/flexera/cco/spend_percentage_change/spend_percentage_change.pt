@@ -66,7 +66,7 @@ parameter "param_cost_metric" do
   label "Spend Metric"
   description "Select the cost metric to use when gathering spend data."
   allowed_values "Unamortized Unblended", "Amortized Unblended", "Unamortized Blended", "Amortized Blended"
-  default "Unamortized Unblended"
+  default "Amortized Unblended"
 end
 
 parameter "param_spend_calculation" do
@@ -360,18 +360,13 @@ script "js_organized_spend", type: "javascript" do
       if (ds_dimension["id"] == "billing_center_id") { value = billing_center_table[value] }
     }
 
-    raw_spend = item["metrics"][cost_metric_table[param_cost_metric]]
-
-    // Find number of days in current month.
-    days_in_month = month_days_table[month.split('-')[1]]
-
-    // Calculate average daily spend
-    spend = raw_spend / days_in_month
-
+    monthly_spend = item["metrics"][cost_metric_table[param_cost_metric]]
     month = item["timestamp"].substring(0, 7)
+    days_in_month = month_days_table[month.split('-')[1]]
+    spend = monthly_spend / days_in_month
 
     if (value_table[value] == undefined) { value_table[value] = [] }
-    value_table[value].push({ month: month, spend: spend, monthly_spend: raw_spend })
+    value_table[value].push({ month: month, spend: spend, monthly_spend: monthly_spend })
   })
 
   // Sort the above table by month, so each list is in order from oldest month to newest.
@@ -452,8 +447,8 @@ script "js_bad_values", type: "javascript" do
     })
   })
 
-  data = _.sortBy(result, 'month').reverse()
-  data = _.sortBy(result, 'dimensionValue')
+  data = _.sortBy(data, 'month').reverse()
+  data = _.sortBy(data, 'dimensionValue')
 
   result = { policy_name: ds_applied_policy['name'], message: message, data: data }
 EOS
