@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.2.0
+
+- Added a parameter to make recommendations or not for changing a disk tier to Standard HDD.
+
 ## v2.1.0
 
 - Added ability to filter results by disk SKU
