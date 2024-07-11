@@ -1,0 +1,509 @@
+name "Spend Percentage Change Alert"
+rs_pt_ver 20180301
+type "policy"
+short_description "Reports when spend has increased in a specific category consecutively over a specific number of months. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/spend_percentage_change/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "low"
+category "Cost"
+default_frequency "monthly"
+info(
+  version: "0.1.0",
+  provider: "Flexera",
+  service: "Cloud Cost Optimization",
+  policy_set: "Cloud Cost Optimization"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to send the alert to."
+  default []
+end
+
+parameter "param_dimension" do
+  type "string"
+  category "Policy Settings"
+  label "Cost Dimension"
+  description "The name/ID of the cost dimension to track costs for. Use 'Billing Center' to track costs by Billing Center. Leave blank to report on all spend. Examples: Category, Billing Center"
+  default ""
+end
+
+parameter "param_dimension_filters" do
+  type "list"
+  category "Policy Settings"
+  label "Cost Dimension Filters"
+  description "Only alert when the specified values for the specified Cost Dimension have an increase. Leave blank to alert on all values."
+  default []
+end
+
+parameter "param_percentage" do
+  type "number"
+  category "Policy Settings"
+  label "Maximum Spend Increase (%)"
+  description "The maximum month-over-month spend increase to permit as a percentage of total spend. If spend increases more than this, the alert will be triggered."
+  min_value 0
+  default 20
+end
+
+parameter "param_months" do
+  type "number"
+  category "Policy Settings"
+  label "Months Of Increase (#)"
+  description "The number of consecutive months that spend has to have increased by more than the 'Maximum Spend Increase (%)' to trigger an alert."
+  min_value 1
+  max_value 11
+  default 3
+end
+
+parameter "param_cost_metric" do
+  type "string"
+  category "Policy Settings"
+  label "Spend Metric"
+  description "Select the cost metric to use when gathering spend data."
+  allowed_values "Unamortized Unblended", "Amortized Unblended", "Unamortized Blended", "Amortized Blended"
+  default "Unamortized Unblended"
+end
+
+parameter "param_spend_calculation" do
+  type "string"
+  category "Policy Settings"
+  label "Spend Calculation"
+  description "Whether to use average daily spend or monthly spend when calculating percentage change from one month to the next. Average daily spend is recommended to account for the fact that spend will vary from month to month due to the varying number of days in each month even if spend-per-day hasn't changed."
+  allowed_values "Average Daily Spend", "Monthly Spend"
+  default "Average Daily Spend"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  symbol = "$"
+  symbol_native = "$"
+  code = "USD"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+      symbol_native = ds_currency_reference[ds_currency_code['value']]['symbol_native']
+      code = ds_currency_reference[ds_currency_code['value']]['code']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    symbol_native: symbol_native,
+    code: code,
+    separator: separator
+  }
+EOS
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
+end
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-EOS
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_cost_dimensions" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/costs/dimensions"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "dimensions[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "type", jmes_path(col_item, "type")
+    end
+  end
+end
+
+datasource "ds_dimension" do
+  run_script $js_dimension, $ds_cost_dimensions, $param_dimension
+end
+
+script "js_dimension", type: "javascript" do
+  parameters "ds_cost_dimensions", "param_dimension"
+  result "result"
+  code <<-EOS
+  result = null
+
+  if (param_dimension != "") {
+    found_id = _.find(ds_cost_dimensions, function(item) {
+      return item['id'].toLowerCase().trim() == param_dimension.toLowerCase().trim()
+    })
+
+    found_name = _.find(ds_cost_dimensions, function(item) {
+      return item['name'].toLowerCase().trim() == param_dimension.toLowerCase().trim()
+    })
+
+    if (param_dimension.toLowerCase() == 'billing center') {
+      result = { name: 'Billing Center', id: 'billing_center_id' }
+    } else if (found_id != undefined) {
+      result = found_id
+    } else if (found_name != undefined) {
+      result = found_name
+    }
+  }
+EOS
+end
+
+datasource "ds_raw_spend" do
+  request do
+    run_script $js_raw_spend, $ds_billing_centers, $ds_top_level_bcs, $ds_dimension, $param_months, $param_cost_metric, $param_dimension_filters, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "metrics", jmes_path(col_item, "metrics")
+      field "dimensions", jmes_path(col_item, "dimensions")
+      field "timestamp", jmes_path(col_item, "timestamp")
+    end
+  end
+end
+
+script "js_raw_spend", type: "javascript" do
+  parameters "ds_billing_centers", "ds_top_level_bcs", "ds_dimension", "param_months", "param_cost_metric", "param_dimension_filters", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  cost_metric_table = {
+    "Unamortized Unblended": "cost_nonamortized_unblended_adj",
+    "Amortized Unblended": "cost_amortized_unblended_adj",
+    "Unamortized Blended": "cost_nonamortized_blended_adj",
+    "Amortized Blended": "cost_amortized_blended_adj"
+  }
+
+  billing_center_table = {}
+  _.each(ds_billing_centers, function(bc) { billing_center_table[bc['name']] == bc['id'] })
+
+  billing_center_ids = ds_top_level_bcs
+  dimensions = null
+  filter = null
+
+  if (ds_dimension != null) {
+    dimensions = [ ds_dimension['id'] ]
+
+    if (ds_dimension['id'] == 'billing_center_id' && param_dimension_filters.length > 0) {
+      billing_center_ids = _.map(param_dimension_filters, function(item) { return billing_center_table[item] })
+    } else if (param_dimension_filters.length > 0) {
+      filters = _.map(param_dimension_filters, function(item) {
+        return { "dimension": ds_dimension['id'], "type": "equal", "value": item }
+      })
+
+      if (filters.length == 1) { filter = filters[0] }
+      if (filters.length > 1) { filter = { "type": "or", "expressions": filters } }
+    }
+  }
+
+  // Set end_date to current month
+  end_date = new Date().toISOString().substring(0, 7)
+
+  // Set start_date based on param_months
+  // We do this manually because JS date objects sometimes do wonky things with setMonth() and skip months
+  year = Number(end_date.split('-')[0])
+  month = Number(end_date.split('-')[1]) - param_months - 1 // Grab an extra month to calculate percentage increase
+  if (month < 1) { year -= 1; month = 12 + month }
+  if (month < 10) { month = '0' + month.toString() }
+  start_date = year.toString() + '-' + month.toString()
+
+  var request = {
+    auth: "auth_flexera",
+    verb: "POST",
+    host: rs_optima_host,
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
+    headers: { "Api-Version": "1.0", "User-Agent": "RS Policies" },
+    body_fields: {
+      "billing_center_ids": billing_center_ids,
+      "dimensions": dimensions,
+      "filter": filter,
+      "metrics": [ cost_metric_table[param_cost_metric] ],
+      "granularity": "month",
+      "start_at": start_date,
+      "end_at": end_date
+    }
+  }
+EOS
+end
+
+datasource "ds_organized_spend" do
+  run_script $js_organized_spend, $ds_raw_spend, $ds_dimension, $ds_billing_centers, $param_cost_metric, $param_spend_calculation
+end
+
+script "js_organized_spend", type: "javascript" do
+  parameters "ds_raw_spend", "ds_dimension", "ds_billing_centers", "param_cost_metric", "param_spend_calculation"
+  result "result"
+  code <<-EOS
+  cost_metric_table = {
+    "Unamortized Unblended": "cost_nonamortized_unblended_adj",
+    "Amortized Unblended": "cost_amortized_unblended_adj",
+    "Unamortized Blended": "cost_nonamortized_blended_adj",
+    "Amortized Blended": "cost_amortized_blended_adj"
+  }
+
+  billing_center_table = {}
+  _.each(ds_billing_centers, function(bc) { billing_center_table[bc['id']] == bc['name'] })
+
+  month_days_table = {
+    "01": 31, "02": 28, "03": 31, "04": 30, "05": 31, "06": 30,
+    "07": 31, "08": 31, "09": 30, "10": 31, "11": 30, "12": 31,
+  }
+
+  // Organize spend into a table sorted by dimension value.
+  // Each dimension value key contains a list with entries for each month and its spend.
+  value_table = {}
+
+  _.each(ds_raw_spend, function(item) {
+    value = "All"
+
+    if (ds_dimension != null) {
+      value = item["dimensions"][ds_dimension["id"]]
+      if (ds_dimension["id"] == "billing_center_id") { value = billing_center_table[value] }
+    }
+
+    raw_spend = item["metrics"][cost_metric_table[param_cost_metric]]
+
+    // Find number of days in current month. Adjust for leap year when relevant.
+    days_in_month = month_days_table[month.split('-')[1]]
+    if (month.split('-')[1] == '02' && Number(month.split('-')[0]) % 4 == 0) { days_in_month = 29 }
+
+    // Calculate average daily spend
+    spend = raw_spend / days_in_month
+
+    month = item["timestamp"].substring(0, 7)
+
+    if (value_table[value] == undefined) { value_table[value] = [] }
+    value_table[value].push({ month: month, spend: spend, monthly_spend: raw_spend })
+  })
+
+  // Sort the above table by month, so each list is in order from oldest month to newest.
+  // Then calculate the percentage change from the previous month and include that for each entry.
+  result = {}
+
+  _.each(_.keys(value_table), function(value) {
+    list = _.sortBy(value_table[value], 'month')
+
+    list_with_percentages = []
+
+    // Skip the oldest month by starting with 1 instead of 0
+    // because it was just pulled to calculate the percentage change
+    for (var i = 1; i < list.length; i++) {
+      if (param_spend_calculation == "Average Daily Spend") {
+        percentage = (list[i]['spend'] / list[i - 1]['spend'] - 1) * 100
+      } else {
+        percentage = (list[i]['monthly_spend'] / list[i - 1]['monthly_spend'] - 1) * 100
+      }
+
+      list_with_percentages.push({
+        month: list[i]['month'],
+        spend: list[i]['spend'],
+        monthly_spend: list[i]['monthly_spend'],
+        percentage: percentage
+      })
+    }
+
+    result[value] = list_with_percentages
+  })
+EOS
+end
+
+datasource "ds_bad_values" do
+  run_script $js_bad_values, $ds_organized_spend, $ds_dimension, $ds_currency, $ds_applied_policy, $param_percentage, $param_months, $param_cost_metric, $param_spend_calculation
+end
+
+script "js_bad_values", type: "javascript" do
+  parameters "ds_organized_spend", "ds_dimension", "ds_currency", "ds_applied_policy", "param_percentage", "param_months", "param_cost_metric", "param_spend_calculation"
+  result "result"
+  code <<-'EOS'
+  // Check every list for percentages that are below the listed threshold.
+  // Return any values where none of the percentages are below.
+  // These are the values that have shown an increase above the threshold.
+  // No need to test for number of months because we only pulled spend data for the relevant months to begin with.
+  bad_values = _.filter(_.keys(ds_organized_spend), function(value) {
+    good_percentages = _.filter(_.pluck(ds_organized_spend[value], 'percentage'), function(item) {
+      return item <= param_percentage
+    })
+
+    return good_percentages.length == 0
+  })
+
+  message = [
+    "The following values for the dimension '", ds_dimension['name'], "' have increased in ",
+    param_spend_calculation.toLowerCase(), " by over ", param_percentage, "% over the last ",
+    param_months, " calendar months: ", bad_values.join(', ')
+  ].join('')
+
+  result = []
+
+  _.each(bad_values, function(value) {
+    _.each(ds_organized_spend[value], function(entry) {
+      result.push({
+        month: entry['month'],
+        spend: Math.round(entry['spend'] * 1000) / 1000,
+        monthly_spend: Math.round(entry['monthly_spend'] * 1000) / 1000,
+        percentage: Math.round(entry['percentage'] * 100) / 100,
+        dimensionName: ds_dimension['name'],
+        dimensionID: ds_dimension['id'],
+        dimensionValue: value,
+        threshold: param_percentage,
+        thresholdMonths: param_months,
+        metric: param_cost_metric,
+        calculation: param_spend_calculation,
+        currency: ds_currency['symbol'],
+        policy_name: ds_applied_policy['name'],
+        message: message
+      })
+    })
+  })
+
+  result = _.sortBy(result, 'month').reverse()
+  result = _.sortBy(result, 'dimensionValue')
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_spend_percentage_change" do
+  validate_each $ds_bad_values do
+    summary_template "{{ data.policy_name }}"
+    detail_template "{{ data.message }}"
+    check eq(val(item, "month"), "")
+    escalate $esc_email
+    export do
+      rersource_level false
+      field "dimensionName" do
+        label "Dimension Name"
+      end
+      field "dimensionID" do
+        label "Dimension ID"
+      end
+      field "dimensionValue" do
+        label "Dimension Value"
+      end
+      field "month" do
+        label "Month"
+      end
+      field "currency" do
+        label "Currency"
+      end
+      field "spend" do
+        label "Average Daily Spend"
+      end
+      field "monthly_spend" do
+        label "Full Month Spend"
+      end
+      field "percentage" do
+        label "Increase (%)"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
