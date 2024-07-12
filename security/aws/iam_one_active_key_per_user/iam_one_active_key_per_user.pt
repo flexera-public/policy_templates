@@ -1,7 +1,7 @@
-name "AWS IAM Ensure One Active Key Per IAM User"
+name "AWS IAM Users With Multiple Active Access Keys"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report if any IAM users have 2 or more active access keys. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/iam_one_active_key_per_user) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Report IAM users with multiple active access keys. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/iam_one_active_key_per_user) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Security"
 severity "high"
@@ -37,6 +37,15 @@ parameter "param_aws_account_number" do
   label "Account Number"
   description "Leave blank; this is for automated use with Meta Policies. See README for more details."
   default ""
+end
+
+parameter "param_max_keys" do
+  type "number"
+  category "Policy Settings"
+  label "Maximum Permitted Access Keys"
+  description "Number of access keys users are permitted to have. Users with more than this will be included in the report."
+  min_value 0
+  default 1
 end
 
 ###############################################################################
@@ -162,7 +171,6 @@ end
 datasource "ds_iam_users" do
   request do
     auth $auth_aws
-    verb "GET"
     host "iam.amazonaws.com"
     path "/"
     query "Action", "ListUsers"
@@ -185,7 +193,6 @@ datasource "ds_iam_users_with_keys" do
   iterate $ds_iam_users
   request do
     auth $auth_aws
-    verb "GET"
     host "iam.amazonaws.com"
     path "/"
     query "Action", "ListAccessKeys"
@@ -212,33 +219,38 @@ datasource "ds_iam_users_with_keys" do
 end
 
 datasource "ds_iam_users_with_many_keys" do
-  run_script $js_iam_users_with_many_keys, $ds_iam_users_with_keys
+  run_script $js_iam_users_with_many_keys, $ds_iam_users_with_keys, $ds_aws_account, $ds_applied_policy, $param_max_keys
 end
 
 script "js_iam_users_with_many_keys", type:"javascript" do
-  parameters "ds_iam_users_with_keys"
+  parameters "ds_iam_users_with_keys", "ds_aws_account", "ds_applied_policy", "param_max_keys"
   result "result"
   code <<-EOS
-    result = []
+  result = []
 
-    _.each(ds_iam_users_with_keys, function(user) {
-      active_keys = 0
+  _.each(ds_iam_users_with_keys, function(user) {
+    numKeys = 0
 
-      _.each(user.access_keys, function(access_key) {
-        if (access_key.status == "Active") {
-          active_keys += 1
-        }
+    if (typeof(user['access_keys']) == 'object') {
+      activeKeys = _.filter(user['access_keys'], function(key) { return key['status'] == 'Active' })
+      numKeys = activeKeys.length
+    }
+
+    if (numKeys > param_max_keys) {
+      result.push({
+        accountID: ds_aws_account['id'],
+        accountName: ds_aws_account['name'],
+        id: user['id'],
+        resourceName: user['name'],
+        resourceARN: user['arn'],
+        createDate: user['create_date'],
+        numKeys: numKeys,
+        activeKeys: _.pluck(activeKeys, 'id').join(', ')
+        policy_name: ds_applied_policy['name'],
+        maxKeys: param_max_keys
       })
-
-      if (active_keys > 1) {
-        result.push({
-          id: user.id,
-          name: user.name,
-          arn: user.arn,
-          active_keys: active_keys
-        })
-      }
-    })
+    }
+  })
 EOS
 end
 
@@ -247,23 +259,38 @@ end
 ###############################################################################
 
 policy "pol_iam_users_with_many_keys" do
-  validate $ds_iam_users_with_many_keys do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Users With Multiple Active Access Keys Found"
-    check eq(size(data), 0)
+  validate_each $ds_iam_users_with_many_keys do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: AWS IAM Users With Multiple Active Access Keys Found"
+    check eq(val(item, "id"), "")
     escalate $esc_email
     export do
       resource_level true
-      field "name" do
-        label "User Name"
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
       end
       field "id" do
         label "User ID"
       end
-      field "arn" do
+      field "resourceName" do
+        label "User Name"
+      end
+      field "resourceARN" do
         label "User ARN"
       end
-      field "active_keys" do
-        label "Active Keys"
+      field "createDate" do
+        label "Created At"
+      end
+      field "activeKeys" do
+        label "Active Key IDs"
+      end
+      field "numKeys" do
+        label "Active Keys (#)"
+      end
+      field "maxKeys" do
+        label "Maximum Allowed Active Keys"
       end
     end
   end
