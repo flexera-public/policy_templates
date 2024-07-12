@@ -1,7 +1,7 @@
-name "AWS IAM Report Root User Doing Everyday Tasks"
+name "AWS IAM Root User Doing Everyday Tasks"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report whether the root account is being used for routine or everyday tasks. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/iam_no_root_for_tasks) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Report if the root user account is being used for routine or everyday tasks. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/iam_no_root_for_tasks) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Security"
 severity "high"
@@ -37,6 +37,15 @@ parameter "param_aws_account_number" do
   label "Account Number"
   description "Leave blank; this is for automated use with Meta Policies. See README for more details."
   default ""
+end
+
+parameter "param_lookback" do
+  type "number"
+  category "Policy Settings"
+  label "Days Back"
+  description "How many days back to look for root user account tasks. Tasks performed longer ago than the specified number of days will be ignored."
+  min_value 1
+  default 7
 end
 
 ###############################################################################
@@ -162,7 +171,6 @@ end
 datasource "ds_generate_cred_report" do
   request do
     auth $auth_aws
-    verb "GET"
     host "iam.amazonaws.com"
     path "/"
     query "Action", "GenerateCredentialReport"
@@ -176,6 +184,7 @@ datasource "ds_generate_cred_report" do
   end
 end
 
+# Wait 2 minutes so that AWS has time to generate a report
 datasource "ds_sleep" do
   run_script $js_sleep, $ds_generate_cred_report
 end
@@ -184,18 +193,18 @@ script "js_sleep", type:"javascript" do
   parameters "ds_generate_cred_report"
   result "result"
   code <<-EOS
-    sleepDuration=240
-    var now = new Date().getTime();
-    while(new Date().getTime() < now + sleepDuration){ /* Do nothing */ }
-    var result = ds_generate_cred_report
+  sleepDuration = 120
+  now = new Date().getTime()
+  while(new Date().getTime() < now + sleepDuration){ /* Do nothing */ }
+
+  result = ds_generate_cred_report
 EOS
 end
 
-datasource "ds_get_cred_report" do
+datasource "ds_cred_report" do
   iterate $ds_sleep
   request do
     auth $auth_aws
-    verb "GET"
     host "iam.amazonaws.com"
     path "/"
     query "Action", "GetCredentialReport"
@@ -209,55 +218,83 @@ datasource "ds_get_cred_report" do
   end
 end
 
-datasource "ds_parse_cred_report" do
-  run_script $js_parse_cred_report, $ds_get_caller_identity, $ds_get_cred_report
+datasource "ds_tasks_report" do
+  run_script $js_tasks_report, $ds_cred_report, $ds_aws_account, $ds_applied_policy, $param_lookback
 end
 
-script "js_parse_cred_report", type:"javascript" do
-  parameters "ds_get_caller_identity", "ds_get_cred_report"
+script "js_tasks_report", type:"javascript" do
+  parameters "ds_cred_report", "ds_aws_account", "ds_applied_policy", "param_lookback"
   result "result"
   code <<-EOS
-  var exceptions=[]
-  var day_difference = 7
-  var now = new Date()
-  var root_index = 0
-  var report = []
+  // Parse report
+  decoded = atob(ds_get_cred_report.credReportBase64).toString()
+  lines = decoded.split('\\n')
+  headers = lines[0].split(',')
 
-  var decoded = atob(ds_get_cred_report.credReportBase64)
-  data = decoded.toString()
-  arr = data.split('\\n');
-  var result = [];
-  var headers = arr[0].split(',');
+  report = []
 
-  for(var i = 1; i < arr.length; i++) {
-    var data = arr[i].split(',');
-    var obj = {};
-    for(var j = 0; j < data.length; j++) {
-      obj[headers[j].trim()] = data[j].trim();
+  for (var line_index = 1; line_index < lines.length; line_index++) {
+    data = lines[line_index].split(',')
+
+    object = {}
+
+    for (var data_index = 0; data_index < data.length; data_index++) {
+      object[headers[data_index].trim()] = data[data_index].trim()
     }
-    report.push(obj);
+
+    report.push(object)
   }
 
-  var root_account = _.find(report, function(item){
+  // Find root user
+  root_account = _.find(report, function(item){
     return item.user == '<root_account>'
   })
 
-  if (now - new Date(root_account['password_last_used']) <= day_difference * 86400000) {
-    exceptions.push("Root Password Last Used: " + root_account['password_last_used'])
+  // Find access entries
+  result = {
+    accountID: ds_aws_account['id'],
+    accountName: ds_aws_account['name'],
+    policy_name: ds_applied_policy['name'],
+    lookback: param_lookback,
+    password_last_used: "Unknown / Never",
+    key1_last_used: "Unknown / Never",
+    key2_last_used: "Unknown / Never",
+    most_recent_access: "Unknown / Never"
   }
 
-  if (now - new Date(root_account['access_key_1_last_used_date']) <= day_difference * 86400000) {
-    exceptions.push("Root Access Key 1 Last Used: " + root_account['access_key_1_last_used_date'])
+  now = new Date()
+
+  if (root_account['password_last_used'] != null) {
+    password_last_used = new Date(root_account['password_last_used'])
+    result['password_last_used'] = password_last_used.toISOString()
+
+    days_ago = Math.round((now - password_last_used) / 86400000)
+
+    if (result['most_recent_access'] == null || result['most_recent_access'] > days_ago) {
+      result['most_recent_access'] = days_ago
+    }
   }
 
-  if (now - new Date(root_account['access_key_2_last_used_date']) <= day_difference * 86400000) {
-    exceptions.push("Root Access Key 2 Last Used: " + root_account['access_key_2_last_used_date'])
+  if (root_account['access_key_1_last_used_date'] != null) {
+    key1_last_used = new Date(root_account['access_key_1_last_used_date'])
+    result['key1_last_used'] = key1_last_used.toISOString()
+
+    days_ago = Math.round((now - key1_last_used) / 86400000)
+
+    if (result['most_recent_access'] == null || result['most_recent_access'] > days_ago) {
+      result['most_recent_access'] = days_ago
+    }
   }
 
-  result={
-    id: ds_get_caller_identity[0]['account'],
-    exceptions: exceptions,
-    day_difference: day_difference
+  if (root_account['access_key_2_last_used_date'] != null) {
+    key2_last_used = new Date(root_account['access_key_2_last_used_date'])
+    result['key2_last_used'] = key2_last_used.toISOString()
+
+    days_ago = Math.round((now - key2_last_used) / 86400000)
+
+    if (result['most_recent_access'] == null || result['most_recent_access'] > days_ago) {
+      result['most_recent_access'] = days_ago
+    }
   }
 EOS
 end
@@ -266,18 +303,19 @@ end
 # Policy
 ###############################################################################
 
-policy "pol_iam_no_root_for_tasks" do
-  validate $ds_parse_cred_report do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: Root User Used"
+policy "pol_root_tasks" do
+  validate $ds_tasks_report do
+    summary_template "{{ data.policy_name }}: AWS IAM Root User Doing Everyday Tasks Found"
     detail_template <<-EOS
-The root user has been utilized in the last {{data.day_difference}} days.
+The root user of the following AWS account has been used in the last {{ data.lookback }} days:
 
-Affected Account ID: {{data.id}}
-{{- range $val := data.exceptions }}
-  {{ $val }}
-{{- end }}
+AWS Account: {{ data.accountName }} ({{ data.accountID }})
+Most Recent Access (Days Ago): {{ data.most_recent_access }}
+Password Last Used: {{ data.password_last_used }}
+Access Key 1 Last Used: {{ data.key1_last_used }}
+Access Key 2 Last Used: {{ data.key2_last_used }}
 EOS
-    check eq(size(val(data, "exceptions")), 0)
+    check logic_or(eq(val(data, "most_recent_access"), "Unknown / Never"), gt(val(data, "most_recent_access"), val(data, "lookback")))
     escalate $esc_email
   end
 end
