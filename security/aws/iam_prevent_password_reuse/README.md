@@ -1,4 +1,4 @@
-# AWS Restrict Reusing Passwords
+# AWS IAM Password Policy Not Restricting Password Reuse
 
 ## What It Does
 
