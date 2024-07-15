@@ -564,94 +564,49 @@ script "js_internet_facing_lbs", type: "javascript" do
       })
     }
 
-    internet_facing = false
-    if (type == "classic" && listeners.length > 0) { internet_facing = true }
-    if (type != "classic" && lb['scheme'] == 'internet-facing') { internet_facing = true }
-
     return {
       accountID: ds_aws_account['id'],
       accountName: ds_aws_account['name'],
-      name: lb['name'],
+      resourceID: lb['name'],
       scheme: lb['scheme'],
       dns: lb['dns'],
       vpc: lb['vpc'],
       instances: lb['instances'],
       region: lb['region'],
-      arn: lb['arn'],
+      resourceARN: lb['arn'],
       type: type,
       zones: zones,
       tags: tags.join(', '),
       instances: instances,
       created: created,
       listeners: listeners.join(', '),
-      internet_facing: internet_facing,
-      policy_name: ds_applied_policy['name']
+      policy_name: ds_applied_policy['name'],
+      service: "ELB"
     }
   })
 
-EOS
-end
+  result = _.filter(cleaned_lbs, function(lb) { return lb['scheme'] == 'internet-facing' })
 
-datasource "ds_internet_facing_elb_map" do
-  run_script $js_elb_filter_map, $ds_elb_list_with_tags, $param_exclude_tags
-end
-
-script "js_elb_filter_map", type: "javascript" do
-  parameters "ds_elb_list_with_tags", "param_exclude_tags"
-  result "content"
-  code <<-EOS
-  var param_exclude_tags_lower = [];
-  for (var j = 0; j < param_exclude_tags.length; j++) {
-    param_exclude_tags_lower[j] = param_exclude_tags[j].toString().toLowerCase();
-  }
-
-  var content = []
-  for (var i = 0; i < ds_elb_list_with_tags.length; i++) {
-    elb = ds_elb_list_with_tags[i]
-
-    // Constructing availabilityZones with comma separated to display in detail_template
-    var availabilityZones = elb['availabilityZones']
-    var s_availabilityZones = ""
-    for (var j = 0; j < availabilityZones.length; j++) {
-      availabilityZone = availabilityZones[j]
-      if (elb['loadBalancerType'] === 'Classic') {
-        s_availabilityZones = s_availabilityZones + ', ' + availabilityZone
-      } else {
-        s_availabilityZones = s_availabilityZones + ', ' + availabilityZone.ZoneName
-      }
-    }
-
-    //Constructing Tags of individual ELB into key=value format. Check, if the tag present in entered param_exclude_tags. Ignore the Load Balancer if the tag matches/present.
-    var tags = elb['tags']
-    var isTagMatched = false
-    var tagKeyValue = ""
-    for (var j = 0; j < tags.length; j++) {
-      tag = tags[j]
-      if ((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey'] + '=' + tag['tagValue']).toLowerCase()) !== -1)) {
-        isTagMatched = true;
-      }
-      // Constructing tags with comma separated to display in detail_template
-      if ((tag['tagValue']).length > 0) {
-        tagKeyValue = tagKeyValue + ', ' + tag['tagKey'] + '=' + tag['tagValue']
-      } else {
-        tagKeyValue = tagKeyValue + ', ' + tag['tagKey']
-      }
-    }
-
-    //If the Load Balancer tag does not match with entered param_exclude_tags, then check if Load Balancer is internet-facing.
-    if (!(isTagMatched) && (elb['scheme']) === 'internet-facing') {
-      content.push({
-        loadBalancerName: elb['loadBalancerName'],
-        loadBalancerType: elb['loadBalancerType'],
-        region: elb['region'],
-        availabilityZones: (s_availabilityZones.slice(2)),
-        tagKeyValue: (tagKeyValue.slice(2)),
-        loadBalancerArn: elb['loadBalancerArn'],
-        api_version: elb['api_version'],
-      })
-    }
-  }
-    content = _.sortBy(content, 'region');
+  // Dummy entry to ensure validation occurs at least once
+  result.push({
+    accountID: "",
+    accountName: "",
+    resourceID: "",
+    scheme: "",
+    dns: "",
+    vpc: "",
+    instances: "",
+    region: "",
+    resourceARN: "",
+    type: "",
+    zones: "",
+    tags: "",
+    instances: "",
+    created: "",
+    listeners: "",
+    policy_name: "",
+    service: ""
+  })
 EOS
 end
 
@@ -659,35 +614,59 @@ end
 # Policy
 ###############################################################################
 
-policy "pol_internet_facing_ELB" do
-  validate $ds_internet_facing_elb_map do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Internet-facing ELBs & ALBs Found in AWS"
-    check eq(size(data), 0)
+policy "pol_internet_facing_lbs" do
+  validate_each $ds_internet_facing_lbs do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Internet-Accessible Elastic Load Balancers Found"
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
-    escalate $esc_delete_internet_facing_elb
+    hash_exclude "instances", "tags", "listeners"
     export do
       resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Resource Name"
+      end
+      field "resourceARN" do
+        label "Resource ARN"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "dns" do
+        label "DNS Name"
+      end
+      field "type" do
+        label "Type"
+      end
       field "region" do
         label "Region"
       end
-      field "id" do
-        label "LoadBalancer Name"
-        path "loadBalancerName"
+      field "listeners" do
+        label "Listeners"
       end
-      field "loadBalancerType" do
-        label "LoadBalancer Type"
-      end
-      field "availabilityZones" do
+      field "zones" do
         label "Availability Zones"
       end
-      field "tagKeyValue" do
-        label "Tags"
+      field "instances" do
+        label "Attached Instances"
       end
-      field "loadBalancerArn" do
-        label "LoadBalancer ARN"
+      field "vpc" do
+        label "VPC"
       end
-      field "api_version" do
-        label "API Version"
+      field "created" do
+        label "Creation Date"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
       end
     end
   end
@@ -704,79 +683,82 @@ escalation "esc_email" do
   email $param_email
 end
 
-escalation "esc_delete_internet_facing_elb" do
-  automatic contains($param_automatic_action, "Delete ELBs and ALBs")
-  label "Delete Resource"
-  description "Delete selected ELB's & ALB's"
-  run "delete_internet_facing_ELB", data, rs_optima_host
+escalation "esc_delete_lbs" do
+  automatic contains($param_automatic_action, "Delete Load Balancers")
+  label "Delete Load Balancers"
+  description "Approval to delete all selected instances"
+  run "delete_lbs", data
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-#https://docs.aws.amazon.com/elasticloadbalancing/2012-06-01/APIReference/API_DeleteLoadBalancer.html (Classic Load Balancer)
-#https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_DeleteLoadBalancer.html (Application Load Balancer)
-define delete_internet_facing_ELB($data, $$rs_optima_host) return $all_responses do
-  $$debug=true
-  $all_responses = []
-  $LoadBalancer= ""
-  foreach $item in $data do
-    if $item["loadBalancerType"] == "Classic"
-      $LoadBalancer= "LoadBalancerName="+ $item["id"]
-    else
-      $LoadBalancer="LoadBalancerArn="+ $item["loadBalancerArn"]
-    end
+define delete_lbs($data) return $all_responses do
+  $$all_responses = []
 
-    sub on_error: skip do
-      $response = http_request(
-        verb: "get",
-        host: join(["elasticloadbalancing.",$item["region"],".amazonaws.com"]),
-        auth: $$auth_aws,
-        href: join(["/", "?Action=DeleteLoadBalancer", "&Version=", $item["api_version"], "&", $LoadBalancer]),
-        https: true,
-        headers:{
-          "cache-control": "no-cache",
-          "content-type": "application/json"
-        }
-      )
-      $all_responses << $response
-      call sys_log('ELB delete response',to_s($response))
+  foreach $lb in $data do
+    sub on_error: handle_error() do
+      call delete_lb($lb) retrieve $response
     end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
   end
 end
 
-define sys_log($subject, $detail) do
-  # Create empty errors array if doesn't already exist
+define delete_lb($lb) return $response do
+  $query_strings = { "Action": "DeleteLoadBalancer" }
+
+  if $lb["type"] == "classic"
+    $field = "LoadBalancerName"
+    $id = $item["resourceID"]
+    $api_version = "2012-06-01"
+
+    $query_strings["LoadBalancerName"] = $id
+    $query_strings["Version"] = $api_version
+  else
+    $field = "LoadBalancerArn"
+    $id = $item["resourceARN"]
+    $api_version = "2015-12-01"
+
+    $query_strings["LoadBalancerArn"] = $id
+    $query_strings["Version"] = $api_version
+  end
+
+  $host = "elasticloadbalancing." + $lb["region"] + ".amazonaws.com"
+  $href = "/"
+  $params = "?Action=DeleteLoadBalancer&Version=" + $api_version + "&" + $field + "=" + $id
+  $url = $host + $href + $params
+  task_label("GET " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "get",
+    host: $host,
+    href: $href,
+    query_strings: $query_strings
+  )
+
+  task_label("GET AWS Elastic Load Balancer response: " + $id + " " + to_json($response))
+  $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response from GET AWS Elastic Load Balancer: " + $id + " " + to_json($response)
+  else
+    task_label("GET AWS Elastic Load Balancer successful: " + $id)
+  end
+end
+
+define handle_error() do
   if !$$errors
     $$errors = []
   end
-  # Check if debug is enabled
-  if $$debug
-    # Append to global $$errors
-    # This is the suggested way to capture errors
-    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
-    # If Flexera NAM Zone, create audit_entries [to be deprecated]
-    # This is the legacy method for capturing errors and only supported on Flexera NAM
-    if $$rs_optima_host == "api.optima.flexeraeng.com"
-      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
-      $task_label = "Creating audit entry for " + $subject
-      sub task_label: $task, on_error: skip_error_and_append($task) do
-        rs_cm.audit_entries.create(
-          notify: "None",
-          audit_entry: {
-            auditee_href: @@account,
-            summary: $subject,
-            detail: $detail
-          }
-        )
-      end # End sub on_error
-    end # End if rs_optima_host
-  end # End if debug is enabled
-end
-
-define skip_error_and_append($subject) do
-  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
   $_error_behavior = "skip"
 end
 
