@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.0.0
+
+- Policy template renamed to `AWS IAM Users With Old Access Keys` to better reflect its functionality
+- Added ability to set a specific age to consider access keys old
+- Added additional incident fields to provide context
+- Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera credential
+
 ## v2.7
 
 - Updated description of `Account Number` parameter
