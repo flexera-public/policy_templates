@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy template reports on any Azure SQL resources that may be eligible for AHUB but are not currently receiving the benefit. Optionally, this report can be emailed, and AHUB can automatically be enabled on these resources.
+This policy template reports on any Azure SQL resources that may be eligible for Azure Hybrid Use Benefit (AHUB) but are not currently receiving the benefit. Optionally, this report can be emailed, and AHUB can automatically be enabled on these resources.
 
 ## How It Works
 
