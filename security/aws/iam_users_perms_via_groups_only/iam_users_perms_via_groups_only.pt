@@ -1,7 +1,7 @@
-name "AWS Ensure IAM Users Receive Permissions Only Through Groups"
+name "AWS IAM Users With Directly-Attached Policies"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report if any IAM users have policies assigned directly instead of through groups. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/iam_users_perms_via_groups_only) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Report IAM users that have policies attached directly instead of through groups. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/iam_users_perms_via_groups_only) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Security"
 severity "high"
@@ -162,7 +162,6 @@ end
 datasource "ds_iam_users" do
   request do
     auth $auth_aws
-    verb "GET"
     host "iam.amazonaws.com"
     path "/"
     query "Action", "ListUsers"
@@ -185,7 +184,6 @@ datasource "ds_iam_users_with_policies" do
   iterate $ds_iam_users
   request do
     auth $auth_aws
-    verb "GET"
     host "iam.amazonaws.com"
     path "/"
     query "Action", "ListUserPolicies"
@@ -196,12 +194,12 @@ datasource "ds_iam_users_with_policies" do
   end
   result do
     encoding "json"
+    field "policies", jmes_path(response, "ListUserPoliciesResponse.ListUserPoliciesResult.PolicyNames")
     field "id", val(iter_item, "id")
     field "name", val(iter_item, "name")
     field "arn", val(iter_item, "arn")
     field "create_date", val(iter_item, "create_date")
     field "password_last_used", val(iter_item, "password_last_used")
-    field "policies", jmes_path(response, "ListUserPoliciesResponse.ListUserPoliciesResult.PolicyNames")
   end
 end
 
@@ -219,42 +217,46 @@ datasource "ds_iam_users_attached" do
   end
   result do
     encoding "xml"
-    field "id", val(iter_item, "id")
-    field "name", val(iter_item, "name")
-    field "arn", val(iter_item, "arn")
-    field "create_date", val(iter_item, "create_date")
-    field "password_last_used", val(iter_item, "password_last_used")
-    field "policies", val(iter_item, "policies")
     field "attached" do
       collect xpath(response, "//ListAttachedUserPoliciesResult/AttachedPolicies/member", "array") do
         field "name", xpath(col_item, "PolicyName")
         field "arn", xpath(col_item, "PolicyArn")
       end
     end
+    field "id", val(iter_item, "id")
+    field "name", val(iter_item, "name")
+    field "arn", val(iter_item, "arn")
+    field "create_date", val(iter_item, "create_date")
+    field "password_last_used", val(iter_item, "password_last_used")
+    field "policies", val(iter_item, "policies")
   end
 end
 
 datasource "ds_iam_users_with_direct_policies" do
-  run_script $js_iam_users_with_direct_policies, $ds_iam_users_attached
+  run_script $js_iam_users_with_direct_policies, $ds_iam_users_attached, $ds_aws_account, $ds_applied_policy
 end
 
 script "js_iam_users_with_direct_policies", type:"javascript" do
-  parameters "ds_iam_users_attached"
+  parameters "ds_iam_users_attached", "ds_aws_account", "ds_applied_policy"
   result "result"
   code <<-EOS
-    result = []
+  bad_users = _.filter(ds_iam_users_attached, function(user) {
+    return user['policies'].length > 0 || user['attached'].length > 0
+  })
 
-    _.each(ds_iam_users_attached, function(user) {
-      if (user.policies.length > 0 || user.attached.length > 0) {
-        result.push({
-          id: user.id,
-          name: user.name,
-          arn: user.arn,
-          inline_policies: user.policies.length,
-          attached_policies: user.attached.length
-        })
-      }
-    })
+  result = _.map(bad_users, function(user) {
+    return {
+      accountID: ds_aws_account['id'],
+      accountName: ds_aws_account['name'],
+      id: user['id'],
+      resourceName: user['name'],
+      resourceARN: user['arn'],
+      createDate: user['create_date'],
+      inline_policies: user['policies'].length,
+      attached_policies: user['attached'].length,
+      policy_name: ds_applied_policy['name']
+    }
+  })
 EOS
 end
 
@@ -263,20 +265,23 @@ end
 ###############################################################################
 
 policy "pol_iam_users_with_direct_policies" do
-  validate $ds_iam_users_with_direct_policies do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Users With Non-Group Policies Found"
-    check eq(size(data), 0)
+  validate_each $ds_iam_users_with_direct_policies do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS IAM Users With Directly-Attached Policies Found"
+    check eq(val(item, "id"), "")
     escalate $esc_email
     export do
       resource_level true
-      field "name" do
-        label "User Name"
-      end
       field "id" do
         label "User ID"
       end
-      field "arn" do
+      field "resourceName" do
+        label "User Name"
+      end
+      field "resourceARN" do
         label "User ARN"
+      end
+      field "createDate" do
+        label "Created At"
       end
       field "inline_policies" do
         label "Inline Policies (#)"

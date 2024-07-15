@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy reports on any IAM credentials in the AWS account that have not been used for a user-specified number of days. Optionally, this report can be emailed.
+This policy template reports on any IAM credentials in the AWS account that have not been used for a user-specified number of days. Optionally, this report can be emailed.
 
 AWS IAM users can access AWS resources using different types of credentials, such as passwords or access keys. It is recommended that all credentials that have been unused in 45 or greater days be deactivated or removed.
 

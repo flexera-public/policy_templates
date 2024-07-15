@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy reports all IAM users in an AWS account that have more than the user-specified number of access keys. Optionally, this report can be emailed.
+This policy template reports all IAM users in an AWS account that have more than the user-specified number of access keys. Optionally, this report can be emailed.
 
 ## Input Parameters
 
