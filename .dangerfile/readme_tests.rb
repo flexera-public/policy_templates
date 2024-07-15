@@ -268,7 +268,7 @@ def readme_invalid_credentials?(file)
       fail_message += "```- [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:```\n\n"
     end
 
-    aws_perm_tester = /^`[a-z0-9]+:[A-Z][a-zA-Z0-9]*`[*]?$/
+    aws_perm_tester = /`[a-zA-Z]+(?:-[a-zA-Z]+)*:[a-zA-Z]+`(?:\*)?/
     asterix_found = 0
     permission_list_found = 0
 
