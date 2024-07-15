@@ -6,6 +6,72 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#2382](https://github.com/flexera-public/policy_templates/pull/2382): POL-1280 Flexera Users With Explicit Roles Revamp
+
+#### Description
+
+> This is a revamp of the `Flexera Users With Explicit Roles` policy template. From the CHANGELOG:
+>
+> - Specific roles can now be ignored via the `Role Ignore List` parameter
+> - Policy template renamed to `Flexera Users With Explicit Roles` to better reflect its functionality
+> - Policy template now uses newer [Flexera IAM APIs](https://developer.flexera.com/docs/api/iam/v1)
+> - Incident table now includes additional fields for added context
+> - Streamlined code for better readability and faster execution
+>
+
+#### Metadata
+
+- **Policies**: [Flexera Users With Explicit Roles](https://github.com/flexera-public/policy_templates/tree/master/compliance/flexera/iam/iam_explicit_user_roles/README.md)
+- **Merged At**: 2024-07-09 20:14:36 UTC
+
+---
+
+### PR [#2393](https://github.com/flexera-public/policy_templates/pull/2393): POL-1285 Powered Off Report Math Fix
+
+#### Description
+
+> This fixes a bug in the `AWS EC2 Instances Time Stopped Report` and `Azure Compute Instances Time Powered Off Report` policy templates where discrepancies in the data returned by Flexera CCO would sometimes cause tiny negative values for the amount of time an instance has been powered off. This would result in these instances appearing in the results erroneously, because negative numbers are less than 0. Also, an instance being powered off for a negative amount of time makes no sense, at least in the context of classical physics.
+>
+> The fix simply checks if the calculated hours powered off is < 0, and if so, sets it to 0 before any further calculations or results are produced.
+>
+
+#### Metadata
+
+- **Policies**: [AWS EC2 Instances Time Stopped Report](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/ec2_stopped_report/README.md), [Meta Parent: AWS EC2 Instances Time Stopped Report](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/ec2_stopped_report/README.md), [Azure Compute Instances Time Powered Off Report](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/compute_poweredoff_report/README.md), [Meta Parent: Azure Compute Instances Time Powered Off Report](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/compute_poweredoff_report/README.md)
+- **Merged At**: 2024-07-09 20:04:03 UTC
+
+---
+
+### PR [#2395](https://github.com/flexera-public/policy_templates/pull/2395): POL-1286 New Policy: Azure Rightsize SQL Managed Instances
+
+#### Description
+
+> This is a new policy to produce rightsize recommendations for Azure SQL Managed Instances. There are enough differences from other SQL offerings at Azure to warrant a distinct policy:
+>
+> - Many informational fields exist for Azure SQL Servers/Databases that don't exist for Azure SQL Managed Instances and vice versa.
+> - Number of connections is not a valid metric for Azure SQL Managed Instances. For this reason, this policy only produces downsize recommendations, though delete actions are still available as an option.
+>
+
+#### Metadata
+
+- **Policies**: [Azure Rightsize SQL Managed Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_sql/README.md), [Meta Parent: Azure Rightsize SQL Managed Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_sql/README.md)
+- **Merged At**: 2024-07-09 20:03:32 UTC
+
+---
+
+### PR [#2375](https://github.com/flexera-public/policy_templates/pull/2375): POL-1278 Deprecate/Unpublish Azure Tag Resources with Resource Group Name Policy
+
+#### Description
+
+> This both deprecates and unpublishes the `Azure Tag Resources with Resource Group Name` policy. This policy does one strange, highly specific thing that doesn't need to be in the catalog; it adds a tag containing the name of the resource group to Azure resources.
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2375) for details about unpublished policies.
+- **Merged At**: 2024-07-09 12:03:39 UTC
+
+---
+
 ### PR [#2360](https://github.com/flexera-public/policy_templates/pull/2360): POL-1167 p90/95/99 Support for Azure Rightsize Compute/SQL Policies
 
 #### Description
@@ -1893,86 +1959,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [AWS Untagged Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/untagged_resources/README.md), [Meta Parent: AWS Untagged Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/untagged_resources/README.md)
 - **Merged At**: 2024-04-15 20:39:22 UTC
-
----
-
-### PR [#2045](https://github.com/flexera-public/policy_templates/pull/2045): POL-1085 Azure Storage Accounts without Lifecycle Management Policies Revamp
-
-#### Description
-
-> This is a revamp of the Azure Storage Accounts without Lifecycle Management Policies policy. From the CHANGELOG:
->
-> - Several parameters altered to be more descriptive and human-readable
-> - Removed `Azure API Wait Time` parameter
-> - Added ability to filter results by subscription, region, or tag
-> - Normalized incident export to be consistent with other policies
-> - Streamlined code for better readability and faster execution
->
-
-#### Metadata
-
-- **Policies**: [Azure Storage Accounts without Lifecycle Management Policies](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/storage_account_lifecycle_management/README.md), [Meta Parent: Azure Storage Accounts without Lifecycle Management Policies](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/storage_account_lifecycle_management/README.md)
-- **Merged At**: 2024-04-15 14:07:22 UTC
-
----
-
-### PR [#2040](https://github.com/flexera-public/policy_templates/pull/2040): POL-1077 AWS S3 Intelligent Tiering Policy Revamp
-
-#### Description
-
-> This is a revamp of the AWS S3 Buckets Without Intelligent Tiering policy. From the CHANGELOG:
->
-> - Several parameters altered to be more descriptive and human-readable
-> - Added ability to filter buckets by region and tags
-> - Normalized incident export to be consistent with other policies
-> - Added additional fields to incident export
-> - Streamlined code for better readability and faster execution
->
-
-#### Metadata
-
-- **Policies**: [AWS S3 Buckets Without Intelligent Tiering](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_storage_policy/README.md), [Meta Parent: AWS S3 Buckets Without Intelligent Tiering](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_storage_policy/README.md)
-- **Merged At**: 2024-04-15 14:07:10 UTC
-
----
-
-### PR [#2036](https://github.com/flexera-public/policy_templates/pull/2036): POL-1193 New Policy: Flexera FOCUS Report
-
-#### Description
-
-> This is a new policy that produces an aggregated billing report for a month that aligns with the FinOps FOCUS framework.
->
-
-#### Metadata
-
-- **Policies**: [Flexera FOCUS Report](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/focus_report/README.md)
-- **Merged At**: 2024-04-11 10:11:12 UTC
-
----
-
-### PR [#2012](https://github.com/flexera-public/policy_templates/pull/2012): POL-1184 Add AWS Usage Report - Amount of Instance Memory Used
-
-#### Description
-
-> <!-- Describe what this change achieves below -->
->
-> - Adds AWS Usage Report showing the amount of instance memory in GiB used over a historical 12 month period.
-> - Also updates the READMEs and policy template file names of the following existing policies:
->   - AWS Usage Report - Number of Instance Hours Used
->   - AWS Usage Report - Number of Instance vCPUs Used
->   - AWS Usage Forecast - Number of Instance Hours Used
->   - AWS Usage Forecast - Number of Instance vCPUs Used
->
-> ### Issues Resolved
->
-> <!-- List any existing issues this PR resolves below -->
-> Adds another variation of existing usage reports tracking Instance Hours Used and Instance vCPUs used.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2012) for these details.
-- **Merged At**: 2024-04-11 08:29:46 UTC
 
 ---
 
