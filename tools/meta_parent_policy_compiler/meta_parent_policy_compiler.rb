@@ -37,8 +37,9 @@ default_child_policy_template_files = [
   "../../operational/aws/scheduled_ec2_events/aws_scheduled_ec2_events.pt",
   "../../operational/aws/tag_cardinality/aws_tag_cardinality.pt",
   "../../security/aws/ebs_unencrypted_volumes/aws_unencrypted_volumes.pt",
-  "../../security/aws/rds_publicly_accessible/aws_publicly_accessible_rds_instances.pt",
+  "../../security/aws/loadbalancer_internet_facing/aws_internet_facing_elbs.pt",
   "../../security/aws/public_buckets/aws_public_buckets.pt",
+  "../../security/aws/rds_publicly_accessible/aws_publicly_accessible_rds_instances.pt",
   "../../cost/aws/superseded_ebs_volumes/aws_superseded_ebs_volumes.pt",
   "../../cost/aws/rightsize_ebs_volumes/aws_rightsize_ebs_volumes.pt",
   # Azure Policy Templates
