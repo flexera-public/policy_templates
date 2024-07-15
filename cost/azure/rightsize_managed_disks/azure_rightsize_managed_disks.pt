@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "monthly"
 info(
-  version: "2.1.0",
+  version: "2.2.0",
   provider: "Azure",
   service: "Managed Disks",
   policy_set: "Rightsize Storage",
@@ -149,6 +149,15 @@ parameter "param_stats_lookback" do
   min_value 1
   max_value 90
   default 30
+end
+
+parameter "param_recommend_hdd_tier" do
+  type "string"
+  category "Filters"
+  label "Recommend HDD tier"
+  description "When this value is set to Yes, the policy will consider the Standard HDD tier for making recommendations."
+  allowed_values "Yes", "No"
+  default "Yes"
 end
 
 ###############################################################################
@@ -712,11 +721,11 @@ datasource "ds_azure_md_pricing" do
 end
 
 datasource "ds_disk_rightsizing_recommendations" do
-  run_script $js_disk_rightsizing_recommendations, $ds_azure_disks_with_metrics_thresholds_filtered, $ds_azure_md_tier_types, $ds_azure_md_pricing, $ds_applied_policy, $ds_min_used_disk_space_pct, $param_stats_lookback, $param_min_savings, $param_min_used_disk_iops_pct, $param_min_used_disk_throughput_pct, $param_stats_aggregation_for_disk_iops, $param_stats_aggregation_for_disk_throughput
+  run_script $js_disk_rightsizing_recommendations, $ds_azure_disks_with_metrics_thresholds_filtered, $ds_azure_md_tier_types, $ds_azure_md_pricing, $ds_applied_policy, $ds_min_used_disk_space_pct, $param_stats_lookback, $param_min_savings, $param_min_used_disk_iops_pct, $param_min_used_disk_throughput_pct, $param_stats_aggregation_for_disk_iops, $param_stats_aggregation_for_disk_throughput, $param_recommend_hdd_tier
 end
 
 script "js_disk_rightsizing_recommendations", type: "javascript" do
-  parameters "ds_azure_disks_with_metrics_thresholds_filtered", "ds_azure_md_tier_types", "ds_azure_md_pricing", "ds_applied_policy", "ds_min_used_disk_space_pct", "param_stats_lookback", "param_min_savings", "param_min_used_disk_iops_pct", "param_min_used_disk_throughput_pct", "param_stats_aggregation_for_disk_iops", "param_stats_aggregation_for_disk_throughput"
+  parameters "ds_azure_disks_with_metrics_thresholds_filtered", "ds_azure_md_tier_types", "ds_azure_md_pricing", "ds_applied_policy", "ds_min_used_disk_space_pct", "param_stats_lookback", "param_min_savings", "param_min_used_disk_iops_pct", "param_min_used_disk_throughput_pct", "param_stats_aggregation_for_disk_iops", "param_stats_aggregation_for_disk_throughput", "param_recommend_hdd_tier"
   result "result"
   code <<-'EOS'
   var hddDiskSizes = [32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32767]
@@ -757,7 +766,6 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
       diskTier = diskTier.split("_")[0]
       diskSizeGB = findDiskSize(diskTier, diskSizeGB)
     } catch (err) {
-      console.log("Error inside findDiskName for "+diskTier +" "+diskSizeGB)
       return undefined
     }
     for (diskName in ds_azure_md_tier_types) {
@@ -853,6 +861,10 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
     if (currentDiskData.downgrades.tier != null) {
       var nextDiskName = currentDiskData.downgrades.tier
       var nextDiskData = ds_azure_md_tier_types[nextDiskName]
+      // If the next disk is HDD tier and HDD tier recommendations are not allowed, we return the current disk.
+      if (nextDiskData.tier == "Standard" && param_recommend_hdd_tier == "No") {
+        return currentDiskName
+      }
       if (
         currentUsedIops <= nextDiskData.IOPS
         && currentUsedThroughput <= nextDiskData.throughput
@@ -869,7 +881,6 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
     var disk = ds_azure_disks_with_metrics_thresholds_filtered[i]
     var currentDiskName = findDiskName(disk.tier, disk.diskSizeGB)
     if (currentDiskName === undefined) {
-     console.log("Current disk name is undefined ", JSON.stringify(disk));
      continue;
     }
     var currentDiskData = ds_azure_md_tier_types[currentDiskName]
@@ -885,7 +896,6 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
       var currentDiskPrice = findDiskPrice(currentDiskName, currentDiskRedundancy, disk.region)
       var fittingDiskPrice = findDiskPrice(fittingDiskName, currentDiskRedundancy, disk.region)
     } catch (err) {
-      console.log("Error while calculating the currentDiskPrice or fittingDiskPrice ", JSON.stringify(disk), JSON.stringify(currentDiskData));
       if (currentDiskData.tier != "Ultra") {
         continue
       }
