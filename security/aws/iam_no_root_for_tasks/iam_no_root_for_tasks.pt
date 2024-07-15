@@ -227,7 +227,7 @@ script "js_tasks_report", type:"javascript" do
   result "result"
   code <<-EOS
   // Parse report
-  decoded = atob(ds_get_cred_report.credReportBase64).toString()
+  decoded = atob(ds_cred_report.credReportBase64).toString()
   lines = decoded.split('\\n')
   headers = lines[0].split(',')
 
@@ -259,7 +259,8 @@ script "js_tasks_report", type:"javascript" do
     password_last_used: "Unknown / Never",
     key1_last_used: "Unknown / Never",
     key2_last_used: "Unknown / Never",
-    most_recent_access: "Unknown / Never"
+    most_recent_access: "Unknown / Never",
+    root_for_tasks: 0
   }
 
   now = new Date()
@@ -296,6 +297,10 @@ script "js_tasks_report", type:"javascript" do
       result['most_recent_access'] = days_ago
     }
   }
+
+  if (result['most_recent_access'] != "Unknown / Never" && result['most_recent_access'] < param_lookback) {
+    result['root_for_tasks'] = 1
+  }
 EOS
 end
 
@@ -309,13 +314,13 @@ policy "pol_root_tasks" do
     detail_template <<-EOS
 The root user of the following AWS account has been used in the last {{ data.lookback }} days:
 
-AWS Account: {{ data.accountName }} ({{ data.accountID }})
-Most Recent Access (Days Ago): {{ data.most_recent_access }}
-Password Last Used: {{ data.password_last_used }}
-Access Key 1 Last Used: {{ data.key1_last_used }}
-Access Key 2 Last Used: {{ data.key2_last_used }}
+**AWS Account:** {{ data.accountName }} ({{ data.accountID }})\\
+**Most Recent Access (Days Ago):** {{ data.most_recent_access }}\\
+**Password Last Used:** {{ data.password_last_used }}\\
+**Access Key 1 Last Used:** {{ data.key1_last_used }}\\
+**Access Key 2 Last Used:** {{ data.key2_last_used }}
 EOS
-    check logic_or(eq(val(data, "most_recent_access"), "Unknown / Never"), gt(val(data, "most_recent_access"), val(data, "lookback")))
+    check eq(val(data, "root_for_tasks"), 0)
     escalate $esc_email
   end
 end
