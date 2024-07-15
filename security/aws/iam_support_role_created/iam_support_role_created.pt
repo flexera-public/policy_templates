@@ -1,4 +1,4 @@
-name "AWS IAM Support Role Created"
+name "AWS IAM Account Missing Support Role"
 rs_pt_ver 20180301
 type "policy"
 short_description "Report if no support roles exist in the AWS account. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/iam_support_role_created) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
@@ -159,10 +159,9 @@ script "js_aws_account", type:"javascript" do
 EOS
 end
 
-datasource "ds_iam_listpolicies" do
+datasource "ds_iam_policies" do
   request do
     auth $auth_aws
-    verb "GET"
     host "iam.amazonaws.com"
     path "/"
     query "Action", "ListPolicies"
@@ -174,32 +173,32 @@ datasource "ds_iam_listpolicies" do
   result do
     encoding "json"
     collect jmes_path(response, "ListPoliciesResponse.ListPoliciesResult.Policies[*]") do
-      field "policyName", jmes_path(col_item, "PolicyName")
+      field "id", jmes_path(col_item, "PolicyId")
+      field "name", jmes_path(col_item, "PolicyName")
       field "arn", jmes_path(col_item, "Arn")
+      field "createDate", jmes_path(col_item, "CreateDate")
+      field "attachmentCount", jmes_path(col_item, "AttachmentCount")
+      field "defaultVersionId", jmes_path(col_item, "DefaultVersionId")
     end
   end
 end
 
-datasource "ds_iam_supportpolicies" do
-  run_script $js_find_support, $ds_iam_listpolicies
+datasource "ds_iam_support_policies" do
+  run_script $js_iam_support_policies, $ds_iam_policies
 end
 
-script "js_find_support", type:"javascript" do
-  parameters "ds_iam_listpolicies"
+script "js_iam_support_policies", type:"javascript" do
+  parameters "ds_iam_policies"
   result "result"
   code <<-EOS
-    var result = [];
-
-    _.each(ds_iam_listpolicies, function(policy) {
-      if (policy['policyName'] == 'AWSSupportAccess') {
-        result.push(policy);
-      }
-    })
+  result = _.filter(ds_iam_policies, function(policy) {
+    return policy['name'] == 'AWSSupportAccess'
+  })
 EOS
 end
 
 datasource "ds_iam_entities" do
-  iterate $ds_iam_supportpolicies
+  iterate $ds_iam_support_policies
   request do
     auth $auth_aws
     verb "GET"
@@ -213,31 +212,33 @@ datasource "ds_iam_entities" do
   end
   result do
     encoding "json"
-    field "policyName", jmes_path(iter_item, "policyName")
+    field "roles", jmes_path(response, "ListEntitiesForPolicyResponse.ListEntitiesForPolicyResult.PolicyRoles")
+    field "id", jmes_path(iter_item, "id")
+    field "name", jmes_path(iter_item, "name")
     field "arn", jmes_path(iter_item, "arn")
-    field "policyRoles", jmes_path(response, "ListEntitiesForPolicyResponse.ListEntitiesForPolicyResult.PolicyRoles")
+    field "createDate", jmes_path(iter_item, "createDate")
+    field "attachmentCount", jmes_path(iter_item, "attachmentCount")
+    field "defaultVersionId", jmes_path(iter_item, "defaultVersionId")
   end
 end
 
-datasource "ds_iam_policies" do
-  run_script $js_iam_policies, $ds_iam_entities, $ds_get_caller_identity
+datasource "ds_support_role_missing" do
+  run_script $js_support_role_missing, $ds_iam_entities, $ds_aws_account, $ds_applied_policy
 end
 
-script "js_iam_policies", type:"javascript" do
-  parameters "ds_iam_entities", "ds_get_caller_identity"
+script "js_support_role_missing", type:"javascript" do
+  parameters "ds_iam_entities", "ds_aws_account", "ds_applied_policy"
   result "result"
   code <<-EOS
-  var support_role_found = 0
-
-  _.each(ds_iam_entities, function(policy){
-    if (policy['policyRoles'].length > 0) {
-      support_role_found = 1
-    }
+  policies_with_support_roles = _.filter(ds_iam_entities, function(policy) {
+    return policy['policyRoles'] != null && policy['policyRoles'] != undefined && policy['policyRoles'].length > 0
   })
 
   result = {
-    id: ds_get_caller_identity[0]['account'],
-    support_role_found: support_role_found
+    accountID: ds_aws_account['id'],
+    accountName: ds_aws_account['name'],
+    policies_with_support_roles: policies_with_support_roles.length,
+    policy_name: ds_applied_policy['name']
   }
 EOS
 end
@@ -246,25 +247,17 @@ end
 # Policy
 ###############################################################################
 
-policy "pol_support_role_created" do
-  validate $ds_iam_policies do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: No Support Role Found"
+policy "pol_support_role_missing" do
+  validate $ds_support_role_missing do
+    summary_template "{{ data.policy_name }}: AWS Account Missing IAM Support Role Found"
     detail_template <<-EOS
-No Support Role found! The AWSSupportAccess policy is not attached to any role.
+No support roles found for the following AWS account:
 
-Affected Account: {{data.id}}
+AWS Account: {{ data.accountName }} ({{ data.accountID }})
+Support Roles Found: {{ data.policies_with_support_roles }}
 EOS
-    check eq(val(data, "support_role_found"), 1)
+    check gt(val(data, "policies_with_support_roles"), 0)
     escalate $esc_email
-    export do
-      resource_level true
-      field "id" do
-        label "id"
-      end
-      field "support_role_found" do
-        label "support_role_found"
-      end
-    end
   end
 end
 
