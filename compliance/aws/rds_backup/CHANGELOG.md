@@ -1,5 +1,17 @@
 # Changelog
 
+## v3.0.0
+
+- Policy template category changed to `Compliance`
+- Resources can be filtered via region using either an allow or deny list
+- Resources can now be filtered by tag
+- Resources can now be tested for backup window or retention period in isolation
+- Added additional incident fields to add context
+- Normalized incident export to be consistent with other policies
+- Policy template no longer raises new escalations if tag data changed but nothing else has
+- Streamlined code for better readability and faster execution
+- Policy template now requires a valid Flexera credential
+
 ## v2.8
 
 - fixed link to README in policy description
