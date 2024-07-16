@@ -493,7 +493,6 @@ These templates can generate savings estimates for your environment.
   - [SaaS Manager - Duplicate User Accounts](./saas/fsm/duplicate_users)
   - [SaaS Manager - Redundant Apps](./saas/fsm/redundant_apps)
   - [SaaS Manager - Renewal Reminder](./saas/fsm/renewal_reminder)
-  - [SaaS Manager - SaaS App User Report by Category](./saas/fsm/users_by_category)
   - [SaaS Manager - Suspicious Users](./saas/fsm/suspicious_users)
   - [SaaS Manager - Unsanctioned Applications with Existing Contract](./saas/fsm/unsanctioned_apps_with_contract)
   - [SaaS Manager - Unsanctioned Spend](./saas/fsm/unsanctioned_spend)
@@ -664,11 +663,11 @@ These templates can generate savings estimates for your environment.
   Compliance: 33
   Cost: 120
   Operational: 26
-  SaaS Management: 12
+  SaaS Management: 11
   Security: 74
 :optimization_count: 61
 :policy_sets:
-  '': 44
+  '': 43
   AWS Config: 1
   Allocate VMs: 3
   Automation: 1
@@ -735,7 +734,7 @@ These templates can generate savings estimates for your environment.
   AWS: 96
   Azure: 95
   Azure China: 1
-  Flexera: 38
+  Flexera: 37
   Flexera Optima: 1
   GCE: 2
   GitHub: 7
@@ -780,7 +779,7 @@ These templates can generate savings estimates for your environment.
   RDS: 6
   S3: 6
   SQL: 19
-  SaaS Manager: 9
+  SaaS Manager: 8
   Security: 3
   Storage: 23
   Storage Accounts: 2
@@ -788,7 +787,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 265
+:total_count: 264
 -->
 <!-- End Policy Template Stats -->
 
