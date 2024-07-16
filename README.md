@@ -121,6 +121,10 @@ These templates can generate savings estimates for your environment.
 
   - [AWS Accounts Missing Service Control Policies](./compliance/aws/missing_scps)
 
+- RDS
+
+  - [AWS RDS Instances With Unapproved Backup Settings](./compliance/aws/rds_backup)
+
 #### Azure
 
 - [Azure Regulatory Compliance](./compliance/azure/compliance_score)
@@ -429,10 +433,6 @@ These templates can generate savings estimates for your environment.
 
   - [AWS Lambda Functions With High Error Rate](./operational/aws/lambda_functions_with_high_error_rate)
 
-- RDS
-
-  - [AWS RDS Backup Settings](./operational/aws/rds_backup)
-
 - Tags
 
   - [AWS Tag Cardinality Report](./operational/aws/tag_cardinality)
@@ -661,9 +661,9 @@ These templates can generate savings estimates for your environment.
 <!--
 ---
 :categories:
-  Compliance: 32
+  Compliance: 33
   Cost: 120
-  Operational: 27
+  Operational: 26
   SaaS Management: 12
   Security: 74
 :optimization_count: 61
