@@ -330,6 +330,7 @@ script "js_azure_disks_region_filtered", type: "javascript" do
 EOS
 end
 
+
 datasource "ds_azure_disks_tag_filtered" do
   run_script $js_azure_disks_tag_filtered, $ds_azure_disks_region_filtered, $param_exclusion_tags, $param_exclusion_tags_boolean
 end
@@ -709,6 +710,49 @@ datasource "ds_azure_md_pricing" do
     path "/flexera-public/policy_templates/master/data/azure/azure_md_pricing.json"
     header "User-Agent", "RS Policies"
   end
+end
+
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+# Gather local currency info
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_target" do
+  run_script $js_currency_target, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency_target", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  // Default to USD if currency is not found
+  result = ds_currency_reference['USD']
+
+  if (ds_currency_code['value'] != undefined && ds_currency_reference[ds_currency_code['value']] != undefined) {
+    result = ds_currency_reference[ds_currency_code['value']]
+  }
+EOS
 end
 
 datasource "ds_disk_rightsizing_recommendations" do
