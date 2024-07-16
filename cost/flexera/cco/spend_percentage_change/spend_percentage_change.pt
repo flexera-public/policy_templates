@@ -29,16 +29,26 @@ parameter "param_dimension" do
   type "string"
   category "Policy Settings"
   label "Cost Dimension"
-  description "The name/ID of the cost dimension to track costs for. Use 'Billing Center' to track costs by Billing Center. Leave blank to report on all spend. Examples: Category, Billing Center"
+  description "The name/ID of the cost dimension to track spend for. Use 'Billing Center' to track spend by Billing Center. Leave blank to report on all spend. Examples: Category, Billing Center"
   default ""
 end
 
-parameter "param_dimension_filters" do
+parameter "param_dimension_filter" do
   type "list"
   category "Policy Settings"
-  label "Cost Dimension Filters"
-  description "Only alert when the specified values for the specified Cost Dimension have an increase. Leave blank to alert on all values."
+  label "Filter Dimensions"
+  description "Specify the names of the dimensions you wish to filter the spend by along with their values in dimension=value format. Spelling and capitalization must match what is shown in the Flexera CCO platform. Examples: Environment=Production, Billing Center=John Doe"
+  allowed_pattern /^[^=]+=[^=]+$/
   default []
+end
+
+parameter "param_dimension_filter_boolean" do
+  type "string"
+  category "Policy Settings"
+  label "Filter Functionality"
+  description "Whether to filter for costs that meet all of the criteria specified in 'Filter Dimensions' or spend that meet any of the criteria. Only applicable if at least two values are entered for 'Filter Dimensions'"
+  allowed_values "All", "Any"
+  default "Any"
 end
 
 parameter "param_percentage" do
@@ -247,7 +257,7 @@ end
 
 datasource "ds_raw_spend" do
   request do
-    run_script $js_raw_spend, $ds_billing_centers, $ds_top_level_bcs, $ds_dimension, $param_months, $param_cost_metric, $param_dimension_filters, rs_org_id, rs_optima_host
+    run_script $js_raw_spend, $ds_billing_centers, $ds_top_level_bcs, $ds_dimension, $ds_cost_dimensions, $param_months, $param_cost_metric, $param_dimension_filter, $param_dimension_filter_boolean, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -260,7 +270,7 @@ datasource "ds_raw_spend" do
 end
 
 script "js_raw_spend", type: "javascript" do
-  parameters "ds_billing_centers", "ds_top_level_bcs", "ds_dimension", "param_months", "param_cost_metric", "param_dimension_filters", "rs_org_id", "rs_optima_host"
+  parameters "ds_billing_centers", "ds_top_level_bcs", "ds_dimension", "ds_cost_dimensions", "param_months", "param_cost_metric", "param_dimension_filter", "param_dimension_filter_boolean", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
   cost_metric_table = {
@@ -270,8 +280,11 @@ script "js_raw_spend", type: "javascript" do
     "Amortized Blended": "cost_amortized_blended_adj"
   }
 
+  cost_dimension_table = {}
+  _.each(ds_cost_dimensions, function(dimension) { cost_dimension_table[dimension['name'].toLowerCase()] = dimension['id'] })
+
   billing_center_table = {}
-  _.each(ds_billing_centers, function(bc) { billing_center_table[bc['name']] == bc['id'] })
+  _.each(ds_billing_centers, function(bc) { billing_center_table[bc['name']] = bc['id'] })
 
   billing_center_ids = ds_top_level_bcs
   dimensions = null
@@ -280,16 +293,31 @@ script "js_raw_spend", type: "javascript" do
   if (ds_dimension != null) {
     dimensions = [ ds_dimension['id'] ]
 
-    if (ds_dimension['id'] == 'billing_center_id' && param_dimension_filters.length > 0) {
-      billing_center_ids = _.map(param_dimension_filters, function(item) { return billing_center_table[item] })
-    } else if (param_dimension_filters.length > 0) {
-      filters = _.map(param_dimension_filters, function(item) {
-        return { "dimension": ds_dimension['id'], "type": "equal", "value": item }
-      })
+    billing_center_filters = []
+    filters = []
 
-      if (filters.length == 1) { filter = filters[0] }
-      if (filters.length > 1) { filter = { "type": "or", "expressions": filters } }
+    _.each(param_dimension_filter, function(entry) {
+      key = entry.split('=')[0].toLowerCase()
+      value = entry.split('=')[1]
+
+      if (typeof(value) == 'string' && value != '') {
+        if (key == "Billing Center") {
+          billing_center_filters.push(billing_center_table[value])
+        } else {
+          filters.push({ "dimension": cost_dimension_table[key], "type": "equal", "value": value })
+        }
+      }
+    })
+
+    boolean_table = { "Any": "or", "All": "and" }
+
+    if (filters.length == 1) { filter = filters[0] }
+
+    if (filters.length > 1) {
+      filter = { "type": boolean_table[param_dimension_filter_boolean], "expressions": filters }
     }
+
+    if (billing_center_filters.length > 0) { billing_center_ids = _.uniq(billing_center_filters) }
   }
 
   // Set end_date to current month
@@ -338,7 +366,7 @@ script "js_organized_spend", type: "javascript" do
   }
 
   billing_center_table = {}
-  _.each(ds_billing_centers, function(bc) { billing_center_table[bc['id']] == bc['name'] })
+  _.each(ds_billing_centers, function(bc) { billing_center_table[bc['id']] = bc['name'] })
 
   month_days_table = {
     "01": 31, "02": 28, "03": 31, "04": 30, "05": 31, "06": 30,
@@ -401,11 +429,11 @@ EOS
 end
 
 datasource "ds_bad_values" do
-  run_script $js_bad_values, $ds_organized_spend, $ds_dimension, $ds_currency, $ds_applied_policy, $param_percentage, $param_months, $param_cost_metric, $param_spend_calculation
+  run_script $js_bad_values, $ds_organized_spend, $ds_dimension, $ds_currency, $ds_applied_policy, $param_dimension_filter, $param_dimension_filter_boolean, $param_percentage, $param_months, $param_cost_metric, $param_spend_calculation
 end
 
 script "js_bad_values", type: "javascript" do
-  parameters "ds_organized_spend", "ds_dimension", "ds_currency", "ds_applied_policy", "param_percentage", "param_months", "param_cost_metric", "param_spend_calculation"
+  parameters "ds_organized_spend", "ds_dimension", "ds_currency", "ds_applied_policy", "param_dimension_filter", "param_dimension_filter_boolean", "param_percentage", "param_months", "param_cost_metric", "param_spend_calculation"
   result "result"
   code <<-'EOS'
   // Check every list for percentages that are below the listed threshold.
@@ -424,7 +452,18 @@ script "js_bad_values", type: "javascript" do
     "The following values for the dimension '", ds_dimension['name'], "' have increased in ",
     param_spend_calculation.toLowerCase(), " by over ", param_percentage, "% over the last ",
     param_months, " calendar months: ", bad_values.join(', ')
-  ].join('')
+  ]
+
+  if (param_dimension_filter.length == 1) {
+    message = message.concat([ "\n\n", "Spend was filtered by the following: ", param_dimension_filter ])
+  }
+
+  if (param_dimension_filter.length > 1) {
+    message = message.concat([
+      "\n\n", "Spend was filtered by the following: (", param_dimension_filter_boolean, ") ",
+      param_dimension_filter.join(', ')
+    ])
+  }
 
   data = []
 
@@ -450,7 +489,7 @@ script "js_bad_values", type: "javascript" do
   data = _.sortBy(data, 'month').reverse()
   data = _.sortBy(data, 'dimensionValue')
 
-  result = { policy_name: ds_applied_policy['name'], message: message, data: data }
+  result = { policy_name: ds_applied_policy['name'], message: message.join(''), data: data }
 EOS
 end
 

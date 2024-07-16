@@ -8,7 +8,8 @@ This policy raises an incident if monthly spend increases by more than a user-sp
 
 - *Email Addresses* - Email addresses of the recipients you wish to send the alert to.
 - *Cost Dimension* - The name/ID of the cost dimension to track costs for. Use `Billing Center` to track costs by Billing Center. Leave blank to report on all spend. Examples: Category, Billing Center
-- *Cost Dimension Filters* - Only alert when the specified values for the specified Cost Dimension have an increase. Leave blank to alert on all values.
+- *Filter Dimensions* - Specify the names of the dimensions you wish to filter the spend by along with their values in dimension=value format. Spelling and capitalization must match what is shown in the Flexera CCO platform. Examples: Environment=Production, Billing Center=John Doe
+- *Filter Functionality* - Whether to filter for costs that meet all of the criteria specified in `Filter Dimensions` or spend that meet any of the criteria. Only applicable if at least two values are entered for `Filter Dimensions`
 - *Maximum Spend Increase (%)* - The maximum month-over-month spend increase to permit as a percentage of total spend. If spend increases more than this, the alert will be triggered.
 - *Months Of Increase (#)* - The number of consecutive months that spend has to have increased by more than the 'Maximum Spend Increase (%)' to trigger an alert.
 - *Spend Metric* - Select the cost metric to use when gathering spend data.
