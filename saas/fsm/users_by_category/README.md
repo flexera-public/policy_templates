@@ -8,15 +8,15 @@ This policy will create an incident when Flexera SaaS Manager identifies users e
 
 This policy integrates with the Flexera SaaS Manager API to retrieve Managed SaaS Application details. The following are prerequisites for this policy to execute:
 
-- Flexera SaaS Manager implementation with HR roster connected
+- Flexera SaaS Manager implementation with HR roster connected.
 - Please contact your Flexera Customer Success Manager for assistance to generate your FSM token.
 
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
-- *Department to report entitled SaaS users* - Department to report on entitled SaaS subscription users
-- *Email addresses to notify* - Email addresses of the recipients you wish to notify
+- *Email Addresses* - Email addresses of the recipients you wish to notify
+- *Department* - Department to report on entitled SaaS subscription users
 
 ## Policy Actions
 
