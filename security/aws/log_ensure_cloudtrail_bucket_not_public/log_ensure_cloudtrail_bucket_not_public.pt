@@ -1,7 +1,7 @@
-name "AWS Ensure CloudTrail S3 Buckets Non-Public"
+name "AWS Publicly Accessible CloudTrail S3 Buckets"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report if CloudTrail stores logs in publicly accessible S3 bucket(s). See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/log_ensure_cloudtrail_bucket_not_public) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+short_description "Report S3 buckets used by CloudTrail that are publicly accessible. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/log_ensure_cloudtrail_bucket_not_public) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
 long_description ""
 category "Security"
 severity "high"
@@ -162,12 +162,11 @@ end
 datasource "ds_trail_list" do
   request do
     auth $auth_aws
-    verb "GET"
     host "cloudtrail.us-east-1.amazonaws.com"
     path "/"
+    query "Action", "DescribeTrails"
     header "User-Agent", "RS Policies"
     header "Accept", "application/json"
-    query "Action", "DescribeTrails"
   end
   result do
     encoding "json"
@@ -191,17 +190,14 @@ datasource "ds_aws_buckets_with_region" do
   end
   result do
     encoding "xml"
+    field "region", xpath(response, "//LocationConstraint")
     field "trail_name", val(iter_item, "name")
     field "trail_arn", val(iter_item, "arn")
     field "trail_region", val(iter_item, "homeregion")
     field "id", val(iter_item, "s3_bucket")
-    field "region", response
   end
 end
 
-# https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetBucketLocation.html
-# "Buckets in Region us-east-1 have a LocationConstraint of null."
-# This is to clean up the data and replace that null value with us-east-1
 datasource "ds_aws_buckets_with_region_cleaned" do
   run_script $js_aws_buckets_with_region_cleaned, $ds_aws_buckets_with_region
 end
@@ -210,22 +206,27 @@ script "js_aws_buckets_with_region_cleaned", type:"javascript" do
   parameters "ds_aws_buckets_with_region"
   result "result"
   code <<-EOS
-    result = []
-
-    for ( i = 0; i < ds_aws_buckets_with_region.length; i++ ) {
-      if (ds_aws_buckets_with_region[i].region == "\\n") {
-        ds_aws_buckets_with_region[i].region = "us-east-1"
-        ds_aws_buckets_with_region[i].host = "s3-external-1.amazonaws.com"
-      } else if (ds_aws_buckets_with_region[i].region == "EU" || ds_aws_buckets_with_region[i].region == "\\nEU") {
-        ds_aws_buckets_with_region[i].region = "eu-west-1"
-        ds_aws_buckets_with_region[i].host = "s3-" + ds_aws_buckets_with_region[i]["region"] + ".amazonaws.com"
-      } else {
-        ds_aws_buckets_with_region[i].region = ds_aws_buckets_with_region[i].region.substring(1)
-        ds_aws_buckets_with_region[i].host = "s3-" + ds_aws_buckets_with_region[i]["region"] + ".amazonaws.com"
-      }
-
-      result.push(ds_aws_buckets_with_region[i])
+  result = _.map(ds_aws_buckets_with_region, function(bucket) {
+    if (typeof(bucket['region']) != 'string' || bucket['region'] == '') {
+      region = "us-east-1"
+      host = "s3-external-1.amazonaws.com"
+    } else if (bucket['region'].toLowerCase().trim() == "eu") {
+      region = "eu-west-1"
+      host = "s3-eu-west-1.amazonaws.com"
+    } else {
+      region = bucket['region']
+      host = "s3-" + region + ".amazonaws.com"
     }
+
+    return {
+      trail_name: bucket['trail_name'],
+      trail_arn: bucket['trail_arn'],
+      trail_region: bucket['trail_region'],
+      id: bucket['id'],
+      region: region,
+      host: host
+    }
+  })
 EOS
 end
 
@@ -281,48 +282,41 @@ datasource "ds_aws_buckets_with_policies" do
   end
 end
 
-datasource "ds_aws_bad_buckets" do
-  run_script $js_bad_buckets, $ds_aws_buckets_with_policies
+datasource "ds_public_aws_buckets" do
+  run_script $js_public_aws_buckets, $ds_aws_buckets_with_policies, $ds_aws_account, $ds_applied_policy
 end
 
-script "js_bad_buckets", type:"javascript" do
-  parameters "ds_aws_buckets_with_policies"
+script "js_public_aws_buckets", type:"javascript" do
+  parameters "ds_aws_buckets_with_policies", "ds_aws_account", "ds_applied_policy"
   result "result"
-  code <<-EOS
-    result = []
+  code <<-'EOS'
+  result = []
 
-    _.each(ds_aws_buckets_with_policies, function(bucket) {
-      bad_acl_grant = "False"
-      bad_policy = "False"
+  _.each(ds_aws_buckets_with_policies, function(bucket) {
+    grant_uris = _.pluck(bucket['acl_grants'], 'uri')
+    bad_acl_grant = _.contains(grant_uris, "https://acs.amazonaws.com/groups/global/AllUsers") || _.contains(grant_uris, "https://acs.amazonaws.com/groups/global/AuthenticatedUsers") || _.contains(grant_uris, "http://acs.amazonaws.com/groups/global/AllUsers") || _.contains(grant_uris, "http://acs.amazonaws.com/groups/global/AuthenticatedUsers")
 
-      _.each(bucket.acl_grants, function(grant) {
-        if (grant.uri == "https://acs.amazonaws.com/groups/global/AllUsers" ||
-            grant.uri == "https://acs.amazonaws.com/groups/global/AuthenticatedUsers" ||
-            grant.uri == "http://acs.amazonaws.com/groups/global/AllUsers" ||
-            grant.uri == "http://acs.amazonaws.com/groups/global/AuthenticatedUsers") {
-          bad_acl_grant = "True"
-        }
-      })
-
-      _.each(bucket.policy.Statement, function(statement) {
-        if (statement.Effect == "Allow") {
-          if (statement.Principal == "*" || statement.Principal == {"AWS": "*"}) {
-            bad_policy = "True"
-          }
-        }
-      })
-
-      if (bad_acl_grant == "True" || bad_policy == "True") {
-        result.push({
-          trail_name: bucket.trail_name,
-          id: bucket.trail_arn,
-          bucket_name: bucket.id,
-          bucket_region: bucket.region,
-          bad_acl_grant: bad_acl_grant,
-          bad_policy: bad_policy
-        })
-      }
+    bad_statements = _.filter(bucket['policy']['Statement'], function(statement) {
+      return statement['Effect'] == "Allow" && ((typeof(statement['Principal']) == 'object' && statement['Principal']['AWS'] == '*') || statement['Principal'] == '*')
     })
+
+    bad_policy = bad_statements.length > 0
+
+    if (bad_acl_grant || bad_policy) {
+      result.push({
+        accountID: ds_aws_account['id'],
+        accountName: ds_aws_account['name'],
+        id: bucket['id'],
+        region: bucket['region'],
+        host: bucket['host'],
+        name: bucket['trail_name'],
+        arn: bucket['trail_arn'],
+        bad_acl_grant: bad_acl_grant.toString(),
+        bad_policy: bad_policy.toString(),
+        policy_name: ds_applied_policy['name']
+      })
+    }
+  })
 EOS
 end
 
@@ -330,24 +324,30 @@ end
 # Policy
 ###############################################################################
 
-policy "pol_trails_with_nonprivate_buckets" do
-  validate $ds_aws_bad_buckets do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} CloudTrails Found With Publicly Accessible Buckets"
-    check eq(size(data), 0)
+policy "pol_trails_public_aws_buckets" do
+  validate_each $ds_public_aws_buckets do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Publicly Accessible CloudTrail S3 Buckets Found"
+    check eq(val(item, "id"), "")
     escalate $esc_email
     export do
       resource_level true
-      field "trail_name" do
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "name" do
         label "CloudTrail Name"
       end
-      field "id" do
+      field "arn" do
         label "CloudTrail ARN"
       end
-      field "bucket_name" do
-        label "S3 Bucket Name"
+      field "id" do
+        label "Bucket Name"
       end
-      field "bucket_region" do
-        label "S3 Bucket Region"
+      field "region" do
+        label "Region"
       end
       field "bad_acl_grant" do
         label "Bad ACL Grant?"
@@ -368,94 +368,4 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email
-end
-
-###############################################################################
-# Meta Policy [alpha]
-# Not intended to be modified or used by policy developers
-###############################################################################
-
-# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
-# if it is set we will look for the parent policy.
-datasource "ds_get_policy" do
-  request do
-    auth $auth_flexera
-    host rs_governance_host
-    ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
-    header "Api-Version", "1.0"
-  end
-  result do
-    encoding "json"
-    field "id", jmes_path(response, "id")
-  end
-end
-
-datasource "ds_parent_policy_terminated" do
-  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
-end
-
-# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
-# This information is used in two places:
-# - determining whether or not we make a delete call
-# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
-script "js_decide_if_self_terminate", type: "javascript" do
-  parameters "found", "self_policy_id", "meta_parent_policy_id"
-  result "result"
-  code <<-EOS
-  var result
-  if (meta_parent_policy_id != "" && found.id == undefined) {
-    result = true
-  } else {
-    result = false
-  }
-  EOS
-end
-
-# Two potentials ways to set this up:
-# - this way and make a unneeded 'get' request when not deleting
-# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
-script "js_make_terminate_request", type: "javascript" do
-  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
-  result "request"
-  code <<-EOS
-
-  var request = {
-    auth:  'auth_flexera',
-    host: rs_governance_host,
-    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
-    headers: {
-      "API-Version": "1.0",
-      "Content-Type":"application/json"
-    },
-  }
-
-  if (should_delete) {
-    request.verb = 'DELETE'
-  }
-  EOS
-end
-
-datasource "ds_terminate_self" do
-  request do
-    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
-  end
-end
-
-datasource "ds_is_deleted" do
-  run_script $js_check_deleted, $ds_terminate_self
-end
-
-# This is just a way to have the check delete request connect to the farthest leaf from policy.
-# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
-# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
-# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
-# would not have access to self-terminate
-# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
-script "js_check_deleted", type: "javascript" do
-  parameters "response"
-  result "result"
-  code <<-EOS
-  result = {"path":"/"}
-  EOS
 end
