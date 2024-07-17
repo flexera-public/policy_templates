@@ -8,9 +8,9 @@ This policy template reports on AWS Relational Database Service (RDS) instances 
 
 This policy uses the AWS RDS API to gather information on all RDS instances in the AWS account. An RDS instance is determined to be publicly accessible if the API returns the following fields for an instance:
 
-- PubliclyAccessible: `true`
-- DeletionProtection: `false`
-- DBInstanceStatus: `available`
+- PubliclyAccessible: true
+- DeletionProtection: false
+- DBInstanceStatus: available
 
 ## Input Parameters
 
