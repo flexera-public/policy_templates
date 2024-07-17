@@ -1,5 +1,12 @@
 # Changelog
 
+## v4.0.0
+
+- Added more robust tag filtering options
+- Added additional fields to incident table for added context
+- Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera credential
+
 ## v3.1
 
 - Updated description of `Account Number` parameter
