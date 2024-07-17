@@ -1,54 +1,55 @@
 # AWS Publicly Accessible RDS Instances
 
-## What it does
+## What It Does
 
-This policy checks all Relational Database Service (RDS) instances and reports on any that are publicly accessible. When such an instance is detected, the user can choose to disable the publicly accessible option and the user can also choose to delete by enabling 'delete action' option as mentioned in Enable delete action section below.
+This policy template reports on AWS Relational Database Service (RDS) instances that are publicly accessible. Optionally, this report can be emailed, and these instances can have their public access revoked or be terminated after approval.
 
-## Functional Details
+## How It Works
 
-When a publicly accessible RDS instance is detected, an email action is triggered automatically to notify the specified users of the incident. Users then have an option to modify configuration after manual approval, and even Users can perform delete action if required.
+This policy uses the AWS RDS API to gather information on all RDS instances in the AWS account. An RDS instance is determined to be publicly accessible if the API returns the following fields for an instance:
 
-- *remove public access rule* - modifies the configuration of the RDS instance by disabling the public access rule
+- PubliclyAccessible: `true`
+- DeletionProtection: `false`
+- DBInstanceStatus: `available`
 
 ## Input Parameters
 
-- *Allowed/Denied Regions* - Whether to treat regions parameter as allow or deny list.
-- *Regions* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
-- *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
+- *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
-- *Tags to ignore* - List of tags that will exclude resources from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'
+- *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation.
+- *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
+- *Allow/Deny Regions List* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled. See [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
+- *Exclusion Tags* - The policy will filter resources containing the specified tags from the results. The following formats are supported:
+  - `Key` - Filter all resources with the specified tag key.
+  - `Key==Value` - Filter all resources with the specified tag key:value pair.
+  - `Key!=Value` - Filter all resources missing the specified tag key:value pair. This will also filter all resources missing the specified tag key.
+  - `Key=~/Regex/` - Filter all resources where the value for the specified key matches the specified regex string.
+  - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified tag key.
+- *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
 Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
-For example if a user selects the "Update RDS Instances" action while applying the policy, all the resources that didn't satisfy the policy condition will be updated.
+For example if a user selects the "Terminate RDS Instances" action while applying the policy, all the resources that didn't satisfy the policy condition will be terminated.
 
 ## Policy Actions
 
-- Sends an email notification
-- Disable the publicly accessible RDS instances after approval
-- Delete publicly accessible RDS instances after approval
-
-Note:
-
-- RDS Instances with 'DB Instance Status' other than 'Available' and RDS instances with 'Delete Protection Enabled' cannot be deleted
-- RDS instances with 'DB Instance Status' other than 'Available' can not be modified.
-- When delete action is performed, DB snapshot gets created with name '<--RDS Instance Name-->-finalSnapshot' Ex mySQL-DBinstance-finalSnapshot before deleting DB instance.
-- For Aurora instance, policy creates Cluster snapshot Since DB instance snapshot cannot be created directly.
+- Sends an email notification.
+- Disables AWS RDS instance public access after approval.
+- Terminates AWS RDS instance after approval.
 
 ## Prerequisites
 
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
 - [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
+  - `sts:GetCallerIdentity`
   - `ec2:DescribeRegions`
   - `rds:DescribeDBInstances`
   - `rds:ListTagsForResource`
-  - `rds:ModifyDBInstance*`
-  - `rds:CreateDBClusterSnapshot*`
-  - `rds:DescribeDBClusterSnapshots`
-  - `rds:DeleteDBInstance*`
+  - `rds:ModifyDBInstance`*
+  - `rds:DeleteDBInstance`*
 
-\* Only required for taking action (terminating or downsizing); the policy will still function in a read-only capacity without these permissions.
+  \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
 
   Example IAM Permission Policy:
 
@@ -59,12 +60,11 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
           {
               "Effect": "Allow",
               "Action": [
+                  "sts:GetCallerIdentity",
                   "ec2:DescribeRegions",
                   "rds:DescribeDBInstances",
                   "rds:ListTagsForResource",
                   "rds:ModifyDBInstance",
-                  "rds:CreateDBClusterSnapshot",
-                  "rds:DescribeDBClusterSnapshots",
                   "rds:DeleteDBInstance"
               ],
               "Resource": "*"
