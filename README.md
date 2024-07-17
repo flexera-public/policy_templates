@@ -527,20 +527,19 @@ These templates can generate savings estimates for your environment.
 
 - Config
 
-  - [AWS Ensure AWS Config Enabled In All Regions](./security/aws/aws_config_enabled)
+  - [AWS Regions Without Config Fully Enabled](./security/aws/aws_config_enabled)
 
 - DBS
 
-  - [AWS EBS Ensure Encryption By Default](./security/aws/ebs_ensure_encryption_default)
+  - [AWS Regions Without Default EBS Encryption](./security/aws/ebs_ensure_encryption_default)
 
 - EBS
 
-  - [AWS Unencrypted Volumes](./security/aws/ebs_unencrypted_volumes)
+  - [AWS Unencrypted EBS Volumes](./security/aws/ebs_unencrypted_volumes)
 
 - ELB
 
   - [AWS Internet-facing ELBs & ALBs](./security/aws/loadbalancer_internet_facing)
-  - [AWS Unencrypted ELB Listeners (ALB/NLB)](./security/aws/elb_unencrypted)
   - [AWS Unencrypted ELB Listeners (CLB)](./security/aws/clb_unencrypted)
 
 - IAM
@@ -564,6 +563,10 @@ These templates can generate savings estimates for your environment.
 - KMS
 
   - [AWS Ensure Rotation For Customer Master Keys (CMKs) Is Enabled](./security/aws/kms_rotation)
+
+- Network
+
+  - [AWS Elastic Load Balancers With Unencrypted Listeners](./security/aws/elb_unencrypted)
 
 - RDS
 
@@ -758,7 +761,7 @@ These templates can generate savings estimates for your environment.
   DBS: 1
   Databricks: 1
   EBS: 4
-  ELB: 3
+  ELB: 2
   FlexNet Manager: 1
   Git: 7
   IAM: 20
@@ -770,7 +773,7 @@ These templates can generate savings estimates for your environment.
   Marketplace: 2
   MySQL: 2
   NetApp Files: 1
-  Network: 3
+  Network: 4
   Network Security Group: 2
   Office 365: 1
   Organization: 1
