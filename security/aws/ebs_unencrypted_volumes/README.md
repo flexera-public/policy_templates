@@ -1,4 +1,4 @@
-# AWS Unencrypted Volumes
+# AWS Unencrypted EBS Volumes
 
 ## What It Does
 
