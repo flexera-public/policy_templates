@@ -70,7 +70,7 @@ parameter "param_regions_allow_or_deny" do
   type "string"
   category "Filters"
   label "Allow/Deny Regions"
-  description "Allow or Deny entered regions. See the README for more details"
+  description "Allow or Deny entered regions. See the README for more details."
   allowed_values "Allow", "Deny"
   default "Allow"
 end
@@ -79,17 +79,26 @@ parameter "param_regions_list" do
   type "list"
   category "Filters"
   label "Allow/Deny Regions List"
-  description "A list of allowed or denied regions. See the README for more details"
+  description "A list of allowed or denied regions. See the README for more details."
   allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   default []
 end
 
-parameter "param_exclude_tags" do
+parameter "param_exclusion_tags" do
   type "list"
-  category "Policy Settings"
-  label "Tags to ignore"
-  description "List of tags that will exclude resources from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test, env=dev'"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
   default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
 end
 
 parameter "param_automatic_action" do
@@ -97,7 +106,7 @@ parameter "param_automatic_action" do
   category "Policy Settings"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Update RDS Instances"]
+  allowed_values ["Remove RDS Instances Public Access", "Terminate RDS Instances"]
   default []
 end
 
@@ -798,19 +807,19 @@ datasource "ds_child_incident_details" do
   end
 end
 
-datasource "ds_rds_publicly_accessible_instance_map_combined_incidents" do
-  run_script $js_ds_rds_publicly_accessible_instance_map_combined_incidents, $ds_child_incident_details
+datasource "ds_bad_rds_instances_combined_incidents" do
+  run_script $js_ds_bad_rds_instances_combined_incidents, $ds_child_incident_details
 end
 
-script "js_ds_rds_publicly_accessible_instance_map_combined_incidents", type: "javascript" do
+script "js_ds_bad_rds_instances_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-EOS
   result = []
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
-    // If the incident summary contains "Publicly Accessible RDS Instances Found in AWS" then include it in the filter result
-    if (s.indexOf("Publicly Accessible RDS Instances Found in AWS") > -1) {
+    // If the incident summary contains "AWS Publicly Accessible RDS Instancess Found" then include it in the filter result
+    if (s.indexOf("AWS Publicly Accessible RDS Instancess Found") > -1) {
       _.each(incident["violation_data"], function(violation) {
         violation["incident_id"] = incident["id"];
         result.push(violation);
@@ -821,32 +830,32 @@ EOS
 end
 
 
-# Escalation for Update Instance
+# Escalation for Remove RDS Instances Public Access
 escalation "esc_modify" do
   automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
-  label "Update Instance"
-  description "Approve selected RDS public access rule configuration change"
+  label "Remove RDS Instances Public Access"
+  description "Approval to disable public access for all selected RDS instances"
 
   # Run declaration should go at end, after any parameters that may exist
   run "esc_modify", data, rs_governance_host, rs_project_id
 end
 define esc_modify($data, $governance_host, $rs_project_id) do
   $actions_options = []
-  call child_run_action($data, $governance_host, $rs_project_id, "Update Instance", $action_options)
+  call child_run_action($data, $governance_host, $rs_project_id, "Remove RDS Instances Public Access", $action_options)
 end
 
-# Escalation for Delete Instance
-escalation "esc_delete" do
+# Escalation for Terminate Unused RDS Instances
+escalation "esc_terminate" do
   automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
-  label "Delete Instance"
-  description "Delete selected publicly accessible RDS-instances"
+  label "Terminate Unused RDS Instances"
+  description "Approval to terminate all selected RDS instances"
 
   # Run declaration should go at end, after any parameters that may exist
-  run "esc_delete", data, rs_governance_host, rs_project_id
+  run "esc_terminate", data, rs_governance_host, rs_project_id
 end
-define esc_delete($data, $governance_host, $rs_project_id) do
+define esc_terminate($data, $governance_host, $rs_project_id) do
   $actions_options = []
-  call child_run_action($data, $governance_host, $rs_project_id, "Delete Instance", $action_options)
+  call child_run_action($data, $governance_host, $rs_project_id, "Terminate Unused RDS Instances", $action_options)
 end
 
 
@@ -856,44 +865,77 @@ end
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
-    # Consolidated incident for Publicly Accessible RDS Instances Found in AWS
-  validate $ds_rds_publicly_accessible_instance_map_combined_incidents do
-    summary_template "Consolidated Incident: {{ len data }} Publicly Accessible RDS Instances Found in AWS"
+    # Consolidated incident for AWS Publicly Accessible RDS Instancess Found
+  validate $ds_bad_rds_instances_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} AWS Publicly Accessible RDS Instancess Found"
     escalate $esc_email
     escalate $esc_modify
-    escalate $esc_delete
+    escalate $esc_terminate
     check eq(size(data), 0)
     export do
       resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
       field "region" do
         label "Region"
       end
-      field "id" do
-        label "DB Instance Identifier"
+      field "state" do
+        label "State"
       end
-      field "availability_zone" do
+      field "publiclyAccessible" do
+        label "Publicly Accessible"
+      end
+      field "deletionProtection" do
+        label "Deletion Protection"
+      end
+      field "storageEncrypted" do
+        label "Storage Encrypted"
+      end
+      field "availabilityZone" do
         label "Availability Zone"
       end
-      field "sec_availability_zone" do
-        label "Secondary Availability Zone"
+      field "privateDnsName" do
+        label "Private DNS Name"
       end
-      field "storage_encrypted" do
-        label "Enable Encryption"
+      field "resourceType" do
+        label "Resource Type"
       end
-      field "db_engine_name" do
-        label "DB Engine Name"
+      field "databaseEngine" do
+        label "Database Engine"
       end
-      field "db_instance_status" do
-        label "DB Instance Status"
+      field "engineVersion" do
+        label "Engine Version"
       end
-      field "delete_protection" do
-        label "Delete Protection Enabled"
+      field "vcpus" do
+        label "vCPUs"
       end
-      field "Tags" do
-        label "tagKeyValue"
+      field "licenseModel" do
+        label "License Model"
       end
-      field "db_cluster_identifier" do
-        label "DB Cluster Identifier"
+      field "arn" do
+        label "ARN"
+      end
+      field "platform" do
+        label "Platform"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "id"
       end
       field "incident_id" do
         label "Child Incident ID"
