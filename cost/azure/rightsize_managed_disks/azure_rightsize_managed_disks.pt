@@ -722,6 +722,15 @@ datasource "ds_azure_md_pricing" do
 end
 
 
+# Gather local currency info
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
 datasource "ds_currency_code" do
   request do
     auth $auth_flexera
@@ -738,15 +747,6 @@ datasource "ds_currency_code" do
   end
 end
 
-# Gather local currency info
-datasource "ds_currency_reference" do
-  request do
-    host "raw.githubusercontent.com"
-    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
-    header "User-Agent", "RS Policies"
-  end
-end
-
 datasource "ds_currency_target" do
   run_script $js_currency_target, $ds_currency_reference, $ds_currency_code
 end
@@ -760,6 +760,72 @@ script "js_currency_target", type:"javascript" do
 
   if (ds_currency_code['value'] != undefined && ds_currency_reference[ds_currency_code['value']] != undefined) {
     result = ds_currency_reference[ds_currency_code['value']]
+  }
+EOS
+end
+
+# Branching logic:
+# This datasource returns an empty array if the target currency is USD.
+# This prevents ds_currency_conversion from running if it's not needed.
+datasource "ds_conditional_currency_conversion" do
+  run_script $js_conditional_currency_conversion, $ds_currency_target
+end
+
+script "js_conditional_currency_conversion", type: "javascript" do
+  parameters "ds_currency_target"
+  result "result"
+  code <<-EOS
+  result = []
+  // Make the request only if the target currency is not USD
+  if (ds_currency_target['code'] != 'USD') {
+    result = [1]
+  }
+EOS
+end
+
+datasource "ds_currency_conversion" do
+  # Only make a request if the target currency is not USD
+  iterate $ds_conditional_currency_conversion
+  request do
+    host "api.xe-auth.flexeraeng.com"
+    path "/prod/{proxy+}"
+    query "from", "USD"
+    query "to", val($ds_currency_target, 'code')
+    query "amount", "1"
+    # Ignore currency conversion if API has issues
+    ignore_status [400, 404, 502]
+  end
+  result do
+    encoding "json"
+    field "from", jmes_path(response, "from")
+    field "to", jmes_path(response, "to")
+    field "amount", jmes_path(response, "amount")
+    field "year", jmes_path(response, "year")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_target, $ds_currency_conversion
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_target", "ds_currency_conversion"
+  result "result"
+  code <<-EOS
+  result = ds_currency_target
+  result['exchange_rate'] = 1
+
+  if (ds_currency_conversion.length > 0) {
+    currency_code = ds_currency_target['code']
+    current_month = parseInt(new Date().toISOString().split('-')[1])
+
+    conversion_block = _.find(ds_currency_conversion[0]['to'][currency_code], function(item) {
+      return item['month'] == current_month
+    })
+
+    if (conversion_block != undefined) {
+      result['exchange_rate'] = conversion_block['monthlyAverage']
+    }
   }
 EOS
 end
