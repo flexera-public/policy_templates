@@ -1,4 +1,4 @@
-# AWS Ensure AWS Config Enabled In All Regions
+# AWS Regions Without Config Fully Enabled
 
 ## What It Does
 
