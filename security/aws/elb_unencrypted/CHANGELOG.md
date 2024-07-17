@@ -2,7 +2,7 @@
 
 ## v4.0.0
 
-- Policy template renamed to `AWS Elastic Load Balancer With Unencrypted Listeners` to better reflect its functionality
+- Policy template renamed to `AWS Elastic Load Balancers With Unencrypted Listeners` to better reflect its functionality
 - Policy now includes support for Classic Load Balancers
 - Expanded region and tag filtering options
 - Added option to filter by load balancer type
