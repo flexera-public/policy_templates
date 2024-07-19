@@ -1,7 +1,7 @@
-name "AWS S3 Buckets without Server Access Logging"
+name "AWS S3 Buckets Without Server Access Logging"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks for buckets that do not have server_access_logging enabled. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/s3_buckets_without_server_access_logging) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Reports any AWS S3 buckets that do not have server access logging enabled. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/s3_buckets_without_server_access_logging) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "high"
 category "Security"
@@ -34,18 +34,23 @@ end
 
 parameter "param_target_bucket" do
   type "string"
+  category "Policy Settings"
   label "Target Bucket"
   description "An existing bucket in same region as source to be used for logging."
+  default ""
 end
 
 parameter "param_target_prefix" do
   type "string"
+  category "Policy Settings"
   label "Target Bucket Prefix"
   description "If using a Target Bucket, this element lets you specify a prefix for the keys that the log files will be stored under."
+  default ""
 end
 
 parameter "param_exclude_target_bucket" do
   type "string"
+  category "Policy Settings"
   label "Exclude Target Bucket"
   description "Exclude target bucket as additional fees may incur. "
   allowed_values "true","false"
@@ -53,9 +58,10 @@ end
 
 parameter "param_automatic_action" do
   type "list"
+  category "Actions"
   label "Automatic Actions"
-  description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Enable Bucket Logging"]
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Enable Server Access Logging"]
   default []
 end
 
@@ -179,19 +185,16 @@ script "js_aws_account", type:"javascript" do
 EOS
 end
 
-# Reference: https://docs.aws.amazon.com/AmazonS3/latest/API/RESTServiceGET.html
 datasource "ds_aws_buckets" do
-  # This request is not paginated
   request do
     auth $auth_aws
     host "s3.amazonaws.com"
     path "/"
-    header "User-Agent", "RS Policies"
   end
   result do
     encoding "xml"
     collect xpath(response, "//ListAllMyBucketsResult/Buckets/Bucket", "array") do
-      field "bucket_name", xpath(col_item,"Name")
+      field "id", xpath(col_item, "Name")
       field "creation_date", xpath(col_item, "CreationDate")
     end
   end
@@ -201,87 +204,77 @@ datasource "ds_aws_buckets_with_region" do
   iterate $ds_aws_buckets
   request do
     auth $auth_aws
-    host "s3-external-1.amazonaws.com"
-    path join(["/", val(iter_item, "bucket_name")])
-    query "location", ""
+    host join([val(iter_item, "id"), ".s3.amazonaws.com"])
+    path "/?location"
     header "User-Agent", "RS Policies"
+    ignore_status [403, 404]
   end
   result do
     encoding "xml"
-    field "bucket_name", val(iter_item, "bucket_name")
-    field "creation_date", val(iter_item, "creation_date")
     field "region", xpath(response, "//LocationConstraint")
+    field "id", val(iter_item, "id")
+    field "creation_date", val(iter_item, "creation_date")
   end
 end
 
-datasource "ds_aws_sanitized_buckets" do
-  run_script $js_aws_sanitized_buckets, $ds_aws_buckets_with_region
+datasource "ds_aws_buckets_with_region_cleaned" do
+  run_script $js_aws_buckets_with_region_cleaned, $ds_aws_buckets_with_region
 end
 
-script "js_aws_sanitized_buckets", type: "javascript" do
-  parameters "buckets"
-  result "results"
+script "js_aws_buckets_with_region_cleaned", type:"javascript" do
+  parameters "ds_aws_buckets_with_region"
+  result "result"
   code <<-EOS
-// This is the list of filtered buckets.
-results = []
-for ( i = 0; i < buckets.length; i++ ) {
-  if ( !buckets[i]["region"] ){
-    results.push(
-    {
-      "bucket_name": buckets[i]["bucket_name"],
-      "creation_date": buckets[i]["creation_date"],
-      "region": "us-east-1",
-      "host": "s3-external-1.amazonaws.com",
-      "auth": "auth_aws"
-    }
-    )
-  } else {
-    if ( buckets[i]["region"] == "EU" ) { buckets[i]["region"] = "eu-west-1" }
-    results.push(
-    {
-      "bucket_name": buckets[i]["bucket_name"],
-      "creation_date": buckets[i]["creation_date"],
-      "region": buckets[i]["region"],
-      "host": "s3-" + buckets[i]["region"] + ".amazonaws.com",
-      "auth": "auth_aws"
-    }
-    )
-  }
-};
+  result = _.map(ds_aws_buckets_with_region, function(bucket) {
+    region = bucket['region']
+    if (typeof(bucket['region']) != 'string' || bucket['region'] == '') { region = 'us-east-1' }
+    if (bucket['region'].toLowerCase().trim() == "eu") { region = 'eu-west-1' }
+
+    return { id: bucket['id'], creation_date: bucket['creation_date'], region: region }
+  })
 EOS
 end
 
-# Reference: https://docs.aws.amazon.com/AmazonS3/latest/API/RESTBucketGETacl.html
-datasource "ds_aws_bucket_logging" do
-  iterate $ds_aws_sanitized_buckets
+datasource "ds_aws_buckets_with_logging" do
+  iterate $ds_aws_buckets_with_region_cleaned
   request do
-    run_script $js_aws_bucket_logging, val(iter_item, "bucket_name"), val(iter_item, "host")
+    auth $auth_aws
+    host join([val(iter_item, "id"), ".s3.amazonaws.com"])
+    path "/?logging"
+    header "User-Agent", "RS Policies"
+    ignore_status [403, 404]
   end
   result do
     encoding "xml"
-    field "bucket_name", val(iter_item, "bucket_name")
-    field "creation_date", val(iter_item,"creation_date")
-    field "region", val(iter_item,"region")
-    field "target_bucket", xpath(response,"//TargetBucket")
-    field "host",val(iter_item, "host")
+    field "target_bucket", xpath(response, "//TargetBucket")
+    field "id", val(iter_item, "id")
+    field "creation_date", val(iter_item, "creation_date")
+    field "region", val(iter_item, "region")
   end
 end
 
-script "js_aws_bucket_logging", type: "javascript" do
-  parameters "bucket_name", "host"
-  result "request"
-  code <<-EOS
-  request = {
-    auth: "auth_aws",
-    host: host,
-    path: '/' + bucket_name + '/',
-    query_params: {
-      logging: ""
-    },
-    headers: {
-      "User-Agent": "RS Policies"
+datasource "ds_aws_buckets_without_server_access_logging" do
+  run_script $js_aws_buckets_without_server_access_logging, $ds_aws_buckets_with_logging, $ds_aws_account, $ds_applied_policy, $param_target_bucket, $param_exclude_target_bucket
+end
+
+script "js_aws_buckets_without_server_access_logging", type:"javascript" do
+  parameters "ds_aws_buckets_with_logging", "ds_aws_account", "ds_applied_policy"
+  result "result"
+  code <<-'EOS'
+  bad_buckets = _.filter(ds_aws_buckets_with_logging, function(bucket) {
+    // logic_or(logic_not(eq(val(item, "target_bucket"), "")),logic_and(eq($param_exclude_target_bucket,"true"),eq(val(item,"bucket_name"),$param_target_bucket)))
+  })
+
+  result = _.map(bad_buckets, function(bucket) {
+    return {
+      accountID: ds_aws_account['id'],
+      accountName: ds_aws_account['name'],
+      id: bucket['id'],
+      region: bucket['region'],
+      creation_date: bucket['creation_date'],
+      policy_name: ds_applied_policy['name']
     }
-  }
+  })
 EOS
 end
 
@@ -289,26 +282,28 @@ end
 # Policy
 ###############################################################################
 
-policy "pol_public_buckets" do
-  validate_each $ds_aws_bucket_logging do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Public Buckets Found in AWS"
+policy "pol_aws_buckets_without_server_access_logging" do
+  validate_each $ds_aws_buckets_without_server_access_logging do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS S3 Buckets Without Server Access Logging Found"
+    check eq(val(item, "id"), "")
     escalate $esc_email
-    escalate $esc_report_open_buckets
-    check logic_or(logic_not(eq(val(item, "target_bucket"), "")),logic_and(eq($param_exclude_target_bucket,"true"),eq(val(item,"bucket_name"),$param_target_bucket)))
+    escalate $esc_enable_logging
     export do
       resource_level true
-      field "region" do
-        label "Region"
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
       end
       field "id" do
         label "Bucket Name"
-        path "bucket_name"
+      end
+      field "region" do
+        label "Region"
       end
       field "creation_date" do
         label "Creation Date"
-      end
-      field "host" do
-        label "Host"
       end
     end
   end
@@ -325,18 +320,18 @@ escalation "esc_email" do
   email $param_email
 end
 
-escalation "esc_report_open_buckets" do
-  automatic contains($param_automatic_action, "Enable Bucket Logging")
-  label "Update Bucket"
-  description "Bucket logging will be enabled for selected buckets"
-  run "enable_logging", data, $param_target_bucket, $param_target_prefix, rs_optima_host
+escalation "esc_enable_logging" do
+  automatic contains($param_automatic_action, "Enable Server Access Logging")
+  label "Enable Server Access Logging"
+  description "Approval to enable server access logging on all selected AWS S3 Buckets"
+  run "enable_logging_buckets", data, $param_target_bucket, $param_target_prefix
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define enable_logging($data, $param_target_bucket, $param_target_prefix, $$rs_optima_host) return $all_responses do
+define enable_logging_buckets($data, $param_target_bucket, $param_target_prefix, $$rs_optima_host) return $all_responses do
   $$debug = "false"
   $all_responses = []
 
