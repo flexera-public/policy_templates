@@ -1,5 +1,12 @@
 # Changelog
 
+## v3.0.0
+
+- Policy template renamed to `AWS IAM User Accounts Without MFA` to better reflect its functionality
+- Added toggle to include or ignore user accounts without a console password
+- Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera credential
+
 ## v2.7
 
 - fixed link to README in policy description

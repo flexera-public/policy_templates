@@ -37,6 +37,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Throughput Threshold (%)* - The throughput threshold at which to consider a managed disk to be underutilized.
 - *Throughput Threshold Statistic* - Statistic to use for throughput when determining if a managed disk is underutilized.
 - *Lookback Period* - How many days back to look at disk IOPS and throughput data. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days.
+- *Recommend HDD tier* - Sometimes the user does not want the policy to recommend changing a disk tier to HDD, with this parameter user can decide if he wants HDD tier recommendations.
 
 ## Policy Actions
 

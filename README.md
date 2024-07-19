@@ -121,6 +121,10 @@ These templates can generate savings estimates for your environment.
 
   - [AWS Accounts Missing Service Control Policies](./compliance/aws/missing_scps)
 
+- RDS
+
+  - [AWS RDS Instances With Unapproved Backup Settings](./compliance/aws/rds_backup)
+
 #### Azure
 
 - [Azure Regulatory Compliance](./compliance/azure/compliance_score)
@@ -429,10 +433,6 @@ These templates can generate savings estimates for your environment.
 
   - [AWS Lambda Functions With High Error Rate](./operational/aws/lambda_functions_with_high_error_rate)
 
-- RDS
-
-  - [AWS RDS Backup Settings](./operational/aws/rds_backup)
-
 - Tags
 
   - [AWS Tag Cardinality Report](./operational/aws/tag_cardinality)
@@ -493,7 +493,6 @@ These templates can generate savings estimates for your environment.
   - [SaaS Manager - Duplicate User Accounts](./saas/fsm/duplicate_users)
   - [SaaS Manager - Redundant Apps](./saas/fsm/redundant_apps)
   - [SaaS Manager - Renewal Reminder](./saas/fsm/renewal_reminder)
-  - [SaaS Manager - SaaS App User Report by Category](./saas/fsm/users_by_category)
   - [SaaS Manager - Suspicious Users](./saas/fsm/suspicious_users)
   - [SaaS Manager - Unsanctioned Applications with Existing Contract](./saas/fsm/unsanctioned_apps_with_contract)
   - [SaaS Manager - Unsanctioned Spend](./saas/fsm/unsanctioned_spend)
@@ -528,43 +527,46 @@ These templates can generate savings estimates for your environment.
 
 - Config
 
-  - [AWS Ensure AWS Config Enabled In All Regions](./security/aws/aws_config_enabled)
+  - [AWS Regions Without Config Fully Enabled](./security/aws/aws_config_enabled)
 
 - DBS
 
-  - [AWS EBS Ensure Encryption By Default](./security/aws/ebs_ensure_encryption_default)
+  - [AWS Regions Without Default EBS Encryption](./security/aws/ebs_ensure_encryption_default)
 
 - EBS
 
-  - [AWS Unencrypted Volumes](./security/aws/ebs_unencrypted_volumes)
+  - [AWS Unencrypted EBS Volumes](./security/aws/ebs_unencrypted_volumes)
 
 - ELB
 
   - [AWS Internet-facing ELBs & ALBs](./security/aws/loadbalancer_internet_facing)
-  - [AWS Unencrypted ELB Listeners (ALB/NLB)](./security/aws/elb_unencrypted)
   - [AWS Unencrypted ELB Listeners (CLB)](./security/aws/clb_unencrypted)
 
 - IAM
 
-  - [AWS Ensure IAM Users Receive Permissions Only Through Groups](./security/aws/iam_users_perms_via_groups_only)
-  - [AWS IAM Ensure Access Keys Are Rotated](./security/aws/iam_rotate_access_keys)
-  - [AWS IAM Ensure Credentials Unused For >45 days Are Disabled](./security/aws/iam_disable_45_day_creds)
-  - [AWS IAM Ensure MFA Enabled For IAM Users](./security/aws/iam_mfa_enabled_for_iam_users)
-  - [AWS IAM Ensure One Active Key Per IAM User](./security/aws/iam_one_active_key_per_user)
-  - [AWS IAM Report Attached Admin IAM Policies](./security/aws/iam_no_admin_iam_policies_attached)
-  - [AWS IAM Report Expired SSL/TLS Certificates](./security/aws/iam_expired_ssl_certs)
-  - [AWS IAM Report Insufficient Password Policy](./security/aws/iam_min_password_length)
-  - [AWS IAM Report Password Policy No Restrict Password Reuse](./security/aws/iam_prevent_password_reuse)
-  - [AWS IAM Report Regions Without Access Analyzer](./security/aws/iam_access_analyzer_enabled)
-  - [AWS IAM Report Root Account Access Keys](./security/aws/iam_no_root_access_keys)
-  - [AWS IAM Report Root Accounts Without Hardware MFA](./security/aws/iam_hwmfa_enabled_for_root)
-  - [AWS IAM Report Root Accounts Without MFA](./security/aws/iam_mfa_enabled_for_root)
-  - [AWS IAM Report Root User Doing Everyday Tasks](./security/aws/iam_no_root_for_tasks)
-  - [AWS IAM Support Role Created](./security/aws/iam_support_role_created)
+  - [AWS IAM Account Missing Support Role](./security/aws/iam_support_role_created)
+  - [AWS IAM Attached Admin Policies](./security/aws/iam_no_admin_iam_policies_attached)
+  - [AWS IAM Expired SSL/TLS Certificates](./security/aws/iam_expired_ssl_certs)
+  - [AWS IAM Insufficient Required Password Length](./security/aws/iam_min_password_length)
+  - [AWS IAM Password Policy Not Restricting Password Reuse](./security/aws/iam_prevent_password_reuse)
+  - [AWS IAM Root Account Access Keys](./security/aws/iam_no_root_access_keys)
+  - [AWS IAM Root User Account Without Hardware MFA](./security/aws/iam_hwmfa_enabled_for_root)
+  - [AWS IAM Root User Account Without MFA](./security/aws/iam_mfa_enabled_for_root)
+  - [AWS IAM Root User Doing Everyday Tasks](./security/aws/iam_no_root_for_tasks)
+  - [AWS IAM User Accounts Without MFA](./security/aws/iam_mfa_enabled_for_iam_users)
+  - [AWS IAM Users With Directly-Attached Policies](./security/aws/iam_users_perms_via_groups_only)
+  - [AWS IAM Users With Multiple Active Access Keys](./security/aws/iam_one_active_key_per_user)
+  - [AWS IAM Users With Old Access Keys](./security/aws/iam_rotate_access_keys)
+  - [AWS Regions Without Access Analyzer Enabled](./security/aws/iam_access_analyzer_enabled)
+  - [AWS Unused IAM Credentials](./security/aws/iam_unused_creds)
 
 - KMS
 
   - [AWS Ensure Rotation For Customer Master Keys (CMKs) Is Enabled](./security/aws/kms_rotation)
+
+- Network
+
+  - [AWS Elastic Load Balancers With Unencrypted Listeners](./security/aws/elb_unencrypted)
 
 - RDS
 
@@ -661,14 +663,14 @@ These templates can generate savings estimates for your environment.
 <!--
 ---
 :categories:
-  Compliance: 32
+  Compliance: 33
   Cost: 120
-  Operational: 27
-  SaaS Management: 12
+  Operational: 26
+  SaaS Management: 11
   Security: 74
 :optimization_count: 61
 :policy_sets:
-  '': 44
+  '': 43
   AWS Config: 1
   Allocate VMs: 3
   Automation: 1
@@ -735,7 +737,7 @@ These templates can generate savings estimates for your environment.
   AWS: 96
   Azure: 95
   Azure China: 1
-  Flexera: 38
+  Flexera: 37
   Flexera Optima: 1
   GCE: 2
   GitHub: 7
@@ -759,7 +761,7 @@ These templates can generate savings estimates for your environment.
   DBS: 1
   Databricks: 1
   EBS: 4
-  ELB: 3
+  ELB: 2
   FlexNet Manager: 1
   Git: 7
   IAM: 20
@@ -771,7 +773,7 @@ These templates can generate savings estimates for your environment.
   Marketplace: 2
   MySQL: 2
   NetApp Files: 1
-  Network: 3
+  Network: 4
   Network Security Group: 2
   Office 365: 1
   Organization: 1
@@ -780,7 +782,7 @@ These templates can generate savings estimates for your environment.
   RDS: 6
   S3: 6
   SQL: 19
-  SaaS Manager: 9
+  SaaS Manager: 8
   Security: 3
   Storage: 23
   Storage Accounts: 2
@@ -788,7 +790,7 @@ These templates can generate savings estimates for your environment.
   Usage Discount: 6
   VPC: 1
   compute: 1
-:total_count: 265
+:total_count: 264
 -->
 <!-- End Policy Template Stats -->
 

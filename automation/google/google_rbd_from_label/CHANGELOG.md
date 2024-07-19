@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.2.1
+
+- Updated policy template to use newer API endpoints. Functionality is unchanged.
+
 ## v1.2
 
 - fixed link to README in policy description

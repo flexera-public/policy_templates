@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.2.1
+
+- Updated policy template to use newer API endpoints. Functionality is unchanged.
+
 ## v2.2
 
 - added ability to specify names for the newly created dimensions
