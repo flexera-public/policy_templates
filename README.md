@@ -539,7 +539,6 @@ These templates can generate savings estimates for your environment.
 
 - ELB
 
-  - [AWS Internet-facing ELBs & ALBs](./security/aws/loadbalancer_internet_facing)
   - [AWS Unencrypted ELB Listeners (CLB)](./security/aws/clb_unencrypted)
 
 - IAM
@@ -562,11 +561,12 @@ These templates can generate savings estimates for your environment.
 
 - KMS
 
-  - [AWS Ensure Rotation For Customer Master Keys (CMKs) Is Enabled](./security/aws/kms_rotation)
+  - [AWS Customer Managed Keys (CMKs) Without Rotation Enabled](./security/aws/kms_rotation)
 
 - Network
 
   - [AWS Elastic Load Balancers With Unencrypted Listeners](./security/aws/elb_unencrypted)
+  - [AWS Internet-Accessible Elastic Load Balancers](./security/aws/loadbalancer_internet_facing)
 
 - RDS
 
@@ -761,7 +761,7 @@ These templates can generate savings estimates for your environment.
   DBS: 1
   Databricks: 1
   EBS: 4
-  ELB: 2
+  ELB: 1
   FlexNet Manager: 1
   Git: 7
   IAM: 20
@@ -773,7 +773,7 @@ These templates can generate savings estimates for your environment.
   Marketplace: 2
   MySQL: 2
   NetApp Files: 1
-  Network: 4
+  Network: 5
   Network Security Group: 2
   Office 365: 1
   Organization: 1
