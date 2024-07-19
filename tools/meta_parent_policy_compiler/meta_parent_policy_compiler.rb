@@ -44,6 +44,11 @@ default_child_policy_template_files = [
   "../../security/aws/loadbalancer_internet_facing/aws_internet_facing_elbs.pt",
   "../../security/aws/public_buckets/aws_public_buckets.pt",
   "../../security/aws/rds_publicly_accessible/aws_publicly_accessible_rds_instances.pt",
+  "../../security/aws/s3_buckets_deny_http/s3_buckets_deny_http.pt",
+  "../../security/aws/s3_buckets_without_server_access_logging/aws_s3_buckets_without_server_access_logging.pt",
+  "../../security/aws/s3_ensure_buckets_block_public_access/s3_ensure_buckets_block_public_access.pt",
+  "../../security/aws/s3_ensure_mfa_delete_enabled/s3_ensure_mfa_delete_enabled.pt",
+  "../../security/aws/unencrypted_s3_buckets/aws_unencrypted_s3_buckets.pt",
   "../../cost/aws/superseded_ebs_volumes/aws_superseded_ebs_volumes.pt",
   "../../cost/aws/rightsize_ebs_volumes/aws_rightsize_ebs_volumes.pt",
   # Azure Policy Templates

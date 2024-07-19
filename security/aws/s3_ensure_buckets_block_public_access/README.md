@@ -42,6 +42,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   - `sts:GetCallerIdentity`
   - `s3:ListBuckets`
   - `s3:GetBucketLocation`
+  - `s3:GetBucketTagging`
   - `s3:GetPublicAccessBlock`
 
   Example IAM Permission Policy:
@@ -56,6 +57,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
                   "sts:GetCallerIdentity",
                   "s3:ListBuckets",
                   "s3:GetBucketLocation",
+                  "s3:GetBucketTagging",
                   "s3:GetPublicAccessBlock"
               ],
               "Resource": "*"
