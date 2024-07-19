@@ -1,4 +1,4 @@
-# Azure Reserved Instances Recommendation
+# Azure Reserved Instances Recommendations
 
 ## What It Does
 
