@@ -39,6 +39,49 @@ parameter "param_aws_account_number" do
   default ""
 end
 
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details"
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  description "A list of allowed or denied regions. See the README for more details"
+  default []
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
+parameter "param_exclude_buckets" do
+  type "list"
+  category "Filters"
+  label "Exclude S3 Buckets"
+  description "Names of specific S3 buckets to exclude from the results."
+  default []
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -174,8 +217,20 @@ datasource "ds_aws_buckets" do
   end
 end
 
+datasource "ds_aws_buckets_name_filtered" do
+  run_script $js_aws_buckets_name_filtered, $ds_aws_buckets, $param_exclude_buckets
+end
+
+script "js_aws_buckets_name_filtered", type:"javascript" do
+  parameters "ds_aws_buckets", "param_exclude_buckets"
+  result "result"
+  code <<-EOS
+  result = _.reject(ds_aws_buckets, function(item) { return _.contains(param_exclude_buckets, item['id']) })
+EOS
+end
+
 datasource "ds_aws_buckets_with_region" do
-  iterate $ds_aws_buckets
+  iterate $ds_aws_buckets_name_filtered
   request do
     auth $auth_aws
     host join([val(iter_item, "id"), ".s3.amazonaws.com"])
@@ -209,6 +264,131 @@ script "js_aws_buckets_with_region_cleaned", type:"javascript" do
 EOS
 end
 
+datasource "ds_aws_buckets_region_filtered" do
+  run_script $js_aws_buckets_region_filtered, $ds_aws_buckets_with_region_cleaned, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_aws_buckets_region_filtered", type:"javascript" do
+  parameters "ds_aws_buckets_with_region_cleaned", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-EOS
+  allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_aws_buckets_with_region_cleaned, function(item) {
+      return _.contains(param_regions_list, item['region']) == allow_deny_test[param_regions_allow_or_deny]
+    })
+  } else {
+    result = ds_aws_buckets_with_region_cleaned
+  }
+EOS
+end
+
+datasource "ds_aws_buckets_with_tags" do
+  iterate $ds_aws_buckets_region_filtered
+  request do
+    auth $auth_aws
+    host join([val(iter_item, "id"), ".s3.amazonaws.com"])
+    path "/?tagging"
+    header "User-Agent", "RS Policies"
+    ignore_status [403, 404]
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//Tagging/TagSet", "array") do
+      field "tags" do
+        collect xpath(col_item, "Tag") do
+          field "key", xpath(col_item, "Key")
+          field "value", xpath(col_item, "Value")
+        end
+      end
+      field "id", val(iter_item, "id")
+      field "creation_date", val(iter_item, "creation_date")
+      field "region", val(iter_item, "region")
+    end
+  end
+end
+
+datasource "ds_aws_buckets_tag_filtered" do
+  run_script $js_aws_buckets_tag_filtered, $ds_aws_buckets_with_tags, $param_exclusion_tags, $param_exclusion_tags_boolean
+end
+
+script "js_aws_buckets_tag_filtered", type: "javascript" do
+  parameters "ds_aws_buckets_with_tags", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  result "result"
+  code <<-EOS
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  if (param_exclusion_tags.length > 0) {
+    result = _.reject(ds_aws_buckets_with_tags, function(resource) {
+      resource_tags = {}
+
+      if (typeof(resource['tags']) == 'object') {
+        _.each(resource['tags'], function(tag) { resource_tags[tag['key']] = tag['value'] })
+      }
+
+      // Store a list of found tags
+      found_tags = []
+
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_tag = resource_tags[comparator['key']]
+
+        if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+        if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+        if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_tag == undefined) { found_tags.push(string) }
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+      })
+
+      all_tags_found = found_tags.length == comparators.length
+      any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+      return all_tags_found || any_tags_found
+    })
+  } else {
+    result = ds_aws_buckets_with_tags
+  }
+EOS
+end
+
 datasource "ds_aws_buckets_with_versioning" do
   iterate $ds_aws_buckets_with_region_cleaned
   request do
@@ -223,6 +403,7 @@ datasource "ds_aws_buckets_with_versioning" do
     field "id", val(iter_item, "id")
     field "creation_date", val(iter_item, "creation_date")
     field "region", val(iter_item, "region")
+    field "tags", val(iter_item, "tags")
     field "versioning", xpath(response, "//VersioningConfiguration/Status")
     field "mfadelete", xpath(response, "//VersioningConfiguration/MfaDelete")
   end
@@ -241,6 +422,12 @@ script "js_aws_buckets_without_mfa", type:"javascript" do
   })
 
   result = _.map(bad_buckets, function(bucket) {
+    tags = []
+
+    if (typeof(resource['tags']) == 'object') {
+      tags = _.map(resource['tags'], function(tag) { return tag['key'] + '=' + tag['value'] })
+    }
+
     versioning = bucket["versioning"]
     mfadelete = bucket["mfadelete"]
 
@@ -253,6 +440,7 @@ script "js_aws_buckets_without_mfa", type:"javascript" do
       id: bucket['id'],
       region: bucket['region'],
       creation_date: bucket['creation_date'],
+      tags: tags.join(', '),
       versioning: versioning,
       mfadelete: mfadelete,
       policy_name: ds_applied_policy['name']
@@ -270,6 +458,7 @@ policy "pol_aws_buckets_without_mfa" do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS S3 Buckets Without MFA Delete Enabled Found"
     check eq(val(item, "id"), "")
     escalate $esc_email
+    hash_exclude "tags"
     export do
       resource_level true
       field "accountID" do
@@ -283,6 +472,9 @@ policy "pol_aws_buckets_without_mfa" do
       end
       field "region" do
         label "Region"
+      end
+      field "tags" do
+        label "Tags"
       end
       field "creation_date" do
         label "Creation Date"

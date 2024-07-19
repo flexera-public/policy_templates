@@ -3,6 +3,7 @@
 ## v3.0.0
 
 - Policy no longer allows for automatic actions
+- Buckets can now be filtered by region, tag, or name
 - Manual actions now allow for unique target bucket and log prefix values per action
 - Added additional fields to incident table for added context
 - Streamlined code for better readability and faster execution
