@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.0.0
+
+- Policy template renamed to `AWS IAM Insufficient Required Password Length` to better reflect its functionality
+- Added ability to set a specific password length to test the password policy for
+- Improved readability of incident output with additional formatting and context
+- Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera credential
+
 ## v2.5
 
 - Updated description of `Account Number` parameter

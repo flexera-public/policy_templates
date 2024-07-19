@@ -1,5 +1,12 @@
 # Changelog
 
+## v3.0.0
+
+- Policy template renamed to `AWS Unused IAM Credentials` to better reflect its functionality
+- Added ability to specify the minimum age of a credential to consider it unused
+- Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera credential
+
 ## v2.5
 
 - Updated description of `Account Number` parameter

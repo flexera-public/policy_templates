@@ -1,13 +1,13 @@
-name "AWS Ensure Rotation For Customer Master Keys (CMKs) Is Enabled"
+name "AWS Customer Managed Keys (CMKs) Without Rotation Enabled"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report if CMK rotation is not enabled. \n See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/kms_rotation) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+short_description "Reports any Customer Managed Keys (CMKs) without rotation enabled. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/kms_rotation) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
 long_description ""
-category "Security"
 severity "high"
+category "Security"
 default_frequency "daily"
 info(
-  version: "2.2",
+  version: "3.0.0",
   provider: "AWS",
   service: "KMS",
   policy_set: "CIS",
@@ -20,13 +20,41 @@ info(
 )
 
 ###############################################################################
-# User inputs
+# Parameters
 ###############################################################################
 
 parameter "param_email" do
   type "list"
-  label "Email Address"
-  description "Email addresses of the recipients you wish to notify"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify."
+  default []
+end
+
+parameter "param_aws_account_number" do
+  type "string"
+  category "Policy Settings"
+  label "Account Number"
+  description "Leave blank; this is for automated use with Meta Policies. See README for more details."
+  default ""
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details"
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  default []
 end
 
 ###############################################################################
@@ -34,19 +62,122 @@ end
 ###############################################################################
 
 credentials "auth_aws" do
-  schemes "aws","aws_sts"
+  schemes "aws", "aws_sts"
   label "AWS"
   description "Select the AWS Credential from the list"
   tags "provider=aws"
+  aws_account_number $param_aws_account_number
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
-# ds_region_list is a list of regions that are opted-in or opt-in-not-required
-datasource "ds_regions_list" do
-  # https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeRegions.html
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get AWS account info
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account", xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_get_caller_identity
+end
+
+script "js_aws_account", type:"javascript" do
+  parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+  result = _.find(ds_cloud_vendor_accounts, function(account) {
+    return account['id'] == ds_get_caller_identity[0]['account']
+  })
+
+  // This is in case the API does not return the relevant account info
+  if (result == undefined) {
+    result = {
+      id: ds_get_caller_identity[0]['account'],
+      name: "",
+      tags: {}
+    }
+  }
+EOS
+end
+
+datasource "ds_describe_regions" do
   request do
     auth $auth_aws
     verb "GET"
@@ -66,24 +197,40 @@ datasource "ds_regions_list" do
   end
 end
 
-datasource "ds_regions_clean" do
-  run_script $js_regions_clean, $ds_regions_list
+datasource "ds_regions" do
+  run_script $js_regions, $ds_describe_regions, $param_regions_list, $param_regions_allow_or_deny
+end
+
+script "js_regions", type:"javascript" do
+  parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
+  result "result"
+  code <<-EOS
+  allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_describe_regions, function(item) {
+      return _.contains(param_regions_list, item['region']) == allow_deny_test[param_regions_allow_or_deny]
+    })
+  } else {
+    result = ds_describe_regions
+  }
+EOS
 end
 
 datasource "ds_regions_with_keys" do
-  iterate $ds_regions_clean
+  iterate $ds_regions
   request do
     auth $auth_aws
     verb "GET"
-    host join(["kms.", iter_item, ".amazonaws.com"])
+    host join(["kms.", val(iter_item, 'region'), ".amazonaws.com"])
     path "/"
+    query "Action", "ListKeys"
     header "User-Agent", "RS Policies"
     header "Accept", "application/json"
-    query "Action", "ListKeys"
   end
   result do
     encoding "json"
-    field "region", iter_item
+    field "region", val(iter_item, "region")
     field "keys", jmes_path(response, "ListKeysResponse.ListKeysResult.Keys")
   end
 end
@@ -92,7 +239,21 @@ datasource "ds_keys" do
   run_script $js_keys, $ds_regions_with_keys
 end
 
-datasource "ds_keys_with_rotation" do
+script "js_keys", type:"javascript" do
+  parameters "ds_regions_with_keys"
+  result "result"
+  code <<-EOS
+  result = []
+
+  _.each(ds_regions_with_keys, function(region) {
+    _.each(region['keys'], function(key) {
+      result.push({ arn: key['KeyArn'], id: key['KeyId'], region: region['region'] })
+    })
+  })
+EOS
+end
+
+datasource "ds_keys_with_rotation_status" do
   iterate $ds_keys
   request do
     auth $auth_aws
@@ -100,69 +261,40 @@ datasource "ds_keys_with_rotation" do
     host join(["kms.", val(iter_item, "region"), ".amazonaws.com"])
     path "/"
     header "User-Agent", "RS Policies"
-    header 'Content-Type', 'application/x-amz-json-1.1'
-    header 'X-Amz-Target', 'TrentService.GetKeyRotationStatus'
-    body join(['{"KeyId": "', val(iter_item, "id"), '"}'])
+    header "Content-Type", "application/x-amz-json-1.1"
+    header "X-Amz-Target", "TrentService.GetKeyRotationStatus"
+    body_field "KeyId", val(iter_item, "id")
     ignore_status 400
   end
   result do
     encoding "json"
+    field "rotation_enabled", jmes_path(response, "KeyRotationEnabled")
     field "arn", val(iter_item, "arn")
     field "id", val(iter_item, "id")
     field "region", val(iter_item, "region")
-    field "rotation_enabled", jmes_path(response, "KeyRotationEnabled")
   end
 end
 
 datasource "ds_keys_without_rotation" do
-  run_script $js_keys_without_rotation, $ds_keys_with_rotation
-end
-
-###############################################################################
-# Scripts
-###############################################################################
-
-script "js_regions_clean", type:"javascript" do
-  parameters "ds_regions_list"
-  result "result"
-  code <<-EOS
-    result = []
-
-    _.each(ds_regions_list, function(region_item) {
-      result.push(region_item.region)
-    })
-EOS
-end
-
-script "js_keys", type:"javascript" do
-  parameters "ds_regions_with_keys"
-  result "result"
-  code <<-EOS
-    result = []
-
-    _.each(ds_regions_with_keys, function(region) {
-      _.each(region.keys, function(key) {
-        result.push({
-          arn: key.KeyArn,
-          id: key.KeyId,
-          region: region.region
-        })
-      })
-    })
-EOS
+  run_script $js_keys_without_rotation, $ds_keys_with_rotation_status, $ds_aws_account, $ds_applied_policy
 end
 
 script "js_keys_without_rotation", type:"javascript" do
-  parameters "ds_keys_with_rotation"
+  parameters "ds_keys_with_rotation_status", "ds_aws_account", "ds_applied_policy"
   result "result"
   code <<-EOS
-    result = []
+  bad_keys = _.reject(ds_keys_with_rotation_status, function(key) { return key['rotation_enabled'] })
 
-    _.each(ds_keys_with_rotation, function(key) {
-      if (key.rotation_enabled != true) {
-        result.push(key)
-      }
-    })
+  result = _.map(bad_keys, function(key) {
+    return {
+      accountID: ds_aws_account['id'],
+      accountName: ds_aws_account['name'],
+      id: key['id'],
+      arn: key['arn'],
+      region: key['region'],
+      policy_name: ds_applied_policy['name']
+    }
+  })
 EOS
 end
 
@@ -170,18 +302,24 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_keys_without_rotation" do
-  validate $ds_keys_without_rotation do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Customer Managed Keys (CMKs) Found Without Rotation Enabled"
-    escalate $esc_report_keys_without_rotation
-    check eq(size(data),0)
+policy "pol_keys_without_rotation" do
+  validate_each $ds_keys_without_rotation do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Customer Managed Keys (CMKs) Without Rotation Enabled Found"
+    check eq(val(item, "id"), "")
+    escalate $esc_email
     export do
       resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
       field "id" do
-        label "Name"
+        label "Key ID"
       end
       field "arn" do
-        label "ARN"
+        label "Key ARN"
       end
       field "region" do
         label "Region"
@@ -194,7 +332,7 @@ end
 # Escalations
 ###############################################################################
 
-escalation "esc_report_keys_without_rotation" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"

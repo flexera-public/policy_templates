@@ -41,8 +41,9 @@ default_child_policy_template_files = [
   "../../security/aws/ebs_ensure_encryption_default/ebs_ensure_encryption_default.pt",
   "../../security/aws/ebs_unencrypted_volumes/aws_unencrypted_volumes.pt",
   "../../security/aws/elb_unencrypted/aws_elb_encryption.pt",
-  "../../security/aws/rds_publicly_accessible/aws_publicly_accessible_rds_instances.pt",
+  "../../security/aws/loadbalancer_internet_facing/aws_internet_facing_elbs.pt",
   "../../security/aws/public_buckets/aws_public_buckets.pt",
+  "../../security/aws/rds_publicly_accessible/aws_publicly_accessible_rds_instances.pt",
   "../../cost/aws/superseded_ebs_volumes/aws_superseded_ebs_volumes.pt",
   "../../cost/aws/rightsize_ebs_volumes/aws_rightsize_ebs_volumes.pt",
   # Azure Policy Templates

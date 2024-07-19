@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.0.0
+
+- Policy template renamed to `AWS IAM Root User Doing Everyday Tasks` to better reflect its functionality
+- Added ability to specify a look back period for checking root access
+- Improved readability of incident output with additional formatting and context
+- Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera credential
+
 ## v2.6
 
 - Updated description of `Account Number` parameter
