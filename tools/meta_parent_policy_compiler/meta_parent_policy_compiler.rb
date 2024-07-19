@@ -42,7 +42,6 @@ default_child_policy_template_files = [
   "../../security/aws/ebs_unencrypted_volumes/aws_unencrypted_volumes.pt",
   "../../security/aws/elb_unencrypted/aws_elb_encryption.pt",
   "../../security/aws/loadbalancer_internet_facing/aws_internet_facing_elbs.pt",
-  "../../security/aws/rds_publicly_accessible/aws_publicly_accessible_rds_instances.pt",
   "../../security/aws/public_buckets/aws_public_buckets.pt",
   "../../security/aws/rds_publicly_accessible/aws_publicly_accessible_rds_instances.pt",
   "../../cost/aws/superseded_ebs_volumes/aws_superseded_ebs_volumes.pt",
