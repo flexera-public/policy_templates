@@ -1,4 +1,4 @@
-# AWS IAM Users With Directly-Assigned Policies
+# AWS IAM Users With Directly-Attached Policies
 
 ## What It Does
 
