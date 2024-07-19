@@ -2,7 +2,7 @@
 
 ## v2.3.0
 
-- Added support automatic currency detection and conversion. Recommendations will now be available in currency from user settings.
+- Implemented automatic currency detection and conversion, ensuring recommendations are displayed in the currency configured in the user's settings.
 
 ## v2.2.0
 
