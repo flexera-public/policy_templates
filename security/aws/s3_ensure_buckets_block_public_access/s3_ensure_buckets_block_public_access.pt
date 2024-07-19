@@ -1,7 +1,7 @@
-name "AWS S3 Ensure 'Block Public Access' Configured For All Buckets"
+name "AWS S3 Buckets Without Public Access Blocked"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report if 'Block Public Access' is not configured for any S3 Buckets. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/s3_ensure_buckets_block_public_access) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Reports any AWS S3 buckets without the necessary settings enabled to block public access. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/s3_ensure_buckets_block_public_access) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Security"
 severity "high"
@@ -164,7 +164,6 @@ datasource "ds_aws_buckets" do
     auth $auth_aws
     host "s3.amazonaws.com"
     path "/"
-    header "User-Agent", "RS Policies"
   end
   result do
     encoding "xml"
@@ -179,22 +178,19 @@ datasource "ds_aws_buckets_with_region" do
   iterate $ds_aws_buckets
   request do
     auth $auth_aws
-    host "s3.amazonaws.com"
-    path join(["/", val(iter_item, "id")])
-    query "location", ""
+    host join([val(iter_item, "id"), ".s3.amazonaws.com"])
+    path "/?location"
     header "User-Agent", "RS Policies"
+    ignore_status [403, 404]
   end
   result do
     encoding "xml"
+    field "region", xpath(response, "//LocationConstraint")
     field "id", val(iter_item, "id")
     field "creation_date", val(iter_item, "creation_date")
-    field "region", response
   end
 end
 
-# https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetBucketLocation.html
-# "Buckets in Region us-east-1 have a LocationConstraint of null."
-# This is to clean up the data and replace that null value with us-east-1
 datasource "ds_aws_buckets_with_region_cleaned" do
   run_script $js_aws_buckets_with_region_cleaned, $ds_aws_buckets_with_region
 end
@@ -203,22 +199,13 @@ script "js_aws_buckets_with_region_cleaned", type:"javascript" do
   parameters "ds_aws_buckets_with_region"
   result "result"
   code <<-EOS
-    result = []
+  result = _.map(ds_aws_buckets_with_region, function(bucket) {
+    region = bucket['region']
+    if (typeof(bucket['region']) != 'string' || bucket['region'] == '') { region = 'us-east-1' }
+    if (bucket['region'].toLowerCase().trim() == "eu") { region = 'eu-west-1' }
 
-    for ( i = 0; i < ds_aws_buckets_with_region.length; i++ ) {
-      if (ds_aws_buckets_with_region[i].region == "\\n") {
-        ds_aws_buckets_with_region[i].region = "us-east-1"
-        ds_aws_buckets_with_region[i].host = "s3-external-1.amazonaws.com"
-      } else if (ds_aws_buckets_with_region[i].region == "EU" || ds_aws_buckets_with_region[i].region == "\\nEU") {
-        ds_aws_buckets_with_region[i].region = "eu-west-1"
-        ds_aws_buckets_with_region[i].host = "s3-" + ds_aws_buckets_with_region[i]["region"] + ".amazonaws.com"
-      } else {
-        ds_aws_buckets_with_region[i].region = ds_aws_buckets_with_region[i].region.substring(1)
-        ds_aws_buckets_with_region[i].host = "s3-" + ds_aws_buckets_with_region[i]["region"] + ".amazonaws.com"
-      }
-
-      result.push(ds_aws_buckets_with_region[i])
-    }
+    return { id: bucket['id'], creation_date: bucket['creation_date'], region: region }
+  })
 EOS
 end
 
@@ -226,69 +213,49 @@ datasource "ds_aws_buckets_with_pab_info" do
   iterate $ds_aws_buckets_with_region_cleaned
   request do
     auth $auth_aws
-    host val(iter_item, "host")
-    path join(["/", val(iter_item, "id")])
-    query "publicAccessBlock", ""
+    host join([val(iter_item, "id"), ".s3.amazonaws.com"])
+    path "/?publicAccessBlock"
     header "User-Agent", "RS Policies"
-    ignore_status 404
+    ignore_status [403, 404]
   end
   result do
     encoding "xml"
-    field "id", val(iter_item, "id")
-    field "creation_date", val(iter_item, "creation_date")
-    field "region", val(iter_item, "region")
     field "block_public_acls", xpath(response, "//PublicAccessBlockConfiguration/BlockPublicAcls")
     field "ignore_public_acls", xpath(response, "//PublicAccessBlockConfiguration/IgnorePublicAcls")
     field "block_public_policy", xpath(response, "//PublicAccessBlockConfiguration/BlockPublicPolicy")
     field "restrict_public_buckets", xpath(response, "//PublicAccessBlockConfiguration/RestrictPublicBuckets")
+    field "id", val(iter_item, "id")
+    field "creation_date", val(iter_item, "creation_date")
+    field "region", val(iter_item, "region")
   end
 end
 
-datasource "ds_aws_buckets_without_pab" do
-  run_script $js_aws_buckets_without_pab, $ds_aws_buckets_with_pab_info, $ds_aws_buckets_with_region_cleaned
+datasource "ds_aws_buckets_without_access_blocked" do
+  run_script $js_aws_buckets_without_access_blocked, $ds_aws_buckets_with_pab_info, $ds_aws_account, $ds_applied_policy
 end
 
-script "js_aws_buckets_without_pab", type:"javascript" do
-  parameters "ds_aws_buckets_with_pab_info", "ds_aws_buckets_with_region"
+script "js_aws_buckets_without_access_blocked", type:"javascript" do
+  parameters "ds_aws_buckets_with_pab_info", "ds_aws_account", "ds_applied_policy"
   result "result"
-  code <<-EOS
-    result = []
+  code <<-'EOS'
+  bad_buckets = _.filter(ds_aws_buckets_with_pab_info, function(bucket) {
+    return bucket['block_public_acls'] != "true" || bucket['ignore_public_acls'] != "true" || bucket['block_public_policy'] != "true" || bucket['restrict_public_buckets'] != "true"
+  })
 
-    foundlistnames = []
-    _.each(ds_aws_buckets_with_pab_info, function(bucket) {
-      foundlistnames.push(bucket.id)
-    })
-
-    _.each(ds_aws_buckets_with_region, function(bucket) {
-      add_to_results = 1
-      _.each(foundlistnames, function(name) {
-        console.log(name)
-        if (bucket.id == name) {
-          add_to_results = 0
-        }
-      })
-
-      if (add_to_results == 1) {
-        result.push({
-          id: bucket.id,
-          creation_date: bucket.creation_date,
-          region: bucket.region,
-          block_public_acls: "false",
-          block_public_policy: "false",
-          ignore_public_acls: "false",
-          restrict_public_buckets: "false"
-        })
-      }
-    })
-
-    _.each(ds_aws_buckets_with_pab_info, function(bucket) {
-      if (bucket.block_public_acls == "false" || bucket.ignore_public_acls == "false" ||
-          bucket.block_public_policy == "false" || bucket.restrict_public_buckets == "false") {
-        result.push(bucket)
-      }
-    })
-
-    result = _.sortBy(result, 'id');
+  result = _.map(bad_buckets, function(bucket) {
+    return {
+      accountID: ds_aws_account['id'],
+      accountName: ds_aws_account['name'],
+      id: bucket['id'],
+      region: bucket['region'],
+      creation_date: bucket['creation_date'],
+      block_public_acls: bucket['block_public_acls'],
+      ignore_public_acls: bucket['ignore_public_acls'],
+      block_public_policy: bucket['block_public_policy'],
+      restrict_public_buckets: bucket['restrict_public_buckets'],
+      policy_name: ds_applied_policy['name']
+    }
+  })
 EOS
 end
 
@@ -296,15 +263,21 @@ end
 # Policy
 ###############################################################################
 
-policy "pol_aws_buckets_without_pab" do
-  validate $ds_aws_buckets_without_pab do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} S3 Buckets Without 'Block Public Access' Configured Found"
-    check eq(size(data), 0)
+policy "pol_aws_buckets_without_access_blocked" do
+  validate_each $ds_aws_buckets_without_access_blocked do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS S3 Buckets Without Public Access Blocked Found"
+    check eq(val(item, "id"), "")
     escalate $esc_email
     export do
       resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
       field "id" do
-        label "S3 Bucket"
+        label "Bucket Name"
       end
       field "region" do
         label "Region"
