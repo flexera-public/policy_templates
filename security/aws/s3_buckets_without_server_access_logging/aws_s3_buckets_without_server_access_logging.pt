@@ -1,16 +1,17 @@
 name "AWS S3 Buckets Without Server Access Logging"
 rs_pt_ver 20180301
 type "policy"
-short_description "Reports any AWS S3 buckets that do not have server access logging enabled. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/s3_buckets_without_server_access_logging) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Reports any AWS S3 buckets that do not have server access logging enabled and, optionally, enables it. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/s3_buckets_without_server_access_logging) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
-severity "high"
 category "Security"
+severity "high"
+default_frequency "daily"
 info(
   version: "3.0.0",
   provider: "AWS",
-  service: "S3",
+  service: "Storage",
   policy_set: ""
-  )
+)
 
 ###############################################################################
 # Parameters
@@ -32,36 +33,11 @@ parameter "param_aws_account_number" do
   default ""
 end
 
-parameter "param_target_bucket" do
-  type "string"
-  category "Policy Settings"
-  label "Target Bucket"
-  description "An existing bucket in same region as source to be used for logging."
-  default ""
-end
-
-parameter "param_target_prefix" do
-  type "string"
-  category "Policy Settings"
-  label "Target Bucket Prefix"
-  description "If using a Target Bucket, this element lets you specify a prefix for the keys that the log files will be stored under."
-  default ""
-end
-
-parameter "param_exclude_target_bucket" do
-  type "string"
-  category "Policy Settings"
-  label "Exclude Target Bucket"
-  description "Exclude target bucket as additional fees may incur. "
-  allowed_values "true","false"
-end
-
-parameter "param_automatic_action" do
+parameter "param_exclude_buckets" do
   type "list"
-  category "Actions"
-  label "Automatic Actions"
-  description "When this value is set, this policy will automatically take the selected action."
-  allowed_values ["Enable Server Access Logging"]
+  category "Policy Settings"
+  label "Exclude S3 Buckets"
+  description "Names of S3 buckets to always exclude from the results."
   default []
 end
 
@@ -254,15 +230,15 @@ datasource "ds_aws_buckets_with_logging" do
 end
 
 datasource "ds_aws_buckets_without_server_access_logging" do
-  run_script $js_aws_buckets_without_server_access_logging, $ds_aws_buckets_with_logging, $ds_aws_account, $ds_applied_policy, $param_target_bucket, $param_exclude_target_bucket
+  run_script $js_aws_buckets_without_server_access_logging, $ds_aws_buckets_with_logging, $ds_aws_account, $ds_applied_policy, $param_exclude_buckets
 end
 
 script "js_aws_buckets_without_server_access_logging", type:"javascript" do
-  parameters "ds_aws_buckets_with_logging", "ds_aws_account", "ds_applied_policy"
+  parameters "ds_aws_buckets_with_logging", "ds_aws_account", "ds_applied_policy", "param_exclude_buckets"
   result "result"
   code <<-'EOS'
   bad_buckets = _.filter(ds_aws_buckets_with_logging, function(bucket) {
-    // logic_or(logic_not(eq(val(item, "target_bucket"), "")),logic_and(eq($param_exclude_target_bucket,"true"),eq(val(item,"bucket_name"),$param_target_bucket)))
+    return bucket['target_bucket'] == '' && _.contains(param_exclude_buckets, bucket['id']) == false
   })
 
   result = _.map(bad_buckets, function(bucket) {
@@ -321,75 +297,83 @@ escalation "esc_email" do
 end
 
 escalation "esc_enable_logging" do
-  automatic contains($param_automatic_action, "Enable Server Access Logging")
+  automatic false
   label "Enable Server Access Logging"
   description "Approval to enable server access logging on all selected AWS S3 Buckets"
-  run "enable_logging_buckets", data, $param_target_bucket, $param_target_prefix
+  parameter "param_target_bucket" do
+    type "string"
+    category "Policy Settings"
+    label "Target Bucket"
+    description "Name of an existing S3 bucket in same region as source to be used for logging."
+    # No default value, user input required
+  end
+  parameter "param_log_prefix" do
+    type "string"
+    category "Policy Settings"
+    label "Log Prefix"
+    description "The prefix for the keys that the log files will be stored under when storing them in the target bucket."
+    default ""
+  end
+  run "enable_logging_buckets", data, $param_target_bucket, $param_log_prefix
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define enable_logging_buckets($data, $param_target_bucket, $param_target_prefix, $$rs_optima_host) return $all_responses do
-  $$debug = "false"
-  $all_responses = []
+define enable_logging_buckets($data, $param_target_bucket, $param_log_prefix) return $all_responses do
+  $$all_responses = []
 
-  foreach $item in $data do
-    if $param_target_prefix == ""
-      $target_prefix = $item["id"] + "-logging"
-    else
-      $target_prefix = $param_target_prefix
+  foreach $bucket in $data do
+    sub on_error: handle_error() do
+      call enable_logging_bucket($bucket, $param_target_bucket, $param_log_prefix) retrieve $enable_response
+      $$all_responses << $enable_response
     end
+  end
 
-      $response = http_request(
-        verb: "put",
-        host: $item["id"]+"."+$item["host"],
-        https: true,
-        auth: $$auth_aws,
-        href: "/",
-        headers: {
-          "content-type": "application/xml"
-        },
-        query_strings: { "logging": ""},
-        body: "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<BucketLoggingStatus xmlns=\"http://doc.s3.amazonaws.com/2006-03-01\"><LoggingEnabled><TargetBucket>"+$param_target_bucket+"</TargetBucket><TargetPrefix>"+$target_prefix+"</TargetPrefix></LoggingEnabled></BucketLoggingStatus>"
-      )
-      $all_responses << $response
-      call sys_log('all_responses', to_s($all_responses))
-
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
   end
 end
 
-define sys_log($subject, $detail) do
-  # Create empty errors array if doesn't already exist
+define enable_logging_bucket($bucket, $param_target_bucket, $param_log_prefix) return $response do
+  $log_prefix = $param_log_prefix
+
+  if $log_prefix == ""
+    $log_prefix = $bucket["id"] + "-logging"
+  end
+
+  $host = $bucket["id"] + ".s3.amazonaws.com"
+  $href = '/?logging'
+  $url = $host + $href
+  $body = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<BucketLoggingStatus xmlns=\"http://doc.s3.amazonaws.com/2006-03-01\"><LoggingEnabled><TargetBucket>" + $param_target_bucket + "</TargetBucket><TargetPrefix>" + $log_prefix + "</TargetPrefix></LoggingEnabled></BucketLoggingStatus>"
+  task_label("PUT " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "put",
+    href: $href,
+    host: $host,
+    body: $body
+  )
+
+  task_label("Put AWS S3 Bucket response: " + $bucket["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "PUT " + $url, "resp": $response})
+
+  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
+    raise "Unexpected response putting AWS S3 Bucket: "+ $bucket["id"] + " " + to_json($response)
+  else
+    task_label("Put AWS S3 Bucket successful: " + $bucket["id"])
+  end
+end
+
+define handle_error() do
   if !$$errors
     $$errors = []
   end
-  # Check if debug is enabled
-  if $$debug
-    # Append to global $$errors
-    # This is the suggested way to capture errors
-    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
-    # If Flexera NAM Zone, create audit_entries [to be deprecated]
-    # This is the legacy method for capturing errors and only supported on Flexera NAM
-    if $$rs_optima_host == "api.optima.flexeraeng.com"
-      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
-      $task_label = "Creating audit entry for " + $subject
-      sub task_label: $task, on_error: skip_error_and_append($task) do
-        rs_cm.audit_entries.create(
-          notify: "None",
-          audit_entry: {
-            auditee_href: @@account,
-            summary: $subject,
-            detail: $detail
-          }
-        )
-      end # End sub on_error
-    end # End if rs_optima_host
-  end # End if debug is enabled
-end
-
-define skip_error_and_append($subject) do
-  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
   $_error_behavior = "skip"
 end

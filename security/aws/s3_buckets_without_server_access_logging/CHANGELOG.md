@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.0.0
+
+- Policy no longer allows for automatic actions
+- Manual actions now allow for unique target bucket and log prefix values per action
+- Added additional fields to incident table for added context
+- Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera credential
+
 ## v2.8
 
 - fixed link to README in policy description
