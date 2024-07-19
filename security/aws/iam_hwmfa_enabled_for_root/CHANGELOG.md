@@ -1,5 +1,12 @@
 # Changelog
 
+## v3.0.0
+
+- Policy template renamed to `AWS IAM Root User Account Without Hardware MFA` to better reflect its functionality
+- Improved readability of incident output with additional formatting and context
+- Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera credential
+
 ## v2.5
 
 - Updated description of `Account Number` parameter
