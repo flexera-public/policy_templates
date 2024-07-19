@@ -1,13 +1,13 @@
-name "AWS Ensure IAM Users Receive Permissions Only Through Groups"
+name "AWS IAM Users With Directly-Attached Policies"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report if any IAM users have policies assigned directly instead of through groups. \n See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/iam_users_perms_via_groups_only) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Report IAM users that have policies attached directly instead of through groups. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/iam_users_perms_via_groups_only) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Security"
 severity "high"
 default_frequency "daily"
 info(
-  version: "2.2",
+  version: "3.0.0",
   provider: "AWS",
   service: "IAM",
   policy_set: "CIS",
@@ -20,13 +20,23 @@ info(
 )
 
 ###############################################################################
-# User inputs
+# Parameters
 ###############################################################################
 
 parameter "param_email" do
   type "list"
-  label "Email Address"
-  description "Email addresses of the recipients you wish to notify"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify."
+  default []
+end
+
+parameter "param_aws_account_number" do
+  type "string"
+  category "Policy Settings"
+  label "Account Number"
+  description "Leave blank; this is for automated use with Meta Policies. See README for more details."
+  default ""
 end
 
 ###############################################################################
@@ -34,20 +44,124 @@ end
 ###############################################################################
 
 credentials "auth_aws" do
-  schemes "aws","aws_sts"
+  schemes "aws", "aws_sts"
   label "AWS"
   description "Select the AWS Credential from the list"
   tags "provider=aws"
+  aws_account_number $param_aws_account_number
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get AWS account info
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account", xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_get_caller_identity
+end
+
+script "js_aws_account", type:"javascript" do
+  parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+  result = _.find(ds_cloud_vendor_accounts, function(account) {
+    return account['id'] == ds_get_caller_identity[0]['account']
+  })
+
+  // This is in case the API does not return the relevant account info
+  if (result == undefined) {
+    result = {
+      id: ds_get_caller_identity[0]['account'],
+      name: "",
+      tags: {}
+    }
+  }
+EOS
+end
 
 datasource "ds_iam_users" do
   request do
     auth $auth_aws
-    verb "GET"
     host "iam.amazonaws.com"
     path "/"
     query "Action", "ListUsers"
@@ -70,7 +184,6 @@ datasource "ds_iam_users_with_policies" do
   iterate $ds_iam_users
   request do
     auth $auth_aws
-    verb "GET"
     host "iam.amazonaws.com"
     path "/"
     query "Action", "ListUserPolicies"
@@ -81,12 +194,12 @@ datasource "ds_iam_users_with_policies" do
   end
   result do
     encoding "json"
+    field "policies", jmes_path(response, "ListUserPoliciesResponse.ListUserPoliciesResult.PolicyNames")
     field "id", val(iter_item, "id")
     field "name", val(iter_item, "name")
     field "arn", val(iter_item, "arn")
     field "create_date", val(iter_item, "create_date")
     field "password_last_used", val(iter_item, "password_last_used")
-    field "policies", jmes_path(response, "ListUserPoliciesResponse.ListUserPoliciesResult.PolicyNames")
   end
 end
 
@@ -104,46 +217,46 @@ datasource "ds_iam_users_attached" do
   end
   result do
     encoding "xml"
-    field "id", val(iter_item, "id")
-    field "name", val(iter_item, "name")
-    field "arn", val(iter_item, "arn")
-    field "create_date", val(iter_item, "create_date")
-    field "password_last_used", val(iter_item, "password_last_used")
-    field "policies", val(iter_item, "policies")
     field "attached" do
       collect xpath(response, "//ListAttachedUserPoliciesResult/AttachedPolicies/member", "array") do
         field "name", xpath(col_item, "PolicyName")
         field "arn", xpath(col_item, "PolicyArn")
       end
     end
+    field "id", val(iter_item, "id")
+    field "name", val(iter_item, "name")
+    field "arn", val(iter_item, "arn")
+    field "create_date", val(iter_item, "create_date")
+    field "password_last_used", val(iter_item, "password_last_used")
+    field "policies", val(iter_item, "policies")
   end
 end
 
 datasource "ds_iam_users_with_direct_policies" do
-  run_script $js_iam_users_with_direct_policies, $ds_iam_users_attached
+  run_script $js_iam_users_with_direct_policies, $ds_iam_users_attached, $ds_aws_account, $ds_applied_policy
 end
 
-###############################################################################
-# Scripts
-###############################################################################
-
 script "js_iam_users_with_direct_policies", type:"javascript" do
-  parameters "ds_iam_users_attached"
+  parameters "ds_iam_users_attached", "ds_aws_account", "ds_applied_policy"
   result "result"
   code <<-EOS
-    result = []
+  bad_users = _.filter(ds_iam_users_attached, function(user) {
+    return user['policies'].length > 0 || user['attached'].length > 0
+  })
 
-    _.each(ds_iam_users_attached, function(user) {
-      if (user.policies.length > 0 || user.attached.length > 0) {
-        result.push({
-          id: user.id,
-          name: user.name,
-          arn: user.arn,
-          inline_policies: user.policies.length,
-          attached_policies: user.attached.length
-        })
-      }
-    })
+  result = _.map(bad_users, function(user) {
+    return {
+      accountID: ds_aws_account['id'],
+      accountName: ds_aws_account['name'],
+      id: user['id'],
+      resourceName: user['name'],
+      resourceARN: user['arn'],
+      createDate: new Date(user['create_date']  * 1000).toISOString(),
+      inline_policies: user['policies'].length,
+      attached_policies: user['attached'].length,
+      policy_name: ds_applied_policy['name']
+    }
+  })
 EOS
 end
 
@@ -151,21 +264,24 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_iam_users_with_direct_policies" do
-  validate $ds_iam_users_with_direct_policies do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Users With Non-Group Policies Found"
-    escalate $esc_report_iam_users_with_direct_policies
-    check eq(size(data),0)
+policy "pol_iam_users_with_direct_policies" do
+  validate_each $ds_iam_users_with_direct_policies do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS IAM Users With Directly-Attached Policies Found"
+    check eq(val(item, "id"), "")
+    escalate $esc_email
     export do
       resource_level true
-      field "name" do
-        label "User Name"
-      end
       field "id" do
         label "User ID"
       end
-      field "arn" do
+      field "resourceName" do
+        label "User Name"
+      end
+      field "resourceARN" do
         label "User ARN"
+      end
+      field "createDate" do
+        label "Created At"
       end
       field "inline_policies" do
         label "Inline Policies (#)"
@@ -181,7 +297,7 @@ end
 # Escalations
 ###############################################################################
 
-escalation "esc_report_iam_users_with_direct_policies" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"

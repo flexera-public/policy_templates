@@ -1,25 +1,16 @@
-# AWS IAM Attached Admin Policies
+# AWS Unused IAM Credentials
 
 ## What It Does
 
-This policy template reports any IAM policies that are both attached and have admin access; AWS policies should grant specific permissions based on the principle of least privilege. Optionally, this report can be emailed.
+This policy template reports on any IAM credentials in the AWS account that have not been used for a user-specified number of days. Optionally, this report can be emailed.
 
-## How It Works
-
-An IAM policy is considered to have admin access if the following exists within the permission statement:
-
-  ```json
-  {
-      "Effect": "Allow",
-      "Action": "*",
-      "Resource": "*"
-  }
-  ```
+AWS IAM users can access AWS resources using different types of credentials, such as passwords or access keys. It is recommended that all credentials that have been unused in 45 or greater days be deactivated or removed.
 
 ## Input Parameters
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify.
 - *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
+- *Days Unused* - Number of days a credential needs to be unused to include it in the report.
 
 ## Policy Actions
 
@@ -31,8 +22,8 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 
 - [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
   - `sts:GetCallerIdentity`
-  - `iam:ListPolicies`
-  - `iam:GetPolicyVersion`
+  - `iam:GenerateCredentialReport`
+  - `iam:GetCredentialReport`
 
   Example IAM Permission Policy:
 
@@ -44,8 +35,8 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
               "Effect": "Allow",
               "Action": [
                   "sts:GetCallerIdentity",
-                  "iam:ListPolicies",
-                  "iam:GetPolicyVersion"
+                  "iam:GenerateCredentialReport",
+                  "iam:GetCredentialReport"
               ],
               "Resource": "*"
           }

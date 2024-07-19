@@ -1,49 +1,52 @@
-# AWS MFA Enabled For Root
+# AWS IAM Root User Account Without MFA
 
-## What it does
+## What It Does
 
-Multi-factor authentication (MFA) increases account security by requiring the user have access to another device in order to log into the account in addition to their username and password. It is recommended that MFA be enabled on all accounts. This policy checks the root account to verify that MFA is enabled.
+This policy template reports if the root user account for an AWS account does not have MFA (multi-factor authentication) enabled. Optionally, this report can be emailed.
 
-## Functional Details
-
-When the root account does not have MFA enabled, an email action is triggered automatically to notify the specified users of the incident.
+Multi-factor authentication increases account security by requiring the user have access to another device in order to log into the account in addition to their username and password. Hardware MFA uses a hardware tool, such as a physical key, to authenticate. It is recommended that MFA be enabled on all accounts, and in some cases, hardware MFA is preferred.
 
 ## Input Parameters
 
-- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
-- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [more](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
+- *Email Addresses* - Email addresses of the recipients you wish to notify.
+- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
 
 ## Policy Actions
 
-- Send an email report
+- Sends an email notification.
 
 ## Prerequisites
 
-This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
-### Credential configuration
+- [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
+  - `sts:GetCallerIdentity`
+  - `iam:GetAccountSummary`
+  - `iam:ListVirtualMFADevices`
 
-For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
+  Example IAM Permission Policy:
 
-Provider tag value to match this policy: `aws` , `aws_sts`
+  ```json
+  {
+      "Version": "2012-10-17",
+      "Statement": [
+          {
+              "Effect": "Allow",
+              "Action": [
+                  "sts:GetCallerIdentity",
+                  "iam:GetAccountSummary",
+                  "iam:ListVirtualMFADevices"
+              ],
+              "Resource": "*"
+          }
+      ]
+  }
+  ```
 
-Required permissions in the provider:
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - `billing_center_viewer`
 
-```javascript
-{
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Effect": "Allow",
-            "Action": [
-                "sts:GetCallerIdentity",
-                "iam:GetAccountSummary"
-            ],
-            "Resource": "*"
-        }
-    ]
-}
-```
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ## Supported Clouds
 
