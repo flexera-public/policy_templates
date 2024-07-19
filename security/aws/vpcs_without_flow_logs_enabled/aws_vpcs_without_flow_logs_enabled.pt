@@ -33,6 +33,23 @@ parameter "param_aws_account_number" do
   default ""
 end
 
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
 parameter "param_regions_allow_or_deny" do
   type "string"
   category "Filters"
@@ -51,11 +68,6 @@ parameter "param_regions_list" do
   default []
 end
 
-parameter "param_exclude_tags" do
-  type "list"
-  label "Ignore Tags"
-  description "List of one or more Tags that will exclude Classic Load Balancer from actions being taken. Format: Key=Value"
-end
 
 ###############################################################################
 # Authentication
@@ -233,15 +245,13 @@ script "js_regions", type:"javascript" do
 EOS
 end
 
-#Get the list of all vpcs
-datasource "ds_vpc_list" do
+datasource "ds_vpcs" do
   iterate $ds_regions
   request do
     auth $auth_aws
     pagination $pagination_aws_xml
-    host join(['ec2.',val(iter_item,"region"),'.amazonaws.com'])
-    path '/'
-    verb 'GET'
+    host join(["ec2.", val(iter_item,"region"), ".amazonaws.com"])
+    path "/"
     query "Action", "DescribeVpcs"
     query "Version", "2016-11-15"
   end
@@ -253,22 +263,101 @@ datasource "ds_vpc_list" do
       field "id", xpath(col_item, "vpcId")
       field "tags" do
         collect xpath(col_item, "tagSet/item") do
-          field "tagKey", xpath(col_item, "key")
-          field "tagValue", xpath(col_item, "value")
+          field "key", xpath(col_item, "key")
+          field "value", xpath(col_item, "value")
         end
       end
     end
   end
 end
 
-datasource "ds_flowlog_list" do
+datasource "ds_vpcs_tag_filtered" do
+  run_script $js_vpcs_tag_filtered, $ds_vpcs, $param_exclusion_tags, $param_exclusion_tags_boolean
+end
+
+script "js_vpcs_tag_filtered", type: "javascript" do
+  parameters "ds_vpcs", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  result "result"
+  code <<-EOS
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  if (param_exclusion_tags.length > 0) {
+    result = _.reject(ds_vpcs, function(resource) {
+      resource_tags = {}
+
+      if (typeof(resource['tags']) == 'object') {
+        _.each(resource['tags'], function(tag) { resource_tags[tag['key']] = tag['value'] })
+      }
+
+      // Store a list of found tags
+      found_tags = []
+
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_tag = resource_tags[comparator['key']]
+
+        if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+        if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+        if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_tag == undefined) { found_tags.push(string) }
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+      })
+
+      all_tags_found = found_tags.length == comparators.length
+      any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+      return all_tags_found || any_tags_found
+    })
+  } else {
+    result = ds_vpcs
+  }
+EOS
+end
+
+datasource "ds_flowlogs" do
   iterate $ds_regions
   request do
     auth $auth_aws
     pagination $pagination_aws_xml
-    host join(['ec2.',val(iter_item,"region"),'.amazonaws.com'])
-    path '/'
-    verb 'GET'
+    host join(["ec2.", val(iter_item,"region"), ".amazonaws.com"])
+    path "/"
     query "Action", "DescribeFlowLogs"
     query "Version", "2016-11-15"
   end
@@ -281,8 +370,8 @@ datasource "ds_flowlog_list" do
       field "flowLogStatus", xpath(col_item, "flowLogStatus")
       field "tags" do
         collect xpath(col_item, "tagSet/item") do
-          field "tagKey", xpath(col_item, "key")
-          field "tagValue", xpath(col_item, "value")
+          field "key", xpath(col_item, "key")
+          field "value", xpath(col_item, "value")
         end
       end
     end
