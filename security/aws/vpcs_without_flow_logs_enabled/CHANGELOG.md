@@ -1,6 +1,6 @@
 # Changelog
 
-## v3.0.0
+## v4.0.0
 
 - Policy template renamed to `AWS VPCs Without FlowLogs Enabled` to better reflect its functionality
 - Improved region and tag filtering
