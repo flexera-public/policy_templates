@@ -1,4 +1,4 @@
-# AWS Ensure CloudTrail S3 Buckets Have Access Logging
+# AWS CloudTrail S3 Buckets Without Access Logging
 
 ## What It Does
 
