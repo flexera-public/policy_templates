@@ -1,13 +1,13 @@
-name "AWS Ensure CloudTrail Enabled In All Regions"
+name "AWS CloudTrail Not Enabled In All Regions"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report if CloudTrail is not fully enabled in all regions. \n See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/log_ensure_cloudtrail_multiregion) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+short_description "Report if CloudTrail is not fully enabled in all regions. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/log_ensure_cloudtrail_multiregion) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
 long_description ""
 category "Security"
 severity "high"
 default_frequency "daily"
 info(
-  version: "2.1",
+  version: "3.0.0",
   provider: "AWS",
   service: "CloudTrail",
   policy_set: "CIS",
@@ -20,13 +20,23 @@ info(
 )
 
 ###############################################################################
-# User inputs
+# Parameters
 ###############################################################################
 
 parameter "param_email" do
   type "list"
-  label "Email Address"
-  description "Email addresses of the recipients you wish to notify"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify."
+  default []
+end
+
+parameter "param_aws_account_number" do
+  type "string"
+  category "Policy Settings"
+  label "Account Number"
+  description "Leave blank; this is for automated use with Meta Policies. See README for more details."
+  default ""
 end
 
 ###############################################################################
@@ -34,25 +44,129 @@ end
 ###############################################################################
 
 credentials "auth_aws" do
-  schemes "aws","aws_sts"
+  schemes "aws", "aws_sts"
   label "AWS"
   description "Select the AWS Credential from the list"
   tags "provider=aws"
+  aws_account_number $param_aws_account_number
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get AWS account info
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account", xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_get_caller_identity
+end
+
+script "js_aws_account", type:"javascript" do
+  parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+  result = _.find(ds_cloud_vendor_accounts, function(account) {
+    return account['id'] == ds_get_caller_identity[0]['account']
+  })
+
+  // This is in case the API does not return the relevant account info
+  if (result == undefined) {
+    result = {
+      id: ds_get_caller_identity[0]['account'],
+      name: "",
+      tags: {}
+    }
+  }
+EOS
+end
 
 datasource "ds_trail_list" do
   request do
     auth $auth_aws
-    verb "GET"
     host "cloudtrail.us-east-1.amazonaws.com"
     path "/"
+    query "Action", "DescribeTrails"
     header "User-Agent", "RS Policies"
     header "Accept", "application/json"
-    query "Action", "DescribeTrails"
   end
   result do
     encoding "json"
@@ -69,21 +183,20 @@ datasource "ds_trail_list_with_logging" do
   iterate $ds_trail_list
   request do
     auth $auth_aws
-    verb "GET"
     host join(["cloudtrail.", val(iter_item, "homeregion"), ".amazonaws.com"])
     path "/"
+    query "Action", "GetTrailStatus"
+    query "Name", val(iter_item, "arn")
     header "User-Agent", "RS Policies"
     header "Accept", "application/json"
-    query "Action", "GetTrailStatus"
-    query "Name", val(iter_item, "name")
   end
   result do
     encoding "json"
+    field "is_logging", jmes_path(response, "GetTrailStatusResponse.GetTrailStatusResult.IsLogging")
     field "name", val(iter_item, "name")
     field "arn", val(iter_item, "arn")
     field "homeregion", val(iter_item, "homeregion")
     field "multiregion", val(iter_item, "multiregion")
-    field "is_logging", jmes_path(response, "GetTrailStatusResponse.GetTrailStatusResult.IsLogging")
   end
 end
 
@@ -91,13 +204,12 @@ datasource "ds_trail_list_with_selectors" do
   iterate $ds_trail_list_with_logging
   request do
     auth $auth_aws
-    verb "GET"
     host join(["cloudtrail.", val(iter_item, "homeregion"), ".amazonaws.com"])
     path "/"
-    header "User-Agent", "RS Policies"
-    header "Accept", "application/json"
     query "Action", "GetEventSelectors"
     query "TrailName", val(iter_item, "arn")
+    header "User-Agent", "RS Policies"
+    header "Accept", "application/json"
   end
   result do
     encoding "json"
@@ -111,32 +223,28 @@ datasource "ds_trail_list_with_selectors" do
 end
 
 datasource "ds_multiregion_fully_enabled" do
-  run_script $js_multiregion_fully_enabled, $ds_trail_list_with_selectors
+  run_script $js_multiregion_fully_enabled, $ds_trail_list_with_selectors, $ds_aws_account, $ds_applied_policy
 end
 
-###############################################################################
-# Scripts
-###############################################################################
-
 script "js_multiregion_fully_enabled", type:"javascript" do
-  parameters "ds_trail_list_with_selectors"
-  result "multiregion_fully_enabled"
+  parameters "ds_trail_list_with_selectors", "ds_aws_account", "ds_applied_policy"
+  result "result"
   code <<-EOS
-    multiregion_fully_enabled = 0
+  result = {
+    accountID: ds_aws_account['id'],
+    accountName: ds_aws_account['name'],
+    policy_name: ds_applied_policy['name']
+  }
 
-    _.each(ds_trail_list_with_selectors, function(trail) {
-      good_event_selector = false
-
-      _.each(trail.selectors, function(selector) {
-        if (selector.IncludeManagementEvents == true && selector.ReadWriteType == "All") {
-          good_event_selector = true
-        }
-      })
-
-      if (trail.multiregion == true && trail.is_logging == true && good_event_selector == true) {
-        multiregion_fully_enabled = 1
-      }
+  good_trails = _.filter(ds_trail_list_with_selectors, function(trail) {
+    good_selectors = _.filter(trail['selectors'], function(selector) {
+      return selector['IncludeManagementEvents'] == true && selector['ReadWriteType'] == "All"
     })
+
+    return trail['multiregion'] && trail['is_logging'] && good_selectors.length > 0
+  })
+
+  result["multiregion_fully_enabled"] = (good_trails.length > 0).toString()
 EOS
 end
 
@@ -144,17 +252,16 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_check_multiregion" do
+policy "pol_check_multiregion" do
   validate $ds_multiregion_fully_enabled do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): CloudTrail Is Not Enabled For All Regions"
-    escalate $esc_report_no_multiregion
-    check eq(data,1)
+    summary_template "{{ data.policy_name }}: AWS CloudTrail Not Enabled In All Regions"
     detail_template <<-EOS
-      No CloudTrail found that meets the requirements of:
-      * IsMultiRegionTrail set to "true"
-      * IsLogging set to "true"
-      * At least one Event Selector with IncludeManagementEvents set to "true" and ReadWriteType set to "All"
-    EOS
+AWS CloudTrail is not fully enabled in all regions for the following account:
+
+**AWS Account:** {{ data.accountName }} ({{ data.accountID }})
+EOS
+    check eq(val(data, "multiregion_fully_enabled"), "true")
+    escalate $esc_email
   end
 end
 
@@ -162,7 +269,7 @@ end
 # Escalations
 ###############################################################################
 
-escalation "esc_report_no_multiregion" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
