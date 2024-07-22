@@ -1,49 +1,49 @@
-# AWS Restrict Reusing Passwords
+# AWS IAM Password Policy Not Restricting Password Reuse
 
-## What it does
+## What It Does
 
-IAM password policies can prevent the reuse of a given password by the same user. It is recommended that the password policy prevent the reuse of passwords, and this policy checks if the password policy has been configured to disallow reusing passwords and to store at least 24 previous passwords for ensuring this.
-
-## Functional Details
-
-The policy leverages the AWS IAM API to examine the password policy. When there is no password policy, the policy does not restrict reusing passwords, or the policy stores fewer than 24 previous passwords, an email action is triggered automatically to notify the specified users of the incident.
+This policy template reports if an AWS account stores an insufficient number of previously-used passwords due to its password policy. Optionally, this report can be emailed.
 
 ## Input Parameters
 
-- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
-- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [more](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
+- *Email Addresses* - Email addresses of the recipients you wish to notify.
+- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
+- *Minimum Stored Passwords* - The minimum number of stored previously-used passwords to require. New passwords are checked against this list to prevent password reuse.
 
 ## Policy Actions
 
-- Send an email report
+- Sends an email notification.
 
 ## Prerequisites
 
-This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
-### Credential configuration
+- [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
+  - `sts:GetCallerIdentity`
+  - `iam:GetAccountPasswordPolicy`
 
-For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
+  Example IAM Permission Policy:
 
-Provider tag value to match this policy: `aws` , `aws_sts`
+  ```json
+  {
+      "Version": "2012-10-17",
+      "Statement": [
+          {
+              "Effect": "Allow",
+              "Action": [
+                  "sts:GetCallerIdentity",
+                  "iam:GetAccountPasswordPolicy"
+              ],
+              "Resource": "*"
+          }
+      ]
+  }
+  ```
 
-Required permissions in the provider:
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - `billing_center_viewer`
 
-```javascript
-{
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Effect": "Allow",
-            "Action": [
-              "iam:GetAccountPasswordPolicy",
-              "sts:GetCallerIdentity"
-            ],
-            "Resource": "*"
-        }
-    ]
-}
-```
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ## Supported Clouds
 

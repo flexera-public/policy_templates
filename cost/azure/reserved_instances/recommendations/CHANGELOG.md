@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.4.1
+
+- Incident fields for `Subscription ID` and `Subscription Name` no longer show a specific Azure Subscription when providing Shared recommendations.
+
 ## v3.4
 
 - Updated policy to use new source for currency information. Policy functionality is unchanged.

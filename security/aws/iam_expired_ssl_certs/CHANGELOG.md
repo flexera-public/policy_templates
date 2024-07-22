@@ -1,5 +1,11 @@
 # Changelog
 
+## v3.0.0
+
+- Policy template renamed to `AWS IAM Expired SSL/TLS Certificates` to better reflect its functionality
+- Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera credential
+
 ## v2.5
 
 - Updated description of `Account Number` parameter
