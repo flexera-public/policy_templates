@@ -1,0 +1,1530 @@
+name "Flexera Onboarding"
+rs_pt_ver 20180301
+type "policy"
+short_description "Provides a starting point for onboarding Flexera, and maturing your FinOps practice."
+long_description ""
+severity "low"
+default_frequency "daily"
+category "Onboarding"
+info(
+  publish: "true",
+  version: "0.1.0",
+  provider: "Flexera",
+  service: "All",
+  policy_set: "N/A"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_checks_exclude" do
+  type "list"
+  category "Policy Settings"
+  label "Exclude Checks"
+  description "A list of checks to exclude from the \"To Do\" incident results."
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+# This PT should only require Flexera Credentials
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_flexera" do
+  get_page_marker do
+    # Pagination provided by Flexera Engineering.  2024-07.  Maybe eventually a better way to implement..?
+    body_path jq(response, 'try(.nextPage | split("skipToken=") | .[1] | sub("%3D";"=";"g") | sub("%253D";"=";"g")) catch null') # The skipToken is url encoded, so we need to decode the %3D and %253D to = .  This is not ideal implementation this seems to be enough without a true urldecode function
+  end
+  set_page_marker do
+    query "skipToken"
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      ui: "app.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      ui: "app.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      ui: "app.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get Service Account Details
+datasource "ds_service_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/iam/v1/orgs/", rs_org_id, "/service-accounts"])
+  end
+end
+
+# Get Service Account Client Details
+datasource "ds_service_account_clients" do
+  iterate $ds_service_accounts
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/iam/v1/orgs/", rs_org_id, "/service-accounts/", val(iter_item, "id"), "/clients"])
+  end
+  result do
+    encoding "json"
+    collect jq(response, ".[]") do
+      field "service_account", iter_item
+      field "clientId", jq(col_item, ".clientId")
+      field "createdAt", jq(col_item, ".createdAt")
+      field "createdBy", jq(col_item, ".createdBy")
+    end
+  end
+end
+
+datasource "ds_result_service_account" do
+  run_script $js_service_account, $ds_service_accounts, $ds_service_account_clients
+end
+
+script "js_service_account", type: "javascript" do
+  parameters "ds_service_accounts", "ds_service_account_clients"
+  result "check_results"
+  code <<-EOS
+check_results = [];
+// Check to see if there is at least one Service Account
+if (ds_service_accounts.length == 0) {
+  check_results.push({
+    "name": "Service Account",
+    "result": "fail",
+    "details": "No Service Account found."
+  });
+} else {
+  check_results.push({
+      "name": "Service Account",
+      "result": "pass",
+      "details": ds_service_accounts.length+" Service Account(s) found."
+    });
+  // Check to see if there is at least one Service Account Client for at least one Service Account
+  if (ds_service_account_clients.length == 0) {
+    check_results.push({
+      "name": "Service Account Client",
+      "result": "fail",
+      "details": "No Service Account Clients found."
+    });
+  } else {
+    // Check to see if there is at least one Service Account Client for at least one Service Account
+    check_results.push({
+      "name": "Service Account Client",
+      "result": "pass",
+      "details": ds_service_account_clients.length+" Service Account Client(s) found."
+    });
+  }
+}
+EOS
+end
+
+# Get Bill Connection Details
+datasource "ds_bill_connects" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-onboarding/v1/orgs/", rs_org_id, "/bill-connects"])
+  end
+  result do
+    # https://developer.flexera.com/docs/api/finops-onboarding/v1#/Bill%20Connect/Bill%20Connect%23index
+    collect jq(response, ".values[]") do
+      field "aws", jq(col_item, ".aws")
+      field "azureEa", jq(col_item, ".azureEa")
+      field "azureEaManagement", jq(col_item, ".azureEaManagement")
+      field "cbi", jq(col_item, ".cbi")
+      field "cbiAzureMca", jq(col_item, ".cbiAzureMca")
+      field "createdat", jq(col_item, ".createdAt")
+      field "gcp", jq(col_item, ".gcp")
+      field "id", jq(col_item, ".id")
+      field "kind", jq(col_item, ".kind")
+      # use jq to remove "finops:bill-connect-" from the beginning of the kind value
+      field "type", jq(col_item, '.kind | sub("finops:bill-connect-"; "")')
+      field "updatedAt", jq(col_item, ".updatedAt")
+    end
+  end
+end
+
+# Get Bill Connect Validations
+# datasource "ds_bill_connect_validations" do
+#   iterate jq($ds_bill_connects, '[ .[] | select(.kind != "finops:bill-connect-azure-ea") ]', "array")
+#   request do
+#     auth $auth_flexera
+#     host val($ds_flexera_api_hosts, 'flexera')
+#     path join(["/finops-onboarding/v1/orgs/", rs_org_id, "/bill-connects/", val(iter_item, "type"),"/", val(iter_item, "id"), "/validation"])
+#   end
+#   result do
+#     encoding "json"
+#     collect jq(response, ".") do
+#       field "bill_connect", iter_item
+#       field "validation", jq(col_item, ".")
+#     end
+#   end
+# end
+
+datasource "ds_bill_connect_validations" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-onboarding/v1/orgs/", rs_org_id, "/bill-connects/validations"])
+  end
+end
+
+datasource "ds_result_bill_connects" do
+  run_script $js_result_bill_connects, $ds_bill_connect_validations, $ds_credentials, $ds_flexera_api_hosts, rs_org_id, rs_project_id
+end
+
+script "js_result_bill_connects", type: "javascript" do
+  parameters "ds_bill_connect_validations", "ds_credentials", "ds_flexera_api_hosts", "rs_org_id", "rs_project_id"
+  result "check_results"
+  code <<-EOS
+check_results = [];
+// Check to see if there is at least one Bill Connect
+if (ds_bill_connect_validations.values.length == 0) {
+  check_results.push({
+    "name": "First Bill Connect",
+    "result": "fail",
+    "details": "No Bill Connect found."
+  });
+} else {
+  check_results.push({
+    "name": "First Bill Connect",
+    "result": "pass",
+    "details": ds_bill_connect_validations.values.length+" Bill Connect(s) found."
+  });
+}
+// Check to see if any Bill Connects have failed validations
+var failed_validations = _.filter(ds_bill_connect_validations.values, function (bill_connect) {
+  return !bill_connect.valid;
+});
+if (failed_validations.length > 0) {
+  check_results.push({
+    "name": "Bill Connect Validation",
+    "result": "fail",
+    "details": failed_validations.length+" Bill Connect(s) have failed validations.  Bill Connect IDs: "+failed_validations.map(function (bill_connect) {
+      return "["+bill_connect.billId+"](https://"+ds_flexera_api_hosts.ui+"/orgs/"+rs_org_id+"/optima/cloud-settings/bill-processing?accountImportHistory="+bill_connect.billId+")";
+    }).join(", ")
+  });
+} else {
+  check_results.push({
+    "name": "Bill Connect Validation",
+    "result": "pass",
+    "details": "All "+ds_bill_connect_validations.values.length+" Bill Connects have passed validations."
+  });
+}
+// Check to see if there is an AWS, Azure, Google
+var checks = [
+  {
+    "name": "AWS",
+    "automation_docs_url": "https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_3335267112_1121575",
+    "regex": /aws/
+  },
+  {
+    "name": "Azure",
+    "automation_docs_url": "https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_3335267112_1121576",
+    "regex": /azure/
+  },
+  {
+    "name": "Google",
+    "automation_docs_url": "https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_3335267112_1121577",
+    "regex": /gcp|google/
+  }
+];
+// for each check, filter the bill connects to see if there is at least one
+_.each(checks, function(check) {
+  // Check for at least one bill connect that matches the regex
+  var bill_connect = _.filter(ds_bill_connect_validations.values, function (bill_connect) {
+    return check.regex.test(bill_connect.kind);
+  });
+  if (bill_connect.length == 0) {
+    check_results.push({
+      "name": check.name+" Bill Connect",
+      "result": "fail",
+      "details": "No "+check.name+" Bill Connect found."
+    });
+  } else {
+    check_results.push({
+      "name": check.name+" Bill Connect",
+      "result": "pass",
+      "details": bill_connect.length+" "+check.name+" Bill Connect(s) found."
+    });
+    // If we have a Bill Connect, we recommend setting up an automation credential as well for that billing account
+    // Check for at least one credential that matches the conditions
+    var credential = _.filter(ds_credentials, function (c) {
+      var provider_tag = _.find(c.tags, function (tag) {
+        return tag.key == "provider";
+      });
+      if (provider_tag == null) {
+        return false;
+      }
+      return check.regex.test(provider_tag.value);
+    });
+    if (credential.length == 0) {
+      check_results.push({
+        "name": check.name+" Automation Credential",
+        "result": "fail",
+        "details": "No "+check.name+" Automation Credential(s) found.  Recommend setting up an automation credential so you can deploy Policy Templates and increase visibility into potential optimization opportunities.\\n\\nYou can remediate this by creating the bill connection following steps outlined here: [Automation > Provider-Specific Credentials > "+check.name+"]("+check.automation_docs_url+")"
+      });
+    } else {
+      check_results.push({
+        "name": check.name+" Automation Credential",
+        "result": "pass",
+        "details": credential.length+" "+check.name+" Automation Credential(s) found: "+credential.map(function (c) {
+          return "["+c.name+"](https://"+ds_flexera_api_hosts.ui+"/orgs/"+rs_org_id+"/automation/projects/"+rs_project_id+"/credentials/"+c.id+")";
+        }).join(", ")
+      });
+    }
+  }
+});
+EOS
+end
+
+# Get Applied Policy Details
+# Both Applied Policies and Policy Aggregates are required for this policy
+datasource "ds_applied_policies" do
+  request do
+    auth $auth_flexera
+    pagination $pagination_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies"])
+    query "limit", "5000"
+    query "view", "extended"
+  end
+  result do
+    collect jq(response, ".values[]?") do
+      field "id", jq(col_item, ".id")
+      field "policyAggregateId", jq(col_item, ".policyAggregateId")
+      field "name", jq(col_item, ".name")
+      field "info", jq(col_item, ".info")
+      field "policyTemplate", jq(col_item, ".policyTemplate")
+      field "publishedTemplate", jq(col_item, ".publishedTemplate")
+      field "metaParentPolicyId", jq(col_item, ".metaParentPolicyId")
+      field "options", jq(col_item, ".options")
+      field "status", jq(col_item, ".status")
+    end
+  end
+end
+
+datasource "ds_applied_policy_aggregates" do
+  request do
+    auth $auth_flexera
+    pagination $pagination_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/policy/v1/orgs/", rs_org_id, "/policy-aggregates"])
+    query "limit", "5000"
+  end
+end
+
+# Get Published Catalog Policy Template List
+datasource "ds_published_templates" do
+  request do
+    auth $auth_flexera
+    pagination $pagination_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/policy/v1/orgs/", rs_org_id, "/published-templates"])
+    query "limit", "5000"
+    query "view", "extended"
+  end
+  result do
+    collect jq(response, ".values[]?") do
+      field "id", jq(col_item, ".id")
+      field "name", jq(col_item, ".name")
+      field "ref", jq(col_item, ".ref")
+      field "builtIn", jq(col_item, ".builtIn")
+      field "fingerprint", jq(col_item, ".fingerprint")
+      field "policyTemplateFingerprint", jq(col_item, ".policyTemplateFingerprint")
+      field "info", jq(col_item, ".info")
+      field "credentials", jq(col_item, ".credentials")
+      field "updatedAt", jq(col_item, ".updatedAt")
+    end
+  end
+end
+
+# Get Credentials
+datasource "ds_credentials" do
+  request do
+    auth $auth_flexera
+    pagination $pagination_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/cred/v2/projects/", rs_project_id, "/credentials"])
+    query "limit", "5000"
+    query "view", "extended"
+  end
+  result do
+    collect jq(response, ".values[]?") do
+      field "id", jq(col_item, ".id")
+      field "name", jq(col_item, ".name")
+      field "tags", jq(col_item, ".tags")
+      field "scheme", jq(col_item, ".scheme")
+      field "kind", jq(col_item, ".kind")
+      field "ref", jq(col_item, ".ref")
+    end
+  end
+end
+
+# Get "Active" Catalog Policy Template List
+# This is the source of truth for what should be applied to catalog
+# This is public data hosted in GitHub and managed by Flexera
+datasource "ds_active_policy_list" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/active_policy_list/active_policy_list.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+# Statically defined list of policy templates that are recommended for onboarding
+datasource "ds_common_policy_list" do
+  run_script $js_common_policy_list
+end
+
+script "js_common_policy_list", type: "javascript" do
+  result "result"
+  code <<-EOS
+  result = {
+    "flexera": [
+      "Flexera Automation Outdated Applied Policies",
+      "Cloud Bill Processing Error Notification"
+    ]
+    "aws": [
+      "Meta Parent: AWS Rightsize EBS Volumes",
+      "Meta Parent: AWS Superseded EBS Volumes",
+      "Meta Parent: AWS Old Snapshots",
+      "Meta Parent: AWS Rightsize EC2 Instances",
+      "Meta Parent: AWS Superseded EC2 Instances",
+      "Meta Parent: AWS Rightsize RDS Instances",
+      "Meta Parent: AWS Unused IP Addresses"
+    ],
+    "azure": [
+      "Azure Rightsize Managed Disks",
+      "Azure Old Snapshots",
+      "Azure Rightsize Compute Instances",
+      "Azure Superseded Compute Instances",
+      "Azure Rightsize SQL Databases",
+      "Azure Rightsize SQL Database Storage",
+      "Azure Unused IP Addresses",
+      "Azure Hybrid Use Benefit for Windows Server",
+      "Azure Hybrid Use Benefit for Linux Server",
+      "Azure Hybrid Use Benefit for SQL",
+      "Azure Rightsize NetApp Files",
+      "Azure Databricks Rightsize Compute Instances"
+    ],
+    "google": [
+      "Google Old Snapshots",
+      "Google Idle Persistent Disk Recommender",
+      "Google Idle IP Address Recommender",
+      "Google Committed Use Discount Recommender",
+      "Google Rightsize VM Recommender",
+      "Google Idle Cloud SQL Instance Recommender"
+    ]
+  }
+EOS
+end
+
+# Statically defined list of policy templates that are recommended for onboarding
+datasource "ds_result_applied_policy" do
+  run_script $js_result_applied_policy, $ds_credentials, $ds_applied_policies, $ds_published_templates, $ds_common_policy_list, $ds_bill_connects, $ds_flexera_api_hosts, rs_org_id, rs_project_id
+end
+
+script "js_result_applied_policy", type: "javascript" do
+  parameters "ds_credentials", "ds_applied_policies", "ds_published_templates", "ds_common_policy_list", "ds_bill_connects", "ds_flexera_api_hosts", "rs_org_id", "rs_project_id"
+  result "check_results"
+  code <<-EOS
+check_results = [];
+// Check to see if there is at least one Applied Policy
+if (ds_applied_policies.length == 0) {
+  check_results.push({
+    "name": "First Applied Policy",
+    "result": "fail",
+    "details": "No Applied Policy found."
+  });
+} else {
+  check_results.push({
+    "name": "First Applied Policy",
+    "result": "pass",
+    "details": ds_applied_policies.length+" Applied Policy(s) found."
+  });
+  // Check to see if there are any Applied Policies that are in error status
+  var error_policies = _.filter(ds_applied_policies, function (applied_policy) {
+    return applied_policy.status == "error";
+  });
+  if (error_policies.length > 0) {
+    percent = Math.round((error_policies.length / ds_applied_policies.length) * 100);
+    check_results.push({
+      "name": "Error Applied Policy",
+      "result": "fail",
+      "details": error_policies.length+" Applied Policy(s) are in error status which is "+percent.toString()+"% of total "+ds_applied_policies.length+" applied policies.\\n\\nApplied Policy IDs: \\n"+error_policies.map(function (applied_policy) { return " - ["+applied_policy.name+"](https://"+ds_flexera_api_hosts.ui+"/orgs/"+rs_org_id+"/automation/applied-policies/projects/"+rs_project_id+"?noIndex=1&policyId="+applied_policy.id+")"; }).join("\\n")
+    });
+  } else {
+    check_results.push({
+      "name": "Error Applied Policy",
+      "result": "pass",
+      "details": "All "+ds_applied_policies.length+" Applied Policy(s) are in a valid status."
+    });
+  }
+  // For each vendor in the common policy list
+  _.each(_.keys(ds_common_policy_list), function(vendor) {
+    // For each of the PT for the vendor in the common policy list
+    _.each(ds_common_policy_list[vendor], function(pt) {
+      // Check if there is a bill connect for the vendor
+      var bill_connects = _.filter(ds_bill_connects, function (bill_connect) {
+        // Match if bill_connect.kind contains vendor string
+        return bill_connect.kind.indexOf(vendor) > -1;
+      });
+      // Check if there is a credential for the vendor
+      var credentials = _.filter(ds_credentials, function (credential) {
+        // Find the provider tag from the tags on the credentials
+        var provider_tag = _.find(credential.tags, function (tag) {
+          return tag.key == "provider";
+        });
+        // If not provider tag, then we can't match this credential to a vendor and exclude from filter
+        if (provider_tag == null) {
+          return false;
+        }
+        // Else, check if the provider tag value contains the vendor string
+        // Lowercase the vendor string since they are defined in lowercase in the provider tag
+        var match = vendor.toLowerCase();
+        // Check if the vendor is "google"
+        // We need to handle this differently because the provider tag value is not an exact match (can be google or gcp)
+        if (vendor == "google") {
+          var regex = /gcp|gce|google/;
+          // console.log("vendor="+vendor+" provider_tag="+provider_tag.value+" match="+regex.test(provider_tag.value)); // Helpful for debugging
+          return regex.test(provider_tag.value);
+        } else {
+          // for all other vendors, we can do a simple indexOf check
+          // console.log("vendor="+vendor+" provider_tag="+provider_tag.value+" match="+provider_tag.value.indexOf()); // Helpful for debugging
+          return provider_tag.value.indexOf(vendor) > -1;
+        }
+      });
+      // console.log("vendor="+vendor+" pt="+pt+" bill_connects="+JSON.stringify(bill_connects)+" credentials="+JSON.stringify(credentials)); // Helpful for debugging
+
+      // Check if we have at least 1 AWS, Azure, or Google bill connect
+      publiccloudBillConnects = _.filter(bill_connects, function (bill_connect) {
+        return bill_connect.kind.indexOf("aws") > -1 || bill_connect.kind.indexOf("azure") > -1 || bill_connect.kind.indexOf("google") > -1 || bill_connect.kind.indexOf("gcp") > -1 || bill_connect.kind.indexOf("gce") > -1;
+      });
+
+      // Only check the recommended policy if:
+      //   - There is at least 1 bill connect for the vendor AND 1 credential for the vendor AND 1 "public cloud" (aws, azure, google) bill connect
+      //   OR
+      //   - Vendor is "flexera"
+      //     We can safely assume "flexera" provider is always present because it is required for this policy to run and there is no "flexera" bill connect
+      if ((bill_connects.length >= 1 && publiccloudBillConnects.length >= 1 && credentials.length >= 1) || vendor == "flexera") {
+        // filter the applied policies to see if the policyTemplate.name contains the recommended policy template
+        var policy = _.filter(ds_applied_policies, function (applied_policy) {
+          // Check to see if it's a policyTemplate or publishedTemplate
+          if (typeof applied_policy.policyTemplate == "object") {
+            // check if pt.name is in the policyTemplate.name
+            return applied_policy.policyTemplate.name.indexOf(pt) > -1;
+          } else {
+            // else, published template
+            // check if pt.name is in the publishedTemplate.name
+            return applied_policy.publishedTemplate.name.indexOf(pt) > -1;
+          }
+        });
+        if (policy.length == 0) {
+          // Get the PT details from the catalog as they are helpful in the fail detail for remediation
+          ptCatalogId = "";
+          var published_template = _.find(ds_published_templates, function (published_template) {
+            return published_template.name == pt;
+          });
+          if (typeof published_template == "object" && typeof published_template.id == "string") {
+            // Add URL query parameter to the catalog URL to load PT details automatically
+            ptCatalogId = "?templateId="+published_template.id;
+          }
+          check_results.push({
+            "name": "Recommended Policy Template: "+pt,
+            "result": "fail",
+            "details": "The "+pt+" policy is not applied. Recommend applying this policy template to increase visibility into potential optimization opportunities.\\n\\nYou can remediate this by applying the policy template from [Automation > Applied Policies > Catalog > Search for `'"+pt+"'`](https://"+ds_flexera_api_hosts.ui+"/orgs/"+rs_org_id+"/automation/catalog"+ptCatalogId+")"
+          });
+        } else {
+          // Else we have at least 1 applied policy for the pt policy template
+          check_results.push({
+            "name": "Recommended Policy Template: "+pt,
+            "result": "pass",
+            "details": "The "+pt+" policy is applied."
+          });
+
+          // Some checks for specific Policy Templates
+          if (pt == "Flexera Automation Outdated Applied Policies") {
+            // Check that the policy option "param_automatic_action" value contains "Update Applied Policies"
+            var policies_compliant = _.groupBy(policy, function (ap) {
+              // Get the specific parameter in the policy options
+              var param = _.find(ap.options, function (option) {
+                return option.name == "param_automatic_action";
+              });
+              // Default to out of compliance
+              var compliance = "false";
+              if (param != null && typeof param.value == "array") {
+                // If a param is found, check if the value contains "Update Applied Policies"
+                compliance = _.contains(param.value, "Update Applied Policies");
+              }
+              // Return false if param_automatic_action list does not contain "Update Applied Policies"
+              return compliance;
+            });
+            // URL depends if it is a published template (org scoped) or policy-template (project scoped)
+            // Check if there are any compliant policies
+            if (typeof policies_compliant["true"] != "array" || policies_compliant["true"].length == 0) {
+              // If we are here with no compliant policies, we must have at least one policy that is non-compliant
+              // Select the first one.. we don't need more than 1 with this option enabled
+              if (policies_compliant["false"][0]["policyTemplate"] != null) {
+                var ptUrl = "https://app.flexera.com/orgs/"+rs_org_id+"/automation/applied-policies/projects/"+rs_project_id+"?noIndex=1&policyId="+policies_compliant["false"][0].id
+              } else {
+                var ptUrl = "https://app.flexera.com/orgs/"+rs_org_id+"/automation/applied-policies?noIndex=1&policyId="+policies_compliant["false"][0].policyAggregateId
+              }
+              check_results.push({
+                "name": "Flexera Automation Outdated Applied Policies: Enable Automatic Action",
+                "result": "fail",
+                "details": "The "+pt+" policy template is applied, but the policy option 'param_automatic_action' does not contain 'Update Applied Policies'.  Recommend updating the policy option to include 'Update Applied Policies' to automatically update outdated applied policies.\\n\\nTo remediate this, you can edit the applied policy template in the UI [Automation > Applied Policies > Search for '"+pt+"']("+ptUrl+")"
+              });
+            } else {
+              // Else at least one policy is compliant
+              // Select the first one.. we don't need more than 1 with this option enabled
+              if (policies_compliant["true"][0]["policyTemplate"] != null) {
+                var ptUrl = "https://app.flexera.com/orgs/"+rs_org_id+"/automation/applied-policies/projects/"+rs_project_id+"?noIndex=1&policyId="+policies_compliant["true"][0].id
+              } else {
+                var ptUrl = "https://app.flexera.com/orgs/"+rs_org_id+"/automation/applied-policies?noIndex=1&policyId="+policies_compliant["true"][0].policyAggregateId
+              }
+              check_results.push({
+                "name": "Flexera Automation Outdated Applied Policies: Enable Automatic Action",
+                "result": "pass",
+                "details": "The ["+pt+"]("+ptUrl+") policy template is applied and configured to automatically update outdated applied policies."
+              });
+            }
+          }
+
+          // Check for Outdated Policy Templates
+          // Check to see if the policy template fingerprint matches the published template fingerprint
+          var published_template = _.find(ds_published_templates, function (published_template) {
+            return published_template.name.indexOf(pt) > -1;
+          });
+          // Only check if we found a matching published template
+          if (published_template && typeof policy[0].publishedTemplate == "object") {
+            // Get the version of the published template in catalog
+            catalogVersion = "unknown";
+            if (typeof published_template.info == "object" && typeof published_template.info.version == "string") {
+              catalogVersion = published_template.info.version;
+            }
+            outdatedAppliedPolicies = [];
+            // Identify any outdated applied policies
+            _.each(policy, function(ap) {
+              // Check the applied policy is from a published template
+              if (typeof ap.publishedTemplate == "object" && ap.publishedTemplate.fingerprint != published_template.fingerprint) {
+                // Check if the applied policy has a version
+                // Check if applied policy version is different from catalog version
+                if (typeof ap.info == "object" && typeof ap.info.version == "string" && catalogVersion != ap.info.version) {
+                  // Check if applied policy is a Meta Parent
+                  if (ap.name.indexOf("Meta Parent") > -1) {
+                    // Count how many applied policies are children of this
+                    var children = _.filter(ds_applied_policies, function (child) {
+                      return child.metaParentPolicyId == ap.id;
+                    });
+                    // add children_count to the applied policy object to be used later
+                    ap.children_count = children.length;
+                  }
+                  outdatedAppliedPolicies.push(ap);
+                }
+              }
+            });
+            // Filter out child policies (applied policies with metaParentPolicyId) -- these are managed by the parent and should not be managed individually
+            // We have the children_count for the objects that are Meta Parents which can be included in report
+            outdatedAppliedPolicies = _.filter(outdatedAppliedPolicies, function (ap) {
+              return ap.metaParentPolicyId == null;
+            });
+            // Check if we have zero outdated applied policies for the PT
+            if (outdatedAppliedPolicies.length == 0) {
+              // Zero means we are up to date
+              check_results.push({
+                "name": "Outdated Policy Template: "+pt,
+                "result": "pass",
+                "details": "The "+pt+" policy version matches the current version in the Catalog.\\n\\nTotal Applied Policies: "+policy.length+"\\n\\nPublished Template Version: "+catalogVersion+" ("+published_template.fingerprint+")"
+              });
+            } else {
+              // There is at least one applied policy that is outdated
+              // Turn the list of outdated applied policies into a markdown list string
+              var apList = outdatedAppliedPolicies.map(function (ap) {
+                var apVersion = "unknown";
+                if (typeof ap.info == "object" && typeof ap.info.version == "string") {
+                  apVersion = ap.info.version;
+                }
+                var rowString = " - ["+ap.name+" Version: "+apVersion+"](https://"+ds_flexera_api_hosts.ui+"/orgs/"+rs_org_id+"/automation/applied-policies/projects/"+rs_project_id+"?noIndex=1&policyId="+ap.id+")";
+                if (typeof ap.children_count == "number") {
+                  rowString += " (with "+ap.children_count+" outdated children)";
+                }
+                return rowString;
+              }).join("\\n");
+              // Add failed check result to the list
+              check_results.push({
+                "name": "Outdated Policy Template: "+pt,
+                "result": "fail",
+                "details": "The "+pt+" policy is out of date and there is a newer version in the Catalog.  Recommend applying latest version from Catalog and terminating this Applied Policy.\\n\\nPublished Template Version: "+catalogVersion+" ("+published_template.fingerprint+")\\n\\n"+apList
+              });
+            }
+          }
+        }
+      }
+    });
+  });
+}
+EOS
+end
+
+# Get Rule-Based Dimensions
+datasource "ds_rule_based_dimensions" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions"])
+    # query "view", "extended"
+  end
+  # result do
+  #   # https://developer.flexera.com/docs/api/FinOps%20Customizations#/Rule-Based%20Dimension/Rule-Based%20Dimension%23index
+  #   collect jq(response, "try(.values[]) catch []") do
+  #     field "createdAt", jq(col_item, ".createdAt")
+  #     field "id", jq(col_item, ".id")
+  #     field "kind", jq(col_item, ".kind")
+  #     field "name", jq(col_item, ".name")
+  #     field "ruleListLinks", jq(col_item, ".ruleListLinks")
+  #     field "updatedAt", jq(col_item, ".updatedAt")
+  #   end
+  # end
+end
+
+# Get Tag Dimensions
+datasource "ds_tag_dimensions" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-customizations/v1/orgs/", rs_org_id, "/tag-dimensions"])
+    query "view", "extended"
+  end
+  # result do
+  #   # https://developer.flexera.com/docs/api/FinOps%20Customizations#/Tag%20Dimension/Tag%20Dimension%23index
+  #   collect jq(response, "try(.values[]) catch []") do
+  #     field "createdAt", jq(col_item, ".createdAt")
+  #     field "id", jq(col_item, ".id")
+  #     field "kind", jq(col_item, ".kind")
+  #     field "name", jq(col_item, ".name")
+  #     field "tags", jq(col_item, ".tags")
+  #     field "updatedAt", jq(col_item, ".updatedAt")
+  #   end
+  # end
+end
+
+datasource "ds_dates" do
+  run_script $js_dates
+end
+
+script "js_dates", type: "javascript" do
+  result "result"
+  code <<-EOS
+month = new Date().toISOString()
+month = month.split('-')[0] + '-' + month.split('-')[1]
+
+next_month = new Date(month)
+next_month.setMonth(next_month.getMonth() + 1)
+next_month = next_month.toISOString()
+next_month = next_month.split('-')[0] + '-' + next_month.split('-')[1]
+
+prior_month = new Date(month)
+prior_month.setMonth(prior_month.getMonth() - 1)
+prior_month = prior_month.toISOString()
+prior_month = prior_month.split('-')[0] + '-' + prior_month.split('-')[1]
+
+result = {
+  month: month,
+  next_month: next_month,
+  prior_month: prior_month
+}
+EOS
+end
+
+datasource "ds_cost_dimensions" do
+  run_script $js_cost_dimensions, val($ds_rule_based_dimensions, "values"), val($ds_tag_dimensions, "values")
+end
+
+script "js_cost_dimensions", type: "javascript" do
+  parameters "ds_rule_based_dimensions", "ds_tag_dimensions"
+  result "results"
+  code <<-EOS
+// Pluck IDs from Rule-Based Dimensions and Tag Dimensions
+rbd_ids = _.pluck(ds_rule_based_dimensions, "id");
+tag_ids = _.pluck(ds_tag_dimensions, "id");
+// Combine the Rule-Based Dimension IDs and Tag Dimension IDs
+results = _.flatten([rbd_ids, tag_ids]);
+EOS
+end
+
+# Get Billing Centers
+# Required for Costs Data, but also needed for Billing Center checks
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    #query "view", "allocation_table"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    # Select the Billing Centers that have "parent_id" undefined or "" (i.e. top-level Billing Centers)
+    collect jq(response, '.[]') do
+      field "href", jq(col_item, ".href")
+      field "id", jq(col_item, ".id")
+      field "name", jq(col_item, ".name")
+      field "parent_id", jq(col_item, ".parent_id")
+    end
+  end
+end
+
+datasource "ds_cost_dimensions_costs" do
+  iterate $ds_cost_dimensions
+  request do
+    run_script $js_cost_dimensions_costs, iter_item, jq($ds_billing_centers,'.[] | select(.parent_id == null)', "array"), $ds_dates, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jq(response, '.rows[]' ) do
+      field "dimension", iter_item
+      field "dimension_value", jq(col_item,".dimensions | to_entries | .[0].value")
+      field "cost_nonamortized_unblended_adj", jq(col_item,".metrics.cost_nonamortized_unblended_adj")
+      # field "timestamp", jq(col_item,".timestamp")
+    end
+  end
+end
+
+script "js_cost_dimensions_costs", type: "javascript" do
+  parameters "dimension", "ds_billing_centers_toplevel", "ds_dates", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  metric = "cost_nonamortized_unblended_adj"
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
+    body_fields: {
+      "dimensions": [
+        dimension,
+      ],
+      "granularity": "month",
+      "start_at": ds_dates["prior_month"],
+      "end_at": ds_dates["month"],
+      "metrics": [metric],
+      "billing_center_ids": _.pluck(ds_billing_centers_toplevel, "id"),
+      "summarized": true
+    },
+    headers: {
+      "User-Agent": "RS Policies",
+      "Api-Version": "1.0"
+    }
+  }
+EOS
+end
+
+datasource "ds_result_cost_dimensions" do
+  run_script $js_result_cost_dimensions, $ds_bill_connects, val($ds_rule_based_dimensions, "values"), val($ds_tag_dimensions, "values"), $ds_cost_dimensions_costs
+end
+
+script "js_result_cost_dimensions", type: "javascript" do
+  parameters "ds_bill_connects", "ds_rule_based_dimensions", "ds_tag_dimensions", "ds_cost_dimensions_costs"
+  result "check_results"
+  code <<-EOS
+function checkCosts(dimension_regex, costs) {
+  // Filter the costs that match the dimension_regex
+  var dimension_costs = _.filter(costs, function (cost) {
+    return dimension_regex.test(cost.dimension);
+  });
+  // Get the total cost for the dimension
+  var total_cost = _.reduce(dimension_costs, function (sum, cost) {
+    return sum + cost.cost_nonamortized_unblended_adj;
+  }, 0);
+  // For each dimension cost, calculate the percentage of the total cost
+  var dimension_cost_percentages = _.map(dimension_costs, function (cost) {
+    return {
+      "dimension": cost.dimension,
+      "dimension_value": cost.dimension_value,
+      "cost": cost.cost_nonamortized_unblended_adj,
+      "percentage": (cost.cost_nonamortized_unblended_adj / total_cost) * 100
+    };
+  });
+  return {
+    "total_cost": total_cost,
+    "dimension_cost_percentages": dimension_cost_percentages
+  };
+}
+// Empty check results
+var check_results = [];
+// Get bill connects that match rege
+publicCloudRegex = /aws|azure|google|gce|gcp/;
+ds_bill_connects_filtered = _.filter(ds_bill_connects, function (bill_connect) {
+  return publicCloudRegex.test(bill_connect.kind);
+});
+// Only check cost dimensions for cost allocation if there is at least 1 bill connect
+if (ds_bill_connects_filtered.length > 0) {
+  // Check to see if there is at least one Tag Dimension
+  if (ds_tag_dimensions.length == 0) {
+    check_results.push({
+      "name": "First Tag Dimension",
+      "result": "fail",
+      "details": "No Tag Dimension found."
+    });
+  } else {
+    check_results.push({
+      "name": "First Tag Dimension",
+      "result": "pass",
+      "details": ds_tag_dimensions.length+" Tag Dimension(s) found."
+    });
+    // Check the costs for each Tag Dimension
+    _.each(ds_tag_dimensions, function (dimension) {
+      var costs = checkCosts(/tag_.*/, ds_cost_dimensions_costs);
+      // Check that the cost.dimension_cost_percentages where dimension_value=None is less than 5%
+      var none_cost = _.find(costs.dimension_cost_percentages, function (cost) {
+        return cost.dimension_value == "None";
+      });
+      // If there is no cost for None, then it is 0%
+      if (typeof none_cost == "undefined") {
+        none_cost = {
+          "dimension": dimension.name,
+          "dimension_value": "None",
+          "cost": 0,
+          "percentage": 0
+        };
+      }
+      // Disabling these for now.. don't agree we should encourage a % KPI that should have tag value
+      // Tag Dimensions are not same as RBDs which we can theoretically allocate 100% of costs (even untaggable)
+      // if (none_cost.percentage > 5) {
+      //   check_results.push({
+      //     "name": "Tag Dimension: "+dimension.name,
+      //     "result": "fail",
+      //     "details": "The None value for the "+dimension.name+" Tag Dimension is "+none_cost.percentage.toFixed(2)+"% of the total cost which is greater than the recommended threshold of 5%.  Recommend reviewing the None value for this Tag Dimension to identify."
+      //   });
+      // } else {
+      //   check_results.push({
+      //     "name": "Tag Dimension: "+dimension.name,
+      //     "result": "pass",
+      //     "details": "The None value for the "+dimension.name+" Tag Dimension is "+none_cost.percentage.toFixed(2)+"% of the total cost."
+      //   });
+      // }
+    });
+  }
+
+  // Check to see if there is at least one Rule-Based Dimension
+  if (ds_rule_based_dimensions.length == 0) {
+    check_results.push({
+      "name": "First Rule-Based Dimension",
+      "result": "fail",
+      "details": "No Rule-Based Dimension found."
+    });
+  } else {
+    check_results.push({
+      "name": "First Rule-Based Dimension",
+      "result": "pass",
+      "details": ds_rule_based_dimensions.length+" Rule-Based Dimension(s) found."
+    });
+    // Check the costs for each Tag Dimension
+    _.each(ds_rule_based_dimensions, function (dimension) {
+      var costs = checkCosts(/rbd_.*/, ds_cost_dimensions_costs);
+      // Check that the cost.dimension_cost_percentages where dimension_value=None is less than 5%
+      var none_cost = _.find(costs.dimension_cost_percentages, function (cost) {
+        return cost.dimension_value == "None";
+      });
+      // If there is no cost for None, then it is 0%
+      if (typeof none_cost == "undefined") {
+        none_cost = {
+          "dimension": dimension.name,
+          "dimension_value": "None",
+          "cost": 0,
+          "percentage": 0
+        };
+      }
+      if (none_cost.percentage > 5) {
+        check_results.push({
+          "name": "Rule-Based Dimension: "+dimension.name,
+          "result": "fail",
+          "details": "The None value for the "+dimension.name+" Rule-Based Dimension is "+none_cost.percentage.toFixed(2)+"% of the total cost which is greater than the recommended threshold of 5%.  Recommend reviewing the None value for this Rule-Based Dimension to identify costs that can potentially be allocated with new rules."
+        });
+      } else {
+        check_results.push({
+          "name": "Rule-Based Dimension: "+dimension.name,
+          "result": "pass",
+          "details": "The None value for the "+dimension.name+" Tag Dimension is "+none_cost.percentage.toFixed(2)+"% of the total cost."
+        });
+      }
+    });
+  }
+}
+EOS
+end
+
+datasource "ds_result_fail_recommended_policy_template" do
+  run_script $js_result_fail_recommended_policy_template, $ds_result_fail
+end
+
+script "js_result_fail_recommended_policy_template", type: "javascript" do
+  parameters "ds_result_fail"
+  result "results"
+  code <<-EOS
+// Filter results to only include "Recommended Policy Template:" failed checks
+var failed_recommended_pt_checks = _.filter(ds_result_fail, function (check) {
+  return check.name.indexOf("Recommended Policy Template:") > -1;
+});
+// From each failed_recommended_pt_checks, extract the policy template name
+results = _.map(failed_recommended_pt_checks, function (check) {
+  var name = check.name.split("Recommended Policy Template: ")[1];
+  return {
+    "name": name,
+    "details": check.details
+  };
+});
+EOS
+end
+
+# Get Identity Providers
+datasource "ds_idps" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/iam/v1/orgs/",rs_org_id,"/idps"])
+  end
+end
+
+datasource "ds_idp_ids" do
+  run_script $js_idp_ids, $ds_idps
+end
+
+script "js_idp_ids", type: "javascript" do
+  parameters "ds_idps"
+  result "result"
+  code <<-EOS
+result = _.pluck(ds_idps, "id");
+EOS
+end
+
+# Get Domains for each Identity Provider
+datasource "ds_idp_domains" do
+  iterate $ds_idp_ids
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/iam/v1/orgs/",rs_org_id,"/idps/",iter_item,"/domains"])
+  end
+end
+
+# Get Login Policy
+datasource "ds_login_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/iam/v1/orgs/",rs_org_id,"/login-policy"])
+  end
+end
+
+datasource "ds_result_iam" do
+  run_script $js_result_iam, $ds_idps, $ds_idp_domains, $ds_login_policy, $ds_flexera_api_hosts, rs_org_id
+end
+
+script "js_result_iam", type: "javascript" do
+  parameters "ds_idps", "ds_idp_domains", "ds_login_policy", "ds_flexera_api_hosts", "rs_org_id"
+  result "check_results"
+  code <<-EOS
+check_results = [];
+// Check to see if there is at least one Identity Provider
+if (ds_idps.length == 0) {
+  check_results.push({
+    "name": "SSO: First Identity Provider",
+    "result": "fail",
+    "details": "No Identity Provider found."
+  });
+} else {
+  check_results.push({
+    "name": "SSO: First Identity Provider",
+    "result": "pass",
+    "details": ds_idps.length+" Identity Provider(s) found."
+  });
+  // Check for First Identity Provider Domain
+  if (ds_idp_domains.length == 0) {
+    check_results.push({
+      "name": "SSO: First Identity Provider Domain",
+      "result": "fail",
+      "details": "No Domain found for any Identity Provider."
+    });
+  } else {
+    check_results.push({
+      "name": "SSO: First Identity Provider Domain",
+      "result": "pass",
+      "details": ds_idp_domains.length+" Domain(s) found for at least one Identity Provider."
+    });
+    // Check for First Verified Identity Provider Domain
+    var verified_domain = _.filter(ds_idp_domains, function (domain) {
+      return typeof domain.verifiedAt == "string";
+    });
+    if (verified_domain.length == 0) {
+      check_results.push({
+        "name": "SSO: First Verified Identity Provider Domain",
+        "result": "fail",
+        "details": "No Domain found for any Identity Provider that has been verified."
+      });
+    } else {
+      check_results.push({
+        "name": "SSO: First Verified Identity Provider Domain",
+        "result": "pass",
+        "details": verified_domain.length+" Domain(s) found for at least one Identity Provider that has been verified."
+      });
+      // Check for Just in Time Provisioning
+      var jit_provisioning = _.filter(ds_idps, function (idp) {
+        console.log("idp="+JSON.stringify(idp));
+        return idp.jitProvisioningEnabled == "true" || idp.jitProvisioningEnabled == true;
+      });
+      if (jit_provisioning.length == 0) {
+        check_results.push({
+          "name": "SSO: Enable Just in Time Provisioning",
+          "result": "fail",
+          "details": "Just in Time Provisioning is not enabled on any [Identity Provider(s)](https://"+ds_flexera_api_hosts.ui+"/orgs/"+rs_org_id+"/admin/identity-providers)"
+        });
+      } else {
+        check_results.push({
+          "name": "SSO: Enable Just in Time Provisioning",
+          "result": "pass",
+          "details": jit_provisioning.length+" Identity Provider(s) have Just in Time Provisioning enabled:\\n"+_.map(jit_provisioning, function (idp) {
+            return " - "+idp.name;
+          }).join("\\n")
+        });
+        // If they got this far, they are ready to enable "Mandatory SSO" / "Enforce SSO"
+        // Check for Login Policy
+        if (typeof ds_login_policy.enforceSso == "boolean" && ds_login_policy.enforceSso ) {
+          check_results.push({
+            "name": "SSO: Enforce Single Sign-On",
+            "result": "pass",
+            "details": "Login Policy is configured to enforce Single Sign-On.  Access to this Org requires an identity in one of the configured and verified Identity Provider(s)](https://"+ds_flexera_api_hosts.ui+"/orgs/"+rs_org_id+"/admin/identity-providers)"
+          });
+        } else {
+          check_results.push({
+            "name": "SSO: Enforce Single Sign-On",
+            "result": "fail",
+            "details": "Login Policy is not configured to enforce Single Sign-On.\\n\\nBefore enforcing single sign-on, make sure you’re able to log in using your identity provider. If it’s not working, your organization will not be able to log in to Flexera One.\\n\\nTo remediate this, you can enable Single Sign-On in the UI [Administration > Identity Providers](https://"+ds_flexera_api_hosts.ui+"/orgs/"+rs_org_id+"/admin/identity-providers), button in the top right corner `'Single sign-on is not enforced'`"
+          });
+        }
+      }
+      // Check for Group Sync Policy
+      var group_sync = _.filter(ds_idps, function (idp) {
+        return idp.groupSyncPolicy != "NONE";
+      });
+      if (group_sync.length == 0) {
+        check_results.push({
+          "name": "SSO: Group Sync Policy Enabled",
+          "result": "fail",
+          "details": "Group Sync Policy is disabled for all Identity Providers."
+        });
+      } else {
+        check_results.push({
+          "name": "SSO: Group Sync Policy Enabled",
+          "result": "pass",
+          "details": group_sync.length+" Identity Provider(s) have Group Sync Policy enabled."
+      });
+      }
+    }
+  }
+}
+EOS
+end
+
+datasource "ds_result" do
+  run_script $js_result, $ds_result_service_account, $ds_result_bill_connects, $ds_result_applied_policy, $ds_result_cost_dimensions, $ds_result_iam
+end
+
+script "js_result", type: "javascript" do
+  parameters "ds_result_service_account", "ds_result_bill_connects", "ds_result_applied_policy", "ds_result_cost_dimensions", "ds_result_iam"
+  result "check_results"
+  code <<-EOS
+// Combine all the results into a single array
+check_results = _.flatten([
+  ds_result_service_account,
+  ds_result_bill_connects,
+  ds_result_applied_policy,
+  ds_result_cost_dimensions,
+  ds_result_iam,
+]);
+EOS
+end
+
+# datasource "ds_result_json" do
+#   run_script $js_result_json, $ds_result
+# end
+
+# script "js_result_json", type: "javascript" do
+#   parameters "ds_result"
+#   result "result"
+#   code <<-EOS
+# result = JSON.stringify(ds_result);
+# EOS
+# end
+
+datasource "ds_result_pass" do
+  run_script $js_result_pass, $ds_result
+end
+
+script "js_result_pass", type: "javascript" do
+  parameters "ds_result"
+  result "results"
+  code <<-EOS
+var results = _.filter(ds_result, function (check) {
+  return check.result == "pass";
+});
+EOS
+end
+
+datasource "ds_result_fail" do
+  run_script $js_result_fail, $ds_result, $param_checks_exclude
+end
+
+script "js_result_fail", type: "javascript" do
+  parameters "ds_result", "param_checks_exclude"
+  result "results"
+  code <<-EOS
+// Filter results to only include failed checks
+var results = _.filter(ds_result, function (check) {
+  return check.result == "fail" ;
+});
+// Exclude checks from input parameter from the results
+results = _.filter(results, function (check) {
+  return !_.contains(param_checks_exclude, check.name);
+});
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy" do
+  # validate $ds_result_json do
+  #   summary_template "Flexera Onboarding: JSON for Debugging"
+  #   detail_template "{{ data }}"
+  #   check eq(0,1) # Always trigger
+  # end
+
+  validate $ds_result_pass do
+    summary_template "Flexera Onboarding: Completed Summary"
+    detail_template <<-EOS
+# Completed List
+
+{{ range data -}}
+## {{ .name }}
+{{ .details }}
+
+{{ end -}}
+EOS
+    check eq(size(data), 0)
+    escalate $esc_email
+  end
+
+  validate $ds_result_fail do
+    summary_template "Flexera Onboarding: To Do Summary"
+    detail_template <<-EOS
+# To Do List
+
+{{ range data -}}
+## {{ .name }}
+{{ .details }}
+
+{{ end -}}
+EOS
+    check eq(size(data), 0)
+    escalate $esc_email
+  end
+
+  validate $ds_result_fail_recommended_policy_template do
+    summary_template "Flexera Onboarding: Apply Recommended Policy Templates"
+    detail_template <<-EOS
+# Apply Recommended Policy Templates
+
+The following recommended policy templates are not applied.  Please review and apply the recommended policy templates to increase visibility into potential optimization opportunities.
+EOS
+    check eq(size(data), 0)
+    export do
+      resource_level true # Enable actioning some, or all of the items
+      field "id" do
+        label "Policy Template Name"
+        path "name"
+      end
+    end
+    escalate $esc_email
+    escalate $esc_apply_policy_templates
+  end
+
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic gt(size($param_email), 0)
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_apply_policy_templates" do
+  automatic false
+  label "Apply Policy Templates"
+  description "Apply the selected Policy Templates"
+  # parameter "param_credential_auth_azure" do
+  #   type "string"
+  #   label "Azure Credential"
+  #   description "Optional -- If no value provided, the first Azure credential found will be used.  The Credential Name or ID can be provided to specify the Azure Credential if there is more than one."
+  #   default ""
+  # end
+  # parameter "param_credential_auth_aws" do
+  #   type "string"
+  #   label "AWS Credential"
+  #   description "Optional -- If no value provided, the first AWS credential found will be used.  The Credential Name or ID can be provided to specify the Azure Credential if there is more than one."
+  #   default ""
+  # end
+  # parameter "param_credential_auth_google" do
+  #   type "string"
+  #   label "Google Credential"
+  #   description "Optional -- If no value provided, the first Google credential found will be used.  The Credential Name or ID can be provided to specify the Azure Credential if there is more than one."
+  #   default ""
+  # end
+  # request_approval do
+  #   label "Apply Policy Template"
+  #   description "Approving this will apply the listed policy templates."
+  # end
+  run "create_applied_policies", data, rs_optima_host, rs_org_id, rs_project_id, rs_governance_host
+end
+
+# if name !=null
+define create_applied_policies($data, $rs_optima_host, $rs_org_id, $rs_project_id, $rs_governance_host) return $responses do
+  $host_table = {
+    "api.optima.flexeraeng.com": {
+      "ui": "app.flexera.com",
+      "flexera": "api.flexera.com",
+      "fsm": "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      "ui": "app.flexera.eu",
+      "flexera": "api.flexera.eu",
+      "fsm": "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      "ui": "app.flexera.au",
+      "flexera": "api.flexera.au",
+      "fsm": "api.fsm-apac.flexeraeng.com"
+    }
+  }
+  task_label("Looking up Flexera API Host")
+  $$flexera_api_host = $host_table[$rs_optima_host]["flexera"]
+
+  $responses = []
+  $$debug = []
+
+  task_label("Get Published Templates")
+  # This only needs to be done once
+  $$published_templates = http_request(
+    auth: $$auth_flexera,
+    verb: "get",
+    https: true,
+    host: $$flexera_api_host,
+    href: join(["/policy/v1/orgs/", $rs_org_id, "/published-templates"]),
+    query_strings: {
+      "view": "extended", # Extended view shows credentials
+      "limit": "5000"
+    }
+  )
+  $responses << $$published_templates
+  # $$debug << to_json({
+  #   "request": {
+  #     "summary": "get https://"+join([$$flexera_api_host, "/policy/v1/orgs/", $rs_org_id, "/published-templates"])
+  #   },
+  #   "response": $$published_templates,
+  #   "item": $item
+  # })
+
+  task_label("Get Credentials")
+  $$credentials = http_request(
+    auth: $$auth_flexera,
+    verb: "get",
+    https: true,
+    host: $$flexera_api_host,
+    href: join(["/cred/v2/projects/", $rs_project_id, "/credentials"])
+  )
+  $responses << $$credentials
+  # $$debug << to_json({
+  #   "request": {
+  #     "summary": "get https://"+join([$$flexera_api_host, "/cred/v2/orgs/", $rs_org_id, "/credentials"])
+  #   },
+  #   "response": $$credentials,
+  #   "item": $item
+  # })
+
+  # Loop through each item in the data
+  $item_index = 0
+  $item_total = size($data)
+  foreach $item in $data on_error: handle_error() do
+    # Increment the item index
+    # Used for tracking task execution status
+    $item_index = $item_index + 1
+    $status = to_s("("+$item_index+"/"+$item_total+")")
+    task_label("Processing item "+$status)
+    $$debug << to_json($item) # Helpful for debugging
+
+    # Get the Policy Template that matches the name + is "built in"
+    $published_template = select($$published_templates["body"]["values"], { "name": $item["id"], "builtIn": true })
+    if size($published_template) == 0
+      raise "Published Template not found in Catalog: "+$item["id"]
+    end
+    # Select first item in array (there should only be one anyways)
+    $published_template = first($published_template)
+    task_label("Found Published Template: "+$published_template["name"])
+    $$debug << to_json($published_template) # Helpful for debugging
+
+    # For each credential on the PT, find the corresponding credential in the account
+    $cred_payload = {}
+    task_label("Loop through PT Credentials")
+    foreach $pt_cred_key in keys($published_template["credentials"]) do
+      $pt_cred = map($published_template, "credentials", $pt_cred_key)
+      task_label("Processing PT Credential: "+$pt_cred["name"])
+      # Select Provider value for this PT Credential
+      $pt_cred_provider = ""
+      # Loop through tags to identify the provider tag for the cred
+      foreach $pt_cred_tag in $pt_cred["tags"] do
+        # Check if tag is provider tag
+        if $pt_cred_tag["key"] == "provider"
+          # Use value to set pt_cred_provider
+          $pt_cred_provider = $pt_cred_tag["value"]
+        end
+      end
+      $$debug << "pt_cred_provider="+to_json($pt_cred_provider) # Helpful for debugging
+      # Loop through Account Credentials
+      foreach $account_cred in $$credentials["body"]["values"] do
+        # Identify this Account Credential's Provider
+        foreach $account_cred_tag in $account_cred["tags"] do
+          # Check if the credential provider matches the PT credential provider
+          if $account_cred_tag["key"] == "provider"
+            # $$debug << $tag["value"]+" == "+$pt_cred_provider
+            # Check if the credential provider matches the PT credential provider
+            # OR if the PT credential provider is "databricks", we can also use a "azure_rm" credential provider
+            if $account_cred_tag["value"] == $pt_cred_provider || ($pt_cred_provider == "databricks" && $account_cred_tag["value"] == "azure_rm")
+              # $$debug << "Found credential for PT "+$published_template["name"]+". pt_cred="+to_json($pt_cred["name"])+" pt_cred_provider="+to_json($pt_cred_provider)+" account_cred="+to_json($account_cred["id"])
+              $cred_name = $pt_cred["name"]
+              $cred_value = $account_cred["id"]
+              $cred_obj = { $cred_name: $cred_value }
+              $cred_payload = $cred_payload + $cred_obj
+            end
+          end
+        end
+      end
+    end
+    $$debug << "cred_payload="+to_json($cred_payload) # Helpful for debugging
+
+    # Create Applied Policy
+    task_label($status+" Creating Applied Policy with Catalog Policy Template: "+$published_template["name"]+" ("+$published_template["id"])+")"
+    $schedule = "FREQ="+upcase($published_template["defaultFrequency"])
+    # Convert "15 MINUTES" defaultFrequency to RRULE "FREQ=MINUTELY;INTERVAL=15"
+    if $schedule = "15 MINUTES"
+      $schedule = "FREQ=MINUTELY;INTERVAL=15"
+    end
+    $body = {
+      "name": $published_template["name"],
+      "description": $published_template["shortDescription"],
+      "templateRef": $published_template["ref"],
+      "dryRun": false,
+      "schedule": {
+        "rrule": $schedule
+      },
+      "credentials": $cred_payload
+    }
+    $$debug << to_json($body) # Helpful for debugging
+    $response = http_request(
+      auth: $$auth_flexera,
+      verb: "post",
+      https: true,
+      host: $$flexera_api_host,
+      href: join(["/policy/v1/orgs/", $rs_org_id, "/projects/", $rs_project_id, "/applied-policies"]),
+      body: $body
+    )
+    $responses << $response
+    $$debug << to_json({
+      "request": {
+        "summary": "post https://"+join([$$flexera_api_host,"/policy/v1/orgs/", $rs_org_id, "/projects/", $rs_project_id, "/applied-policies"]),
+        "body": $body
+      },
+      "response": $response,
+      "item": $item
+    })
+
+    task_label("Check that the response is expected")
+    if $response["code"] != 201
+      raise "Failed to create Applied Policy: "+$published_template["name"]+". Response code: "+$response["code"]+". Response body: "+to_json($response["body"])
+    end
+  end
+
+  # If we encountered any errors, use `raise` to mark the CWF process as errored
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+
+  # If we made it here, action completed successfully
+  task_label("Action completed successfully")
+end
+
+# CWF function to handle errors
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
+end
