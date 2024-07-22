@@ -517,13 +517,13 @@ These templates can generate savings estimates for your environment.
 
 - CloudTrail
 
-  - [AWS Ensure CloudTrail Enabled In All Regions](./security/aws/log_ensure_cloudtrail_multiregion)
-  - [AWS Ensure CloudTrail Integrated With Cloudwatch](./security/aws/log_cloudtrail_cloudwatch_integrated)
-  - [AWS Ensure CloudTrail Logs Encrypted At Rest](./security/aws/log_ensure_cloudtrail_encrypted)
-  - [AWS Ensure CloudTrail S3 Buckets Have Access Logging](./security/aws/log_ensure_cloudtrail_bucket_access_logging)
-  - [AWS Ensure CloudTrail S3 Buckets Non-Public](./security/aws/log_ensure_cloudtrail_bucket_not_public)
-  - [AWS Ensure Log File Validation Enabled For All CloudTrails](./security/aws/log_file_validation_enabled)
-  - [AWS Ensure Object-level Events Logging Enabled For CloudTrails](./security/aws/log_ensure_cloudtrail_bucket_object_logging)
+  - [AWS CloudTrail Not Enabled In All Regions](./security/aws/log_ensure_cloudtrail_multiregion)
+  - [AWS CloudTrail S3 Buckets Without Access Logging](./security/aws/log_ensure_cloudtrail_bucket_access_logging)
+  - [AWS CloudTrails Not Integrated With CloudWatch](./security/aws/log_cloudtrail_cloudwatch_integrated)
+  - [AWS CloudTrails Without Encrypted Logs](./security/aws/log_ensure_cloudtrail_encrypted)
+  - [AWS CloudTrails Without Log File Validation Enabled](./security/aws/log_file_validation_enabled)
+  - [AWS CloudTrails Without Object-level Events Logging Enabled](./security/aws/log_ensure_cloudtrail_bucket_object_logging)
+  - [AWS Publicly Accessible CloudTrail S3 Buckets](./security/aws/log_ensure_cloudtrail_bucket_not_public)
 
 - Config
 
