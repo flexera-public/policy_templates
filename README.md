@@ -670,7 +670,7 @@ These templates can generate savings estimates for your environment.
   Security: 74
 :optimization_count: 61
 :policy_sets:
-  '': 43
+  '': 44
   AWS Config: 1
   Allocate VMs: 3
   Automation: 1
@@ -707,7 +707,7 @@ These templates can generate savings estimates for your environment.
   Open Buckets: 1
   Open S3 Buckets: 1
   PaaS Optimization: 1
-  Public Database Access: 2
+  Public Database Access: 1
   Reserved Instance: 3
   Reserved Instances: 8
   Rightsize Clusters: 1
