@@ -236,8 +236,9 @@ datasource "ds_aws_buckets_with_region" do
   iterate $ds_aws_buckets_name_filtered
   request do
     auth $auth_aws
-    host join([val(iter_item, "id"), ".s3.amazonaws.com"])
-    path "/?location"
+    host "s3.amazonaws.com"
+    path join(["/", val(iter_item, "id")])
+    query "location", ""
     header "User-Agent", "RS Policies"
     ignore_status [403, 404]
   end
@@ -258,11 +259,23 @@ script "js_aws_buckets_with_region_cleaned", type:"javascript" do
   result "result"
   code <<-EOS
   result = _.map(ds_aws_buckets_with_region, function(bucket) {
-    region = bucket['region']
-    if (typeof(bucket['region']) != 'string' || bucket['region'] == '') { region = 'us-east-1' }
-    if (bucket['region'].toLowerCase().trim() == "eu") { region = 'eu-west-1' }
+    if (typeof(bucket['region']) != 'string' || bucket['region'] == '' || bucket['region'] == 'us-east-1') {
+      region = 'us-east-1'
+      host = 's3.amazonaws.com'
+    } else if (bucket['region'].toLowerCase() == 'eu') {
+      region = 'eu-west-1'
+      host = 's3-eu-west-1.amazonaws.com'
+    } else {
+      region = bucket['region'].toLowerCase().trim()
+      host = 's3-' + region + '.amazonaws.com'
+    }
 
-    return { id: bucket['id'], creation_date: bucket['creation_date'], region: region }
+    return {
+      id: bucket['id'],
+      creation_date: bucket['creation_date'],
+      region: region,
+      host: host
+    }
   })
 EOS
 end
@@ -291,8 +304,9 @@ datasource "ds_aws_buckets_with_tags" do
   iterate $ds_aws_buckets_region_filtered
   request do
     auth $auth_aws
-    host join([val(iter_item, "id"), ".s3.amazonaws.com"])
-    path "/?tagging"
+    host val(iter_item, "host")
+    path join(["/", val(iter_item, "id")])
+    query "tagging", ""
     header "User-Agent", "RS Policies"
     ignore_status [403, 404]
   end
@@ -308,6 +322,7 @@ datasource "ds_aws_buckets_with_tags" do
       field "id", val(iter_item, "id")
       field "creation_date", val(iter_item, "creation_date")
       field "region", val(iter_item, "region")
+      field "host", val(iter_item, "host")
     end
   end
 end
@@ -396,8 +411,9 @@ datasource "ds_aws_buckets_with_pab_info" do
   iterate $ds_aws_buckets_tag_filtered
   request do
     auth $auth_aws
-    host join([val(iter_item, "id"), ".s3.amazonaws.com"])
-    path "/?publicAccessBlock"
+    host val(iter_item, "host")
+    path join(["/", val(iter_item, "id")])
+    query "publicAccessBlock", ""
     header "User-Agent", "RS Policies"
     ignore_status [403, 404]
   end
@@ -410,6 +426,7 @@ datasource "ds_aws_buckets_with_pab_info" do
     field "id", val(iter_item, "id")
     field "creation_date", val(iter_item, "creation_date")
     field "region", val(iter_item, "region")
+    field "host", val(iter_item, "host")
     field "tags", val(iter_item, "tags")
   end
 end

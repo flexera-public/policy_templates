@@ -230,8 +230,9 @@ datasource "ds_aws_buckets_with_region" do
   iterate $ds_aws_buckets_name_filtered
   request do
     auth $auth_aws
-    host join([val(iter_item, "id"), ".s3.amazonaws.com"])
-    path "/?location"
+    host "s3.amazonaws.com"
+    path join(["/", val(iter_item, "id")])
+    query "location", ""
     header "User-Agent", "RS Policies"
     ignore_status [403, 404]
   end
@@ -252,11 +253,23 @@ script "js_aws_buckets_with_region_cleaned", type:"javascript" do
   result "result"
   code <<-EOS
   result = _.map(ds_aws_buckets_with_region, function(bucket) {
-    region = bucket['region']
-    if (typeof(bucket['region']) != 'string' || bucket['region'] == '') { region = 'us-east-1' }
-    if (bucket['region'].toLowerCase().trim() == "eu") { region = 'eu-west-1' }
+    if (typeof(bucket['region']) != 'string' || bucket['region'] == '' || bucket['region'] == 'us-east-1') {
+      region = 'us-east-1'
+      host = 's3.amazonaws.com'
+    } else if (bucket['region'].toLowerCase() == 'eu') {
+      region = 'eu-west-1'
+      host = 's3-eu-west-1.amazonaws.com'
+    } else {
+      region = bucket['region'].toLowerCase().trim()
+      host = 's3-' + region + '.amazonaws.com'
+    }
 
-    return { id: bucket['id'], creation_date: bucket['creation_date'], region: region }
+    return {
+      id: bucket['id'],
+      creation_date: bucket['creation_date'],
+      region: region,
+      host: host
+    }
   })
 EOS
 end
@@ -285,8 +298,9 @@ datasource "ds_aws_buckets_with_tags" do
   iterate $ds_aws_buckets_region_filtered
   request do
     auth $auth_aws
-    host join([val(iter_item, "id"), ".s3.amazonaws.com"])
-    path "/?tagging"
+    host val(iter_item, "host")
+    path join(["/", val(iter_item, "id")])
+    query "tagging", ""
     header "User-Agent", "RS Policies"
     ignore_status [403, 404]
   end
@@ -302,6 +316,7 @@ datasource "ds_aws_buckets_with_tags" do
       field "id", val(iter_item, "id")
       field "creation_date", val(iter_item, "creation_date")
       field "region", val(iter_item, "region")
+      field "host", val(iter_item, "host")
     end
   end
 end
@@ -390,8 +405,9 @@ datasource "ds_aws_buckets_with_logging" do
   iterate $ds_aws_buckets_tag_filtered
   request do
     auth $auth_aws
-    host join([val(iter_item, "id"), ".s3.amazonaws.com"])
-    path "/?logging"
+    host val(iter_item, "host")
+    path join(["/", val(iter_item, "id")])
+    query "logging", ""
     header "User-Agent", "RS Policies"
     ignore_status [403, 404]
   end
@@ -401,6 +417,7 @@ datasource "ds_aws_buckets_with_logging" do
     field "id", val(iter_item, "id")
     field "creation_date", val(iter_item, "creation_date")
     field "region", val(iter_item, "region")
+    field "host", val(iter_item, "host")
     field "tags", val(iter_item, "tags")
   end
 end
@@ -429,6 +446,7 @@ script "js_aws_buckets_without_server_access_logging", type:"javascript" do
       accountName: ds_aws_account['name'],
       id: bucket['id'],
       region: bucket['region'],
+      host: bucket['host'],
       creation_date: bucket['creation_date'],
       tags: tags.join(', '),
       policy_name: ds_applied_policy['name']
@@ -441,6 +459,7 @@ script "js_aws_buckets_without_server_access_logging", type:"javascript" do
     accountName: '',
     id: '',
     region: '',
+    host: '',
     creation_date: '',
     tags: '',
     policy_name: ''
@@ -478,6 +497,9 @@ policy "pol_aws_buckets_without_server_access_logging" do
       end
       field "creation_date" do
         label "Creation Date"
+      end
+      field "host" do
+        label "Host"
       end
     end
   end
@@ -541,9 +563,10 @@ define enable_logging_bucket($bucket, $param_target_bucket, $param_log_prefix) r
     $log_prefix = $bucket["id"] + "-logging"
   end
 
-  $host = $bucket["id"] + ".s3.amazonaws.com"
-  $href = '/?logging'
-  $url = $host + $href
+  $host = $bucket["host"]
+  $href = "/" + $bucket["id"]
+  $params = "?logging"
+  $url = $host + $href + $params
   $body = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<BucketLoggingStatus xmlns=\"http://doc.s3.amazonaws.com/2006-03-01\"><LoggingEnabled><TargetBucket>" + $param_target_bucket + "</TargetBucket><TargetPrefix>" + $log_prefix + "</TargetPrefix></LoggingEnabled></BucketLoggingStatus>"
   task_label("PUT " + $url)
 
@@ -551,8 +574,9 @@ define enable_logging_bucket($bucket, $param_target_bucket, $param_log_prefix) r
     auth: $$auth_aws,
     https: true,
     verb: "put",
-    href: $href,
     host: $host,
+    href: $href,
+    query_strings: { "logging": "" },
     body: $body
   )
 
