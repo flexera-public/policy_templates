@@ -1,7 +1,7 @@
-name "AWS VPC's without FlowLogs Enabled"
+name "AWS VPCs Without FlowLogs Enabled"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report any AWS VPC's without FlowLogs Enabled. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/vpcs_without_flow_logs_enabled) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Report any AWS VPCs without FlowLogs enabled. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/vpcs_without_flow_logs_enabled) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Security"
 severity "medium"
@@ -9,8 +9,8 @@ default_frequency "daily"
 info(
   version: "4.0.0",
   provider: "AWS",
-  service: "VPC",
-  policy_set: "AWS Config"
+  service: "Network",
+  policy_set: ""
 )
 
 ###############################################################################
@@ -250,23 +250,28 @@ datasource "ds_vpcs" do
   request do
     auth $auth_aws
     pagination $pagination_aws_xml
-    host join(["ec2.", val(iter_item,"region"), ".amazonaws.com"])
+    host join(["ec2.", val(iter_item, "region"), ".amazonaws.com"])
     path "/"
     query "Action", "DescribeVpcs"
     query "Version", "2016-11-15"
   end
   result do
     encoding "xml"
-    collect xpath(response, "//DescribeVpcsResponse/vpcSet/item","array") do
-      field "region", val(iter_item, "region")
+    collect xpath(response, "//DescribeVpcsResponse/vpcSet/item", "array") do
       field "ownerId", xpath(col_item, "ownerId")
       field "id", xpath(col_item, "vpcId")
+      field "state", xpath(col_item, "state")
+      field "cidrBlock", xpath(col_item, "cidrBlock")
+      field "dhcpOptionsId", xpath(col_item, "dhcpOptionsId")
+      field "instanceTenancy", xpath(col_item, "instanceTenancy")
+      field "isDefault", xpath(col_item, "isDefault")
       field "tags" do
         collect xpath(col_item, "tagSet/item") do
           field "key", xpath(col_item, "key")
           field "value", xpath(col_item, "value")
         end
       end
+      field "region", val(iter_item, "region")
     end
   end
 end
@@ -356,7 +361,7 @@ datasource "ds_flowlogs" do
   request do
     auth $auth_aws
     pagination $pagination_aws_xml
-    host join(["ec2.", val(iter_item,"region"), ".amazonaws.com"])
+    host join(["ec2.", val(iter_item, "region"), ".amazonaws.com"])
     path "/"
     query "Action", "DescribeFlowLogs"
     query "Version", "2016-11-15"
@@ -364,7 +369,6 @@ datasource "ds_flowlogs" do
   result do
     encoding "xml"
     collect xpath(response, "//DescribeFlowLogsResponse/flowLogSet/item","array") do
-      field "region", val(iter_item, "region")
       field "flowLogId", xpath(col_item, "flowLogId")
       field "resourceId", xpath(col_item, "resourceId")
       field "flowLogStatus", xpath(col_item, "flowLogStatus")
@@ -374,70 +378,100 @@ datasource "ds_flowlogs" do
           field "value", xpath(col_item, "value")
         end
       end
+      field "region", val(iter_item, "region")
     end
   end
 end
 
-datasource "ds_vpc_filtered" do
-  run_script $js_vpc_filtered, $ds_vpc_list, $ds_flowlog_list, $param_exclude_tags
+datasource "ds_vpcs_without_flowlogs" do
+  run_script $js_vpcs_without_flowlogs, $ds_vpcs_tag_filtered, $ds_flowlogs, $ds_aws_account, $ds_applied_policy
 end
 
-script "js_vpc_filtered", type:"javascript" do
-  parameters "ds_vpc_list", "ds_flowlog_list", "param_exclude_tags"
-  result "vpc_result"
-  code <<-EOF
-  var param_exclude_tags_lower=[];
-  for(var i=0; i < param_exclude_tags.length; i++){
-    param_exclude_tags_lower[i]=param_exclude_tags[i].toString().toLowerCase();
-  }
-  var vpc_result = _.reject(ds_vpc_list, function(vpc){
-    tags = vpc.tags
-    var tag_key_value=""
-    if(typeof(tags) != "undefined"){
-      for(var k=0;k<tags.length;k++){
-        var tag=tags[k];
-        if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
-          is_tag_matched = true;
-        }
-        // Constructing tags with comma separated to display in detail_template
-        if((tag['tagValue']).length > 0){
-          tag_key_value = tag_key_value + ', '+ tag['tagKey']+'='+tag['tagValue']
-        }else{
-          tag_key_value = tag_key_value + ', '+ tag['tagKey']
-        }
-      }
+script "js_vpcs_without_flowlogs", type:"javascript" do
+  parameters "ds_vpcs_tag_filtered", "ds_flowlogs", "ds_aws_account", "ds_applied_policy"
+  result "result"
+  code <<-'EOS'
+  vpc_ids_with_flowlogs = _.pluck(ds_flowlogs, 'resourceId')
+  bad_vpcs = _.reject(ds_vpcs_tag_filtered, function(vpc) { return _.contains(vpc_ids_with_flowlogs, vpc['id']) })
+
+  result = _.map(bad_vpcs, function(vpc) {
+    tags = []
+
+    if (typeof(vpc['tags']) == 'object') {
+      tags = _.map(vpc['tags'], function(tag) { return tag['key'] + '=' + tag['value'] })
     }
-    vpc["tagKeyValue"] = (tag_key_value.slice(1))
-    for (var i = 0; i < ds_flowlog_list.length; i++) {
-      if (vpc.id == ds_flowlog_list[i].resourceId){
-        return vpc;
-      }
+
+    return {
+      accountID: ds_aws_account['id'],
+      accountName: ds_aws_account['name'],
+      id: vpc['id'],
+      ownerId: vpc['ownerId'],
+      state: vpc['state'],
+      cidrBlock: vpc['cidrBlock'],
+      dhcpOptionsId: vpc['dhcpOptionsId'],
+      instanceTenancy: vpc['instanceTenancy'],
+      isDefault: vpc['isDefault'],
+      region: vpc['region'],
+      tags: tags.join(', '),
+      policy_name: ds_applied_policy['name']
     }
   })
-  EOF
+
+  // Dummy entry to ensure validation occurs
+  result.push({
+    accountID: '',
+    accountName: '',
+    id: '',
+    ownerId: '',
+    state: '',
+    cidrBlock: '',
+    dhcpOptionsId: '',
+    instanceTenancy: '',
+    isDefault: '',
+    region: '',
+    tags: '',
+    policy_name: ''
+  })
+EOS
 end
 
 ###############################################################################
 # Policy
 ###############################################################################
 
-policy "pol_vpcs_with_flowlogs" do
-  validate $ds_vpc_filtered do
-    summary_template "AWS Account ID: {{with index data 0}}{{ .ownerId }}{{end}}: {{ len data }} AWS VPC's without FlowLogs Enabled."
-    check eq(size(data), 0)
+policy "pol_vpcs_without_flowlogs" do
+  validate_each $ds_vpcs_without_flowlogs do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS VPCs Without FlowLogs Enabled"
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "id"), ""))
     escalate $esc_email
+    hash_exclude "tags"
     export do
       resource_level true
-      field "ownerId" do
-        label "AWS Account Id"
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
       end
       field "id" do
-        label "VPC Id"
+        label "VPC ID"
+      end
+      field "ownerId" do
+        label "Owner ID"
+      end
+      field "state" do
+        label "State"
+      end
+      field "cidrBlock" do
+        label "CIDR Block"
+      end
+      field "isDefault" do
+        label "Default"
       end
       field "region" do
         label "Region"
       end
-      field "tagKeyValue" do
+      field "tags" do
         label "Tags"
       end
     end
@@ -453,4 +487,94 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
 end
