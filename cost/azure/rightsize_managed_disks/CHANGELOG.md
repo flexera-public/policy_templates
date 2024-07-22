@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.3.0
+
+- Implemented automatic currency detection and conversion, ensuring recommendations are displayed in the currency configured in the user's settings.
+
 ## v2.2.0
 
 - Added a parameter to make recommendations or not for changing a disk tier to Standard HDD.

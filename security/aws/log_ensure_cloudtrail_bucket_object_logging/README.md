@@ -1,48 +1,52 @@
-# AWS Ensure Object-level Events Logging Enabled For CloudTrails
+# AWS CloudTrails Without Object-level Events Logging Enabled
 
-## What it does
+## What It Does
 
-S3 object-level API operations such as GetObject, DeleteObject, and PutObject are called data events. By default, CloudTrail trails don't log data events and so it is recommended to enable Object-level logging for S3 buckets. This policy raises an incident if any CloudTrails are not configured to do so.
+This policy template reports any AWS CloudTrail trails that do not have object-level events logging enabled. Optionally, it emails this report.
 
-## Functional Details
-
-The policy leverages the AWS CloudTrail API.
+S3 object-level API operations such as GetObject, DeleteObject, and PutObject are called data events. By default, CloudTrail trails don't log data events and so it is recommended to enable Object-level logging for S3 buckets used by CloudTrail.
 
 ## Input Parameters
 
-- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
+- *Email Addresses* - Email addresses of the recipients you wish to notify.
+- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
 
 ## Policy Actions
 
-- Send an email report
+- Sends an email notification.
 
 ## Prerequisites
 
-This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
-### Credential configuration
+- [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
+  - `sts:GetCallerIdentity`
+  - `cloudtrail:DescribeTrails`
+  - `cloudtrail:GetEventSelectors`
 
-For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
+  Example IAM Permission Policy:
 
-Provider tag value to match this policy: `aws` , `aws_sts`
+  ```json
+  {
+      "Version": "2012-10-17",
+      "Statement": [
+          {
+              "Effect": "Allow",
+              "Action": [
+                  "sts:GetCallerIdentity",
+                  "cloudtrail:DescribeTrails",
+                  "cloudtrail:GetEventSelectors"
+              ],
+              "Resource": "*"
+          }
+      ]
+  }
+  ```
 
-Required permissions in the provider:
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - `billing_center_viewer`
 
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": [
-        "cloudtrail:DescribeTrails",
-        "cloudtrail:GetEventSelectors"
-      ],
-      "Resource": "*"
-    }
-  ]
-}
-```
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ## Supported Clouds
 
