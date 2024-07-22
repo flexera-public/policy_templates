@@ -1,45 +1,27 @@
 name "AWS Publicly Accessible RDS Instances"
 rs_pt_ver 20180301
 type "policy"
-short_description "Check for database services that are publicly accessible and terminate them after approval. \n See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/rds_publicly_accessible) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Reports AWS RDS instances that are publicly accessible, with the option to revoke public access or terminate them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/rds_publicly_accessible) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Security"
 severity "high"
 default_frequency "hourly"
 info(
-  version: "4.2.1",
+  version: "5.0.0",
   provider: "AWS",
   service: "RDS",
-  policy_set: "Public Database Access"
+  policy_set: ""
 )
 
 ###############################################################################
 # Parameters
 ###############################################################################
 
-parameter "param_allowed_regions_allow_or_deny" do
-  type "string"
-  category "Policy Settings"
-  label "Allow/Deny Regions"
-  description "Allow or Deny entered regions. See the README for more details"
-  allowed_values "Allow", "Deny"
-  default "Allow"
-end
-
-parameter "param_allowed_regions" do
-  type "list"
-  category "Policy Settings"
-  label "Regions"
-  description "A list of allowed or denied regions. See the README for more details"
-  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
-  default []
-end
-
 parameter "param_email" do
   type "list"
   category "Policy Settings"
-  label "Email addresses to notify"
-  description "Email addresses of the recipients you wish to notify when new incidents are created"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify."
   default []
 end
 
@@ -51,12 +33,39 @@ parameter "param_aws_account_number" do
   default ""
 end
 
-parameter "param_exclude_tags" do
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
   type "list"
-  category "Policy Settings"
-  label "Tags to ignore"
-  description "List of tags that will exclude resources from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test, env=dev'"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   default []
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
 end
 
 parameter "param_automatic_action" do
@@ -64,7 +73,7 @@ parameter "param_automatic_action" do
   category "Policy Settings"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Update RDS Instances"]
+  allowed_values ["Remove RDS Instances Public Access", "Terminate RDS Instances"]
   default []
 end
 
@@ -72,7 +81,6 @@ end
 # Authentication
 ###############################################################################
 
-#AUTHENTICATE WITH AWS
 credentials "auth_aws" do
   schemes "aws", "aws_sts"
   label "AWS"
@@ -81,7 +89,6 @@ credentials "auth_aws" do
   aws_account_number $param_aws_account_number
 end
 
-#AUTHENTICATE WITH FLEXERA
 credentials "auth_flexera" do
   schemes "oauth2"
   label "Flexera"
@@ -90,25 +97,117 @@ credentials "auth_flexera" do
 end
 
 ###############################################################################
-# Pagination
-###############################################################################
-
-pagination "pagination_rds" do
-  get_page_marker do
-    body_path "DescribeDBInstancesResult.NextMarker"
-  end
-  set_page_marker do
-    query "Marker"
-  end
-end
-
-###############################################################################
 # Datasources & Scripts
 ###############################################################################
 
-# ds_region_list is a list of regions that are opted-in or opt-in-not-required
-datasource "ds_regions_list" do
-  # https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeRegions.html
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get AWS RDS instance sizes
+datasource "ds_aws_instance_size_map" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/aws/instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get AWS account info
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account", xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_get_caller_identity
+end
+
+script "js_aws_account", type:"javascript" do
+  parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+  result = _.find(ds_cloud_vendor_accounts, function(account) {
+    return account['id'] == ds_get_caller_identity[0]['account']
+  })
+
+  // This is in case the API does not return the relevant account info
+  if (result == undefined) {
+    result = {
+      id: ds_get_caller_identity[0]['account'],
+      name: "",
+      tags: {}
+    }
+  }
+EOS
+end
+
+datasource "ds_describe_regions" do
   request do
     auth $auth_aws
     verb "GET"
@@ -131,259 +230,358 @@ datasource "ds_regions_list" do
   end
 end
 
-# Get only SCP enabled regions
 datasource "ds_regions" do
-  run_script $js_regions, $ds_regions_list, $param_allowed_regions, $param_allowed_regions_allow_or_deny
+  run_script $js_regions, $ds_describe_regions, $param_regions_list, $param_regions_allow_or_deny
 end
 
 script "js_regions", type:"javascript" do
-  parameters "all_regions", "user_entered_regions", "regions_allow_or_deny"
-  result "regions"
+  parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
+  result "result"
   code <<-EOS
-    if(_.isEmpty(user_entered_regions)){
-      regions = all_regions;
-    }else{
-      //Filter unique regions
-      var uniqueRegions = _.uniq(user_entered_regions);
-      var all_regions_list = [];
-      //Filter and remove denied regions from all_regions
-      if (regions_allow_or_deny == "Deny"){
-        var all_regions = all_regions.filter(function(obj){
-          return user_entered_regions.indexOf(obj.region) === -1;
-        });
-      }
-      all_regions.forEach(function(all_region){
-        all_regions_list.push(all_region.region)
-      })
-      //Filter valid regions
-      var valid_regions = [];
-      _.map(uniqueRegions, function(uniqueRegion){
-        if(all_regions_list.indexOf(uniqueRegion) > -1){
-          valid_regions.push({"region": uniqueRegion})
-        }
-      })
+  allow_deny_test = { "Allow": true, "Deny": false }
 
-      //Throw an error if no valid regions found
-      if (_.isEmpty(valid_regions)) {
-        regions = all_regions;
-      }else{
-        regions = valid_regions
-      }
-    }
-  EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_describe_regions, function(item) {
+      return _.contains(param_regions_list, item['region']) == allow_deny_test[param_regions_allow_or_deny]
+    })
+  } else {
+    result = ds_describe_regions
+  }
+EOS
 end
 
-#To get list of All RDS Instances.
-datasource "ds_rds_instances_list" do
+datasource "ds_rds_instances_set" do
   iterate $ds_regions
   request do
-    run_script $js_rds_instances_list, val(iter_item, "region")
+    run_script $js_rds_instances_set, val(iter_item, "region")
   end
   result do
-    encoding "json"
-    collect jmes_path(response, "DescribeDBInstancesResponse.DescribeDBInstancesResult.DBInstances[*]") do
-      field "db_instance_arn", jmes_path(col_item, "DBInstanceArn")
-      field "db_instance_identifier", jmes_path(col_item, "DBInstanceIdentifier")
-      field "publicly_accessible", jmes_path(col_item, "PubliclyAccessible")
-      field "storage_encrypted", jmes_path(col_item, "StorageEncrypted")
-      field "db_engine_name", jmes_path(col_item, "Engine")
-      field "delete_protection", jmes_path(col_item, "DeletionProtection")
-      field "availability_zone", jmes_path(col_item, "AvailabilityZone")
-      field "sec_availability_zone", jmes_path(col_item, "SecondaryAvailabilityZone")
-      field "db_instance_status", jmes_path(col_item, "DBInstanceStatus")
-      field "region", val(iter_item, "region")
-      field "db_cluster_identifier", jmes_path(col_item, "DBClusterIdentifier")
-    end
-  end
-end
-
-#https://docs.aws.amazon.com/AmazonRDS/latest/APIReference/API_DescribeDBInstances.html
-script "js_rds_instances_list", type: "javascript" do
-  parameters "region"
-  result "results"
-  code <<-EOS
-    results = {
-      auth: 'auth_aws',
-      host: 'rds.'+region+'.amazonaws.com',
-      path: '/',
-      pagination: "pagination_rds",
-      query_params: {
-        "Action": "DescribeDBInstances",
-        "Version": "2014-10-31",
-      },
-      headers: {
-        "Accept": "application/json"
-      }
-    }
-  EOS
-end
-
-#Get respective tags for all RDS instances
-datasource "ds_rds_list_with_tags" do
-  iterate $ds_rds_instances_list
-  request do
-    run_script $js_rds_list_with_tags, val(iter_item, "region"), val(iter_item, "db_instance_arn")
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "ListTagsForResourceResponse.ListTagsForResourceResult") do
-      field "tags" do
-        collect jmes_path(col_item, "TagList") do
-          field "tagKey", jmes_path(col_item, "Key")
-          field "tagValue", jmes_path(col_item, "Value")
+    encoding "xml"
+    collect xpath(response, "//DescribeDBInstancesResponse/DescribeDBInstancesResult/DBInstances/DBInstance[*]", "array") do
+      field "instanceId", xpath(col_item, "DbiResourceId")
+      field "instanceArn", xpath(col_item, "DBInstanceArn")
+      field "resourceType", xpath(col_item, "DBInstanceClass")
+      field "name", xpath(col_item, "DBInstanceIdentifier")
+      field "clusterIdentifier", xpath(col_item, "DBClusterIdentifier")
+      field "status", xpath(col_item, "DBInstanceStatus")
+      field "privateDnsName", xpath(col_item, "Endpoint/Address")
+      field "databaseEngine", xpath(col_item, "Engine")
+      field "engineVersion", xpath(col_item, "EngineVersion")
+      field "availabilityZone", xpath(col_item, "AvailabilityZone")
+      field "secondaryAvailabilityZone", xpath(col_item, "SecondaryAvailabilityZone")
+      field "licenseModel", xpath(col_item, "LicenseModel")
+      field "publiclyAccessible", xpath(col_item, "PubliclyAccessible")
+      field "storageEncrypted", xpath(col_item, "StorageEncrypted")
+      field "deletionProtection", xpath(col_item, "DeletionProtection")
+      field "processorFeatures" do
+        collect xpath(col_item, "ProcessorFeatures/ProcessorFeature") do
+          field "name", xpath(col_item, "Name")
+          field "value", xpath(col_item, "Value")
         end
       end
-      field "db_instance_arn", val(iter_item, "db_instance_arn")
-      field "db_instance_identifier", val(iter_item, "db_instance_identifier")
-      field "publicly_accessible", val(iter_item, "publicly_accessible")
-      field "storage_encrypted", val(iter_item, "storage_encrypted")
-      field "delete_protection", val(iter_item, "delete_protection")
       field "region", val(iter_item, "region")
-      field "db_engine_name", val(iter_item, "db_engine_name")
-      field "availability_zone", val(iter_item, "availability_zone")
-      field "sec_availability_zone", val(iter_item, "sec_availability_zone")
-      field "db_instance_status", val(iter_item, "db_instance_status")
-      field "db_cluster_identifier", val(iter_item, "db_cluster_identifier")
     end
   end
 end
 
-#https://docs.aws.amazon.com/AmazonRDS/latest/APIReference/API_ListTagsForResource.html
-script "js_rds_list_with_tags", type: "javascript" do
-  parameters "region", "db_instance_arn"
+script "js_rds_instances_set", type: "javascript" do
+  parameters "region"
   result "request"
   code <<-EOS
-    request = {
-      auth: 'auth_aws',
-      host: 'rds.'+region+'.amazonaws.com',
-      path: '/',
-      verb: 'GET',
-      query_params: {
-        "Action": "ListTagsForResource",
-        "Version": "2014-10-31",
-        "ResourceName": db_instance_arn,
-      },
-      headers: {
-        "Accept": "application/json"
-      }
+  end_date = new Date()
+  end_date = end_date.toISOString()
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 30)
+  start_date = start_date.toISOString()
+
+  var request = {
+    auth: "auth_aws",
+    host: "rds." + region + ".amazonaws.com",
+    verb: "GET",
+    path: "/",
+    headers: {
+      "User-Agent": "RS Policies",
+      "Content-Type": "text/xml"
     }
-  EOS
+    query_params: {
+      "Action": "DescribeDBInstances",
+      "Version": "2014-10-31"
+    }
+  }
+EOS
 end
 
-datasource "ds_rds_publicly_accessible_instance_map" do
-  run_script $js_rds_publicly_accessible_instance_map, $ds_rds_list_with_tags, $param_exclude_tags
+datasource "ds_resource_tags" do
+  iterate $ds_rds_instances_set
+  request do
+    run_script $js_resource_tags, val(iter_item, "instanceArn"), val(iter_item, "region")
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//ListTagsForResourceResponse/ListTagsForResourceResult/TagList/Tag[*]", "array") do
+      field "instanceId", val(iter_item, "instanceId")
+      field "key", xpath(col_item, "Key")
+      field "value", xpath(col_item, "Value")
+    end
+  end
 end
 
-#Process the response data, check for the tags and generate a list of RDS instances that are publicly accessible
-script "js_rds_publicly_accessible_instance_map", type: "javascript" do
-  parameters "ds_rds_list_with_tags", "param_exclude_tags"
-  result "content"
+script "js_resource_tags", type: "javascript" do
+  parameters "instanceArn", "region"
+  result "request"
   code <<-EOS
-    var param_exclude_tags_lower=[];
-    for(var j=0; j < param_exclude_tags.length; j++){
-      param_exclude_tags_lower[j]=param_exclude_tags[j].toString().toLowerCase();
+  end_date = new Date()
+  end_date = end_date.toISOString()
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 30)
+  start_date = start_date.toISOString()
+
+  var request = {
+    auth: "auth_aws",
+    host: "rds." + region + ".amazonaws.com",
+    verb: "GET",
+    path: "/",
+    headers: {
+      "User-Agent": "RS Policies",
+      "Content-Type": "text/xml"
+    }
+    query_params: {
+      "Action": "ListTagsForResource",
+      "ResourceName": instanceArn,
+      "Version": "2014-10-31"
+    }
+  }
+EOS
+end
+
+datasource "ds_rds_instances" do
+  run_script $js_rds_instances, $ds_rds_instances_set, $ds_resource_tags, $ds_aws_instance_size_map, $ds_aws_account, $ds_applied_policy, $param_exclusion_tags, $param_exclusion_tags_boolean
+end
+
+script "js_rds_instances", type: "javascript" do
+  parameters "ds_rds_instances_set", "ds_resource_tags", "ds_aws_instance_size_map", "ds_aws_account", "ds_applied_policy", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  result "result"
+  code <<-EOS
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
     }
 
-    var content=[]
-    for(var i=0; i<ds_rds_list_with_tags.length; i++){
-      rds=ds_rds_list_with_tags[i]
-
-      //Check, if the tag present in entered param_exclude_tags, ignore the RDS instance if the tag matches/present.
-      var tags = rds['tags']
-      var isTagMatched=false
-      var tagKeyValue=""
-      for(var j=0; j < tags.length; j++){
-        tag = tags[j]
-        if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
-          isTagMatched = true;
-        }
-        // Constructing tags with comma separated to display in detail_template
-        if((tag['tagValue']).length > 0){
-          tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
-        } else {
-          tagKeyValue = tagKeyValue + ', '+ tag['tagKey']
-        }
-      }
-
-      var storage_encrypted = rds['storage_encrypted'];
-      if(storage_encrypted === true){
-        storage_encrypted = 'Yes';
-      } else {
-        storage_encrypted = 'No';
-      }
-      var delete_protection = rds['delete_protection'];
-      if(delete_protection === true){
-        delete_protection = 'Yes';
-      } else {
-        delete_protection = 'No';
-      }
-
-      //If the RDS instance tag does not match with entered param_exclude_tags, then check if RDS instance is Publicly Accessible
-      if(!(isTagMatched) && (rds['publicly_accessible']) === true){
-        content.push({
-          db_instance_arn: rds['db_instance_arn'],
-          db_engine_name: rds['db_engine_name'],
-          region: rds['region'],
-          availability_zone: rds['availability_zone'],
-          sec_availability_zone: rds['sec_availability_zone'],
-          tagKeyValue:(tagKeyValue.slice(2)),
-          db_instance_identifier: rds['db_instance_identifier'],
-          storage_encrypted: storage_encrypted,
-          db_instance_status: rds['db_instance_status'],
-          db_cluster_identifier: rds['db_cluster_identifier'],
-          delete_protection: delete_protection,
-          publicly_accessible: rds['publicly_accessible']
-        })
-      }
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
     }
-    content = _.sortBy(content, 'region');
-  EOS
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  tag_object = {}
+
+  _.each(ds_resource_tags, function(item) {
+    id = item['instanceId'].toLowerCase()
+    key = item['key']
+    value = item['value']
+
+    if (tag_object[id] == undefined) {
+      tag_object[id] = {}
+    }
+
+    tag_object[id][key] = value
+  })
+
+  result = []
+
+  _.each(ds_rds_instances_set, function(instance) {
+    id = instance['instanceId'].toLowerCase()
+
+    resource_tags = {}
+    if (tag_object[id] != undefined) { resource_tags = tag_object[id] }
+
+    // Store a list of found tags
+    found_tags = []
+
+    _.each(comparators, function(comparator) {
+      comparison = comparator['comparison']
+      value = comparator['value']
+      string = comparator['string']
+      resource_tag = resource_tags[comparator['key']]
+
+      if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+      if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+      if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+      if (comparison == '=~') {
+        if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+      }
+
+      if (comparison == '!~') {
+        if (resource_tag == undefined) { found_tags.push(string) }
+        if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+      }
+    })
+
+    all_tags_found = found_tags.length == comparators.length
+    any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+    if ((!any_tags_found && !all_tags_found) || param_exclusion_tags.length == 0) {
+      tags = _.map(_.keys(resource_tags), function(key) { return key + '=' + resource_tags[key] })
+
+      vcpus = null
+
+      if (instance["processorFeatures"] != null && instance["processorFeatures"] != undefined) {
+        cores = _.findWhere(instance["processorFeatures"], { "name": "coreCount" })
+        threads = _.findWhere(instance["processorFeatures"], { "name": "threadsPerCore" })
+
+        if (cores != undefined && threads != undefined) {
+          vcpus = cores["value"] * threads["value"]
+        }
+      }
+
+      if (vcpus == null && ds_aws_instance_size_map[instance["resourceType"]] != undefined) {
+        vcpus = ds_aws_instance_size_map[instance["resourceType"]]["vcpu"]
+      }
+
+      result.push({
+        accountID: ds_aws_account['id'],
+        accountName: ds_aws_account['name'],
+        resourceID: instance['instanceId'],
+        arn: instance['instanceArn'],
+        resourceType: instance['resourceType'],
+        resourceName: instance['name'],
+        clusterIdentifier: instance['clusterIdentifier'],
+        state: instance['status'],
+        databaseEngine: instance['databaseEngine'],
+        platform: instance['databaseEngine'],
+        engineVersion: instance['engineVersion'],
+        privateDnsName: instance['privateDnsName'],
+        region: instance['region'],
+        availabilityZone: instance['availabilityZone'],
+        secondaryAvailabilityZone: instance['secondaryAvailabilityZone'],
+        licenseModel: instance['licenseModel'],
+        publiclyAccessible: instance['publiclyAccessible'],
+        storageEncrypted: instance['storageEncrypted'],
+        deletionProtection: instance['deletionProtection'],
+        processorFeatures: instance['processorFeatures'],
+        vcpus: vcpus,
+        tags: tags.join(', '),
+        policy_name: ds_applied_policy['name'],
+        service: 'AmazonRDS'
+      })
+    }
+  })
+EOS
+end
+
+datasource "ds_bad_rds_instances" do
+  run_script $js_bad_rds_instances, $ds_rds_instances
+end
+
+script "js_bad_rds_instances", type: "javascript" do
+  parameters "ds_rds_instances"
+  result "result"
+  code <<-'EOS'
+  result = _.filter(ds_rds_instances, function(db) {
+    return db['publiclyAccessible'] == 'true' && db['deletionProtection'] == 'false' && db['state'] == 'available'
+  })
+EOS
 end
 
 ###############################################################################
 # Policy
 ###############################################################################
 
-policy "pol_rds_instance_list" do
-  validate_each $ds_rds_publicly_accessible_instance_map do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Publicly Accessible RDS Instances Found in AWS"
-    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
-    check logic_or($ds_parent_policy_terminated, logic_or(eq(val(item, "delete_protection"), "YES"), ne(val(item, "db_instance_status"), "available")))
+policy "pol_bad_rds_instances" do
+  validate_each $ds_bad_rds_instances do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Publicly Accessible RDS Instances Found"
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     escalate $esc_modify
-    escalate $esc_delete
+    escalate $esc_terminate
+    hash_exclude "tags"
     export do
       resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
       field "region" do
         label "Region"
       end
-      field "id" do
-        path "db_instance_identifier"
-        label "DB Instance Identifier"
+      field "state" do
+        label "State"
       end
-      field "availability_zone" do
+      field "publiclyAccessible" do
+        label "Publicly Accessible"
+      end
+      field "deletionProtection" do
+        label "Deletion Protection"
+      end
+      field "storageEncrypted" do
+        label "Storage Encrypted"
+      end
+      field "availabilityZone" do
         label "Availability Zone"
       end
-      field "sec_availability_zone" do
-        label "Secondary Availability Zone"
+      field "privateDnsName" do
+        label "Private DNS Name"
       end
-      field "storage_encrypted" do
-        label "Enable Encryption"
+      field "resourceType" do
+        label "Resource Type"
       end
-      field "db_engine_name" do
-        label "DB Engine Name"
+      field "databaseEngine" do
+        label "Database Engine"
       end
-      field "db_instance_status" do
-        label "DB Instance Status"
+      field "engineVersion" do
+        label "Engine Version"
       end
-      field "delete_protection" do
-        label "Delete Protection Enabled"
+      field "vcpus" do
+        label "vCPUs"
       end
-      field "Tags" do
-        label "tagKeyValue"
+      field "licenseModel" do
+        label "License Model"
       end
-      field "db_cluster_identifier" do
-        label "DB Cluster Identifier"
+      field "arn" do
+        label "ARN"
+      end
+      field "platform" do
+        label "Platform"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "id"
+        path "resourceID"
       end
     end
   end
@@ -401,162 +599,120 @@ escalation "esc_email" do
 end
 
 escalation "esc_modify" do
-  automatic contains($param_automatic_action, "Update RDS Instances")
-  label "Update Instance"
-  description "Approve selected RDS public access rule configuration change"
-  run "remove_public_access_RDS", data, rs_optima_host
+  automatic contains($param_automatic_action, "Remove RDS Instances Public Access")
+  label "Remove RDS Instances Public Access"
+  description "Approval to disable public access for all selected RDS instances"
+  run "remove_rds_instances_public_access", data
 end
 
-escalation "esc_delete" do
-  automatic false
-  label "Delete Instance"
-  description "Delete selected publicly accessible RDS-instances"
-  run "delete_publicly_acessible_RDS_instances", data, rs_optima_host
+escalation "esc_terminate" do
+  automatic contains($param_automatic_action, "Terminate RDS Instances")
+  label "Terminate RDS Instances"
+  description "Approval to terminate all selected RDS instances"
+  run "terminate_rds_instances", data
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-#https://docs.aws.amazon.com/AmazonRDS/latest/APIReference/API_ModifyDBInstance.html
-define remove_public_access_RDS($data, $$rs_optima_host) return $all_responses do
-  $$debug=true
-  $all_responses = []
-  foreach $item in $data do
-    sub on_error: skip do
-      $response = http_request(
-        auth: $$auth_aws,
-        https: true,
-        verb: "get",
-        href: "/",
-        host: "rds."+$item["region"]+".amazonaws.com",
-        query_strings: {
-          "Action": "ModifyDBInstance",
-          "Version": "2014-10-31",
-          "PubliclyAccessible": false,
-          "DBInstanceIdentifier": $item["id"]
-        }
-      )
-      $all_responses << $response
-      call sys_log('RDS instance config change response', to_s($response))
+define remove_rds_instances_public_access($data) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call remove_rds_instance_public_access($instance) retrieve $remove_response
     end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
   end
 end
 
-#https://docs.aws.amazon.com/AmazonRDS/latest/APIReference/API_DeleteDBInstance.html
-#https://docs.aws.amazon.com/AmazonRDS/latest/APIReference/API_CreateDBClusterSnapshot.html
-#https://docs.aws.amazon.com/AmazonRDS/latest/APIReference/API_DescribeDBClusterSnapshots.html
-define delete_publicly_acessible_RDS_instances($data, $$rs_optima_host) return $all_responses do
-  $$debug=true
-  $all_responses = []
-  foreach $item in $data do
-    sub on_error: skip do
-      if ($item['db_cluster_identifier'] != null)
-        #Creating Cluster snapshot manually Since DB instance snapshot cannot be created directly for Aurora cluster DB instance.
-        $create_cluster_snapshot = http_request(
-          auth: $$auth_aws,
-          https: true,
-          verb: "get",
-          href: "/",
-          host: "rds."+$item["region"]+".amazonaws.com",
-          query_strings: {
-            "Action": "CreateDBClusterSnapshot",
-            "Version": "2014-10-31",
-            "DBClusterIdentifier": $item["db_cluster_identifier"],
-            "DBClusterSnapshotIdentifier": $item["db_cluster_identifier"]+"-finalSnapshot"
-          }
-        )
-        $status = $create_cluster_snapshot['body']['CreateDBClusterSnapshotResponse']['CreateDBClusterSnapshotResult']['DBClusterSnapshot']['Status']
+define terminate_rds_instances($data) return $all_responses do
+  $$all_responses = []
 
-        $statusCheckCount = 0
-        while ($status != "available") && ($statusCheckCount < 30) do
-          sleep(30)
-          $describe_cluster_snapshot = http_request(
-            auth: $$auth_aws,
-            https: true,
-            verb: "get",
-            href: "/",
-            host: "rds."+$item["region"]+".amazonaws.com",
-            query_strings: {
-              "Action": "DescribeDBClusterSnapshots",
-              "Version": "2014-10-31",
-              "DeleteAutomatedBackups": false,
-              "DBInstanceIdentifier": $item["id"]
-            }
-          )
-          $status = $describe_cluster_snapshot['body']['DescribeDBClusterSnapshotsResponse']['DescribeDBClusterSnapshotsResult']['DBClusterSnapshots']['DBClusterSnapshot']['Status']
-          $statusCheckCount = $statusCheckCount + 1
-        end
-
-        if $status == "available"
-          $response = http_request(
-            auth: $$auth_aws,
-            https: true,
-            verb: "get",
-            href: "/",
-            host: "rds."+$item["region"]+".amazonaws.com",
-            query_strings: {
-              "Action": "DeleteDBInstance",
-              "Version": "2014-10-31",
-              "DeleteAutomatedBackups": false,
-              "DBInstanceIdentifier": $item["id"]
-            }
-          )
-        end
-      else
-        #Delete non-Aurora DB instances were a DB snapshot gets created with name '<--db_instance_identifier-->-finalSnapshot' Ex mySQL-DBinstance--finalSnapshot before deleting DB instance.
-        $response = http_request(
-          auth: $$auth_aws,
-          https: true,
-          verb: "get",
-          href: "/",
-          host: "rds."+$item["region"]+".amazonaws.com",
-          query_strings: {
-            "Action": "DeleteDBInstance",
-            "Version": "2014-10-31",
-            "DeleteAutomatedBackups": false,
-            "DBInstanceIdentifier": $item["id"],
-            "FinalDBSnapshotIdentifier": $item["id"]+"-finalSnapshot"
-          }
-        )
-      end
-      $all_responses << $response
-      call sys_log('RDS instance delete response', to_s($response))
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call terminate_instance($instance) retrieve $terminate_response
     end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
   end
 end
 
-define sys_log($subject, $detail) do
-  # Create empty errors array if doesn't already exist
+define remove_rds_instance_public_access($instance) return $response do
+  $host = "rds." + $instance["region"] + ".amazonaws.com"
+  $href = "/"
+  $params = "?Action=ModifyDBInstance&Version=2014-10-31&DBInstanceIdentifier=" + $instance["resourceName"] + "&PubliclyAccessible=false"
+  $url = $host + $href + $params
+  task_label("GET " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "get",
+    host: $host,
+    href: $href,
+    query_strings: {
+      "Action": "ModifyDBInstance",
+      "Version": "2014-10-31",
+      "DBInstanceIdentifier": $instance["resourceName"],
+      "PubliclyAccessible": "false"
+    }
+  )
+
+  task_label("GET AWS RDS instance response: " + $instance["resourceName"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response from GET AWS RDS instance: "+ $instance["resourceName"] + " " + to_json($response)
+  else
+    task_label("GET AWS RDS instance successful: " + $instance["resourceName"])
+  end
+end
+
+define terminate_instance($instance) return $response do
+  $host = "rds." + $instance["region"] + ".amazonaws.com"
+  $href = "/"
+  $params = "?Action=DeleteDBInstance&Version=2014-10-31&DBInstanceIdentifier=" + $instance["resourceName"] + "&SkipFinalSnapshot=true"
+  $url = $host + $href + $params
+  task_label("GET " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "get",
+    host: $host,
+    href: $href,
+    query_strings: {
+      "Action": "DeleteDBInstance",
+      "Version": "2014-10-31",
+      "DBInstanceIdentifier": $instance["resourceName"],
+      "SkipFinalSnapshot": "true"
+    }
+  )
+
+  task_label("GET AWS RDS instance response: " + $instance["resourceName"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response from GET AWS RDS instance: "+ $instance["resourceName"] + " " + to_json($response)
+  else
+    task_label("GET AWS RDS instance successful: " + $instance["resourceName"])
+  end
+end
+
+define handle_error() do
   if !$$errors
     $$errors = []
   end
-  # Check if debug is enabled
-  if $$debug
-    # Append to global $$errors
-    # This is the suggested way to capture errors
-    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
-    # If Flexera NAM Zone, create audit_entries [to be deprecated]
-    # This is the legacy method for capturing errors and only supported on Flexera NAM
-    if $$rs_optima_host == "api.optima.flexeraeng.com"
-      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
-      $task_label = "Creating audit entry for " + $subject
-      sub task_label: $task, on_error: skip_error_and_append($task) do
-        rs_cm.audit_entries.create(
-          notify: "None",
-          audit_entry: {
-            auditee_href: @@account,
-            summary: $subject,
-            detail: $detail
-          }
-        )
-      end # End sub on_error
-    end # End if rs_optima_host
-  end # End if debug is enabled
-end
-
-define skip_error_and_append($subject) do
-  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
   $_error_behavior = "skip"
 end
 
