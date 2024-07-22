@@ -1,10 +1,10 @@
-name "Azure Ensure High Severity Alerts"
+name "Azure Subscriptions Without High Severity Alerts"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report if any subscriptions are not configured to report high severity alerts. \n See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/azure/high_severity_alerts) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+short_description "Report any Azure Subscriptions that are not configured to report high severity alerts. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/azure/high_severity_alerts) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
 long_description ""
-category "Security"
 severity "high"
+category "Security"
 default_frequency "daily"
 info(
   version: "2.3",
@@ -24,32 +24,61 @@ info(
 
 parameter "param_email" do
   type "list"
-  label "Email addresses of the recipients you wish to notify"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
 end
 
 parameter "param_azure_endpoint" do
   type "string"
+  category "Policy Settings"
   label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
   allowed_values "management.azure.com", "management.chinacloudapi.cn"
   default "management.azure.com"
+end
+
+parameter "param_subscriptions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Subscriptions"
+  description "Allow or Deny entered Subscriptions."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_subscriptions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Subscriptions List"
+  description "A list of allowed or denied Subscription IDs/names. Leave blank to check all Subscriptions."
+  default []
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-credentials "azure_auth" do
+credentials "auth_azure" do
   schemes "oauth2"
   label "Azure"
   description "Select the Azure Resource Manager Credential from the list."
   tags "provider=azure_rm"
 end
 
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
 ###############################################################################
 # Pagination
 ###############################################################################
 
-pagination "azure_pagination" do
+pagination "pagination_azure" do
   get_page_marker do
     body_path "nextLink"
   end
@@ -59,17 +88,30 @@ pagination "azure_pagination" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
-datasource "ds_subscriptions" do
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
   request do
-    auth $azure_auth
-    pagination $azure_pagination
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_azure_subscriptions" do
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
     host $param_azure_endpoint
     path "/subscriptions/"
-    query "api-version", "2019-06-01"
+    query "api-version", "2020-01-01"
     header "User-Agent", "RS Policies"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
     ignore_status [400, 403, 404]
   end
@@ -77,73 +119,100 @@ datasource "ds_subscriptions" do
     encoding "json"
     collect jmes_path(response, "value[*]") do
       field "id", jmes_path(col_item, "subscriptionId")
-      field "displayName", jmes_path(col_item, "displayName")
+      field "name", jmes_path(col_item, "displayName")
       field "state", jmes_path(col_item, "state")
     end
   end
+end
+
+datasource "ds_azure_subscriptions_filtered" do
+  run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
+end
+
+script "js_azure_subscriptions_filtered", type: "javascript" do
+  parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
+  result "result"
+  code <<-EOS
+  if (param_subscriptions_list.length > 0) {
+    result = _.filter(ds_azure_subscriptions, function(subscription) {
+      include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
+
+      if (param_subscriptions_allow_or_deny == "Deny") {
+        include_subscription = !include_subscription
+      }
+
+      return include_subscription
+    })
+  } else {
+    result = ds_azure_subscriptions
+  }
+EOS
 end
 
 datasource "ds_security_contacts" do
   iterate $ds_subscriptions
   request do
     auth $azure_auth
-    pagination $azure_pagination
+    pagination $pagination_azure
     host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Security/securityContacts"])
-    query "api-version", "2020-01-01-preview"
+    query "api-version", "2023-12-01-preview"
     header "User-Agent", "RS Policies"
     header "Content-Type", "application/json"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
     ignore_status [400, 403, 404]
   end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "type", jmes_path(col_item, "type")
+      field "alertNotifications", jmes_path(col_item, "properties.alertNotifications")
+      field "subscriptionId", val(iter_item, "id")
+      field "subscriptionName", val(iter_item, "name")
+    end
+  end
 end
 
-datasource "ds_bad_security_alerts" do
-  run_script $js_bad_security_alerts, $ds_security_contacts, $ds_subscriptions
+datasource "ds_bad_subscriptions" do
+  run_script $js_bad_subscriptions, $ds_security_contacts, $ds_applied_policy
 end
-
-###############################################################################
-# Scripts
-###############################################################################
 
 script "js_bad_security_alerts", type: "javascript" do
-  parameters "ds_security_contacts", "ds_subscriptions"
+  parameters "ds_security_contacts", "ds_applied_policy"
   result "result"
   code <<-EOS
+  security_contacts = _.groupBy(ds_security_contacts, 'subscriptionId')
+
   result = []
 
-  _.each(ds_security_contacts, function(sec) {
-    if (sec['id'] != undefined) {
-      if (sec['name'] == 'default') {
-        if (sec['properties']['alertNotifications']['minimalSeverity'] != "High" || sec['properties']['alertNotifications']['state'] != "On") {
-          subscriptionId = sec['id'].split('/')[2]
-          subscriptionName = ''
+  _.each(ds_azure_subscriptions, function(sub) {
+    default_security = null
+    minimalSeverity = null
+    state = null
 
-          _.each(ds_subscriptions, function(sub) {
-            if (subscriptionId == sub['id']) {
-              subscriptionName = sub['displayName']
-            }
-          })
+    if (security_contacts[sub['id']] != undefined) {
+      default_security = _.find(security_contacts[sub['id']], function(contact) {
+        return contact['name'] == 'default'
+      })
 
-          enabled = "No"
-
-          if (sec['properties']['alertNotifications']['state'] == "On") {
-            enabled = "Yes"
-          }
-
-          result.push({
-            id: sec['id'],
-            subscriptionId: subscriptionId,
-            subscriptionName: subscriptionName,
-            etag: sec['etag'],
-            location: sec['location'],
-            name: sec['name'],
-            type: sec['type'],
-            enabled: enabled,
-            severity: sec['properties']['alertNotifications']['minimalSeverity']
-          })
+      if (typeof(default_security) == 'object') {
+        if (typeof(default_security['alertNotifications']) == 'object') {
+          minimalSeverity = default_security['alertNotifications']['minimalSeverity']
+          state = default_security['alertNotifications']['state']
         }
       }
+    }
+
+    if (state != "On") {
+      result.push({
+        id: sub['id'],
+        accountName: sub['name'],
+        policy_name: ds_applied_policy['name'],
+        minimalSeverity: minimalSeverity,
+        state: state
+      })
     }
   })
 EOS
@@ -155,23 +224,21 @@ end
 
 policy "policy_security_alerts" do
   validate $ds_bad_security_alerts do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure Subscription(s) Without High Severity Alerting Found"
-    escalate $esc_security_alerts
-    check eq(size(data),0)
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Subscriptions Without High Severity Alerts Found"
+    check eq(val(item, "id"), "")
+    escalate $esc_email
     export do
-      field "subscriptionId" do
+      resource_level true
+      field "id" do
         label "ID"
       end
-      field "subscriptionName" do
+      field "accountName" do
         label "Name"
       end
-      field "location" do
-        label "Location"
-      end
-      field "enabled" do
+      field "state" do
         label "Notifications Enabled?"
       end
-      field "severity" do
+      field "minimalSeverity" do
         label "Minimum Severity"
       end
     end
@@ -182,7 +249,7 @@ end
 # Escalations
 ###############################################################################
 
-escalation "esc_security_alerts" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
