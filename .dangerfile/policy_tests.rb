@@ -1158,15 +1158,23 @@ def policy_missing_recommendation_fields?(file, field_type)
   pp.parse(file)
   info = pp.parsed_info
 
-  if field_type == "required"
-    required_fields = [ "accountID", "accountName", "resourceID", "recommendationDetails", "service", "savings", "savingsCurrency", "id" ]
+  required_fields = []
+
+  if info[:recommendation_type] == "Usage Reduction"
+    if field_type == "required"
+      required_fields = [ "accountID", "accountName", "resourceID", "recommendationDetails", "service", "savings", "savingsCurrency", "id" ]
+    end
+
+    if field_type == "recommended"
+      required_fields = [ "resourceName", "region", "tags" ]
+    end
+  elsif info[:recommendation_type] == "Rate Reduction"
+    if field_type == "required"
+      required_fields = [ "accountID", "accountName", "service", "savings", "savingsCurrency" ]
+    end
   end
 
-  if field_type == "recommended"
-    required_fields = [ "resourceName", "region", "tags" ]
-  end
-
-  if !info[:recommendation_type].nil?
+  if !required_fields.empty?
     fields_found = []
     export_block = false
     export_line = nil

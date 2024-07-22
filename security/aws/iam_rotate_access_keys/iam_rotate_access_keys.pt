@@ -1,13 +1,13 @@
-name "AWS IAM Ensure Access Keys Are Rotated"
+name "AWS IAM Users With Old Access Keys"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report if access keys exist that are 90 days old or older. \n See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/iam_rotate_access_keys) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Report IAM users with old, unrotated access keys. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/iam_rotate_access_keys) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Security"
 severity "high"
 default_frequency "daily"
 info(
-  version: "2.7",
+  version: "3.0.0",
   provider: "AWS",
   service: "IAM",
   policy_set: "CIS",
@@ -25,8 +25,10 @@ info(
 
 parameter "param_email" do
   type "list"
-  label "Email Address"
-  description "Email addresses of the recipients you wish to notify"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify."
+  default []
 end
 
 parameter "param_aws_account_number" do
@@ -37,45 +39,138 @@ parameter "param_aws_account_number" do
   default ""
 end
 
+parameter "param_lookback" do
+  type "number"
+  category "Policy Settings"
+  label "Maximum Age (Days)"
+  description "Maximum age in days for access keys. Users with access keys older than this will be included in the report."
+  min_value 1
+  default 90
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
 
 credentials "auth_aws" do
-  schemes "aws","aws_sts"
+  schemes "aws", "aws_sts"
   label "AWS"
   description "Select the AWS Credential from the list"
   tags "provider=aws"
   aws_account_number $param_aws_account_number
 end
 
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
-# Retrieve the id number of the account being tested
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get AWS account info
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+
 datasource "ds_get_caller_identity" do
   request do
     auth $auth_aws
     verb "GET"
     host "sts.amazonaws.com"
     path "/"
-    header "User-Agent", "RS Policies"
     query "Action", "GetCallerIdentity"
     query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
   end
   result do
     encoding "xml"
     collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
-      field "account",xpath(col_item, "Account")
+      field "account", xpath(col_item, "Account")
     end
   end
+end
+
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_get_caller_identity
+end
+
+script "js_aws_account", type:"javascript" do
+  parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+  result = _.find(ds_cloud_vendor_accounts, function(account) {
+    return account['id'] == ds_get_caller_identity[0]['account']
+  })
+
+  // This is in case the API does not return the relevant account info
+  if (result == undefined) {
+    result = {
+      id: ds_get_caller_identity[0]['account'],
+      name: "",
+      tags: {}
+    }
+  }
+EOS
 end
 
 datasource "ds_generate_cred_report" do
   request do
     auth $auth_aws
-    verb "GET"
     host "iam.amazonaws.com"
     path "/"
     query "Action", "GenerateCredentialReport"
@@ -89,15 +184,27 @@ datasource "ds_generate_cred_report" do
   end
 end
 
+# Wait 2 minutes so that AWS has time to generate a report
 datasource "ds_sleep" do
   run_script $js_sleep, $ds_generate_cred_report
 end
 
-datasource "ds_get_cred_report" do
+script "js_sleep", type:"javascript" do
+  parameters "ds_generate_cred_report"
+  result "result"
+  code <<-EOS
+  sleepDuration = 120
+  now = new Date().getTime()
+  while(new Date().getTime() < now + sleepDuration){ /* Do nothing */ }
+
+  result = ds_generate_cred_report
+EOS
+end
+
+datasource "ds_cred_report" do
   iterate $ds_sleep
   request do
     auth $auth_aws
-    verb "GET"
     host "iam.amazonaws.com"
     path "/"
     query "Action", "GetCredentialReport"
@@ -111,57 +218,59 @@ datasource "ds_get_cred_report" do
   end
 end
 
-datasource "ds_parse_cred_report" do
-  run_script $js_parse_cred_report, $ds_get_caller_identity, $ds_get_cred_report
+datasource "ds_old_access_keys" do
+  run_script $js_old_access_keys, $ds_cred_report, $ds_aws_account, $ds_applied_policy, $param_lookback
 end
 
-###############################################################################
-# Scripts
-###############################################################################
-
-script "js_sleep", type:"javascript" do
-  parameters "ds_generate_cred_report"
+script "js_old_access_keys", type:"javascript" do
+  parameters "ds_cred_report", "ds_aws_account", "ds_applied_policy", "param_lookback"
   result "result"
   code <<-EOS
-    sleepDuration=60
-    var now = new Date().getTime();
-    while(new Date().getTime() < now + sleepDuration){ /* Do nothing */ }
-    var result = ds_generate_cred_report
-EOS
-end
+  // Parse report
+  decoded = atob(ds_cred_report.credReportBase64).toString()
+  lines = decoded.split('\\n')
+  headers = lines[0].split(',')
 
-script "js_parse_cred_report", type:"javascript" do
-  parameters "ds_get_caller_identity", "ds_get_cred_report"
-  result "result"
-  code <<-EOS
-  bad_users_list = []
+  report = []
+
+  for (var line_index = 1; line_index < lines.length; line_index++) {
+    data = lines[line_index].split(',')
+
+    object = {}
+
+    for (var data_index = 0; data_index < data.length; data_index++) {
+      object[headers[data_index].trim()] = data[data_index].trim()
+    }
+
+    report.push(object)
+  }
+
+  result = []
   now = new Date()
 
-  var decoded = atob(ds_get_cred_report.credReportBase64)
-  data = decoded.toString()
-  arr = data.split('\\n');
-  var report = [];
-  var headers = arr[0].split(',');
+  _.each(report, function(user) {
+    key1_age = null
+    key2_age = null
 
-  for(var i = 1; i < arr.length; i++) {
-    var data = arr[i].split(',');
-    var obj = {};
-    for(var j = 0; j < data.length; j++) {
-      obj[headers[j].trim()] = data[j].trim();
+    key1_active = user['access_key_1_active'] == 'true'
+    key2_active = user['access_key_2_active'] == 'true'
+
+    if (key1_active) { key1_age = (now - new Date(user['access_key_1_last_rotated'])) / 86400000 }
+    if (key2_active) { key2_age = (now - new Date(user['access_key_2_last_rotated'])) / 86400000 }
+
+    if ((key1_active && key1_age > param_lookback) || (key2_active && key2_age > param_lookback)) {
+      result.push({
+        accountID: ds_aws_account['id'],
+        accountName: ds_aws_account['name'],
+        id: user['user'],
+        key1_active: key1_active.toString(),
+        key1_age: key1_age,
+        key2_active: key2_active.toString(),
+        key2_age: key2_age,
+        policy_name: ds_applied_policy['name']
+      })
     }
-    report.push(obj);
-  }
-
-  _.each(report, function(user){
-    if ((user.access_key_1_active == "true" && now - new Date(user.access_key_1_last_rotated) >= 86400000 * 90) ||
-        (user.access_key_2_active == "true" && now - new Date(user.access_key_2_last_rotated) >= 86400000 * 90))
-      { bad_users_list.push(user.user) }
   })
-
-  result={
-    id: ds_get_caller_identity[0]['account'],
-    bad_users_list: bad_users_list
-  }
 EOS
 end
 
@@ -169,28 +278,36 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_rotate_access_keys" do
-  validate $ds_parse_cred_report do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Old Access Keys Found"
-    escalate $esc_report_rotate_access_keys
-    detail_template <<-EOS
-IAM user accounts found that have access keys that are 90+ days old.
-It is recommended that these access keys be rotated.
-
-Affected Account ID: {{data.id}}
-Affected Users:
-{{- range $val := data.bad_users_list }}
-  {{ $val }}
-{{- end }}
-EOS
-    check eq(size(val(data, "bad_users_list")),0)
+policy "pol_old_access_keys" do
+  validate_each $ds_old_access_keys do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS IAM Users With Old Access Keys Found"
+    check eq(val(item, "id"), "")
+    escalate $esc_email
     export do
       resource_level true
-      field "id" do
-        label "id"
+      field "accountID" do
+        label "Account ID"
       end
-      field "bad_users_list" do
-        label "bad_users_list"
+      field "accountName" do
+        label "Account Name"
+      end
+      field "id" do
+        label "User"
+      end
+      field "key1_active" do
+        label "Key 1 Active"
+      end
+      field "key1_age" do
+        label "Key 1 Age (Days)"
+      end
+      field "key2_active" do
+        label "Key 2 Active"
+      end
+      field "key2_age" do
+        label "Key 2 Age (Days)"
+      end
+      field "threshold" do
+        label "Maximum Allowed Key Age (Days)"
       end
     end
   end
@@ -200,7 +317,7 @@ end
 # Escalations
 ###############################################################################
 
-escalation "esc_report_rotate_access_keys" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"

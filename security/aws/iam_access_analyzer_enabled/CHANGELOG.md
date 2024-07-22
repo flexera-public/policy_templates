@@ -1,5 +1,13 @@
 # Changelog
 
+## v4.0.0
+
+- Policy template renamed to `AWS Regions Without Access Analyzer Enabled` to better reflect its functionality
+- Expanded region filtering options
+- Several parameters altered to be more descriptive and human-readable
+- Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera credential
+
 ## v3.1
 
 - Updated description of `Account Number` parameter

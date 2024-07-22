@@ -1,13 +1,13 @@
-name "AWS Ensure CloudTrail Integrated With Cloudwatch"
+name "AWS CloudTrails Not Integrated With CloudWatch"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report if CloudTrail trails are not integrated with CloudWatch logs. \n See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/log_cloudtrail_cloudwatch_integrated) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+short_description "Report any CloudTrail trails that are not integrated with CloudWatch logs. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/log_cloudtrail_cloudwatch_integrated) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
 long_description ""
 category "Security"
 severity "high"
 default_frequency "daily"
 info(
-  version: "2.1",
+  version: "3.0.0",
   provider: "AWS",
   service: "CloudTrail",
   policy_set: "CIS",
@@ -20,13 +20,32 @@ info(
 )
 
 ###############################################################################
-# User inputs
+# Parameters
 ###############################################################################
 
 parameter "param_email" do
   type "list"
-  label "Email Address"
-  description "Email addresses of the recipients you wish to notify"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify."
+  default []
+end
+
+parameter "param_aws_account_number" do
+  type "string"
+  category "Policy Settings"
+  label "Account Number"
+  description "Leave blank; this is for automated use with Meta Policies. See README for more details."
+  default ""
+end
+
+parameter "param_threshold" do
+  type "number"
+  category "Policy Settings"
+  label "Last Update (Hours)"
+  description "Maximum number of hours since CloudTrail data was last sent to CloudWatch. CloudTrails that have not done so for longer than this will be considered not integrated with CloudWatch and included in the results."
+  min_value 1
+  default 24
 end
 
 ###############################################################################
@@ -34,25 +53,129 @@ end
 ###############################################################################
 
 credentials "auth_aws" do
-  schemes "aws","aws_sts"
+  schemes "aws", "aws_sts"
   label "AWS"
   description "Select the AWS Credential from the list"
   tags "provider=aws"
+  aws_account_number $param_aws_account_number
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get AWS account info
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account", xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_get_caller_identity
+end
+
+script "js_aws_account", type:"javascript" do
+  parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+  result = _.find(ds_cloud_vendor_accounts, function(account) {
+    return account['id'] == ds_get_caller_identity[0]['account']
+  })
+
+  // This is in case the API does not return the relevant account info
+  if (result == undefined) {
+    result = {
+      id: ds_get_caller_identity[0]['account'],
+      name: "",
+      tags: {}
+    }
+  }
+EOS
+end
 
 datasource "ds_trail_list" do
   request do
     auth $auth_aws
-    verb "GET"
     host "cloudtrail.us-east-1.amazonaws.com"
     path "/"
+    query "Action", "DescribeTrails"
     header "User-Agent", "RS Policies"
     header "Accept", "application/json"
-    query "Action", "DescribeTrails"
   end
   result do
     encoding "json"
@@ -72,85 +195,89 @@ datasource "ds_trail_list_with_cw" do
     verb "GET"
     host join(["cloudtrail.", val(iter_item, "homeregion"), ".amazonaws.com"])
     path "/"
+    query "Action", "GetTrailStatus"
+    query "Name", val(iter_item, "id")
     header "User-Agent", "RS Policies"
     header "Accept", "application/json"
-    query "Action", "GetTrailStatus"
-    query "Name", val(iter_item, "name")
   end
   result do
     encoding "json"
+    field "cloudwatch_del_time", jmes_path(response, "GetTrailStatusResponse.GetTrailStatusResult.LatestCloudWatchLogsDeliveryTime")
     field "name", val(iter_item, "name")
     field "id", val(iter_item, "id")
     field "homeregion", val(iter_item, "homeregion")
     field "cloudwatch_arn", val(iter_item, "cloudwatch_arn")
-    field "cloudwatch_del_time", jmes_path(response, "GetTrailStatusResponse.GetTrailStatusResult.LatestCloudWatchLogsDeliveryTime")
   end
 end
 
 datasource "ds_trails_without_cw" do
-  run_script $js_trails_without_cw, $ds_trail_list_with_cw
+  run_script $js_trails_without_cw, $ds_trail_list_with_cw, $ds_aws_account, $ds_applied_policy, $param_threshold
 end
-
-###############################################################################
-# Scripts
-###############################################################################
 
 script "js_trails_without_cw", type:"javascript" do
-  parameters "ds_trail_list_with_cw"
+  parameters "ds_trail_list_with_cw", "ds_aws_account", "ds_applied_policy", "param_threshold"
   result "result"
   code <<-EOS
-    now = new Date()
-    result = []
+  now = new Date()
+  result = []
 
-    _.each(ds_trail_list_with_cw, function(trail) {
-      cloudwatch_del_time = new Date(trail.cloudwatch_del_time * 1000)
-      cloudwatch_enabled = true
-      cloudwatch_recent = true
-      cloudwatch_lastupdate = Math.round(((now - cloudwatch_del_time) / 1000 / 60 / 60) * 100) / 100
+  _.each(ds_trail_list_with_cw, function(trail) {
+    cloudwatch_enabled = true
+    cloudwatch_recent = true
 
-      if (trail.cloudwatch_arn == null) {
-        cloudwatch_enabled = false
-        cloudwatch_recent = false
-        cloudwatch_lastupdate = ""
-      } else {
-        if (cloudwatch_lastupdate > 24) {
-          cloudwatch_recent = false
-        }
-      }
+    cloudwatch_del_time = new Date(trail.cloudwatch_del_time * 1000)
+    cloudwatch_lastupdate = Math.round(((now - cloudwatch_del_time) / 1000 / 60 / 60) * 100) / 100
 
-      if (cloudwatch_enabled == false || cloudwatch_recent == false) {
-        result.push({
-          name: trail.name,
-          id: trail.id,
-          homeregion: trail.homeregion,
-          cloudwatch_enabled: cloudwatch_enabled,
-          cloudwatch_lastupdate: cloudwatch_lastupdate
-        })
-      }
-    })
+    if (trail['cloudwatch_arn'] == null) {
+      cloudwatch_enabled = false
+      cloudwatch_recent = false
+      cloudwatch_lastupdate = ""
+    } else {
+      if (cloudwatch_lastupdate > param_threshold) { cloudwatch_recent = false }
+    }
+
+    if (!cloudwatch_enabled || !cloudwatch_recent) {
+      result.push({
+        accountID: ds_aws_account['id'],
+        accountName: ds_aws_account['name'],
+        name: trail['name'],
+        id: trail['id'],
+        region: trail['homeregion'],
+        cloudwatch_enabled: cloudwatch_enabled.toString(),
+        cloudwatch_lastupdate: cloudwatch_lastupdate,
+        threshold: param_threshold,
+        policy_name: ds_applied_policy['name']
+      })
+    }
+  })
 EOS
 end
-
-
 
 ###############################################################################
 # Policy
 ###############################################################################
 
-policy "policy_trails_without_cw" do
-  validate $ds_trails_without_cw do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} CloudTrails Not Integrated With Cloudwatch Logs"
-    escalate $esc_report_trails_without_cw
-    check eq(size(data),0)
+policy "pol_trails_without_cw" do
+  validate_each $ds_trails_without_cw do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS CloudTrails Not Integrated With CloudWatch Found"
+    check eq(val(item, "id"), "")
+    escalate $esc_email
+    hash_exclude "cloudwatch_lastupdate"
     export do
       resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
       field "name" do
-        label "Name"
+        label "CloudTrail Name"
       end
       field "id" do
-        label "ARN"
+        label "CloudTrail ARN"
       end
-      field "homeregion" do
+      field "region" do
         label "Region"
       end
       field "cloudwatch_enabled" do
@@ -158,6 +285,9 @@ policy "policy_trails_without_cw" do
       end
       field "cloudwatch_lastupdate" do
         label "Most Recent Log Delivery (Hours)"
+      end
+      field "threshold" do
+        label "Maximum Log Delivery Threshold (Hours)"
       end
     end
   end
@@ -167,7 +297,7 @@ end
 # Escalations
 ###############################################################################
 
-escalation "esc_report_trails_without_cw" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"

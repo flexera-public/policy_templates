@@ -517,13 +517,13 @@ These templates can generate savings estimates for your environment.
 
 - CloudTrail
 
-  - [AWS Ensure CloudTrail Enabled In All Regions](./security/aws/log_ensure_cloudtrail_multiregion)
-  - [AWS Ensure CloudTrail Integrated With Cloudwatch](./security/aws/log_cloudtrail_cloudwatch_integrated)
-  - [AWS Ensure CloudTrail Logs Encrypted At Rest](./security/aws/log_ensure_cloudtrail_encrypted)
-  - [AWS Ensure CloudTrail S3 Buckets Have Access Logging](./security/aws/log_ensure_cloudtrail_bucket_access_logging)
-  - [AWS Ensure CloudTrail S3 Buckets Non-Public](./security/aws/log_ensure_cloudtrail_bucket_not_public)
-  - [AWS Ensure Log File Validation Enabled For All CloudTrails](./security/aws/log_file_validation_enabled)
-  - [AWS Ensure Object-level Events Logging Enabled For CloudTrails](./security/aws/log_ensure_cloudtrail_bucket_object_logging)
+  - [AWS CloudTrail Not Enabled In All Regions](./security/aws/log_ensure_cloudtrail_multiregion)
+  - [AWS CloudTrail S3 Buckets Without Access Logging](./security/aws/log_ensure_cloudtrail_bucket_access_logging)
+  - [AWS CloudTrails Not Integrated With CloudWatch](./security/aws/log_cloudtrail_cloudwatch_integrated)
+  - [AWS CloudTrails Without Encrypted Logs](./security/aws/log_ensure_cloudtrail_encrypted)
+  - [AWS CloudTrails Without Log File Validation Enabled](./security/aws/log_file_validation_enabled)
+  - [AWS CloudTrails Without Object-level Events Logging Enabled](./security/aws/log_ensure_cloudtrail_bucket_object_logging)
+  - [AWS Publicly Accessible CloudTrail S3 Buckets](./security/aws/log_ensure_cloudtrail_bucket_not_public)
 
 - Config
 
@@ -539,34 +539,34 @@ These templates can generate savings estimates for your environment.
 
 - ELB
 
-  - [AWS Internet-facing ELBs & ALBs](./security/aws/loadbalancer_internet_facing)
   - [AWS Unencrypted ELB Listeners (CLB)](./security/aws/clb_unencrypted)
 
 - IAM
 
-  - [AWS Ensure IAM Users Receive Permissions Only Through Groups](./security/aws/iam_users_perms_via_groups_only)
-  - [AWS IAM Ensure Access Keys Are Rotated](./security/aws/iam_rotate_access_keys)
-  - [AWS IAM Ensure Credentials Unused For >45 days Are Disabled](./security/aws/iam_disable_45_day_creds)
-  - [AWS IAM Ensure MFA Enabled For IAM Users](./security/aws/iam_mfa_enabled_for_iam_users)
-  - [AWS IAM Ensure One Active Key Per IAM User](./security/aws/iam_one_active_key_per_user)
-  - [AWS IAM Report Attached Admin IAM Policies](./security/aws/iam_no_admin_iam_policies_attached)
-  - [AWS IAM Report Expired SSL/TLS Certificates](./security/aws/iam_expired_ssl_certs)
-  - [AWS IAM Report Insufficient Password Policy](./security/aws/iam_min_password_length)
-  - [AWS IAM Report Password Policy No Restrict Password Reuse](./security/aws/iam_prevent_password_reuse)
-  - [AWS IAM Report Regions Without Access Analyzer](./security/aws/iam_access_analyzer_enabled)
-  - [AWS IAM Report Root Account Access Keys](./security/aws/iam_no_root_access_keys)
-  - [AWS IAM Report Root Accounts Without Hardware MFA](./security/aws/iam_hwmfa_enabled_for_root)
-  - [AWS IAM Report Root Accounts Without MFA](./security/aws/iam_mfa_enabled_for_root)
-  - [AWS IAM Report Root User Doing Everyday Tasks](./security/aws/iam_no_root_for_tasks)
-  - [AWS IAM Support Role Created](./security/aws/iam_support_role_created)
+  - [AWS IAM Account Missing Support Role](./security/aws/iam_support_role_created)
+  - [AWS IAM Attached Admin Policies](./security/aws/iam_no_admin_iam_policies_attached)
+  - [AWS IAM Expired SSL/TLS Certificates](./security/aws/iam_expired_ssl_certs)
+  - [AWS IAM Insufficient Required Password Length](./security/aws/iam_min_password_length)
+  - [AWS IAM Password Policy Not Restricting Password Reuse](./security/aws/iam_prevent_password_reuse)
+  - [AWS IAM Root Account Access Keys](./security/aws/iam_no_root_access_keys)
+  - [AWS IAM Root User Account Without Hardware MFA](./security/aws/iam_hwmfa_enabled_for_root)
+  - [AWS IAM Root User Account Without MFA](./security/aws/iam_mfa_enabled_for_root)
+  - [AWS IAM Root User Doing Everyday Tasks](./security/aws/iam_no_root_for_tasks)
+  - [AWS IAM User Accounts Without MFA](./security/aws/iam_mfa_enabled_for_iam_users)
+  - [AWS IAM Users With Directly-Attached Policies](./security/aws/iam_users_perms_via_groups_only)
+  - [AWS IAM Users With Multiple Active Access Keys](./security/aws/iam_one_active_key_per_user)
+  - [AWS IAM Users With Old Access Keys](./security/aws/iam_rotate_access_keys)
+  - [AWS Regions Without Access Analyzer Enabled](./security/aws/iam_access_analyzer_enabled)
+  - [AWS Unused IAM Credentials](./security/aws/iam_unused_creds)
 
 - KMS
 
-  - [AWS Ensure Rotation For Customer Master Keys (CMKs) Is Enabled](./security/aws/kms_rotation)
+  - [AWS Customer Managed Keys (CMKs) Without Rotation Enabled](./security/aws/kms_rotation)
 
 - Network
 
   - [AWS Elastic Load Balancers With Unencrypted Listeners](./security/aws/elb_unencrypted)
+  - [AWS Internet-Accessible Elastic Load Balancers](./security/aws/loadbalancer_internet_facing)
 
 - RDS
 
@@ -761,7 +761,7 @@ These templates can generate savings estimates for your environment.
   DBS: 1
   Databricks: 1
   EBS: 4
-  ELB: 2
+  ELB: 1
   FlexNet Manager: 1
   Git: 7
   IAM: 20
@@ -773,7 +773,7 @@ These templates can generate savings estimates for your environment.
   Marketplace: 2
   MySQL: 2
   NetApp Files: 1
-  Network: 4
+  Network: 5
   Network Security Group: 2
   Office 365: 1
   Organization: 1
