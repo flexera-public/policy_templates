@@ -1402,8 +1402,8 @@ def policy_console_log?(file, file_lines)
   file_lines.each_with_index do |line, index|
     line_number = index + 1
     # Check if the line contains the "console.log" function
-    # Also check if the line is not a comment
-    fail_message += "Line #{line_number.to_s}\n" if line.include?("console.log") && !line.strip.starts_with?("//")
+    # Also check if the line is not a comment (regex match /\A\/\//)
+    fail_message += "Line #{line_number.to_s}\n" if line.include?("console.log") && line.strip[/\A\/\//].nil?
   end
 
   fail_message = "Policy Template has console.log() statements. These are used for debugging and should not be present in catalog policy templates:\n\n" + fail_message if !fail_message.empty?
