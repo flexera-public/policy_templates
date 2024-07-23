@@ -1,5 +1,14 @@
 # Changelog
 
+## v5.0.0
+
+- Policy template renamed to `AWS Publicly Accessible RDS Instances` to better reflect its functionality
+- Added more robust tag filtering options
+- Added option to automatically terminate offending instances
+- Added additional fields to incident table for added context
+- Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera credential
+
 ## v4.2.1
 
 - Added default value for parameters that do not require user input
