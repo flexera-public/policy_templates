@@ -34,3 +34,13 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
   - *`org_owner`* - Required for accessing Service Account and Service Account Client details, SSO, and other Org-scoped configurations
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+
+## Supported Clouds
+
+- AWS
+- Azure
+- Google
+
+## Cost
+
+This Policy Template does not incur any cloud costs.
