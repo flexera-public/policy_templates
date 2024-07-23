@@ -165,7 +165,9 @@ datasource "ds_security_contacts" do
       field "id", jmes_path(col_item, "id")
       field "name", jmes_path(col_item, "name")
       field "type", jmes_path(col_item, "type")
-      field "alertNotifications", jmes_path(col_item, "properties.alertNotifications")
+      field "isEnabled", jmes_path(col_item, "properties.isEnabled")
+      field "notificationsSources", jmes_path(col_item, "properties.notificationsSources")
+      field "notificationsByRole", jmes_path(col_item, "properties.notificationsByRole")
       field "subscriptionId", val(iter_item, "id")
       field "subscriptionName", val(iter_item, "name")
     end
@@ -185,9 +187,7 @@ script "js_bad_subscriptions", type: "javascript" do
   result = []
 
   _.each(ds_azure_subscriptions, function(sub) {
-    default_security = null
-    minimalSeverity = null
-    state = null
+    alerts_enabled = false
 
     if (security_contacts[sub['id']] != undefined) {
       default_security = _.find(security_contacts[sub['id']], function(contact) {
@@ -195,20 +195,19 @@ script "js_bad_subscriptions", type: "javascript" do
       })
 
       if (typeof(default_security) == 'object') {
-        if (typeof(default_security['alertNotifications']) == 'object') {
-          minimalSeverity = default_security['alertNotifications']['minimalSeverity']
-          state = default_security['alertNotifications']['state']
-        }
+        _.each(default_security['notificationsSources'], function(source) {
+          if (source['minimalSeverity'] == 'High' && source['sourceType'] == 'Alert') {
+            alerts_enabled = true
+          }
+        })
       }
     }
 
-    if (state != "On") {
+    if (!alerts_enabled) {
       result.push({
         id: sub['id'],
         accountName: sub['name'],
-        policy_name: ds_applied_policy['name'],
-        minimalSeverity: minimalSeverity,
-        state: state
+        policy_name: ds_applied_policy['name']
       })
     }
   })
@@ -231,12 +230,6 @@ policy "pol_bad_subscriptions" do
       end
       field "accountName" do
         label "Name"
-      end
-      field "state" do
-        label "Notifications Enabled?"
-      end
-      field "minimalSeverity" do
-        label "Minimum Severity"
       end
     end
   end

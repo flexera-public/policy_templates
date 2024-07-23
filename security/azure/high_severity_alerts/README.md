@@ -6,7 +6,7 @@ This policy template reports all Azure subscriptions that are not configured to 
 
 ## How It Works
 
-The Azure Resource Manager API is used to get a list of subscriptions. This list is then used to query the "/providers/Microsoft.Security/securityContacts" endpoint iteratively in order to find the properties.alertNotifications.minimalSeverity and properties.alertNotifications.state settings for each subscription.
+An Azure Subscription is considered to have high severity alerts enabled if its default security contact has a notification source where `minimalSeverity` is "High" and `sourceType` is "Alert".
 
 ## Input Parameters
 
