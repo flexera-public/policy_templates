@@ -803,7 +803,6 @@ EOS
 end
 
 # Get Billing Centers
-# Required for Costs Data, but also needed for Billing Center checks
 datasource "ds_billing_centers" do
   request do
     auth $auth_flexera
@@ -826,10 +825,38 @@ datasource "ds_billing_centers" do
   end
 end
 
+# Get Billing Centers again
+# Filtering on toplevel
+# Separate request to workaround the Policy Template Test `run_script statements found whose parameters are not in the correct order. run_script parameters should be in the following order: script, val(iter_item, string), datasources, parameters, variables, raw values``
+# Otherwise we could use existing ds_billing_centers resource and jq:
+#   jq($ds_billing_centers,'.[] | select(.parent_id == null)', "array")
+datasource "ds_toplevel_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    # Select the Billing Centers that have "parent_id" undefined or "" (i.e. top-level Billing Centers)
+    collect jq(response, '.[] | select(.parent_id == null)' ) do
+      field "href", jq(col_item, ".href")
+      field "id", jq(col_item, ".id")
+      field "name", jq(col_item, ".name")
+      field "parent_id", jq(col_item, ".parent_id")
+      field "ancestor_ids", jq(col_item, ".ancestor_ids")
+      field "allocation_table", jq(col_item, ".allocation_table")
+    end
+  end
+end
+
 datasource "ds_cost_dimensions_costs" do
   iterate $ds_cost_dimensions
   request do
-    run_script $js_cost_dimensions_costs, iter_item, jq($ds_billing_centers,'.[] | select(.parent_id == null)', "array"), $ds_dates, rs_org_id, rs_optima_host
+    run_script $js_cost_dimensions_costs, iter_item, $ds_toplevel_billing_centers, $ds_dates, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -843,7 +870,7 @@ datasource "ds_cost_dimensions_costs" do
 end
 
 script "js_cost_dimensions_costs", type: "javascript" do
-  parameters "dimension", "ds_billing_centers_toplevel", "ds_dates", "rs_org_id", "rs_optima_host"
+  parameters "dimension", "ds_toplevel_billing_centers", "ds_dates", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
   metric = "cost_nonamortized_unblended_adj"
@@ -861,7 +888,7 @@ script "js_cost_dimensions_costs", type: "javascript" do
       "start_at": ds_dates["prior_month"],
       "end_at": ds_dates["month"],
       "metrics": [metric],
-      "billing_center_ids": _.pluck(ds_billing_centers_toplevel, "id"),
+      "billing_center_ids": _.pluck(ds_toplevel_billing_centers, "id"),
       "summarized": true
     },
     headers: {
@@ -873,11 +900,11 @@ EOS
 end
 
 datasource "ds_result_cost_dimensions" do
-  run_script $js_result_cost_dimensions, $ds_bill_connects, val($ds_rule_based_dimensions, "values"), val($ds_tag_dimensions, "values"), $ds_cost_dimensions_costs
+  run_script $js_result_cost_dimensions, val($ds_rule_based_dimensions, "values"), val($ds_tag_dimensions, "values"), $ds_bill_connects, $ds_cost_dimensions_costs
 end
 
 script "js_result_cost_dimensions", type: "javascript" do
-  parameters "ds_bill_connects", "ds_rule_based_dimensions", "ds_tag_dimensions", "ds_cost_dimensions_costs"
+  parameters "ds_rule_based_dimensions", "ds_tag_dimensions", "ds_bill_connects", "ds_cost_dimensions_costs"
   result "check_results"
   code <<-EOS
   function checkCosts(dimension_regex, costs) {
