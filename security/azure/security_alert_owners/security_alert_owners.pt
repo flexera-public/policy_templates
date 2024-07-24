@@ -1,7 +1,7 @@
 name "Azure Subscriptions Without Owner Security Alerts"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report any Azure Subscriptions that are not configured to send security alerts to their owners. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/azure/security_alert_owners) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+short_description "Reports any Azure Subscriptions that are not configured to send security alerts to their owners. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/azure/security_alert_owners) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
 long_description ""
 category "Security"
 severity "high"
@@ -178,56 +178,39 @@ datasource "ds_security_contacts" do
   end
 end
 
-datasource "ds_bad_security_contacts" do
-  run_script $js_bad_security_contacts, $ds_security_contacts, $ds_subscriptions
+datasource "ds_bad_subscriptions" do
+  run_script $js_bad_subscriptions, $ds_security_contacts, $ds_azure_subscriptions_filtered, $ds_applied_policy
 end
 
-script "js_bad_security_contacts", type: "javascript" do
-  parameters "ds_security_contacts", "ds_subscriptions"
+script "js_bad_subscriptions", type: "javascript" do
+  parameters "ds_security_contacts", "ds_azure_subscriptions_filtered", "ds_applied_policy"
   result "result"
   code <<-EOS
+  contacts = _.groupBy(ds_security_contacts, 'subscriptionId')
+
   result = []
 
-  _.each(ds_security_contacts, function(sec) {
-    if (sec['id'] != undefined) {
-      if (sec['name'] == 'default') {
-        owner_not_found = true
-        role_list = ''
+  _.each(ds_azure_subscriptions_filtered, function(sub) {
+    roles = []
+    bad_subscription = true
 
-        _.each(sec['properties']['notificationsByRole']['roles'], function(role) {
-          if (role_list == '') {
-            role_list = role
-          } else {
-            role_list += ', ' + role
+    if (contacts[sub['id']] != undefined) {
+      _.each(contacts[sub['id']], function(contact) {
+        if (typeof(contact['notificationsByRole']) == 'object') {
+          if (typeof(contact['notificationsByRole']['roles']) == 'object') {
+            roles = roles.concat(contact['notificationsByRole']['roles'])
           }
-
-          if (role == "Owner") {
-            owner_not_found = false
-          }
-        })
-
-        subscriptionId = sec['id'].split('/')[2]
-        subscriptionName = ''
-
-        _.each(ds_subscriptions, function(sub) {
-          if (subscriptionId == sub['id']) {
-            subscriptionName = sub['displayName']
-          }
-        })
-
-        if (owner_not_found) {
-          result.push({
-            id: sec['id'],
-            subscriptionId: subscriptionId,
-            subscriptionName: subscriptionName,
-            etag: sec['etag'],
-            location: sec['location'],
-            name: sec['name'],
-            type: sec['type'],
-            roles: role_list
-          })
         }
-      }
+      })
+    }
+
+    if (_.contains(roles, 'Owner') == false) {
+      result.push({
+        id: sub['id'],
+        name: sub['name'],
+        roles: _.uniq(_.compact(roles)).sort().join(', '),
+        policy_name: ds_applied_policy['name']
+      })
     }
   })
 EOS
@@ -237,20 +220,18 @@ end
 # Policy
 ###############################################################################
 
-policy "pol_bad_security_contacts" do
-  validate_each $ds_bad_security_contacts do
+policy "pol_bad_subscriptions" do
+  validate_each $ds_bad_subscriptions do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Subscriptions Without Owner Security Alerts Found"
     check logic_or($ds_parent_policy_terminated, eq(val(item, "id"), ""))
     escalate $esc_email
     export do
-      field "subscriptionId" do
-        label "ID"
+      resource_level true
+      field "id" do
+        label "Subscription ID"
       end
-      field "subscriptionName" do
-        label "Name"
-      end
-      field "location" do
-        label "Location"
+      field "name" do
+        label "Subscription Name"
       end
       field "roles" do
         label "Roles Alerted"
