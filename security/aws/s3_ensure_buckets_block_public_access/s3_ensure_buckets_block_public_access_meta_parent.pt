@@ -1,13 +1,13 @@
-name "Meta Parent: AWS Untagged Resources"
+name "Meta Parent: AWS S3 Buckets Without Public Access Blocked"
 rs_pt_ver 20180301
 type "policy"
-short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** Applies and manages \"child\" [AWS Untagged Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/untagged_resources) Policies."
+short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** Applies and manages \"child\" [AWS S3 Buckets Without Public Access Blocked](https://github.com/flexera-public/policy_templates/tree/master/security/aws/s3_ensure_buckets_block_public_access) Policies."
 severity "low"
 category "Meta"
 default_frequency "15 minutes"
 info(
   provider: "AWS",
-  version: "5.2.1", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "3.0.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
 )
 
 ##############################################################################
@@ -60,43 +60,17 @@ end
 parameter "param_template_source" do
   type "string"
   label "Child Policy Template Source"
-  description "By default, will use the \"AWS Untagged Resources\" Policy Template from Catalog.  Optionally, you can use the \"AWS Untagged Resources\" Policy Template uploaded in the current Flexera Project."
+  description "By default, will use the \"AWS S3 Buckets Without Public Access Blocked\" Policy Template from Catalog.  Optionally, you can use the \"AWS S3 Buckets Without Public Access Blocked\" Policy Template uploaded in the current Flexera Project."
   default "Published Catalog Template"
   allowed_values "Published Catalog Template", "Uploaded Template"
 end
 
 ## Child Policy Parameters
-parameter "param_include_savings" do
-  type "string"
-  category "Policy Settings"
-  label "Include Savings"
-  description "Whether or not to include the total estimated savings opportunities for each resource in the results. Disabling this can speed up policy execution but will result in the relevant fields in the report being empty."
-  allowed_values "Include Savings", "Do Not Include Savings"
-  default "Include Savings"
-end
-
-parameter "param_tags" do
-  type "list"
-  category "Filters"
-  label "Tags"
-  description "The policy will report resources missing the specified tags. Enter the key name to look for resources missing a key, and enter Key==Value to find resources missing a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
-  default []
-end
-
-parameter "param_tags_boolean" do
-  type "string"
-  category "Filters"
-  label "Any / All"
-  description "Whether to report on instances missing any of the specified tags or all of them. Only applicable if more than one value is entered in the 'Tags' field."
-  allowed_values "Any", "All"
-  default "Any"
-end
-
 parameter "param_regions_allow_or_deny" do
   type "string"
   category "Filters"
   label "Allow/Deny Regions"
-  description "Allow or Deny entered regions. See the README for more details."
+  description "Allow or Deny entered regions. See the README for more details"
   allowed_values "Allow", "Deny"
   default "Allow"
 end
@@ -105,18 +79,34 @@ parameter "param_regions_list" do
   type "list"
   category "Filters"
   label "Allow/Deny Regions List"
-  description "A list of allowed or denied regions. See the README for more details."
+  description "A list of allowed or denied regions. See the README for more details"
   allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   default []
 end
 
-parameter "param_consider_tag_dimensions" do
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
   type "string"
   category "Filters"
-  label "Consider Tag Dimensions"
-  description "Exclude results when a tag has a value for a tag key normalized by a Tag Dimension. Please see README for more details."
-  allowed_values "Consider Tag Dimensions", "Do Not Consider Tag Dimensions"
-  default "Consider Tag Dimensions"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
+parameter "param_exclude_buckets" do
+  type "list"
+  category "Filters"
+  label "Exclude S3 Buckets"
+  description "Names of specific S3 buckets to exclude from the results."
+  default []
 end
 
 ###############################################################################
@@ -229,7 +219,7 @@ datasource "ds_published_child_policy_information" do
   result do
     encoding "json"
     # Select the published policy that is published by "support@flexera.com" and matches the name of the child policy template
-    collect jq(response, '.items[] | select(.name == "AWS Untagged Resources" and .created_by.email == "support@flexera.com")' ) do
+    collect jq(response, '.items[] | select(.name == "AWS S3 Buckets Without Public Access Blocked" and .created_by.email == "support@flexera.com")' ) do
       field "name", jmes_path(col_item, "name")
       field "href", jmes_path(col_item, "href")
       field "short_description", jmes_path(col_item, "short_description")
@@ -248,7 +238,7 @@ datasource "ds_project_child_policy_information" do
   result do
     encoding "json"
     # Select the uploaded policy that matches the name of the child policy template
-    collect jq(response, '.items[] | select(.name == "AWS Untagged Resources")' ) do
+    collect jq(response, '.items[] | select(.name == "AWS S3 Buckets Without Public Access Blocked")' ) do
       field "name", jmes_path(col_item, "name")
       field "href", jmes_path(col_item, "href")
       field "short_description", jmes_path(col_item, "short_description")
@@ -816,19 +806,19 @@ datasource "ds_child_incident_details" do
   end
 end
 
-datasource "ds_missing_tags_incident_combined_incidents" do
-  run_script $js_ds_missing_tags_incident_combined_incidents, $ds_child_incident_details
+datasource "ds_aws_buckets_without_access_blocked_combined_incidents" do
+  run_script $js_ds_aws_buckets_without_access_blocked_combined_incidents, $ds_child_incident_details
 end
 
-script "js_ds_missing_tags_incident_combined_incidents", type: "javascript" do
+script "js_ds_aws_buckets_without_access_blocked_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-EOS
   result = []
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
-    // If the incident summary contains "AWS Resources Missing Tags Found" then include it in the filter result
-    if (s.indexOf("AWS Resources Missing Tags Found") > -1) {
+    // If the incident summary contains "AWS S3 Buckets Without Public Access Blocked Found" then include it in the filter result
+    if (s.indexOf("AWS S3 Buckets Without Public Access Blocked Found") > -1) {
       _.each(incident["violation_data"], function(violation) {
         violation["incident_id"] = incident["id"];
         result.push(violation);
@@ -839,26 +829,6 @@ EOS
 end
 
 
-# Escalation for Add Tags
-escalation "esc_tag_resources" do
-  automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
-  label "Add Tags"
-  description "Update tags of the selected resources"
-  parameter "param_tags_to_add" do
-    type "list"
-    category "Actions"
-    label "Add Tags (Key=Value)"
-    description "Cloud native tags to add to resources with missing tags. Use Key=Value format. Example: env=production"
-    allowed_pattern /^[^=]+=[^=]+$/
-    # No default value, user input required
-  end
-  # Run declaration should go at end, after any parameters that may exist
-  run "esc_tag_resources", data, rs_governance_host, rs_project_id, $param_tags_to_add
-end
-define esc_tag_resources($data, $governance_host, $rs_project_id, $param_tags_to_add) do
-  $actions_options = [{ "name": "param_tags_to_add", "value": $param_tags_to_add }]
-  call child_run_action($data, $governance_host, $rs_project_id, "Add Tags", $action_options)
-end
 
 
 # Summary and a conditional incident which will show up if any policy is being applied, updated or deleted.
@@ -867,11 +837,11 @@ end
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
-    # Consolidated incident for AWS Resources Missing Tags Found
-  validate $ds_missing_tags_incident_combined_incidents do
-    summary_template "Consolidated Incident: {{ len data }} AWS Resources Missing Tags Found"
+    # Consolidated incident for AWS S3 Buckets Without Public Access Blocked Found
+  validate $ds_aws_buckets_without_access_blocked_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} AWS S3 Buckets Without Public Access Blocked Found"
     escalate $esc_email
-    escalate $esc_tag_resources
+    
     check eq(size(data), 0)
     export do
       resource_level true
@@ -881,35 +851,29 @@ policy "policy_scheduled_report" do
       field "accountName" do
         label "Account Name"
       end
-      field "resourceID" do
-        label "Resource ARN"
-      end
-      field "resourceName" do
-        label "Resource Name"
-      end
-      field "tags" do
-        label "Resource Tags"
-      end
-      field "missing_tags" do
-        label "Missing Tags"
-      end
-      field "resourceType" do
-        label "Resource Type"
+      field "id" do
+        label "Bucket Name"
       end
       field "region" do
         label "Region"
       end
-      field "service" do
-        label "Service"
+      field "tags" do
+        label "Tags"
       end
-      field "id" do
-        label "ID"
+      field "creation_date" do
+        label "Creation Date"
       end
-      field "savings" do
-        label "Estimated Monthly Savings"
+      field "block_public_acls" do
+        label "Block Public ACLs"
       end
-      field "savingsCurrency" do
-        label "Savings Currency"
+      field "ignore_public_acls" do
+        label "Ignore Public ACLs"
+      end
+      field "block_public_policy" do
+        label "Block Public Policy"
+      end
+      field "restrict_public_buckets" do
+        label "Restrict Public Buckets"
       end
       field "incident_id" do
         label "Child Incident ID"
