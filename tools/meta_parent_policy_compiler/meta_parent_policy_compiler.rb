@@ -88,6 +88,12 @@ default_child_policy_template_files = [
   "../../operational/azure/compute_poweredoff_report/azure_compute_poweredoff_report.pt",
   "../../operational/azure/tag_cardinality/azure_tag_cardinality.pt",
   "../../operational/azure/vms_without_managed_disks/azure_vms_without_managed_disks.pt",
+  "../../security/azure/queue_storage_logging/queue_storage_logging.pt",
+  "../../security/azure/restrict_rdp_internet/azure_restrict_rdp_inet.pt",
+  "../../security/azure/restrict_ssh_internet/azure_restrict_ssh_inet.pt",
+  "../../security/azure/secure_transfer_required/secure_transfer_required.pt",
+  "../../security/azure/security_alert_owners/security_alert_owners.pt",
+  "../../security/azure/security_contact_email/security_contact_email.pt",
   # Google Policy Templates
   "../../compliance/google/long_stopped_instances/google_long_stopped_instances.pt",
   "../../compliance/google/unlabeled_resources/unlabeled_resources.pt",
