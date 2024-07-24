@@ -181,8 +181,8 @@ datasource "ds_azure_netsecgroups" do
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "name", jmes_path(col_item, "name")
       field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
       field "type", jmes_path(col_item, "type")
       field "region", jmes_path(col_item, "location")
       field "securityRules", jmes_path(col_item, "properties.securityRules")
@@ -232,43 +232,67 @@ script "js_bad_azure_netsecgroups", type: "javascript" do
   parameters "ds_azure_netsecgroups_region_filtered", "ds_applied_policy"
   result "result"
   code <<-EOS
-  var res = [];
-  _.each(ds_azure_resources, function (ds_azure_resource) {
-    bad_resource = false;
-    _.each(ds_azure_resource.securityRules, function (security_rule) {
-      if (security_rule.properties.access === "Allow") {
-        if (security_rule.properties.direction === 'Inbound') {
-          if (security_rule.properties.protocol === 'TCP') {
-            var bad_port = false;
-            var destinationPortRange = [];
-            if (security_rule.properties.destinationPortRange){
-              destinationPortRange = security_rule.properties.destinationPortRange.split('-');
-            }
-            if (destinationPortRange.length != 0 && destinationPortRange[1] != undefined) {
-              if (destinationPortRange[0] <= 3389 && destinationPortRange[1] >= 3389) {
-                bad_port = true;
-                console.log(destinationPortRange[0]);
-              }
-            } else {
-              if (destinationPortRange[0] == '3389' || destinationPortRange[0] == '*') {
-                bad_port = true;
-              }
-            }
-            if (bad_port == true) {
-              if (_.contains(["*", "0.0.0.0", "<nw>/0", "/0", "internet", "Any"], security_rule.properties.sourceAddressPrefix)) {
-                bad_resource = true;
-              }
-            }
-          }
-        }
-      }
-    });
-    if (bad_resource) {
-      res.push(ds_azure_resource);
-    }
+  result = []
 
-  });
-  EOS
+  _.each(ds_azure_netsecgroups_region_filtered, function(group) {
+    // Filter down just to rules that allow inbound TCP traffic and have a port range. Other rules are not of concern.
+    inbound_rules = _.filter(group['securityRules'], function(rule) {
+      return rule['properties']['access'] == "Allow" && rule['properties']['direction'] == "Inbound" && rule['properties']['protocol'] == "TCP" && typeof(rule['properties']['destinationPortRange']) == "string" && rule['properties']['destinationPortRange'] != ""
+    })
+
+    // From the above list, filter down to just rules that include port 3389
+    bad_rules = _.filter(inbound_rules, function(rule) {
+      if (rule['properties']['destinationPortRange'].indexOf('-') == -1) {
+        return rule['properties']['destinationPortRange'] == '*' || Number(rule['properties']['destinationPortRange']) == 3389
+      } else {
+        range_start = Number(rule['properties']['destinationPortRange'].split('-')[0])
+        range_end = Number(rule['properties']['destinationPortRange'].split('-')[1])
+        return range_start <= 3389 && range_end >= 3389
+      }
+    })
+
+    if (bad_rules.length > 0) {
+      result.push({
+        accountID: group['subscriptionID'],
+        accountName: group['subscriptionName'],
+        resourceGroup: group['resourceGroup'],
+        id: group['id'],
+        resourceName: group['name'],
+        resourceType: group['type'],
+        region: group['region'],
+        securityRules: group['securityRules'],
+        provisioningState: group['provisioningState'],
+        description: group['description'],
+        protocol: group['protocol'],
+        destinationPortRange: group['destinationPortRange'],
+        access: group['access'],
+        direction: group['direction'],
+        sourceAddressPrefix: group['sourceAddressPrefix'],
+        policy_name: ds_applied_policy['name']
+      })
+    }
+  })
+
+  // Dummy entry to ensure validation occurs at least once
+  result.push({
+    accountID: '',
+    accountName: '',
+    resourceGroup: '',
+    id: '',
+    resourceName: '',
+    resourceType: '',
+    region: '',
+    securityRules: '',
+    provisioningState: '',
+    description: '',
+    protocol: '',
+    destinationPortRange: '',
+    access: '',
+    direction: '',
+    sourceAddressPrefix: '',
+    policy_name: ''
+  })
+EOS
 end
 
 ###############################################################################
@@ -278,15 +302,24 @@ end
 policy "pol_bad_azure_netsecgroups" do
   validate_each $ds_bad_azure_netsecgroups do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Network Security Groups With Inbound RDP Open Found"
-    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "id"), ""))
     escalate $esc_email
     export do
       resource_level true
-      field "id" do
-        label "Azure Resource Id"
+      field "accountID" do
+        label "Subscription ID"
       end
-      field "name" do
-        label "Network Security Group Name"
+      field "accountName" do
+        label "Subscription Name"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "id" do
+        label "ID"
+      end
+      field "resourceName" do
+        label "Name"
       end
       field "region" do
         label "Region"
