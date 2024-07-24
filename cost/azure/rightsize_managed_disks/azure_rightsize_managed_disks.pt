@@ -533,7 +533,7 @@ script "js_azure_virtual_machines_with_metrics", type: "javascript" do
       "metricnames": "OS Disk IOPS Consumed Percentage,OS Disk Bandwidth Consumed Percentage,Data Disk IOPS Consumed Percentage,Data Disk Bandwidth Consumed Percentage",
       "timespan": timespan,
       "$filter": "LUN eq '*'",
-      "aggregation": "Average, Maximum",
+      "aggregation": "Average, Maximum, Minimum",
       "interval": "PT1H",
     },
     headers: {
@@ -577,6 +577,12 @@ script "js_azure_disks_with_metrics", type: "javascript" do
     return result
   }
 
+  function getMinValues(data) {
+    var minValues = _.filter(data, function(data) { return data.minimum != undefined && data.minimum != null })
+    minValues = _.map(minValues, function(v) { return v.minimum })
+    return minValues
+  }
+
   function getMaxValues(data) {
     var maxValues = _.filter(data, function(data) { return data.maximum != undefined && data.maximum != null })
     maxValues = _.map(maxValues, function(v) { return v.maximum })
@@ -616,20 +622,17 @@ script "js_azure_disks_with_metrics", type: "javascript" do
           p99: -1
         }
       } else {
+        var minValues = getMinValues(correspondingTs.data)
         var maxValues = getMaxValues(correspondingTs.data)
         var avgValues = getAvgValues(correspondingTs.data)
+        var allValues = sortArray(minValues.concat(maxValues).concat(avgValues))
         var r = {
           average: getAverage(avgValues),
           maximum: _.last(maxValues),
-          p90: percentile(maxValues, 90),
-          p95: percentile(maxValues, 95),
-          p99: percentile(maxValues, 99),
+          p90: percentile(allValues, 90),
+          p95: percentile(allValues, 95),
+          p99: percentile(allValues, 99),
         }
-        console.log("maxValues")
-        console.log(maxValues)
-        console.log("avgValues")
-        console.log(avgValues)
-        console.log("average: " + r.average + " maximum: " + r.maximum + " p90: " + r.p90 + " p95: " + r.p95 + " p99: " + r.p99)
         return r
       }
     }
@@ -646,13 +649,15 @@ script "js_azure_disks_with_metrics", type: "javascript" do
       if (vmWithDisk.osDisk === null || vmWithDisk.osDisk === undefined) continue;
       if (metric.name.value === "OS Disk IOPS Consumed Percentage") {
         try {
+          var minValues = getMinValues(metric.timeseries[0].data)
           var maxValues = getMaxValues(metric.timeseries[0].data)
           var avgValues = getAvgValues(metric.timeseries[0].data)
+          var allValues = sortArray(minValues.concat(maxValues).concat(avgValues))
           vmWithDisk.osDisk.iopsConsumedPctAvg = getAverage(avgValues)
           vmWithDisk.osDisk.iopsConsumedPctMax = _.last(maxValues)
-          vmWithDisk.osDisk.iopsConsumedPctP90 = percentile(maxValues, 90)
-          vmWithDisk.osDisk.iopsConsumedPctP95 = percentile(maxValues, 95)
-          vmWithDisk.osDisk.iopsConsumedPctP99 = percentile(maxValues, 99)
+          vmWithDisk.osDisk.iopsConsumedPctP90 = percentile(allValues, 90)
+          vmWithDisk.osDisk.iopsConsumedPctP95 = percentile(allValues, 95)
+          vmWithDisk.osDisk.iopsConsumedPctP99 = percentile(allValues, 99)
         } catch (err) {
           vmWithDisk.osDisk.iopsConsumedPctAvg = -1
           vmWithDisk.osDisk.iopsConsumedPctMax = -1
@@ -663,13 +668,15 @@ script "js_azure_disks_with_metrics", type: "javascript" do
       }
       if (metric.name.value === "OS Disk Bandwidth Consumed Percentage") {
         try {
+          var minValues = getMinValues(metric.timeseries[0].data)
           var maxValues = getMaxValues(metric.timeseries[0].data)
           var avgValues = getAvgValues(metric.timeseries[0].data)
+          var allValues = sortArray(minValues.concat(maxValues).concat(avgValues))
           vmWithDisk.osDisk.bandwithConsumedPctAvg = getAverage(avgValues)
           vmWithDisk.osDisk.bandwithConsumedPctMax = _.last(maxValues)
-          vmWithDisk.osDisk.bandwithConsumedPctP90 = percentile(maxValues, 90)
-          vmWithDisk.osDisk.bandwithConsumedPctP95 = percentile(maxValues, 95)
-          vmWithDisk.osDisk.bandwithConsumedPctP99 = percentile(maxValues, 99)
+          vmWithDisk.osDisk.bandwithConsumedPctP90 = percentile(allValues, 90)
+          vmWithDisk.osDisk.bandwithConsumedPctP95 = percentile(allValues, 95)
+          vmWithDisk.osDisk.bandwithConsumedPctP99 = percentile(allValues, 99)
         } catch (err) {
           vmWithDisk.osDisk.bandwithConsumedPctAvg = -1
           vmWithDisk.osDisk.bandwithConsumedPctMax = -1
