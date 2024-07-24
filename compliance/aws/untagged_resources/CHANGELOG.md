@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.2.1
+
+- Fixed bug related to pagination on the AWS Tagging API
+
 ## v5.2.0
 
 - Added parameter `Include Savings` to optionally allow the user to not report savings
