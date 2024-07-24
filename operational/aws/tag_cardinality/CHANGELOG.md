@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1.1
+
+- Fixed bug related to pagination on the AWS Tagging API
+
 ## v3.1
 
 - Added parameter to enable region filtering
