@@ -88,6 +88,7 @@ default_child_policy_template_files = [
   "../../operational/azure/compute_poweredoff_report/azure_compute_poweredoff_report.pt",
   "../../operational/azure/tag_cardinality/azure_tag_cardinality.pt",
   "../../operational/azure/vms_without_managed_disks/azure_vms_without_managed_disks.pt",
+  "../../security/azure/private_blob_containers/private_blob_containers.pt",
   "../../security/azure/queue_storage_logging/queue_storage_logging.pt",
   "../../security/azure/restrict_rdp_internet/azure_restrict_rdp_inet.pt",
   "../../security/azure/restrict_ssh_internet/azure_restrict_ssh_inet.pt",
