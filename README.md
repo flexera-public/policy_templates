@@ -567,6 +567,7 @@ These templates can generate savings estimates for your environment.
 
   - [AWS Elastic Load Balancers With Unencrypted Listeners](./security/aws/elb_unencrypted)
   - [AWS Internet-Accessible Elastic Load Balancers](./security/aws/loadbalancer_internet_facing)
+  - [AWS VPCs Without FlowLogs Enabled](./security/aws/vpcs_without_flow_logs_enabled)
 
 - RDS
 
@@ -576,15 +577,14 @@ These templates can generate savings estimates for your environment.
 - S3
 
   - [AWS Open S3 Buckets](./security/aws/public_buckets)
-  - [AWS S3 Buckets without Server Access Logging](./security/aws/s3_buckets_without_server_access_logging)
-  - [AWS S3 Ensure 'Block Public Access' Configured For All Buckets](./security/aws/s3_ensure_buckets_block_public_access)
-  - [AWS S3 Ensure Bucket Policies Deny HTTP Requests](./security/aws/s3_buckets_deny_http)
-  - [AWS S3 Ensure MFA Delete Enabled For All Buckets](./security/aws/s3_ensure_mfa_delete_enabled)
-  - [AWS Unencrypted S3 Buckets](./security/aws/unencrypted_s3_buckets)
 
-- VPC
+- Storage
 
-  - [AWS VPC's without FlowLogs Enabled](./security/aws/vpcs_without_flow_logs_enabled)
+  - [AWS S3 Buckets Accepting HTTP Requests](./security/aws/s3_buckets_deny_http)
+  - [AWS S3 Buckets Without Default Encryption Configuration](./security/aws/unencrypted_s3_buckets)
+  - [AWS S3 Buckets Without MFA Delete Enabled](./security/aws/s3_ensure_mfa_delete_enabled)
+  - [AWS S3 Buckets Without Public Access Blocked](./security/aws/s3_ensure_buckets_block_public_access)
+  - [AWS S3 Buckets Without Server Access Logging](./security/aws/s3_buckets_without_server_access_logging)
 
 #### Azure
 
@@ -670,8 +670,7 @@ These templates can generate savings estimates for your environment.
   Security: 74
 :optimization_count: 61
 :policy_sets:
-  '': 44
-  AWS Config: 1
+  '': 45
   Allocate VMs: 3
   Automation: 1
   Autoscaling: 1
@@ -773,22 +772,21 @@ These templates can generate savings estimates for your environment.
   Marketplace: 2
   MySQL: 2
   NetApp Files: 1
-  Network: 5
+  Network: 6
   Network Security Group: 2
   Office 365: 1
   Organization: 1
   PaaS: 3
   PostgreSQL: 4
   RDS: 6
-  S3: 6
+  S3: 1
   SQL: 19
   SaaS Manager: 8
   Security: 3
-  Storage: 23
+  Storage: 28
   Storage Accounts: 2
   Tags: 2
   Usage Discount: 6
-  VPC: 1
   compute: 1
 :total_count: 264
 -->
