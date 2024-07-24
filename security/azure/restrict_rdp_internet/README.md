@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy template reports any Azure Network Security Groups that have port 3389 open to the internet. Optionally, it emails this report.
+This policy template reports any Azure Network Security Groups that have RDP (TCP port 3389) open to the internet. Optionally, it emails this report.
 
 ## Input Parameters
 
