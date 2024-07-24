@@ -1,4 +1,4 @@
-# Azure Ensure Owners Receive Security Alerts
+# Azure Subscriptions Without Owner Security Alerts
 
 ## What it does
 

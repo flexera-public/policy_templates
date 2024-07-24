@@ -1,4 +1,4 @@
-# Azure Ensure Security Contact Email
+# Azure Subscriptions Without Security Contact Email
 
 ## What it does
 

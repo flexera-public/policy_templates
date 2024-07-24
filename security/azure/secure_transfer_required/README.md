@@ -1,4 +1,4 @@
-# Azure Ensure Secure Transfer Required
+# Azure Storage Accounts Without Secure Transfer
 
 ## What it does
 
