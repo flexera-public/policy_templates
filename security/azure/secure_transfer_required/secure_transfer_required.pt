@@ -346,19 +346,68 @@ EOS
 end
 
 datasource "ds_bad_storage_accounts" do
-  run_script $js_bad_storage_accounts, $ds_storage_accounts
+  run_script $js_bad_storage_accounts, $ds_azure_storage_accounts_name_filtered, $ds_applied_policy
 end
 
 script "js_bad_storage_accounts", type: "javascript" do
-  parameters "ds_storage_accounts"
+  parameters "ds_azure_storage_accounts_name_filtered", "ds_applied_policy"
   result "result"
   code <<-EOS
-  result = []
+  bad_accounts = _.filter(ds_azure_storage_accounts_name_filtered, function(resource) {
+    return resource['supportsHttpsTrafficOnly'].toLowerCase().trim() != "true"
+  })
 
-  _.each(ds_storage_accounts, function(account) {
-    if (account['secure_transfer'] != true) {
-      result.push(account)
+  result = _.map(bad_accounts, function(resource) {
+    tags = []
+
+    if (typeof(resource['tags']) == 'object') {
+      tags = _.map(_.keys(resource['tags']), function(key) { return key + '=' + resource['tags'][key] })
     }
+
+    return {
+      accountID: resource['subscriptionID'],
+      accountName: resource['subscriptionName'],
+      resourceGroup: resource['resourceGroup'],
+      resourceID: resource['id'],
+      resourceName: resource['name'],
+      resourceType: resource['kind'],
+      region: resource['region'],
+      accessTier: resource['accessTier'],
+      creationTime: resource['creationTime'],
+      primaryLocation: resource['primaryLocation'],
+      provisioningState: resource['provisioningState'],
+      statusOfPrimary: resource['statusOfPrimary'],
+      supportsHttpsTrafficOnly: resource['supportsHttpsTrafficOnly'],
+      encryption: resource['encryption'],
+      keyCreationTime: resource['keyCreationTime'],
+      networkAcls: resource['networkAcls'],
+      primaryEndpoints: resource['primaryEndpoints'],
+      tags: tags.join(', '),
+      policy_name: ds_applied_policy['name']
+    }
+  })
+
+  // Dummy entry to ensure validation occurs
+  result.push({
+    accountID: '',
+    accountName: '',
+    resourceGroup: '',
+    resourceID: '',
+    resourceName: '',
+    resourceType: '',
+    region: '',
+    accessTier: '',
+    creationTime: '',
+    primaryLocation: '',
+    provisioningState: '',
+    statusOfPrimary: '',
+    supportsHttpsTrafficOnly: '',
+    encryption: '',
+    keyCreationTime: '',
+    networkAcls: '',
+    primaryEndpoints: '',
+    tags: '',
+    policy_name: ''
   })
 EOS
 end
@@ -374,29 +423,43 @@ policy "pol_bad_storage_accounts" do
     escalate $esc_email
     hash_exclude "tags"
     export do
-      field "name" do
-        label "Name"
+      resource_level true
+      field "accountID" do
+        label "Subscription ID"
       end
-      field "kind" do
-        label "Kind"
+      field "accountName" do
+        label "Subscription Name"
       end
-      field "location" do
-        label "Location"
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "resourceID" do
+        label "Storage Account ID"
+      end
+      field "resourceName" do
+        label "Storage Account Name"
+      end
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "tags" do
+        label "Tags"
+      end
+      field "creationTime" do
+        label "Created At"
       end
       field "accessTier" do
         label "Access Tier"
       end
-      field "secure_transfer" do
-        label "Secure Transfer Enforced?"
+      field "supportsHttpsTrafficOnly" do
+        label "Secure Transfer Required"
       end
       field "id" do
-        label "Resource ID"
-      end
-      field "subscriptionId" do
-        label "Subscription ID"
-      end
-      field "subscriptionName" do
-        label "Subscription Name"
+        label "ID"
+        path "resourceID"
       end
     end
   end
