@@ -7,7 +7,7 @@ severity "medium"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "3.4.1",
+  version: "4.0.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Reserved Instances",
@@ -107,11 +107,11 @@ end
 
 parameter "param_scope" do
   type "string"
-  category "Reservation Settings"
-  label "Reservation Scope"
-  description "The scope to provide recommendations for."
-  allowed_values "Single", "Shared"
-  default "Single"
+  category "Savings Plan Settings"
+  label "Savings Plan Scope"
+  description "The scope to provide recommendations for. Select 'Shared' to not have recommendations scoped to individual Subscriptions or Resource Groups."
+  default "Subscription"
+  allowed_values "Subscription", "Resource Group", "Shared"
 end
 
 ###############################################################################
@@ -394,12 +394,47 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
 EOS
 end
 
+# Only request the resource groups in each subscription if we're doing "Resource Group" scope
+datasource "ds_azure_resource_groups_requests" do
+  run_script $js_azure_resource_groups_requests, $ds_azure_subscriptions_filtered, $param_scope
+end
+
+script "js_azure_resource_groups_requests", type: "javascript" do
+  parameters "ds_azure_subscriptions_filtered", "param_scope"
+  result "result"
+  code <<-EOS
+  result = []
+  if (param_scope == "Resource Group") { result = ds_azure_subscriptions_filtered }
+EOS
+end
+
+datasource "ds_azure_resource_groups" do
+  iterate $ds_azure_resource_groups_requests
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "id"), "/resourcegroups"])
+    query "api-version", "2021-04-01"
+    header "User-Agent", "RS Policies"
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "resourceGroup", jmes_path(col_item, "name")
+      field "id", val(iter_item, "id")
+      field "name", val(iter_item, "name")
+    end
+  end
+end
+
 datasource "ds_ri_requests" do
-  run_script $js_ri_requests, $ds_azure_subscriptions_filtered, $ds_service_table, $param_service, $param_scope
+  run_script $js_ri_requests, $ds_azure_subscriptions_filtered, $ds_azure_resource_groups, $ds_service_table, $param_service, $param_scope
 end
 
 script "js_ri_requests", type: "javascript" do
-  parameters "ds_azure_subscriptions_filtered", "ds_service_table", "param_service", "param_scope"
+  parameters "ds_azure_subscriptions_filtered", "ds_azure_resource_groups", "ds_service_table", "param_service", "param_scope"
   result "result"
   code <<-EOS
   result = []
@@ -408,17 +443,32 @@ script "js_ri_requests", type: "javascript" do
     _.each(param_service, function(service) {
       result.push({
         service: ds_service_table[service],
-        subscriptionId: ds_azure_subscriptions_filtered[0]['id'],
-        subscriptionName: ds_azure_subscriptions_filtered[0]['name']
+        id: ds_azure_subscriptions_filtered[0]['id'],
+        name: ds_azure_subscriptions_filtered[0]['name']
       })
     })
-  } else {
+  }
+
+  if (param_scope == "Subscription") {
     _.each(ds_azure_subscriptions_filtered, function(subscription) {
       _.each(param_service, function(service) {
         result.push({
           service: ds_service_table[service],
-          subscriptionId: subscription['id'],
-          subscriptionName: subscription['name']
+          id: subscription['id'],
+          name: subscription['name']
+        })
+      })
+    })
+  }
+
+  if (param_scope == "Resource Group") {
+    _.each(ds_azure_resource_groups, function(rg) {
+      _.each(param_service, function(service) {
+        result.push({
+          service: ds_service_table[service],
+          id: rg['id'],
+          name: rg['name'],
+          resourceGroup: rg['resourceGroup']
         })
       })
     })
@@ -429,7 +479,7 @@ end
 datasource "ds_ri_recommendations" do
   iterate $ds_ri_requests
   request do
-    run_script $js_ri_recommendations, val(iter_item, "service"), val(iter_item, "subscriptionId"), $param_days, $param_scope, $param_azure_endpoint
+    run_script $js_ri_recommendations, iter_item, $param_days, $param_scope, $param_azure_endpoint
   end
   result do
     encoding "json"
@@ -451,14 +501,15 @@ datasource "ds_ri_recommendations" do
       field "normalizedSize", jmes_path(col_item, "properties.normalizedSize")
       field "recommendedQuantityNormalized", jmes_path(col_item, "properties.recommendedQuantityNormalized")
       field "service", val(iter_item, "service")
-      field "subscriptionId", val(iter_item, "subscriptionId")
-      field "subscriptionName", val(iter_item, "subscriptionName")
+      field "resourceGroup", val(iter_item, "resourceGroup")
+      field "subscriptionId", val(iter_item, "id")
+      field "subscriptionName", val(iter_item, "name")
     end
   end
 end
 
 script "js_ri_recommendations", type: "javascript" do
-  parameters "service", "subscriptionId", "param_days", "param_scope", "param_azure_endpoint"
+  parameters "account", "param_days", "param_scope", "param_azure_endpoint"
   result "request"
   code <<-EOS
   // Slow down rate of requests to prevent throttling
@@ -467,10 +518,13 @@ script "js_ri_recommendations", type: "javascript" do
   while(new Date().getTime() < now + (api_wait * 1000)) { /* Do nothing */ }
 
   filter = [
-    "properties/resourceType eq '", service, "' ",
+    "properties/resourceType eq '", account['service'], "' ",
     "and properties/scope eq '", param_scope, "' ",
     "and properties/lookBackPeriod eq '", param_days.replace(' ', '').replace(' ', ''), "'"
   ].join('')
+
+  path_prefix = "/subscriptions/" + account['id']
+  if (param_scope == "Resource Group") { path_prefix += "/resourceGroups/" + account['resourceGroup'] }
 
   var request = {
     auth: "auth_azure",
@@ -478,14 +532,9 @@ script "js_ri_recommendations", type: "javascript" do
     host: param_azure_endpoint,
     // Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
     ignore_status: [400, 403, 404, 422],
-    path: "/subscriptions/" + subscriptionId + "/providers/Microsoft.Consumption/reservationRecommendations",
-    query_params: {
-      "api-version": "2021-10-01",
-      "$filter": filter
-    },
-    headers: {
-      "User-Agent": "RS Policies"
-    }
+    path: path_prefix + "/providers/Microsoft.Consumption/reservationRecommendations",
+    query_params: { "api-version": "2021-10-01", "$filter": filter },
+    headers: { "User-Agent": "RS Policies" }
   }
 EOS
 end
@@ -568,16 +617,19 @@ script "js_ri_incident", type: "javascript" do
 
       accountID = recommendation['subscriptionId']
       accountName = recommendation['subscriptionName']
+      resourceGroup = recommendation['resourceGroup']
 
       if (param_scope == "Shared") {
         id = recommendation['name']
         accountID = ""
         accountName = "All"
+        resourceGroup = ""
       }
 
       result.push({
         accountID: accountID,
         accountName: accountName,
+        resourceGroup: resourceGroup,
         service: recommendation["service"],
         resourceType: recommendation["skuName"],
         region: recommendation["region"],
@@ -672,6 +724,9 @@ policy "pol_azure_ri_recommendations" do
       end
       field "accountName" do
         label "Subscription Name"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
       end
       field "service" do
         label "Service"
