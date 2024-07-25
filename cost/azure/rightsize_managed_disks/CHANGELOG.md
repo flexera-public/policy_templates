@@ -2,7 +2,8 @@
 
 ## v2.4.0
 
-- Added more options for parameters *IOPS Threshold Statistic* and *Throughput Threshold Statistic*: P90, P95 and P99.
+- Added a parameter to select the interval to use when gathering Azure metrics data.
+- Added more options for parameters *IOPS Threshold Statistic* and *Throughput Threshold Statistic*: p90, p95 and p99.
 - Fixed a bug that caused the incident fields "New Disk IOPS" and "New Disk Throughput (MB/s)" to be miscalculated when "Premium SSD v2" was the recommended disk type.
 
 ## v2.3.0

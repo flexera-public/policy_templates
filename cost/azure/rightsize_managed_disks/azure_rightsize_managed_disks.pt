@@ -118,7 +118,7 @@ parameter "param_stats_aggregation_for_disk_iops" do
   category "Statistics"
   label "IOPS Threshold Statistic"
   description "Statistic to use for IOPS when determining if a managed disk is underutilized."
-  allowed_values "Average", "Maximum", "P90", "P95", "P99"
+  allowed_values "Average", "Maximum", "p99", "p95", "p90"
   default "Maximum"
 end
 
@@ -137,8 +137,17 @@ parameter "param_stats_aggregation_for_disk_throughput" do
   category "Statistics"
   label "Throughput Threshold Statistic"
   description "Statistic to use for throughput when determining if a managed disk is underutilized."
-  allowed_values "Average", "Maximum", "P90", "P95", "P99"
+  allowed_values "Average", "Maximum", "p99", "p95", "p90"
   default "Maximum"
+end
+
+parameter "param_stats_interval" do
+  type "string"
+  category "Statistics"
+  label "Statistic Interval"
+  description "The interval to use when gathering Azure metrics data. Smaller intervals produce more accurate results at the expense of policy memory usage and completion time due to larger data sets."
+  allowed_values "1 Minute", "5 Minutes", "15 Minutes", "30 Minutes", "1 Hour", "6 Hours", "12 Hours", "1 Day"
+  default "15 Minutes"
 end
 
 parameter "param_stats_lookback" do
@@ -217,6 +226,33 @@ datasource "ds_azure_subscriptions" do
       field "state", jmes_path(col_item, "state")
     end
   end
+end
+
+datasource "ds_stats_interval" do
+  run_script $js_stats_interval, $param_stats_interval
+end
+
+script "js_stats_interval", type: "javascript" do
+  parameters "param_stats_interval"
+  result "result"
+  code <<-EOS
+  // Tables to convert human-readable parameter values to their API equivalents
+  interval_table = {
+    "1 Minute": "PT1M",
+    "5 Minutes": "PT5M",
+    "15 Minutes": "PT15M",
+    "30 Minutes": "PT30M",
+    "1 Hour": "PT1H",
+    "6 Hours": "PT6H",
+    "12 Hours": "PT12H",
+    "1 Day": "P1D"
+  }
+
+  result = {
+    pretty: param_stats_interval,
+    api: interval_table[param_stats_interval]
+  }
+EOS
 end
 
 datasource "ds_applied_policy" do
@@ -496,7 +532,7 @@ end
 datasource "ds_azure_virtual_machines_with_metrics" do
   iterate $ds_azure_virtual_machines_with_disks
   request do
-    run_script $js_azure_virtual_machines_with_metrics, val(iter_item, "vmId"), $param_azure_endpoint, $param_stats_lookback
+    run_script $js_azure_virtual_machines_with_metrics, val(iter_item, "vmId"), $ds_stats_interval, $param_azure_endpoint, $param_stats_lookback
   end
   result do
     encoding "json"
@@ -506,7 +542,7 @@ datasource "ds_azure_virtual_machines_with_metrics" do
 end
 
 script "js_azure_virtual_machines_with_metrics", type: "javascript" do
-  parameters "vmId", "param_azure_endpoint", "param_stats_lookback"
+  parameters "vmId", "ds_stats_interval", "param_azure_endpoint", "param_stats_lookback"
   result "request"
   code <<-EOS
   var end_date = new Date()
@@ -534,7 +570,7 @@ script "js_azure_virtual_machines_with_metrics", type: "javascript" do
       "timespan": timespan,
       "$filter": "LUN eq '*'",
       "aggregation": "Average, Maximum, Minimum",
-      "interval": "PT1H",
+      "interval": ds_stats_interval.api,
     },
     headers: {
       "User-Agent": "RS Policies",
@@ -789,13 +825,13 @@ script "js_azure_disks_with_metrics_thresholds_filtered", type: "javascript" do
         case "Maximum":
           usedMetricPct = disk.iopsConsumedPctMax
           break;
-        case "P90":
+        case "p90":
           usedMetricPct = disk.iopsConsumedPctP90
           break;
-        case "P95":
+        case "p95":
           usedMetricPct = disk.iopsConsumedPctP95
           break;
-        case "P99":
+        case "p99":
           usedMetricPct = disk.iopsConsumedPctP99
           break;
       }
@@ -812,13 +848,13 @@ script "js_azure_disks_with_metrics_thresholds_filtered", type: "javascript" do
         case "Maximum":
           usedMetricPct = disk.bandwithConsumedPctMax
           break;
-        case "P90":
+        case "p90":
           usedMetricPct = disk.bandwithConsumedPctP90
           break;
-        case "P95":
+        case "p95":
           usedMetricPct = disk.bandwithConsumedPctP95
           break;
-        case "P99":
+        case "p99":
           usedMetricPct = disk.bandwithConsumedPctP99
           break;
       }
@@ -1372,13 +1408,13 @@ EOS
         path "iopsPctAverage"
       end
       field "iopsPctP90" do
-        label "IOPS P90 %"
+        label "IOPS p90"
       end
       field "iopsPctP95" do
-        label "IOPS P95 %"
+        label "IOPS p95"
       end
       field "iopsPctP99" do
-        label "IOPS P99 %"
+        label "IOPS p99"
       end
       field "iopsThreshold" do
         label "IOPS Threshold %"
@@ -1390,13 +1426,13 @@ EOS
         label "Throughput Average %"
       end
       field "throughputPctP90" do
-        label "Throughput P90 %"
+        label "Throughput p90"
       end
       field "throughputPctP95" do
-        label "Throughput P95 %"
+        label "Throughput p95"
       end
       field "throughputPctP99" do
-        label "Throughput P99 %"
+        label "Throughput p99"
       end
       field "throughputThreshold" do
         label "Throughput Threshold %"
