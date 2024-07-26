@@ -1,13 +1,13 @@
-name "Meta Parent: Azure Rightsize Managed Disks"
+name "Meta Parent: Azure Blob Storage Accounts Without Logging Enabled"
 rs_pt_ver 20180301
 type "policy"
-short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** Applies and manages \"child\" [Azure Rightsize Managed Disks](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_disks) Policies."
+short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** Applies and manages \"child\" [Azure Blob Storage Accounts Without Logging Enabled](https://github.com/flexera-public/policy_templates/tree/master/security/azure/blob_storage_logging) Policies."
 severity "low"
 category "Meta"
 default_frequency "15 minutes"
 info(
   provider: "Azure",
-  version: "2.4.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "3.0.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
 )
 
 ##############################################################################
@@ -60,7 +60,7 @@ end
 parameter "param_template_source" do
   type "string"
   label "Child Policy Template Source"
-  description "By default, will use the \"Azure Rightsize Managed Disks\" Policy Template from Catalog.  Optionally, you can use the \"Azure Rightsize Managed Disks\" Policy Template uploaded in the current Flexera Project."
+  description "By default, will use the \"Azure Blob Storage Accounts Without Logging Enabled\" Policy Template from Catalog.  Optionally, you can use the \"Azure Blob Storage Accounts Without Logging Enabled\" Policy Template uploaded in the current Flexera Project."
   default "Published Catalog Template"
   allowed_values "Published Catalog Template", "Uploaded Template"
 end
@@ -75,13 +75,29 @@ parameter "param_azure_endpoint" do
   default "management.azure.com"
 end
 
-parameter "param_min_savings" do
-  type "number"
-  category "Policy Settings"
-  label "Minimum Savings Threshold"
-  description "Minimum potential savings required to generate a recommendation."
-  min_value 0
-  default 0
+parameter "param_storage_account_ignore_list" do
+  type "list"
+  category "Filters"
+  label "Storage Account Ignore List"
+  description "A list of Azure Storage Accounts to never include in the results."
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
 end
 
 parameter "param_exclusion_tags" do
@@ -101,97 +117,6 @@ parameter "param_exclusion_tags_boolean" do
   default "Any"
 end
 
-parameter "param_regions_allow_or_deny" do
-  type "string"
-  category "Filters"
-  label "Allow/Deny Regions"
-  description "Allow or deny entered regions. See the README for more details."
-  allowed_values "Allow", "Deny"
-  default "Allow"
-end
-
-parameter "param_regions_list" do
-  type "list"
-  category "Filters"
-  label "Allow/Deny Regions List"
-  description "A list of allowed or denied regions. See the README for more details."
-  default []
-end
-
-parameter "param_sku_ignore_list" do
-  type "list"
-  category "Filters"
-  label "SKU Ignore List"
-  description "A list of disk SKUs to ignore and not include in the results. To remove HDDs from the results, add 'Standard_LRS' and 'Standard_ZRS' to this list. Leave blank to produce recommendations for all SKUs."
-  default []
-end
-
-parameter "param_min_used_disk_iops_pct" do
-  type "number"
-  category "Filters"
-  label "IOPS Threshold (%)"
-  description "The IOPs threshold at which to consider a managed disk to be underutilized. Set to -1 to turn off this filter."
-  min_value -1
-  max_value 100
-  default -1
-end
-
-parameter "param_stats_aggregation_for_disk_iops" do
-  type "string"
-  category "Statistics"
-  label "IOPS Threshold Statistic"
-  description "Statistic to use for IOPS when determining if a managed disk is underutilized."
-  allowed_values "Average", "Maximum", "p99", "p95", "p90"
-  default "Maximum"
-end
-
-parameter "param_min_used_disk_throughput_pct" do
-  type "number"
-  category "Filters"
-  label "Throughput Threshold (%)"
-  description "The throughput threshold at which to consider a managed disk to be underutilized. Set to -1 to turn off this filter."
-  min_value -1
-  max_value 100
-  default -1
-end
-
-parameter "param_stats_aggregation_for_disk_throughput" do
-  type "string"
-  category "Statistics"
-  label "Throughput Threshold Statistic"
-  description "Statistic to use for throughput when determining if a managed disk is underutilized."
-  allowed_values "Average", "Maximum", "p99", "p95", "p90"
-  default "Maximum"
-end
-
-parameter "param_stats_interval" do
-  type "string"
-  category "Statistics"
-  label "Statistic Interval"
-  description "The interval to use when gathering Azure metrics data. Smaller intervals produce more accurate results at the expense of policy memory usage and completion time due to larger data sets."
-  allowed_values "1 Minute", "5 Minutes", "15 Minutes", "30 Minutes", "1 Hour", "6 Hours", "12 Hours", "1 Day"
-  default "15 Minutes"
-end
-
-parameter "param_stats_lookback" do
-  type "number"
-  category "Statistics"
-  label "Lookback period"
-  description "How many days back to look at disk IOPS and throughput data. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days."
-  min_value 1
-  max_value 90
-  default 30
-end
-
-parameter "param_recommend_hdd_tier" do
-  type "string"
-  category "Filters"
-  label "Recommend HDD tier"
-  description "When this value is set to Yes, the policy will consider the Standard HDD tier for making recommendations."
-  allowed_values "Yes", "No"
-  default "Yes"
-end
-
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -200,6 +125,13 @@ credentials "auth_azure" do
   label "Azure"
   description "Select the Azure Resource Manager Credential from the list."
   tags "provider=azure_rm"
+end
+
+credentials "auth_azure_storage" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Storage Credential from the list."
+  tags "provider=azure_storage"
 end
 
 credentials "auth_flexera" do
@@ -313,7 +245,7 @@ datasource "ds_published_child_policy_information" do
   result do
     encoding "json"
     # Select the published policy that is published by "support@flexera.com" and matches the name of the child policy template
-    collect jq(response, '.items[] | select(.name == "Azure Rightsize Managed Disks" and .created_by.email == "support@flexera.com")' ) do
+    collect jq(response, '.items[] | select(.name == "Azure Blob Storage Accounts Without Logging Enabled" and .created_by.email == "support@flexera.com")' ) do
       field "name", jmes_path(col_item, "name")
       field "href", jmes_path(col_item, "href")
       field "short_description", jmes_path(col_item, "short_description")
@@ -332,7 +264,7 @@ datasource "ds_project_child_policy_information" do
   result do
     encoding "json"
     # Select the uploaded policy that matches the name of the child policy template
-    collect jq(response, '.items[] | select(.name == "Azure Rightsize Managed Disks")' ) do
+    collect jq(response, '.items[] | select(.name == "Azure Blob Storage Accounts Without Logging Enabled")' ) do
       field "name", jmes_path(col_item, "name")
       field "href", jmes_path(col_item, "href")
       field "short_description", jmes_path(col_item, "short_description")
@@ -898,19 +830,19 @@ datasource "ds_child_incident_details" do
   end
 end
 
-datasource "ds_disk_rightsizing_recommendations_combined_incidents" do
-  run_script $js_ds_disk_rightsizing_recommendations_combined_incidents, $ds_child_incident_details
+datasource "ds_bad_storage_accounts_combined_incidents" do
+  run_script $js_ds_bad_storage_accounts_combined_incidents, $ds_child_incident_details
 end
 
-script "js_ds_disk_rightsizing_recommendations_combined_incidents", type: "javascript" do
+script "js_ds_bad_storage_accounts_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-EOS
   result = []
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
-    // If the incident summary contains "Azure Oversized Managed Disks Found" then include it in the filter result
-    if (s.indexOf("Azure Oversized Managed Disks Found") > -1) {
+    // If the incident summary contains "Azure Blob Storage Accounts Without Logging Enabled Found" then include it in the filter result
+    if (s.indexOf("Azure Blob Storage Accounts Without Logging Enabled Found") > -1) {
       _.each(incident["violation_data"], function(violation) {
         violation["incident_id"] = incident["id"];
         result.push(violation);
@@ -929,9 +861,9 @@ end
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
-    # Consolidated incident for Azure Oversized Managed Disks Found
-  validate $ds_disk_rightsizing_recommendations_combined_incidents do
-    summary_template "Consolidated Incident: {{ len data }} Azure Oversized Managed Disks Found"
+    # Consolidated incident for Azure Blob Storage Accounts Without Logging Enabled Found
+  validate $ds_bad_storage_accounts_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} Azure Blob Storage Accounts Without Logging Enabled Found"
     escalate $esc_email
     
     check eq(size(data), 0)
@@ -946,110 +878,38 @@ policy "policy_scheduled_report" do
       field "resourceGroup" do
         label "Resource Group"
       end
-      field "service" do
-        label "Service"
+      field "resourceID" do
+        label "Storage Account ID"
       end
       field "resourceName" do
-        label "Resource Name"
-      end
-      field "resourceID" do
-        label "Resource ID"
-      end
-      field "tags" do
-        label "Resource Tags"
+        label "Storage Account Name"
       end
       field "resourceType" do
-        label "Disk Type"
-      end
-      field "resourceTypeRedundancy" do
-        label "Disk Redundancy"
-      end
-      field "resourceTypeGiB" do
-        label "Disk Capacity (GiB)"
-      end
-      field "resourceTypeIOPS" do
-        label "Disk IOPS"
-      end
-      field "resourceTypeThroughput" do
-        label "Disk Throughput (MB/s)"
-      end
-      field "resourceTypeMonthlyPrice" do
-        label "Disk Monthly Price"
-      end
-      field "newResourceType" do
-        label "New Disk Type"
-      end
-      field "newResourceTypeRedundancy" do
-        label "New Disk Redundancy"
-      end
-      field "newResourceTypeGiB" do
-        label "New Disk Capacity (GiB)"
-      end
-      field "newResourceTypeIOPS" do
-        label "New Disk IOPS"
-      end
-      field "newResourceTypeThroughput" do
-        label "New Disk Throughput (MB/s)"
-      end
-      field "newResourceTypeMonthlyPrice" do
-        label "New Disk Monthly Price"
-      end
-      field "resourceTypePriceCurrency" do
-        label "Disk Price Currency"
-      end
-      field "resourceKind" do
-        label "Resource Kind"
+        label "Resource Type"
       end
       field "region" do
         label "Region"
       end
-      field "savings" do
-        label "Estimated Monthly Savings"
+      field "tags" do
+        label "Tags"
       end
-      field "savingsCurrency" do
-        label "Savings Currency"
+      field "creationTime" do
+        label "Created At"
       end
-      field "iopsPctMaximum" do
-        label "IOPS Maximum %"
+      field "accessTier" do
+        label "Access Tier"
       end
-      field "iopsAverage" do
-        label "IOPS Average %"
+      field "loggingVersion" do
+        label "Logging Version"
       end
-      field "iopsPctP90" do
-        label "IOPS p90"
+      field "loggingRead" do
+        label "Read Logging"
       end
-      field "iopsPctP95" do
-        label "IOPS p95"
+      field "loggingWrite" do
+        label "Write Logging"
       end
-      field "iopsPctP99" do
-        label "IOPS p99"
-      end
-      field "iopsThreshold" do
-        label "IOPS Threshold %"
-      end
-      field "throughputPctMaximum" do
-        label "Throughput Maximum %"
-      end
-      field "throughputPctAverage" do
-        label "Throughput Average %"
-      end
-      field "throughputPctP90" do
-        label "Throughput p90"
-      end
-      field "throughputPctP95" do
-        label "Throughput p95"
-      end
-      field "throughputPctP99" do
-        label "Throughput p99"
-      end
-      field "throughputThreshold" do
-        label "Throughput Threshold %"
-      end
-      field "sizeGB" do
-        label "Actual Disk Size (GiB)"
-      end
-      field "lookbackPeriod" do
-        label "Look Back Period (Days)"
+      field "loggingDelete" do
+        label "Delete Logging"
       end
       field "id" do
         label "ID"

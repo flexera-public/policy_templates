@@ -94,6 +94,13 @@ default_child_policy_template_files = [
   "../../operational/azure/compute_poweredoff_report/azure_compute_poweredoff_report.pt",
   "../../operational/azure/tag_cardinality/azure_tag_cardinality.pt",
   "../../operational/azure/vms_without_managed_disks/azure_vms_without_managed_disks.pt",
+  "../../security/azure/blob_storage_logging/blob_storage_logging.pt",
+  "../../security/azure/mysql_ssl/mysql_ssl.pt",
+  "../../security/azure/mysql_tls_version/mysql_tls_version.pt",
+  "../../security/azure/pg_conn_throttling/pg_conn_throttling.pt",
+  "../../security/azure/pg_infra_encryption/pg_infra_encryption.pt",
+  "../../security/azure/pg_log_retention/pg_log_retention.pt",
+  "../../security/azure/pg_log_settings/pg_log_settings.pt",
   # Google Policy Templates
   "../../compliance/google/long_stopped_instances/google_long_stopped_instances.pt",
   "../../compliance/google/unlabeled_resources/unlabeled_resources.pt",
