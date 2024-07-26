@@ -1,10 +1,10 @@
-# Azure Ensure SQL Server VA Periodic Scans Enabled
+# Azure SQL Servers Vulnerability Assessment Without Periodic Scans
 
-## What it does
+## What It Does
 
-This policy checks all Azure SQL Servers to ensure that they have Vulnerability Assessment periodic scans enabled. An incident is raised with the offending SQL Servers if any are found that don't.
+This policy template reports any Azure SQL Servers that do not have Vulnerability Assessment (VA) periodic scans enabled. Optionally, this report can be emailed.
 
-## Functional Details
+## How It Works
 
 The Azure Resource Manager API is used to get a list of subscriptions and SQL Servers within those subscriptions. The policy then queries the Vulnerability Assessments endpoint for each SQL Server and checks the "properties.recurringScans.isEnabled" field to ensure periodic scans are enabled.
 
