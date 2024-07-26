@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.0.0
+
+- Policy template renamed to `Azure Web Apps Without Secure TLS` to better reflect its functionality
+- Added ability to filter results by subscription, region, or tags
+- Added additional fields to incident output for added context
+- Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera credential
+
 ## v2.7
 
 - Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.
