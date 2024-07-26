@@ -6,7 +6,7 @@ This policy template reports any Azure Storage Accounts that do not, at minimum,
 
 ## How It Works
 
-The Azure Resource Manager API is used to get a list of subscriptions and storage accounts within those subscriptions. The policy then checks the value of "properties.minimumTlsVersion" for each storage account to make sure it is equal to either "TLS1_2" or "TLS1_3".
+The Azure Resource Manager API is used to get a list of Azure Storage Accounts. The policy then checks the value of "properties.minimumTlsVersion" for each Azure Storage Account to make sure it is equal to either "TLS1_2" or "TLS1_3".
 
 ## Input Parameters
 
