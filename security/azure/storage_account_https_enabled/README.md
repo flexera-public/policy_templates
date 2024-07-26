@@ -1,5 +1,9 @@
 # Azure HTTPs for Storage Accounts
 
+## Deprecated
+
+This policy is no longer being updated. The [Azure Storage Accounts Without Secure Transfer](https://github.com/flexera-public/policy_templates/tree/master/security/azure/secure_transfer_required/) policy now includes this functionality.
+
 ## What it does
 
 This Policy checks for Azure Storage Accounts with HTTPs not enforced.
