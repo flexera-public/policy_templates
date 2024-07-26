@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy template reports any Azure SQL Servers that do not have Vulnerability Assessment (VA) enabled. Optionally, this report cna be emailed.
+This policy template reports any Azure SQL Servers that do not have Vulnerability Assessment (VA) enabled. Optionally, this report can be emailed.
 
 ## How It Works
 
