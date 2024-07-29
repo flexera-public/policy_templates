@@ -95,25 +95,75 @@ datasource "ds_applied_policy" do
   end
 end
 
-datasource "ds_get_currency" do
+datasource "ds_kubecost_currency_code" do
   request do
-    scheme "http"
     host $param_kubecost_host
     path "/model/getConfigs"
   end
   result do
     encoding "json"
-    field "currencyCode", jmes_path(response, "data.currencyCode")
+    field "code", jmes_path(response, "data.currencyCode")
   end
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_kubecost_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_kubecost_currency_code"
+  result "result"
+  code <<-EOS
+  code = ds_kubecost_currency_code['code'].toUpperCase().trim()
+  symbol = "$"
+  separator = ","
+
+  if (code != undefined) {
+    if (ds_currency_reference[code] != undefined) {
+      symbol = ds_currency_reference[code]['symbol']
+
+      if (ds_currency_reference[code]['t_separator'] != undefined) {
+        separator = ds_currency_reference[code]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = { code: code, symbol: symbol, separator: separator }
+EOS
+end
+
+datasource "ds_target_util" do
+  run_script $js_target_util, $param_target_util
+end
+
+script "js_target_util", type:"javascript" do
+  parameters "param_target_util"
+  result "result"
+  code "result = { value: (param_target_util / 100).toString() }"
 end
 
 datasource "ds_cluster_sizing" do
   request do
-    run_script $js_cluster_sizing, $param_kubecost_host, $param_min_nodes, $param_historical_days, $param_target_util
+    host $param_kubecost_host
+    path "/model/savings/clusterSizing"
+    query "minNodeCount", $param_min_nodes
+    query "window", join([$param_historical_days, "d"])
+    query "targetUtilization", val($ds_target_util, "value")
+    header "User-Agent", "RS Policies"
   end
   result do
     encoding "json"
-    field "accountId", jmes_path(response, "data.parameters.clusterId")
+    field "accountID", jmes_path(response, "data.parameters.clusterId")
     field "accountName", jmes_path(response, "data.parameters.clusterName")
     field "totalNodeCount", jmes_path(response, "data.currentClusterInfo.totalCounts.totalNodeCount")
     field "totalRAMGB", jmes_path(response, "data.currentClusterInfo.totalCounts.totalRAMGB")
@@ -123,49 +173,34 @@ datasource "ds_cluster_sizing" do
   end
 end
 
-script "js_cluster_sizing", type: "javascript" do
-  parameters "kubecost_host", "min_nodes", "historical_days", "target_util"
-  result "request"
-  code <<-EOS
-  var request = {
-    "scheme": "http",
-    "host": kubecost_host,
-    "path": "/model/savings/clusterSizing",
-    "query_params": {
-      "minNodeCount": min_nodes.toString(),
-      "window": historical_days + "d",
-      "targetUtilization": (target_util/100).toString()
-    }
-  }
-EOS
+datasource "ds_recommendations" do
+  run_script $js_recommendations, $ds_cluster_sizing, $ds_currency, $ds_applied_policy, $param_recommendation_strategy
 end
 
-datasource "ds_cluster_array" do
-  run_script $js_cluster_array, $ds_cluster_sizing, $ds_get_currency, $param_recommendation_strategy
-end
+script "js_recommendations", type: "javascript" do
+  parameters "ds_cluster_sizing", "ds_currency", "ds_applied_policy", "param_recommendation_strategy"
+  result "result"
+  code <<-'EOS'
+  accountID = ds_cluster_sizing['accountID']
+  accountName = ds_cluster_sizing['accountName']
+  totalNodeCount = ds_cluster_sizing['totalNodeCount']
+  totalRAMGB = ds_cluster_sizing['totalRAMGB']
+  totalVCPUs = ds_cluster_sizing['totalVCPUs']
+  monthlyRate = ds_cluster_sizing['monthlyRate']
 
-script "js_cluster_array", type: "javascript" do
-  parameters "ds_cluster_sizing", "ds_get_currency", "recommendation_strategy"
-  result "results"
-  code <<-EOS
-  var accountId = ds_cluster_sizing.accountId
-  var accountName = ds_cluster_sizing.accountName
-  var totalNodeCount = ds_cluster_sizing.totalNodeCount
-  var totalRAMGB = ds_cluster_sizing.totalRAMGB
-  var totalVCPUs = ds_cluster_sizing.totalVCPUs
-  var monthlyRate = ds_cluster_sizing.monthlyRate
-  var results = []
-  var optimalValue = 0
-  var tempResult
-  _.forEach(ds_cluster_sizing.recommendations, function(e, k) {
+  result = []
+  optimalValue = 0
+  tempResult = null
+
+  _.each(ds_cluster_sizing['recommendations'], function(e, rec_strategy) {
     e.rec_strategy = k;
-    e.accountId = accountId;
+    e.accountID = accountID;
     e.accountName = accountName;
-    if (e.accountName == "" || e.accountName.lenght === 0) {
-      e.accountName = accountId;
+    if (e.accountName == "" || e.accountName.length === 0) {
+      e.accountName = accountID;
     }
     e.currencyCode = ds_get_currency.currencyCode
-    if (e.currencyCode == "" || e.currencyCode.lenght === 0) {
+    if (e.currencyCode == "" || e.currencyCode.length === 0) {
       e.currencyCode = "USD";
     }
     e.totalNodeCount = totalNodeCount
@@ -173,7 +208,7 @@ script "js_cluster_array", type: "javascript" do
     e.totalVCPUs = totalVCPUs
     e.monthlyRate = monthlyRate
     e.strPools = JSON.stringify(e.pools);
-    if (recommendation_strategy.toLowerCase() == "optimal") {
+    if (param_recommendation_strategy.toLowerCase() == "optimal") {
       if (e.monthlySavings > optimalValue) {
         optimalValue = e.monthlySavings
         e.monthlySavings = Math.round(e.monthlySavings * 100) / 100
@@ -182,16 +217,17 @@ script "js_cluster_array", type: "javascript" do
         tempResult = e
       }
     } else {
-      if (k == recommendation_strategy.toLowerCase()) {
+      if (k == param_recommendation_strategy.toLowerCase()) {
         e.monthlySavings = Math.round(e.monthlySavings * 100) / 100
         e.monthlyRate = Math.round(e.monthlyRate * 100) / 100
         e.totalMonthlyCost = Math.round(e.totalMonthlyCost * 100) / 100
-        results.push(e)
+        result.push(e)
       }
     }
   })
-  if (recommendation_strategy.toLowerCase() == "optimal") {
-    results.push(tempResult)
+
+  if (param_recommendation_strategy.toLowerCase() == "optimal") {
+    result.push(tempResult)
   }
 EOS
 end
@@ -201,14 +237,14 @@ end
 ###############################################################################
 
 policy "policy_kubecost_cluster" do
-  validate_each $ds_cluster_array do
-    summary_template "Kubecost Cluster Sizing Report"
-    check eq(0, 1)
+  validate_each $ds_recommendations do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Kubecost Cluster Rightsizing Recommendations Found"
+    check eq(val(item, "accountID"), "")
     escalate $esc_email
     export do
+      resource_level true
       field "accountID" do
         label "Cluster ID"
-        path "accountId"
       end
       field "accountName" do
         label "Cluster Name"
@@ -243,6 +279,10 @@ policy "policy_kubecost_cluster" do
       end
       field "strPools" do
         label "Recommended Pools"
+      end
+      field "id" do
+        label "ID"
+        path "accountID"
       end
     end
   end
