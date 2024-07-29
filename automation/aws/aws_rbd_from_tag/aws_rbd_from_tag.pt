@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.2.1",
+  version: "2.3.1",
   provider: "Flexera",
   service: "Optima",
   policy_set: "Automation",
@@ -40,6 +40,15 @@ parameter "param_effective_date" do
   label "Effective Date"
   description "Year/month you want rules to start applying in YYYY-MM format"
   default "2010-01"
+end
+
+parameter "param_normalize_case" do
+  type "string"
+  category "Policy Settings"
+  label "Lowercase Values"
+  description "Whether or not to normalize all values by converting them to lowercase. Note that, if the same value appears multiple times with different casing, and this option is disabled, the rule-based dimension will be rejected and this policy template will fail."
+  allowed_values "Yes", "No"
+  default "Yes"
 end
 
 ###############################################################################
@@ -122,11 +131,11 @@ datasource "ds_existing_rbds" do
 end
 
 datasource "ds_rbds" do
-  run_script $js_rbds, $ds_cloud_vendor_accounts, $ds_existing_rbds, $param_name_list, $param_tag_list, $param_effective_date
+  run_script $js_rbds, $ds_cloud_vendor_accounts, $ds_existing_rbds, $param_name_list, $param_tag_list, $param_effective_date, $param_normalize_case
 end
 
 script "js_rbds", type: "javascript" do
-  parameters "accounts", "existing_rbds", "param_name_list", "param_tag_list", "param_effective_date"
+  parameters "accounts", "existing_rbds", "param_name_list", "param_tag_list", "param_effective_date", "param_normalize_case"
   result "result"
   code <<-'EOS'
   result = []
@@ -144,10 +153,7 @@ script "js_rbds", type: "javascript" do
 
     tag_key = tag.toLowerCase().trim()
     verb = "POST"
-
-    if (_.contains(rbd_id_list, rbd_id)) {
-      verb = "PATCH"
-    }
+    if (_.contains(rbd_id_list, rbd_id)) { verb = "PATCH" }
 
     rules = []
 
@@ -155,15 +161,12 @@ script "js_rbds", type: "javascript" do
       if (typeof(account['id']) == 'string' && account['id'] != '') {
         if (account['tags'][tag_key] != undefined && account['tags'][tag_key] != null) {
           if (account['tags'][tag_key].trim() != '') {
+            value = account['tags'][tag_key].trim()
+            if (param_normalize_case == "Yes") { value = value.toLowerCase() }
+
             rules.push({
-              "condition": {
-                "type": "dimension_equals",
-                "dimension": "vendor_account",
-                "value": account['id']
-              },
-              "value": {
-                "text": account['tags'][tag_key].toLowerCase().trim()
-              }
+              condition: { type: "dimension_equals", dimension: "vendor_account", value: account['id'] },
+              value: { text: value }
             })
           }
         }

@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.3.1
+
+- Added option to retain original casing of tag values instead of normalizing them all to lowercase
+
 ## v1.2.1
 
 - Updated policy template to use newer API endpoints. Functionality is unchanged.
