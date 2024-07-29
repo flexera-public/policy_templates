@@ -8,7 +8,7 @@ category "Cost"
 default_frequency "daily"
 tenancy "single"
 info(
-  version: "0.3",
+  version: "0.4.0",
   provider: "Kubecost",
   service: "Kubernetes",
   policy_set: "Rightsize Containers",
@@ -16,23 +16,28 @@ info(
 )
 
 ###############################################################################
-# User inputs
+# Parameters
 ###############################################################################
 
 parameter "param_email" do
-  label "Email addresses"
-  description "Email addresses of the recipients you wish to notify"
   type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
 end
 
 parameter "param_kubecost_host" do
   type "string"
+  category "Policy Settings"
   label "Kubecost Host or IP address"
   description "IP Address of Kubecost LB"
+  # No default value, user input required
 end
 
 parameter "param_scope" do
   type "string"
+  category "Policy Settings"
   label "Scope"
   description "Choose between requesting the recommendations per cluster or overall"
   allowed_values "overall", "per cluster"
@@ -40,15 +45,17 @@ parameter "param_scope" do
 end
 
 parameter "param_minimum_savings_threshold" do
+  type "number"
+  category "Policy Settings"
   label "Monthly Savings Threshold"
   description "Specify the minimum estimated monthly savings that should result in a recommendation"
   min_value 0
   default 0
-  type "number"
 end
 
 parameter "param_window" do
   type "string"
+  category "Policy Settings"
   label "Range to analyze"
   description "Accepts duration in number of days, hours or minutes e.g., 3d, 30m, 6h"
   default "3d"
@@ -56,6 +63,7 @@ end
 
 parameter "param_cpu_algo" do
   type "string"
+  category "Policy Settings"
   label "The algorithm for CPU"
   description "Defines whether max or a certain quantile should be used to compute CPU request recommendation"
   allowed_values "max", "quantile"
@@ -64,6 +72,7 @@ end
 
 parameter "param_cpu_q" do
   type "number"
+  category "Policy Settings"
   label "CPU percentile"
   description "The desired percentile to base CPU request recommendations on"
   min_value 1
@@ -73,6 +82,7 @@ end
 
 parameter "param_cpu_util" do
   type "number"
+  category "Policy Settings"
   label "Target CPU Utilization (%)"
   description "Target CPU utilization in percent"
   min_value 1
@@ -82,6 +92,7 @@ end
 
 parameter "param_mem_algo" do
   type "string"
+  category "Policy Settings"
   label "The algorithm for Memory"
   description "Defines whether max or a certain quantile should be used to compute Memory request recommendation"
   allowed_values "max", "quantile"
@@ -90,6 +101,7 @@ end
 
 parameter "param_mem_q" do
   type "number"
+  category "Policy Settings"
   label "Memory percentile"
   description "The desired percentile to base Memory recommendations on"
   min_value 1
@@ -99,6 +111,7 @@ end
 
 parameter "param_mem_util" do
   type "number"
+  category "Policy Settings"
   label "Target Memory Utilization (%)"
   description "Target memory utilization in percent"
   min_value 1
@@ -107,13 +120,80 @@ parameter "param_mem_util" do
 end
 
 ###############################################################################
-# Datasource
+# Authentication
 ###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_get_clusters" do
+  request do
+    host $param_kubecost_host
+    path "/model/clusterInfoMap"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "data | values(@)") do
+      field "id", jmes_path(col_item, "id")
+    end
+  end
+end
+
+datasource "ds_sizing_recommendation_request_list" do
+  run_script $js_sizing_recommendation_request_list, $ds_get_clusters, $param_scope, $param_cpu_algo, $param_cpu_q, $param_mem_algo, $param_mem_q, $param_window, $param_cpu_util, $param_mem_util
+end
+
+script "js_sizing_recommendation_request_list", type: "javascript" do
+  parameters "ds_get_clusters", "param_scope", "param_cpu_algo", "param_cpu_q", "param_mem_algo", "param_mem_q", "param_window", "param_cpu_util", "param_mem_util"
+  result "result"
+  code <<-EOS
+  cpu_util = (param_cpu_util / 100).toString()
+  mem_util = (param_mem_util / 100).toString()
+
+  query_params = {
+    "algorithmCPU": param_cpu_algo,
+    "qCPU": param_cpu_q.toString(),
+    "algorithmRAM": param_mem_algo,
+    "qRAM": param_mem_q.toString(),
+    "window": param_window,
+    "targetCPUUtilization": cpu_util,
+    "targetRAMUtilization": mem_util
+  }
+
+  result = [ query_params ]
+
+  if (param_scope == "per cluster") {
+    result = _.map(ds_get_clusters, function(cluster) {
+      cluster_query_params = query_params
+      cluster_query_params['filter'] = 'cluster:"' + cluster['id'] + '"'
+      return cluster_query_params
+    })
+  }
+EOS
+end
 
 datasource "ds_request_sizing" do
   iterate $ds_sizing_recommendation_request_list
   request do
-    run_script $js_get_request_from_iter_item, iter_item
+    run_script $js_request_sizing, iter_item, $param_kubecost_host
   end
   result do
     encoding "json"
@@ -133,172 +213,144 @@ datasource "ds_request_sizing" do
   end
 end
 
-script "js_get_request_from_iter_item", type: "javascript" do
-  parameters "item"
+script "js_request_sizing", type: "javascript" do
+  parameters "query_params", "param_kubecost_host"
   result "request"
   code <<-EOS
-  request = item
-  EOS
+  var request = {
+    "host": param_kubecost_host,
+    "path": "/model/savings/requestSizingV2",
+    "query_params": query_params
+  }
+EOS
 end
 
-datasource "ds_get_currency" do
+datasource "ds_kubecost_currency_code" do
   request do
-    verb "GET"
-    scheme "http"
     host $param_kubecost_host
     path "/model/getConfigs"
   end
   result do
     encoding "json"
-    field "currencyCode", jmes_path(response, "data.currencyCode")
+    field "code", jmes_path(response, "data.currencyCode")
   end
 end
 
-datasource "ds_get_clusters" do
+datasource "ds_currency_reference" do
   request do
-    verb "GET"
-    scheme "http"
-    host $param_kubecost_host
-    path "/model/clusterInfoMap"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "data | values(@)") do
-      field "clusterId", jmes_path(col_item, "id")
-    end
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
   end
 end
 
-datasource "ds_sizing_recommendation_request_list" do
-  run_script $js_sizing_recommendation_request_list, $param_kubecost_host, $param_scope, $ds_get_clusters, $param_cpu_algo, $param_cpu_q, $param_mem_algo, $param_mem_q, $param_window, $param_cpu_util, $param_mem_util
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_kubecost_currency_code
 end
 
-script "js_sizing_recommendation_request_list", type: "javascript" do
-  parameters "kubecost_host", "param_scope", "ds_get_clusters", "param_cpu_algo", "param_cpu_q", "param_mem_algo", "param_mem_q", "param_window", "param_cpu_util", "param_mem_util"
-  result "request_list"
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_kubecost_currency_code"
+  result "result"
   code <<-EOS
-  param_cpu_q = param_cpu_q.toString()
-  param_mem_q = param_mem_q.toString()
-  param_cpu_util = (param_cpu_util/100).toString()
-  param_mem_util = (param_mem_util/100).toString()
+  code = ds_kubecost_currency_code['code'].toUpperCase().trim()
+  symbol = "$"
+  separator = ","
 
-  request_list = []
-  if (param_scope === "per cluster") {
-    _.forEach(ds_get_clusters, function (clusterData) {
-      request_list.push(
-        {
-          "verb": "GET",
-          "scheme": "http",
-          "host": kubecost_host,
-          "path": "/model/savings/requestSizingV2",
-          "query_params": {
-            "filter": 'cluster:"' + clusterData.clusterId + '"',
-            "algorithmCPU": param_cpu_algo,
-            "qCPU": param_cpu_q,
-            "algorithmRAM": param_mem_algo,
-            "qRAM": param_mem_q,
-            "window": param_window,
-            "targetCPUUtilization": param_cpu_util,
-            "targetRAMUtilization": param_mem_util
-          }
-        }
-      )
-    })
-  } else {  // Else means: param_scope === "overall"
-    request_list.push(
-      {
-        "verb": "GET",
-        "scheme": "http",
-        "host": kubecost_host,
-        "path": "/model/savings/requestSizingV2",
-        "query_params": {
-          "algorithmCPU": param_cpu_algo,
-          "qCPU": param_cpu_q,
-          "algorithmRAM": param_mem_algo,
-          "qRAM": param_mem_q,
-          "window": param_window,
-          "targetCPUUtilization": param_cpu_util,
-          "targetRAMUtilization": param_mem_util
-        }
+  if (code != undefined) {
+    if (ds_currency_reference[code] != undefined) {
+      symbol = ds_currency_reference[code]['symbol']
+
+      if (ds_currency_reference[code]['t_separator'] != undefined) {
+        separator = ds_currency_reference[code]['t_separator']
+      } else {
+        separator = ""
       }
-    )
+    }
   }
-  EOS
+
+  result = { code: code, symbol: symbol, separator: separator }
+EOS
 end
 
 datasource "ds_recommendations" do
-  run_script $js_requests_array, $ds_request_sizing, $ds_get_currency, $param_minimum_savings_threshold
+  run_script $js_recommendations, $ds_request_sizing, $ds_currency, $ds_applied_policy, $param_minimum_savings_threshold
 end
 
-script "js_requests_array", type: "javascript" do
-  parameters "ds_request_sizing","ds_get_currency", "param_minimum_savings_threshold"
+script "js_recommendations", type: "javascript" do
+  parameters "ds_request_sizing", "ds_currency", "ds_applied_policy", "param_minimum_savings_threshold"
   result "result"
-  code <<-EOS
-    var recommendations = []
-    var totalSavings = 0
-    var currencyCode = ""
+  code <<-'EOS'
+  // Function for formatting currency numbers later
+  function formatNumber(number, separator) {
+    var numString = number.toString()
+    var values = numString.split(".")
+    var formatted_number = ''
 
-    function roundNumber(num, dec) {
-      return Math.round(num * Math.pow(10, dec)) / Math.pow(10, dec);
+    while (values[0].length > 3) {
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      formatted_number = separator + chunk + formatted_number
     }
 
-    _.forEach(ds_request_sizing, function(c) {
-      var accountID = c.accountID
-      var accountName = c.accountID
-      var namespace = c.namespace
-      var controllerKind = c.controllerKind
-      var controllerName = c.controllerName
-      var containerName = c.containerName
-      var recommendedRequestCPU = c.recommendedRequestCPU
-      var recommendedRequestMem = c.recommendedRequestMem
-      var latestKnownRequestCPU = c.latestKnownRequestCPU
-      var latestKnownRequestMem = c.latestKnownRequestMem
-      var monthlySavingsCPU = c.monthlySavingsCPU? c.monthlySavingsCPU: 0
-      var monthlySavingsMem = c.monthlySavingsMem? c.monthlySavingsMem: 0
-      var savings = monthlySavingsCPU > 0? monthlySavingsCPU: 0 + monthlySavingsMem > 0?monthlySavingsMem: 0
-      if ( savings > param_minimum_savings_threshold ) {
-        totalSavings += savings
-        var formatedsavings = roundNumber(savings,3)
-        recommendations.push({
-          accountID: accountID
-          accountName: accountID
-          namespace: namespace
-          controllerKind: controllerKind
-          controllerName: controllerName
-          containerName: containerName
-          recommendedRequestCPU: recommendedRequestCPU
-          recommendedRequestMem: recommendedRequestMem
-          latestKnownRequestCPU: latestKnownRequestCPU
-          latestKnownRequestMem: latestKnownRequestMem
-          monthlySavingsCPU: monthlySavingsCPU
-          monthlySavingsMem: monthlySavingsMem
-          savings: formatedsavings
-        })
-      }
-    })
+    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
 
-    currencyCode = ds_get_currency.currencyCode === "" ? "USD" : ds_get_currency.currencyCode;
-    var str = "$ " + roundNumber(totalSavings,3).toString() + " " + currencyCode
+    if (values[1] == undefined) { return formatted_number }
 
-    result={
-      "savings": str,
-      "recommendations": recommendations
+    return formatted_number + "." + values[1]
+  }
+
+  result = []
+  total_savings = 0.0
+
+  _.each(ds_request_sizing, function(cluster) {
+    monthlySavingsCPU = cluster['monthlySavingsCPU'] ? cluster['monthlySavingsCPU'] : 0
+    monthlySavingsMem = cluster['monthlySavingsMem'] ? cluster['monthlySavingsMem'] : 0
+    savings = monthlySavingsCPU + monthlySavingsMem
+
+    if (savings > param_minimum_savings_threshold) {
+      total_savings += savings
+
+      result.push({
+        accountID: cluster['accountID'],
+        accountName: cluster['accountID'],
+        namespace: cluster['namespace'],
+        controllerKind: cluster['controllerKind'],
+        controllerName: cluster['controllerName'],
+        containerName: cluster['containerName'],
+        recommendedRequestCPU: cluster['recommendedRequestCPU'],
+        recommendedRequestMem: cluster['recommendedRequestMem'],
+        latestKnownRequestCPU: cluster['latestKnownRequestCPU'],
+        latestKnownRequestMem: cluster['latestKnownRequestMem'],
+        monthlySavingsCPU: monthlySavingsCPU,
+        monthlySavingsMem: monthlySavingsMem,
+        savings: Math.round(savings * 1000) / 1000,
+        policy_name: ds_applied_policy['name'],
+        total_savings: ""
+      })
     }
-  EOS
+  })
+
+  if (result.length > 0) {
+    result[0]['total_savings'] = [
+      ds_currency['symbol'], ' ',
+      formatNumber(Math.round(total_savings * 100) / 100, ds_currency['separator'])
+    ].join('')
+  }
+EOS
 end
+
 ###############################################################################
 # Policy
 ###############################################################################
 
 policy "policy_kubecost_request_sizing" do
-  validate $ds_recommendations do
-    summary_template "Kubecost Request Rightsizing Report"
-    detail_template <<-EOS
-    The total estimated monthly savings : {{data.savings}}
-    EOS
-    escalate $report_requests
-    check eq(size(val(data, "recommendations")), 0)
-    export "recommendations" do
+  validate_each $ds_recommendations do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Kubecost Request Rightsizing Recommendations Found"
+    detail_template "**Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}"
+    escalate $esc_email
+    check eq(val(item, "namespace"), "")
+    export do
+      resource_level true
       field "accountID" do
         label "Cluster ID"
       end
@@ -337,6 +389,10 @@ policy "policy_kubecost_request_sizing" do
         label "Recommended Memory Request"
         format "center"
       end
+      field "id" do
+        label "ID"
+        path "accountID"
+      end
     end
   end
 end
@@ -345,7 +401,7 @@ end
 # Escalations
 ###############################################################################
 
-escalation "report_requests" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"

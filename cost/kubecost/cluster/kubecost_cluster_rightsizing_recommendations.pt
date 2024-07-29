@@ -3,12 +3,11 @@ rs_pt_ver 20180301
 type "policy"
 short_description "The policy retrieves Kubecost recommendations for rightsizing of Kubernetes clusters and raises an incident. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/kubecost/cluster) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
-severity "low"
 category "Cost"
+severity "low"
 default_frequency "daily"
-tenancy "single"
 info(
-  version: "0.2",
+  version: "0.3.0",
   provider: "Kubecost",
   service: "Kubernetes",
   policy_set: "Rightsize Clusters",
@@ -16,30 +15,37 @@ info(
 )
 
 ###############################################################################
-# User inputs
+# Parameters
 ###############################################################################
 
 parameter "param_email" do
-  label "Email addresses"
-  description "Email addresses of the recipients you wish to notify"
   type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
 end
 
 parameter "param_kubecost_host" do
   type "string"
+  category "Policy Settings"
   label "Kubecost Host"
   description "Kubecost Host or IP Address of Kubecost LB"
+  # No default value, user input required
 end
 
 parameter "param_min_nodes" do
   type "number"
+  category "Policy Settings"
   label "Minimum node count"
   description "Minimum allowed node count in the cluster"
+  min_value 0
   default 2
 end
 
 parameter "param_historical_days" do
   type "number"
+  category "Policy Settings"
   label "Number of days to analyze"
   description "Historical range to analyze"
   min_value 2
@@ -49,6 +55,7 @@ end
 
 parameter "param_target_util" do
   type "number"
+  category "Policy Settings"
   label "Target Utilization (%)"
   description "Desirable target utilization in percent"
   default 80
@@ -56,18 +63,40 @@ end
 
 parameter "param_recommendation_strategy" do
   type "string"
+  category "Policy Settings"
   label "Recommendation Strategy"
   description "Recommendation strategy to apply"
-  allowed_values ["Single", "Multi", "Optimal"]
+  allowed_values "Single", "Multi", "Optimal"
+  default "Optimal"
 end
 
 ###############################################################################
-# Datasource
+# Authentication
 ###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
 
 datasource "ds_get_currency" do
   request do
-    verb "GET"
     scheme "http"
     host $param_kubecost_host
     path "/model/getConfigs"
@@ -98,18 +127,17 @@ script "js_cluster_sizing", type: "javascript" do
   parameters "kubecost_host", "min_nodes", "historical_days", "target_util"
   result "request"
   code <<-EOS
-    var request = {
-      "verb": "GET",
-      "scheme": "http",
-      "host": kubecost_host,
-      "path": "/model/savings/clusterSizing",
-      "query_params": {
-        "minNodeCount": min_nodes.toString(),
-        "window": historical_days + "d",
-        "targetUtilization": (target_util/100).toString()
-      }
+  var request = {
+    "scheme": "http",
+    "host": kubecost_host,
+    "path": "/model/savings/clusterSizing",
+    "query_params": {
+      "minNodeCount": min_nodes.toString(),
+      "window": historical_days + "d",
+      "targetUtilization": (target_util/100).toString()
     }
-  EOS
+  }
+EOS
 end
 
 datasource "ds_cluster_array" do
@@ -119,53 +147,53 @@ end
 script "js_cluster_array", type: "javascript" do
   parameters "ds_cluster_sizing", "ds_get_currency", "recommendation_strategy"
   result "results"
-  code <<-EOF
-    var accountId = ds_cluster_sizing.accountId
-    var accountName = ds_cluster_sizing.accountName
-    var totalNodeCount = ds_cluster_sizing.totalNodeCount
-    var totalRAMGB = ds_cluster_sizing.totalRAMGB
-    var totalVCPUs = ds_cluster_sizing.totalVCPUs
-    var monthlyRate = ds_cluster_sizing.monthlyRate
-    var results = []
-    var optimalValue = 0
-    var tempResult
-    _.forEach(ds_cluster_sizing.recommendations, function(e, k) {
-      e.rec_strategy = k;
-      e.accountId = accountId;
-      e.accountName = accountName;  
-      if (e.accountName == "" || e.accountName.lenght === 0) {
-        e.accountName = accountId;
-      }
-      e.currencyCode = ds_get_currency.currencyCode
-      if (e.currencyCode == "" || e.currencyCode.lenght === 0) {
-        e.currencyCode = "USD";
-      }
-      e.totalNodeCount = totalNodeCount
-      e.totalRAMGB = totalRAMGB
-      e.totalVCPUs = totalVCPUs
-      e.monthlyRate = monthlyRate
-      e.strPools = JSON.stringify(e.pools);
-      if (recommendation_strategy.toLowerCase() == "optimal") {
-        if (e.monthlySavings > optimalValue) {
-          optimalValue = e.monthlySavings
-          e.monthlySavings = Math.round(e.monthlySavings * 100) / 100
-          e.monthlyRate = Math.round(e.monthlyRate * 100) / 100
-          e.totalMonthlyCost = Math.round(e.totalMonthlyCost * 100) / 100
-          tempResult = e
-        }
-      } else {
-        if (k == recommendation_strategy.toLowerCase()) {
-          e.monthlySavings = Math.round(e.monthlySavings * 100) / 100
-          e.monthlyRate = Math.round(e.monthlyRate * 100) / 100
-          e.totalMonthlyCost = Math.round(e.totalMonthlyCost * 100) / 100
-          results.push(e)
-        }
-      }
-    })
-    if (recommendation_strategy.toLowerCase() == "optimal") {
-      results.push(tempResult)
+  code <<-EOS
+  var accountId = ds_cluster_sizing.accountId
+  var accountName = ds_cluster_sizing.accountName
+  var totalNodeCount = ds_cluster_sizing.totalNodeCount
+  var totalRAMGB = ds_cluster_sizing.totalRAMGB
+  var totalVCPUs = ds_cluster_sizing.totalVCPUs
+  var monthlyRate = ds_cluster_sizing.monthlyRate
+  var results = []
+  var optimalValue = 0
+  var tempResult
+  _.forEach(ds_cluster_sizing.recommendations, function(e, k) {
+    e.rec_strategy = k;
+    e.accountId = accountId;
+    e.accountName = accountName;
+    if (e.accountName == "" || e.accountName.lenght === 0) {
+      e.accountName = accountId;
     }
-  EOF
+    e.currencyCode = ds_get_currency.currencyCode
+    if (e.currencyCode == "" || e.currencyCode.lenght === 0) {
+      e.currencyCode = "USD";
+    }
+    e.totalNodeCount = totalNodeCount
+    e.totalRAMGB = totalRAMGB
+    e.totalVCPUs = totalVCPUs
+    e.monthlyRate = monthlyRate
+    e.strPools = JSON.stringify(e.pools);
+    if (recommendation_strategy.toLowerCase() == "optimal") {
+      if (e.monthlySavings > optimalValue) {
+        optimalValue = e.monthlySavings
+        e.monthlySavings = Math.round(e.monthlySavings * 100) / 100
+        e.monthlyRate = Math.round(e.monthlyRate * 100) / 100
+        e.totalMonthlyCost = Math.round(e.totalMonthlyCost * 100) / 100
+        tempResult = e
+      }
+    } else {
+      if (k == recommendation_strategy.toLowerCase()) {
+        e.monthlySavings = Math.round(e.monthlySavings * 100) / 100
+        e.monthlyRate = Math.round(e.monthlyRate * 100) / 100
+        e.totalMonthlyCost = Math.round(e.totalMonthlyCost * 100) / 100
+        results.push(e)
+      }
+    }
+  })
+  if (recommendation_strategy.toLowerCase() == "optimal") {
+    results.push(tempResult)
+  }
+EOS
 end
 
 ###############################################################################
@@ -175,8 +203,8 @@ end
 policy "policy_kubecost_cluster" do
   validate_each $ds_cluster_array do
     summary_template "Kubecost Cluster Sizing Report"
-    escalate $esc_report_volumes
-    check eq(0,1)
+    check eq(0, 1)
+    escalate $esc_email
     export do
       field "accountID" do
         label "Cluster ID"
@@ -224,7 +252,7 @@ end
 # Escalations
 ###############################################################################
 
-escalation "esc_report_volumes" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
