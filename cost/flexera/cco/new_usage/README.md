@@ -1,8 +1,26 @@
-# New Service Usage
+# New Usage
 
 ## What It Does
 
-This policy checks for new services that appear in the bill between the last month and the current run. If any new services are found it will generate and incident. There is an option to include services that have been added but have not generated any cost as of the current run.
+This policy compares billing data from 3 days ago to billing data from a user-specified number of days ago (10 by default) to see if any new usage types exist for the user-specified dimension. For example, if the user specifies the `Service` dimension, any new values for this dimension that did not exist previously will be reported. A list of the new usage types and their estimated monthly cost is raised as an incident and, optionally, emailed.
+
+## How It Works
+
+The policy includes the estimated monthly cost. Flexera's Cloud Cost Optimization (CCO) API is used to retrieve cloud costs for a full day (3 days ago). The daily cost of any new values for the user-specified dimension are then multiplied by 30.44 (the average number of days in a month). The cost is displayed in the Estimated Monthly Cost column. The incident message detail includes the sum of each product *Estimated Monthly Cost* as *Potential Monthly Cost*.
+
+## Input Parameters
+
+- *Email Addresses* - A list of email addresses to notify.
+- *Dimension* - The name or ID of the Flexera dimension whose values you want to check for new usage; for example, `Service`.
+- *Minimum Cost Threshold* - Minimum monthly cost to report on new usage. New usage whose estimated monthly cost is lower will not be reported.
+- *Look Back Period (Days)* - How far back, in days, to compare to current usage to see if new usage has been added.
+- *Cost Metric* - The cost metric to use when assessing new usage spend.
+- *Allow/Deny Billing Centers* - Allow or Deny entered Billing Centers.
+- *Allow/Deny Billing Center List* - A list of allowed or denied Billing Center names/IDs. Leave blank to run report across entire Flexera organization.
+
+## Policy Actions
+
+- Sends an email notification
 
 ## Prerequisites
 
@@ -13,32 +31,10 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
-## Functional Description
-
-- This policy queries optima data for the current month, as well as the last month and does a comparison on `billing center`, `vendor`, `vendor account name`, `region`, and `service` to determine if a new service has been added to the current month's bill.
-
-## Input Parameters
-
-This policy template has the following Input parameters which require value before the policy can be applied.
-
-- *Email addresses* - A list of email addresses to notify
-- *Billing Center Name* - List of Billing Center Names to check
-- *Include 0 Dollar Items* - Include items that have a `$0.00` run rate at the time of the policy run.
-
-## Actions
-
-Policy actions may include automation to alert or remediate violations found in the Policy Incident. Actions that destroy or terminate a resource generally require approval from the Policy Approver. This policy includes the following actions.
-
-- Sends an email notification
-
 ## Supported Clouds
 
-This policy template supports the following clouds:
+- All
 
-- AWS
-- Azure
-- Google
-
-## Costs
+## Cost
 
 This Policy Template does not incur any cloud costs.
