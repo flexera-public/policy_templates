@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "4.1.0",
+  version: "4.2.0",
   provider: "Azure",
   service: "SQL",
   policy_set: "Hybrid Use Benefit"
@@ -155,6 +155,60 @@ datasource "ds_applied_policy" do
     path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
     header "Api-Version", "1.0"
   end
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
 end
 
 datasource "ds_azure_subscriptions" do
@@ -542,12 +596,163 @@ script "js_resources_region_filtered", type: "javascript" do
 EOS
 end
 
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
+end
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-EOS
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_instance_costs" do
+  iterate $ds_azure_subscriptions_filtered
+  request do
+    run_script $js_instance_costs, val(iter_item, 'id'), $ds_top_level_bcs, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "resourceID", jmes_path(col_item, "dimensions.resource_id")
+      field "unit", jmes_path(col_item, "dimensions.usage_unit")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+      field "usage", jmes_path(col_item, "metrics.usage_amount")
+    end
+  end
+end
+
+script "js_instance_costs", type: "javascript" do
+  parameters "subscription_id", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 32)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
+    body_fields: {
+      dimensions: ["resource_id", "usage_unit"],
+      granularity: "day",
+      start_at: start_date,
+      end_at: end_date,
+      metrics: ["cost_amortized_unblended_adj", "usage_amount"],
+      billing_center_ids: ds_top_level_bcs,
+      limit: 100000,
+      filter: {
+        "type": "and",
+        "expressions": [
+          {
+            "type": "or",
+            "expressions": [
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "Microsoft.Sql"
+              },
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "microsoft.sql"
+              }
+            ]
+          },
+          {
+            "dimension": "vendor_account",
+            "type": "equal",
+            "value": subscription_id
+          },
+          {
+            "type": "not",
+            "expression": {
+              "dimension": "adjustment_name",
+              "type": "substring",
+              "substring": "Shared"
+            }
+          }
+        ]
+      }
+    },
+    headers: {
+      'User-Agent': "RS Policies",
+      'Api-Version': "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
+datasource "ds_instance_costs_grouped" do
+  run_script $js_instance_costs_grouped, $ds_instance_costs
+end
+
+script "js_instance_costs_grouped", type: "javascript" do
+  parameters "ds_instance_costs"
+  result "result"
+  code <<-EOS
+  // Group cost data by resourceId for later use
+  result = {}
+
+  _.each(ds_instance_bill_data, function(item) {
+    id = item['resourceID'].toLowerCase()
+
+    if (typeof(id) == "string" && id != "" && item['unit'] == "1 Hour") {
+      if (result[id] == undefined) { result[id] = {} }
+      if (result[id]['cost'] == undefined) { result[id]['cost'] = 0 }
+      if (result[id]['usage'] == undefined) { result[id]['usage'] = 0 }
+
+      result[id]['cost'] += item['cost']
+      result[id]['usage'] += item['usage']
+    }
+  })
+
+  _.each(_.keys(result), function(id) {
+    result[id]['hourly_cost'] = result[id]['cost'] / result[id]['usage']
+  })
+EOS
+end
+
 datasource "ds_ahub_recommendations" do
-  run_script $js_ahub_recommendations, $ds_resources_region_filtered, $ds_applied_policy, $param_resource_types
+  run_script $js_ahub_recommendations, $ds_instance_costs_grouped, $ds_resources_region_filtered, $ds_currency, $ds_applied_policy, $param_resource_types
 end
 
 script "js_ahub_recommendations", type: "javascript" do
-  parameters "ds_resources_region_filtered", "ds_applied_policy", "param_resource_types"
+  parameters "ds_instance_costs_grouped", "ds_resources_region_filtered", "ds_currency", "ds_applied_policy", "param_resource_types"
   result "result"
   code <<-EOS
   function incident_map(resource_list) {
@@ -569,6 +774,14 @@ script "js_ahub_recommendations", type: "javascript" do
 
       message = "Note: This policy does not track licenses or license availability. Please verify that you have a valid license for each resource AHUB is enabled for."
 
+      hourly_cost = null
+      savingsCurrency = null
+
+      if (ds_instance_costs_grouped[resource["id"].toLowerCase()] != undefined) {
+        hourly_cost = Math.round(ds_instance_costs_grouped[resource["id"].toLowerCase()]['hourly_cost'] * 1000) / 1000
+        savingsCurrency = ds_currency["symbol"]
+      }
+
       return {
         id: resource["id"],
         vmId: resource["virtualMachineResourceId"],
@@ -588,6 +801,8 @@ script "js_ahub_recommendations", type: "javascript" do
         recommendationDetails: recommendationDetails,
         message: message,
         tags: tags.join(", "),
+        savingsCurrency: savingsCurrency,
+        hourly_cost: hourly_cost,
         policy_name: ds_applied_policy['name'],
         service: "Microsoft.Sql"
       }
@@ -601,7 +816,30 @@ script "js_ahub_recommendations", type: "javascript" do
   )
 
   // Dummy entry to ensure validation runs at least once
-  result.push({ id: "", policy_name: "", message: "", tags: "" })
+  result.push({
+    id: "",
+    vmId: "",
+    resourceName: "",
+    region: "",
+    resourceType: "",
+    imageOffer: "",
+    imageSku: "",
+    licenseType: "",
+    skuName: "",
+    skuTier: "",
+    skuCapacity: "",
+    skuFamily: "",
+    resourceGroup: "",
+    accountID: "",
+    accountName: "",
+    recommendationDetails: "",
+    message: "",
+    tags: "",
+    savingsCurrency: "",
+    hourly_cost: "",
+    policy_name: "",
+    service: ""
+  })
 EOS
 end
 
@@ -666,6 +904,12 @@ policy "pol_azure_sql_ahub_recommendations" do
       end
       field "service" do
         label "Service"
+      end
+      field "hourly_cost" do
+        label "Resource Hourly Cost"
+      end
+      field "savingsCurrency" do
+        label "Currency"
       end
       field "vmId" do
         label "VM ID"
