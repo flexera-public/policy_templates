@@ -4,7 +4,7 @@
 
 This Policy Template is used to automatically apply the Azure Hybrid Use Benefit (AHUB) to all eligible Windows VMs in an Azure Subscription and provides a monthly savings value if AHUB were to be enabled.
 
-## Functional Details
+## How It Works
 
 - The policy identifies all Windows server instances that could utilize [Azure Hybrid Use Benefit](https://azure.microsoft.com/en-us/pricing/hybrid-benefit/) but are not currently using it. It raises an incident for all applicable VMs not currently using AHUB, provides a monthly savings amount if AHUB were to be enabled, and provides the option to automatically enable AHUB on all identified instances.
 - This policy does not track licenses or availability. It is your responsibility to ensure you are not under licensed.
@@ -43,13 +43,14 @@ This policy has the following input parameters required when launching the polic
 Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
 For example if a user selects the "Apply Hybrid Use Benefit" action while applying the policy, all of the Windows VMs without AHUB that qualify will have AHUB enabled.
 
+## Policy Actions
+
+- Sends an email notification
+- Apply AHUB benefit to resource after approval
+
 ## Prerequisites
 
-This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy, you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
-
-### Credential configuration
-
-For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
 - [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:
   - `Microsoft.Compute/virtualMachines/read`
@@ -59,6 +60,8 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
+
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ## Supported Clouds
 
