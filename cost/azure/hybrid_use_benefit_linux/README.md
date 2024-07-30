@@ -9,6 +9,7 @@ This Policy Template is used to automatically apply the Azure Hybrid Use Benefit
 - The policy identifies all Linux server instances that could utilize [Azure Hybrid Use Benefit](https://azure.microsoft.com/en-us/pricing/hybrid-benefit/) but are not currently using it. It raises an incident for all applicable VMs not currently using AHUB with the option to automatically enable AHUB on all identified instances.
 - Before enabling AHUB for RHEL, you must enable your [Red Hat products for Cloud Access](https://www.redhat.com/en/technologies/cloud-computing/cloud-access) on Azure through Red Hat Subscription Management.
 - This policy does not track licenses or availability. It is your responsibility to ensure you are not under licensed.
+- The hourly cost of a virtual machine is calculated by dividing the total cost of the virtual machine for the last 30 days by the hours of usage for that same time period.
 
 ## Input Parameters
 

@@ -8,6 +8,7 @@ This Policy Template is used to automatically apply the Azure Hybrid Use Benefit
 
 - The policy identifies all Windows server instances that could utilize [Azure Hybrid Use Benefit](https://azure.microsoft.com/en-us/pricing/hybrid-benefit/) but are not currently using it. It raises an incident for all applicable VMs not currently using AHUB, provides a monthly savings amount if AHUB were to be enabled, and provides the option to automatically enable AHUB on all identified instances.
 - This policy does not track licenses or availability. It is your responsibility to ensure you are not under licensed.
+- The hourly cost of a virtual machine is calculated by dividing the total cost of the virtual machine for the last 30 days by the hours of usage for that same time period.
 
 ### Policy Savings Details
 

@@ -8,6 +8,7 @@ This policy template reports on any Azure SQL resources that may be eligible for
 
 - The policy identifies all SQL databases in Azure that are not currently using [Azure Hybrid Use Benefit](https://azure.microsoft.com/en-us/pricing/hybrid-benefit/). These can be SQL Virtual Machines, SQL Elastic Pools, SQL Databases or SQL Managed Instances. It raises an incident for all applicable instances not currently using AHUB, which once approved, will enable AHUB on all identified instances.
 - This policy does not track licenses or availability. It is your responsibility to ensure that you have valid licenses for all resources that AHUB is enabled for.
+- The hourly cost of a SQL resource is calculated by dividing the total cost of the SQL resource for the last 30 days by the hours of usage for that same time period.
 
 ## Input Parameters
 
