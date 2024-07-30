@@ -2,6 +2,7 @@
 
 ## v0.4.0
 
+- Policy template renamed to `Kubecost Container Request Rightsizing Recommendations` to better reflect its functionality
 - Kubecost API requests now use HTTPS for added security
 - Policy template now falls back to Flexera-configured currency if Kubecost does not report a currency
 - Added additional context to incident

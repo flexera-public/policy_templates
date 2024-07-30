@@ -1,4 +1,4 @@
-name "Kubecost Request Rightsizing Recommendations"
+name "Kubecost Container Request Rightsizing Recommendations"
 rs_pt_ver 20180301
 type "policy"
 short_description "Reports Request Rightsizing Recommendations from Kubecost. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/kubecost/sizing/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
@@ -320,28 +320,37 @@ script "js_recommendations", type: "javascript" do
   result = []
   total_savings = 0.0
 
-  _.each(ds_request_sizing, function(cluster) {
-    monthlySavingsCPU = cluster['monthlySavingsCPU'] ? cluster['monthlySavingsCPU'] : 0
-    monthlySavingsMem = cluster['monthlySavingsMem'] ? cluster['monthlySavingsMem'] : 0
+  _.each(ds_request_sizing, function(entry) {
+    monthlySavingsCPU = entry['monthlySavingsCPU'] ? entry['monthlySavingsCPU'] : 0
+    monthlySavingsMem = entry['monthlySavingsMem'] ? entry['monthlySavingsMem'] : 0
     savings = monthlySavingsCPU + monthlySavingsMem
 
     if (savings > param_min_savings) {
       total_savings += savings
 
+      recommendationDetails = [
+        "Modify settings for container ", entry['containerName'],
+        " in namespace ", entry['namespace'],
+        " in cluster ", entry['accountID'],
+        " so that CPU Request is set to ", entry['recommendedRequestCPU'],
+        " and Memory Request is set to ", entry['recommendedRequestMem']
+      ].join('')
+
       result.push({
-        accountID: cluster['accountID'],
-        accountName: cluster['accountID'],
-        namespace: cluster['namespace'],
-        controllerKind: cluster['controllerKind'],
-        controllerName: cluster['controllerName'],
-        containerName: cluster['containerName'],
-        recommendedRequestCPU: cluster['recommendedRequestCPU'],
-        recommendedRequestMem: cluster['recommendedRequestMem'],
-        latestKnownRequestCPU: cluster['latestKnownRequestCPU'],
-        latestKnownRequestMem: cluster['latestKnownRequestMem'],
+        accountID: entry['accountID'],
+        accountName: entry['accountID'],
+        namespace: entry['namespace'],
+        controllerKind: entry['controllerKind'],
+        controllerName: entry['controllerName'],
+        resourceName: entry['containerName'],
+        recommendedRequestCPU: entry['recommendedRequestCPU'],
+        recommendedRequestMem: entry['recommendedRequestMem'],
+        latestKnownRequestCPU: entry['latestKnownRequestCPU'],
+        latestKnownRequestMem: entry['latestKnownRequestMem'],
         monthlySavingsCPU: Math.round(monthlySavingsCPU * 1000) / 1000,
         monthlySavingsMem: Math.round(monthlySavingsMem * 1000) / 1000,
-        region: cluster_table[cluster['accountID']]['region'],
+        recommendationDetails: recommendationDetails,
+        region: cluster_table[entry['accountID']]['region'],
         savings: Math.round(savings * 1000) / 1000,
         savingsCurrency: ds_currency['symbol'],
         min_savings: param_min_savings,
@@ -392,7 +401,7 @@ end
 
 policy "pol_kubecost_recommendations" do
   validate_each $ds_recommendations do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Kubecost Request Rightsizing Recommendations Found"
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Kubecost Container Request Rightsizing Recommendations Found"
     detail_template <<-'EOS'
     **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
 
@@ -417,7 +426,7 @@ policy "pol_kubecost_recommendations" do
       field "controllerName" do
         label "Controller"
       end
-      field "containerName" do
+      field "resourceName" do
         label "Container"
       end
       field "savings" do
@@ -437,6 +446,9 @@ policy "pol_kubecost_recommendations" do
       end
       field "recommendedRequestMem" do
         label "Recommended Memory Request"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
       end
       field "region" do
         label "Region"
@@ -470,15 +482,11 @@ policy "pol_kubecost_recommendations" do
       end
       field "id" do
         label "ID"
-        path "accountID"
+        path "containerName"
       end
       field "resourceID" do
         label "Resource ID"
-        path "accountID"
-      end
-      field "resourceName" do
-        label "Resource Name"
-        path "accountID"
+        path "containerName"
       end
     end
   end

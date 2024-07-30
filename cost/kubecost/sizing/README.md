@@ -1,8 +1,8 @@
-# Kubecost Request Rightsizing Recommendations
+# Kubecost Container Request Rightsizing Recommendations
 
 ## What It Does
 
-This policy template reports Kubecost recommendations for container resource requests generated from the user-specified parameters. Optionally, this report can be emailed.
+This policy template reports Kubecost container request rightsizing recommendations generated from the Kubecost API with the user-specified parameters. Optionally, this report can be emailed.
 
 ## How It Works
 

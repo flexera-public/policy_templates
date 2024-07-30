@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy template reports a Kubecost cluster sizing recommendation generated from the user-specified parameters. Optionally, this report can be emailed.
+This policy template reports a Kubecost cluster rightsizing recommendation generated from the Kubecost API with the user-specified parameters. Optionally, this report can be emailed.
 
 ## Input Parameters
 
