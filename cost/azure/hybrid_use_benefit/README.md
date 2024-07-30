@@ -16,7 +16,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 
 - Data retrieved from the Azure Pricing API is used to determine the hourly list price of the instance type with and without AHUB. The `Estimated Monthly Savings` is calculated by taking the difference between the two prices and multiplying by 24 and then 30.44 to get a monthly price.
 - Since savings is calculated based on list prices obtained from the Azure Pricing API, they will *not* take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
-- The savings are displayed in the `Estimated Monthly Savings` column.
+- The savings areÂ displayed in the `Estimated Monthly Savings`Â column.
 - The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
 - If the Flexera organization is configured to use a currency other than USD, the savings values will be converted from USD using the exchange rate at the time that the policy executes.
 
@@ -55,7 +55,7 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
   - `Microsoft.Compute/virtualMachines/read`
   - `Microsoft.Compute/virtualMachines/write`*
 
-\* Only required for taking action (applying AHUB to VMs); the policy will still function in a read-only capacity without these permissions.
+  \* Only required for taking action (applying AHUB to VMs); the policy will still function in a read-only capacity without these permissions.
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
