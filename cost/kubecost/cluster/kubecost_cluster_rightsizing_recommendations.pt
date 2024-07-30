@@ -190,6 +190,25 @@ script "js_recommendations", type: "javascript" do
   parameters "ds_cluster_sizing", "ds_currency", "ds_applied_policy", "param_strategy", "param_min_nodes", "param_lookback", "param_target_util"
   result "result"
   code <<-'EOS'
+  // Function for formatting currency numbers later
+  function formatNumber(number, separator) {
+    var numString = number.toString()
+    var values = numString.split(".")
+    var formatted_number = ''
+
+    while (values[0].length > 3) {
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      formatted_number = separator + chunk + formatted_number
+    }
+
+    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
+
+    if (values[1] == undefined) { return formatted_number }
+
+    return formatted_number + "." + values[1]
+  }
+
   selected_strategy = param_strategy
 
   if (selected_strategy == "Optimal") {
@@ -237,7 +256,11 @@ script "js_recommendations", type: "javascript" do
     min_nodes: param_min_nodes,
     lookback: param_lookback,
     target_util: param_target_util,
-    message: message
+    message: message,
+    message_savings: [
+      ds_currency['symbol'], ' ',
+      formatNumber(Math.round(recommendation['monthlySavings'] * -1000) / 1000, ds_currency['separator'])
+    ].join('')
   }]
 EOS
 end
@@ -250,7 +273,7 @@ policy "pol_recommendations" do
   validate_each $ds_recommendations do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}"
     detail_template <<-'EOS'
-    **Potential Monthly Savings:** {{ with index data 0 }}{{ .savingsCurrency }}{{ end }} {{ with index data 0 }}{{ .savings }}{{ end }}
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .message_savings }}{{ end }}
 
     {{ with index data 0 }}{{ .message }}{{ end }}
     EOS
