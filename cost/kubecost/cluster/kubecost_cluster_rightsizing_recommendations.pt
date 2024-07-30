@@ -1,7 +1,7 @@
-name "Kubecost Cluster Rightsizing Recommendations"
+name "Kubecost Cluster Rightsizing Recommendation"
 rs_pt_ver 20180301
 type "policy"
-short_description "The policy retrieves Kubecost recommendations for rightsizing of Kubernetes clusters and raises an incident. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/kubecost/cluster) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Reports Kubecost recommendation for rightsizing of Kubernetes cluster. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/kubecost/cluster) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Cost"
 severity "low"
@@ -30,24 +30,24 @@ parameter "param_kubecost_host" do
   type "string"
   category "Policy Settings"
   label "Kubecost Host"
-  description "Kubecost Host or IP Address of Kubecost LB"
+  description "Kubecost Hostname or IP Address of Kubecost Load Balancer to make queries against."
   # No default value, user input required
 end
 
 parameter "param_min_nodes" do
   type "number"
   category "Policy Settings"
-  label "Minimum node count"
-  description "Minimum allowed node count in the cluster"
+  label "Minimum Node Count"
+  description "Minimum required node count for recommendations."
   min_value 0
   default 2
 end
 
-parameter "param_historical_days" do
+parameter "param_lookback" do
   type "number"
   category "Policy Settings"
-  label "Number of days to analyze"
-  description "Historical range to analyze"
+  label "Lookback Period (Days)"
+  description "Number of historical days of usage to analyze when generating recommendations."
   min_value 2
   max_value 60
   default 7
@@ -57,15 +57,15 @@ parameter "param_target_util" do
   type "number"
   category "Policy Settings"
   label "Target Utilization (%)"
-  description "Desirable target utilization in percent"
+  description "Utilization target to use when generating recommendations."
   default 80
 end
 
-parameter "param_recommendation_strategy" do
+parameter "param_strategy" do
   type "string"
   category "Policy Settings"
   label "Recommendation Strategy"
-  description "Recommendation strategy to apply"
+  description "Recommendation strategy to apply. 'Optimal' will automatically select whichever strategy has the highest potential savings."
   allowed_values "Single", "Multi", "Optimal"
   default "Optimal"
 end
@@ -106,6 +106,22 @@ datasource "ds_kubecost_currency_code" do
   end
 end
 
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
@@ -115,30 +131,23 @@ datasource "ds_currency_reference" do
 end
 
 datasource "ds_currency" do
-  run_script $js_currency, $ds_currency_reference, $ds_kubecost_currency_code
+  run_script $js_currency, $ds_currency_reference, $ds_kubecost_currency_code, $ds_currency_code
 end
 
 script "js_currency", type:"javascript" do
-  parameters "ds_currency_reference", "ds_kubecost_currency_code"
+  parameters "ds_currency_reference", "ds_kubecost_currency_code", "ds_currency_code"
   result "result"
   code <<-EOS
   code = ds_kubecost_currency_code['code'].toUpperCase().trim()
-  symbol = "$"
-  separator = ","
+  if (code == '') { code = ds_currency_code['value'] }
+  if (typeof(code) != 'string' || code == '') { code = 'USD' }
+  if (ds_currency_reference[code] == undefined) { code = 'USD' }
 
-  if (code != undefined) {
-    if (ds_currency_reference[code] != undefined) {
-      symbol = ds_currency_reference[code]['symbol']
-
-      if (ds_currency_reference[code]['t_separator'] != undefined) {
-        separator = ds_currency_reference[code]['t_separator']
-      } else {
-        separator = ""
-      }
-    }
+  result = {
+    code: code,
+    symbol: ds_currency_reference[code]['symbol'],
+    separator: ds_currency_reference[code]['t_separator'] ? ds_currency_reference[code]['t_separator'] : ""
   }
-
-  result = { code: code, symbol: symbol, separator: separator }
 EOS
 end
 
@@ -157,7 +166,7 @@ datasource "ds_cluster_sizing" do
     host $param_kubecost_host
     path "/model/savings/clusterSizing"
     query "minNodeCount", $param_min_nodes
-    query "window", join([$param_historical_days, "d"])
+    query "window", join([$param_lookback, "d"])
     query "targetUtilization", val($ds_target_util, "value")
     header "User-Agent", "RS Policies"
   end
@@ -174,63 +183,62 @@ datasource "ds_cluster_sizing" do
 end
 
 datasource "ds_recommendations" do
-  run_script $js_recommendations, $ds_cluster_sizing, $ds_currency, $ds_applied_policy, $param_recommendation_strategy
+  run_script $js_recommendations, $ds_cluster_sizing, $ds_currency, $ds_applied_policy, $param_strategy, $param_min_nodes, $param_lookback, $param_target_util
 end
 
 script "js_recommendations", type: "javascript" do
-  parameters "ds_cluster_sizing", "ds_currency", "ds_applied_policy", "param_recommendation_strategy"
+  parameters "ds_cluster_sizing", "ds_currency", "ds_applied_policy", "param_strategy", "param_min_nodes", "param_lookback", "param_target_util"
   result "result"
   code <<-'EOS'
-  accountID = ds_cluster_sizing['accountID']
-  accountName = ds_cluster_sizing['accountName']
-  totalNodeCount = ds_cluster_sizing['totalNodeCount']
-  totalRAMGB = ds_cluster_sizing['totalRAMGB']
-  totalVCPUs = ds_cluster_sizing['totalVCPUs']
-  monthlyRate = ds_cluster_sizing['monthlyRate']
+  selected_strategy = param_strategy
 
-  result = []
-  optimalValue = 0
-  tempResult = null
+  if (selected_strategy == "Optimal") {
+    selected_strategy = "Single"
 
-  _.each(ds_cluster_sizing['recommendations'], function(e, rec_strategy) {
-    e.rec_strategy = k;
-    e.accountID = accountID;
-    e.accountName = accountName;
-    if (e.accountName == "" || e.accountName.length === 0) {
-      e.accountName = accountID;
+    // Note: Savings is presented as a negative value. Hence why we select the lowest, not the highest.
+    if (ds_cluster_sizing['recommendations']['multi']['monthlySavings'] < ds_cluster_sizing['recommendations']['single']['monthlySavings']) {
+      selected_strategy = "Multi"
     }
-    e.currencyCode = ds_get_currency.currencyCode
-    if (e.currencyCode == "" || e.currencyCode.length === 0) {
-      e.currencyCode = "USD";
-    }
-    e.totalNodeCount = totalNodeCount
-    e.totalRAMGB = totalRAMGB
-    e.totalVCPUs = totalVCPUs
-    e.monthlyRate = monthlyRate
-    e.strPools = JSON.stringify(e.pools);
-    if (param_recommendation_strategy.toLowerCase() == "optimal") {
-      if (e.monthlySavings > optimalValue) {
-        optimalValue = e.monthlySavings
-        e.monthlySavings = Math.round(e.monthlySavings * 100) / 100
-        e.monthlyRate = Math.round(e.monthlyRate * 100) / 100
-        e.totalMonthlyCost = Math.round(e.totalMonthlyCost * 100) / 100
-        tempResult = e
-      }
-    } else {
-      if (k == param_recommendation_strategy.toLowerCase()) {
-        e.monthlySavings = Math.round(e.monthlySavings * 100) / 100
-        e.monthlyRate = Math.round(e.monthlyRate * 100) / 100
-        e.totalMonthlyCost = Math.round(e.totalMonthlyCost * 100) / 100
-        result.push(e)
-      }
-    }
-  })
-
-  if (param_recommendation_strategy.toLowerCase() == "optimal") {
-    result.push(tempResult)
   }
 
-  if (result.length > 0) { result[0]['policy_name'] = ds_applied_policy['name'] }
+  recommendation = ds_cluster_sizing['recommendations'][selected_strategy.toLowerCase()]
+
+  accountID = ds_cluster_sizing['accountID']
+  accountName = ds_cluster_sizing['accountName']
+  if (typeof(accountName) != 'string' || accountName == '') { accountName = accountID }
+
+  message_strategy = selected_strategy
+  if (param_strategy == "Optimal") { message_strategy += " (Optimal)" }
+
+  message = [
+    "Recommendation was produced with the following settings:\n\n",
+    "- Strategy: ", message_strategy, "\n",
+    "- Minimum Nodes: ", param_min_nodes, "\n",
+    "- Lookback Period: ", param_lookback, " Days\n",
+    "- Target Utilization: ", param_target_util, "%\n\n",
+    "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+  ].join('')
+
+  result = [{
+    accountID: accountID,
+    accountName: accountName,
+    strategy: selected_strategy,
+    totalNodeCount: ds_cluster_sizing['totalNodeCount'],
+    totalRAMGB: ds_cluster_sizing['totalRAMGB'],
+    totalVCPUs: ds_cluster_sizing['totalVCPUs'],
+    monthlyRate: Math.round(ds_cluster_sizing['monthlyRate'] * 1000) / 1000,
+    totalMonthlyCost: Math.round(recommendation['totalMonthlyCost'] * 1000) / 1000,
+    // Note: Savings is presented as a negative value. Hence why we multiply by a negative number to invert it
+    savings: Math.round(recommendation['monthlySavings'] * -1000) / 1000,
+    savingsCurrency: ds_currency['symbol'],
+    nodeCount: recommendation['nodeCount'],
+    pools: JSON.stringify(recommendation['pools']),
+    policy_name: ds_applied_policy['name'],
+    min_nodes: param_min_nodes,
+    lookback: param_lookback,
+    target_util: param_target_util,
+    message: message
+  }]
 EOS
 end
 
@@ -238,9 +246,14 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_kubecost_cluster" do
+policy "pol_recommendations" do
   validate_each $ds_recommendations do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Kubecost Cluster Rightsizing Recommendations Found"
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .savingsCurrency }}{{ end }} {{ with index data 0 }}{{ .savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
     check eq(val(item, "accountID"), "")
     escalate $esc_email
     export do
@@ -251,7 +264,7 @@ policy "policy_kubecost_cluster" do
       field "accountName" do
         label "Cluster Name"
       end
-      field "rec_strategy" do
+      field "strategy" do
         label "Recommendation Strategy"
       end
       field "totalNodeCount" do
@@ -263,9 +276,6 @@ policy "policy_kubecost_cluster" do
       field "totalVCPUs" do
         label "Current Total vCPUs"
       end
-      field "currencyCode" do
-        label "Currency"
-      end
       field "monthlyRate" do
         label "Current Monthly Cost"
       end
@@ -273,14 +283,25 @@ policy "policy_kubecost_cluster" do
         label "Recommended Monthly Cost"
       end
       field "savings" do
-        label "Savings"
-        path "monthlySavings"
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
       end
       field "nodeCount" do
         label "Recommended Node Count"
       end
-      field "strPools" do
+      field "pools" do
         label "Recommended Pools"
+      end
+      field "min_nodes" do
+        label "Minimum Nodes"
+      end
+      field "lookback" do
+        label "Lookback Period (Days)"
+      end
+      field "target_util" do
+        label "Target Utilization (%)"
       end
       field "id" do
         label "ID"

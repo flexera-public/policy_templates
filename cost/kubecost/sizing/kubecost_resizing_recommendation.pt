@@ -155,6 +155,22 @@ datasource "ds_kubecost_currency_code" do
   end
 end
 
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
@@ -164,30 +180,23 @@ datasource "ds_currency_reference" do
 end
 
 datasource "ds_currency" do
-  run_script $js_currency, $ds_currency_reference, $ds_kubecost_currency_code
+  run_script $js_currency, $ds_currency_reference, $ds_kubecost_currency_code, $ds_currency_code
 end
 
 script "js_currency", type:"javascript" do
-  parameters "ds_currency_reference", "ds_kubecost_currency_code"
+  parameters "ds_currency_reference", "ds_kubecost_currency_code", "ds_currency_code"
   result "result"
   code <<-EOS
   code = ds_kubecost_currency_code['code'].toUpperCase().trim()
-  symbol = "$"
-  separator = ","
+  if (code == '') { code = ds_currency_code['value'] }
+  if (typeof(code) != 'string' || code == '') { code = 'USD' }
+  if (ds_currency_reference[code] == undefined) { code = 'USD' }
 
-  if (code != undefined) {
-    if (ds_currency_reference[code] != undefined) {
-      symbol = ds_currency_reference[code]['symbol']
-
-      if (ds_currency_reference[code]['t_separator'] != undefined) {
-        separator = ds_currency_reference[code]['t_separator']
-      } else {
-        separator = ""
-      }
-    }
+  result = {
+    code: code,
+    symbol: ds_currency_reference[code]['symbol'],
+    separator: ds_currency_reference[code]['t_separator'] ? ds_currency_reference[code]['t_separator'] : ""
   }
-
-  result = { code: code, symbol: symbol, separator: separator }
 EOS
 end
 
