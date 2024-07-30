@@ -594,13 +594,13 @@ These templates can generate savings estimates for your environment.
 
 - IAM
 
-  - [Azure Ensure Log Analytics Auto-Provisioning](./security/azure/log_analytics_autoprovision)
-  - [Azure Guest Users Audit](./security/azure/guest_users)
+  - [Azure Guest Users](./security/azure/guest_users)
+  - [Azure Subscriptions Without Log Analytics Auto-Provisioning](./security/azure/log_analytics_autoprovision)
 
 - MySQL
 
-  - [Azure Ensure MySQL Flexible Servers Use Secure TLS](./security/azure/mysql_tls_version)
-  - [Azure Ensure MySQL Servers Enforce SSL Connections](./security/azure/mysql_ssl)
+  - [Azure MySQL Flexible Servers Without Secure TLS](./security/azure/mysql_tls_version)
+  - [Azure MySQL Servers Without Enforced SSL](./security/azure/mysql_ssl)
 
 - Network Security Group
 
@@ -609,10 +609,10 @@ These templates can generate savings estimates for your environment.
 
 - PostgreSQL
 
-  - [Azure Ensure Correct PostgreSQL Servers Log Settings](./security/azure/pg_log_settings)
-  - [Azure Ensure PostgreSQL Servers Connection Throttling Enabled](./security/azure/pg_conn_throttling)
-  - [Azure Ensure PostgreSQL Servers Infrastructure Encryption](./security/azure/pg_infra_encryption)
-  - [Azure Ensure PostgreSQL Servers Sufficient Log Retention](./security/azure/pg_log_retention)
+  - [Azure PostgreSQL Servers With Bad Log Settings](./security/azure/pg_log_settings)
+  - [Azure PostgreSQL Servers With Insufficient Log Retention](./security/azure/pg_log_retention)
+  - [Azure PostgreSQL Servers Without Connection Throttling](./security/azure/pg_conn_throttling)
+  - [Azure PostgreSQL Servers Without Infrastructure Encryption](./security/azure/pg_infra_encryption)
 
 - SQL
 
@@ -629,18 +629,18 @@ These templates can generate savings estimates for your environment.
 
 - Security
 
-  - [Azure Ensure High Severity Alerts](./security/azure/high_severity_alerts)
   - [Azure Ensure Owners Receive Security Alerts](./security/azure/security_alert_owners)
   - [Azure Ensure Security Contact Email](./security/azure/security_contact_email)
+  - [Azure Subscriptions Without High Severity Alerts](./security/azure/high_severity_alerts)
 
 - Storage
 
+  - [Azure Blob Storage Accounts Without Logging Enabled](./security/azure/blob_storage_logging)
   - [Azure Ensure Blob Containers Set To Private](./security/azure/private_blob_containers)
   - [Azure Ensure Secure Transfer Required](./security/azure/secure_transfer_required)
   - [Azure Ensure Soft Delete Enabled For Azure Storage](./security/azure/storage_soft_delete)
   - [Azure Ensure Storage Account Default Network Access Set To Deny](./security/azure/storage_network_deny)
   - [Azure Ensure Storage Accounts Require Secure TLS Version](./security/azure/storage_tls_version)
-  - [Azure Ensure Storage Logging Enabled For Blob Service](./security/azure/blob_storage_logging)
   - [Azure Ensure Storage Logging Enabled For Queue Service](./security/azure/queue_storage_logging)
   - [Azure Ensure Storage Logging Enabled For Table Service](./security/azure/table_storage_logging)
   - [Azure Ensure Trusted Microsoft Services Enabled](./security/azure/storage_trusted_services)

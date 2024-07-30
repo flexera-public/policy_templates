@@ -1,13 +1,13 @@
-name "Meta Parent: Azure Reserved Instances Recommendations"
+name "Meta Parent: Azure Blob Storage Accounts Without Logging Enabled"
 rs_pt_ver 20180301
 type "policy"
-short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** Applies and manages \"child\" [Azure Reserved Instances Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/reserved_instances/recommendations) Policies."
+short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** Applies and manages \"child\" [Azure Blob Storage Accounts Without Logging Enabled](https://github.com/flexera-public/policy_templates/tree/master/security/azure/blob_storage_logging) Policies."
 severity "low"
 category "Meta"
 default_frequency "15 minutes"
 info(
   provider: "Azure",
-  version: "4.0.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "3.0.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
 )
 
 ##############################################################################
@@ -60,7 +60,7 @@ end
 parameter "param_template_source" do
   type "string"
   label "Child Policy Template Source"
-  description "By default, will use the \"Azure Reserved Instances Recommendations\" Policy Template from Catalog.  Optionally, you can use the \"Azure Reserved Instances Recommendations\" Policy Template uploaded in the current Flexera Project."
+  description "By default, will use the \"Azure Blob Storage Accounts Without Logging Enabled\" Policy Template from Catalog.  Optionally, you can use the \"Azure Blob Storage Accounts Without Logging Enabled\" Policy Template uploaded in the current Flexera Project."
   default "Published Catalog Template"
   allowed_values "Published Catalog Template", "Uploaded Template"
 end
@@ -75,20 +75,19 @@ parameter "param_azure_endpoint" do
   default "management.azure.com"
 end
 
-parameter "param_min_savings" do
-  type "number"
-  category "Policy Settings"
-  label "Minimum Savings Threshold"
-  description "Minimum potential savings required to generate a recommendation."
-  min_value 0
-  default 0
+parameter "param_storage_account_ignore_list" do
+  type "list"
+  category "Filters"
+  label "Storage Account Ignore List"
+  description "A list of Azure Storage Accounts to never include in the results."
+  default []
 end
 
 parameter "param_regions_allow_or_deny" do
   type "string"
   category "Filters"
   label "Allow/Deny Regions"
-  description "Allow or Deny entered regions."
+  description "Allow or Deny entered regions. See the README for more details."
   allowed_values "Allow", "Deny"
   default "Allow"
 end
@@ -97,44 +96,25 @@ parameter "param_regions_list" do
   type "list"
   category "Filters"
   label "Allow/Deny Regions List"
-  description "A list of allowed or denied regions. Leave blank to check all regions."
+  description "A list of allowed or denied regions. See the README for more details."
   default []
 end
 
-parameter "param_days" do
-  type "string"
-  category "Reservation Settings"
-  label "Look Back Period"
-  description "Number of days of prior usage to analyze."
-  allowed_values "Last 7 Days", "Last 30 Days", "Last 60 Days"
-  default "Last 30 Days"
-end
-
-parameter "param_service" do
+parameter "param_exclusion_tags" do
   type "list"
-  category "Reservation Settings"
-  label "Resource Types"
-  description "Types of resources to provide recommendations for. Items can be removed by clicking X to the right of the name."
-  allowed_values ["Virtual Machines", "SQL Databases", "PostgreSQL", "Managed Disks", "MySQL", "Red Hat", "MariaDB", "Redis Cache", "CosmosDB", "SQL Data Warehouse", "SUSE Linux", "App Service", "Block Blob", "Azure Data Explorer", "VMware CloudSimple"]
-  default ["Virtual Machines", "SQL Databases", "PostgreSQL", "Managed Disks", "MySQL", "Red Hat", "MariaDB", "Redis Cache", "CosmosDB", "SQL Data Warehouse", "SUSE Linux", "App Service", "Block Blob", "Azure Data Explorer", "VMware CloudSimple"]
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
 end
 
-parameter "param_term" do
+parameter "param_exclusion_tags_boolean" do
   type "string"
-  category "Reservation Settings"
-  label "Reservation Term"
-  description "Length of reservation term to provide recommendations for."
-  allowed_values "1 Year", "3 Year"
-  default "1 Year"
-end
-
-parameter "param_scope" do
-  type "string"
-  category "Reservation Settings"
-  label "Reservation Scope"
-  description "The scope to provide recommendations for. Select 'Shared' to not have recommendations scoped to individual Subscriptions or Resource Groups."
-  allowed_values "Subscription", "Resource Group", "Shared"
-  default "Subscription"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
 end
 
 ###############################################################################
@@ -145,6 +125,13 @@ credentials "auth_azure" do
   label "Azure"
   description "Select the Azure Resource Manager Credential from the list."
   tags "provider=azure_rm"
+end
+
+credentials "auth_azure_storage" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Storage Credential from the list."
+  tags "provider=azure_storage"
 end
 
 credentials "auth_flexera" do
@@ -258,7 +245,7 @@ datasource "ds_published_child_policy_information" do
   result do
     encoding "json"
     # Select the published policy that is published by "support@flexera.com" and matches the name of the child policy template
-    collect jq(response, '.items[] | select(.name == "Azure Reserved Instances Recommendations" and .created_by.email == "support@flexera.com")' ) do
+    collect jq(response, '.items[] | select(.name == "Azure Blob Storage Accounts Without Logging Enabled" and .created_by.email == "support@flexera.com")' ) do
       field "name", jmes_path(col_item, "name")
       field "href", jmes_path(col_item, "href")
       field "short_description", jmes_path(col_item, "short_description")
@@ -277,7 +264,7 @@ datasource "ds_project_child_policy_information" do
   result do
     encoding "json"
     # Select the uploaded policy that matches the name of the child policy template
-    collect jq(response, '.items[] | select(.name == "Azure Reserved Instances Recommendations")' ) do
+    collect jq(response, '.items[] | select(.name == "Azure Blob Storage Accounts Without Logging Enabled")' ) do
       field "name", jmes_path(col_item, "name")
       field "href", jmes_path(col_item, "href")
       field "short_description", jmes_path(col_item, "short_description")
@@ -843,19 +830,19 @@ datasource "ds_child_incident_details" do
   end
 end
 
-datasource "ds_ri_incident_combined_incidents" do
-  run_script $js_ds_ri_incident_combined_incidents, $ds_child_incident_details
+datasource "ds_bad_storage_accounts_combined_incidents" do
+  run_script $js_ds_bad_storage_accounts_combined_incidents, $ds_child_incident_details
 end
 
-script "js_ds_ri_incident_combined_incidents", type: "javascript" do
+script "js_ds_bad_storage_accounts_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-EOS
   result = []
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
-    // If the incident summary contains "Azure Reserved Instances Purchase Recommendations" then include it in the filter result
-    if (s.indexOf("Azure Reserved Instances Purchase Recommendations") > -1) {
+    // If the incident summary contains "Azure Blob Storage Accounts Without Logging Enabled Found" then include it in the filter result
+    if (s.indexOf("Azure Blob Storage Accounts Without Logging Enabled Found") > -1) {
       _.each(incident["violation_data"], function(violation) {
         violation["incident_id"] = incident["id"];
         result.push(violation);
@@ -874,14 +861,14 @@ end
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
-    # Consolidated incident for Azure Reserved Instances Purchase Recommendations
-  validate $ds_ri_incident_combined_incidents do
-    summary_template "Consolidated Incident: {{ len data }} Azure Reserved Instances Purchase Recommendations"
+    # Consolidated incident for Azure Blob Storage Accounts Without Logging Enabled Found
+  validate $ds_bad_storage_accounts_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} Azure Blob Storage Accounts Without Logging Enabled Found"
     escalate $esc_email
     
     check eq(size(data), 0)
     export do
-      resource_level false
+      resource_level true
       field "accountID" do
         label "Subscription ID"
       end
@@ -891,8 +878,11 @@ policy "policy_scheduled_report" do
       field "resourceGroup" do
         label "Resource Group"
       end
-      field "service" do
-        label "Service"
+      field "resourceID" do
+        label "Storage Account ID"
+      end
+      field "resourceName" do
+        label "Storage Account Name"
       end
       field "resourceType" do
         label "Resource Type"
@@ -900,47 +890,26 @@ policy "policy_scheduled_report" do
       field "region" do
         label "Region"
       end
-      field "term" do
-        label "Term"
+      field "tags" do
+        label "Tags"
       end
-      field "recommendedQuantity" do
-        label "Recommended Quantity to Purchase"
+      field "creationTime" do
+        label "Created At"
       end
-      field "savingsCurrency" do
-        label "Currency"
+      field "accessTier" do
+        label "Access Tier"
       end
-      field "costWithNoRI" do
-        label "Current Monthly Cost"
+      field "loggingVersion" do
+        label "Logging Version"
       end
-      field "totalCostWithRI" do
-        label "New Monthly Cost with Reservations"
+      field "loggingRead" do
+        label "Read Logging"
       end
-      field "savings" do
-        label "Estimated Monthly Savings"
+      field "loggingWrite" do
+        label "Write Logging"
       end
-      field "firstUsageDate" do
-        label "First Usage Date"
-      end
-      field "resourceID" do
-        label "Resource Meter ID"
-      end
-      field "scope" do
-        label "Scope"
-      end
-      field "instanceFlexibilityGroup" do
-        label "Flexibility Group"
-      end
-      field "instanceFlexibilityRatio" do
-        label "Flexibility Ratio"
-      end
-      field "normalizedSize" do
-        label "Normalized Resource Type"
-      end
-      field "recommendedQuantityNormalized" do
-        label "Normalized Recommended Quantity to Purchase"
-      end
-      field "lookbackPeriod" do
-        label "Look Back Period"
+      field "loggingDelete" do
+        label "Delete Logging"
       end
       field "id" do
         label "ID"
