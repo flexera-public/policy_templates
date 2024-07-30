@@ -3,10 +3,9 @@ rs_pt_ver 20180301
 type "policy"
 short_description "Reports Request Rightsizing Recommendations from Kubecost. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/kubecost/sizing/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
-severity "low"
 category "Cost"
-default_frequency "daily"
-tenancy "single"
+severity "low"
+default_frequency "weekly"
 info(
   version: "0.4.0",
   provider: "Kubecost",
@@ -35,15 +34,6 @@ parameter "param_kubecost_host" do
   # No default value, user input required
 end
 
-parameter "param_scope" do
-  type "string"
-  category "Policy Settings"
-  label "Scope"
-  description "Whether to produce recommendations for the entire Kubecost estate or per cluster."
-  allowed_values "Entire Estate", "Per Cluster"
-  default "Entire Estate"
-end
-
 parameter "param_min_savings" do
   type "number"
   category "Policy Settings"
@@ -51,6 +41,15 @@ parameter "param_min_savings" do
   description "Minimum potential savings required to generate a recommendation."
   min_value 0
   default 0
+end
+
+parameter "param_scope" do
+  type "string"
+  category "Policy Settings"
+  label "Scope"
+  description "Whether to produce recommendations for the entire Kubecost estate or per cluster."
+  allowed_values "Entire Estate", "Per Cluster"
+  default "Entire Estate"
 end
 
 parameter "param_lookback" do
@@ -333,8 +332,10 @@ script "js_recommendations", type: "javascript" do
         monthlySavingsCPU: monthlySavingsCPU,
         monthlySavingsMem: monthlySavingsMem,
         savings: Math.round(savings * 1000) / 1000,
+        savingsCurrency: ds_currency['symbol'],
         policy_name: ds_applied_policy['name'],
-        total_savings: ""
+        total_savings: "",
+        message: ""
       })
     }
   })
@@ -343,6 +344,20 @@ script "js_recommendations", type: "javascript" do
     result[0]['total_savings'] = [
       ds_currency['symbol'], ' ',
       formatNumber(Math.round(total_savings * 100) / 100, ds_currency['separator'])
+    ].join('')
+
+    result[0]['message'] = [
+      "Recommendation was produced with the following settings:\n\n",
+      "- Minimum Savings Threshold: ", param_min_savings, "\n",
+      "- Scope: ", param_scope, "\n",
+      "- Lookback Period: ", param_lookback, " Days\n",
+      "- CPU Assessment Algorithm: ", param_cpu_algo, "\n",
+      "- CPU Percentile: ", param_cpu_q, "%\n",
+      "- Target CPU Utilization: ", param_cpu_util, "%\n",
+      "- Memory Assessment Algorithm: ", param_mem_algo, "\n",
+      "- Memory Percentile: ", param_mem_q, "%\n",
+      "- Target Memory Utilization: ", param_mem_util, "%\n\n",
+      "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
     ].join('')
   }
 EOS
@@ -355,9 +370,13 @@ end
 policy "policy_kubecost_request_sizing" do
   validate_each $ds_recommendations do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Kubecost Request Rightsizing Recommendations Found"
-    detail_template "**Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}"
-    escalate $esc_email
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
     check eq(val(item, "accountID"), "")
+    escalate $esc_email
     export do
       resource_level true
       field "accountID" do

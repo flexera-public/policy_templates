@@ -14,8 +14,8 @@ This policy template reports Kubecost recommendations for container resource req
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Kubecost Host* - Kubecost Hostname or IP Address of Kubecost Load Balancer to make queries against.
-- *Scope* - Whether to produce recommendations for the entire Kubecost estate or per cluster.
 - *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation.
+- *Scope* - Whether to produce recommendations for the entire Kubecost estate or per cluster.
 - *Lookback Period (Days)* - Number of historical days of usage to analyze when generating recommendations.
 - *CPU Assessment Algorithm* - Whether max or a certain quantile should be used to produce CPU request recommendations.
 - *CPU Percentile (%)* - The desired percentile to base CPU request recommendations on.
