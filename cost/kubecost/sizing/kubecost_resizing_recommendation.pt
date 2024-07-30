@@ -210,6 +210,13 @@ datasource "ds_clusters" do
     encoding "json"
     collect jmes_path(response, "data | values(@)") do
       field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "profile", jmes_path(col_item, "profile")
+      field "provider", jmes_path(col_item, "provider")
+      field "account", jmes_path(col_item, "account")
+      field "project", jmes_path(col_item, "project")
+      field "region", jmes_path(col_item, "region")
+      field "provisioner", jmes_path(col_item, "provisioner")
     end
   end
 end
@@ -225,7 +232,7 @@ script "js_sizing_recommendation_request_list", type: "javascript" do
   cpu_util = (param_cpu_util / 100).toString()
   mem_util = (param_mem_util / 100).toString()
 
-  query_params = {
+  query = {
     algorithmCPU: param_cpu_algo.toLowerCase(),
     algorithmRAM: param_mem_algo.toLowerCase(),
     qCPU: param_cpu_q.toString(),
@@ -236,13 +243,13 @@ script "js_sizing_recommendation_request_list", type: "javascript" do
     filter: ''
   }
 
-  result = [ query_params ]
+  result = [ query ]
 
   if (param_scope == "Per Cluster") {
     result = _.map(ds_clusters, function(cluster) {
-      cluster_query_params = query_params
-      cluster_query_params['filter'] = 'cluster:"' + cluster['id'] + '"'
-      return cluster_query_params
+      cluster_query = query
+      cluster_query['filter'] = 'cluster:"' + cluster['id'] + '"'
+      return cluster_query
     })
   }
 EOS
@@ -281,11 +288,11 @@ datasource "ds_request_sizing" do
 end
 
 datasource "ds_recommendations" do
-  run_script $js_recommendations, $ds_request_sizing, $ds_currency, $ds_applied_policy, $param_min_savings, $param_scope, $param_lookback, $param_cpu_algo, $param_cpu_q, $param_cpu_util, $param_mem_algo, $param_mem_q, $param_mem_util
+  run_script $js_recommendations, $ds_request_sizing, $ds_clusters, $ds_currency, $ds_applied_policy, $param_min_savings, $param_scope, $param_lookback, $param_cpu_algo, $param_cpu_q, $param_cpu_util, $param_mem_algo, $param_mem_q, $param_mem_util
 end
 
 script "js_recommendations", type: "javascript" do
-  parameters "ds_request_sizing", "ds_currency", "ds_applied_policy", "param_min_savings", "param_scope", "param_lookback", "param_cpu_algo", "param_cpu_q", "param_cpu_util", "param_mem_algo", "param_mem_q", "param_mem_util"
+  parameters "ds_request_sizing", "ds_clusters", "ds_currency", "ds_applied_policy", "param_min_savings", "param_scope", "param_lookback", "param_cpu_algo", "param_cpu_q", "param_cpu_util", "param_mem_algo", "param_mem_q", "param_mem_util"
   result "result"
   code <<-'EOS'
   // Function for formatting currency numbers later
@@ -306,6 +313,9 @@ script "js_recommendations", type: "javascript" do
 
     return formatted_number + "." + values[1]
   }
+
+  cluster_table = {}
+  _.each(ds_clusters, function(cluster) { cluster_table[cluster['id']] = cluster })
 
   result = []
   total_savings = 0.0
@@ -331,6 +341,7 @@ script "js_recommendations", type: "javascript" do
         latestKnownRequestMem: cluster['latestKnownRequestMem'],
         monthlySavingsCPU: Math.round(monthlySavingsCPU * 1000) / 1000,
         monthlySavingsMem: Math.round(monthlySavingsMem * 1000) / 1000,
+        region: cluster_table[cluster['accountID']]['region'],
         savings: Math.round(savings * 1000) / 1000,
         savingsCurrency: ds_currency['symbol'],
         min_savings: param_min_savings,
@@ -343,11 +354,14 @@ script "js_recommendations", type: "javascript" do
         mem_q: param_mem_q,
         mem_util: param_mem_util,
         policy_name: ds_applied_policy['name'],
+        service: "Kubernetes",
         total_savings: "",
         message: ""
       })
     }
   })
+
+  result = _.sortBy(result, 'savings').reverse()
 
   if (result.length > 0) {
     result[0]['total_savings'] = [
@@ -424,32 +438,46 @@ policy "pol_kubecost_recommendations" do
       field "recommendedRequestMem" do
         label "Recommended Memory Request"
       end
+      field "region" do
+        label "Region"
+      end
+      field "service" do
+        label "Service"
+      end
       field "scope" do
         label "Scope"
       end
       field "lookback" do
         label "Lookback Period (Days)"
       end
-      field "param_cpu_algo" do
+      field "cpu_algo" do
         label "CPU Assessment Algorithm"
       end
-      field "param_cpu_q" do
+      field "cpu_q" do
         label "CPU Percentile (%)"
       end
-      field "param_cpu_util" do
+      field "cpu_util" do
         label "Target CPU Utilization (%)"
       end
-      field "param_mem_algo" do
+      field "mem_algo" do
         label "Memory Assessment Algorithm"
       end
-      field "param_mem_q" do
+      field "mem_q" do
         label "Memory Percentile (%)"
       end
-      field "param_mem_util" do
+      field "mem_util" do
         label "Target Memory Utilization (%)"
       end
       field "id" do
         label "ID"
+        path "accountID"
+      end
+      field "resourceID" do
+        label "Resource ID"
+        path "accountID"
+      end
+      field "resourceName" do
+        label "Resource Name"
         path "accountID"
       end
     end
