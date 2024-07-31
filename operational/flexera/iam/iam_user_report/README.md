@@ -1,4 +1,4 @@
-# Flexera One User Report
+# Flexera One User Access Report
 
 ## What It Does
 

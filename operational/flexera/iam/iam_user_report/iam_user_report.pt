@@ -1,4 +1,4 @@
-name "Flexera One User Report"
+name "Flexera One User Access Report"
 rs_pt_ver 20180301
 type "policy"
 short_description "Reports all Flexera users, their roles, and which products they have access to. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/flexera/iam/iam_explicit_user_roles) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
@@ -105,6 +105,36 @@ datasource "ds_users" do
   end
 end
 
+datasource "ds_groups" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "grs")
+    path join(["/grs/orgs/", rs_org_id, "/groups"])
+    query "view", "extended"
+    header "X-Api-Version", "2.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "href", jmes_path(col_item, "href")
+      field "name", jmes_path(col_item, "name")
+      field "description", jmes_path(col_item, "description")
+      field "kind", jmes_path(col_item, "kind")
+      field "users", jmes_path(col_item, "users")
+      field "createdAt", jmes_path(col_item, "timestamps.created_at")
+      field "updatedAt", jmes_path(col_item, "timestamps.updated_at")
+      field "orgId", jmes_path(col_item, "org.id")
+      field "orgHref", jmes_path(col_item, "org.href")
+      field "orgName", jmes_path(col_item, "org.name")
+      field "orgKind", jmes_path(col_item, "org.kind")
+      field "orgCreatedAt", jmes_path(col_item, "org.timestamps.created_at")
+      field "orgUpdatedAt", jmes_path(col_item, "org.timestamps.updated_at")
+    end
+  end
+end
+
 datasource "ds_access_rules" do
   request do
     auth $auth_flexera
@@ -132,43 +162,207 @@ datasource "ds_access_rules" do
   end
 end
 
-datasource "ds_groups" do
-  request do
-    auth $auth_flexera
-    host val($ds_flexera_api_hosts, "grs")
-    path join(["/grs/orgs/", rs_org_id, "/groups"])
-    query "view", "extended"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "[*]") do
-      field "id", jmes_path(col_item, "id")
-      field "href", jmes_path(col_item, "href")
-      field "name", jmes_path(col_item, "name")
-      field "description", jmes_path(col_item, "description")
-      field "kind", jmes_path(col_item, "kind")
-      field "users", jmes_path(col_item, "users")
-      field "createdAt", jmes_path(col_item, "timestamps.created_at")
-      field "updatedAt", jmes_path(col_item, "timestamps.updated_at")
-      field "orgId", jmes_path(col_item, "org.id")
-      field "orgHref", jmes_path(col_item, "org.href")
-      field "orgName", jmes_path(col_item, "org.name")
-      field "orgKind", jmes_path(col_item, "org.kind")
-      field "orgCreatedAt", jmes_path(col_item, "org.timestamps.created_at")
-      field "orgUpdatedAt", jmes_path(col_item, "org.timestamps.updated_at")
-    end
-  end
+datasource "ds_rules_by_subject" do
+  run_script $js_rules_by_subject, $ds_access_rules
+end
+
+script "js_rules_by_subject", type: "javascript" do
+  parameters "ds_access_rules"
+  result "result"
+  code <<-'EOS'
+  // Sort rules by subject (user or group) to reference later
+  result = {}
+
+  _.each(ds_access_rules, function(rule) {
+    type = null
+
+    if (typeof(rule['subjectKind']) == 'string') {
+      if (rule['subjectKind'].indexOf('user') != -1) { type = 'user' }
+      if (rule['subjectKind'].indexOf('group') != -1) { type = 'group' }
+    }
+
+    if (type != null) {
+      subject = type + ':' + rule['subjectId']
+      if (result[subject] == undefined) { result[subject] = [] }
+      result[subject].push(rule)
+    }
+  })
+EOS
+end
+
+datasource "ds_groups_by_user" do
+  run_script $js_groups_by_user, $ds_groups, $ds_rules_by_subject
+end
+
+script "js_groups_by_user", type: "javascript" do
+  parameters "ds_groups", "ds_rules_by_subject"
+  result "result"
+  code <<-'EOS'
+  // Sort groups by user and include the rules from the above table specific to each group
+  result = {}
+
+  _.each(ds_groups, function(group) {
+    group_with_rules = group
+    group_with_rules['rules'] = []
+
+    if (ds_rules_by_subject['group:' + group['id']] != undefined) {
+      group_with_rules['rules'] = ds_rules_by_subject['group:' + group['id']]
+    }
+
+    _.each(group['users'], function(user) {
+      if (result[user['id'].toString()] == undefined) { result[user['id'].toString()] = [] }
+      result[user['id'].toString()].push(group_with_rules)
+    })
+  })
+EOS
+end
+
+datasource "ds_rules_with_metadata" do
+  run_script $js_rules_with_metadata, $ds_users, $ds_rules_by_subject, $ds_groups_by_user, $ds_applied_policy
+end
+
+script "js_rules_with_metadata", type: "javascript" do
+  parameters "ds_users", "ds_rules_by_subject", "ds_groups_by_user", "ds_applied_policy"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  _.each(ds_users, function(user) {
+    rules = []
+
+    if (ds_rules_by_subject['user:' + user['id']] != undefined) {
+      rules = _.map(ds_rules_by_subject['user:' + user['id']], function(rule) {
+        new_rule = rule
+        new_rule['source'] = "User"
+        new_rule['sourceId'] = user['id']
+        new_rule['sourceName'] = user['email']
+        return new_rule
+      })
+    }
+
+    groups = []
+    if (ds_groups_by_user[user['id'].toString()] != undefined) { groups = ds_groups_by_user[user['id'].toString()] }
+
+    _.each(groups, function(group) {
+      rules = rules.concat(_.map(group['rules'], function(rule) {
+        new_rule = rule
+        new_rule['source'] = "Group"
+        new_rule['sourceId'] = group['id']
+        new_rule['sourceName'] = group['name']
+        return new_rule
+      }))
+    })
+
+    incident_rule = {
+      userId: user['id'],
+      userEmail: user['email'],
+      userFirstName: user['firstName'],
+      userLastName: user['lastName'],
+      userLastAPILogin: user['lastAPILogin'],
+      userLastUILogin: user['lastUILogin'],
+      userCreatedAt: user['createdAt'],
+      userUpdatedAt: user['updatedAt'],
+      source: null,
+      sourceId: null,
+      sourceName: null,
+      id: null,
+      name: "No Access Granted",
+      category: null,
+      displayName: null,
+      createdAt: null,
+      policy_name: ds_applied_policy['name']
+    }
+
+    if (rules.length > 0) {
+      _.each(rules, function(rule) {
+        new_rule = incident_rule
+
+        new_rule['source'] = rule['source'],
+        new_rule['sourceId'] = rule['sourceId'],
+        new_rule['sourceName'] = rule['sourceName'],
+        new_rule['id'] = rule['roleId'],
+        new_rule['name'] = rule['roleName'],
+        new_rule['category'] = rule['roleCategory'],
+        new_rule['displayName'] = rule['roleDisplayName'],
+        new_rule['createdAt'] = rule['createdAt']
+
+        result.push(new_rule)
+      })
+    } else {
+      result.push(incident_rule)
+    }
+  })
+EOS
 end
 
 ###############################################################################
 # Policy
 ###############################################################################
 
-policy "pol_bad_users" do
-  validate_each $ds_groups do
-    summary_template ""
-    detail_template ""
-    check eq(0, 1)
+policy "pol_user_report" do
+  validate_each $ds_rules_with_metadata do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}"
+    check eq(val(item, "id"), "")
+    escalate $esc_email
+    hash_exclude "userUpdatedAt", "userLastAPILogin", "userLastUILogin"
+    export do
+      resource_level true
+      field "userId" do
+        label "User ID"
+      end
+      field "userEmail" do
+        label "User Email"
+      end
+      field "userFirstName" do
+        label "User First Name"
+      end
+      field "userLastName" do
+        label "User Last Name"
+      end
+      field "userLastAPILogin" do
+        label "User Last API Login"
+      end
+      field "userLastUILogin" do
+        label "User Last UI Login"
+      end
+      field "userCreatedAt" do
+        label "User Created At"
+      end
+      field "userUpdatedAt" do
+        label "User Updated At"
+      end
+      field "id" do
+        label "Role ID"
+      end
+      field "name" do
+        label "Role Name"
+      end
+      field "displayName" do
+        label "Role Display Name"
+      end
+      field "createdAt" do
+        label "Role Created At"
+      end
+      field "source" do
+        label "Role Source"
+      end
+      field "sourceId" do
+        label "Role Source ID"
+      end
+      field "sourceName" do
+        label "Role Source Name"
+      end
+    end
   end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
 end
