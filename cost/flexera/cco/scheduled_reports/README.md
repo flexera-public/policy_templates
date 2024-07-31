@@ -25,7 +25,6 @@ This policy can be used for automated "reporting" use-cases, as well as "alertin
 - *Percent Change Alert Metric* - The metric to use for the percent change alert. Percent Change from Previous Time Period Daily Average is recommended to normalize between Month periods. This has no affect if Billing Term is set to 'Day'.
 - *Percent Change Alert Direction* - Select the direction of percent change that will trigger the report.
 
-
 ## Policy Actions
 
 - Sends an email notification
