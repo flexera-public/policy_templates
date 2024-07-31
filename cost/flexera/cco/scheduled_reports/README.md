@@ -4,6 +4,8 @@
 
 This policy pulls cost data from Flexera CCO (Cloud Cost Optimization) in order to email a report summarizing that data. The report includes a graph showing costs over time as well as a table with the data the graph is built from. The user can alter the contents of the report via parameters.
 
+This policy can be used for automated "reporting" use-cases, as well as "alerting" use-cases. For example, you can set up a scheduled report to be sent every month to show costs over time, or you can set up a scheduled report to be sent only when the percent change in cost exceeds a certain threshold.
+
 *Note: Any cost data that is less than 3 days old will be incomplete. This is because cloud cost data is not imported into Flexera CCO in real time.*
 
 ## Input Parameters
@@ -12,11 +14,17 @@ This policy pulls cost data from Flexera CCO (Cloud Cost Optimization) in order 
 - *Cost Metric* - Select the cost metric for your report. This determines whether to build the report using amortized or unamortized costs, and whether to blend AWS costs or not.
 - *Graph Dimension* - Select which dimension you'd like to be broken out on the graph in the report. Select `Custom` to specify the name of a custom dimension, such as a Custom Tag or Custom Rule-Based Dimension, or the name of any dimension not on the list.
 - *Custom Graph Dimension* - Specify the name of the custom dimension you want to break costs out by. Spelling and capitalization must match what is shown in the Flexera CCO platform. Only applicable if `Custom` is selected for the Graph Dimension.
+- *Graph Dimension Value Count* - The number of values to display on the graph for the selected dimension. The top N values will be displayed based on the cost metric selected. Enter 0 to display all values. Warning: Displaying all values may result in a graph that is difficult to interpret.
 - *Filter Dimensions* - Specify the names of the dimensions you wish to filter the costs by along with their values in dimension=value format. These can be built-in dimensions, Custom Tags or Custom Rule-Based Dimensions. Spelling and capitalization must match what is shown in the Flexera CCO platform. Examples: Environment=Production, Cost Owner=John Doe
 - *Filter Functionality* - Whether to filter for costs that meet all of the criteria specified in `Filter Dimensions` or costs that meet any of the criteria. Only applicable if at least two values are entered for `Filter Dimensions`.
 - *Date Range* - Select the Date Range options you'd like to display on the graph in the report.
 - *Billing Term* - Select the unit of time you'd like to display on the graph in the report. The report will split costs along the option selected. For example, if `Week` is selected, the costs will be split out by week along the graph's X axis and in the incident report.
-- *Billing Center List* - List of Billing Center names or IDs you want to report on. Leave blank to select all top level Billing Centers.
+- *Billing Center List* - List of Billing Center Name(s) or ID(s) you want to report on. Leave blank to select all top level Billing Centers.
+- *Percent Change Threshold Value* - The threshold (in percent) for the percent change in cost between time period(s) that will trigger the report. Default of 0 will send the report every time based on the applied policy schedule.
+- *Percent Change Consecutive Threshold* - The number of consecutive time period(s) where there was a percent change in cost between time period(s) that will trigger the report. Default of `0` will send the report every time based on the applied policy schedule.
+- *Percent Change Alert Metric* - The metric to use for the percent change alert. Percent Change from Previous Time Period Daily Average is recommended to normalize between Month periods. This has no affect if Billing Term is set to 'Day'.
+- *Percent Change Alert Direction* - Select the direction of percent change that will trigger the report.
+
 
 ## Policy Actions
 
