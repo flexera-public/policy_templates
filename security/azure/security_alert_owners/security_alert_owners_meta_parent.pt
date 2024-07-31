@@ -1,13 +1,13 @@
-name "Meta Parent: Azure Reserved Instances Recommendations"
+name "Meta Parent: Azure Subscriptions Without Owner Security Alerts"
 rs_pt_ver 20180301
 type "policy"
-short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** Applies and manages \"child\" [Azure Reserved Instances Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/reserved_instances/recommendations) Policies."
+short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** Applies and manages \"child\" [Azure Subscriptions Without Owner Security Alerts](https://github.com/flexera-public/policy_templates/tree/master/security/azure/security_alert_owners) Policies."
 severity "low"
 category "Meta"
 default_frequency "15 minutes"
 info(
   provider: "Azure",
-  version: "4.0.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "3.0.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
 )
 
 ##############################################################################
@@ -60,7 +60,7 @@ end
 parameter "param_template_source" do
   type "string"
   label "Child Policy Template Source"
-  description "By default, will use the \"Azure Reserved Instances Recommendations\" Policy Template from Catalog.  Optionally, you can use the \"Azure Reserved Instances Recommendations\" Policy Template uploaded in the current Flexera Project."
+  description "By default, will use the \"Azure Subscriptions Without Owner Security Alerts\" Policy Template from Catalog.  Optionally, you can use the \"Azure Subscriptions Without Owner Security Alerts\" Policy Template uploaded in the current Flexera Project."
   default "Published Catalog Template"
   allowed_values "Published Catalog Template", "Uploaded Template"
 end
@@ -73,68 +73,6 @@ parameter "param_azure_endpoint" do
   description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
   allowed_values "management.azure.com", "management.chinacloudapi.cn"
   default "management.azure.com"
-end
-
-parameter "param_min_savings" do
-  type "number"
-  category "Policy Settings"
-  label "Minimum Savings Threshold"
-  description "Minimum potential savings required to generate a recommendation."
-  min_value 0
-  default 0
-end
-
-parameter "param_regions_allow_or_deny" do
-  type "string"
-  category "Filters"
-  label "Allow/Deny Regions"
-  description "Allow or Deny entered regions."
-  allowed_values "Allow", "Deny"
-  default "Allow"
-end
-
-parameter "param_regions_list" do
-  type "list"
-  category "Filters"
-  label "Allow/Deny Regions List"
-  description "A list of allowed or denied regions. Leave blank to check all regions."
-  default []
-end
-
-parameter "param_days" do
-  type "string"
-  category "Reservation Settings"
-  label "Look Back Period"
-  description "Number of days of prior usage to analyze."
-  allowed_values "Last 7 Days", "Last 30 Days", "Last 60 Days"
-  default "Last 30 Days"
-end
-
-parameter "param_service" do
-  type "list"
-  category "Reservation Settings"
-  label "Resource Types"
-  description "Types of resources to provide recommendations for. Items can be removed by clicking X to the right of the name."
-  allowed_values ["Virtual Machines", "SQL Databases", "PostgreSQL", "Managed Disks", "MySQL", "Red Hat", "MariaDB", "Redis Cache", "CosmosDB", "SQL Data Warehouse", "SUSE Linux", "App Service", "Block Blob", "Azure Data Explorer", "VMware CloudSimple"]
-  default ["Virtual Machines", "SQL Databases", "PostgreSQL", "Managed Disks", "MySQL", "Red Hat", "MariaDB", "Redis Cache", "CosmosDB", "SQL Data Warehouse", "SUSE Linux", "App Service", "Block Blob", "Azure Data Explorer", "VMware CloudSimple"]
-end
-
-parameter "param_term" do
-  type "string"
-  category "Reservation Settings"
-  label "Reservation Term"
-  description "Length of reservation term to provide recommendations for."
-  allowed_values "1 Year", "3 Year"
-  default "1 Year"
-end
-
-parameter "param_scope" do
-  type "string"
-  category "Reservation Settings"
-  label "Reservation Scope"
-  description "The scope to provide recommendations for. Select 'Shared' to not have recommendations scoped to individual Subscriptions or Resource Groups."
-  allowed_values "Subscription", "Resource Group", "Shared"
-  default "Subscription"
 end
 
 ###############################################################################
@@ -258,7 +196,7 @@ datasource "ds_published_child_policy_information" do
   result do
     encoding "json"
     # Select the published policy that is published by "support@flexera.com" and matches the name of the child policy template
-    collect jq(response, '.items[] | select(.name == "Azure Reserved Instances Recommendations" and .created_by.email == "support@flexera.com")' ) do
+    collect jq(response, '.items[] | select(.name == "Azure Subscriptions Without Owner Security Alerts" and .created_by.email == "support@flexera.com")' ) do
       field "name", jmes_path(col_item, "name")
       field "href", jmes_path(col_item, "href")
       field "short_description", jmes_path(col_item, "short_description")
@@ -277,7 +215,7 @@ datasource "ds_project_child_policy_information" do
   result do
     encoding "json"
     # Select the uploaded policy that matches the name of the child policy template
-    collect jq(response, '.items[] | select(.name == "Azure Reserved Instances Recommendations")' ) do
+    collect jq(response, '.items[] | select(.name == "Azure Subscriptions Without Owner Security Alerts")' ) do
       field "name", jmes_path(col_item, "name")
       field "href", jmes_path(col_item, "href")
       field "short_description", jmes_path(col_item, "short_description")
@@ -843,19 +781,19 @@ datasource "ds_child_incident_details" do
   end
 end
 
-datasource "ds_ri_incident_combined_incidents" do
-  run_script $js_ds_ri_incident_combined_incidents, $ds_child_incident_details
+datasource "ds_bad_subscriptions_combined_incidents" do
+  run_script $js_ds_bad_subscriptions_combined_incidents, $ds_child_incident_details
 end
 
-script "js_ds_ri_incident_combined_incidents", type: "javascript" do
+script "js_ds_bad_subscriptions_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-EOS
   result = []
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
-    // If the incident summary contains "Azure Reserved Instances Purchase Recommendations" then include it in the filter result
-    if (s.indexOf("Azure Reserved Instances Purchase Recommendations") > -1) {
+    // If the incident summary contains "Azure Subscriptions Without Owner Security Alerts Found" then include it in the filter result
+    if (s.indexOf("Azure Subscriptions Without Owner Security Alerts Found") > -1) {
       _.each(incident["violation_data"], function(violation) {
         violation["incident_id"] = incident["id"];
         result.push(violation);
@@ -874,76 +812,22 @@ end
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
-    # Consolidated incident for Azure Reserved Instances Purchase Recommendations
-  validate $ds_ri_incident_combined_incidents do
-    summary_template "Consolidated Incident: {{ len data }} Azure Reserved Instances Purchase Recommendations"
+    # Consolidated incident for Azure Subscriptions Without Owner Security Alerts Found
+  validate $ds_bad_subscriptions_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} Azure Subscriptions Without Owner Security Alerts Found"
     escalate $esc_email
     
     check eq(size(data), 0)
     export do
-      resource_level false
-      field "accountID" do
+      resource_level true
+      field "id" do
         label "Subscription ID"
       end
-      field "accountName" do
+      field "name" do
         label "Subscription Name"
       end
-      field "resourceGroup" do
-        label "Resource Group"
-      end
-      field "service" do
-        label "Service"
-      end
-      field "resourceType" do
-        label "Resource Type"
-      end
-      field "region" do
-        label "Region"
-      end
-      field "term" do
-        label "Term"
-      end
-      field "recommendedQuantity" do
-        label "Recommended Quantity to Purchase"
-      end
-      field "savingsCurrency" do
-        label "Currency"
-      end
-      field "costWithNoRI" do
-        label "Current Monthly Cost"
-      end
-      field "totalCostWithRI" do
-        label "New Monthly Cost with Reservations"
-      end
-      field "savings" do
-        label "Estimated Monthly Savings"
-      end
-      field "firstUsageDate" do
-        label "First Usage Date"
-      end
-      field "resourceID" do
-        label "Resource Meter ID"
-      end
-      field "scope" do
-        label "Scope"
-      end
-      field "instanceFlexibilityGroup" do
-        label "Flexibility Group"
-      end
-      field "instanceFlexibilityRatio" do
-        label "Flexibility Ratio"
-      end
-      field "normalizedSize" do
-        label "Normalized Resource Type"
-      end
-      field "recommendedQuantityNormalized" do
-        label "Normalized Recommended Quantity to Purchase"
-      end
-      field "lookbackPeriod" do
-        label "Look Back Period"
-      end
-      field "id" do
-        label "ID"
+      field "roles" do
+        label "Roles Alerted"
       end
       field "incident_id" do
         label "Child Incident ID"

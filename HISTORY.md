@@ -6,6 +6,114 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#2451](https://github.com/flexera-public/policy_templates/pull/2451): POL-1297 Azure Security Policy Revamps: Part 1
+
+#### Description
+
+> This is a revamp of several Azure Security policies. See their respective CHANGELOGS and READMEs for more details.
+>
+> This also includes two small Dangerfile tweaks around Graph API credentials.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2451) for these details.
+- **Merged At**: 2024-07-26 12:08:05 UTC
+
+---
+
+### PR [#2459](https://github.com/flexera-public/policy_templates/pull/2459): POL-1169 P90, P95 and P99 for Azure Rightsize Managed Disks
+
+#### Description
+
+> I implemented the statistics P90, P95 and P99 for the parameters:
+> - IOPS Threshold Statistic
+> - Throughput Threshold Statistic
+>
+> ### Issues Resolved
+>
+> - https://flexera.attlassian.com/browse/POL-1169
+>
+
+#### Metadata
+
+- **Policies**: [Azure Rightsize Managed Disks](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_disks/README.md)
+- **Merged At**: 2024-07-25 18:21:28 UTC
+
+---
+
+### PR [#2453](https://github.com/flexera-public/policy_templates/pull/2453): POL-1300 - fix: use `PaginationToken` for paginating tagging API
+
+#### Description
+
+> Fixes an issue discovered when troubleshooting the `AWS Untagged Resources` Policy Template
+>
+>  - Use [`PaginationToken`](https://docs.aws.amazon.com/resourcegroupstagging/latest/APIReference/API_GetResources.html#API_GetResources_RequestSyntax) for paginating tagging API
+>
+
+#### Metadata
+
+- **Policies**: [AWS Untagged Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/untagged_resources/README.md), [AWS Tag Cardinality Report](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/tag_cardinality/README.md)
+- **Merged At**: 2024-07-24 17:21:06 UTC
+
+---
+
+### PR [#2447](https://github.com/flexera-public/policy_templates/pull/2447): POL-1281 AWS Security Policy Revamps: Part 6
+
+#### Description
+
+> This is a revamp of the last set of AWS Security policies. See their respective CHANGELOGs and READMEs for more details.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2447) for these details.
+- **Merged At**: 2024-07-24 17:19:57 UTC
+
+---
+
+### PR [#2429](https://github.com/flexera-public/policy_templates/pull/2429): POL-1281 AWS Security Policy Revamps: Part 5
+
+#### Description
+
+> This is a revamp of two RDS Security policies:
+>
+> **AWS Publicly Accessible RDS Instances**
+> - Policy template renamed to `AWS Publicly Accessible RDS Instances` to better reflect its functionality
+> - Added more robust tag filtering options
+> - Added option to automatically terminate offending instances
+> - Added additional fields to incident table for added context
+> - Streamlined code for better readability and faster execution
+> - Policy now requires a valid Flexera credential
+>
+> **AWS Unencrypted RDS Instances**
+> - Added more robust tag filtering options
+> - Added additional fields to incident table for added context
+> - Streamlined code for better readability and faster execution
+> - Policy now requires a valid Flexera credential
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2429) for these details.
+- **Merged At**: 2024-07-22 15:36:24 UTC
+
+---
+
+### PR [#2425](https://github.com/flexera-public/policy_templates/pull/2425): POL-1281 AWS Security Policy Revamps: Part 4
+
+#### Description
+
+> This is a revamp for all of the Security policy templates focused on AWS CloudTrail logs. See the individual CHANGELOGs for information on the changes in each template.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2425) for these details.
+- **Merged At**: 2024-07-22 12:23:58 UTC
+
+---
+
 ### PR [#2424](https://github.com/flexera-public/policy_templates/pull/2424): FOPTS-4349 Display recommendation in the local currency.
 
 #### Description
@@ -1852,112 +1960,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [AWS Untagged Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/untagged_resources/README.md)
 - **Merged At**: 2024-04-26 12:06:36 UTC
-
----
-
-### PR [#2124](https://github.com/flexera-public/policy_templates/pull/2124): POL-1114 Google Policy Deprecations
-
-#### Description
-
-> This deprecates 4 policies that have more modern equivalents. The READMEs have been updated to direct users to the proper policy.
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2124) for these details.
-- **Merged At**: 2024-04-24 19:23:05 UTC
-
----
-
-### PR [#1668](https://github.com/flexera-public/policy_templates/pull/1668): feat: add `Scheduled Report for Unallocated Costs`
-
-#### Description
-
-> Commits PT for `Scheduled Report for Unallocated Costs` -- this is not going to be published to catalog initially
->
-
-#### Metadata
-
-- **Policies**: [Scheduled Report for Unallocated Costs](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/scheduled_report_unallocated/README.md)
-- **Merged At**: 2024-04-24 13:55:38 UTC
-
----
-
-### PR [#2113](https://github.com/flexera-public/policy_templates/pull/2113): POL-1100 Policy Deprecations
-
-#### Description
-
-> This deprecates several policies that have not been updated in years and likely no longer work. In some cases, the policy is also obsolete due to platform improvements.
->
-> This also updates Dangerfile testing to automatically skip deprecated policies.
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2113) for these details.
-- **Merged At**: 2024-04-22 20:35:58 UTC
-
----
-
-### PR [#2098](https://github.com/flexera-public/policy_templates/pull/2098): POL-1207 Azure Rightsize Compute Fixes/Enhancements
-
-#### Description
-
-> Several changes to the Azure Rightsize Compute policy based on customer feedback:
->
-> - New `Exclude Stopped Virtual Machines` parameter to filter stopped virtual machines from results
-> - New `Exclude Databricks` parameter to filter Azure Databricks virtual machines from results
-> - `Power State` field added to results to indicate whether a virtual machine is running or stopped
-> - Fields related to the image the virtual machine was created with added to results
-> - Idle Virtual Machines incident now includes a `Recommended Instance Size` field with a value of `Delete Virtual Machine` for ease of analyzing recommendations from the Flexera Optimization dashboard
-> - Added warning about invalid Databricks recommendations to incident description if `Exclude Databricks` parameter is set to `No`
-> - Fixed issue that would cause downsize actions to fail
->
-
-#### Metadata
-
-- **Policies**: [Azure Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances/README.md), [Meta Parent: Azure Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances/README.md)
-- **Merged At**: 2024-04-22 14:50:00 UTC
-
----
-
-### PR [#2097](https://github.com/flexera-public/policy_templates/pull/2097): POL-1208 AWS Unused IP Address Cost Fix
-
-#### Description
-
-> It was discovered that the AWS Unused IP Address policy now sometimes fails on execution. Further digging revealed that the AWS Price List API no longer provides pricing for unattached IP addresses, which breaks the datasource and script that retrieve this pricing. This is likely because AWS now charges for all IP addresses, not just unattached ones. I also discovered the following:
->
-> - Pricing for attached IPs is consistent regardless of region in the results; all IPv4 addresses cost $0.005 USD/hour. This aligns with AWS's own documentation, which cites a single universal price for IPv4 addresses rather than one that is contextualized by region or other variables.
-> - The Price List API does not bother to return pricing results for a majority of AWS regions even for attached IP addresses.
->
-> The short version is that the AWS Price List API doesn't really bother to provide granular IP address pricing information anymore. Because of this, and because AWS's own docs specifically outline a single consistent price, the price is now hardcoded into the policy rather than retrieved from an API.
->
-> This does mean that, if the price model changes, the policy itself will need to be updated, but that would be true regardless, since that would likely also mean that the Price List API's output would change as well. This seems to be the least bad solution until and unless AWS provides a means via API to get region-specific pricing for unattached IP addresses.
->
-
-#### Metadata
-
-- **Policies**: [AWS Unused IP Addresses](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/unused_ip_addresses/README.md), [Meta Parent: AWS Unused IP Addresses](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/unused_ip_addresses/README.md)
-- **Merged At**: 2024-04-22 14:01:04 UTC
-
----
-
-### PR [#2073](https://github.com/flexera-public/policy_templates/pull/2073): POL-1086 AWS Unused ECS Clusters Revamp
-
-#### Description
-
-> This is a revamp of the AWS Unused ECS Clusters policy. From the CHANGELOG:
->
-> - Several parameters altered to be more descriptive and human-readable
-> - Added ability to filter resources by multiple tag key:value pairs and with regex
-> - Normalized incident export to be consistent with other policies
-> - Added human-readable recommendation to incident export
-> - Streamlined code for better readability and faster execution
-> - Policy now requires a valid Flexera credential
->
-
-#### Metadata
-
-- **Policies**: [AWS Unused ECS Clusters](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/ecs_unused/README.md), [Meta Parent: AWS Unused ECS Clusters](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/ecs_unused/README.md)
-- **Merged At**: 2024-04-22 13:02:52 UTC
 
 ---
 
