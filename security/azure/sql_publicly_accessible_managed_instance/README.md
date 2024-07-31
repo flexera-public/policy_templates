@@ -1,4 +1,4 @@
-# Azure Publicly Accessible SQL Managed Instances
+# Azure Publicly-Accessible SQL Managed Instances
 
 ## What It Does
 

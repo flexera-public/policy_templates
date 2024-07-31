@@ -1,4 +1,4 @@
-# Azure Ensure SQL Server AD Admin Configured
+# Azure SQL Servers Without Active Directory Admin
 
 ## What It Does
 
