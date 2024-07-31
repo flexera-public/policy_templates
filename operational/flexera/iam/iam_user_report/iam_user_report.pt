@@ -25,6 +25,15 @@ parameter "param_email" do
   default []
 end
 
+parameter "param_inactive_roles" do
+  type "string"
+  category "Policy Settings"
+  label "Report Inactive Roles"
+  description "Whether to include roles that are not enabled for users in the results. If enabled, the report will contain an entry for every possible role for every user, regardless of whether it is enabled for that user. The 'Role Enabled' field will indicate if the role is enabled or not."
+  allowed_values "Yes", "No"
+  default "No"
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -499,12 +508,12 @@ script "js_groups_by_user", type: "javascript" do
 EOS
 end
 
-datasource "ds_rules_with_metadata" do
-  run_script $js_rules_with_metadata, $ds_users, $ds_roles, $ds_rules_by_subject, $ds_groups_by_user, $ds_applied_policy
+datasource "ds_roles_with_metadata" do
+  run_script $js_roles_with_metadata, $ds_users, $ds_roles, $ds_rules_by_subject, $ds_groups_by_user, $ds_applied_policy, $param_inactive_roles
 end
 
-script "js_rules_with_metadata", type: "javascript" do
-  parameters "ds_users", "ds_roles", "ds_rules_by_subject", "ds_groups_by_user", "ds_applied_policy"
+script "js_roles_with_metadata", type: "javascript" do
+  parameters "ds_users", "ds_roles", "ds_rules_by_subject", "ds_groups_by_user", "ds_applied_policy", "param_inactive_roles"
   result "result"
   code <<-'EOS'
   result = []
@@ -554,35 +563,37 @@ script "js_rules_with_metadata", type: "javascript" do
         name: rule['roleDisplayName'],
         category: rule['roleCategory'],
         policy_name: ds_applied_policy['name'],
-        active: "Yes"
+        state: "Active"
       })
     })
 
     // Add each missing rules to the incident result
-    missing_rules = _.reject(ds_roles, function(role) {
-      return _.contains(_.pluck(rules, 'roleName'), role['name'])
-    })
-
-    _.each(missing_rules, function(rule) {
-      result.push({
-        userId: user['id'],
-        userEmail: user['email'],
-        userFirstName: user['firstName'],
-        userLastName: user['lastName'],
-        userLastAPILogin: user['lastAPILogin'],
-        userLastUILogin: user['lastUILogin'],
-        userCreatedAt: user['createdAt'],
-        userUpdatedAt: user['updatedAt'],
-        source: null,
-        sourceId: null,
-        sourceName: null,
-        id: rule['name'],
-        name: rule['displayName'],
-        category: rule['category'],
-        policy_name: ds_applied_policy['name'],
-        active: "No"
+    if (param_inactive_roles == "Yes") {
+      missing_rules = _.reject(ds_roles, function(role) {
+        return _.contains(_.pluck(rules, 'roleName'), role['name'])
       })
-    })
+
+      _.each(missing_rules, function(rule) {
+        result.push({
+          userId: user['id'],
+          userEmail: user['email'],
+          userFirstName: user['firstName'],
+          userLastName: user['lastName'],
+          userLastAPILogin: user['lastAPILogin'],
+          userLastUILogin: user['lastUILogin'],
+          userCreatedAt: user['createdAt'],
+          userUpdatedAt: user['updatedAt'],
+          source: null,
+          sourceId: null,
+          sourceName: null,
+          id: rule['name'],
+          name: rule['displayName'],
+          category: rule['category'],
+          policy_name: ds_applied_policy['name'],
+          state: "Inactive"
+        })
+      })
+    }
   })
 
   result = _.sortBy(result, 'name')
@@ -596,9 +607,9 @@ end
 ###############################################################################
 
 policy "pol_user_report" do
-  validate_each $ds_rules_with_metadata do
+  validate_each $ds_roles_with_metadata do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}"
-    check eq(val(item, "id"), "")
+    check eq(val(item, "userId"), "")
     escalate $esc_email
     hash_exclude "userUpdatedAt", "userLastAPILogin", "userLastUILogin"
     export do
@@ -636,7 +647,7 @@ policy "pol_user_report" do
       field "name" do
         label "Role Display Name"
       end
-      field "active" do
+      field "state" do
         label "Role Enabled"
       end
       field "source" do
