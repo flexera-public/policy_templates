@@ -2,11 +2,12 @@
 
 ## What It Does
 
-This policy template
+This policy template provides a report of every role assigned to a user in Flexera One. Optionally, this report can be emailed.
 
 ## Input Parameters
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify.
+- *Report Inactive Roles* - Whether to include roles that are not active for users in the results. If enabled, the report will contain an entry for every possible role for every user, regardless of whether it is active for that user. The `Role Status` field will indicate if the role is active or not.
 
 ## Policy Actions
 
