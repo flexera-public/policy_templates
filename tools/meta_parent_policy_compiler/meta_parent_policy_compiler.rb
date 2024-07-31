@@ -102,6 +102,13 @@ default_child_policy_template_files = [
   "../../security/azure/pg_infra_encryption/pg_infra_encryption.pt",
   "../../security/azure/pg_log_retention/pg_log_retention.pt",
   "../../security/azure/pg_log_settings/pg_log_settings.pt",
+  "../../security/azure/private_blob_containers/private_blob_containers.pt",
+  "../../security/azure/queue_storage_logging/queue_storage_logging.pt",
+  "../../security/azure/restrict_rdp_internet/azure_restrict_rdp_inet.pt",
+  "../../security/azure/restrict_ssh_internet/azure_restrict_ssh_inet.pt",
+  "../../security/azure/secure_transfer_required/secure_transfer_required.pt",
+  "../../security/azure/security_alert_owners/security_alert_owners.pt",
+  "../../security/azure/security_contact_email/security_contact_email.pt",
   # Google Policy Templates
   "../../compliance/google/long_stopped_instances/google_long_stopped_instances.pt",
   "../../compliance/google/unlabeled_resources/unlabeled_resources.pt",
