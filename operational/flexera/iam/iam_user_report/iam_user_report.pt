@@ -1,0 +1,174 @@
+name "Flexera One User Report"
+rs_pt_ver 20180301
+type "policy"
+short_description "Reports all Flexera users, their roles, and which products they have access to. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/flexera/iam/iam_explicit_user_roles) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+category "Operational"
+severity "low"
+default_frequency "weekly"
+info(
+  version: "0.1.0",
+  provider: "Flexera",
+  service: "Identity & Access Management",
+  policy_set: "Identity & Access Management"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify."
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+datasource "ds_users" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/iam/v1/orgs/", rs_org_id, "/users"])
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "kind", jmes_path(col_item, "kind")
+      field "email", jmes_path(col_item, "email")
+      field "firstName", jmes_path(col_item, "firstName")
+      field "lastName", jmes_path(col_item, "lastName")
+      field "lastAPILogin", jmes_path(col_item, "lastAPILogin")
+      field "lastUILogin", jmes_path(col_item, "lastUILogin")
+      field "ref", jmes_path(col_item, "ref")
+      field "createdAt", jmes_path(col_item, "createdAt")
+      field "updatedAt", jmes_path(col_item, "updatedAt")
+    end
+  end
+end
+
+datasource "ds_access_rules" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/iam/v1/orgs/", rs_org_id, "/access-rules"])
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "roleId", jmes_path(col_item, "role.id")
+      field "roleKind", jmes_path(col_item, "role.kind")
+      field "roleName", jmes_path(col_item, "role.name")
+      field "roleDisplayName", jmes_path(col_item, "role.displayName")
+      field "roleCategory", jmes_path(col_item, "role.category")
+      field "scopeId", jmes_path(col_item, "scope.id")
+      field "scopeKind", jmes_path(col_item, "scope.kind")
+      field "scopeRef", jmes_path(col_item, "scope.ref")
+      field "subjectId", jmes_path(col_item, "subject.id")
+      field "subjectKind", jmes_path(col_item, "subject.kind")
+      field "subjectRef", jmes_path(col_item, "subject.ref")
+      field "kind", jmes_path(col_item, "kind")
+      field "createdAt", jmes_path(col_item, "createdAt")
+    end
+  end
+end
+
+datasource "ds_groups" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "grs")
+    path join(["/grs/orgs/", rs_org_id, "/groups"])
+    query "view", "extended"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "href", jmes_path(col_item, "href")
+      field "name", jmes_path(col_item, "name")
+      field "description", jmes_path(col_item, "description")
+      field "kind", jmes_path(col_item, "kind")
+      field "users", jmes_path(col_item, "users")
+      field "createdAt", jmes_path(col_item, "timestamps.created_at")
+      field "updatedAt", jmes_path(col_item, "timestamps.updated_at")
+      field "orgId", jmes_path(col_item, "org.id")
+      field "orgHref", jmes_path(col_item, "org.href")
+      field "orgName", jmes_path(col_item, "org.name")
+      field "orgKind", jmes_path(col_item, "org.kind")
+      field "orgCreatedAt", jmes_path(col_item, "org.timestamps.created_at")
+      field "orgUpdatedAt", jmes_path(col_item, "org.timestamps.updated_at")
+    end
+  end
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_bad_users" do
+  validate_each $ds_groups do
+    summary_template ""
+    detail_template ""
+    check eq(0, 1)
+  end
+end
