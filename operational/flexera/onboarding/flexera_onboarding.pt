@@ -135,22 +135,24 @@ script "js_result_service_account", type: "javascript" do
   // Check to see if there is at least one Service Account
   if (ds_service_accounts.length == 0) {
     check_results.push({
-      "name": "Service Account",
+      "name": "First Service Account",
       "severity": "high",
       "result": "fail",
-      "details": "No Service Account found."
+      "details": "No Service Account found.  Recommend setting up a Service Account and using those credentials for automation instead of User Refresh Token.\\n\\nTo remediate this, you can create a Service Account following steps outlined here: [Flexera Docs > Creating a Service Account](https://docs.flexera.com/flexera/EN/FlexeraAPI/ServiceAccounts.htm#gettingstarted_2667441685_1132254)"
     });
   } else {
     check_results.push({
-        "name": "Service Account",
+        "name": "First Service Account",
         "severity": "high",
         "result": "pass",
-        "details": ds_service_accounts.length+" Service Account(s) found."
+        "details": ds_service_accounts.length+" Service Account(s) found.\\n\\n"+ds_service_accounts.map(function (sa) {
+          return " - "+sa.name+" (ID: "+sa.id+")";
+        }).join("\\n")
       });
     // Check to see if there is at least one Service Account Client for at least one Service Account
     if (ds_service_account_clients.length == 0) {
       check_results.push({
-        "name": "Service Account Client",
+        "name": "First Service Account Client",
         "severity": "high",
         "result": "fail",
         "details": "No Service Account Clients found."
@@ -158,7 +160,7 @@ script "js_result_service_account", type: "javascript" do
     } else {
       // Check to see if there is at least one Service Account Client for at least one Service Account
       check_results.push({
-        "name": "Service Account Client",
+        "name": "First Service Account Client",
         "severity": "high",
         "result": "pass",
         "details": ds_service_account_clients.length+" Service Account Client(s) found."
@@ -1097,6 +1099,25 @@ script "js_result_fail_recommended_policy_template", type: "javascript" do
 EOS
 end
 
+datasource "ds_result_fail_service_account" do
+  run_script $js_result_fail_service_account, $ds_result_fail
+end
+
+script "js_result_fail_service_account", type: "javascript" do
+  parameters "ds_result_fail"
+  result "results"
+  code <<-EOS
+  // Check if "First Service Account" failed checks
+  var failed_checks = _.filter(ds_result_fail, function (check) {
+    return check.name == "First Service Account";
+  });
+  var results = {
+      "checks": failed_checks,
+      "action": "Create a Service Account"
+    };
+EOS
+end
+
 # Get Identity Providers
 datasource "ds_idps" do
   request do
@@ -1391,10 +1412,35 @@ EOS
         path "name"
       end
     end
-    escalate $esc_email
     escalate $esc_apply_policy_templates
   end
 
+  validate $ds_result_fail_service_account do
+    summary_template "Flexera Onboarding: Create Service Account"
+    detail_template <<-EOS
+# Create Service Account
+
+## Action Details
+
+This action will do the needful to enable using a Service Account with Flexera Automation including:
+  - Create a Service Account
+  - Grant the Service Account permissions
+  - Create a Client for the Service Account
+  - Create a Flexera Automation Credential using Service Account Client ID + Service
+EOS
+    check eq(size(val(data, "checks")), 0)
+    export do
+      # This should not need to be resource_level true
+      # For some reason (UI bug?) it is not showing the action button in the UI when this is disabled.
+      # Checked existing PTs, and all that have resource_level false only use "email" action which has automatic true and we potentially have not encountered a need for manual action that is not resource scoped.
+      resource_level true
+      field "id" do
+        label "Action"
+        path "action"
+      end
+    end
+    escalate $esc_create_service_account
+  end
 end
 
 ###############################################################################
@@ -1437,31 +1483,48 @@ escalation "esc_apply_policy_templates" do
   run "create_applied_policies", data, rs_optima_host, rs_org_id, rs_project_id, rs_governance_host
 end
 
+escalation "esc_create_service_account" do
+  automatic false
+  label "Create Service Account"
+  description "Create a Service Account"
+  run "create_service_account", data, rs_optima_host, rs_org_id, rs_project_id, rs_governance_host
+end
+
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-# if name !=null
-define create_applied_policies($data, $rs_optima_host, $rs_org_id, $rs_project_id, $rs_governance_host) return $responses do
+
+define hostname_lookup($rs_optima_host, $service) return $hostname do
+  task_label("Starting lookup Flexera API Host: "+$rs_optima_host + " for service: " + $service)
   $host_table = {
     "api.optima.flexeraeng.com": {
       "ui": "app.flexera.com",
       "flexera": "api.flexera.com",
-      "fsm": "api.fsm.flexeraeng.com"
+      "fsm": "api.fsm.flexeraeng.com",
+      "login": "login.flexera.com"
     },
     "api.optima-eu.flexeraeng.com": {
       "ui": "app.flexera.eu",
       "flexera": "api.flexera.eu",
-      "fsm": "api.fsm-eu.flexeraeng.com"
+      "fsm": "api.fsm-eu.flexeraeng.com",
+      "login": "login.flexera.eu"
     },
     "api.optima-apac.flexeraeng.com": {
       "ui": "app.flexera.au",
       "flexera": "api.flexera.au",
-      "fsm": "api.fsm-apac.flexeraeng.com"
+      "fsm": "api.fsm-apac.flexeraeng.com",
+      "login": "login.flexera.au"
     }
   }
-  task_label("Looking up Flexera API Host")
-  $$flexera_api_host = $host_table[$rs_optima_host]["flexera"]
+  $hostname = $host_table[$rs_optima_host][$service]
+  task_label("Completed. Flexera API Host: "+$hostname)
+end
+
+# if name !=null
+define create_applied_policies($data, $rs_optima_host, $rs_org_id, $rs_project_id, $rs_governance_host) return $responses do
+
+  call hostname_lookup($rs_optima_host, "flexera") retrieve $$flexera_api_host
 
   $responses = []
   $$debug = []
@@ -1607,6 +1670,159 @@ define create_applied_policies($data, $rs_optima_host, $rs_org_id, $rs_project_i
       raise "Failed to create Applied Policy: "+$published_template["name"]+". Response code: "+$response["code"]+". Response body: "+to_json($response["body"])
     end
   end
+
+  # If we encountered any errors, use `raise` to mark the CWF process as errored
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+
+  # If we made it here, action completed successfully
+  task_label("Action completed successfully")
+end
+
+define create_service_account($data, $rs_optima_host, $rs_org_id, $rs_project_id, $rs_governance_host) do
+  if !$$debug
+    $$debug = []
+  end
+
+  sub on_error: handle_error() do
+    call hostname_lookup($rs_optima_host, "flexera") retrieve $$flexera_api_host
+
+
+    ## Create Service Account
+    $body = {
+      "description": "Service Account for calling Flexera APIs from Flexera.  Created by Flexera Onboarding Policy Template Action",
+      "name": "Service Account for Flexera Automation"
+    }
+    $href = join(["/iam/v1/orgs/", $rs_org_id, "/service-accounts"])
+    $$debug << to_json($body) # Helpful for debugging
+    $response = http_request(
+      auth: $$auth_flexera,
+      verb: "post",
+      https: true,
+      host: $$flexera_api_host,
+      href: $href,
+      body: $body
+    )
+    $$debug << to_json({
+      "request": {
+        "summary": "post https://"+join([$$flexera_api_host, $href]),
+        "body": $body
+      },
+      "response": $response
+    })
+    task_label("Check that the response is expected")
+    if $response["code"] != 201
+      raise "Failed to create Service Account. Response code: "+$response["code"]+". Response body: "+to_json($response["body"])
+    end
+
+    ## Get Service Account ID from the response location header
+    $service_account_id = last(split($response["headers"]["Location"], "/"))
+
+    ## Grant Service Account `org_owner` Role
+    ## org_owner is the highest role in the organization
+    ## This is needed to validate Service Accounts, SSO, and other Org-scoped permissions
+    $body = {
+      "role": {
+        "name": "org_owner"
+      },
+      "scope": {
+        "ref": "ref::::iam:org:"+$rs_org_id
+      },
+      "subject": {
+        "ref": "ref::::iam:service-account:"+$service_account_id
+      }
+    }
+    $href = join(["/iam/v1/orgs/", $rs_org_id, "/access-rules/grant"])
+    $$debug << to_json($body) # Helpful for debugging
+    $response = http_request(
+      auth: $$auth_flexera,
+      verb: "put",
+      https: true,
+      host: $$flexera_api_host,
+      href: $href,
+      body: $body
+    )
+    $$debug << to_json({
+      "request": {
+        "summary": "put https://"+join([$$flexera_api_host, $href]),
+        "body": $body
+      },
+      "response": $response
+    })
+    task_label("Check that the response is expected")
+    if $response["code"] != 204
+      raise "Failed to grant permissions. Response code: "+$response["code"]+". Response body: "+to_json($response["body"])
+    end
+
+    ## Create Service Account Client
+    $href = join(["/iam/v1/orgs/", $rs_org_id, "/service-accounts/", $service_account_id, "/clients"])
+    $$debug << to_json($body) # Helpful for debugging
+    $response = http_request(
+      auth: $$auth_flexera,
+      verb: "post",
+      https: true,
+      host: $$flexera_api_host,
+      href: $href
+    )
+    $$debug << to_json({
+      "request": {
+        "summary": "put https://"+join([$$flexera_api_host, $href]),
+        "body": $body
+      },
+      "response": $response
+    })
+    task_label("Check that the response is expected")
+    if $response["code"] != 201
+      raise "Failed to create Service Account Client. Response code: "+$response["code"]+". Response body: "+to_json($response["body"])
+    end
+
+    ## Get clientId and clientSecret from the response body
+    $client_id = $response["body"]["clientId"]
+    $client_secret = $response["body"]["clientSecret"]
+
+    ## Get Login API Host
+    call hostname_lookup($rs_optima_host, "login") retrieve $login_api_host
+
+    ## Create a Flexera Automation OAuth2 Credential
+    $body = {
+      "clientCredentialsParams": {
+        "clientId": $client_id,
+        "clientSecret": $client_secret
+      },
+      "description": "Service Account for calling Flexera APIs from Flexera.  Created by Flexera Onboarding Policy Template Action",
+      "grantType": "client_credentials",
+      "name": "Flexera Service Account",
+      "tags": [
+        {
+          "key": "provider",
+          "value": "flexera"
+        }
+      ],
+      "tokenUrl": "https://"+$login_api_host+"/oidc/token"
+    }
+    $href = join(["/cred/v2/projects/", $rs_project_id, "/credentials/oauth2/Flexera_Service_Account_"+$service_account_id])
+    $$debug << to_json($body) # Helpful for debugging
+    $response = http_request(
+      auth: $$auth_flexera,
+      verb: "put",
+      https: true,
+      host: $$flexera_api_host,
+      href: $href,
+      body: $body
+    )
+    $$debug << to_json({
+      "request": {
+        "summary": "put https://"+join([$$flexera_api_host, $href]),
+        "body": $body
+      },
+      "response": $response
+    })
+    task_label("Check that the response is expected")
+    if $response["code"] != 201
+      raise "Failed to create Flexera Automation OAuth2 Credential. Response code: "+$response["code"]+". Response body: "+to_json($response["body"])
+    end
+  end # end sub do on_error
 
   # If we encountered any errors, use `raise` to mark the CWF process as errored
   if inspect($$errors) != "null"
