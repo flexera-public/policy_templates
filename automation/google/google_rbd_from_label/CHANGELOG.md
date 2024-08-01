@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.3.1
+## v1.3.0
 
 - Added option to retain original casing of tag values instead of normalizing them all to lowercase
 
