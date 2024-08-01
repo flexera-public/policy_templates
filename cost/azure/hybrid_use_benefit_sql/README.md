@@ -8,6 +8,7 @@ This policy template reports on any Azure SQL resources that may be eligible for
 
 - The policy identifies all SQL databases in Azure that are not currently using [Azure Hybrid Use Benefit](https://azure.microsoft.com/en-us/pricing/hybrid-benefit/). These can be SQL Virtual Machines, SQL Elastic Pools, SQL Databases or SQL Managed Instances. It raises an incident for all applicable instances not currently using AHUB, which once approved, will enable AHUB on all identified instances.
 - This policy does not track licenses or availability. It is your responsibility to ensure that you have valid licenses for all resources that AHUB is enabled for.
+- The hourly cost of a SQL resource is calculated by dividing the total cost of the SQL resource for the last 30 days by the hours of usage for that same time period.
 
 ## Input Parameters
 
@@ -41,10 +42,6 @@ For example if a user selects the "Apply Hybrid Use Benefit" action while applyi
 ## Prerequisites
 
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
-
-### Credential configuration
-
-For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
 
 - [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:
   - `Microsoft.SqlVirtualMachine/sqlVirtualMachines/read`

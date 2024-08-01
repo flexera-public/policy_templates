@@ -98,8 +98,8 @@ These templates can generate savings estimates for your environment.
 
 #### Kubecost
 
-- [Kubecost Cluster Rightsizing Recommendations](./cost/kubecost/cluster)
-- [Kubecost Request Rightsizing Recommendations](./cost/kubecost/sizing)
+- [Kubecost Cluster Rightsizing Recommendation](./cost/kubecost/cluster)
+- [Kubecost Container Request Rightsizing Recommendations](./cost/kubecost/sizing)
 
 ### Policy Templates for Compliance
 
@@ -405,8 +405,8 @@ These templates can generate savings estimates for your environment.
 
 - Kubernetes
 
-  - [Kubecost Cluster Rightsizing Recommendations](./cost/kubecost/cluster)
-  - [Kubecost Request Rightsizing Recommendations](./cost/kubecost/sizing)
+  - [Kubecost Cluster Rightsizing Recommendation](./cost/kubecost/cluster)
+  - [Kubecost Container Request Rightsizing Recommendations](./cost/kubecost/sizing)
 
 #### Oracle
 
@@ -592,6 +592,10 @@ These templates can generate savings estimates for your environment.
 
   - [Azure Web App Minimum TLS Version](./security/azure/webapp_tls_version_support)
 
+- Compute
+
+  - [Azure Resources with public IP address](./security/azure/resources_with_public_ip_address)
+
 - IAM
 
   - [Azure Guest Users](./security/azure/guest_users)
@@ -629,29 +633,25 @@ These templates can generate savings estimates for your environment.
 
 - Security
 
-  - [Azure Ensure Owners Receive Security Alerts](./security/azure/security_alert_owners)
-  - [Azure Ensure Security Contact Email](./security/azure/security_contact_email)
   - [Azure Subscriptions Without High Severity Alerts](./security/azure/high_severity_alerts)
+  - [Azure Subscriptions Without Owner Security Alerts](./security/azure/security_alert_owners)
+  - [Azure Subscriptions Without Security Contact Email](./security/azure/security_contact_email)
 
 - Storage
 
   - [Azure Blob Storage Accounts Without Logging Enabled](./security/azure/blob_storage_logging)
-  - [Azure Ensure Blob Containers Set To Private](./security/azure/private_blob_containers)
-  - [Azure Ensure Secure Transfer Required](./security/azure/secure_transfer_required)
   - [Azure Ensure Soft Delete Enabled For Azure Storage](./security/azure/storage_soft_delete)
   - [Azure Ensure Storage Account Default Network Access Set To Deny](./security/azure/storage_network_deny)
   - [Azure Ensure Storage Accounts Require Secure TLS Version](./security/azure/storage_tls_version)
-  - [Azure Ensure Storage Logging Enabled For Queue Service](./security/azure/queue_storage_logging)
   - [Azure Ensure Storage Logging Enabled For Table Service](./security/azure/table_storage_logging)
   - [Azure Ensure Trusted Microsoft Services Enabled](./security/azure/storage_trusted_services)
+  - [Azure Publicly-Accessible Blob Containers](./security/azure/private_blob_containers)
+  - [Azure Queue Storage Accounts Without Logging Enabled](./security/azure/queue_storage_logging)
+  - [Azure Storage Accounts Without Secure Transfer](./security/azure/secure_transfer_required)
 
 - Storage Accounts
 
   - [Azure Storage Accounts Without HTTPs Enforced](./security/azure/storage_account_https_enabled)
-
-- compute
-
-  - [Azure Resources with public IP address](./security/azure/resources_with_public_ip_address)
 
 #### Google
 
@@ -755,7 +755,7 @@ These templates can generate savings estimates for your environment.
   Cloud Cost Optimization: 19
   CloudTrail: 7
   Common Bill Ingestion: 3
-  Compute: 76
+  Compute: 77
   Config: 1
   DBS: 1
   Databricks: 1
@@ -787,7 +787,6 @@ These templates can generate savings estimates for your environment.
   Storage Accounts: 2
   Tags: 2
   Usage Discount: 6
-  compute: 1
 :total_count: 264
 -->
 <!-- End Policy Template Stats -->
