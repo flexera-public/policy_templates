@@ -620,16 +620,16 @@ These templates can generate savings estimates for your environment.
 
 - SQL
 
-  - [Azure Ensure SQL Database Encryption](./security/azure/sql_db_encryption)
-  - [Azure Ensure SQL Server AD Admin Configured](./security/azure/sql_ad_admin)
-  - [Azure Ensure SQL Server ATP (Advanced Threat Protection) Enabled](./security/azure/sql_server_atp)
-  - [Azure Ensure SQL Server Auditing Enabled](./security/azure/sql_server_auditing)
-  - [Azure Ensure SQL Server Minimum Auditing Retention Of 90 Days](./security/azure/sql_auditing_retention)
-  - [Azure Ensure SQL Server VA Email Notifications](./security/azure/sql_server_va_emails)
-  - [Azure Ensure SQL Server VA Notify Admins/Subscription Owners](./security/azure/sql_server_va_admins)
-  - [Azure Ensure SQL Server VA Periodic Scans Enabled](./security/azure/sql_server_va_scans)
-  - [Azure Ensure SQL Server Vulnerability Assessment (VA) Enabled](./security/azure/sql_server_va)
-  - [Azure Publicly Accessible Managed SQL Instance](./security/azure/sql_publicly_accessible_managed_instance)
+  - [Azure Publicly-Accessible SQL Managed Instances](./security/azure/sql_publicly_accessible_managed_instance)
+  - [Azure SQL Databases Without Encryption](./security/azure/sql_db_encryption)
+  - [Azure SQL Servers Vulnerability Assessment Does Not Notify Admins](./security/azure/sql_server_va_admins)
+  - [Azure SQL Servers Vulnerability Assessment Without Email Notifications](./security/azure/sql_server_va_emails)
+  - [Azure SQL Servers Vulnerability Assessment Without Periodic Scans](./security/azure/sql_server_va_scans)
+  - [Azure SQL Servers With Insufficient Auditing Retention](./security/azure/sql_auditing_retention)
+  - [Azure SQL Servers Without Active Directory Admin](./security/azure/sql_ad_admin)
+  - [Azure SQL Servers Without Advanced Threat Protection (ATP)](./security/azure/sql_server_atp)
+  - [Azure SQL Servers Without Auditing Enabled](./security/azure/sql_server_auditing)
+  - [Azure SQL Servers Without Vulnerability Assessment (VA) Enabled](./security/azure/sql_server_va)
 
 - Security
 
@@ -670,7 +670,7 @@ These templates can generate savings estimates for your environment.
   Security: 74
 :optimization_count: 61
 :policy_sets:
-  '': 45
+  '': 46
   Allocate VMs: 3
   Automation: 1
   Autoscaling: 1
@@ -706,7 +706,6 @@ These templates can generate savings estimates for your environment.
   Open Buckets: 1
   Open S3 Buckets: 1
   PaaS Optimization: 1
-  Public Database Access: 1
   Reserved Instance: 3
   Reserved Instances: 8
   Rightsize Clusters: 1
