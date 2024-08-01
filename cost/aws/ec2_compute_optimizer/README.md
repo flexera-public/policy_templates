@@ -40,8 +40,6 @@ For example if a user selects the "Resize Resources" action while applying the p
 
 ## Prerequisites
 
-Since this policy template relies on the AWS Compute Optimizer, it must be enabled in the various accounts and regions that one wishes to obtain recommendations for. Please consult the [relevant AWS documentation](https://docs.aws.amazon.com/compute-optimizer/latest/ug/getting-started.html) for more information on how to do this.
-
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
 - [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
@@ -82,6 +80,10 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   - `billing_center_viewer`
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+
+### Compute Optimizer
+
+Since this policy template relies on the AWS Compute Optimizer, it must be enabled in the various accounts and regions that one wishes to obtain recommendations for. Please consult the [relevant AWS documentation](https://docs.aws.amazon.com/compute-optimizer/latest/ug/getting-started.html) for more information on how to do this.
 
 ## Supported Clouds
 
