@@ -1,7 +1,7 @@
-name "Azure SQL Databases Without Encryption"
+name "Azure Publicly-Accessible SQL Managed Instances"
 rs_pt_ver 20180301
 type "policy"
-short_description "Reports any SQL databases that do not have encryption enabled. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/azure/sql_db_encryption) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+short_description "Reports any SQL Managed Instances that are publicly accessible and terminates them after approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/azure/sql_publicly_accessible_managed_instance) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Security"
 severity "high"
@@ -10,12 +10,7 @@ info(
   version: "3.0.0",
   provider: "Azure",
   service: "SQL",
-  policy_set: "CIS",
-  cce_id: "",
-  benchmark_control: "4.1.2",
-  benchmark_version: "1.4.0",
-  cis_controls: "[\"3.11v8\", \"14.8v7\"]",
-  nist: "SC-28"
+  policy_set: ""
 )
 
 ###############################################################################
@@ -88,6 +83,15 @@ parameter "param_exclusion_tags_boolean" do
   description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
   allowed_values "Any", "All"
   default "Any"
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Disable Public Endpoints", "Delete SQL Managed Instances"]
+  default []
 end
 
 ###############################################################################
@@ -183,78 +187,43 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
 EOS
 end
 
-datasource "ds_azure_sql_servers" do
+datasource "ds_azure_sql_managed_instances" do
   iterate $ds_azure_subscriptions_filtered
   request do
     auth $auth_azure
     pagination $pagination_azure
     host $param_azure_endpoint
-    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Sql/servers"])
-    query "api-version", "2022-02-01-preview"
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Sql/managedInstances"])
+    query "api-version", "2015-05-01-preview"
     header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
     ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
-    collect jmes_path(response, "value") do
+    collect jmes_path(response, "value[*]") do
       field "id", jmes_path(col_item, "id")
-      field "kind", jmes_path(col_item, "kind")
+      field "name", jmes_path(col_item, "name")
       field "region", jmes_path(col_item, "location")
-      field "name", jmes_path(col_item, "name")
-      field "tags", jmes_path(col_item, "tags")
-      field "fqdn", jmes_path(col_item, "properties.fullyQualifiedDomainName")
+      field "licenseType", jmes_path(col_item, "properties.licenseType")
+      field "publicDataEndpointEnabled", jmes_path(col_item, "properties.publicDataEndpointEnabled")
       field "state", jmes_path(col_item, "properties.state")
-      field "version", jmes_path(col_item, "properties.version")
-      field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
-      field "subscriptionID", val(iter_item, "id")
-      field "subscriptionName", val(iter_item, "name")
-    end
-  end
-end
-
-datasource "ds_azure_sql_databases" do
-  iterate $ds_azure_sql_servers
-  request do
-    auth $auth_azure
-    pagination $pagination_azure
-    host $param_azure_endpoint
-    path join([val(iter_item, "id"), "/databases"])
-    query "api-version", "2022-02-01-preview"
-    header "User-Agent", "RS Policies"
-    ignore_status [400, 403, 404]
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "value") do
-      field "id", jmes_path(col_item, "id")
-      field "name", jmes_path(col_item, "name")
-      field "type", jmes_path(col_item, "type")
-      field "kind", jmes_path(col_item, "kind")
-      field "sku", jmes_path(col_item, "sku")
+      field "storageSizeInGB", jmes_path(col_item, "properties.storageSizeInGB")
+      field "vCores", jmes_path(col_item, "properties.vCores")
       field "tags", jmes_path(col_item, "tags")
-      field "createdTime", jmes_path(col_item, "properties.creationDate")
-      field "status", jmes_path(col_item, "properties.status")
-      field "region", val(iter_item, "region")
-      field "serverId", val(iter_item, "id")
-      field "serverKind", val(iter_item, "kind")
-      field "serverName", val(iter_item, "name")
-      field "serverTags", val(iter_item, "tags")
-      field "serverFQDN", val(iter_item, "fqdn")
-      field "serverState", val(iter_item, "state")
-      field "serverVersion", val(iter_item, "version")
-      field "resourceGroup", val(iter_item, "resourceGroup")
-      field "subscriptionID", val(iter_item, "subscriptionID")
-      field "subscriptionName", val(iter_item, "subscriptionName")
+      field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
+      field "subscriptionId", val(iter_item, "subscriptionId")
+      field "subscriptionName", val(iter_item, "displayName")
     end
   end
 end
 
-datasource "ds_azure_sql_databases_tag_filtered" do
-  run_script $js_azure_sql_databases_tag_filtered, $ds_azure_sql_databases, $param_exclusion_tags, $param_exclusion_tags_boolean
+datasource "ds_azure_sql_managed_instances_tag_filtered" do
+  run_script $js_azure_sql_managed_instances_tag_filtered, $ds_azure_sql_managed_instances, $param_exclusion_tags, $param_exclusion_tags_boolean
 end
 
-script "js_azure_sql_databases_tag_filtered", type: "javascript" do
-  parameters "ds_azure_sql_databases", "param_exclusion_tags", "param_exclusion_tags_boolean"
+script "js_azure_sql_managed_instances_tag_filtered", type: "javascript" do
+  parameters "ds_azure_sql_managed_instances", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-EOS
   comparators = _.map(param_exclusion_tags, function(item) {
@@ -288,7 +257,7 @@ script "js_azure_sql_databases_tag_filtered", type: "javascript" do
   })
 
   if (param_exclusion_tags.length > 0) {
-    result = _.reject(ds_azure_sql_databases, function(resource) {
+    result = _.reject(ds_azure_sql_managed_instances, function(resource) {
       resource_tags = {}
       if (typeof(resource['tags']) == 'object') { resource_tags = resource['tags'] }
 
@@ -321,21 +290,21 @@ script "js_azure_sql_databases_tag_filtered", type: "javascript" do
       return all_tags_found || any_tags_found
     })
   } else {
-    result = ds_azure_sql_databases
+    result = ds_azure_sql_managed_instances
   }
 EOS
 end
 
-datasource "ds_azure_sql_databases_region_filtered" do
-  run_script $js_azure_sql_databases_region_filtered, $ds_azure_sql_databases_tag_filtered, $param_regions_allow_or_deny, $param_regions_list
+datasource "ds_azure_sql_managed_instances_region_filtered" do
+  run_script $js_azure_sql_managed_instances_region_filtered, $ds_azure_sql_managed_instances_tag_filtered, $param_regions_allow_or_deny, $param_regions_list
 end
 
-script "js_azure_sql_databases_region_filtered", type: "javascript" do
-  parameters "ds_azure_sql_databases_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
+script "js_azure_sql_managed_instances_region_filtered", type: "javascript" do
+  parameters "ds_azure_sql_managed_instances_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-EOS
   if (param_regions_list.length > 0) {
-    result = _.filter(ds_azure_sql_databases_tag_filtered, function(ip) {
+    result = _.filter(ds_azure_sql_managed_instances_tag_filtered, function(ip) {
       include_db = _.contains(param_regions_list, db['region'])
 
       if (param_regions_allow_or_deny == "Deny") {
@@ -345,60 +314,24 @@ script "js_azure_sql_databases_region_filtered", type: "javascript" do
       return include_db
     })
   } else {
-    result = ds_azure_sql_databases_tag_filtered
+    result = ds_azure_sql_managed_instances_tag_filtered
   }
 EOS
 end
 
-datasource "ds_azure_sql_databases_with_tde" do
-  iterate $ds_azure_sql_databases_region_filtered
-  request do
-    auth $auth_azure
-    pagination $pagination_azure
-    host $param_azure_endpoint
-    path join([val(iter_item, "id"), "/transparentDataEncryption/current"])
-    query "api-version", "2020-11-01-preview"
-    header "User-Agent", "RS Policies"
-    ignore_status [400, 403, 404]
-  end
-  result do
-    encoding "json"
-    field "encryptionState", jmes_path(response, "properties.state")
-    field "id", val(iter_item, "id")
-    field "name", val(iter_item, "name")
-    field "type", val(iter_item, "type")
-    field "kind", val(iter_item, "kind")
-    field "sku", val(iter_item, "sku")
-    field "tags", val(iter_item, "tags")
-    field "createdTime", val(iter_item, "createdTime")
-    field "status", val(iter_item, "status")
-    field "region", val(iter_item, "region")
-    field "serverId", val(iter_item, "serverId")
-    field "serverKind", val(iter_item, "serverKind")
-    field "serverName", val(iter_item, "serverName")
-    field "serverTags", val(iter_item, "serverTags")
-    field "serverFQDN", val(iter_item, "serverFQDN")
-    field "serverState", val(iter_item, "serverState")
-    field "serverVersion", val(iter_item, "serverVersion")
-    field "resourceGroup", val(iter_item, "resourceGroup")
-    field "subscriptionID", val(iter_item, "subscriptionID")
-    field "subscriptionName", val(iter_item, "subscriptionName")
-  end
+datasource "ds_bad_azure_sql_managed_instances" do
+  run_script $js_bad_azure_sql_managed_instances, $ds_azure_sql_managed_instances_region_filtered, $ds_applied_policy
 end
 
-datasource "ds_bad_azure_sql_databases" do
-  run_script $js_bad_azure_sql_databases, $ds_azure_sql_databases_with_tde, $ds_applied_policy
-end
-
-script "js_bad_azure_sql_databases", type: "javascript" do
-  parameters "ds_azure_sql_databases_with_tde", "ds_applied_policy"
+script "js_bad_azure_sql_managed_instances", type: "javascript" do
+  parameters "ds_azure_sql_managed_instances_region_filtered", "ds_applied_policy"
   result "result"
   code <<-EOS
-  bad_dbs = _.filter(ds_azure_sql_databases_with_tde, function(db) {
-    return db['encryptionState'] != 'Enabled'
+  bad_instances = _.filter(ds_azure_sql_managed_instances_region_filtered, function(db) {
+    return db['publicDataEndpointEnabled'] == true || db['publicDataEndpointEnabled'] == "true"
   })
 
-  result = _.map(bad_dbs, function(db) {
+  result = _.map(bad_instances, function(db) {
     tags = []
 
     if (typeof(db['tags']) == 'object') {
@@ -411,12 +344,12 @@ script "js_bad_azure_sql_databases", type: "javascript" do
       resourceGroup: db['resourceGroup'],
       id: db['id'],
       resourceName: db['name'],
-      resourceType: db['type'],
-      kind: db['kind'],
       region: db['region'],
-      createdTime: db['createdTime'],
-      status: db['status'],
-      encryptionState: db['encryptionState'],
+      state: db['state'],
+      licenseType: db['licenseType'],
+      storageSizeInGB: db['storageSizeInGB'],
+      vCores: db['vCores'],
+      publicDataEndpointEnabled: db['publicDataEndpointEnabled'],
       tags: tags.join(', '),
       policy_name: ds_applied_policy['name'],
       service: 'Microsoft.Sql'
@@ -430,12 +363,12 @@ script "js_bad_azure_sql_databases", type: "javascript" do
     resourceGroup: '',
     id: '',
     resourceName: '',
-    resourceType: '',
-    kind: '',
     region: '',
-    createdTime: '',
-    status: '',
-    encryptionState: '',
+    state: '',
+    licenseType: '',
+    storageSizeInGB: '',
+    vCores: '',
+    publicDataEndpointEnabled: '',
     tags: '',
     policy_name: '',
     service: ''
@@ -447,11 +380,13 @@ end
 # Policy
 ###############################################################################
 
-policy "pol_bad_azure_sql_databases" do
-  validate_each $ds_bad_azure_sql_databases do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure SQL Databases Without Encryption Found"
+policy "pol_bad_azure_sql_managed_instances" do
+  validate_each $ds_bad_azure_sql_managed_instances do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Publicly-Accessible SQL Managed Instances Found"
     check logic_or($ds_parent_policy_terminated, eq(val(item, "id"), ""))
     escalate $esc_email
+    escalate $esc_disable
+    escalate $esc_delete
     hash_exclude "tags"
     export do
       resource_level true
@@ -476,17 +411,20 @@ policy "pol_bad_azure_sql_databases" do
       field "tags" do
         label "Tags"
       end
-      field "status" do
-        label "Status"
+      field "licenseType" do
+        label "License Type"
       end
-      field "createdTime" do
-        label "Created At"
+      field "vCores" do
+        label "vCores"
       end
-      field "encryptionState" do
-        label "Encryption"
+      field "storageSizeInGB" do
+        label "Storage Size (GB)"
       end
-      field "resourceType" do
-        label "Type"
+      field "publicDataEndpointEnabled" do
+        label "Public Data Endpoint Enabled"
+      end
+      field "state" do
+        label "State"
       end
       field "service" do
         label "Service"
@@ -506,6 +444,127 @@ escalation "esc_email" do
   email $param_email
 end
 
+escalation "esc_disable" do
+  automatic contains($param_automatic_action, "Disable Public Endpoints")
+  label "Disable Public Endpoints"
+  description "Approval to disable public endpoints on all selected instances"
+  run "disable_instances", data, $param_azure_endpoint
+end
+
+escalation "esc_delete" do
+  automatic contains($param_automatic_action, "Delete SQL Managed Instances")
+  label "Delete SQL Managed Instances"
+  description "Approval to delete all selected instances"
+  run "delete_instances", data, $param_azure_endpoint
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define disable_instances($data, $param_azure_endpoint) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call disable_instance($instance, $param_azure_endpoint) retrieve $disable_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define disable_instance($instance, $param_azure_endpoint) return $response do
+  $host = $param_azure_endpoint
+  $href = $instance["id"]
+  $params = "?api-version=2015-05-01-preview"
+  $url = $host + $href + $params
+  task_label("PATCH " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "patch",
+    host: $host,
+    href: $href,
+    query_strings: { "api-version": "2015-05-01-preview" },
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json"
+    },
+    body: {
+      "properties": {
+        "publicDataEndpointEnabled": false
+      }
+    }
+  )
+
+  task_label("Patch Azure SQL Managed Instance response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "PATCH " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response patching Azure SQL instance: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Patch Azure SQL instance successful: " + $instance["id"])
+  end
+end
+
+define delete_instances($data, $param_azure_endpoint) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call delete_instance($instance, $param_azure_endpoint) retrieve $delete_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define delete_instance($instance, $param_azure_endpoint) return $response do
+  $host = $param_azure_endpoint
+  $href = $instance["id"]
+  $params = "?api-version=2015-05-01-preview"
+  $url = $host + $href + $params
+  task_label("DELETE " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "delete",
+    host: $host,
+    href: $href,
+    query_strings: { "api-version": "2015-05-01-preview" },
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json"
+    }
+  )
+
+  task_label("Delete Azure SQL Managed Instance response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response deleting Azure SQL instance: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Delete Azure SQL instance successful: " + $instance["id"])
+  end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
+end
+
 ###############################################################################
 # Meta Policy [alpha]
 # Not intended to be modified or used by policy developers
@@ -518,7 +577,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
     header "Api-Version", "1.0"
   end
   result do
