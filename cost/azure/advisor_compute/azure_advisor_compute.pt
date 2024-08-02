@@ -552,7 +552,7 @@ datasource "ds_conditional_currency_conversion" do
 end
 
 script "js_conditional_currency_conversion", type: "javascript" do
-  parameters "ds_currency_target", "ds_optimizer_recs"
+  parameters "ds_currency_target", "ds_azure_advisor_recs"
   result "result"
   code <<-EOS
   result = []
@@ -638,7 +638,7 @@ script "js_recommendations_merged", type: "javascript" do
   }
 
   vm_table = {}
-  _.each(ds_azure_instances_status_filtered, function(vm) { vm_table[vm['resourceID']] = vm })
+  _.each(ds_azure_instances_status_filtered, function(vm) { vm_table[vm['resourceID'].toLowerCase()] = vm })
 
   valid_recs = _.filter(ds_azure_advisor_recs, function(rec) {
     return rec["recommendationType"] == "SkuChange" && rec["impactedField"] == "Microsoft.Compute/virtualMachines"
@@ -648,9 +648,10 @@ script "js_recommendations_merged", type: "javascript" do
   total_savings = 0.0
 
   _.each(valid_recs, function(rec) {
-    vm = vm_table[rec['resourceId']]
+    vm = null
+    if (typeof(rec['resourceId']) == 'string') { vm = vm_table[rec['resourceId'].toLowerCase()] }
 
-    if (vm != undefined) {
+    if (vm != undefined && vm != null) {
       savings = rec["savingsAmount"] * ds_currency['exchange_rate']
 
       if (savings >= param_min_savings) {
@@ -666,10 +667,16 @@ script "js_recommendations_merged", type: "javascript" do
         powerstate = _.find(status_codes, function(code) { return code.indexOf('PowerState') == 0 })
         state = powerstate.split('/')[1]
 
-        recommendationDetails = ""
+        recommendationDetails = [
+          "Resize Azure virtual machine ", vm["name"], " ",
+          "in Azure Subscription ", vm["subscriptionName"], " ",
+          "(", vm["subscriptionId"], ") ",
+          "from ", vm["resourceType"], " ",
+          "to ", rec['targetSku']
+        ].join('')
 
         result.push({
-          resourceName: vm['resourceName'],
+          resourceName: vm['name'],
           resourceGroup: vm['resourceGroup'],
           resourceID: vm['resourceID'],
           resourceKind: vm['resourceKind'],
@@ -707,13 +714,13 @@ script "js_recommendations_merged", type: "javascript" do
   savings_message = ds_currency['symbol'] + ' ' + formatNumber(Math.round(total_savings * 1000) / 1000, ds_currency['separator'])
 
   inst_noun = "virtual machine"
-  if (ds_instances.length > 1) { inst_noun += "s" }
+  if (ds_azure_instances_status_filtered.length > 1) { inst_noun += "s" }
 
   rec_noun = "recommendation was"
   if (result.length > 1) { rec_noun = "recommendations were" }
 
   findings = [
-    "Out of ", ds_instances.length, " Azure ", inst_noun, " analyzed, ",
+    "Out of ", ds_azure_instances_status_filtered.length, " Azure ", inst_noun, " analyzed, ",
     result.length, " ", rec_noun, " found. "
   ].join('')
 
