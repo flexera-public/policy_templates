@@ -3,12 +3,11 @@ rs_pt_ver 20180301
 type "policy"
 short_description "This policy allows the user to specify a Commitment target value (based on the commitment amount agreed with your Cloud Service Provider/s), and track the current commitment spend to date, as well as projected commitment spend over a period. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/forecasting/commitment_forecast/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
-severity "medium"
 category "Cost"
-tenancy "single"
+severity "medium"
 default_frequency "monthly"
 info(
-  version: "3.5",
+  version: "4.0.0",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Forecasting"
@@ -18,66 +17,150 @@ info(
 # Parameters
 ###############################################################################
 
-parameter "param_cloud_vendor" do
-  label "Cloud Vendor"
-  description "Provide the name of a Cloud Vendor if the Budget Scope is 'Cloud Vendor'. Example: 'AWS' or 'GCP'. Leave it blank for 'Organization' scope."
-  type "string"
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
 end
 
 parameter "param_start_date" do
   type "string"
+  category "Policy Settings"
   label "Commitment Period Start Date"
-  description "Start Date for Commitment Period YYYY-MM"
+  description "Start Date for Commitment Period in YYYY-MM format. For example: 2024-01"
   allowed_pattern /20[2-9][0-9]-[0-1][0-9]/
-  default "2020-06"
+  # No default value, user input required
 end
 
 parameter "param_end_date" do
   type "string"
+  category "Policy Settings"
   label "Commitment Period End Date"
-  description "End Date for Commitment Period YYYY-MM"
+  description "End Date for Commitment Period in YYYY-MM format. For example: 2024-06"
   allowed_pattern /20[2-9][0-9]-[0-1][0-9]/
-  default "2022-06"
+  # No default value, user input required
 end
 
 parameter "param_commitment_target" do
-  label "Total Commitment Target"
   type "number"
-  description "Specify total commitment target for the given Cloud Vendor and the specified time period.  Currency is irrelevant; the policy will default to whichever currency is used in Optima"
+  category "Policy Settings"
+  label "Total Commitment Target"
+  description "The total commitment target for the specified time period. Value should be in the currency the Flexera One organization is configured to use."
   default 100000
-end
-
-parameter "param_email" do
-  label "Email addresses"
-  type "list"
-  description "A list of email addresses to notify"
 end
 
 parameter "param_cost_metric" do
   type "string"
+  category "Policy Settings"
   label "Cost Metric"
+  description "Ccost metric to use for the report."
   allowed_values "Unamortized Unblended","Amortized Unblended","Unamortized Blended","Amortized Blended"
   default "Unamortized Unblended"
-  description "Select the cost metric for your report.  See the README file for more details"
+end
+
+parameter "param_cloud_vendor" do
+  type "string"
+  category "Filters"
+  label "Cloud Vendor"
+  description "Cloud Vendor to report on. Example: 'AWS' or 'GCP'. Leave blank to report on all vendors."
+  default ""
+end
+
+parameter "param_bc_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Billing Centers"
+  description "Allow or Deny entered Billing Centers."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_bc_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Billing Center List"
+  description "A list of allowed or denied Billing Center names/IDs. Leave blank to report on all Billing Centers."
+  default []
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-#AUTHENTICATE WITH FLEXERA/OPTIMA
 credentials "auth_flexera" do
   schemes "oauth2"
-  label "flexera"
+  label "Flexera"
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
 
 ###############################################################################
-# Datasources and Scripts
+# Datasources & Scripts
 ###############################################################################
 
-#GET CURRENCY REFERENCE
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_cost_metric" do
+  run_script $js_cost_metric, $param_cost_metric
+end
+
+script "js_cost_metric", type:"javascript" do
+  parameters "param_cost_metric"
+  result "result"
+  code <<-EOS
+  cost_metric_table = {
+    "Unamortized Unblended": "cost_nonamortized_unblended_adj",
+    "Amortized Unblended": "cost_amortized_unblended_adj",
+    "Unamortized Blended": "cost_nonamortized_blended_adj",
+    "Amortized Blended": "cost_amortized_blended_adj"
+  }
+
+  result = { id: cost_metric_table[param_cost_metric], name: param_cost_metric }
+EOS
+end
+
+datasource "ds_cloud_vendor" do
+  run_script $js_cloud_vendor, $param_cloud_vendor
+end
+
+script "js_cloud_vendor", type:"javascript" do
+  parameters "param_cloud_vendor"
+  result "result"
+  code <<-EOS
+  vendor_table = {
+    "aws": "AWS",
+    "amazon web services": "AWS",
+    "azure": "Azure",
+    "azuremca": "Azure",
+    "azure mca": "Azure",
+    "azuremca-enterprise": "Azure",
+    "microsoft": "Azure",
+    "microsoft azure": "Azure",
+    "microsoft azure mca": "Azure",
+    "gcp": "GCP",
+    "google": "GCP",
+    "google cloud": "GCP",
+    "google cloud platform": "GCP"
+  }
+
+  result = param_cloud_vendor
+
+  if (param_cloud_vendor.trim() != "" && vendor_table[param_cloud_vendor.toLowerCase()] != undefined) {
+    result = vendor_table[param_cloud_vendor.toLowerCase()]
+  }
+EOS
+end
+
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
@@ -86,174 +169,169 @@ datasource "ds_currency_reference" do
   end
 end
 
-#GET CURRENCY CODE FOR ORG
 datasource "ds_currency_code" do
   request do
     auth $auth_flexera
     host rs_optima_host
-    path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
     header "Api-Version", "0.1"
     header "User-Agent", "RS Policies"
+    ignore_status [403]
   end
   result do
     encoding "json"
-    field "id", jmes_path(response,"id")
-    field "value", jmes_path(response,"value")
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
   end
 end
 
-#GET ALL BILLING CENTERS FOR ORG
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  code = "USD"
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      code = ds_currency_code['value']
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+      separator = ""
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      }
+    }
+  }
+
+  result = { code: code, symbol: symbol, separator: separator }
+EOS
+end
+
 datasource "ds_billing_centers" do
   request do
     auth $auth_flexera
     host rs_optima_host
-    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
   end
   result do
     encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "href", jmes_path(col_item,"href")
-      field "id", jmes_path(col_item,"id")
-      field "name", jmes_path(col_item,"name")
-      field "parent_id", jmes_path(col_item,"parent_id")
-      field "ancestor_ids", jmes_path(col_item,"ancestor_ids")
-      field "allocation_table", jmes_path(col_item,"allocation_table")
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
     end
   end
 end
 
-#FILTER FOR TOP-LEVEL BILLING CENTERS
-datasource "ds_top_level_billing_centers" do
-  run_script $js_top_level_bc, $ds_billing_centers
+datasource "ds_billing_centers_filtered" do
+  run_script $js_billing_centers_filtered, $ds_billing_centers, $param_bc_allow_or_deny, $param_bc_list
 end
 
-script "js_top_level_bc", type: "javascript" do
-  parameters "billing_centers"
-  result "filtered_billing_centers"
+script "js_billing_centers_filtered", type: "javascript" do
+  parameters "ds_billing_centers", "param_bc_allow_or_deny", "param_bc_list"
+  result "result"
   code <<-EOS
-  var filtered_billing_centers =
-    _.reject(billing_centers, function(bc){ return bc.parent_id != null });
-  EOS
+  allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_bc_list.length > 0) {
+    billing_centers = _.filter(ds_billing_centers, function(item) {
+      id_found = _.contains(param_bc_list, item['id']) == allow_deny_test[param_bc_allow_or_deny]
+      name_found = _.contains(param_bc_list, item['name']) == allow_deny_test[param_bc_allow_or_deny]
+      return id_found || name_found
+    })
+
+    // Check for conflicting parents/children and remove children if present
+    bc_ids = _.compact(_.pluck(billing_centers, 'id'))
+    bad_children = _.filter(ds_billing_centers, function(bc) { return _.contains(bc_ids, bc['parent_id']) })
+    bad_children_ids = _.pluck(bad_children, 'id')
+
+    // Create final result with the bad children removed
+    result = _.reject(billing_centers, function(bc) { return _.contains(bad_children_ids, bc['id']) })
+  } else {
+    // If we're not filtering at all, just grab all of the top level billing centers
+    result = _.filter(ds_billing_centers, function(bc) {
+      return bc['parent_id'] == null || bc['parent_id'] == undefined
+    })
+  }
+EOS
 end
 
-#GET BILLING CENTER COSTS
 datasource "ds_aggregated_costs" do
   request do
-    run_script $js_agg_costs_request, $ds_top_level_billing_centers, $param_cloud_vendor, $param_start_date, $param_end_date, $param_cost_metric, rs_org_id, rs_optima_host
+    run_script $js_aggregated_costs, $ds_billing_centers_filtered, $ds_cloud_vendor, $ds_cost_metric, $param_start_date, $param_end_date, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
     collect jmes_path(response,"rows") do
-      field "vendor", jmes_path(col_item,"dimensions.vendor")
-      field "amortized_unblended_costs", jmes_path(col_item,"metrics.cost_amortized_unblended_adj")
-      field "amortized_blended_costs", jmes_path(col_item,"metrics.cost_amortized_blended_adj")
-      field "unamortized_unblended_costs", jmes_path(col_item,"metrics.cost_nonamortized_unblended_adj")
-      field "unamortized_blended_costs", jmes_path(col_item,"metrics.cost_nonamortized_blended_adj")
+      field "billing_center_id", jmes_path(col_item, "dimensions.billing_center_id")
+      field "vendor", jmes_path(col_item, "dimensions.vendor")
+      field "metrics", jmes_path(col_item, "metrics")
+      field "timestamp", jmes_path(col_item, "timestamp")
     end
   end
 end
 
-script "js_agg_costs_request", type: "javascript" do
-  parameters "top_billing_centers", "cloud_vendor", "start_date", "end_date", "param_cost_metric", "org_id", "optima_host"
+script "js_aggregated_costs", type: "javascript" do
+  parameters "ds_billing_centers_filtered", "ds_cloud_vendor", "ds_cost_metric", "param_start_date", "param_end_date", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
-
-  var bc_ids = []
-  for(var i = 0; i < top_billing_centers.length; i++){
-    bc_ids.push(top_billing_centers[i].id)
-  }
-
-  var cloud_vendor_types = {
-    "aws": "AWS",
-    "azure": "Azure",
-    "gcp": "GCP"
-  }
-
-  var cost_metrics = {
-    "Unamortized Unblended":"cost_nonamortized_unblended_adj",
-    "Amortized Unblended":"cost_amortized_unblended_adj",
-    "Unamortized Blended": "cost_nonamortized_blended_adj",
-    "Amortized Blended":"cost_amortized_blended_adj"
-  }
-
-  if(cloud_vendor.length <= 0){
-    var request = {
-      auth: "auth_flexera",
-      host: optima_host,
-      verb: "POST",
-      path: "/bill-analysis/orgs/" + org_id + "/costs/aggregated",
-      body_fields: {
-        "dimensions": ["billing_center_id", "vendor"],
-        "granularity": "month",
-        "start_at": start_date,
-        "end_at": end_date,
-        "metrics": [ cost_metrics[param_cost_metric] ],
-        "billing_center_ids": bc_ids
-      },
-      headers: {
-        "User-Agent": "RS Policies",
-        "Api-Version": "1.0"
-      }
-    }
-  } else {
-    var request = {
-      auth: "auth_flexera",
-      host: optima_host,
-      verb: "POST",
-      path: "/bill-analysis/orgs/" + org_id + "/costs/aggregated",
-      body_fields: {
-        "dimensions": ["billing_center_id", "vendor"],
-        "granularity": "month",
-        "start_at": start_date,
-        "end_at": end_date,
-        "filter": { "dimension": "vendor", "type": "equal", "value": cloud_vendor_types[cloud_vendor.toLowerCase()] }
-        "metrics": [ cost_metrics[param_cost_metric] ],
-        "billing_center_ids": bc_ids
-      },
-      headers: {
-        "User-Agent": "RS Policies",
-        "Api-Version": "1.0"
-      }
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
+    headers: { "User-Agent": "RS Policies", "Api-Version": "1.0" },
+    body_fields: {
+      billing_center_ids: _.pluck(ds_billing_centers_filtered, 'id'),
+      dimensions: [ "billing_center_id", "vendor" ],
+      metrics: [ ds_cost_metric['id'] ],
+      granularity: "month",
+      start_at: param_start_date,
+      end_at: param_end_date,
+      filter: null
     }
   }
-  EOS
+
+  if (ds_cloud_vendor != "") {
+    request['body_fields']['filter'] = { dimension: "vendor", type: "substring", substring: ds_cloud_vendor }
+  }
+EOS
 end
 
-#CALCULATE ACTUAL SPEND (SUM OF TOTAL BILLING CENTER COSTS)
 datasource "ds_total_cost" do
-  run_script $js_get_total_cost, $ds_aggregated_costs, $param_cloud_vendor, $param_cost_metric, rs_org_name
+  run_script $js_total_cost, $ds_aggregated_costs, $ds_cost_metric, $ds_cloud_vendor, rs_org_name
 end
 
-script "js_get_total_cost", type: "javascript" do
-  parameters "aggregate_costs", "cloud_vendor", "cost_metric", "org_name"
+script "js_total_cost", type: "javascript" do
+  parameters "ds_aggregated_costs", "ds_cost_metric", "ds_cloud_vendor", "rs_org_name"
   result "result"
   code <<-EOS
   var totals = []
-  total_cost = 0
-  _.each(aggregate_costs, function(agg){
-    totals.push(agg[cost_metric.toLowerCase().replace(/ /g, "_") + "_costs"])
-  })
-  total_cost = _.reduce(totals, function(memo, num){ return memo + num; }, 0)
 
-  if (cloud_vendor == ""){
-    var result = [{
-      name: org_name,
-      total: total_cost,
-      id: null,
-      vendor: "Organization (All Vendors)"
-    }]
-  } else {
-    var result = [{
-      name: org_name,
-      total: total_cost,
-      id: null,
-      vendor: aggregate_costs[0].vendor
-    }]
-  }
-  EOS
+  _.each(ds_aggregated_costs, function(entry) {
+    totals.push(entry['metrics'][ds_cost_metric['id']])
+  })
+
+  total_cost = _.reduce(totals, function(memo, num) { return memo + num }, 0)
+
+  result = [{
+    name: rs_org_name,
+    total: total_cost,
+    id: null,
+    vendor: "Organization (All Vendors)"
+  }]
+
+  if (ds_cloud_vendor != "") { result[0]['vendor'] = ds_cloud_vendor }
+EOS
 end
 
 #CALCULATE FORECASTED SPEND (SUM OF TOTAL BC COSTS + EXPECTED COST OVER REMAINING PERIOD)
