@@ -307,170 +307,151 @@ script "js_aggregated_costs", type: "javascript" do
 EOS
 end
 
-datasource "ds_total_cost" do
-  run_script $js_total_cost, $ds_aggregated_costs, $ds_cost_metric, $ds_cloud_vendor, rs_org_name
+datasource "ds_actual_forecasted_spend" do
+  run_script $js_actual_forecasted_spend, $ds_aggregated_costs, $ds_cost_metric, $ds_cloud_vendor, $ds_currency, $ds_applied_policy, $param_start_date, $param_end_date, $param_commitment_target
 end
 
-script "js_total_cost", type: "javascript" do
-  parameters "ds_aggregated_costs", "ds_cost_metric", "ds_cloud_vendor", "rs_org_name"
+script "js_actual_forecasted_spend", type: "javascript" do
+  parameters "ds_aggregated_costs", "ds_cost_metric", "ds_cloud_vendor", "ds_currency", "ds_applied_policy", "param_start_date", "param_end_date", "param_commitment_target"
   result "result"
   code <<-EOS
-  var totals = []
-
-  _.each(ds_aggregated_costs, function(entry) {
-    totals.push(entry['metrics'][ds_cost_metric['id']])
-  })
-
+  totals = []
+  _.each(ds_aggregated_costs, function(entry) { totals.push(entry['metrics'][ds_cost_metric['id']]) })
   total_cost = _.reduce(totals, function(memo, num) { return memo + num }, 0)
 
-  result = [{
-    name: rs_org_name,
-    total: total_cost,
-    id: null,
-    vendor: "Organization (All Vendors)"
-  }]
+  vendor = "Organization (All Vendors)"
+  if (ds_cloud_vendor != "") { vendor = ds_cloud_vendor }
 
-  if (ds_cloud_vendor != "") { result[0]['vendor'] = ds_cloud_vendor }
+  now = new Date()
+  start_date = new Date(param_start_date + "-01")
+  end_date = new Date(param_end_date + "-01")
+
+  period_length = (end_date - start_date) / (1000 * 3600 * 24)
+  period_completed_to_date = ((now - start_date) / (1000 * 3600 * 24)) / period_length
+
+  forecasted_spend = (total_cost * (1 / period_completed_to_date)) - total_cost
+  forecasted_total = total_cost * (1 / period_completed_to_date)
+  spend_difference = forecasted_total - commitment_target
+
+  target_status = "Met"
+  if (spend_difference < 0) { target_status = "Not Met" }
+
+  result = {
+    commitment_period: period_length,
+    period_completed: Math.round(period_completed_to_date * 100) / 100,
+    actual_spend: Math.round(total_cost * 1000) / 1000,
+    forecasted_spend: Math.round(forecasted_spend * 1000) / 1000,
+    forecasted_total: Math.round(forecasted_total * 1000) / 1000,
+    spend_difference: Math.round(spend_difference * 1000) / 1000,
+    target_status: target_status,
+    commitment_target: param_commitment_target,
+    vendor: vendor,
+    currency: ds_currency['symbol'],
+    currency_code: ds_currency['code'],
+    currency_sep: ds_currency['separator'],
+    policy_name: ds_applied_policy['name'],
+    cost_metric: ds_cost_metric['name'],
+    cost_metric_id: ds_cost_metric['id'],
+    start_date: param_start_date,
+    end_date: param_end_date
+  }
 EOS
 end
 
-#CALCULATE FORECASTED SPEND (SUM OF TOTAL BC COSTS + EXPECTED COST OVER REMAINING PERIOD)
-datasource "ds_actual_forecasted_spend" do
-  run_script $js_get_forecasted_spend, $ds_total_cost, $param_start_date, $param_end_date, $param_commitment_target
-end
-
-script "js_get_forecasted_spend", type: "javascript" do
-  parameters "total_cost", "start_date", "end_date", "commitment_target"
-  result "result"
-  code <<-EOS
-  var period_length = (new Date( end_date+"-01" ) - new Date( start_date+"-01" )) / (1000 * 3600 * 24)
-  var period_completed_to_date = ((new Date() - new Date( start_date+"-01" )) / (1000 * 3600 * 24)) / (period_length )
-
-  var result = []
-  _.each(total_cost, function(tc){
-    result.push({
-      "commitment_period": period_length,
-      "period_completed": period_completed_to_date,
-      "actual_spend": tc.total,
-      "forecasted_spend": (tc.total * (1/period_completed_to_date)) - tc.total,
-      "forecasted_total": tc.total * (1/period_completed_to_date)
-      "commitment_target": commitment_target
-      "name": tc.name,
-      "vendor": tc.vendor
-    })
-  })
-  EOS
-end
-
-#CREATE AND FORMAT CHART DATA
 datasource "ds_chart_data" do
-  run_script $js_get_chart_data, $ds_actual_forecasted_spend, $ds_currency_reference, $ds_currency_code, $param_commitment_target
+  run_script $js_chart_data, $ds_actual_forecasted_spend
 end
 
-script "js_get_chart_data", type: "javascript" do
-  parameters "spend_data", "curr_ref", "curr_code", "commitment_target"
-  result "report"
-  code <<-EOS
-  var spend_diff = spend_data[0].forecasted_total - commitment_target
-  var curr = "$", separator = ",", target_name = "", over_commitment_data = "", over_commitment_label = "", over_commitment_amount_value = "", chart_data_values = ""
-
-  if (curr_code.value !== undefined){
-    curr = curr_ref[curr_code.value].symbol,
-    separator = curr_ref[curr_code.value].t_separator
-  }
-
+script "js_chart_data", type: "javascript" do
+  parameters "ds_actual_forecasted_spend"
+  result "result"
+  code <<-'EOS'
+  // Used for formatting numbers to look pretty
   function formatNumber(number, separator){
-    var values = number.toString().split(".");
-    var result = ''
+    numString = number.toString()
+    values = numString.split(".")
+    formatted_number = ''
 
-    while (values[0].length > 3){
+    while (values[0].length > 3) {
       var chunk = values[0].substr(-3)
       values[0] = values[0].substr(0, values[0].length - 3)
-      result = separator + chunk + result
+      formatted_number = separator + chunk + formatted_number
     }
-    if (values[0].length > 0){
-      result = values[0] + result
-    }
-    if(values[1]==undefined){
-      return result
-    }
-    return result + "." + values[1]
+
+    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
+    if (values[1] == undefined) { return formatted_number }
+
+    return formatted_number + "." + values[1]
   }
 
-  if(spend_diff < 0 ){
-    target_name = "Not Met"
-  } else {
-    target_name = "Met"
-  }
+  fmt_actual_spend = ds_actual_forecasted_spend['currency'] + formatNumber(ds_actual_forecasted_spend['actual_spend'], ds_actual_forecasted_spend['currency_sep'])
+  fmt_forecasted_spend = ds_actual_forecasted_spend['currency'] + formatNumber(ds_actual_forecasted_spend['forecasted_spend'], ds_actual_forecasted_spend['currency_sep'])
+  fmt_commitment_target = ds_actual_forecasted_spend['currency'] + formatNumber(ds_actual_forecasted_spend['commitment_target'], ds_actual_forecasted_spend['currency_sep'])
 
-  if(target_name == "Met"){
-    over_commitment_data = 0+","+(spend_diff.toFixed(2))
+  if (ds_actual_forecasted_spend['target_status'] == "Met") {
+    over_commitment_amount_value = ds_actual_forecasted_spend['spend_difference']
+    over_commitment_data = "0," + over_commitment_amount_value.toString()
     over_commitment_label = "Forecasted+Amount+Over+Commitment+Target"
-    over_commitment_amount_value = spend_diff.toFixed(2)
     over_commitment_color = "4CBA54"
-    chart_data_values = (curr+formatNumber(spend_data[0].actual_spend.toFixed(2),separator)) +'||' + (curr+formatNumber(spend_data[0].forecasted_spend.toFixed(2),separator)) +'|||'+ (curr+formatNumber(commitment_target,separator)) +'||'+ (curr+formatNumber(over_commitment_amount_value,separator))
+    fmt_commitment_value = ds_actual_forecasted_spend['currency'] + formatNumber(over_commitment_amount_value, ds_actual_forecasted_spend['currency_sep'])
+    data_values = fmt_actual_spend + '||' + fmt_forecasted_spend + '|||' + commitment_target + '||' + fmt_commitment_value
   } else {
-    over_commitment_data = (spend_diff.toFixed(2)*-1)+","+0
+    over_commitment_amount_value = ds_actual_forecasted_spend['spend_difference'] * -1
+    over_commitment_data = over_commitment_amount_value.toString() + ",0"
     over_commitment_label = "Forecasted+Amount+Under+Commitment+Target"
-    over_commitment_amount_value = spend_diff.toFixed(2)*(-1)
     over_commitment_color = "F04B46"
-    chart_data_values = (curr+formatNumber(spend_data[0].actual_spend.toFixed(2),separator)) +'||' + (curr+formatNumber(spend_data[0].forecasted_spend.toFixed(2),separator)) +'|||'+ (curr+formatNumber(commitment_target,separator)) +'|'+ (curr+formatNumber(over_commitment_amount_value,separator) + '|')
+    fmt_commitment_value = ds_actual_forecasted_spend['currency'] + formatNumber(over_commitment_amount_value, ds_actual_forecasted_spend['currency_sep'])
+    data_values = fmt_actual_spend +'||' + fmt_forecasted_spend + '|||' + fmt_commitment_target + '|' + fmt_commitment_value + '|'
   }
 
-  report = {
-    chart_type: encodeURI("cht=bhs"),
-    chart_size: encodeURI("chs=800x200"),
-    chart_data: encodeURI("chd=t:" + (spend_data[0].actual_spend.toFixed(2)) + "," + 0 + "|" + (spend_data[0].forecasted_spend.toFixed(2)) +"," + 0 + "|" + 0 + "," + commitment_target + "|" + over_commitment_data),
-    chart_title: encodeURI("chtt=Actual+and+Forecasted+Spend+vs.+Vendor+Commitment+Spend+Target+Report"),
-    chart_image: encodeURI("chof=.png"),
-    chart_color: encodeURI("chco=4FA8E9,9EC9E9,63CED6," + over_commitment_color),
-    chart_label: encodeURI("chdl=Actual+Spend+To+Date|Forecasted+Spend|Commitment+Target+Amount|" + over_commitment_label),
-    chart_label_position: encodeURI("chdlp=b"),
-    chart_y_axis: encodeURI("chxt=y"),
-    chart_y_axis_label: encodeURI("chxl=0:|+1:|+"),
-    chart_data_autoscale: encodeURI("chds=a"),
-    chart_data_value: encodeURI('chl=' + chart_data_values),
-    report_data: spend_data,
-    target_adj: target_name,
-    bc_org_name: spend_data[0].name,
-    cloud_vendor: spend_data[0].vendor
+  chart_type = encodeURI("cht=bhs")
+  chart_size = encodeURI("chs=800x200")
+  chart_data = encodeURI("chd=t:" + ds_actual_forecasted_spend['actual_spend'] + ",0|" + ds_actual_forecasted_spend['forecasted_spend'] +",0|0," + ds_actual_forecasted_spend['commitment_target'] + "|" + over_commitment_data)
+  chart_title = encodeURI("chtt=Actual+and+Forecasted+Spend+vs.+Vendor+Commitment+Spend+Target+Report")
+  chart_image = encodeURI("chof=.png")
+  chart_color = encodeURI("chco=4FA8E9,9EC9E9,63CED6," + over_commitment_color)
+  chart_label = encodeURI("chdl=Actual+Spend+To+Date|Forecasted+Spend|Commitment+Target+Amount|" + over_commitment_label)
+  chart_label_position = encodeURI("chdlp=b")
+  chart_y_axis = encodeURI("chxt=y")
+  chart_y_axis_label = encodeURI("chxl=0:|+1:|+")
+  chart_data_autoscale = encodeURI("chds=a")
+  chart_data_value = encodeURI('chl=' + data_values)
+
+  chart_options = [
+    chart_type, chart_size, chart_data, chart_title, chart_image, chart_color, chart_label,
+    chart_label_position, chart_y_axis, chart_y_axis_label, chart_data_autoscale, chart_data_value
+  ].join('&').replace(/\(/g, "%28").replace(/\)/g, "%29")
+
+  result = {
+    chart_options: chart_options,
+    report_data: [ ds_actual_forecasted_spend ],
+    target_status: ds_actual_forecasted_spend['target_status'],
+    cloud_vendor: ds_actual_forecasted_spend['vendor'],
+    policy_name: ds_actual_forecasted_spend['policy_name'],
+    cost_metric: ds_actual_forecasted_spend['cost_metric'],
+    start_date: ds_actual_forecasted_spend['start_date'],
+    end_date: ds_actual_forecasted_spend['end_date']
   }
-  EOS
-end
-
-###############################################################################
-# Escalations
-###############################################################################
-
-escalation "esc_budget_alert" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
+EOS
 end
 
 ###############################################################################
 # Policy
 ###############################################################################
 
-policy "policy_commitment_tracker" do
+policy "pol_commitment_forecast" do
   validate $ds_chart_data do
-    summary_template "Vendor Commitment Forecast for {{ parameters.param_cloud_vendor }}"
+    summary_template "{{ data.policy_name }}"
     detail_template <<-EOS
-# Commitment Target {{ data.target_adj }}
-### Cloud Vendor: {{ data.cloud_vendor }}
-### Cost Metric: Unamortized Unblended
+# Commitment Forecast Report for {{ rs_org_name }} - {{ data.cloud_vendor }}
+## Commitment Target {{ data.target_status }}
+### Cost Metric: {{ data.cost_metric }}
 ### Commitment Period: {{ parameters.param_start_date }} to {{ parameters.param_end_date }}
-![Spending Overview Chart](https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id={{ rs_org_id }}&rs_project_id={{ rs_project_id }}&{{ data.chart_type }}&{{ data.chart_data }}&{{ data.chart_size }}&{{ data.chart_image }}&{{ data.chart_color }}&{{ data.chart_label }}&{{ data.chart_y_axis_label }}&{{ data.chart_y_axis }}&{{ data.chart_label_position }}&{{data.chart_data_autoscale}}&{{data.chart_data_value}}&{{ data.chart_title }})
-___
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+![Spending Overview Chart](https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id={{ rs_org_id }}&rs_project_id={{ rs_project_id }}&{{ data.chart_options }})
 EOS
-    escalate $esc_budget_alert
-    check eq(0,1)
+    escalate $esc_email
+    check eq(0, 1)
     export "report_data" do
-      field "name" do
-        label "Billing Center Name"
-      end
       field "vendor" do
         label "Cloud Vendor"
       end
@@ -486,6 +467,32 @@ EOS
       field "forecasted_total" do
         label "Forecasted Full Period Spend"
       end
+      field "currency" do
+        label "Currency"
+      end
+      field "target_status" do
+        label "Commitment Target Status"
+      end
+      field "cost_metric" do
+        label "Cost Metric"
+      end
+      field "start_date" do
+        label "Period Start Date"
+      end
+      field "end_date" do
+        label "Period End Date"
+      end
     end
   end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
 end
