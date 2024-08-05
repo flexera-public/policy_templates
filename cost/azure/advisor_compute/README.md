@@ -4,6 +4,8 @@
 
 This policy template reports Azure virtual machine rightsizing recommendations produced by [Azure Advisor](https://learn.microsoft.com/en-us/azure/advisor/advisor-overview). Optionally, this report can be emailed and the offending instances can be resized.
 
+**NOTE: This policy template will produce recommendations similar to the [Azure Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances) policy template. It is recommended that you avoid using both templates at the same time. Otherwise, redundant recommendations may appear in the Flexera One platform, causing inaccuracies in calculated potential savings.**
+
 ## How It Works
 
 The policy utilizes the [Azure Advisor API](https://learn.microsoft.com/en-us/rest/api/advisor/recommendations/list?view=rest-advisor-2023-01-01&tabs=HTTP#category) to get a list of recommendations for Azure virtual machines. The specific recommendations produced by Azure Advisor will depend on how it is configured within the Azure environment. Please consult the [relevant Azure documentation](https://learn.microsoft.com/en-us/azure/advisor/advisor-get-started) for more information on how to do this.
