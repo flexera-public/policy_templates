@@ -4,6 +4,8 @@
 
 This policy template reports EC2 rightsizing recommendations produced by the [AWS Compute Optimizer](https://aws.amazon.com/compute-optimizer/faqs/#EC2_instance_recommendations). Optionally, this report can be emailed and the offending instances can be resized.
 
+**NOTE: This policy template will produce recommendations similar to the [AWS Rightsize EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances) policy template. It is recommended that you avoid using both templates at the same time. Otherwise, redundant recommendations may appear in the Flexera One platform, causing inaccuracies in calculated potential savings.**
+
 ## How It Works
 
 The policy utilizes the [AWS Compute Optimizer API](https://docs.aws.amazon.com/compute-optimizer/latest/APIReference/API_GetEC2InstanceRecommendations.html) to get a list of recommendations for EC2 instances. The specific recommendations produced by the AWS Compute Optimizer will depend on how it is configured within the AWS environment. Please consult the [relevant AWS documentation](https://docs.aws.amazon.com/compute-optimizer/latest/ug/viewing-recommendation-preferences.html) for more information on how to do this.
