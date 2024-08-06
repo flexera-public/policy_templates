@@ -1,83 +1,127 @@
-
 name "ServiceNow Inactive Approvers"
 rs_pt_ver 20180301
 type "policy"
-short_description "This policy will identify ServiceNow Approvers that have not logged in within a specified number of days. See the [README](https://github.com/flexera-public/policy_templates/tree/master/saas/servicenow/inactive_approvers/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Reports ServiceNow Approvers that have not logged in within a specified number of days. See the [README](https://github.com/flexera-public/policy_templates/tree/master/saas/servicenow/inactive_approvers/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
-severity "medium"
 category "SaaS Management"
+severity "medium"
+default_frequency "weekly"
 info(
-  version: "2.3",
+  version: "3.0.0",
   provider: "ServiceNow",
   service: "",
   policy_set: ""
 )
 
 ###############################################################################
-# User inputs
+# Parameters
 ###############################################################################
-
-parameter "param_sn_instance_id" do
-  label "ServiceNow Instance Name"
-  type "string"
-end
-
-parameter "param_roles" do
-  label "Approval Roles"
-  description "ServiceNow Roles to target"
-  type "list"
-  default ["approver_user","itil"]
-end
-
-parameter "param_days" do
-  label "Number of Days"
-  description "Number of days without an approval action executed in ServiceNow"
-  type "number"
-  default 30
-end
 
 parameter "param_email" do
   type "list"
-  label "Email addresses to notify"
-  description "Email addresses of the recipients you wish to notify when new incidents are created"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify"
+  default []
+end
+
+parameter "param_servicenow_name" do
+  type "string"
+  category "Policy Settings"
+  label "ServiceNow Instance Name"
+  description "Name of the instance in your ServiceNow domain. For example, 'myinstance' if your ServiceNow domain is myinstance.service-now.com."
+  min_length 1
+  # No default value, user input required
+end
+
+parameter "param_servicenow_roles" do
+  type "list"
+  category "Policy Settings"
+  label "ServiceNow Roles"
+  description "ServiceNow roles assigned to approval users."
+  min_length 1
+  default [ "approver_user", "itil" ]
+end
+
+parameter "param_days" do
+  type "number"
+  category "Policy Settings"
+  label "Approval Action Threshold (Days)"
+  description "Number of days without an approval action executed in ServiceNow to report a user."
+  min_value 1
+  default 30
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-credentials "auth_sn" do
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+credentials "auth_servicenow" do
   schemes "basic"
-  label "ServiceNow Credential"
+  label "ServiceNow"
+  description "Select ServiceNow Credential"
   tags "provider=servicenow"
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
-datasource "ds_sn_roles" do
+# Gather applied policy metadata for use later
+datasource "ds_applied_policy" do
   request do
-    run_script $js_sn_roles, $param_roles, $param_sn_instance_id
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_servicenow_roles" do
+  request do
+    run_script $js_servicenow_roles, $param_servicenow_roles, $param_servicenow_name
   end
   result do
     encoding "json"
-    collect jmes_path(response,"result[*]") do
-      field "role_name", jmes_path(col_item, "name")
-      field "role_id", jmes_path(col_item, "sys_id")
+    collect jmes_path(response, "result[*]") do
+      field "name", jmes_path(col_item, "name")
+      field "sys_id", jmes_path(col_item, "sys_id")
     end
   end
 end
 
-datasource "ds_sn_user_roles" do
-  iterate $ds_sn_roles
+script "js_servicenow_roles", type: "javascript" do
+  parameters "param_servicenow_roles", "param_servicenow_name"
+  result "request"
+  code <<-EOS
+  query = _.map(param_servicenow_roles, function(role) { return "name=" + role }).join("^OR")
+
+  var request = {
+    auth: "auth_servicenow",
+    host: param_servicenow_name + ".service-now.com",
+    path: "api/now/table/sys_user_role",
+    query_params: { "sysparm_fields": "name,sys_id", "sysparm_query": query },
+    headers: { "User-Agent": "RS Policies" }
+  }
+EOS
+end
+
+datasource "ds_servicenow_user_roles" do
+  iterate $ds_servicenow_roles
   request do
-    auth $auth_sn
-    host join([$param_sn_instance_id,".service-now.com"])
+    auth $auth_servicenow
+    host join([$param_servicenow_name, ".service-now.com"])
     path "/api/now/table/sys_user_has_role"
     header "User-Agent", "RS Policies"
     query "sysparm_fields", "role,sys_id,inherited,user"
-    query "sysparm_query", join(["role=",val(iter_item,"role_id")])
+    query "sysparm_query", join(["role=", val(iter_item, "sys_id")])
   end
   result do
     encoding "json"
@@ -90,44 +134,45 @@ datasource "ds_sn_user_roles" do
   end
 end
 
-datasource "ds_sn_approver_users" do
-  iterate $ds_sn_user_roles
+datasource "ds_servicenow_approver_users" do
+  iterate $ds_servicenow_user_roles
   request do
-    auth $auth_sn
-    host join([$param_sn_instance_id, ".service-now.com"])
+    auth $auth_servicenow
+    host join([$param_servicenow_name, ".service-now.com"])
     path "/api/now/table/sys_user"
     header "User-Agent", "RS Policies"
-    query "sysparm_query", join(["sys_id=",val(iter_item,"user_id")])
+    query "sysparm_query", join(["sys_id=", val(iter_item, "user_id")])
     query "sysparm_fields", "sys_id,name,user_name,last_login_time,vip,email"
   end
   result do
     encoding "json"
     collect jmes_path(response,"result[*]") do
-      field "user_id", val(iter_item, "user_id")
-      field "role_id", val(iter_item, "role_id")
-      field "inherited", val(iter_item, "inherited")
       field "approver", jmes_path(col_item, "name")
       field "username", jmes_path(col_item, "user_name")
       field "last_login", jmes_path(col_item, "last_login_time")
       field "vip", jmes_path(col_item, "vip")
       field "email", jmes_path(col_item, "email")
+      field "user_id", val(iter_item, "user_id")
+      field "role_id", val(iter_item, "role_id")
+      field "inherited", val(iter_item, "inherited")
     end
   end
 end
 
 datasource "ds_approvals" do
-  iterate $ds_sn_approver_users
+  iterate $ds_servicenow_approver_users
   request do
-    auth $auth_sn
-    host join([$param_sn_instance_id, ".service-now.com"])
+    auth $auth_servicenow
+    host join([$param_servicenow_name, ".service-now.com"])
     path "/api/now/table/sysapproval_approver"
     header "User-Agent", "RS Policies"
-    query "sysparm_query", join(["sys_updated_by=",val(iter_item,"username")])
+    query "sysparm_query", join(["sys_updated_by=", val(iter_item, "username")])
     query "sysparm_fields", "approver,sys_updated_on,state,sys_updated_by"
   end
   result do
     encoding "json"
-    collect jmes_path(response,"result[*]") do
+    collect jmes_path(response, "result[*]") do
+      field "updated_on", jmes_path(col_item, "sys_updated_on")
       field "user_id", val(iter_item, "user_id")
       field "role_id", val(iter_item, "role_id")
       field "inherited", val(iter_item, "inherited")
@@ -136,89 +181,91 @@ datasource "ds_approvals" do
       field "last_login", val(iter_item, "last_login")
       field "vip", val(iter_item, "vip")
       field "email", val(iter_item, "email")
-      field "updated_by", jmes_path(col_item, "sys_updated_by")
-      field "updated_on", jmes_path(col_item, "sys_updated_on")
     end
   end
 end
 
-datasource "ds_latest_approval" do
-  run_script $js_latest_approval, $ds_approvals, $ds_sn_approver_users, $param_days
+datasource "ds_bad_approvers" do
+  run_script $js_bad_approvers, $ds_approvals, $ds_servicenow_approver_users, $ds_applied_policy, $param_days
 end
 
-###############################################################################
-# Scripts
-###############################################################################
-
-script "js_sn_roles", type: "javascript" do
-  parameters "param_roles", "param_sn_instance_id"
-  result "request"
-  code <<-EOS
-  if (_.size(param_roles) > 1){
-    var query = "";
-    _.each(param_roles, function(role){
-      if (_.last(param_roles) === role){
-        query = query.concat("name=",role)
-      } else {
-        query = query.concat("name=",role,"^OR")
-      }
-    })
-  } else {
-    var query = "name="+param_roles[0]
-  }
-
-  var request = {
-    auth: "auth_sn",
-    host: param_sn_instance_id+".service-now.com",
-    path: "api/now/table/sys_user_role",
-    headers: {
-      "User-Agent": "RS Policies"
-    },
-    query_params: {
-      "sysparm_fields": "name,sys_id",
-      "sysparm_query": query
-    }
-  }
-  EOS
-end
-
-script "js_latest_approval", type: "javascript" do
-  parameters "ds_approvals", "ds_sn_approver_users", "param_days"
+script "js_bad_approvers", type: "javascript" do
+  parameters "ds_approvals", "ds_servicenow_approver_users", "ds_applied_policy", "param_days"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
+  approvals_table = _.groupBy(ds_approvals, 'username')
 
-    var result = [];
-    var updaters = _.unique(_.pluck(ds_approvals, 'updated_by'));
-    var approver_users = _.pluck(ds_sn_approver_users, 'username');
-    var target_date = new Date(new Date().setDate(new Date().getDate() - param_days)).toISOString();
+  target_date = new Date()
+  target_date = target_date.setDate(target_date.getDate() - param_days)
 
-    _.each(approver_users, function(approver){
-      if (!_.contains(updaters, approver)){
-        // approver has no approvals
-        var user = _.first(_.where(ds_sn_approver_users, {"username": approver}));
-        result.push({
-          user_id: user['user_id'],
-          role_id: user['role_id'],
-          inherited: user['inherited'],
-          approver: user['approver'],
-          username: user['username'],
-          last_login: user['last_login'],
-          vip: user['vip'],
-          email: user['email'],
-          updated_by: 'N/A',
-          updated_on: 'N/A'
-        })
-      } else {
-        var latest_approval = _.first(_.sortBy( _.where(ds_approvals, {"updated_by": approver}), "updated_on").reverse());
-        var approval_date = new Date(latest_approval.updated_on.split(" ")[0]).toISOString();
-        if (target_date > approval_date){
-          result.push(latest_approval)
+  result = []
+
+  _.each(ds_servicenow_approver_users, function(user) {
+    new_user = {
+      id: user['user_id'],
+      name: user['username'],
+      inherited: user['inherited'],
+      approver: user['approver'],
+      last_login: user['last_login'],
+      vip: user['vip'],
+      email: user['email'],
+      updated_on: 'Never',
+      policy_name: ds_applied_policy['name'],
+      lookback: param_days
+    }
+
+    if (approvals_table[user['username']] == undefined) {
+      result.push(new_user)
+    } else {
+      _.each(approvals_table[user['username']], function(approval) {
+        if (new_user['updated_on'] == 'Never' || new Date(approval['updated_on']) > new_user['updated_on']) {
+          new_user['updated_on'] = new Date(approval['updated_on'])
         }
+      })
+
+      if (new_user['updated_on'] < target_date) {
+        new_user['updated_on'] = new_user['updated_on'].toISOString()
+        result.push(new_user)
       }
-    })
+    }
+  })
+EOS
+end
 
+###############################################################################
+# Policy
+###############################################################################
 
-  EOS
+policy "pol_bad_approvers" do
+  validate_each $ds_bad_approvers do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} ServiceNow Inactive Approver Users Found"
+    check eq(val(item, "id"), "")
+    escalate $esc_email
+    export do
+      resource_level true
+      field "approver" do
+        label "Approver"
+      end
+      field "id" do
+        label "User ID"
+      end
+      field "name" do
+        label "User Name"
+      end
+      field "email" do
+        label "Email"
+      end
+      field "last_login" do
+        label "Last Login"
+      end
+      field "updated_on" do
+        label "Last Approval"
+      end
+      field "lookback" do
+        label "Look Back Period (Days)"
+      end
+    end
+  end
 end
 
 ###############################################################################
@@ -230,34 +277,4 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email
-end
-
-###############################################################################
-# Policy
-###############################################################################
-
-policy "policy_inactive_approvers" do
-  validate $ds_latest_approval do
-    summary_template "{{len data}} Inactive ServiceNow Approver Users"
-    export do
-      field "approver" do
-        label "Approver User"
-      end
-      field "username" do
-        label "User Name"
-      end
-      field "updated_on" do
-        label "Last Approval"
-      end
-      field "last_login" do
-        label "Last Login"
-      end
-      field "email" do
-        label "Email"
-      end
-    end
-
-    escalate $esc_email
-    check eq(size(data), 0)
-  end
 end
