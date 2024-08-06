@@ -11,7 +11,7 @@ The [Okta Users API](https://developer.okta.com/docs/reference/api/users/#list-u
 ## Input Parameters
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify
-- *Okta Organization Name* - Name of the Okta organization. For example, if you navigate to *https://myorg.okta.com* to log into Okta, the organization name would be *myorg*.
+- *Okta Organization Name* - Name of the Okta organization. For example, if you navigate to *myorg.okta.com* to log into Okta, the organization name would be *myorg*.
 - *Days Since Last Login* - The number of days a user needs to go without logging in to be considered inactive.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
