@@ -61,7 +61,7 @@ task :generate_policy_list do
       # Get datetime for last time file was modified
       commits = github_client.commits(repo_name, branch, path: file)
       updated_at = commits.first.commit.author.date.utc.iso8601 if !commits.empty?
-      generally_recommended = generally_recommended_templates.include?(pp.parsed_name)
+      generally_recommended = generally_recommended_templates.include?(pp.parsed_name) && !deprecated
 
       puts "Adding #{pp.parsed_name}"
 
@@ -79,6 +79,7 @@ task :generate_policy_list do
         "policy_set": policy_set,
         "recommendation_type": recommendation_type,
         "updated_at": updated_at,
+        "generally_recommended": generally_recommended,
         "deprecated": deprecated
       }
     end
