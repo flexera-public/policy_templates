@@ -63,7 +63,8 @@ def extract_permissions_from_readme(readme_content)
     "[**Flexera Credential**]",
     "[**Turbonomic Credential**]",
     "[**GitHub Credential**]",
-    "[**ServiceNow Credential**]"
+    "[**ServiceNow Credential**]",
+    "[**Okta Credential**]"
   ]
 
   sections.each do |section|
@@ -86,6 +87,8 @@ def extract_permissions_from_readme(readme_content)
       provider = "github"
     when "[**ServiceNow Credential**]"
       provider = "servicenow"
+    when "[**Okta Credential**]"
+      provider = "okta"
     end
 
     # If the Credential Section exists...

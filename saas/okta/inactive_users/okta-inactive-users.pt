@@ -1,42 +1,65 @@
 name "Okta Inactive Users"
 rs_pt_ver 20180301
 type "policy"
-short_description "This policy will identify Okta users that have not logged in within a specified number of days and deactivate the users upon approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/saas/okta/inactive_users/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Reports any Okta users that have not logged in within a specified number of days and deactivate the users upon approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/saas/okta/inactive_users/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
-severity "medium"
 category "SaaS Management"
+severity "medium"
+default_frequency "weekly"
 info(
-  version: "2.4",
+  version: "3.0.0",
   provider: "Okta",
   service: "",
   policy_set: ""
 )
 
-parameter "param_okta_org_name" do
-  label "Okta Organization Name"
-  type "string"
-  description "For example, if you navigate to https://contoso.okta.com to login to Okta, the value in this parameter would be `contoso`"
-end
-
-parameter "param_days" do
-  label "Number of Days Since Last Login"
-  type "number"
-  default 30
-  description "This value will be the threshold for which incidents will be raised"
-end
+###############################################################################
+# Parameters
+###############################################################################
 
 parameter "param_email" do
   type "list"
-  label "Email addresses to notify"
-  description "Email addresses of the recipients you wish to notify when new incidents are created"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_okta_org_name" do
+  type "string"
+  category "Policy Settings"
+  label "Okta Organization Name"
+  description "Name of the Okta organization. For example, if you navigate to https://myorg.okta.com to log into Okta, the organization name would be `myorg`"
+  # No default value, user input required
+end
+
+parameter "param_days" do
+  type "number"
+  category "Policy Settings"
+  label "Days Since Last Login"
+  description "The number of days a user needs to go without logging in to be considered inactive."
+  min_value 1
+  default 30
 end
 
 parameter "param_automatic_action" do
   type "list"
+  category "Actions"
   label "Automatic Actions"
-  description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Deactivate Users"]
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Deactivate Inactive Users"]
   default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
 end
 
 credentials "auth_okta" do
@@ -46,70 +69,83 @@ credentials "auth_okta" do
   tags "provider=okta"
 end
 
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Gather applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
 datasource "ds_okta_users" do
   request do
     auth $auth_okta
-    host join([$param_okta_org_name,".okta.com"])
+    host join([$param_okta_org_name, ".okta.com"])
     path "/api/v1/users"
-    header "User-Agent", "RS Policies"
     query "filter", 'status eq "ACTIVE"'
     query "limit", "200"
+    header "User-Agent", "RS Policies"
   end
   result do
     encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "id", jmes_path(col_item,"id")
-      field "status", jmes_path(col_item,"status")
-      field "created", jmes_path(col_item,"created")
-      field "lastLogin", jmes_path(col_item,"lastLogin")
-      field "passwordChanged", jmes_path(col_item,"passwordChanged")
-      field "firstName", jmes_path(col_item,"profile.firstName")
-      field "lastName", jmes_path(col_item,"profile.lastName")
-      field "email", jmes_path(col_item,"profile.email")
+    collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "status", jmes_path(col_item, "status")
+      field "created", jmes_path(col_item, "created")
+      field "lastLogin", jmes_path(col_item, "lastLogin")
+      field "passwordChanged", jmes_path(col_item, "passwordChanged")
+      field "firstName", jmes_path(col_item, "profile.firstName")
+      field "lastName", jmes_path(col_item, "profile.lastName")
+      field "email", jmes_path(col_item, "profile.email")
     end
   end
 end
 
-datasource "ds_filtered_users" do
-  run_script $js_filtered_users, $ds_okta_users, $param_days
+datasource "ds_bad_users" do
+  run_script $js_bad_users, $ds_okta_users, $ds_applied_policy, $param_days, $param_okta_org_name
 end
 
-script "js_filtered_users", type: "javascript" do
-  parameters "users","param_days"
+script "js_bad_users", type: "javascript" do
+  parameters "ds_okta_users", "ds_applied_policy", "param_days", "param_okta_org_name"
   result "result"
-  code <<-EOS
-    var result = [];
+  code <<-'EOS'
+  target_date = new Date()
+  target_date = target_date.setDate(target_date.getDate() - param_days)
 
-    var date = new Date(new Date().setDate(new Date().getDate() - param_days)).toISOString();
+  bad_users = _.filter(ds_okta_users, function(user) { return target_date > new Date(user["lastLogin"]) })
 
-    _.each(users, function(user){
-      if (date > user["lastLogin"]){
-        result.push(user)
-      }
-    })
-  EOS
+  result = _.map(bad_users, function(user) {
+    id: user['id'],
+    status: user['status'],
+    created: user['created'],
+    lastLogin: user['lastLogin'],
+    passwordChanged: user['passwordChanged'],
+    firstName: user['firstName'],
+    lastName: user['lastName'],
+    email: user['email'],
+    org: param_okta_org_name,
+    lookback: param_days,
+    policy_name: ds_applied_policy['name']
+  })
+EOS
 end
 
-escalation "esc_email" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
-end
-
-escalation "esc_deactivate_users" do
-  automatic contains($param_automatic_action, "Deactivate Users")
-  label "Deactivate User"
-  description "Deactivate inactive Okta Users"
-  run "deactivate_users", data, $param_okta_org_name
-end
+###############################################################################
+# Policy
+###############################################################################
 
 policy "policy_inactive_users" do
-  validate $ds_filtered_users do
-    summary_template "Inactive Okta Users"
+  validate $ds_bad_users do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Okta Inactive Users Found"
+    check eq(val(item, "id"), "")
     escalate $esc_email
     escalate $esc_deactivate_users
-    check eq(size(data), 0)
     export do
       resource_level true
       field "firstName" do
@@ -124,27 +160,92 @@ policy "policy_inactive_users" do
       field "lastLogin" do
         label "Last Login"
       end
+      field "status" do
+        label "Status"
+      end
+      field "org" do
+        label "Okta Organization"
+      end
       field "id" do
         label "ID"
+      end
+      field "lookback" do
+        label "Look Back Period (Days)"
       end
     end
   end
 end
 
-define deactivate_users($data, $param_okta_org_name) do
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_deactivate_users" do
+  automatic contains($param_automatic_action, "Deactivate Inactive Users")
+  label "Deactivate Inactive Users"
+  description "Deactivate selected inactive Okta Users"
+  run "deactivate_users", data
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define deactivate_users($data) return $all_responses do
+  $$all_responses = []
 
   foreach $user in $data do
-    http_request(
-      verb: "post",
-      auth: $$auth_okta,
-      host: join([$param_okta_org_name,".okta.com"]),
-      https: true,
-      href: join(["/api/v1/users/",$user["id"],"/lifecycle/deactivate"]),
-      headers: {
-        "Content-Type": "application/json",
-        "Accept": "application/json"
-      }
-    )
+    sub on_error: handle_error() do
+      call deactivate_user($user) retrieve $deactivate_response
+    end
   end
 
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define delete_firewall($user) return $response do
+  $host = join([$user["org"], ".okta.com"])
+  $href = join(["/api/v1/users/", $user["id"], "/lifecycle/deactivate"])
+  $url = $host + $href
+  task_label("POST " + $url)
+
+  $response = http_request(
+    auth: $$auth_okta,
+    https: true,
+    verb: "post",
+    host: $host,
+    href: $href,
+    headers: {
+      "Content-Type": "application/json",
+      "Accept": "application/json"
+    }
+  )
+
+  task_label("POST Okta User response: " + $user["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response posting Okta User: "+ $user["id"] + " " + to_json($response)
+  else
+    task_label("POST Okta User successful: " + $user["id"])
+  end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
 end
