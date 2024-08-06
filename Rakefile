@@ -18,6 +18,9 @@ task :generate_policy_list do
   github_api_token = ENV["GITHUB_API_TOKEN"]
   github_client = Octokit::Client.new(access_token: github_api_token)
 
+  # Get the static list of recommended policy templates
+  generally_recommended_templates = YAML.load_file('data/active_policy_list/generally_recommended_templates.yaml')
+
   FileUtils.mkdir_p 'dist'
   file_list = []
 
@@ -58,6 +61,7 @@ task :generate_policy_list do
       # Get datetime for last time file was modified
       commits = github_client.commits(repo_name, branch, path: file)
       updated_at = commits.first.commit.author.date.utc.iso8601 if !commits.empty?
+      generally_recommended = generally_recommended_templates.include?(pp.parsed_name)
 
       puts "Adding #{pp.parsed_name}"
 
