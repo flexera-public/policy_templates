@@ -6,8 +6,6 @@ This policy template reports any approval users in ServiceNow that have not appr
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
-
 - *Email Addresses* - Email addresses of the recipients you wish to notify
 - *ServiceNow Instance Name* - Name of the instance in your ServiceNow domain. For example, *myinstance* if your ServiceNow domain is *myinstance.service-now.com*.
 - *ServiceNow Roles* - ServiceNow roles assigned to approval users.
