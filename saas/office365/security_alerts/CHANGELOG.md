@@ -2,6 +2,7 @@
 
 ## v3.0.0
 
+- Modified credential to correctly match Microsoft Graph credentials in the Flexera platform
 - Several parameters altered to be more descriptive and human-readable
 - Removed unused `Azure AD Tenant ID` parameter
 - Updated Microsoft Graph API call to use production `/v1.0/security/alerts_v2` endpoint
