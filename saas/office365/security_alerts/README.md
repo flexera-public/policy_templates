@@ -1,37 +1,38 @@
 # Office 365 Security Alerts
 
-## What it does
+## What It Does
 
-This policy will identify Security Alerts that have been raised in Office 365. Policy Managers can minimize the notifications by choosing to only be alerted by certain severity level(s).
+This policy template reports any Security Alerts that have been raised in Office 365. Optionally, this report can be emailed.
 
-## Functional Description
+## How It Works
 
-This policy integrates with the Microsoft Graph API to retrieve Office 365 Security Alerts.
+The [Microsoft Graph API](https://learn.microsoft.com/en-us/graph/api/security-list-alerts_v2?view=graph-rest-1.0&tabs=http#http-request) is used with appropriate filters to retrieve Office 365 security alerts.
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
-
-- *Azure AD Tenant ID* - This value needs to be your Azure tenant ID. To get your tenant ID see [this article](https://docs.microsoft.com/en-us/onedrive/find-your-office-365-tenant-id)
-- *Alert Severity* - Specify the alert severity levels that should raise an incident
-- *Email addresses to notify* - Email addresses of the recipients you wish to notify
+- *Email Addresses* - Email addresses of the recipients you wish to notify
+- *Alert Severity* - The alert severity levels to report.
 
 ## Policy Actions
 
-- Sends an email notification
+- Send an email report
 
 ## Prerequisites
 
-This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm)
-for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no
-credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
-### Credential configuration
+- [**Microsoft Graph Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121576) (*provider=azure_graph*) which has the following permissions:
+  - `SecurityEvents.Read.All`
 
-For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - `billing_center_viewer`
 
-Provider tag value to match this policy: `microsoft`
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
-Required permissions in the provider:
+## Supported Clouds
 
-- SecurityEvents.Read.All and SecurityEvents.ReadWrite.All in Azure AD
+- Microsoft Office 365
+
+## Cost
+
+This Policy Template does not incur any cloud costs.

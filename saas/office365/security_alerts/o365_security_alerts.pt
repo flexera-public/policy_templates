@@ -81,6 +81,8 @@ datasource "ds_alerts" do
       field "severity", jmes_path(col_item, "severity")
       field "status", jmes_path(col_item, "status")
       field "title", jmes_path(col_item, "title")
+      field "incidentId", jmes_path(col_item, "incidentId")
+      field "tenantId", jmes_path(col_item, "tenantId")
     end
   end
 end
@@ -89,13 +91,16 @@ script "js_alerts", type: "javascript" do
   parameters "param_alert_severity"
   result "request"
   code <<-EOS
-  filter = _.map(param_alert_severity, function(item) { return "Severity eq '" + item + "'"}).join(' or ')
+  vendors = [ "Office 365 Security and Compliance", "Office 365" ]
+  vendor_filter = _.map(vendors, function(item) { return "vendorInformation/provider eq '" + item + "'"})
+  sev_filter = _.map(param_alert_severity, function(item) { return "Severity eq '" + item.toLowerCase() + "'"})
+  filter = "(" + vendor_filter.join(' or ') + ") and (" + sev_filter.join(' or ') + ")"
 
   var request = {
     auth: "auth_azure_graph",
     verb: "GET",
     host: "graph.microsoft.com",
-    path: "/beta/security/alerts",
+    path: "/v1.0/security/alerts_v2",
     query_params: { "filter": filter },
     headers: { "User-Agent": "RS Policies" }
   }
@@ -114,12 +119,14 @@ script "js_alerts_incident", type: "javascript" do
     return {
       id: alert['id'],
       category: alert['category'],
-      createdDateTime: alert['createdDateTime'],
       description: alert['description'],
+      createdDateTime: alert['createdDateTime'],
       eventDateTime: alert['eventDateTime'],
       severity: alert['severity'],
       status: alert['status'],
       title: alert['title'],
+      incidentId: alert['incidentId'],
+      tenantId: alert['tenantId'],
       policy_name: ds_applied_policy['name']
     }
   })
@@ -130,11 +137,11 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_o365_alerts" do
+policy "pol_o365_alerts" do
   validate_each $ds_alerts_incident do
-    summary_template "Office 365 Security Alerts"
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Office 365 Security Alerts Found"
+    check eq(val(item, "id"), "")
     escalate $esc_email
-    check eq(size(data), 0)
     export do
       resource_level true
       field "title" do
@@ -150,10 +157,16 @@ policy "policy_o365_alerts" do
         label "Description"
       end
       field "eventDateTime" do
-        label "Event DateTime"
+        label "Event Date"
       end
       field "status" do
         label "Status"
+      end
+      field "incidentId" do
+        label "Incident ID"
+      end
+      field "tenantId" do
+        label "Tenant ID"
       end
       field "id" do
         label "ID"

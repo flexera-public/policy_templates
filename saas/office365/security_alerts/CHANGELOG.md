@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.0.0
+
+- Several parameters altered to be more descriptive and human-readable
+- Removed unused `Azure AD Tenant ID` parameter
+- Updated Microsoft Graph API call to use production `/v1.0/security/alerts_v2` endpoint
+- Fixed issue where policy template would report alerts unrelated to Office 365
+- Streamlined code for better readability and faster execution
+
 ## v2.4
 
 - Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`
