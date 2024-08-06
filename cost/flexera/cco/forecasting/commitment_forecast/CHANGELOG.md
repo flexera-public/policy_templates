@@ -5,6 +5,7 @@
 - Renamed policy template to `Vendor Spend Commitment Forecast` to avoid confusion with policy templates for RIs/SPs
 - Added ability to specify a cost metric to use when gathering spend data
 - Several parameters altered to be more descriptive and human-readable
+- Additional fields added to incident table for context
 - Streamlined code for better readability and faster execution
 
 ## v3.5
