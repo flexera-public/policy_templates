@@ -1,10 +1,27 @@
-# Vendor Commitment Forecast
+# Vendor Spend Commitment Forecast
 
-## What it does
+## What It Does
 
-This Policy uses Optima to determine a forecast against the commitment amount agreed with your Cloud Service Provider/s. This policy allows the user to specify a Commitment target value, and track the current commitment spend to date, as well as projected commitment spend for a given period. The commitment amount can be measured against a specific Cloud Provider spend or for the entire Organization spend.
+This policy template calculates the total projected spend for the user-specified cloud vendor (or all spend if no vendor is specified) for the specified time period and compares that projection to a user-specified commitment target. The results, along with a chart, are provided in a report. Optionally, this report can be emailed.
 
-The policy uses the specified previous number of months, not including the current month to determine a straight-line forecast.
+The purpose of this policy template is to assist in tracking and projecting total spend with a cloud vendor to ensure that any discounts due to spend commitments are not lost due to insufficient spend.
+
+## How It Works
+
+Projected spend is extrapolated from the spend of whatever portion of the specified time period is in the past. Future spend is assumed to be straight-forwardly commensurate with past spend. For example, if the time period specified is for 1 year, and 1 month has passed, then the projected spend will be the spend for that month multiplied by 12.
+
+## Input Parameters
+
+- *Email Addresses* - Email addresses of the recipients you wish to send the report to.
+- *Total Commitment Target* - The total commitment target for the specified time period. Value should be in the currency the Flexera One organization is configured to use.
+- *Cost Metric* - Cost metric to use for the report. `Unamortized Unblended` is recommended for accuracy.
+- *Commitment Period Start Date* - Start date for the Commitment Period in YYYY-MM format. Example: 2024-01
+- *Commitment Period End Date* - End date for the Commitment Period in YYYY-MM format. Example: 2025-01
+- *Cloud Vendor* - Cloud Vendor to report on. Examples: AWS, Azure, GCP. Leave blank to report on all vendors.
+
+## Policy Actions
+
+- Send an email report
 
 ## Prerequisites
 
@@ -15,24 +32,9 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
-## Functional Details
-
-- This policy supports a commitment target amount for a single Cloud Service Provider (e.g., AWS) or the entire Organization.
-- This policy produces a view of forecasted spend to the specified end date, based on previous spend to date from the specified start date.
-
-### Input Parameters
-
-This policy has the following input parameters required when launching the policy.
-
-- *Cloud Vendor* - Name of the Cloud Vendor if the Budget Scope is 'Cloud Vendor'. Example: 'AWS' or 'GCP'. Leave this blank for 'Organization' scope
-- *Commitment Period Start Date* - A date in the past to generate forecast from (YYYY-MM format)
-- *Commitment Period End Date* - A date in the future to forecast up to (YYYY-MM format)
-- *Total Commitment Target* - Specify total commitment target for the given Cloud Vendor and the specified time period.  Currency is irrelevant; the policy will default to whichever currency is used in Optima
-- *Email addresses* - A list of email addresses to notify
-
 ## Supported Clouds
 
-- All configured clouds
+- All
 
 ## Cost
 

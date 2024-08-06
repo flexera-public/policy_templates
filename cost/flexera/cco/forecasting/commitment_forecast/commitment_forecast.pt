@@ -1,7 +1,7 @@
-name "Vendor Commitment Forecast"
+name "Vendor Spend Commitment Forecast"
 rs_pt_ver 20180301
 type "policy"
-short_description "This policy allows the user to specify a Commitment target value (based on the commitment amount agreed with your Cloud Service Provider/s), and track the current commitment spend to date, as well as projected commitment spend over a period. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/forecasting/commitment_forecast/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Reports whether spend for the specified cloud provider is projected to meet a spend commitment target for the specified time period. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/forecasting/commitment_forecast/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Cost"
 severity "medium"
@@ -25,11 +25,28 @@ parameter "param_email" do
   default []
 end
 
+parameter "param_commitment_target" do
+  type "number"
+  category "Policy Settings"
+  label "Total Commitment Target"
+  description "The total commitment target for the specified time period. Value should be in the currency the Flexera One organization is configured to use."
+  # No default value, user input required
+end
+
+parameter "param_cost_metric" do
+  type "string"
+  category "Policy Settings"
+  label "Cost Metric"
+  description "Cost metric to use for the report. 'Unamortized Unblended' is recommended for accuracy."
+  allowed_values "Unamortized Unblended", "Amortized Unblended", "Unamortized Blended", "Amortized Blended"
+  default "Unamortized Unblended"
+end
+
 parameter "param_start_date" do
   type "string"
   category "Policy Settings"
   label "Commitment Period Start Date"
-  description "Start Date for Commitment Period in YYYY-MM format. For example: 2024-01"
+  description "Start date for the Commitment Period in YYYY-MM format. Example: 2024-01"
   allowed_pattern /20[2-9][0-9]-[0-1][0-9]/
   # No default value, user input required
 end
@@ -38,51 +55,17 @@ parameter "param_end_date" do
   type "string"
   category "Policy Settings"
   label "Commitment Period End Date"
-  description "End Date for Commitment Period in YYYY-MM format. For example: 2024-06"
+  description "End date for the Commitment Period in YYYY-MM format. Example: 2025-01"
   allowed_pattern /20[2-9][0-9]-[0-1][0-9]/
   # No default value, user input required
-end
-
-parameter "param_commitment_target" do
-  type "number"
-  category "Policy Settings"
-  label "Total Commitment Target"
-  description "The total commitment target for the specified time period. Value should be in the currency the Flexera One organization is configured to use."
-  default 100000
-end
-
-parameter "param_cost_metric" do
-  type "string"
-  category "Policy Settings"
-  label "Cost Metric"
-  description "Ccost metric to use for the report."
-  allowed_values "Unamortized Unblended","Amortized Unblended","Unamortized Blended","Amortized Blended"
-  default "Unamortized Unblended"
 end
 
 parameter "param_cloud_vendor" do
   type "string"
   category "Filters"
   label "Cloud Vendor"
-  description "Cloud Vendor to report on. Example: 'AWS' or 'GCP'. Leave blank to report on all vendors."
+  description "Cloud Vendor to report on. Examples: AWS, Azure, GCP. Leave blank to report on all vendors."
   default ""
-end
-
-parameter "param_bc_allow_or_deny" do
-  type "string"
-  category "Filters"
-  label "Allow/Deny Billing Centers"
-  description "Allow or Deny entered Billing Centers."
-  allowed_values "Allow", "Deny"
-  default "Allow"
-end
-
-parameter "param_bc_list" do
-  type "list"
-  category "Filters"
-  label "Allow/Deny Billing Center List"
-  description "A list of allowed or denied Billing Center names/IDs. Leave blank to report on all Billing Centers."
-  default []
 end
 
 ###############################################################################
@@ -232,47 +215,29 @@ datasource "ds_billing_centers" do
   end
 end
 
-datasource "ds_billing_centers_filtered" do
-  run_script $js_billing_centers_filtered, $ds_billing_centers, $param_bc_allow_or_deny, $param_bc_list
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
 end
 
-script "js_billing_centers_filtered", type: "javascript" do
-  parameters "ds_billing_centers", "param_bc_allow_or_deny", "param_bc_list"
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
   result "result"
   code <<-EOS
-  allow_deny_test = { "Allow": true, "Deny": false }
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
 
-  if (param_bc_list.length > 0) {
-    billing_centers = _.filter(ds_billing_centers, function(item) {
-      id_found = _.contains(param_bc_list, item['id']) == allow_deny_test[param_bc_allow_or_deny]
-      name_found = _.contains(param_bc_list, item['name']) == allow_deny_test[param_bc_allow_or_deny]
-      return id_found || name_found
-    })
-
-    // Check for conflicting parents/children and remove children if present
-    bc_ids = _.compact(_.pluck(billing_centers, 'id'))
-    bad_children = _.filter(ds_billing_centers, function(bc) { return _.contains(bc_ids, bc['parent_id']) })
-    bad_children_ids = _.pluck(bad_children, 'id')
-
-    // Create final result with the bad children removed
-    result = _.reject(billing_centers, function(bc) { return _.contains(bad_children_ids, bc['id']) })
-  } else {
-    // If we're not filtering at all, just grab all of the top level billing centers
-    result = _.filter(ds_billing_centers, function(bc) {
-      return bc['parent_id'] == null || bc['parent_id'] == undefined
-    })
-  }
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
 EOS
 end
 
 datasource "ds_aggregated_costs" do
   request do
-    run_script $js_aggregated_costs, $ds_billing_centers_filtered, $ds_cloud_vendor, $ds_cost_metric, $param_start_date, $param_end_date, rs_org_id, rs_optima_host
+    run_script $js_aggregated_costs, $ds_top_level_bcs, $ds_cloud_vendor, $ds_cost_metric, $param_start_date, $param_end_date, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
     collect jmes_path(response,"rows") do
-      field "billing_center_id", jmes_path(col_item, "dimensions.billing_center_id")
       field "vendor", jmes_path(col_item, "dimensions.vendor")
       field "metrics", jmes_path(col_item, "metrics")
       field "timestamp", jmes_path(col_item, "timestamp")
@@ -281,7 +246,7 @@ datasource "ds_aggregated_costs" do
 end
 
 script "js_aggregated_costs", type: "javascript" do
-  parameters "ds_billing_centers_filtered", "ds_cloud_vendor", "ds_cost_metric", "param_start_date", "param_end_date", "rs_org_id", "rs_optima_host"
+  parameters "ds_top_level_bcs", "ds_cloud_vendor", "ds_cost_metric", "param_start_date", "param_end_date", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
   var request = {
@@ -291,8 +256,8 @@ script "js_aggregated_costs", type: "javascript" do
     path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
     headers: { "User-Agent": "RS Policies", "Api-Version": "1.0" },
     body_fields: {
-      billing_center_ids: _.pluck(ds_billing_centers_filtered, 'id'),
-      dimensions: [ "billing_center_id", "vendor" ],
+      billing_center_ids: ds_top_level_bcs,
+      dimensions: [ "vendor" ],
       metrics: [ ds_cost_metric['id'] ],
       granularity: "month",
       start_at: param_start_date,
@@ -307,11 +272,11 @@ script "js_aggregated_costs", type: "javascript" do
 EOS
 end
 
-datasource "ds_actual_forecasted_spend" do
-  run_script $js_actual_forecasted_spend, $ds_aggregated_costs, $ds_cost_metric, $ds_cloud_vendor, $ds_currency, $ds_applied_policy, $param_start_date, $param_end_date, $param_commitment_target
+datasource "ds_forecasted_spend" do
+  run_script $js_forecasted_spend, $ds_aggregated_costs, $ds_cost_metric, $ds_cloud_vendor, $ds_currency, $ds_applied_policy, $param_start_date, $param_end_date, $param_commitment_target
 end
 
-script "js_actual_forecasted_spend", type: "javascript" do
+script "js_forecasted_spend", type: "javascript" do
   parameters "ds_aggregated_costs", "ds_cost_metric", "ds_cloud_vendor", "ds_currency", "ds_applied_policy", "param_start_date", "param_end_date", "param_commitment_target"
   result "result"
   code <<-EOS
@@ -359,15 +324,15 @@ EOS
 end
 
 datasource "ds_chart_data" do
-  run_script $js_chart_data, $ds_actual_forecasted_spend
+  run_script $js_chart_data, $ds_forecasted_spend
 end
 
 script "js_chart_data", type: "javascript" do
-  parameters "ds_actual_forecasted_spend"
+  parameters "ds_forecasted_spend"
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
-  function formatNumber(number, separator){
+  function formatNumber(number, separator) {
     numString = number.toString()
     values = numString.split(".")
     formatted_number = ''
@@ -384,29 +349,29 @@ script "js_chart_data", type: "javascript" do
     return formatted_number + "." + values[1]
   }
 
-  fmt_actual_spend = ds_actual_forecasted_spend['currency'] + formatNumber(ds_actual_forecasted_spend['actual_spend'], ds_actual_forecasted_spend['currency_sep'])
-  fmt_forecasted_spend = ds_actual_forecasted_spend['currency'] + formatNumber(ds_actual_forecasted_spend['forecasted_spend'], ds_actual_forecasted_spend['currency_sep'])
-  fmt_commitment_target = ds_actual_forecasted_spend['currency'] + formatNumber(ds_actual_forecasted_spend['commitment_target'], ds_actual_forecasted_spend['currency_sep'])
+  fmt_actual_spend = ds_forecasted_spend['currency'] + formatNumber(ds_forecasted_spend['actual_spend'], ds_forecasted_spend['currency_sep'])
+  fmt_forecasted_spend = ds_forecasted_spend['currency'] + formatNumber(ds_forecasted_spend['forecasted_spend'], ds_forecasted_spend['currency_sep'])
+  fmt_commitment_target = ds_forecasted_spend['currency'] + formatNumber(ds_forecasted_spend['commitment_target'], ds_forecasted_spend['currency_sep'])
 
-  if (ds_actual_forecasted_spend['target_status'] == "Met") {
-    over_commitment_amount_value = ds_actual_forecasted_spend['spend_difference']
+  if (ds_forecasted_spend['target_status'] == "Met") {
+    over_commitment_amount_value = ds_forecasted_spend['spend_difference']
     over_commitment_data = "0," + over_commitment_amount_value.toString()
     over_commitment_label = "Forecasted+Amount+Over+Commitment+Target"
     over_commitment_color = "4CBA54"
-    fmt_commitment_value = ds_actual_forecasted_spend['currency'] + formatNumber(over_commitment_amount_value, ds_actual_forecasted_spend['currency_sep'])
+    fmt_commitment_value = ds_forecasted_spend['currency'] + formatNumber(over_commitment_amount_value, ds_forecasted_spend['currency_sep'])
     data_values = fmt_actual_spend + '||' + fmt_forecasted_spend + '|||' + fmt_commitment_target + '||' + fmt_commitment_value
   } else {
-    over_commitment_amount_value = ds_actual_forecasted_spend['spend_difference'] * -1
+    over_commitment_amount_value = ds_forecasted_spend['spend_difference'] * -1
     over_commitment_data = over_commitment_amount_value.toString() + ",0"
     over_commitment_label = "Forecasted+Amount+Under+Commitment+Target"
     over_commitment_color = "F04B46"
-    fmt_commitment_value = ds_actual_forecasted_spend['currency'] + formatNumber(over_commitment_amount_value, ds_actual_forecasted_spend['currency_sep'])
+    fmt_commitment_value = ds_forecasted_spend['currency'] + formatNumber(over_commitment_amount_value, ds_forecasted_spend['currency_sep'])
     data_values = fmt_actual_spend +'||' + fmt_forecasted_spend + '|||' + fmt_commitment_target + '|' + fmt_commitment_value + '|'
   }
 
   chart_type = encodeURI("cht=bhs")
   chart_size = encodeURI("chs=800x200")
-  chart_data = encodeURI("chd=t:" + ds_actual_forecasted_spend['actual_spend'] + ",0|" + ds_actual_forecasted_spend['forecasted_spend'] +",0|0," + ds_actual_forecasted_spend['commitment_target'] + "|" + over_commitment_data)
+  chart_data = encodeURI("chd=t:" + ds_forecasted_spend['actual_spend'] + ",0|" + ds_forecasted_spend['forecasted_spend'] +",0|0," + ds_forecasted_spend['commitment_target'] + "|" + over_commitment_data)
   chart_title = encodeURI("chtt=Actual+and+Forecasted+Spend+vs.+Vendor+Commitment+Spend+Target+Report")
   chart_image = encodeURI("chof=.png")
   chart_color = encodeURI("chco=4FA8E9,9EC9E9,63CED6," + over_commitment_color)
@@ -424,13 +389,13 @@ script "js_chart_data", type: "javascript" do
 
   result = {
     chart_options: chart_options,
-    report_data: [ ds_actual_forecasted_spend ],
-    target_status: ds_actual_forecasted_spend['target_status'],
-    cloud_vendor: ds_actual_forecasted_spend['vendor'],
-    policy_name: ds_actual_forecasted_spend['policy_name'],
-    cost_metric: ds_actual_forecasted_spend['cost_metric'],
-    start_date: ds_actual_forecasted_spend['start_date'],
-    end_date: ds_actual_forecasted_spend['end_date']
+    report_data: [ ds_forecasted_spend ],
+    target_status: ds_forecasted_spend['target_status'],
+    cloud_vendor: ds_forecasted_spend['vendor'],
+    policy_name: ds_forecasted_spend['policy_name'],
+    cost_metric: ds_forecasted_spend['cost_metric'],
+    start_date: ds_forecasted_spend['start_date'],
+    end_date: ds_forecasted_spend['end_date']
   }
 EOS
 end
@@ -443,7 +408,7 @@ policy "pol_commitment_forecast" do
   validate $ds_chart_data do
     summary_template "{{ data.policy_name }}"
     detail_template <<-EOS
-# Commitment Forecast Report for {{ rs_org_name }} - {{ data.cloud_vendor }}
+# Spend Commitment Forecast Report for {{ rs_org_name }} - {{ data.cloud_vendor }}
 ## Commitment Target {{ data.target_status }}
 ### Cost Metric: {{ data.cost_metric }}
 ### Commitment Period: {{ parameters.param_start_date }} to {{ parameters.param_end_date }}
