@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.1.1
+
+- Fixed bug where invalid recommendations with no new resource type would sometimes be included in results
+
 ## v2.1
 
 - Updated policy to use new source for currency information. Policy functionality is unchanged.

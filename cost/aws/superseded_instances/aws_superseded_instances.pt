@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "2.1",
+  version: "2.1.1",
   provider: "AWS",
   service: "Compute",
   policy_set: "Superseded Compute Instances",
@@ -743,111 +743,113 @@ script "js_superseded_instances", type: "javascript" do
       }
     }
 
-    if (typeof(superseded_type) == 'string' && typeof(operating_system) == 'string') {
-      if (ds_aws_instance_cost_map[instance['region']] != undefined) {
-        instance_type_cost_map = ds_aws_instance_cost_map[instance['region']][instance_type]
+    if (typeof(superseded_type) == 'string' && superseded_type != '') {
+      if (typeof(operating_system) == 'string') {
+        if (ds_aws_instance_cost_map[instance['region']] != undefined) {
+          instance_type_cost_map = ds_aws_instance_cost_map[instance['region']][instance_type]
 
-        if (instance_type_cost_map != undefined) {
-          instance_type_price_map = instance_type_cost_map[operating_system]
-        }
+          if (instance_type_cost_map != undefined) {
+            instance_type_price_map = instance_type_cost_map[operating_system]
+          }
 
-        if (instance_type_price_map != undefined) {
-          instance_type_price = instance_type_price_map['pricePerUnit']
-        }
+          if (instance_type_price_map != undefined) {
+            instance_type_price = instance_type_price_map['pricePerUnit']
+          }
 
-        superseded_type_cost_map = ds_aws_instance_cost_map[instance['region']][superseded_type]
+          superseded_type_cost_map = ds_aws_instance_cost_map[instance['region']][superseded_type]
 
-        if (superseded_type_cost_map != undefined) {
-          superseded_type_price_map = superseded_type_cost_map[operating_system]
-        }
+          if (superseded_type_cost_map != undefined) {
+            superseded_type_price_map = superseded_type_cost_map[operating_system]
+          }
 
-        if (superseded_type_price_map != undefined) {
-          superseded_type_price = superseded_type_price_map['pricePerUnit']
+          if (superseded_type_price_map != undefined) {
+            superseded_type_price = superseded_type_price_map['pricePerUnit']
+          }
         }
       }
-    }
 
-    if (typeof(instance_type_price) == 'number' && typeof(superseded_type_price) == 'number') {
-      instance_type_price *= ds_currency['exchange_rate'] * hourly_cost_multiplier
-      superseded_type_price *= ds_currency['exchange_rate'] * hourly_cost_multiplier
-      savings = instance_type_price - superseded_type_price
-    }
+      if (typeof(instance_type_price) == 'number' && typeof(superseded_type_price) == 'number') {
+        instance_type_price *= ds_currency['exchange_rate'] * hourly_cost_multiplier
+        superseded_type_price *= ds_currency['exchange_rate'] * hourly_cost_multiplier
+        savings = instance_type_price - superseded_type_price
+      }
 
-    if (typeof(superseded_type) == 'string' && savings >= param_min_savings) {
-      total_savings += savings
+      if (savings >= param_min_savings) {
+        total_savings += savings
 
-      tags = []
-      resourceName = ""
+        tags = []
+        resourceName = ""
 
-      if (instance['tags'] != null && instance['tags'] != undefined) {
-        _.each(instance['tags'], function(tag) {
-          tags.push([tag['key'], tag['value']].join('='))
+        if (instance['tags'] != null && instance['tags'] != undefined) {
+          _.each(instance['tags'], function(tag) {
+            tags.push([tag['key'], tag['value']].join('='))
 
-          if (tag['key'].toLowerCase() == 'name') {
-            resourceName = tag['value']
-          }
+            if (tag['key'].toLowerCase() == 'name') {
+              resourceName = tag['value']
+            }
+          })
+        }
+
+        savings = parseFloat(savings.toFixed(3))
+
+        if (typeof(cost) == 'number') {
+          cost = parseFloat(cost.toFixed(3))
+        }
+
+        if (typeof(instance_type_price) == 'number') {
+          instance_type_price = parseFloat(instance_type_price.toFixed(3))
+        }
+
+        if (typeof(superseded_type_price) == 'number') {
+          superseded_type_price = parseFloat(superseded_type_price.toFixed(3))
+        }
+
+        recommendationDetails = [
+          "Change instance type of EC2 instance ", instance["instanceId"], " ",
+          "in AWS Account ", ds_aws_account['name'], " ",
+          "(", ds_aws_account['id'], ") ",
+          "from ", instance["resourceType"], " ",
+          "to ", superseded_type
+        ].join('')
+
+        hostname = null
+
+        if (typeof(instance['privateDnsName']) == 'string') {
+          hostname = instance['privateDnsName'].split('.')[0]
+        }
+
+        result.push({
+          region: instance['region'],
+          resourceID: instance['instanceId'],
+          ipAddress: instance['ipAddress'],
+          ipv6Address: instance['ipv6Address'],
+          imageId: instance['imageId'],
+          resourceType: instance['resourceType'],
+          platform: instance['platform'],
+          privateDnsName: instance['privateDnsName'],
+          launchTime: instance['launchTime'],
+          osType: operating_system,
+          billing_center: billing_center,
+          purchase_option: purchase_option,
+          service: "AmazonEC2",
+          tags: tags.join(', '),
+          accountID: ds_aws_account['id'],
+          accountName: ds_aws_account['name'],
+          hostname: hostname,
+          recommendationDetails: recommendationDetails,
+          newResourceType: superseded_type,
+          resourceName: resourceName,
+          cost: cost,
+          instance_type_price: instance_type_price,
+          superseded_type_price: superseded_type_price,
+          savings: savings,
+          savingsCurrency: ds_currency['symbol'],
+          recommendationType: param_instance_type,
+          policy_name: ds_applied_policy['name'],
+          total_savings: "",
+          message: ""
         })
       }
-
-      savings = parseFloat(savings.toFixed(3))
-
-      if (typeof(cost) == 'number') {
-        cost = parseFloat(cost.toFixed(3))
-      }
-
-      if (typeof(instance_type_price) == 'number') {
-        instance_type_price = parseFloat(instance_type_price.toFixed(3))
-      }
-
-      if (typeof(superseded_type_price) == 'number') {
-        superseded_type_price = parseFloat(superseded_type_price.toFixed(3))
-      }
-
-      recommendationDetails = [
-        "Change instance type of EC2 instance ", instance["instanceId"], " ",
-        "in AWS Account ", ds_aws_account['name'], " ",
-        "(", ds_aws_account['id'], ") ",
-        "from ", instance["resourceType"], " ",
-        "to ", superseded_type
-      ].join('')
-
-      hostname = null
-
-      if (typeof(instance['privateDnsName']) == 'string') {
-        hostname = instance['privateDnsName'].split('.')[0]
-      }
-
-      result.push({
-        region: instance['region'],
-        resourceID: instance['instanceId'],
-        ipAddress: instance['ipAddress'],
-        ipv6Address: instance['ipv6Address'],
-        imageId: instance['imageId'],
-        resourceType: instance['resourceType'],
-        platform: instance['platform'],
-        privateDnsName: instance['privateDnsName'],
-        launchTime: instance['launchTime'],
-        osType: operating_system,
-        billing_center: billing_center,
-        purchase_option: purchase_option,
-        service: "AmazonEC2",
-        tags: tags.join(', '),
-        accountID: ds_aws_account['id'],
-        accountName: ds_aws_account['name'],
-        hostname: hostname,
-        recommendationDetails: recommendationDetails,
-        newResourceType: superseded_type,
-        resourceName: resourceName,
-        cost: cost,
-        instance_type_price: instance_type_price,
-        superseded_type_price: superseded_type_price,
-        savings: savings,
-        savingsCurrency: ds_currency['symbol'],
-        recommendationType: param_instance_type,
-        policy_name: ds_applied_policy['name'],
-        total_savings: "",
-        message: ""
-      })
     }
   })
 
