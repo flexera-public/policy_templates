@@ -43,6 +43,15 @@ parameter "param_instance_type" do
   default "Regular"
 end
 
+parameter "param_fallback_instance_type" do
+  type "string"
+  category "Policy Settings"
+  label "Fallback Instance Type Category"
+  description "Instance Type Category to pick from for recommended instance types if there are no valid recommendations for the primary category. Set to 'None' to have no fallback. See README for more information."
+  allowed_values "Regular", "Next Gen", "Burstable", "AMD", "None"
+  default "None"
+end
+
 parameter "param_min_savings" do
   type "number"
   category "Policy Settings"
@@ -677,11 +686,11 @@ EOS
 end
 
 datasource "ds_superseded_instances" do
-  run_script $js_superseded_instances, $ds_instances, $ds_instance_costs_grouped, $ds_aws_instance_size_map, $ds_aws_instance_cost_map, $ds_currency_conversion, $ds_currency, $ds_aws_account, $ds_applied_policy, $param_instance_type, $param_min_savings
+  run_script $js_superseded_instances, $ds_instances, $ds_instance_costs_grouped, $ds_aws_instance_size_map, $ds_aws_instance_cost_map, $ds_currency_conversion, $ds_currency, $ds_aws_account, $ds_applied_policy, $param_instance_type, $param_fallback_instance_type, $param_min_savings
 end
 
 script "js_superseded_instances", type: "javascript" do
-  parameters "ds_instances", "ds_instance_costs_grouped", "ds_aws_instance_size_map", "ds_aws_instance_cost_map", "ds_currency_conversion", "ds_currency", "ds_aws_account", "ds_applied_policy", "param_instance_type", "param_min_savings"
+  parameters "ds_instances", "ds_instance_costs_grouped", "ds_aws_instance_size_map", "ds_aws_instance_cost_map", "ds_currency_conversion", "ds_currency", "ds_aws_account", "ds_applied_policy", "param_instance_type", "param_fallback_instance_type", "param_min_savings"
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
@@ -740,6 +749,20 @@ script "js_superseded_instances", type: "javascript" do
 
       if (typeof(superseded_table) == 'object') {
         superseded_type = superseded_table[superseded_parameter]
+        recommendationType = param_instance_type
+      }
+    }
+
+    if ((typeof(superseded_type) != 'string' || superseded_type != '') && param_fallback_instance_type != "None") {
+      superseded_parameter = type_table[param_fallback_instance_type]
+
+      if (ds_aws_instance_size_map[instance_type] != undefined) {
+        superseded_table = ds_aws_instance_size_map[instance_type]['superseded']
+
+        if (typeof(superseded_table) == 'object') {
+          superseded_type = superseded_table[superseded_parameter]
+          recommendationType = param_fallback_instance_type
+        }
       }
     }
 
@@ -844,7 +867,7 @@ script "js_superseded_instances", type: "javascript" do
           superseded_type_price: superseded_type_price,
           savings: savings,
           savingsCurrency: ds_currency['symbol'],
-          recommendationType: param_instance_type,
+          recommendationType: recommendationType,
           policy_name: ds_applied_policy['name'],
           total_savings: "",
           message: ""
@@ -875,9 +898,14 @@ script "js_superseded_instances", type: "javascript" do
   findings = [
     "Out of ", total_instances, " EC2 ", instance_noun, " analyzed, ",
     total_superseded, " (", superseded_percentage,
-    ") ", superseded_verb, " superseded and recommended for an instance type change. ",
-    "All recommendations are for ", param_instance_type, " instance types.\n\n"
+    ") ", superseded_verb, " superseded and recommended for an instance type change. "
   ].join('')
+
+  if (param_fallback_instance_type == "None") {
+    findings += "All recommendations are for '", param_instance_type, "' instance types.\n\n"
+  } else {
+    findings += "All recommendations are for '", param_instance_type, "' instance types when available with '", param_fallback_instance_type, "' as a fallback instance type when the primary type is not an option.\n\n"
+  }
 
   disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
 
@@ -895,16 +923,35 @@ script "js_superseded_instances", type: "javascript" do
 
   // Dummy entry to ensure the check statement in validation always runs at least once
   result.push({
-    region: "",                 resourceID: "",               ipAddress: "",
-    ipv6Address: "",            imageId: "",                  resourceType: "",
-    platform: "",               privateDnsName: "",           launchTime: "",
-    osType: "",                 billing_center: "",           purchase_option: "",
-    service: "",                tags: "",                     accountID: "",
-    accountName: "",            hostname: "",                 recommendationDetails: "",
-    newResourceType: "",        resourceName: "",             cost: "",
-    instance_type_price: "",    superseded_type_price: "",    savings: "",
-    savingsCurrency: "",        recommendationType: "",       policy_name: "",
-    total_savings: "",          message: ""
+    region: "",
+    resourceID: "",
+    ipAddress: "",
+    ipv6Address: "",
+    imageId: "",
+    resourceType: "",
+    platform: "",
+    privateDnsName: "",
+    launchTime: "",
+    osType: "",
+    billing_center: "",
+    purchase_option: "",
+    service: "",
+    tags: "",
+    accountID: "",
+    accountName: "",
+    hostname: "",
+    recommendationDetails: "",
+    newResourceType: "",
+    resourceName: "",
+    cost: "",
+    instance_type_price: "",
+    superseded_type_price: "",
+    savings: "",
+    savingsCurrency: "",
+    recommendationType: "",
+    policy_name: "",
+    total_savings: "",
+    message: ""
   })
 
   result[0]['total_savings'] = savings_message
