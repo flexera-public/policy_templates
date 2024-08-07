@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "2.1",
+  version: "2.2.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Superseded Compute Instances",
@@ -41,6 +41,15 @@ parameter "param_instance_type" do
   description "Instance Type Category to pick from for recommended instance types. See README for more information."
   allowed_values "Regular", "Next Gen", "Burstable", "AMD"
   default "Regular"
+end
+
+parameter "param_fallback_instance_type" do
+  type "string"
+  category "Policy Settings"
+  label "Fallback Instance Type Category"
+  description "Instance Type Category to pick from for recommended instance types if there are no valid recommendations for the primary category. Set to 'None' to have no fallback. See README for more information."
+  allowed_values "Regular", "Next Gen", "Burstable", "AMD", "None"
+  default "None"
 end
 
 parameter "param_min_savings" do
@@ -82,8 +91,8 @@ parameter "param_regions_list" do
   type "list"
   category "Filters"
   label "Allow/Deny Regions List"
-  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   description "A list of allowed or denied regions. See the README for more details"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   default []
 end
 
@@ -116,19 +125,6 @@ credentials "auth_flexera" do
 end
 
 ###############################################################################
-# Pagination
-###############################################################################
-
-pagination "pagination_aws" do
-  get_page_marker do
-    body_path jmes_path(response, "NextToken")
-  end
-  set_page_marker do
-    body_field "NextToken"
-  end
-end
-
-###############################################################################
 # Datasources & Scripts
 ###############################################################################
 
@@ -137,7 +133,7 @@ datasource "ds_aws_instance_size_map" do
   request do
     verb "GET"
     host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/data/aws/instance_types.json"
+    path "/flexera-public/policy_templates/master/data/aws/instance_types.json"
     header "User-Agent", "RS Policies"
   end
 end
@@ -146,7 +142,7 @@ datasource "ds_aws_instance_cost_map" do
   request do
     verb "GET"
     host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/data/aws/aws_ec2_pricing.json"
+    path "/flexera-public/policy_templates/master/data/aws/aws_ec2_pricing.json"
     header "User-Agent", "RS Policies"
   end
 end
@@ -213,9 +209,9 @@ datasource "ds_get_caller_identity" do
     verb "GET"
     host "sts.amazonaws.com"
     path "/"
-    header "User-Agent", "RS Policies"
     query "Action", "GetCallerIdentity"
     query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
   end
   result do
     encoding "xml"
@@ -253,9 +249,9 @@ datasource "ds_billing_centers" do
     auth $auth_flexera
     host rs_optima_host
     path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
     ignore_status [403]
   end
   result do
@@ -443,17 +439,17 @@ datasource "ds_instance_sets" do
     auth $auth_aws
     host join(['ec2.', val(iter_item, 'region'), '.amazonaws.com'])
     path '/'
-    header 'User-Agent', 'RS Policies'
-    header 'Content-Type', 'text/xml'
     query 'Action', 'DescribeInstances'
     query 'Version', '2016-11-15'
+    header 'User-Agent', 'RS Policies'
+    header 'Content-Type', 'text/xml'
   end
   result do
     encoding "xml"
     collect xpath(response, "//DescribeInstancesResponse/reservationSet/item", "array") do
       field "instances_set" do
-        collect xpath(col_item,"instancesSet/item","array") do
-          field "region",val(iter_item, "region")
+        collect xpath(col_item, "instancesSet/item", "array") do
+          field "region", val(iter_item, "region")
           field "instanceId", xpath(col_item, "instanceId")
           field "ipAddress", xpath(col_item, "ipAddress")
           field "ipv6Address", xpath(col_item, "ipv6Address")
@@ -463,7 +459,7 @@ datasource "ds_instance_sets" do
           field "privateDnsName", xpath(col_item, "privateDnsName")
           field "launchTime", xpath(col_item, "launchTime")
           field "tags" do
-            collect xpath(col_item,"tagSet/item", "array") do
+            collect xpath(col_item, "tagSet/item", "array") do
               field "key", xpath(col_item, "key")
               field "value", xpath(col_item, "value")
             end
@@ -568,7 +564,7 @@ datasource "ds_instance_costs" do
   end
   result do
     encoding "json"
-    collect jmes_path(response,"rows[*]") do
+    collect jmes_path(response, "rows[*]") do
       field "resourceId", jmes_path(col_item, "dimensions.resource_id")
       field "billing_center_id", jmes_path(col_item, "dimensions.billing_center_id")
       field "operating_system", jmes_path(col_item, "dimensions.operating_system")
@@ -677,11 +673,11 @@ EOS
 end
 
 datasource "ds_superseded_instances" do
-  run_script $js_superseded_instances, $ds_instances, $ds_instance_costs_grouped, $ds_aws_instance_size_map, $ds_aws_instance_cost_map, $ds_currency_conversion, $ds_currency, $ds_aws_account, $ds_applied_policy, $param_instance_type, $param_min_savings
+  run_script $js_superseded_instances, $ds_instances, $ds_instance_costs_grouped, $ds_aws_instance_size_map, $ds_aws_instance_cost_map, $ds_currency_conversion, $ds_currency, $ds_aws_account, $ds_applied_policy, $param_instance_type, $param_fallback_instance_type, $param_min_savings
 end
 
 script "js_superseded_instances", type: "javascript" do
-  parameters "ds_instances", "ds_instance_costs_grouped", "ds_aws_instance_size_map", "ds_aws_instance_cost_map", "ds_currency_conversion", "ds_currency", "ds_aws_account", "ds_applied_policy", "param_instance_type", "param_min_savings"
+  parameters "ds_instances", "ds_instance_costs_grouped", "ds_aws_instance_size_map", "ds_aws_instance_cost_map", "ds_currency_conversion", "ds_currency", "ds_aws_account", "ds_applied_policy", "param_instance_type", "param_fallback_instance_type", "param_min_savings"
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
@@ -740,114 +736,130 @@ script "js_superseded_instances", type: "javascript" do
 
       if (typeof(superseded_table) == 'object') {
         superseded_type = superseded_table[superseded_parameter]
+        recommendationType = param_instance_type
       }
     }
 
-    if (typeof(superseded_type) == 'string' && typeof(operating_system) == 'string') {
-      if (ds_aws_instance_cost_map[instance['region']] != undefined) {
-        instance_type_cost_map = ds_aws_instance_cost_map[instance['region']][instance_type]
+    if ((typeof(superseded_type) != 'string' || superseded_type != '') && param_fallback_instance_type != "None") {
+      superseded_parameter = type_table[param_fallback_instance_type]
 
-        if (instance_type_cost_map != undefined) {
-          instance_type_price_map = instance_type_cost_map[operating_system]
-        }
+      if (ds_aws_instance_size_map[instance_type] != undefined) {
+        superseded_table = ds_aws_instance_size_map[instance_type]['superseded']
 
-        if (instance_type_price_map != undefined) {
-          instance_type_price = instance_type_price_map['pricePerUnit']
-        }
-
-        superseded_type_cost_map = ds_aws_instance_cost_map[instance['region']][superseded_type]
-
-        if (superseded_type_cost_map != undefined) {
-          superseded_type_price_map = superseded_type_cost_map[operating_system]
-        }
-
-        if (superseded_type_price_map != undefined) {
-          superseded_type_price = superseded_type_price_map['pricePerUnit']
+        if (typeof(superseded_table) == 'object') {
+          superseded_type = superseded_table[superseded_parameter]
+          recommendationType = param_fallback_instance_type
         }
       }
     }
 
-    if (typeof(instance_type_price) == 'number' && typeof(superseded_type_price) == 'number') {
-      instance_type_price *= ds_currency['exchange_rate'] * hourly_cost_multiplier
-      superseded_type_price *= ds_currency['exchange_rate'] * hourly_cost_multiplier
-      savings = instance_type_price - superseded_type_price
-    }
+    if (typeof(superseded_type) == 'string' && superseded_type != '') {
+      if (typeof(operating_system) == 'string') {
+        if (ds_aws_instance_cost_map[instance['region']] != undefined) {
+          instance_type_cost_map = ds_aws_instance_cost_map[instance['region']][instance_type]
 
-    if (typeof(superseded_type) == 'string' && savings >= param_min_savings) {
-      total_savings += savings
-
-      tags = []
-      resourceName = ""
-
-      if (instance['tags'] != null && instance['tags'] != undefined) {
-        _.each(instance['tags'], function(tag) {
-          tags.push([tag['key'], tag['value']].join('='))
-
-          if (tag['key'].toLowerCase() == 'name') {
-            resourceName = tag['value']
+          if (instance_type_cost_map != undefined) {
+            instance_type_price_map = instance_type_cost_map[operating_system]
           }
+
+          if (instance_type_price_map != undefined) {
+            instance_type_price = instance_type_price_map['pricePerUnit']
+          }
+
+          superseded_type_cost_map = ds_aws_instance_cost_map[instance['region']][superseded_type]
+
+          if (superseded_type_cost_map != undefined) {
+            superseded_type_price_map = superseded_type_cost_map[operating_system]
+          }
+
+          if (superseded_type_price_map != undefined) {
+            superseded_type_price = superseded_type_price_map['pricePerUnit']
+          }
+        }
+      }
+
+      if (typeof(instance_type_price) == 'number' && typeof(superseded_type_price) == 'number') {
+        instance_type_price *= ds_currency['exchange_rate'] * hourly_cost_multiplier
+        superseded_type_price *= ds_currency['exchange_rate'] * hourly_cost_multiplier
+        savings = instance_type_price - superseded_type_price
+      }
+
+      if (savings >= param_min_savings) {
+        total_savings += savings
+
+        tags = []
+        resourceName = ""
+
+        if (instance['tags'] != null && instance['tags'] != undefined) {
+          _.each(instance['tags'], function(tag) {
+            tags.push([tag['key'], tag['value']].join('='))
+
+            if (tag['key'].toLowerCase() == 'name') {
+              resourceName = tag['value']
+            }
+          })
+        }
+
+        savings = parseFloat(savings.toFixed(3))
+
+        if (typeof(cost) == 'number') {
+          cost = parseFloat(cost.toFixed(3))
+        }
+
+        if (typeof(instance_type_price) == 'number') {
+          instance_type_price = parseFloat(instance_type_price.toFixed(3))
+        }
+
+        if (typeof(superseded_type_price) == 'number') {
+          superseded_type_price = parseFloat(superseded_type_price.toFixed(3))
+        }
+
+        recommendationDetails = [
+          "Change instance type of EC2 instance ", instance["instanceId"], " ",
+          "in AWS Account ", ds_aws_account['name'], " ",
+          "(", ds_aws_account['id'], ") ",
+          "from ", instance["resourceType"], " ",
+          "to ", superseded_type
+        ].join('')
+
+        hostname = null
+
+        if (typeof(instance['privateDnsName']) == 'string') {
+          hostname = instance['privateDnsName'].split('.')[0]
+        }
+
+        result.push({
+          region: instance['region'],
+          resourceID: instance['instanceId'],
+          ipAddress: instance['ipAddress'],
+          ipv6Address: instance['ipv6Address'],
+          imageId: instance['imageId'],
+          resourceType: instance['resourceType'],
+          platform: instance['platform'],
+          privateDnsName: instance['privateDnsName'],
+          launchTime: instance['launchTime'],
+          osType: operating_system,
+          billing_center: billing_center,
+          purchase_option: purchase_option,
+          service: "AmazonEC2",
+          tags: tags.join(', '),
+          accountID: ds_aws_account['id'],
+          accountName: ds_aws_account['name'],
+          hostname: hostname,
+          recommendationDetails: recommendationDetails,
+          newResourceType: superseded_type,
+          resourceName: resourceName,
+          cost: cost,
+          instance_type_price: instance_type_price,
+          superseded_type_price: superseded_type_price,
+          savings: savings,
+          savingsCurrency: ds_currency['symbol'],
+          recommendationType: recommendationType,
+          policy_name: ds_applied_policy['name'],
+          total_savings: "",
+          message: ""
         })
       }
-
-      savings = parseFloat(savings.toFixed(3))
-
-      if (typeof(cost) == 'number') {
-        cost = parseFloat(cost.toFixed(3))
-      }
-
-      if (typeof(instance_type_price) == 'number') {
-        instance_type_price = parseFloat(instance_type_price.toFixed(3))
-      }
-
-      if (typeof(superseded_type_price) == 'number') {
-        superseded_type_price = parseFloat(superseded_type_price.toFixed(3))
-      }
-
-      recommendationDetails = [
-        "Change instance type of EC2 instance ", instance["instanceId"], " ",
-        "in AWS Account ", ds_aws_account['name'], " ",
-        "(", ds_aws_account['id'], ") ",
-        "from ", instance["resourceType"], " ",
-        "to ", superseded_type
-      ].join('')
-
-      hostname = null
-
-      if (typeof(instance['privateDnsName']) == 'string') {
-        hostname = instance['privateDnsName'].split('.')[0]
-      }
-
-      result.push({
-        region: instance['region'],
-        resourceID: instance['instanceId'],
-        ipAddress: instance['ipAddress'],
-        ipv6Address: instance['ipv6Address'],
-        imageId: instance['imageId'],
-        resourceType: instance['resourceType'],
-        platform: instance['platform'],
-        privateDnsName: instance['privateDnsName'],
-        launchTime: instance['launchTime'],
-        osType: operating_system,
-        billing_center: billing_center,
-        purchase_option: purchase_option,
-        service: "AmazonEC2",
-        tags: tags.join(', '),
-        accountID: ds_aws_account['id'],
-        accountName: ds_aws_account['name'],
-        hostname: hostname,
-        recommendationDetails: recommendationDetails,
-        newResourceType: superseded_type,
-        resourceName: resourceName,
-        cost: cost,
-        instance_type_price: instance_type_price,
-        superseded_type_price: superseded_type_price,
-        savings: savings,
-        savingsCurrency: ds_currency['symbol'],
-        recommendationType: param_instance_type,
-        policy_name: ds_applied_policy['name'],
-        total_savings: "",
-        message: ""
-      })
     }
   })
 
@@ -873,9 +885,14 @@ script "js_superseded_instances", type: "javascript" do
   findings = [
     "Out of ", total_instances, " EC2 ", instance_noun, " analyzed, ",
     total_superseded, " (", superseded_percentage,
-    ") ", superseded_verb, " superseded and recommended for an instance type change. ",
-    "All recommendations are for ", param_instance_type, " instance types.\n\n"
+    ") ", superseded_verb, " superseded and recommended for an instance type change. "
   ].join('')
+
+  if (param_fallback_instance_type == "None") {
+    findings += "All recommendations are for '", param_instance_type, "' instance types.\n\n"
+  } else {
+    findings += "All recommendations are for '", param_instance_type, "' instance types when available with '", param_fallback_instance_type, "' as a fallback instance type when the primary type is not an option.\n\n"
+  }
 
   disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
 
@@ -893,16 +910,35 @@ script "js_superseded_instances", type: "javascript" do
 
   // Dummy entry to ensure the check statement in validation always runs at least once
   result.push({
-    region: "",                 resourceID: "",               ipAddress: "",
-    ipv6Address: "",            imageId: "",                  resourceType: "",
-    platform: "",               privateDnsName: "",           launchTime: "",
-    osType: "",                 billing_center: "",           purchase_option: "",
-    service: "",                tags: "",                     accountID: "",
-    accountName: "",            hostname: "",                 recommendationDetails: "",
-    newResourceType: "",        resourceName: "",             cost: "",
-    instance_type_price: "",    superseded_type_price: "",    savings: "",
-    savingsCurrency: "",        recommendationType: "",       policy_name: "",
-    total_savings: "",          message: ""
+    region: "",
+    resourceID: "",
+    ipAddress: "",
+    ipv6Address: "",
+    imageId: "",
+    resourceType: "",
+    platform: "",
+    privateDnsName: "",
+    launchTime: "",
+    osType: "",
+    billing_center: "",
+    purchase_option: "",
+    service: "",
+    tags: "",
+    accountID: "",
+    accountName: "",
+    hostname: "",
+    recommendationDetails: "",
+    newResourceType: "",
+    resourceName: "",
+    cost: "",
+    instance_type_price: "",
+    superseded_type_price: "",
+    savings: "",
+    savingsCurrency: "",
+    recommendationType: "",
+    policy_name: "",
+    total_savings: "",
+    message: ""
   })
 
   result[0]['total_savings'] = savings_message
@@ -1045,7 +1081,7 @@ define change_instances($data) return $all_responses do
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -1208,7 +1244,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
     header "Api-Version", "1.0"
   end
   result do
