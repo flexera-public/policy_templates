@@ -1,8 +1,9 @@
 # Changelog
 
-## v2.1.1
+## v2.2.0
 
 - Fixed bug where invalid recommendations with no new resource type would sometimes be included in results
+- Added `Fallback Instance Type Category` parameter to provide alternate recommendations when the selected category is not available
 
 ## v2.1
 
