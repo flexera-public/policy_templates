@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy checks all the EC2 instances in an AWS Account to determine if the instance type has been superseded. If it has, the virtual machine is recommended for resizing to a more modern instance type. An incident listing all of these superseded EC2 instances is emailed to the user.
+This policy template checks all the EC2 instances in an AWS Account to determine if the instance type has been superseded. If it has, the virtual machine is recommended for resizing to a more modern instance type. An incident listing all of these superseded EC2 instances is emailed to the user.
 
 ## How It Works
 
