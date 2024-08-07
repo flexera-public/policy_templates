@@ -91,8 +91,8 @@ parameter "param_regions_list" do
   type "list"
   category "Filters"
   label "Allow/Deny Regions List"
-  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   description "A list of allowed or denied regions. See the README for more details"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   default []
 end
 
@@ -125,19 +125,6 @@ credentials "auth_flexera" do
 end
 
 ###############################################################################
-# Pagination
-###############################################################################
-
-pagination "pagination_aws" do
-  get_page_marker do
-    body_path jmes_path(response, "NextToken")
-  end
-  set_page_marker do
-    body_field "NextToken"
-  end
-end
-
-###############################################################################
 # Datasources & Scripts
 ###############################################################################
 
@@ -146,7 +133,7 @@ datasource "ds_aws_instance_size_map" do
   request do
     verb "GET"
     host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/data/aws/instance_types.json"
+    path "/flexera-public/policy_templates/master/data/aws/instance_types.json"
     header "User-Agent", "RS Policies"
   end
 end
@@ -155,7 +142,7 @@ datasource "ds_aws_instance_cost_map" do
   request do
     verb "GET"
     host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/data/aws/aws_ec2_pricing.json"
+    path "/flexera-public/policy_templates/master/data/aws/aws_ec2_pricing.json"
     header "User-Agent", "RS Policies"
   end
 end
@@ -222,9 +209,9 @@ datasource "ds_get_caller_identity" do
     verb "GET"
     host "sts.amazonaws.com"
     path "/"
-    header "User-Agent", "RS Policies"
     query "Action", "GetCallerIdentity"
     query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
   end
   result do
     encoding "xml"
@@ -262,9 +249,9 @@ datasource "ds_billing_centers" do
     auth $auth_flexera
     host rs_optima_host
     path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
     ignore_status [403]
   end
   result do
@@ -452,17 +439,17 @@ datasource "ds_instance_sets" do
     auth $auth_aws
     host join(['ec2.', val(iter_item, 'region'), '.amazonaws.com'])
     path '/'
-    header 'User-Agent', 'RS Policies'
-    header 'Content-Type', 'text/xml'
     query 'Action', 'DescribeInstances'
     query 'Version', '2016-11-15'
+    header 'User-Agent', 'RS Policies'
+    header 'Content-Type', 'text/xml'
   end
   result do
     encoding "xml"
     collect xpath(response, "//DescribeInstancesResponse/reservationSet/item", "array") do
       field "instances_set" do
-        collect xpath(col_item,"instancesSet/item","array") do
-          field "region",val(iter_item, "region")
+        collect xpath(col_item,"instancesSet/item", "array") do
+          field "region", val(iter_item, "region")
           field "instanceId", xpath(col_item, "instanceId")
           field "ipAddress", xpath(col_item, "ipAddress")
           field "ipv6Address", xpath(col_item, "ipv6Address")
@@ -472,7 +459,7 @@ datasource "ds_instance_sets" do
           field "privateDnsName", xpath(col_item, "privateDnsName")
           field "launchTime", xpath(col_item, "launchTime")
           field "tags" do
-            collect xpath(col_item,"tagSet/item", "array") do
+            collect xpath(col_item, "tagSet/item", "array") do
               field "key", xpath(col_item, "key")
               field "value", xpath(col_item, "value")
             end
@@ -577,7 +564,7 @@ datasource "ds_instance_costs" do
   end
   result do
     encoding "json"
-    collect jmes_path(response,"rows[*]") do
+    collect jmes_path(response, "rows[*]") do
       field "resourceId", jmes_path(col_item, "dimensions.resource_id")
       field "billing_center_id", jmes_path(col_item, "dimensions.billing_center_id")
       field "operating_system", jmes_path(col_item, "dimensions.operating_system")
@@ -1094,7 +1081,7 @@ define change_instances($data) return $all_responses do
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -1257,7 +1244,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
     header "Api-Version", "1.0"
   end
   result do
