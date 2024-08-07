@@ -8,7 +8,7 @@ This JSON file contains a list of all published policies in the catalog and thei
 
 ## Generally Recommended Policy Templates List
 
-The [`generally_recommended_policy_templates_list.yaml`](generally_recommended_policy_templates_list.yaml) file defines the generally recommended policy templates.  The list is curated by the Flexera Solution Architect and Advisor teams and includes the Catalog Policy Templates we generally recommend for all customers (given they use the respective vendor).
+The [`generally_recommended_policy_templates_list.json`](generally_recommended_policy_templates_list.json) file defines the generally recommended policy templates.  The list is curated by the Flexera Solution Architect and Advisor teams and includes the Catalog Policy Templates we generally recommend for all customers (given they use the respective vendor).
 
 The result of this is that the [active_policy_list.json](active_policy_list.json) file will contain a `generally_recommended` key for each policy template with a "true" or "false" value.  Automation tools/scripts, as well as Customers directly can reference this list as a source of truth for what policy templates are generally recommended.
 
