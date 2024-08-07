@@ -19,7 +19,8 @@ task :generate_policy_list do
   github_client = Octokit::Client.new(access_token: github_api_token)
 
   # Get the static list of recommended policy templates
-  generally_recommended_templates = YAML.load_file('data/active_policy_list/generally_recommended_templates.yaml')
+  generally_recommended_templates_json = File.read('data/active_policy_list/generally_recommended_templates.json')
+  generally_recommended_templates = JSON.parse(generally_recommended_templates_json)
 
   FileUtils.mkdir_p 'dist'
   file_list = []
