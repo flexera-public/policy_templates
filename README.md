@@ -351,7 +351,7 @@ These templates can generate savings estimates for your environment.
   - [New Service Usage](./cost/flexera/cco/new_service_usage)
   - [Scheduled Report](./cost/flexera/cco/scheduled_reports)
   - [Superseded Instances](./cost/flexera/cco/superseded_instance)
-  - [Vendor Commitment Forecast](./cost/flexera/cco/forecasting/commitment_forecast)
+  - [Vendor Spend Commitment Forecast](./cost/flexera/cco/forecasting/commitment_forecast)
 
 - Common Bill Ingestion
 
