@@ -133,29 +133,22 @@ script "js_result_service_account", type: "javascript" do
   code <<-EOS
   check_results = [];
   // Check to see if there is at least one Service Account
-  if (ds_service_accounts.length == 0) {
-    check_results.push({
-      "name": "First Service Account",
-      "severity": "high",
-      "result": "fail",
-      "details": "No Service Account found.  Recommend setting up a Service Account and using those credentials for automation instead of User Refresh Token.\\n\\nTo remediate this, you can create a Service Account following steps outlined here: [Flexera Docs > Creating a Service Account](https://docs.flexera.com/flexera/EN/FlexeraAPI/ServiceAccounts.htm#gettingstarted_2667441685_1132254)"
-    });
-  } else {
-    check_results.push({
-        "name": "First Service Account",
-        "severity": "high",
-        "result": "pass",
-        "details": ds_service_accounts.length+" Service Account(s) found.\\n\\n"+ds_service_accounts.map(function (sa) {
-          return " - "+sa.name+" (ID: "+sa.id+")";
-        }).join("\\n")
-      });
+  if (ds_service_accounts.length > 0) {
     // Check to see if there is at least one Service Account Client for at least one Service Account
     if (ds_service_account_clients.length == 0) {
+      // Details from official docs page
+      // https://developer.flexera.com/docs/api/iam/v1#/Service%20Account%20Client
+      details = [
+        "Each service account client belongs to a service account, and consists of a clientId and clientSecret. The clientSecret is a sensitive credential and must be stored securely. Lost or compromised clients should be deleted immediately.",
+        "Generally, only one of the service account's clients should be in use at a time. The exception is during a no-downtime credential rotation, a new client must be generated and supplied to the running application acting as a service account, before the previous client is deleted.",
+        "The service account client's clientId and clientSecret are used to authenticate with Flexera One's API. After authentication, the application's permission in the Flexera One API is determined by the roles assigned to the service account.",
+        "More details in the [Flexera API > Service Account Client Documentation](https://developer.flexera.com/docs/api/iam/v1#/Service%20Account%20Client)"
+      ]
       check_results.push({
         "name": "First Service Account Client",
         "severity": "high",
         "result": "fail",
-        "details": "No Service Account Clients found."
+        "details": "No Service Account Clients found.\\n\\n"+details.join("\\n\\n")
       });
     } else {
       // Check to see if there is at least one Service Account Client for at least one Service Account
@@ -273,16 +266,29 @@ script "js_result_bill_connects", type: "javascript" do
     {
       "name": "AWS",
       "automation_docs_url": "https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_3335267112_1121575",
+      "details": [
+        "AWS bill connect provides a resource for registering and maintaining AWS bill connections. This offer two ways of connecting AWS bills, using IAM Role (cross-account role) or IAM user. The preferred method for connecting to AWS, cross-account roles allow you to grant Flexera access to your account in a defined and constrained way. IAM users provide broad access to AWS services. Where possible, we recommend using cross-account roles.",
+        "See [FinOps Bill Connect Configs AWS](https://docs.flexera.com/flexera/EN/Optima/OptimaBillConnectConfigsAWS.htm) for more details."
+      ],
       "regex": /aws/
     },
     {
       "name": "Azure",
       "automation_docs_url": "https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_3335267112_1121576",
+      "details": [
+        "The Azure EA and Azure MCA bill connects uses Azure's Service Principals with a Client Secret under the hood for authentication with Microsoft's APIs.",
+        "[Azure EA (Enterprise Agreement) Bill Connect](https://docs.flexera.com/flexera/EN/Optima/BillConnectConfigsAzureEALegacy.htm) provides a resource for registering and maintaining Azure EA Bill Connections at Billing or Enrollment Account scopes. ",
+        "[Azure MCA (Microsoft Customer Agreement) Bill Connect](https://docs.flexera.com/flexera/EN/Optima/BillConnectConfigsAzureEAModernCommerce.htm) provides a resource for registering and maintaining Azure MCA Bill Connections at the Billing Account scope. Billing account for the Microsoft Customer Agreement contains one or more billing profiles that let you manage your invoices and payment methods. Each billing profile contains one or more invoice sections that let you organize costs on the billing profile's invoice."
+      ],
       "regex": /azure/
     },
     {
       "name": "Google",
       "automation_docs_url": "https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_3335267112_1121577",
+      "details": [
+        "GCP (Google Cloud Platform) bill connect provides a resource for registering and maintaining GCP bill connections.",
+        "See [FinOps Bill Connect Configs GCP](https://docs.flexera.com/flexera/EN/Optima/OptimaBillConnectConfigsGoogle.htm) for more details."
+      ],
       "regex": /gcp|google|gce/
     }
   ];
@@ -297,7 +303,7 @@ script "js_result_bill_connects", type: "javascript" do
         "name": check.name+" Bill Connect",
         "severity": "high",
         "result": "fail",
-        "details": "No "+check.name+" Bill Connect found."
+        "details": "No "+check.name+" Bill Connect found.\\n\\n"+check.details.join("\\n\\n")
       });
     } else {
       check_results.push({
@@ -361,6 +367,53 @@ datasource "ds_applied_policies" do
       field "metaParentPolicyId", jq(col_item, ".metaParentPolicyId")
       field "options", jq(col_item, ".options")
       field "status", jq(col_item, ".status")
+    end
+  end
+end
+
+# We cannot use rs_governance_host // Governan ce API because it does not support Service Account auth
+# Coming Q4:
+#   Tatiana Dubovchenko: We plan to work on Incident API in Q4
+#   sent on August 7, 2024 1:04 PM
+
+# datasource "ds_applied_policies_incidents" do
+#   iterate $ds_applied_policies
+#   request do
+#     auth $auth_flexera
+#     host rs_governance_host
+#     path join(["/api/governance/projects/", rs_project_id, "/incidents"])
+#     verb "GET"
+#     header "User-Agent", "RS Policies"
+#     header "Api-Version", "1.0"
+#     query "applied_policy_id", val(iter_item, 'id')
+#     query "state", "triggered"
+#   end
+#   result do
+#     collect jq(response, ".items[]?") do
+#       field "applied_policy_id", jq(col_item, ".applied_policy.id") # Used to map incident to applied policy
+#       field "id", jq(col_item, ".id") # Used to create link to incident in UI
+#       field "name", jq(col_item, ".name") # Used to create link to incident in UI
+#       # field "applied_policy", jq(col_item, ".applied_policy")
+#     end
+#   end
+# end
+
+datasource "ds_applied_policies_incidents" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/incidents"])
+    verb "GET"
+    header "User-Agent", "RS Policies"
+    header "Api-Version", "1.0"
+    query "state", "triggered"
+  end
+  result do
+    collect jq(response, ".items[]?") do
+      field "applied_policy_id", jq(col_item, ".applied_policy.id") # Used to map incident to applied policy
+      field "id", jq(col_item, ".id") # Used to create link to incident in UI
+      field "summary", jq(col_item, ".summary") # Used to create link to incident in UI
+      # field "applied_policy", jq(col_item, ".applied_policy")
     end
   end
 end
@@ -436,67 +489,20 @@ end
 #   end
 # end
 
-# Statically defined list of policy templates that are recommended for onboarding
-datasource "ds_common_policy_list" do
-  run_script $js_common_policy_list
-end
-
-script "js_common_policy_list", type: "javascript" do
-  result "result"
-  code <<-EOS
-  result = {
-    "flexera": [
-      "Flexera Automation Outdated Applied Policies",
-      "Cloud Bill Processing Error Notification"
-    ]
-    "aws": [
-      "Meta Parent: AWS Rightsize EBS Volumes",
-      "Meta Parent: AWS Superseded EBS Volumes",
-      "Meta Parent: AWS Old Snapshots",
-      "Meta Parent: AWS Rightsize EC2 Instances",
-      "Meta Parent: AWS Superseded EC2 Instances",
-      "Meta Parent: AWS Rightsize RDS Instances",
-      "Meta Parent: AWS Unused IP Addresses",
-      "AWS Reserved Instances Recommendations",
-      "AWS Reserved Instances Utilization",
-      "AWS Expiring Reserved Instances"
-    ],
-    "azure": [
-      "Azure Rightsize Managed Disks",
-      "Azure Old Snapshots",
-      "Azure Rightsize Compute Instances",
-      "Azure Superseded Compute Instances",
-      "Azure Rightsize SQL Databases",
-      "Azure Rightsize SQL Database Storage",
-      "Azure Unused IP Addresses",
-      "Azure Hybrid Use Benefit for Windows Server",
-      "Azure Hybrid Use Benefit for Linux Server",
-      "Azure Hybrid Use Benefit for SQL",
-      "Azure Rightsize NetApp Files",
-      "Azure Databricks Rightsize Compute Instances",
-      "Azure Reserved Instances Recommendations",
-      "Azure Reserved Instances Utilization",
-      "Azure Expiring Reserved Instances"
-    ],
-    "google": [
-      "Google Old Snapshots",
-      "Google Idle Persistent Disk Recommender",
-      "Google Idle IP Address Recommender",
-      "Google Committed Use Discount Recommender",
-      "Google Rightsize VM Recommender",
-      "Google Idle Cloud SQL Instance Recommender"
-    ]
-  }
-EOS
+datasource "ds_generally_recommended_templates_json" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/active_policy_list/generally_recommended_templates.json"
+  end
 end
 
 # Statically defined list of policy templates that are recommended for onboarding
 datasource "ds_result_applied_policy" do
-  run_script $js_result_applied_policy, $ds_credentials, $ds_applied_policies, $ds_published_templates, $ds_common_policy_list, $ds_bill_connects, $ds_flexera_api_hosts, rs_org_id, rs_project_id
+  run_script $js_result_applied_policy, $ds_credentials, $ds_applied_policies, $ds_applied_policies_incidents, $ds_published_templates, $ds_bill_connects, $ds_flexera_api_hosts, rs_org_id, rs_project_id
 end
 
 script "js_result_applied_policy", type: "javascript" do
-  parameters "ds_credentials", "ds_applied_policies", "ds_published_templates", "ds_common_policy_list", "ds_bill_connects", "ds_flexera_api_hosts", "rs_org_id", "rs_project_id"
+  parameters "ds_credentials", "ds_applied_policies", "ds_applied_policies_incidents", "ds_published_templates", "ds_bill_connects", "ds_flexera_api_hosts", "rs_org_id", "rs_project_id"
   result "check_results"
   code <<-EOS
   check_results = [];
@@ -521,11 +527,42 @@ script "js_result_applied_policy", type: "javascript" do
     });
     if (error_policies.length > 0) {
       percent = Math.round((error_policies.length / ds_applied_policies.length) * 100);
+      // Loop through all Applied Policies to aggregate the children in error under the parent
+      // This will help with the formatting the results, instead of 1 bullet per applied policy (which there can be thousands of errored applied policies with Meta/Children policies)
+      error_policies_grouped = _.groupBy(error_policies, function (applied_policy) {
+        return applied_policy.metaParentPolicyId;
+      });
+      // Construct the list of error policies
+      var error_policies_list = [];
+      _.each(_.keys(error_policies_grouped), function (metaParentPolicyId) {
+        // key for child policies with no parent is a string with value "undefined"
+        // This is result from _.groupBy() function.  normally we would expect null or "" from Flexera API
+        if (metaParentPolicyId != "undefined" && metaParentPolicyId.length > 0) {
+          // Find the parent policy
+          parent_policy = _.find(ds_applied_policies, function (ap) {
+            return ap.id == metaParentPolicyId;
+          });
+          if (parent_policy == null) {
+            parent_policy = {"name": "*Parent Applied Policy Terminated*", "id": metaParentPolicyId};
+          }
+          // https://app.flexera.com/orgs/30719/automation/applied-policies/projects/131226?noIndex=1&policyId=62f55a98794f000001196456
+          // Construct the list of children policies
+          children_policies = error_policies_grouped[metaParentPolicyId].length
+          error_policies_list.push(" - ["+parent_policy.name+"](https://"+ds_flexera_api_hosts.ui+"/orgs/"+rs_org_id+"/automation/applied-policies/projects/"+rs_project_id+"?noIndex=1&policyId="+parent_policy.id+") ("+children_policies+" Child Policy(s) in error)");
+        } else {
+          // No parent policy, just list the children policies
+          _.each(error_policies_grouped[metaParentPolicyId], function (applied_policy) {
+            error_policies_list.push(" - ["+applied_policy.name+"](https://"+ds_flexera_api_hosts.ui+"/orgs/"+rs_org_id+"/automation/applied-policies/projects/"+rs_project_id+"?noIndex=1&policyId="+applied_policy.id+")");
+          });
+        }
+        // Add the parent policy and children policies to the error_policies_list
+      });
+      // Add fail check result
       check_results.push({
         "name": "Error Applied Policy",
         "severity": "medium",
         "result": "fail",
-        "details": error_policies.length+" Applied Policy(s) are in error status which is "+percent.toString()+"% of total "+ds_applied_policies.length+" applied policies.\\n\\nApplied Policy IDs: \\n"+error_policies.map(function (applied_policy) { return " - ["+applied_policy.name+"](https://"+ds_flexera_api_hosts.ui+"/orgs/"+rs_org_id+"/automation/applied-policies/projects/"+rs_project_id+"?noIndex=1&policyId="+applied_policy.id+")"; }).join("\\n")
+        "details": error_policies.length+" Applied Policy(s) are in error status which is "+percent.toString()+"% of total "+ds_applied_policies.length+" applied policies.\\n\\nApplied Policy in error state: \\n"+error_policies_list.join("\\n")
       });
     } else {
       check_results.push({
@@ -535,23 +572,43 @@ script "js_result_applied_policy", type: "javascript" do
         "details": "All "+ds_applied_policies.length+" Applied Policy(s) are in a valid status."
       });
     }
+  }
+EOS
+end
 
-    // Check if we have at least 1 AWS, Azure, or Google bill connect
-    // This is used later but we can filter the list now
-    publiccloudBillConnects = _.filter(ds_bill_connects, function (bill_connect) {
-      return bill_connect.kind.indexOf("aws") > -1 || bill_connect.kind.indexOf("azure") > -1 || bill_connect.kind.indexOf("google") > -1 || bill_connect.kind.indexOf("gcp") > -1 || bill_connect.kind.indexOf("gce") > -1;
+datasource "ds_result_fail_generally_recommended_templates" do
+  run_script $js_result_fail_generally_recommended_templates, $ds_credentials, $ds_applied_policies, $ds_applied_policies_incidents, $ds_published_templates, $ds_generally_recommended_templates_json, $ds_bill_connects, $ds_flexera_api_hosts, rs_org_id, rs_project_id
+end
+
+script "js_result_fail_generally_recommended_templates", type: "javascript" do
+  parameters "ds_credentials", "ds_applied_policies", "ds_applied_policies_incidents", "ds_published_templates", "ds_generally_recommended_templates_json", "ds_bill_connects", "ds_flexera_api_hosts", "rs_org_id", "rs_project_id"
+  result "check_results"
+  code <<-EOS
+  check_results = [];
+
+  // Check if we have at least 1 AWS, Azure, or Google bill connect
+  // This is used later but we can filter the list now
+  publiccloudBillConnects = _.filter(ds_bill_connects, function (bill_connect) {
+    return bill_connect.kind.indexOf("aws") > -1 || bill_connect.kind.indexOf("azure") > -1 || bill_connect.kind.indexOf("google") > -1 || bill_connect.kind.indexOf("gcp") > -1 || bill_connect.kind.indexOf("gce") > -1;
+  });
+  // console.log("publiccloudBillConnects="+JSON.stringify(publiccloudBillConnects)); // Helpful for debugging
+
+  // Add "Flexera Onboarding" to ds_generally_recommended_templates
+  // We have some checks that we want to run for this policy template
+  // Currently not included in the recommended templates list because it's not in the Catalog but it could be and then this could be removed.
+  ds_generally_recommended_templates_json["flexera"] = ["Flexera Onboarding"];
+
+  // For each vendor in the common policy list
+  _.each(_.keys(ds_generally_recommended_templates_json), function(vendor) {
+    var bill_connects = _.filter(ds_bill_connects, function (bill_connect) {
+      // Match if bill_connect.kind contains vendor string
+      return bill_connect.kind.indexOf(vendor) > -1;
     });
-    // console.log("publiccloudBillConnects="+JSON.stringify(publiccloudBillConnects)); // Helpful for debugging
-
-    // For each vendor in the common policy list
-    _.each(_.keys(ds_common_policy_list), function(vendor) {
+    // Only loop through policy templates if we have at least one bill connect for the vendor
+    if (bill_connects.length >= 1) {
       // For each of the PT for the vendor in the common policy list
-      _.each(ds_common_policy_list[vendor], function(pt) {
+      _.each(ds_generally_recommended_templates_json[vendor], function(pt) {
         // Check if there is a bill connect for the vendor
-        var bill_connects = _.filter(ds_bill_connects, function (bill_connect) {
-          // Match if bill_connect.kind contains vendor string
-          return bill_connect.kind.indexOf(vendor) > -1;
-        });
         // Check if there is a credential for the vendor
         var credentials = _.filter(ds_credentials, function (credential) {
           // Find the provider tag from the tags on the credentials
@@ -610,145 +667,178 @@ script "js_result_applied_policy", type: "javascript" do
               ptCatalogId = "?templateId="+published_template.id;
             }
             check_results.push({
-              "name": "Recommended Policy Template: "+pt,
-              "severity": "medium",
-              "result": "fail",
+              // "name": "Recommended Policy Template: "+pt,
+              // "severity": "medium",
+              // "result": "fail",
+              "name": pt,
               "details": "The "+pt+" policy is not applied. Recommend applying this policy template to increase visibility into potential optimization opportunities.\\n\\nYou can remediate this by applying the policy template from [Automation > Applied Policies > Catalog > Search for `'"+pt+"'`](https://"+ds_flexera_api_hosts.ui+"/orgs/"+rs_org_id+"/automation/catalog"+ptCatalogId+")"
             });
-          } else {
-            // Else we have at least 1 applied policy for the pt policy template
-            check_results.push({
-              "name": "Recommended Policy Template: "+pt,
-              "severity": "medium",
-              "result": "pass",
-              "details": "The "+pt+" policy is applied."
-            });
-
-            // Some checks for specific Policy Templates
-            if (pt == "Flexera Automation Outdated Applied Policies") {
-              // Check that the policy option "param_automatic_action" value contains "Update Applied Policies"
-              var policies_compliant = _.groupBy(policy, function (ap) {
-                // Get the specific parameter in the policy options
-                var param = _.find(ap.options, function (option) {
-                  return option.name == "param_automatic_action";
-                });
-                // Default to out of compliance
-                var compliance = "false";
-                if (param != null && typeof param.value == "array") {
-                  // If a param is found, check if the value contains "Update Applied Policies"
-                  compliance = _.contains(param.value, "Update Applied Policies");
-                }
-                // Return false if param_automatic_action list does not contain "Update Applied Policies"
-                return compliance;
-              });
-              // URL depends if it is a published template (org scoped) or policy-template (project scoped)
-              // Check if there are any compliant policies
-              if (typeof policies_compliant["true"] != "array" || policies_compliant["true"].length == 0) {
-                // If we are here with no compliant policies, we must have at least one policy that is non-compliant
-                // Select the first one.. we don't need more than 1 with this option enabled
-                if (policies_compliant["false"][0]["policyTemplate"] != null) {
-                  var ptUrl = "https://app.flexera.com/orgs/"+rs_org_id+"/automation/applied-policies/projects/"+rs_project_id+"?noIndex=1&policyId="+policies_compliant["false"][0].id
-                } else {
-                  var ptUrl = "https://app.flexera.com/orgs/"+rs_org_id+"/automation/applied-policies?noIndex=1&policyId="+policies_compliant["false"][0].policyAggregateId
-                }
-                check_results.push({
-                  "name": "Flexera Automation Outdated Applied Policies: Enable Automatic Action",
-                  "severity": "medium",
-                  "result": "fail",
-                  "details": "The "+pt+" policy template is applied, but the policy option 'param_automatic_action' does not contain 'Update Applied Policies'.  Recommend updating the policy option to include 'Update Applied Policies' to automatically update outdated applied policies.\\n\\nTo remediate this, you can edit the applied policy template in the UI [Automation > Applied Policies > Search for '"+pt+"']("+ptUrl+")"
-                });
-              } else {
-                // Else at least one policy is compliant
-                // Select the first one.. we don't need more than 1 with this option enabled
-                if (policies_compliant["true"][0]["policyTemplate"] != null) {
-                  var ptUrl = "https://app.flexera.com/orgs/"+rs_org_id+"/automation/applied-policies/projects/"+rs_project_id+"?noIndex=1&policyId="+policies_compliant["true"][0].id
-                } else {
-                  var ptUrl = "https://app.flexera.com/orgs/"+rs_org_id+"/automation/applied-policies?noIndex=1&policyId="+policies_compliant["true"][0].policyAggregateId
-                }
-                check_results.push({
-                  "name": "Flexera Automation Outdated Applied Policies: Enable Automatic Action",
-                  "severity": "medium",
-                  "result": "pass",
-                  "details": "The ["+pt+"]("+ptUrl+") policy template is applied and configured to automatically update outdated applied policies."
-                });
-              }
-            }
-
-            // Check for Outdated Policy Templates
-            // Check to see if the policy template fingerprint matches the published template fingerprint
-            var published_template = _.find(ds_published_templates, function (published_template) {
-              return published_template.name.indexOf(pt) > -1;
-            });
-            // Only check if we found a matching published template
-            if (published_template && typeof policy[0].publishedTemplate == "object") {
-              // Get the version of the published template in catalog
-              catalogVersion = "unknown";
-              if (typeof published_template.info == "object" && typeof published_template.info.version == "string") {
-                catalogVersion = published_template.info.version;
-              }
-              outdatedAppliedPolicies = [];
-              // Identify any outdated applied policies
-              _.each(policy, function(ap) {
-                // Check the applied policy is from a published template
-                if (typeof ap.publishedTemplate == "object" && ap.publishedTemplate.fingerprint != published_template.fingerprint) {
-                  // Check if the applied policy has a version
-                  // Check if applied policy version is different from catalog version
-                  if (typeof ap.info == "object" && typeof ap.info.version == "string" && catalogVersion != ap.info.version) {
-                    // Check if applied policy is a Meta Parent
-                    if (ap.name.indexOf("Meta Parent") > -1) {
-                      // Count how many applied policies are children of this
-                      var children = _.filter(ds_applied_policies, function (child) {
-                        return child.metaParentPolicyId == ap.id;
-                      });
-                      // add children_count to the applied policy object to be used later
-                      ap.children_count = children.length;
-                    }
-                    outdatedAppliedPolicies.push(ap);
-                  }
-                }
-              });
-              // Filter out child policies (applied policies with metaParentPolicyId) -- these are managed by the parent and should not be managed individually
-              // We have the children_count for the objects that are Meta Parents which can be included in report
-              outdatedAppliedPolicies = _.filter(outdatedAppliedPolicies, function (ap) {
-                return ap.metaParentPolicyId == null;
-              });
-              // Check if we have zero outdated applied policies for the PT
-              if (outdatedAppliedPolicies.length == 0) {
-                // Zero means we are up to date
-                check_results.push({
-                  "name": "Outdated Policy Template: "+pt,
-                  "severity": "low",
-                  "result": "pass",
-                  "details": "The "+pt+" policy version matches the current version in the Catalog.\\n\\nTotal Applied Policies: "+policy.length+"\\n\\nPublished Template Version: "+catalogVersion+" ("+published_template.fingerprint+")"
-                });
-              } else {
-                // There is at least one applied policy that is outdated
-                // Turn the list of outdated applied policies into a markdown list string
-                var apList = outdatedAppliedPolicies.map(function (ap) {
-                  var apVersion = "unknown";
-                  if (typeof ap.info == "object" && typeof ap.info.version == "string") {
-                    apVersion = ap.info.version;
-                  }
-                  var rowString = " - ["+ap.name+" Version: "+apVersion+"](https://"+ds_flexera_api_hosts.ui+"/orgs/"+rs_org_id+"/automation/applied-policies/projects/"+rs_project_id+"?noIndex=1&policyId="+ap.id+")";
-                  if (typeof ap.children_count == "number") {
-                    rowString += " (with "+ap.children_count+" outdated children)";
-                  }
-                  return rowString;
-                }).join("\\n");
-                // Add failed check result to the list
-                check_results.push({
-                  "name": "Outdated Policy Template: "+pt,
-                  "severity": "low",
-                  "result": "fail",
-                  "details": "The "+pt+" policy is out of date and there is a newer version in the Catalog.  Recommend applying latest version from Catalog and terminating this Applied Policy.\\n\\nPublished Template Version: "+catalogVersion+" ("+published_template.fingerprint+")\\n\\n"+apList
-                });
-              }
-            }
           }
         }
       });
-    });
-  }
+    }
+  });
+EOS
+end
+
+datasource "ds_check_specific_policy_templates" do
+  run_script $js_check_specific_policy_templates, $ds_credentials, $ds_applied_policies, $ds_applied_policies_incidents, $ds_published_templates, $ds_generally_recommended_templates_json, $ds_bill_connects, $ds_flexera_api_hosts, rs_org_id, rs_project_id
+end
+
+script "js_check_specific_policy_templates", type: "javascript" do
+  parameters "ds_credentials", "ds_applied_policies", "ds_applied_policies_incidents", "ds_published_templates", "ds_generally_recommended_templates_json", "ds_bill_connects", "ds_flexera_api_hosts", "rs_org_id", "rs_project_id"
+  result "check_results"
+  code <<-EOS
+  check_results = [];
+
+  // pt_check_flag is an object to hold the status of a check for each policy template
+  // This is used in cases where only 1 policy template (out of potentially many) meets the criteria
+  // While looping through all PTs, if the check pases, the pt_check_flat value for that PT check is set to "pass"
+  // After looping through all PTs, we use pt_check_flag to determine if we should add a pass or fail check_results entry
+  pt_check_flag = {}
+
+  // For each ds_applied_policies_incidents
+  _.each(ds_applied_policies, function(applied_policy) {
+    if (applied_policy != null) {
+      // Get the Policy Template name (pt) from the applied_policy
+      var pt = null;
+      // Check to see if it's a policyTemplate or publishedTemplate
+      if (typeof applied_policy.policyTemplate == "object") {
+        pt = applied_policy.policyTemplate.name;
+      } else if (typeof applied_policy.publishedTemplate == "object") {
+        // else, publishedTemplate
+        pt = applied_policy.publishedTemplate.name;
+      } else {
+        // This is not expected
+        pt = "Unknown";
+      }
+
+      // Check if the Policy Template has any Incidents
+      incidents = _.filter(ds_applied_policies_incidents, function (incident) {
+        return incident.applied_policy_id == applied_policy.id;
+      });
+
+      // Begin Flexera Onboarding checks
+      if (pt == "Flexera Onboarding") {
+        // If we have incidents for the PT
+        if (incidents.length > 0) {
+          // Check if any of the incidents match "Flexera Onboarding: Apply Recommended Policy Templates"
+          var apply_recommended_policy_incidents = _.filter(incidents, function (incident) {
+            return incident.summary == "Flexera Onboarding: Apply Recommended Policy Templates";
+          });
+          if (apply_recommended_policy_incidents.length > 0) {
+            check_results.push({
+              "name": "Flexera Onboarding: Apply Recommended Policy Templates",
+              "severity": "medium",
+              "result": "fail",
+              "details": "The "+pt+" policy template has an incident triggered to apply recommended policy templates.  Recommend reviewing the incidents to determine if any action is needed.\\n\\nTo remediate this, you can view the incidents in the UI Automation > Incidents > Search for '"+pt+"' or use this direct link:\\n\\n"+apply_recommended_policy_incidents.map(function (incident) {
+                return " - ["+incident.summary+"](https://"+ds_flexera_api_hosts.ui+"/orgs/"+rs_org_id+"/automation/incidents/projects/"+rs_project_id+"?incidentId="+incident.id+")";
+              }).join("\\n")
+            });
+          } else {
+            check_results.push({
+              "name": "Flexera Onboarding: Apply Recommended Policy Templates",
+              "severity": "medium",
+              "result": "pass",
+              "details": "The "+pt+" policy template has no incidents triggered to apply recommended policy templates."
+            });
+          }
+
+          // Check if any of the incidents match "Flexera Onboarding: Create Service Account"
+          var create_service_account_incidents = _.filter(incidents, function (incident) {
+            return incident.summary == "Flexera Onboarding: Create Service Account";
+          });
+          if (create_service_account_incidents.length > 0) {
+            check_results.push({
+              "name": "Flexera Onboarding: Create Service Account",
+              "severity": "medium",
+              "result": "fail",
+              "details": "The "+pt+" policy template has an incident triggered to help create a service account.  Recommend reviewing the incidents to take the necessary action and remediate this recommended task.\\n\\nTo remediate this, you can view the incidents in the UI Automation > Incidents > Search for '"+pt+"' or use this direct link:\\n\\n"+create_service_account_incidents.map(function (incident) {
+                return " - ["+incident.summary+"](https://"+ds_flexera_api_hosts.ui+"/orgs/"+rs_org_id+"/automation/incidents/projects/"+rs_project_id+"?incidentId="+incident.id+")";
+              }).join("\\n")
+            });
+          } else {
+            check_results.push({
+              "name": "Flexera Onboarding: Create Service Account",
+              "severity": "medium",
+              "result": "pass",
+              "details": "The "+pt+" policy template has no incidents triggered to help create a service account."
+            });
+          }
+
+        } else {
+          check_results.push({
+            "name": "Flexera Onboarding Incidents",
+            "severity": "medium",
+            "result": "pass",
+            "details": "The "+pt+" policy template has no incidents triggered."
+          });
+        }
+      }
+      // End Flexera Onboarding checks
+
+      // Begin Flexera Automation Outdated Applied Policies checks
+      if (pt == "Flexera Automation Outdated Applied Policies") {
+        // If we have incidents for the PT
+        if (incidents.length > 0) {
+          check_results.push({
+            "name": "Flexera Automation Outdated Applied Policies",
+            "severity": "medium",
+            "result": "fail",
+            "details": "The "+pt+" policy template has "+incidents.length+" incident(s) triggered.  Recommend reviewing the incidents to determine if any action is needed.\\n\\nTo remediate this, you can view the incidents in the UI Automation > Incidents > Search for '"+pt+"' or use these direct link(s):\\n\\n"+incidents.map(function (incident) {
+              return " - ["+incident.summary+"](https://"+ds_flexera_api_hosts.ui+"/orgs/"+rs_org_id+"/automation/incidents/projects/"+rs_project_id+"?incidentId="+incident.id+")";
+            }).join("\\n")
+          });
+        } else {
+          check_results.push({
+            "name": "Flexera Automation Outdated Applied Policies",
+            "severity": "medium",
+            "result": "pass",
+            "details": "The "+pt+" policy template has no incidents triggered."
+          });
+        }
+
+        // Check that the policy option "param_automatic_action" value contains "Update Applied Policies"
+        var param_automatic_action = _.find(applied_policy.options, function (option) {
+          return option.name == "param_automatic_action";
+        });
+
+        var compliance = false
+        if (param_automatic_action != null && typeof param_automatic_action.value == "array") {
+          // If a param is found, check if the value contains "Update Applied Policies"
+          compliance = _.contains(param_automatic_action.value, "Update Applied Policies");
+        }
+
+        var ptUrl = "#"
+        // URL depends if it is a published template (org scoped) or policy-template (project scoped)
+        if (applied_policy.policyTemplate != null) {
+          ptUrl = "https://app.flexera.com/orgs/"+rs_org_id+"/automation/applied-policies/projects/"+rs_project_id+"?noIndex=1&policyId="+applied_policy.id
+        } else {
+          ptUrl = "https://app.flexera.com/orgs/"+rs_org_id+"/automation/applied-policies?noIndex=1&policyId="+applied_policy.policyAggregateId
+        }
+
+        // Check if there are any compliant policies
+        if (!compliance) {
+          // If we are here with no compliant policies, we must have at least one policy that is non-compliant
+          check_results.push({
+            "name": "Flexera Automation Outdated Applied Policies: Enable Automatic Action",
+            "severity": "medium",
+            "result": "fail",
+            "details": "The "+pt+" policy template is applied, but the policy option 'param_automatic_action' does not contain 'Update Applied Policies'.  Recommend updating the policy option to include 'Update Applied Policies' to automatically update outdated applied policies.\\n\\nTo remediate this, you can edit the applied policy template in the UI [Automation > Applied Policies > Search for '"+pt+"']("+ptUrl+")"
+          });
+        } else {
+          // Else at least one policy is compliant
+          check_results.push({
+            "name": "Flexera Automation Outdated Applied Policies: Enable Automatic Action",
+            "severity": "medium",
+            "result": "pass",
+            "details": "The ["+pt+"]("+ptUrl+") policy template is applied and configured to automatically update outdated applied policies."
+          });
+        }
+      }
+      // End Flexera Automation Outdated Applied Policies checks
+    }
+  });
 EOS
 end
 
@@ -1076,45 +1166,23 @@ script "js_result_cost_dimensions", type: "javascript" do
 EOS
 end
 
-datasource "ds_result_fail_recommended_policy_template" do
-  run_script $js_result_fail_recommended_policy_template, $ds_result_fail
-end
-
-script "js_result_fail_recommended_policy_template", type: "javascript" do
-  parameters "ds_result_fail"
-  result "results"
-  code <<-EOS
-  // Filter results to only include "Recommended Policy Template:" failed checks
-  var failed_recommended_pt_checks = _.filter(ds_result_fail, function (check) {
-    return check.name.indexOf("Recommended Policy Template:") > -1;
-  });
-  // From each failed_recommended_pt_checks, extract the policy template name
-  results = _.map(failed_recommended_pt_checks, function (check) {
-    var name = check.name.split("Recommended Policy Template: ")[1];
-    return {
-      "name": name,
-      "details": check.details
-    };
-  });
-EOS
-end
-
 datasource "ds_result_fail_service_account" do
-  run_script $js_result_fail_service_account, $ds_result_fail
+  run_script $js_result_fail_service_account, $ds_service_accounts
 end
 
 script "js_result_fail_service_account", type: "javascript" do
-  parameters "ds_result_fail"
+  parameters "ds_service_accounts"
   result "results"
   code <<-EOS
-  // Check if "First Service Account" failed checks
-  var failed_checks = _.filter(ds_result_fail, function (check) {
-    return check.name == "First Service Account";
-  });
   var results = {
-      "checks": failed_checks,
+      "action": ""
+  };
+  // Check to see if there is at least one Service Account
+  if (ds_service_accounts.length == 0) {
+    results = {
       "action": "Create a Service Account"
     };
+  }
 EOS
 end
 
@@ -1280,11 +1348,11 @@ EOS
 end
 
 datasource "ds_result" do
-  run_script $js_result, $ds_result_service_account, $ds_result_bill_connects, $ds_result_applied_policy, $ds_result_cost_dimensions, $ds_result_iam
+  run_script $js_result, $ds_result_service_account, $ds_result_bill_connects, $ds_result_applied_policy, $ds_check_specific_policy_templates, $ds_result_cost_dimensions, $ds_result_iam
 end
 
 script "js_result", type: "javascript" do
-  parameters "ds_result_service_account", "ds_result_bill_connects", "ds_result_applied_policy", "ds_result_cost_dimensions", "ds_result_iam"
+  parameters "ds_result_service_account", "ds_result_bill_connects", "ds_result_applied_policy", "ds_check_specific_policy_templates", "ds_result_cost_dimensions", "ds_result_iam"
   result "check_results"
   code <<-EOS
   // Combine all the results into a single array
@@ -1292,6 +1360,7 @@ script "js_result", type: "javascript" do
     ds_result_service_account,
     ds_result_bill_connects,
     ds_result_applied_policy,
+    ds_check_specific_policy_templates,
     ds_result_cost_dimensions,
     ds_result_iam,
   ]);
@@ -1397,7 +1466,7 @@ EOS
     escalate $esc_email
   end
 
-  validate $ds_result_fail_recommended_policy_template do
+  validate $ds_result_fail_generally_recommended_templates do
     summary_template "Flexera Onboarding: Apply Recommended Policy Templates"
     detail_template <<-EOS
 # Apply Recommended Policy Templates
@@ -1428,7 +1497,7 @@ This action will do the needful to enable using a Service Account with Flexera A
   - Create a Client for the Service Account
   - Create a Flexera Automation Credential using Service Account Client ID + Service
 EOS
-    check eq(size(val(data, "checks")), 0)
+    check ne(val(data, "action"), "Create a Service Account")
     export do
       # This should not need to be resource_level true
       # For some reason (UI bug?) it is not showing the action button in the UI when this is disabled.
