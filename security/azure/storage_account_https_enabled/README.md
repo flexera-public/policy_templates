@@ -4,11 +4,11 @@
 
 This policy is no longer being updated. The [Azure Storage Accounts Without Secure Transfer](https://github.com/flexera-public/policy_templates/tree/master/security/azure/secure_transfer_required/) policy now includes this functionality.
 
-## What it does
+## What It Does
 
 This Policy checks for Azure Storage Accounts with HTTPs not enforced.
 
-## Functional Details
+## How It Works
 
 - This Policy identifies all Azure Storage Accounts where the property `supportsHttpsTrafficOnly` is set to false.
 
@@ -40,4 +40,4 @@ Required permissions in the provider:
 
 ## Cost
 
-This policy does not incur any cloud costs.
+This Policy Template does not incur any cloud costs.
