@@ -1,5 +1,11 @@
 # Changelog
 
+## v3.5.0
+
+- Added parameter `Graph Dimension Value Count` to enable configuration of number of dimensions included in the report graph
+- Added `Percent Change from Previous Time Period`, `Daily Average Cost for Time Period`, and `Percent Change from Previous Time Period Daily Average` fields to the report
+- Added optional threshold parameters `Percent Change Threshold Value`, `Percent Change Consecutive Threshold`, `Percent Change Alert Metric`, and `Percent Change Alert Direction` to enable using this policy template for alerting use-cases and send the report only when the percent change in cost exceeds the configurable thresholds
+
 ## v3.4.1
 
 - Updated policy to use internal Flexera API for generating charts. Policy functionality is unchanged.
