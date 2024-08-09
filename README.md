@@ -98,8 +98,8 @@ These templates can generate savings estimates for your environment.
 
 #### Kubecost
 
-- [Kubecost Cluster Rightsizing Recommendations](./cost/kubecost/cluster)
-- [Kubecost Request Rightsizing Recommendations](./cost/kubecost/sizing)
+- [Kubecost Cluster Rightsizing Recommendation](./cost/kubecost/cluster)
+- [Kubecost Container Request Rightsizing Recommendations](./cost/kubecost/sizing)
 
 ### Policy Templates for Compliance
 
@@ -348,10 +348,10 @@ These templates can generate savings estimates for your environment.
   - [Flexera FOCUS Report](./cost/flexera/cco/focus_report)
   - [Low Service Usage](./cost/flexera/cco/low_service_usage)
   - [Low Usage Report](./cost/flexera/cco/low_usage)
-  - [New Service Usage](./cost/flexera/cco/new_service_usage)
+  - [New Usage](./cost/flexera/cco/new_usage)
   - [Scheduled Report](./cost/flexera/cco/scheduled_reports)
   - [Superseded Instances](./cost/flexera/cco/superseded_instance)
-  - [Vendor Commitment Forecast](./cost/flexera/cco/forecasting/commitment_forecast)
+  - [Vendor Spend Commitment Forecast](./cost/flexera/cco/forecasting/commitment_forecast)
 
 - Common Bill Ingestion
 
@@ -405,8 +405,8 @@ These templates can generate savings estimates for your environment.
 
 - Kubernetes
 
-  - [Kubecost Cluster Rightsizing Recommendations](./cost/kubecost/cluster)
-  - [Kubecost Request Rightsizing Recommendations](./cost/kubecost/sizing)
+  - [Kubecost Cluster Rightsizing Recommendation](./cost/kubecost/cluster)
+  - [Kubecost Container Request Rightsizing Recommendations](./cost/kubecost/sizing)
 
 #### Oracle
 
@@ -567,6 +567,7 @@ These templates can generate savings estimates for your environment.
 
   - [AWS Elastic Load Balancers With Unencrypted Listeners](./security/aws/elb_unencrypted)
   - [AWS Internet-Accessible Elastic Load Balancers](./security/aws/loadbalancer_internet_facing)
+  - [AWS VPCs Without FlowLogs Enabled](./security/aws/vpcs_without_flow_logs_enabled)
 
 - RDS
 
@@ -576,31 +577,34 @@ These templates can generate savings estimates for your environment.
 - S3
 
   - [AWS Open S3 Buckets](./security/aws/public_buckets)
-  - [AWS S3 Buckets without Server Access Logging](./security/aws/s3_buckets_without_server_access_logging)
-  - [AWS S3 Ensure 'Block Public Access' Configured For All Buckets](./security/aws/s3_ensure_buckets_block_public_access)
-  - [AWS S3 Ensure Bucket Policies Deny HTTP Requests](./security/aws/s3_buckets_deny_http)
-  - [AWS S3 Ensure MFA Delete Enabled For All Buckets](./security/aws/s3_ensure_mfa_delete_enabled)
-  - [AWS Unencrypted S3 Buckets](./security/aws/unencrypted_s3_buckets)
 
-- VPC
+- Storage
 
-  - [AWS VPC's without FlowLogs Enabled](./security/aws/vpcs_without_flow_logs_enabled)
+  - [AWS S3 Buckets Accepting HTTP Requests](./security/aws/s3_buckets_deny_http)
+  - [AWS S3 Buckets Without Default Encryption Configuration](./security/aws/unencrypted_s3_buckets)
+  - [AWS S3 Buckets Without MFA Delete Enabled](./security/aws/s3_ensure_mfa_delete_enabled)
+  - [AWS S3 Buckets Without Public Access Blocked](./security/aws/s3_ensure_buckets_block_public_access)
+  - [AWS S3 Buckets Without Server Access Logging](./security/aws/s3_buckets_without_server_access_logging)
 
 #### Azure
 
 - App Service
 
-  - [Azure Web App Minimum TLS Version](./security/azure/webapp_tls_version_support)
+  - [Azure Web Apps Without Secure TLS](./security/azure/webapp_tls_version_support)
+
+- Compute
+
+  - [Azure Resources with public IP address](./security/azure/resources_with_public_ip_address)
 
 - IAM
 
-  - [Azure Ensure Log Analytics Auto-Provisioning](./security/azure/log_analytics_autoprovision)
-  - [Azure Guest Users Audit](./security/azure/guest_users)
+  - [Azure Guest Users](./security/azure/guest_users)
+  - [Azure Subscriptions Without Log Analytics Auto-Provisioning](./security/azure/log_analytics_autoprovision)
 
 - MySQL
 
-  - [Azure Ensure MySQL Flexible Servers Use Secure TLS](./security/azure/mysql_tls_version)
-  - [Azure Ensure MySQL Servers Enforce SSL Connections](./security/azure/mysql_ssl)
+  - [Azure MySQL Flexible Servers Without Secure TLS](./security/azure/mysql_tls_version)
+  - [Azure MySQL Servers Without Enforced SSL](./security/azure/mysql_ssl)
 
 - Network Security Group
 
@@ -609,49 +613,45 @@ These templates can generate savings estimates for your environment.
 
 - PostgreSQL
 
-  - [Azure Ensure Correct PostgreSQL Servers Log Settings](./security/azure/pg_log_settings)
-  - [Azure Ensure PostgreSQL Servers Connection Throttling Enabled](./security/azure/pg_conn_throttling)
-  - [Azure Ensure PostgreSQL Servers Infrastructure Encryption](./security/azure/pg_infra_encryption)
-  - [Azure Ensure PostgreSQL Servers Sufficient Log Retention](./security/azure/pg_log_retention)
+  - [Azure PostgreSQL Servers With Bad Log Settings](./security/azure/pg_log_settings)
+  - [Azure PostgreSQL Servers With Insufficient Log Retention](./security/azure/pg_log_retention)
+  - [Azure PostgreSQL Servers Without Connection Throttling](./security/azure/pg_conn_throttling)
+  - [Azure PostgreSQL Servers Without Infrastructure Encryption](./security/azure/pg_infra_encryption)
 
 - SQL
 
-  - [Azure Ensure SQL Database Encryption](./security/azure/sql_db_encryption)
-  - [Azure Ensure SQL Server AD Admin Configured](./security/azure/sql_ad_admin)
-  - [Azure Ensure SQL Server ATP (Advanced Threat Protection) Enabled](./security/azure/sql_server_atp)
-  - [Azure Ensure SQL Server Auditing Enabled](./security/azure/sql_server_auditing)
-  - [Azure Ensure SQL Server Minimum Auditing Retention Of 90 Days](./security/azure/sql_auditing_retention)
-  - [Azure Ensure SQL Server VA Email Notifications](./security/azure/sql_server_va_emails)
-  - [Azure Ensure SQL Server VA Notify Admins/Subscription Owners](./security/azure/sql_server_va_admins)
-  - [Azure Ensure SQL Server VA Periodic Scans Enabled](./security/azure/sql_server_va_scans)
-  - [Azure Ensure SQL Server Vulnerability Assessment (VA) Enabled](./security/azure/sql_server_va)
-  - [Azure Publicly Accessible Managed SQL Instance](./security/azure/sql_publicly_accessible_managed_instance)
+  - [Azure Publicly-Accessible SQL Managed Instances](./security/azure/sql_publicly_accessible_managed_instance)
+  - [Azure SQL Databases Without Encryption](./security/azure/sql_db_encryption)
+  - [Azure SQL Servers Vulnerability Assessment Does Not Notify Admins](./security/azure/sql_server_va_admins)
+  - [Azure SQL Servers Vulnerability Assessment Without Email Notifications](./security/azure/sql_server_va_emails)
+  - [Azure SQL Servers Vulnerability Assessment Without Periodic Scans](./security/azure/sql_server_va_scans)
+  - [Azure SQL Servers With Insufficient Auditing Retention](./security/azure/sql_auditing_retention)
+  - [Azure SQL Servers Without Active Directory Admin](./security/azure/sql_ad_admin)
+  - [Azure SQL Servers Without Advanced Threat Protection (ATP)](./security/azure/sql_server_atp)
+  - [Azure SQL Servers Without Auditing Enabled](./security/azure/sql_server_auditing)
+  - [Azure SQL Servers Without Vulnerability Assessment (VA) Enabled](./security/azure/sql_server_va)
 
 - Security
 
-  - [Azure Ensure High Severity Alerts](./security/azure/high_severity_alerts)
-  - [Azure Ensure Owners Receive Security Alerts](./security/azure/security_alert_owners)
-  - [Azure Ensure Security Contact Email](./security/azure/security_contact_email)
+  - [Azure Subscriptions Without High Severity Alerts](./security/azure/high_severity_alerts)
+  - [Azure Subscriptions Without Owner Security Alerts](./security/azure/security_alert_owners)
+  - [Azure Subscriptions Without Security Contact Email](./security/azure/security_contact_email)
 
 - Storage
 
-  - [Azure Ensure Blob Containers Set To Private](./security/azure/private_blob_containers)
-  - [Azure Ensure Secure Transfer Required](./security/azure/secure_transfer_required)
-  - [Azure Ensure Soft Delete Enabled For Azure Storage](./security/azure/storage_soft_delete)
-  - [Azure Ensure Storage Account Default Network Access Set To Deny](./security/azure/storage_network_deny)
-  - [Azure Ensure Storage Accounts Require Secure TLS Version](./security/azure/storage_tls_version)
-  - [Azure Ensure Storage Logging Enabled For Blob Service](./security/azure/blob_storage_logging)
-  - [Azure Ensure Storage Logging Enabled For Queue Service](./security/azure/queue_storage_logging)
-  - [Azure Ensure Storage Logging Enabled For Table Service](./security/azure/table_storage_logging)
-  - [Azure Ensure Trusted Microsoft Services Enabled](./security/azure/storage_trusted_services)
+  - [Azure Blob Storage Accounts Without Logging Enabled](./security/azure/blob_storage_logging)
+  - [Azure Blob Storage Accounts Without Soft Delete Enabled](./security/azure/storage_soft_delete)
+  - [Azure Publicly-Accessible Blob Containers](./security/azure/private_blob_containers)
+  - [Azure Queue Storage Accounts Without Logging Enabled](./security/azure/queue_storage_logging)
+  - [Azure Storage Accounts Allowing Default Network Access](./security/azure/storage_network_deny)
+  - [Azure Storage Accounts Without Secure TLS](./security/azure/storage_tls_version)
+  - [Azure Storage Accounts Without Secure Transfer](./security/azure/secure_transfer_required)
+  - [Azure Storage Accounts Without Trusted Microsoft Services Access](./security/azure/storage_trusted_services)
+  - [Azure Table Storage Accounts Without Logging Enabled](./security/azure/table_storage_logging)
 
 - Storage Accounts
 
   - [Azure Storage Accounts Without HTTPs Enforced](./security/azure/storage_account_https_enabled)
-
-- compute
-
-  - [Azure Resources with public IP address](./security/azure/resources_with_public_ip_address)
 
 #### Google
 
@@ -670,8 +670,7 @@ These templates can generate savings estimates for your environment.
   Security: 74
 :optimization_count: 61
 :policy_sets:
-  '': 44
-  AWS Config: 1
+  '': 46
   Allocate VMs: 3
   Automation: 1
   Autoscaling: 1
@@ -707,7 +706,6 @@ These templates can generate savings estimates for your environment.
   Open Buckets: 1
   Open S3 Buckets: 1
   PaaS Optimization: 1
-  Public Database Access: 1
   Reserved Instance: 3
   Reserved Instances: 8
   Rightsize Clusters: 1
@@ -756,7 +754,7 @@ These templates can generate savings estimates for your environment.
   Cloud Cost Optimization: 19
   CloudTrail: 7
   Common Bill Ingestion: 3
-  Compute: 76
+  Compute: 77
   Config: 1
   DBS: 1
   Databricks: 1
@@ -773,23 +771,21 @@ These templates can generate savings estimates for your environment.
   Marketplace: 2
   MySQL: 2
   NetApp Files: 1
-  Network: 5
+  Network: 6
   Network Security Group: 2
   Office 365: 1
   Organization: 1
   PaaS: 3
   PostgreSQL: 4
   RDS: 6
-  S3: 6
+  S3: 1
   SQL: 19
   SaaS Manager: 8
   Security: 3
-  Storage: 23
+  Storage: 28
   Storage Accounts: 2
   Tags: 2
   Usage Discount: 6
-  VPC: 1
-  compute: 1
 :total_count: 264
 -->
 <!-- End Policy Template Stats -->

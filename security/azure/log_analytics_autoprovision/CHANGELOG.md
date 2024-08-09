@@ -1,5 +1,12 @@
 # Changelog
 
+## v3.0.0
+
+- Policy template renamed to `Azure Subscriptions Without Log Analytics Auto-Provisioning` to better reflect its functionality
+- Added ability to filter results by Azure Subscription
+- Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera credential
+
 ## v2.3
 
 - Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.

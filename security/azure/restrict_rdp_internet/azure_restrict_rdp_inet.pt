@@ -1,20 +1,20 @@
 name "Azure Network Security Groups With Inbound RDP Open"
 rs_pt_ver 20180301
 type "policy"
-short_description "Reports when an Azure Network Security Group has RDP open to the internet. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/azure/restrict_rdp_internet) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Reports any Azure Network Security Groups that have RDP open to the internet. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/azure/restrict_rdp_internet) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
-severity "high"
 category "Security"
+severity "high"
 default_frequency "hourly"
 info(
-  version: "2.4",
+  version: "3.0.0",
   provider: "Azure",
   service: "Network Security Group",
   policy_set: "CIS",
   cce_id: "",
   benchmark_control: "6.1",
   benchmark_version: "1.4.0",
-  cis_controls: "[\"4.4v8\", \"4.5v8\", \9.2v7\]",
+  cis_controls: "[\"4.4v8\", \"4.5v8\", \"9.2v7\]",
   nist: "SC-8"
 )
 
@@ -24,32 +24,78 @@ info(
 
 parameter "param_email" do
   type "list"
-  label "Email addresses of the recipients you wish to notify"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
 end
 
 parameter "param_azure_endpoint" do
   type "string"
+  category "Policy Settings"
   label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
   allowed_values "management.azure.com", "management.chinacloudapi.cn"
   default "management.azure.com"
+end
+
+parameter "param_subscriptions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Subscriptions"
+  description "Allow or Deny entered Subscriptions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_subscriptions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Subscriptions List"
+  description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-credentials "azure_auth" do
+credentials "auth_azure" do
   schemes "oauth2"
   label "Azure"
   description "Select the Azure Resource Manager Credential from the list."
   tags "provider=azure_rm"
 end
 
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
 ###############################################################################
 # Pagination
 ###############################################################################
 
-pagination "azure_pagination" do
+pagination "pagination_azure" do
   get_page_marker do
     body_path "nextLink"
   end
@@ -59,37 +105,74 @@ pagination "azure_pagination" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
-datasource "ds_subscriptions" do
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
   request do
-    auth $azure_auth
-    pagination $azure_pagination
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_azure_subscriptions" do
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
     host $param_azure_endpoint
     path "/subscriptions/"
-    query "api-version", "2019-06-01"
+    query "api-version", "2020-01-01"
     header "User-Agent", "RS Policies"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
     ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "subscriptionId", jmes_path(col_item,"subscriptionId")
-      field "displayName", jmes_path(col_item,"displayName")
-      field "state", jmes_path(col_item,"state")
+      field "id", jmes_path(col_item, "subscriptionId")
+      field "name", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
     end
   end
 end
 
-datasource "ds_azure_resources" do
-  iterate $ds_subscriptions
+datasource "ds_azure_subscriptions_filtered" do
+  run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
+end
+
+script "js_azure_subscriptions_filtered", type: "javascript" do
+  parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
+  result "result"
+  code <<-EOS
+  if (param_subscriptions_list.length > 0) {
+    result = _.filter(ds_azure_subscriptions, function(subscription) {
+      include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
+
+      if (param_subscriptions_allow_or_deny == "Deny") {
+        include_subscription = !include_subscription
+      }
+
+      return include_subscription
+    })
+  } else {
+    result = ds_azure_subscriptions
+  }
+EOS
+end
+
+datasource "ds_azure_netsecgroups" do
+  iterate $ds_azure_subscriptions_filtered
   request do
-    auth $azure_auth
-    pagination $azure_pagination
+    auth $auth_azure
+    pagination $pagination_azure
     host $param_azure_endpoint
-    path join(["/subscriptions/", val(iter_item,"subscriptionId"),"/providers/Microsoft.Network/networkSecurityGroups"])
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Network/networkSecurityGroups"])
     query "api-version", "2021-05-01"
     header "User-Agent", "RS Policies"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
@@ -98,89 +181,145 @@ datasource "ds_azure_resources" do
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "name", jmes_path(col_item,"name")
-      field "id", jmes_path(col_item,"id")
-      field "type", jmes_path(col_item,"type")
-      field "region", jmes_path(col_item,"location")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "type", jmes_path(col_item, "type")
+      field "region", jmes_path(col_item, "location")
       field "securityRules", jmes_path(col_item, "properties.securityRules")
-      field "provisioningState", jmes_path(col_item,"properties.provisioningState")
-      field "description", jmes_path(col_item,"properties.description")
-      field "protocol", jmes_path(col_item,"properties.protocol")
-      field "destinationPortRange", jmes_path(col_item,"properties.destinationPortRange")
-      field "access", jmes_path(col_item,"properties.access")
-      field "direction", jmes_path(col_item,"propteries.direction")
-      field "sourceAddressPrefix", jmes_path(col_item,"properties.sourceAddressPrefix")
+      field "provisioningState", jmes_path(col_item, "properties.provisioningState")
+      field "description", jmes_path(col_item, "properties.description")
+      field "protocol", jmes_path(col_item, "properties.protocol")
+      field "destinationPortRange", jmes_path(col_item, "properties.destinationPortRange")
+      field "access", jmes_path(col_item, "properties.access")
+      field "direction", jmes_path(col_item, "propteries.direction")
+      field "sourceAddressPrefix", jmes_path(col_item, "properties.sourceAddressPrefix")
+      field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
+      field "subscriptionID", val(iter_item, "id")
+      field "subscriptionName", val(iter_item, "name")
     end
   end
 end
 
-datasource "ds_filter_azure_resources" do
-  run_script $js_filter_azure_resources, $ds_azure_resources
+datasource "ds_azure_netsecgroups_region_filtered" do
+  run_script $js_azure_netsecgroups_region_filtered, $ds_azure_netsecgroups, $param_regions_allow_or_deny, $param_regions_list
 end
 
-###############################################################################
-# Scripts
-###############################################################################
-
-script "js_filter_azure_resources", type: "javascript" do
-  result "res"
-  parameters "ds_azure_resources"
+script "js_azure_netsecgroups_region_filtered", type: "javascript" do
+  parameters "ds_azure_netsecgroups", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
   code <<-EOS
-  var res = [];
-  _.each(ds_azure_resources, function (ds_azure_resource) {
-    bad_resource = false;
-    _.each(ds_azure_resource.securityRules, function (security_rule) {
-      if (security_rule.properties.access === "Allow") {
-        if (security_rule.properties.direction === 'Inbound') {
-          if (security_rule.properties.protocol === 'TCP') {
-            var bad_port = false;
-            var destinationPortRange = [];
-            if (security_rule.properties.destinationPortRange){
-              destinationPortRange = security_rule.properties.destinationPortRange.split('-');
-            }
-            if (destinationPortRange.length != 0 && destinationPortRange[1] != undefined) {
-              if (destinationPortRange[0] <= 3389 && destinationPortRange[1] >= 3389) {
-                bad_port = true;
-                console.log(destinationPortRange[0]);
-              }
-            } else {
-              if (destinationPortRange[0] == '3389' || destinationPortRange[0] == '*') {
-                bad_port = true;
-              }
-            }
-            if (bad_port == true) {
-              if (_.contains(["*", "0.0.0.0", "<nw>/0", "/0", "internet", "Any"], security_rule.properties.sourceAddressPrefix)) {
-                bad_resource = true;
-              }
-            }
-          }
-        }
-      }
-    });
-    if (bad_resource) {
-      res.push(ds_azure_resource);
-    }
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_azure_netsecgroups, function(resource) {
+      include_resource = _.contains(param_regions_list, resource['region'])
 
-  });
-  EOS
+      if (param_regions_allow_or_deny == "Deny") {
+        include_resource = !include_resource
+      }
+
+      return include_resource
+    })
+  } else {
+    result = ds_azure_netsecgroups
+  }
+EOS
+end
+
+datasource "ds_bad_azure_netsecgroups" do
+  run_script $js_bad_azure_netsecgroups, $ds_azure_netsecgroups_region_filtered, $ds_applied_policy
+end
+
+script "js_bad_azure_netsecgroups", type: "javascript" do
+  parameters "ds_azure_netsecgroups_region_filtered", "ds_applied_policy"
+  result "result"
+  code <<-EOS
+  result = []
+
+  _.each(ds_azure_netsecgroups_region_filtered, function(group) {
+    // Filter down just to rules that allow inbound TCP traffic and have a port range. Other rules are not of concern.
+    inbound_rules = _.filter(group['securityRules'], function(rule) {
+      return rule['properties']['access'] == "Allow" && rule['properties']['direction'] == "Inbound" && rule['properties']['protocol'] == "TCP" && typeof(rule['properties']['destinationPortRange']) == "string"
+    })
+
+    // From the above list, filter down to just rules that include port 3389
+    bad_rules = _.filter(inbound_rules, function(rule) {
+      if (rule['properties']['destinationPortRange'].indexOf('-') == -1) {
+        return rule['properties']['destinationPortRange'] == '*' || Number(rule['properties']['destinationPortRange']) == 3389
+      } else {
+        range_start = Number(rule['properties']['destinationPortRange'].split('-')[0])
+        range_end = Number(rule['properties']['destinationPortRange'].split('-')[1])
+        return range_start <= 3389 && range_end >= 3389
+      }
+    })
+
+    if (bad_rules.length > 0) {
+      result.push({
+        accountID: group['subscriptionID'],
+        accountName: group['subscriptionName'],
+        resourceGroup: group['resourceGroup'],
+        id: group['id'],
+        resourceName: group['name'],
+        resourceType: group['type'],
+        region: group['region'],
+        securityRules: group['securityRules'],
+        provisioningState: group['provisioningState'],
+        description: group['description'],
+        protocol: group['protocol'],
+        destinationPortRange: group['destinationPortRange'],
+        access: group['access'],
+        direction: group['direction'],
+        sourceAddressPrefix: group['sourceAddressPrefix'],
+        policy_name: ds_applied_policy['name']
+      })
+    }
+  })
+
+  // Dummy entry to ensure validation occurs at least once
+  result.push({
+    accountID: '',
+    accountName: '',
+    resourceGroup: '',
+    id: '',
+    resourceName: '',
+    resourceType: '',
+    region: '',
+    securityRules: '',
+    provisioningState: '',
+    description: '',
+    protocol: '',
+    destinationPortRange: '',
+    access: '',
+    direction: '',
+    sourceAddressPrefix: '',
+    policy_name: ''
+  })
+EOS
 end
 
 ###############################################################################
 # Policy
 ###############################################################################
 
-policy "policy_azure_resource" do
-  validate $ds_filter_azure_resources do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure Network Security Group(s) Found With RDP Ports Exposed"
-    escalate $escalate_email
-    check eq(size(data),0)
+policy "pol_bad_azure_netsecgroups" do
+  validate_each $ds_bad_azure_netsecgroups do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Network Security Groups With Inbound RDP Open Found"
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "id"), ""))
+    escalate $esc_email
     export do
       resource_level true
-      field "id" do
-        label "Azure Resource Id"
+      field "accountID" do
+        label "Subscription ID"
       end
-      field "name" do
-        label "Network Security Group Name"
+      field "accountName" do
+        label "Subscription Name"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "id" do
+        label "ID"
+      end
+      field "resourceName" do
+        label "Name"
       end
       field "region" do
         label "Region"
@@ -196,9 +335,99 @@ end
 # Escalations
 ###############################################################################
 
-escalation "escalate_email" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
   email $param_email
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
 end

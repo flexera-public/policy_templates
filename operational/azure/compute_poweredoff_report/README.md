@@ -11,6 +11,7 @@ __NOTE: The most recent 3 days are ignored when performing the assessment. This 
 - The policy leverages the Azure API to retrieve a list of all virtual machines.
 - The policy leverages the Flexera Bill Analysis API to gather usage data for each virtual machine.
 - For each virtual machine, the total number of hours in the specified time frame is compared to the number of hours in the usage data to determine the percentage of time the virtual machine is powered off. The following formula is used for this calculation: (`Look Back Period (Days)` \* 24) - `Hours Of Usage` / (`Look Back Period (Days)` \* 24)
+- The hourly cost is calculated by dividing the total cost of the instance across the `Look Back Period (Days)` by `Hours Of Usage`. This is the estimated hourly cost of the instance while it is powered on.
 
 ## Input Parameters
 

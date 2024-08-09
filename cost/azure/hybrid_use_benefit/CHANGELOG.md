@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.2.0
+
+- Added `Resource Hourly Cost` to incident table for added context
+
 ## v5.1
 
 - Updated policy to use new source for currency information. Policy functionality is unchanged.

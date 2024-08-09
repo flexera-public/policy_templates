@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.2.0
+
+- Added `Resource Hourly Cost` and `Currency` to incident table for added context
+
 ## v4.1.0
 
 - Added ability to filter results by SQL resource type via `SQL Resource Types` parameter

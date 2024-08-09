@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.7.1
+
+- Deprecated: This policy is no longer being updated. Please see policy README for more information.
+
 ## v2.7
 
 - fixed link to README in policy description

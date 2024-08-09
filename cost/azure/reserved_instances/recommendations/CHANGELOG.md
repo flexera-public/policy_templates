@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.0.0
+
+- Recommendations can now be generated at the "Resource Group" scope
+
 ## v3.4.1
 
 - Incident fields for `Subscription ID` and `Subscription Name` no longer show a specific Azure Subscription when providing Shared recommendations.

@@ -1,35 +1,40 @@
 # ServiceNow Inactive Approvers
 
-## What it does
+## What It Does
 
-This policy will identify approver users in ServiceNow that have not approved any requests in the past **n** days.
+This policy template reports any approval users in ServiceNow that have not approved any request for a user-specified number of days. Optionally, this report can be emailed.
 
-## Functional Description
+## How It Works
 
-This policy integrates with the ServiceNow API to retrieve approval history. Therefore the following are prerequisites for this policy to execute:
-
-- ServiceNow implementation
-- ServiceNow user with the appropriate permissions to read approval history (sysapproval_approver table), read roles (sys_user_role table), and read users (sys_user table)
+The [ServiceNow Table API](https://docs.servicenow.com/bundle/washingtondc-api-reference/page/integrate/inbound-rest/concept/c_TableAPI.html) is used with appropriate API calls to retrieve information on users and roles and their approval history.
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
-
-- *ServiceNow Instance Name* - Name of the instance in your ServiceNow url (e.g. "contoso" if your ServiceNow instance is contoso.service-now.com)
-- *Approval Roles* - ServiceNow Roles that identify Approver Users to target for this policy
-- *Number of Days* - Number of days without an approval action executed in ServiceNow
-- *Email addresses to notify* - Email addresses of the recipients you wish to notify
-
-## Prerequisites
-
-This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
-
-### Credential configuration
-
-For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
-
-Provider tag value to match this policy: `servicenow`
+- *Email Addresses* - Email addresses of the recipients you wish to notify
+- *ServiceNow Instance Name* - Name of the instance in your ServiceNow domain. For example, *myinstance* if your ServiceNow domain is *myinstance.service-now.com*.
+- *ServiceNow Roles* - ServiceNow roles assigned to approval users.
+- *Approval Action Threshold (Days)* - Number of days without an approval action executed in ServiceNow to report a user.
 
 ## Policy Actions
 
-- Sends an email notification
+- Send an email report
+
+## Prerequisites
+
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+
+- [**ServiceNow Credential**](https://docs.flexera.com/flexera/EN/Automation/GenericCredentials.htm#automationadmin_3335267112_1121390) (*provider=servicenow*) which has the following permissions:
+  - `user_admin`
+
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - `billing_center_viewer`
+
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+
+## Supported Clouds
+
+- ServiceNow
+
+## Cost
+
+This Policy Template does not incur any cloud costs.

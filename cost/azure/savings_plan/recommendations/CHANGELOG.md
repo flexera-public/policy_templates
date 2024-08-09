@@ -1,5 +1,10 @@
 # Changelog
 
+## v3.0.0
+
+- Recommendations can now be generated at the "Resource Group" scope
+- Removed redundant API requests to speed up execution for "Shared" scope
+
 ## v2.2
 
 - Updated policy to use new source for currency information. Policy functionality is unchanged.

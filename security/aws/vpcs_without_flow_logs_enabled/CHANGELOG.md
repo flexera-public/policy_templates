@@ -1,5 +1,13 @@
 # Changelog
 
+## v4.0.0
+
+- Policy template renamed to `AWS VPCs Without FlowLogs Enabled` to better reflect its functionality
+- Improved region and tag filtering
+- Added additional fields to incident table for added context
+- Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera credential
+
 ## v3.1
 
 - Updated description of `Account Number` parameter

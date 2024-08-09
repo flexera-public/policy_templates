@@ -27,7 +27,7 @@ If the Flexera organization is configured to use a currency other than the one t
 - *Resource Types* - Types of resources to provide recommendations for. Items can be removed by clicking X to the right of the name.
   - Note: For large cloud estates, it is recommended that this policy be applied once for each resource type recommendations are desired for rather than attempting to gather all recommendations with a single applied policy.
 - *Reservation Term* - Length of reservation term to provide recommendations for. Can be set to either `1 Year` or `3 Year`
-- *Reservation Scope* - The scope to provide recommendations for. Can be set to either `Single` or `Shared`
+- *Reservation Scope* - The scope to provide recommendations for. Select `Shared` to not have recommendations scoped to individual Subscriptions or Resource Groups.
 
 ## Policy Actions
 

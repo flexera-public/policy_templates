@@ -1,31 +1,33 @@
 # Azure Network Security Groups With Inbound RDP Open
 
-## What it does
+## What It Does
 
-This policy checks all Azure subscriptions for Network Security Groups that have 3389 open to the internet. An incident is raised with the offending Network Security Groups if any are found with port 3389 open."
-
-## Functional Details
-
-This policy connects to the Azure Resource Manager API to get a list of Network Security Groups. It then checks the rules field of each group to see if any rules are open inbound on port 3389
+This policy template reports any Azure Network Security Groups that have RDP (TCP port 3389) open to the internet. Optionally, it emails this report.
 
 ## Input Parameters
 
-- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
-- *Azure Endpoint* - Azure Endpoint to access resources
+- *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
+- *Azure Endpoint* - The endpoint to send Azure API requests to. Recommended to leave this at default unless using this policy with Azure China.
+- *Allow/Deny Subscriptions* - Allow or Deny entered Subscriptions to filter results.
+- *Allow/Deny Subscriptions List* - A list of allowed or denied Subscription IDs/names. Leave blank to check all Subscriptions.
+- *Allow/Deny Regions* - Allow or Deny entered regions to filter results.
+- *Allow/Deny Regions List* - A list of allowed or denied regions. Leave blank to check all Subscriptions.
+
+## Policy Actions
+
+- Send an email report
 
 ## Prerequisites
 
-This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
-### Credential configuration
+- [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:
+  - `Microsoft.Network/networkSecurityGroups/read`
 
-For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - `billing_center_viewer`
 
-Provider tag value to match this policy: `azure_rm`
-
-Required permissions in the provider:
-
-- Microsoft.Network/networkSecurityGroups/read
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ## Supported Clouds
 

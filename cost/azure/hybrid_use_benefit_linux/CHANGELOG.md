@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.1.0
+
+- Added `Resource Hourly Cost` and `Currency` to incident table for added context
+
 ## v5.0
 
 - Added support for regex when filtering resources by tag

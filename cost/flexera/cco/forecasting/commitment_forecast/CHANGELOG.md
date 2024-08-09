@@ -1,5 +1,13 @@
 # Changelog
 
+## v4.0.0
+
+- Renamed policy template to `Vendor Spend Commitment Forecast` to avoid confusion with policy templates for RIs/SPs
+- Added ability to specify a cost metric to use when gathering spend data
+- Several parameters altered to be more descriptive and human-readable
+- Additional fields added to incident table for context
+- Streamlined code for better readability and faster execution
+
 ## v3.5
 
 - Updated policy metadata to make it more clear what Flexera service the policy is for
@@ -14,7 +22,7 @@
 
 ## v3.2
 
-- Updated indentation for chart url so it renders corrrectly in the policy incident email
+- Updated indentation for chart url so it renders correctly in the policy incident email
 
 ## v3.1
 

@@ -1,42 +1,41 @@
-# Inactive Users - Okta
+# Okta Inactive Users
 
-## Functional Details
+## What It Does
 
-- This policy will target a specific Okta organization
+This policy template reports any Okta users that have not logged in for a user-specified number of days. Optionally, this report can be emailed and the inactive users can be deactivated.
 
-## What it does
+## How It Works
 
-This Policy Template leverages the [Okta Users API](https://developer.okta.com/docs/reference/api/users/#list-users) to identify users that have not logged in for an extended period of time, and optionally will deactivate those users upon approval.
+The [Okta Users API](https://developer.okta.com/docs/reference/api/users/#list-users) is used to obtain a list of Okta users and their most recent login date.
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
-
-- *Okta Organization Name* - The name of your Okta Organization.  For example, if you navigate to <https://demo.okta.com> to login to Okta, the value in this parameter would be `demo`.
-- *Number of Days Since Last Login* - The number of days that a user has not logged in to Okta, which should raise an incident.
-- *Email addresses to notify* - A list of email addresses to notify
+- *Email Addresses* - Email addresses of the recipients you wish to notify
+- *Okta Organization Name* - Name of the Okta organization. For example, if you navigate to *myorg.okta.com* to log into Okta, the organization name would be *myorg*.
+- *Days Since Last Login* - The number of days a user needs to go without logging in to be considered inactive.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
 Please note that the "*Automatic Actions*" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
-For example if a user selects the "Deactivate Users" action while applying the policy, all the users that didn't satisfy the policy condition will be deactivated.
+For example if a user selects the "Deactivate Inactive Users" action while applying the policy, all the users that didn't satisfy the policy condition will be deactivated.
+
+## Policy Actions
+
+- Send an email report
+- Deactivate inactive users after approval
 
 ## Prerequisites
 
-This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm)
-for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no
-credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
-### Credential configuration
+- [**Okta Credential**](https://docs.flexera.com/flexera/EN/Automation/GenericCredentials.htm#automationadmin_3335267112_1121389) (*provider=okta*) which has the following permissions:
+  - `READ_ONLY_ADMIN`
 
-For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - `billing_center_viewer`
 
-Provider tag value to match this policy: `okta`
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
-Required permissions in the provider:
-
-This policy requires permissions to access Okta.com API as the Owner of the Organization(s).
-
-## Supported Services
+## Supported Clouds
 
 - Okta
 

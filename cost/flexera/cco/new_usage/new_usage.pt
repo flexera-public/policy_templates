@@ -1,0 +1,491 @@
+name "New Usage"
+rs_pt_ver 20180301
+type "policy"
+short_description "Reports any new usage for the specified dimensions. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/new_usage) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+category "Cost"
+severity "low"
+default_frequency "daily"
+info(
+  version: "3.0.0",
+  provider: "Flexera",
+  service: "Cloud Cost Optimization",
+  policy_set: "Cloud Cost Optimization"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_dimension" do
+  type "string"
+  category "Policy Settings"
+  label "Dimension"
+  description "The name or ID of the Flexera dimension whose values you want to check for new usage; for example, 'Service'."
+  default "Service"
+end
+
+parameter "param_min_cost" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Cost Threshold"
+  description "Minimum monthly cost to report on new usage. New usage whose estimated monthly cost is lower will not be reported."
+  min_value 0
+  default 0
+end
+
+parameter "param_lookback" do
+  type "number"
+  category "Policy Settings"
+  label "Look Back Period (Days)"
+  description "How far back, in days, to compare to current usage to see if new usage has been added."
+  min_value 4
+  default 10
+end
+
+parameter "param_cost_metric" do
+  type "string"
+  category "Policy Settings"
+  label "Cost Metric"
+  description "The cost metric to use when assessing new usage spend."
+  allowed_values "Unamortized Unblended", "Amortized Unblended", "Unamortized Blended", "Amortized Blended"
+  default "Amortized Unblended"
+end
+
+parameter "param_bc_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Billing Centers"
+  description "Allow or Deny entered Billing Centers."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_bc_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Billing Center List"
+  description "A list of allowed or denied Billing Center names/IDs. Leave blank to run report across entire Flexera organization."
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+datasource "ds_billing_centers_filtered" do
+  run_script $js_billing_centers_filtered, $ds_billing_centers, $param_bc_allow_or_deny, $param_bc_list
+end
+
+script "js_billing_centers_filtered", type: "javascript" do
+  parameters "ds_billing_centers", "param_bc_allow_or_deny", "param_bc_list"
+  result "result"
+  code <<-EOS
+  allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_bc_list.length > 0) {
+    billing_centers = _.filter(ds_billing_centers, function(item) {
+      id_found = _.contains(param_bc_list, item['id']) == allow_deny_test[param_bc_allow_or_deny]
+      name_found = _.contains(param_bc_list, item['name']) == allow_deny_test[param_bc_allow_or_deny]
+      return id_found || name_found
+    })
+
+    // Check for conflicting parents/children and remove children if present
+    bc_ids = _.compact(_.pluck(billing_centers, 'id'))
+    bad_children = _.filter(ds_billing_centers, function(bc) { return _.contains(bc_ids, bc['parent_id']) })
+    bad_children_ids = _.pluck(bad_children, 'id')
+
+    // Create final result with the bad children removed
+    result = _.reject(billing_centers, function(bc) { return _.contains(bad_children_ids, bc['id']) })
+  } else {
+    // If we're not filtering at all, just grab all of the top level billing centers
+    result = _.filter(ds_billing_centers, function(bc) {
+      return bc['parent_id'] == null || bc['parent_id'] == undefined
+    })
+  }
+EOS
+end
+
+datasource "ds_dimensions_list" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/costs/dimensions"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "dimensions[].{id: id, name: name}") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+    end
+  end
+end
+
+datasource "ds_dimension" do
+  run_script $js_dimension, $ds_dimensions_list, $param_dimension
+end
+
+script "js_dimension", type: "javascript" do
+  parameters "ds_dimensions_list", "param_dimension"
+  result "result"
+  code <<-EOS
+  result = _.find(ds_dimensions_list, function(item) { return item['id'] == param_dimension })
+
+  // If user-specified dimension isn't a valid dimension ID, check for name instead
+  if (result == undefined) {
+    result = _.find(ds_dimensions_list, function(item) { return item['name'] == param_dimension })
+  }
+
+  // If user-specified dimension isn't a valid dimension ID *or* name, check for name without case
+  if (result == undefined) {
+    result = _.find(ds_dimensions_list, function(item) { return item['name'].toLowerCase() == param_dimension.toLowerCase() })
+  }
+
+  // If the above has failed, place dummy values indicating a problematic input
+  if (result == undefined) { result = { id: "zzz_unknown", name: "Unknown" } }
+EOS
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = { symbol: symbol, separator: separator }
+EOS
+end
+
+datasource "ds_current_bill" do
+  request do
+    run_script $js_get_bill, $ds_billing_centers_filtered, $ds_dimension, $param_cost_metric, rs_org_id, rs_optima_host, 3
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "dimensions", jmes_path(col_item, "dimensions")
+      field "metrics", jmes_path(col_item, "metrics")
+      field "timestamp", jmes_path(col_item, "timestamp")
+    end
+  end
+end
+
+datasource "ds_previous_bill" do
+  request do
+    run_script $js_get_bill, $ds_billing_centers_filtered, $ds_dimension, $param_cost_metric, rs_org_id, rs_optima_host, $param_lookback
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "dimensions", jmes_path(col_item, "dimensions")
+      field "metrics", jmes_path(col_item, "metrics")
+      field "timestamp", jmes_path(col_item, "timestamp")
+    end
+  end
+end
+
+script "js_get_bill", type: "javascript" do
+  parameters "ds_billing_centers_filtered", "ds_dimension", "param_cost_metric", "rs_org_id", "rs_optima_host", "lookback"
+  result "request"
+  code <<-EOS
+  cost_metric_table = {
+    "Unamortized Unblended": "cost_nonamortized_unblended_adj",
+    "Amortized Unblended": "cost_amortized_unblended_adj",
+    "Unamortized Blended": "cost_nonamortized_blended_adj",
+    "Amortized Blended": "cost_amortized_blended_adj"
+  }
+
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - (lookback - 1))
+  end_date = end_date.toISOString().split('T')[0]
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - lookback)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
+    headers: { "User-Agent": "RS Policies", "Api-Version": "1.0" },
+    body_fields: {
+      dimensions: [ ds_dimension['id'], "billing_center_id" ],
+      metrics: [ cost_metric_table[param_cost_metric] ],
+      billing_center_ids: _.pluck(ds_billing_centers_filtered, 'id'),
+      granularity: "day",
+      start_at: start_date,
+      end_at: end_date,
+      filter: null,
+      limit: 100000
+    }
+  }
+EOS
+end
+
+datasource "ds_new_usage" do
+  run_script $js_new_usage, $ds_current_bill, $ds_previous_bill, $ds_billing_centers, $ds_dimension, $ds_currency, $ds_applied_policy, $param_min_cost, $param_lookback, $param_cost_metric
+end
+
+script "js_new_usage", type: "javascript" do
+  parameters "ds_current_bill", "ds_previous_bill", "ds_billing_centers", "ds_dimension", "ds_currency", "ds_applied_policy", "param_min_cost", "param_lookback", "param_cost_metric"
+  result "result"
+  code <<-'EOS'
+  // Function for formatting currency numbers later
+  function formatNumber(number, separator) {
+    var numString = number.toString()
+    var values = numString.split(".")
+    var formatted_number = ''
+
+    while (values[0].length > 3) {
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      formatted_number = separator + chunk + formatted_number
+    }
+
+    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
+
+    if (values[1] == undefined) { return formatted_number }
+
+    return formatted_number + "." + values[1]
+  }
+
+  cost_metric_table = {
+    "Unamortized Unblended": "cost_nonamortized_unblended_adj",
+    "Amortized Unblended": "cost_amortized_unblended_adj",
+    "Unamortized Blended": "cost_nonamortized_blended_adj",
+    "Amortized Blended": "cost_amortized_blended_adj"
+  }
+
+  bc_table = {}
+  _.each(ds_billing_centers, function(bc) { bc_table[bc['id']] = bc['name'] })
+
+  // Create a list of all of the keys for the specified dimension that were present in the past
+  old_cost_keys = []
+  _.each(ds_previous_bill, function(entry) { old_cost_keys.push(entry['dimensions'][ds_dimension['id']]) })
+
+  // Create a table of all of the new values and their respective total cost
+  new_costs = {}
+
+  _.each(ds_current_bill, function(entry) {
+    key = entry['dimensions'][ds_dimension['id']]
+    cost = entry['metrics'][cost_metric_table[param_cost_metric]]
+    billing_center = bc_table[entry['dimensions']['billing_center_id']]
+
+    if (new_costs[key] == undefined) { new_costs[key] = { cost: 0.0, billing_centers: [] } }
+    new_costs[key]['cost'] += cost
+    new_costs[key]['billing_centers'].push(billing_center)
+  })
+
+  // Create a result containing only the new keys
+  result = []
+  total_cost = 0.0
+
+  _.each(_.keys(new_costs), function(key) {
+    // Get estimated monthly cost from daily cost
+    cost = new_costs[key]['cost'] * 365.25 / 12
+
+    if (_.contains(old_cost_keys, key) == false && cost >= param_min_cost) {
+      total_cost += cost
+
+      result.push({
+        dimension_name: ds_dimension['name'],
+        dimension_id: ds_dimension['id'],
+        value: key,
+        cost: Math.round(cost * 1000) / 1000,
+        billing_centers: _.uniq(new_costs[key]['billing_centers']).join(', '),
+        currency: ds_currency['symbol'],
+        policy_name: ds_applied_policy['name'],
+        min_cost: param_min_cost,
+        lookback: param_lookback,
+        cost_metric: param_cost_metric,
+        total_cost: "",
+        message: ""
+      })
+    }
+  })
+
+  if (result.length > 0) {
+    result = _.sortBy(result, 'cost').reverse()
+
+    cost_message = [
+      ds_currency['symbol'], ' ',
+      formatNumber(Math.round(total_cost * 1000) / 1000, ds_currency['separator'])
+    ].join('')
+
+    start_date = new Date()
+    start_date.setDate(start_date.getDate() - param_lookback)
+    start_date = start_date.toISOString().split('T')[0]
+
+    noun = "type"
+    if (result.length > 1) { noun = "types" }
+
+    verb = "was"
+    if (result.length > 1) { verb = "were" }
+
+    message = [
+      result.length, " new usage ", noun, " for the dimension \"", ds_dimension['name'], "\" found that ",
+      verb, " not present on ", start_date, " (", param_lookback.toString(), " days ago). "
+    ].join('')
+
+    if (param_min_cost > 0) {
+      message += "New usage types with an estimated monthly cost below " + ds_currency['symbol'] + param_min_cost + " were not included in the results. "
+    }
+
+    disclaimer = "\n\nThe above settings can be modified by editing the applied policy and changing the appropriate parameters."
+
+    result[0]['total_cost'] = cost_message
+    result[0]['message'] = message + disclaimer
+  }
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_new_usage" do
+  validate_each $ds_new_usage do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} New Usage Types For Dimension \"{{ with index data 0 }}{{ .dimension_name }}{{ end }}\" Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Cost:** {{ with index data 0 }}{{ .total_cost }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
+    check eq(val(item, "value"), "")
+    escalate $esc_email
+    hash_exclude "message", "total_cost", "cost", "currency"
+    export do
+      resource_level false
+      field "value" do
+        label "New Usage Type"
+      end
+      field "cost" do
+        label "Estimated Monthly Cost"
+      end
+      field "currency" do
+        label "Currency"
+      end
+      field "cost_metric" do
+        label "Cost Metric"
+      end
+      field "billing_centers" do
+        label "Associated Billing Centers"
+      end
+      field "dimension_name" do
+        label "Dimension Name"
+      end
+      field "dimension_id" do
+        label "Dimension ID"
+      end
+      field "min_cost" do
+        label "Monthly Cost Threshold"
+      end
+      field "lookback" do
+        label "Lookback Period (Days)"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end

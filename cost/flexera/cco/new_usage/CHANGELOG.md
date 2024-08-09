@@ -1,5 +1,15 @@
 # Changelog
 
+## v3.0.0
+
+- Policy template renamed to `New Usage` to better reflect its functionality
+- Added ability to report new usage for any cost dimension
+- Added ability to specify a cost metric and look back period
+- Added ability to filter results by estimated monthly cost
+- Improved Billing Center filtering options
+- Added additional fields and text to incident output for added context
+- Streamlined code for better readability and faster execution
+
 ## v2.2
 
 - Updated policy metadata to make it more clear what Flexera service the policy is for

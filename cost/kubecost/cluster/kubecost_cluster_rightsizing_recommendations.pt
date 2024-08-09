@@ -1,14 +1,13 @@
-name "Kubecost Cluster Rightsizing Recommendations"
+name "Kubecost Cluster Rightsizing Recommendation"
 rs_pt_ver 20180301
 type "policy"
-short_description "The policy retrieves Kubecost recommendations for rightsizing of Kubernetes clusters and raises an incident. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/kubecost/cluster) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Reports Kubecost recommendation for rightsizing of Kubernetes cluster. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/kubecost/cluster) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
-severity "low"
 category "Cost"
-default_frequency "daily"
-tenancy "single"
+severity "low"
+default_frequency "weekly"
 info(
-  version: "0.2",
+  version: "0.3.0",
   provider: "Kubecost",
   service: "Kubernetes",
   policy_set: "Rightsize Clusters",
@@ -16,32 +15,40 @@ info(
 )
 
 ###############################################################################
-# User inputs
+# Parameters
 ###############################################################################
 
 parameter "param_email" do
-  label "Email addresses"
-  description "Email addresses of the recipients you wish to notify"
   type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
 end
 
 parameter "param_kubecost_host" do
   type "string"
+  category "Policy Settings"
   label "Kubecost Host"
-  description "Kubecost Host or IP Address of Kubecost LB"
+  description "Kubecost Hostname or IP Address of Kubecost Load Balancer to make queries against."
+  min_length 1
+  # No default value, user input required
 end
 
 parameter "param_min_nodes" do
   type "number"
-  label "Minimum node count"
-  description "Minimum allowed node count in the cluster"
+  category "Policy Settings"
+  label "Minimum Node Count"
+  description "Minimum required node count for recommendations."
+  min_value 0
   default 2
 end
 
-parameter "param_historical_days" do
+parameter "param_lookback" do
   type "number"
-  label "Number of days to analyze"
-  description "Historical range to analyze"
+  category "Policy Settings"
+  label "Lookback Period (Days)"
+  description "Number of historical days of usage to analyze when generating recommendations."
   min_value 2
   max_value 60
   default 7
@@ -49,42 +56,124 @@ end
 
 parameter "param_target_util" do
   type "number"
+  category "Policy Settings"
   label "Target Utilization (%)"
-  description "Desirable target utilization in percent"
+  description "Utilization target to use when generating recommendations."
   default 80
 end
 
-parameter "param_recommendation_strategy" do
+parameter "param_strategy" do
   type "string"
+  category "Policy Settings"
   label "Recommendation Strategy"
-  description "Recommendation strategy to apply"
-  allowed_values ["Single", "Multi", "Optimal"]
+  description "Recommendation strategy to use. 'Optimal' will automatically select whichever strategy has the highest potential savings."
+  allowed_values "Single", "Multi", "Optimal"
+  default "Optimal"
 end
 
 ###############################################################################
-# Datasource
+# Authentication
 ###############################################################################
 
-datasource "ds_get_currency" do
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
   request do
-    verb "GET"
-    scheme "http"
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_kubecost_currency_code" do
+  request do
     host $param_kubecost_host
     path "/model/getConfigs"
   end
   result do
     encoding "json"
-    field "currencyCode", jmes_path(response, "data.currencyCode")
+    field "code", jmes_path(response, "data.currencyCode")
   end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_kubecost_currency_code, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_kubecost_currency_code", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  code = ds_kubecost_currency_code['code'].toUpperCase().trim()
+  if (code == '') { code = ds_currency_code['value'] }
+  if (typeof(code) != 'string' || code == '') { code = 'USD' }
+  if (ds_currency_reference[code] == undefined) { code = 'USD' }
+
+  result = {
+    code: code,
+    symbol: ds_currency_reference[code]['symbol'],
+    separator: ds_currency_reference[code]['t_separator'] ? ds_currency_reference[code]['t_separator'] : ""
+  }
+EOS
+end
+
+datasource "ds_target_util" do
+  run_script $js_target_util, $param_target_util
+end
+
+script "js_target_util", type:"javascript" do
+  parameters "param_target_util"
+  result "result"
+  code "result = { value: (param_target_util / 100).toString() }"
 end
 
 datasource "ds_cluster_sizing" do
   request do
-    run_script $js_cluster_sizing, $param_kubecost_host, $param_min_nodes, $param_historical_days, $param_target_util
+    host $param_kubecost_host
+    path "/model/savings/clusterSizing"
+    query "minNodeCount", $param_min_nodes
+    query "window", join([$param_lookback, "d"])
+    query "targetUtilization", val($ds_target_util, "value")
+    header "User-Agent", "RS Policies"
   end
   result do
     encoding "json"
-    field "accountId", jmes_path(response, "data.parameters.clusterId")
+    field "accountID", jmes_path(response, "data.parameters.clusterId")
     field "accountName", jmes_path(response, "data.parameters.clusterName")
     field "totalNodeCount", jmes_path(response, "data.currentClusterInfo.totalCounts.totalNodeCount")
     field "totalRAMGB", jmes_path(response, "data.currentClusterInfo.totalCounts.totalRAMGB")
@@ -94,98 +183,125 @@ datasource "ds_cluster_sizing" do
   end
 end
 
-script "js_cluster_sizing", type: "javascript" do
-  parameters "kubecost_host", "min_nodes", "historical_days", "target_util"
-  result "request"
-  code <<-EOS
-    var request = {
-      "verb": "GET",
-      "scheme": "http",
-      "host": kubecost_host,
-      "path": "/model/savings/clusterSizing",
-      "query_params": {
-        "minNodeCount": min_nodes.toString(),
-        "window": historical_days + "d",
-        "targetUtilization": (target_util/100).toString()
-      }
-    }
-  EOS
+datasource "ds_recommendations" do
+  run_script $js_recommendations, $ds_cluster_sizing, $ds_currency, $ds_applied_policy, $param_strategy, $param_min_nodes, $param_lookback, $param_target_util
 end
 
-datasource "ds_cluster_array" do
-  run_script $js_cluster_array, $ds_cluster_sizing, $ds_get_currency, $param_recommendation_strategy
-end
+script "js_recommendations", type: "javascript" do
+  parameters "ds_cluster_sizing", "ds_currency", "ds_applied_policy", "param_strategy", "param_min_nodes", "param_lookback", "param_target_util"
+  result "result"
+  code <<-'EOS'
+  // Function for formatting currency numbers later
+  function formatNumber(number, separator) {
+    var numString = number.toString()
+    var values = numString.split(".")
+    var formatted_number = ''
 
-script "js_cluster_array", type: "javascript" do
-  parameters "ds_cluster_sizing", "ds_get_currency", "recommendation_strategy"
-  result "results"
-  code <<-EOF
-    var accountId = ds_cluster_sizing.accountId
-    var accountName = ds_cluster_sizing.accountName
-    var totalNodeCount = ds_cluster_sizing.totalNodeCount
-    var totalRAMGB = ds_cluster_sizing.totalRAMGB
-    var totalVCPUs = ds_cluster_sizing.totalVCPUs
-    var monthlyRate = ds_cluster_sizing.monthlyRate
-    var results = []
-    var optimalValue = 0
-    var tempResult
-    _.forEach(ds_cluster_sizing.recommendations, function(e, k) {
-      e.rec_strategy = k;
-      e.accountId = accountId;
-      e.accountName = accountName;  
-      if (e.accountName == "" || e.accountName.lenght === 0) {
-        e.accountName = accountId;
-      }
-      e.currencyCode = ds_get_currency.currencyCode
-      if (e.currencyCode == "" || e.currencyCode.lenght === 0) {
-        e.currencyCode = "USD";
-      }
-      e.totalNodeCount = totalNodeCount
-      e.totalRAMGB = totalRAMGB
-      e.totalVCPUs = totalVCPUs
-      e.monthlyRate = monthlyRate
-      e.strPools = JSON.stringify(e.pools);
-      if (recommendation_strategy.toLowerCase() == "optimal") {
-        if (e.monthlySavings > optimalValue) {
-          optimalValue = e.monthlySavings
-          e.monthlySavings = Math.round(e.monthlySavings * 100) / 100
-          e.monthlyRate = Math.round(e.monthlyRate * 100) / 100
-          e.totalMonthlyCost = Math.round(e.totalMonthlyCost * 100) / 100
-          tempResult = e
-        }
-      } else {
-        if (k == recommendation_strategy.toLowerCase()) {
-          e.monthlySavings = Math.round(e.monthlySavings * 100) / 100
-          e.monthlyRate = Math.round(e.monthlyRate * 100) / 100
-          e.totalMonthlyCost = Math.round(e.totalMonthlyCost * 100) / 100
-          results.push(e)
-        }
-      }
-    })
-    if (recommendation_strategy.toLowerCase() == "optimal") {
-      results.push(tempResult)
+    while (values[0].length > 3) {
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      formatted_number = separator + chunk + formatted_number
     }
-  EOF
+
+    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
+
+    if (values[1] == undefined) { return formatted_number }
+
+    return formatted_number + "." + values[1]
+  }
+
+  selected_strategy = param_strategy
+
+  if (selected_strategy == "Optimal") {
+    selected_strategy = "Single"
+
+    // Note: Savings is presented as a negative value. Hence why we select the lowest, not the highest.
+    if (ds_cluster_sizing['recommendations']['multi']['monthlySavings'] < ds_cluster_sizing['recommendations']['single']['monthlySavings']) {
+      selected_strategy = "Multi"
+    }
+  }
+
+  recommendation = ds_cluster_sizing['recommendations'][selected_strategy.toLowerCase()]
+
+  regions = []
+  _.each(recommendation['pools'], function(pool) { regions.push(pool['type']['region']) })
+  region = _.uniq(_.compact(regions)).join(', ')
+
+  accountID = ds_cluster_sizing['accountID']
+  accountName = ds_cluster_sizing['accountName']
+  if (typeof(accountName) != 'string' || accountName == '') { accountName = accountID }
+
+  message_strategy = selected_strategy
+  if (param_strategy == "Optimal") { message_strategy += " (Optimal)" }
+
+  message = [
+    "Recommendation was produced with the following settings:\n\n",
+    "- Strategy: ", message_strategy, "\n",
+    "- Minimum Nodes: ", param_min_nodes, "\n",
+    "- Lookback Period: ", param_lookback, " Days\n",
+    "- Target Utilization: ", param_target_util, "%\n\n",
+    "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+  ].join('')
+
+  recommendationDetails = [
+    "Modify settings for cluster ", accountID,
+    " so that node count is set to ", recommendation['nodeCount'],
+    " and pools are configured to match the Recommended Pools field."
+  ].join('')
+
+  result = [{
+    accountID: accountID,
+    accountName: accountName,
+    strategy: selected_strategy,
+    totalNodeCount: ds_cluster_sizing['totalNodeCount'],
+    totalRAMGB: ds_cluster_sizing['totalRAMGB'],
+    totalVCPUs: ds_cluster_sizing['totalVCPUs'],
+    monthlyRate: Math.round(ds_cluster_sizing['monthlyRate'] * 1000) / 1000,
+    totalMonthlyCost: Math.round(recommendation['totalMonthlyCost'] * 1000) / 1000,
+    // Note: Savings is presented as a negative value. Hence why we multiply by a negative number to invert it
+    savings: Math.round(recommendation['monthlySavings'] * -1000) / 1000,
+    savingsCurrency: ds_currency['symbol'],
+    nodeCount: recommendation['nodeCount'],
+    pools: JSON.stringify(recommendation['pools']),
+    recommendationDetails: recommendationDetails,
+    region: region,
+    service: "Kubernetes",
+    policy_name: ds_applied_policy['name'],
+    min_nodes: param_min_nodes,
+    lookback: param_lookback,
+    target_util: param_target_util,
+    message: message,
+    message_savings: [
+      ds_currency['symbol'], ' ',
+      formatNumber(Math.round(recommendation['monthlySavings'] * -1000) / 1000, ds_currency['separator'])
+    ].join('')
+  }]
+EOS
 end
 
 ###############################################################################
 # Policy
 ###############################################################################
 
-policy "policy_kubecost_cluster" do
-  validate_each $ds_cluster_array do
-    summary_template "Kubecost Cluster Sizing Report"
-    escalate $esc_report_volumes
-    check eq(0,1)
+policy "pol_kubecost_recommendations" do
+  validate_each $ds_recommendations do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .message_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
+    check eq(val(item, "accountID"), "")
+    escalate $esc_email
     export do
+      resource_level true
       field "accountID" do
         label "Cluster ID"
-        path "accountId"
       end
       field "accountName" do
         label "Cluster Name"
       end
-      field "rec_strategy" do
+      field "strategy" do
         label "Recommendation Strategy"
       end
       field "totalNodeCount" do
@@ -197,9 +313,6 @@ policy "policy_kubecost_cluster" do
       field "totalVCPUs" do
         label "Current Total vCPUs"
       end
-      field "currencyCode" do
-        label "Currency"
-      end
       field "monthlyRate" do
         label "Current Monthly Cost"
       end
@@ -207,14 +320,46 @@ policy "policy_kubecost_cluster" do
         label "Recommended Monthly Cost"
       end
       field "savings" do
-        label "Savings"
-        path "monthlySavings"
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
       end
       field "nodeCount" do
         label "Recommended Node Count"
       end
-      field "strPools" do
+      field "pools" do
         label "Recommended Pools"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "min_nodes" do
+        label "Minimum Nodes"
+      end
+      field "lookback" do
+        label "Lookback Period (Days)"
+      end
+      field "target_util" do
+        label "Target Utilization (%)"
+      end
+      field "id" do
+        label "ID"
+        path "accountID"
+      end
+      field "resourceID" do
+        label "Resource ID"
+        path "accountID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+        path "accountID"
       end
     end
   end
@@ -224,7 +369,7 @@ end
 # Escalations
 ###############################################################################
 
-escalation "esc_report_volumes" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
