@@ -1,4 +1,4 @@
-# Azure Ensure Soft Delete Enabled For Azure Storage
+# Azure Blob Storage Accounts Without Soft Delete Enabled
 
 ## What It Does
 
