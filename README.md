@@ -348,7 +348,7 @@ These templates can generate savings estimates for your environment.
   - [Flexera FOCUS Report](./cost/flexera/cco/focus_report)
   - [Low Service Usage](./cost/flexera/cco/low_service_usage)
   - [Low Usage Report](./cost/flexera/cco/low_usage)
-  - [New Service Usage](./cost/flexera/cco/new_service_usage)
+  - [New Usage](./cost/flexera/cco/new_usage)
   - [Scheduled Report](./cost/flexera/cco/scheduled_reports)
   - [Superseded Instances](./cost/flexera/cco/superseded_instance)
   - [Vendor Spend Commitment Forecast](./cost/flexera/cco/forecasting/commitment_forecast)
