@@ -6,7 +6,7 @@ This policy template reports any Okta users that have not logged in for a user-s
 
 ## How It Works
 
-The [Okta Users API](https://developer.okta.com/docs/reference/api/users/#list-users) to used to obtain a list of Okta users and their most recent login date.
+The [Okta Users API](https://developer.okta.com/docs/reference/api/users/#list-users) is used to obtain a list of Okta users and their most recent login date.
 
 ## Input Parameters
 
