@@ -590,7 +590,7 @@ These templates can generate savings estimates for your environment.
 
 - App Service
 
-  - [Azure Web App Minimum TLS Version](./security/azure/webapp_tls_version_support)
+  - [Azure Web Apps Without Secure TLS](./security/azure/webapp_tls_version_support)
 
 - Compute
 
@@ -640,14 +640,14 @@ These templates can generate savings estimates for your environment.
 - Storage
 
   - [Azure Blob Storage Accounts Without Logging Enabled](./security/azure/blob_storage_logging)
-  - [Azure Ensure Soft Delete Enabled For Azure Storage](./security/azure/storage_soft_delete)
-  - [Azure Ensure Storage Account Default Network Access Set To Deny](./security/azure/storage_network_deny)
-  - [Azure Ensure Storage Accounts Require Secure TLS Version](./security/azure/storage_tls_version)
-  - [Azure Ensure Storage Logging Enabled For Table Service](./security/azure/table_storage_logging)
-  - [Azure Ensure Trusted Microsoft Services Enabled](./security/azure/storage_trusted_services)
+  - [Azure Blob Storage Accounts Without Soft Delete Enabled](./security/azure/storage_soft_delete)
   - [Azure Publicly-Accessible Blob Containers](./security/azure/private_blob_containers)
   - [Azure Queue Storage Accounts Without Logging Enabled](./security/azure/queue_storage_logging)
+  - [Azure Storage Accounts Allowing Default Network Access](./security/azure/storage_network_deny)
+  - [Azure Storage Accounts Without Secure TLS](./security/azure/storage_tls_version)
   - [Azure Storage Accounts Without Secure Transfer](./security/azure/secure_transfer_required)
+  - [Azure Storage Accounts Without Trusted Microsoft Services Access](./security/azure/storage_trusted_services)
+  - [Azure Table Storage Accounts Without Logging Enabled](./security/azure/table_storage_logging)
 
 - Storage Accounts
 

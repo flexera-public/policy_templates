@@ -119,6 +119,12 @@ default_child_policy_template_files = [
   "../../security/azure/sql_server_va_admins/sql_server_va_admins.pt",
   "../../security/azure/sql_server_va_emails/sql_server_va_emails.pt",
   "../../security/azure/sql_server_va_scans/sql_server_va_scans.pt",
+  "../../security/azure/storage_network_deny/storage_network_deny.pt",
+  "../../security/azure/storage_soft_delete/storage_soft_delete.pt",
+  "../../security/azure/storage_tls_version/storage_tls_version.pt",
+  "../../security/azure/storage_trusted_services/storage_trusted_services.pt",
+  "../../security/azure/table_storage_logging/table_storage_logging.pt",
+  "../../security/azure/webapp_tls_version_support/azure_webapp_min_tls_version.pt",
   # Google Policy Templates
   "../../compliance/google/long_stopped_instances/google_long_stopped_instances.pt",
   "../../compliance/google/unlabeled_resources/unlabeled_resources.pt",
