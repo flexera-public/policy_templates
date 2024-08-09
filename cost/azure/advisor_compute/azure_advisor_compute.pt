@@ -546,20 +546,34 @@ datasource "ds_azure_advisor_recs" do
   end
 end
 
+datasource "ds_azure_advisor_recs_vm" do
+  run_script $js_azure_advisor_recs_vm, $ds_azure_advisor_recs
+end
+
+script "js_azure_advisor_recs_vm", type: "javascript" do
+  parameters "ds_azure_advisor_recs"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_azure_advisor_recs, function(rec) {
+    return rec['impactedField'] == "Microsoft.Compute/virtualMachines" && rec["recommendationType"] == "SkuChange"
+  })
+EOS
+end
+
 # Branching logic:
 # This datasource returns an empty array if the target currency is USD.
 # This prevents ds_currency_conversion from running if it's not needed.
 datasource "ds_conditional_currency_conversion" do
-  run_script $js_conditional_currency_conversion, $ds_currency_target, $ds_azure_advisor_recs
+  run_script $js_conditional_currency_conversion, $ds_currency_target, $ds_azure_advisor_recs_vm
 end
 
 script "js_conditional_currency_conversion", type: "javascript" do
-  parameters "ds_currency_target", "ds_azure_advisor_recs"
+  parameters "ds_currency_target", "ds_azure_advisor_recs_vm"
   result "result"
   code <<-EOS
   result = []
   from_currency = "USD"
-  if (ds_azure_advisor_recs.length > 0) { from_currency = ds_azure_advisor_recs[0]['savingsCurrency'] }
+  if (ds_azure_advisor_recs_vm.length > 0) { from_currency = ds_azure_advisor_recs_vm[0]['savingsCurrency'] }
 
   // Make the request only if the target currency is not USD
   if (ds_currency_target['code'] != from_currency) { result = [{ from: from_currency }] }
@@ -614,11 +628,11 @@ EOS
 end
 
 datasource "ds_recommendations_merged" do
-  run_script $js_recommendations_merged, $ds_azure_advisor_recs, $ds_azure_instances_status_filtered, $ds_currency, $ds_applied_policy, $param_min_savings
+  run_script $js_recommendations_merged, $ds_azure_advisor_recs_vm, $ds_azure_instances_status_filtered, $ds_currency, $ds_applied_policy, $param_min_savings
 end
 
 script "js_recommendations_merged", type: "javascript" do
-  parameters "ds_azure_advisor_recs", "ds_azure_instances_status_filtered", "ds_currency", "ds_applied_policy", "param_min_savings"
+  parameters "ds_azure_advisor_recs_vm", "ds_azure_instances_status_filtered", "ds_currency", "ds_applied_policy", "param_min_savings"
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
@@ -642,14 +656,10 @@ script "js_recommendations_merged", type: "javascript" do
   vm_table = {}
   _.each(ds_azure_instances_status_filtered, function(vm) { vm_table[vm['resourceID'].toLowerCase()] = vm })
 
-  valid_recs = _.filter(ds_azure_advisor_recs, function(rec) {
-    return rec["recommendationType"] == "SkuChange" && rec["impactedField"] == "Microsoft.Compute/virtualMachines"
-  })
-
   result = []
   total_savings = 0.0
 
-  _.each(valid_recs, function(rec) {
+  _.each(ds_azure_advisor_recs_vm, function(rec) {
     vm = null
     if (typeof(rec['resourceId']) == 'string') { vm = vm_table[rec['resourceId'].toLowerCase()] }
 
