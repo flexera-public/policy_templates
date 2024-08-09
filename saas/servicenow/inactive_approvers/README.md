@@ -4,6 +4,10 @@
 
 This policy template reports any approval users in ServiceNow that have not approved any request for a user-specified number of days. Optionally, this report can be emailed.
 
+## How It Works
+
+The [ServiceNow Table API](https://docs.servicenow.com/bundle/washingtondc-api-reference/page/integrate/inbound-rest/concept/c_TableAPI.html) is used with appropriate API calls to retrieve information on users and roles and their approval history.
+
 ## Input Parameters
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify
