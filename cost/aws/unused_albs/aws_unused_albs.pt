@@ -413,7 +413,7 @@ datasource "ds_albs" do
       field "created", val(iter_item, "created")
       field "dns", val(iter_item, "dns")
       field "vpc", val(iter_item, "vpc")
-      field "elb_zones", val(iter_item, "elb_zones")
+      field "zones", val(iter_item, "elb_zones")
       field "region", val(iter_item, "region")
       field "type", val(iter_item, "type")
       field "arn", val(iter_item, "arn")
@@ -592,6 +592,7 @@ datasource "ds_alb_target_groups" do
       field "port", jmes_path(col_item, "Port")
       field "vpcId", jmes_path(col_item, "VpcId")
       field "arn", val(iter_item, "arn")
+      field "region", val(iter_item, "region")
     end
   end
 end
@@ -599,13 +600,7 @@ end
 datasource "ds_alb_target_groups_health" do
   iterate $ds_alb_target_groups
   request do
-    auth $auth_aws
-    host join(["elasticloadbalancing.", val(iter_item, "region"), ".amazonaws.com"])
-    path "/"
-    query "Action", "DescribeTargetHealth"
-    query "Version", "2015-12-01"
-    query "TargetGroupArn", val(iter_item, "targetGroupArn")
-    header "Accept", "application/json"
+    run_script $js_alb_target_groups_health, val(iter_item, 'region'), val(iter_item, 'targetGroupArn')
   end
   result do
     encoding "json"
@@ -613,8 +608,27 @@ datasource "ds_alb_target_groups_health" do
       field "targetHealth", jmes_path(col_item, "TargetHealth.State")
       field "targetGroupArn", val(iter_item, "targetGroupArn")
       field "arn", val(iter_item, "arn")
+      field "region", val(iter_item, "region")
     end
   end
+end
+
+script "js_alb_target_groups_health", type: "javascript" do
+  parameters "region", "targetGroupArn"
+  result "request"
+  code <<-EOS
+  var request = {
+    auth: "auth_aws",
+    host: "elasticloadbalancing." + region + ".amazonaws.com",
+    path: "/",
+    query_params: {
+      "Action": "DescribeTargetHealth",
+      "Version": "2015-12-01",
+      "TargetGroupArn": encodeURI(targetGroupArn)
+    },
+    headers: { "Accept": "application/json" }
+  }
+EOS
 end
 
 datasource "ds_albs_combined" do
@@ -671,15 +685,21 @@ script "js_albs_combined", type: "javascript" do
 
     created = new Date(Math.round(lb['created'] * 1000)).toISOString()
 
+    zones = []
+
+    if (typeof(lb['zones']) == 'object') {
+      zones = _.map(lb['zones'], function(zone) { return 'subnet:' + zone['subnetId'] + ' ' + 'zone:' + zone['zoneName'] })
+    }
+
     return {
       name: lb['name'],
       scheme: lb['scheme'],
       dns: lb['dns'],
       vpc: lb['vpc'],
-      elb_zones: lb['elb_zones'],
       region: lb['region'],
       type: lb['type'],
       arn: lb['arn'],
+      zones: zones.join(', '),
       tags: tags.join(', '),
       created: created,
       listeners: listeners,
@@ -833,14 +853,14 @@ script "js_bad_albs", type: "javascript" do
         scheme: lb['scheme'],
         dns: lb['dns'],
         vpc: lb['vpc'],
-        zones: lb['zones'].join(', '),
+        zones: lb['zones'],
         region: lb['region'],
-        savings: parseFloat(savings.toFixed(3)),
+        savings: Math.round(savings * 1000) / 1000,
         savingsCurrency: ds_currency['symbol'],
         policy_name: ds_applied_policy['name'],
         created: lb['created'],
         tags: lb['tags'],
-        totalListeners: listeners.length,
+        totalListeners: lb['listeners'].length,
         totalGroups: lb['target_groups'].length,
         totalHealthyGroups: lb['healthy_groups'].length,
         type: "Application Load Balancer",

@@ -11,6 +11,7 @@ Note: Elastic Load Balancing (ELB) supports three types of load balancers: Class
 - The policy leverages the AWS Elastic Load Balancing API to gather a list of Application Load Balancers in the AWS account.
 - The same API is then used to gather information about the Application Load Balancer's listeners and target groups.
 - If the Application Load Balancer has no listeners, or has no target groups with a `healthy` status, it is considered unused.
+  - Note: Target Groups with no targets will not be considered `healthy` for the purposes of this assessment.
 - The recommendation provided for unused Application Load Balancers is deletion. These resources can be deleted in an automated manner or after approval.
 
 ### Policy Savings Details
