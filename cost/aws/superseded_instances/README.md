@@ -12,7 +12,7 @@ This policy template checks all the EC2 instances in an AWS Account to determine
 
 ### Policy Savings Details
 
-The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the instance type is changed to the recommended instance type. The savings isÂ calculated by taking the difference in the hourly list price between the current instance type and the recommended instance type. This value is then multiplied by 24 to get the daily savings, and then by 30.44 (the average number of days in a month) to get the monthly savings. The savings value is 0 if no cost information for the resource type was found in our internal database.
+The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the instance type is changed to the recommended instance type. The savings is calculated by taking the difference in the hourly list price between the current instance type and the recommended instance type. This value is then multiplied by 24 to get the daily savings, and then by 30.44 (the average number of days in a month) to get the monthly savings. The savings value is 0 if no cost information for the resource type was found in our internal database.
 
 The savings is displayed in the Estimated Monthly Savings column. The incident message detail includes the sum of each resource *Estimated Monthly Savings* as *Potential Monthly Savings*. If the Flexera organization is configured to use a currency other than USD, the savings values will be converted from USD using the exchange rate at the time that the policy executes.
 
