@@ -92,7 +92,7 @@ parameter "param_automatic_action" do
   category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Delete Application Load Balancers"]
+  allowed_values ["Delete Unused Application Load Balancers"]
   default []
 end
 
@@ -375,7 +375,6 @@ datasource "ds_elbs_without_tags" do
           field "zoneName", jmes_path(col_item, "ZoneName")
         end
       end
-      field "instances", jmes_path(col_item, "Instances[*].InstanceId")
       field "type", jmes_path(col_item, "Type")
       field "arn", jmes_path(col_item, "LoadBalancerArn")
       field "region", val(iter_item, "region")
@@ -415,7 +414,6 @@ datasource "ds_albs" do
       field "dns", val(iter_item, "dns")
       field "vpc", val(iter_item, "vpc")
       field "elb_zones", val(iter_item, "elb_zones")
-      field "instances", val(iter_item, "instances")
       field "region", val(iter_item, "region")
       field "type", val(iter_item, "type")
       field "arn", val(iter_item, "arn")
@@ -441,12 +439,34 @@ script "js_albs", type: "javascript" do
 EOS
 end
 
+datasource "ds_albs_age_filtered" do
+  run_script $js_albs_age_filtered, $ds_albs, $param_loadbalancer_age
+end
+
+script "js_albs_age_filtered", type: "javascript" do
+  parameters "ds_albs", "param_loadbalancer_age"
+  result "result"
+  code <<-'EOS'
+  now = new Date()
+
+  if (param_loadbalancer_age > 0) {
+    result = _.filter(ds_albs, function(lb) {
+      hours = param_loadbalancer_age * 3600000
+      created = new Date(Math.round(lb['created'] * 1000))
+      return now - created > hours
+    })
+  } else {
+    result = ds_albs
+  }
+EOS
+end
+
 datasource "ds_albs_tag_filtered" do
-  run_script $js_albs_tag_filtered, $ds_albs, $param_exclusion_tags, $param_exclusion_tags_boolean
+  run_script $js_albs_tag_filtered, $ds_albs_age_filtered, $param_exclusion_tags, $param_exclusion_tags_boolean
 end
 
 script "js_albs_tag_filtered", type: "javascript" do
-  parameters "ds_albs", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  parameters "ds_albs_age_filtered", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-'EOS'
   comparators = _.map(param_exclusion_tags, function(item) {
@@ -480,7 +500,7 @@ script "js_albs_tag_filtered", type: "javascript" do
   })
 
   if (param_exclusion_tags.length > 0) {
-    result = _.reject(ds_albs, function(resource) {
+    result = _.reject(ds_albs_age_filtered, function(resource) {
       resource_tags = {}
 
       if (typeof(resource['tags']) == 'object') {
@@ -518,13 +538,13 @@ script "js_albs_tag_filtered", type: "javascript" do
       return all_tags_found || any_tags_found
     })
   } else {
-    result = ds_albs
+    result = ds_albs_age_filtered
   }
 EOS
 end
 
 datasource "ds_alb_listeners" do
-  iterate $ds_albs
+  iterate $ds_albs_tag_filtered
   request do
     auth $auth_aws
     host join(["elasticloadbalancing.", val(iter_item, "region"), ".amazonaws.com"])
@@ -545,7 +565,7 @@ datasource "ds_alb_listeners" do
 end
 
 datasource "ds_alb_target_groups" do
-  iterate $ds_albs
+  iterate $ds_albs_tag_filtered
   request do
     auth $auth_aws
     host join(["elasticloadbalancing.", val(iter_item, "region"), ".amazonaws.com"])
@@ -595,4 +615,534 @@ datasource "ds_alb_target_groups_health" do
       field "arn", val(iter_item, "arn")
     end
   end
+end
+
+datasource "ds_albs_combined" do
+  run_script $js_albs_combined, $ds_albs_tag_filtered, $ds_alb_listeners, $ds_alb_target_groups, $ds_alb_target_groups_health
+end
+
+script "js_albs_combined", type: "javascript" do
+  parameters "ds_albs_tag_filtered", "ds_alb_listeners", "ds_alb_target_groups", "ds_alb_target_groups_health"
+  result "result"
+  code <<-'EOS'
+  listener_table = _.groupBy(ds_alb_listeners, 'arn')
+  group_table = _.groupBy(ds_alb_target_groups, 'arn')
+  health_table = _.groupBy(ds_alb_target_groups_health, 'targetGroupArn')
+
+  result = _.map(ds_albs_tag_filtered, function(lb) {
+    listeners = []
+    if (listener_table[lb['arn']] != undefined) { listeners = listener_table[lb['arn']] }
+
+    target_groups_without_health = []
+    if (group_table[lb['arn']] != undefined) { target_groups_without_health = group_table[lb['arn']] }
+
+    target_groups = _.map(target_groups_without_health, function(group) {
+      healthStatus = "unknown"
+
+      if (health_table[group['targetGroupArn']] != undefined) {
+        healthStatus = health_table[group['targetGroupArn']][0]['targetHealth']
+      }
+
+      return {
+        targetGroupArn: group['targetGroupArn'],
+        targetGroupName: group['targetGroupName'],
+        healthCheckTimeoutSeconds: group['healthCheckTimeoutSeconds'],
+        healthCheckPort: group['healthCheckPort'],
+        healthCheckProtocol: group['healthCheckProtocol'],
+        healthCheckPath: group['healthCheckPath'],
+        healthCheckIntervalSeconds: group['healthCheckIntervalSeconds'],
+        healthyThresholdCount: group['healthyThresholdCount'],
+        unhealthyThresholdCount: group['unhealthyThresholdCount'],
+        matcher: group['matcher'],
+        protocol: group['protocol'],
+        port: group['port'],
+        vpcId: group['vpcId'],
+        healthStatus: healthStatus
+      }
+    })
+
+    healthy_groups = _.filter(target_groups, function(group) { return group['healthStatus'] == 'healthy' })
+
+    tags = []
+
+    if (typeof(lb['tags']) == 'object') {
+      tags = _.map(lb['tags'], function(tag) { return tag['key'] + '=' + tag['value'] })
+    }
+
+    created = new Date(Math.round(lb['created'] * 1000)).toISOString()
+
+    return {
+      name: lb['name'],
+      scheme: lb['scheme'],
+      dns: lb['dns'],
+      vpc: lb['vpc'],
+      elb_zones: lb['elb_zones'],
+      region: lb['region'],
+      type: lb['type'],
+      arn: lb['arn'],
+      tags: tags.join(', '),
+      created: created,
+      listeners: listeners,
+      target_groups: target_groups,
+      healthy_groups: healthy_groups
+    }
+  })
+EOS
+end
+
+datasource "ds_alb_costs" do
+  request do
+    run_script $js_alb_costs, $ds_aws_account, $ds_top_level_bcs, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "id", jmes_path(col_item, "dimensions.resource_id")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_blended_adj")
+    end
+  end
+end
+
+script "js_alb_costs", type:"javascript" do
+  parameters "ds_aws_account", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-'EOS'
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split('T')[0]
+
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
+    body_fields: {
+      "dimensions": ["resource_id"],
+      "granularity": "day",
+      "start_at": start_date,
+      "end_at": end_date,
+      "metrics": ["cost_amortized_blended_adj"],
+      "billing_center_ids": ds_top_level_bcs,
+      "limit": 100000,
+      "filter": {
+        "type": "and",
+        "expressions": [
+          {
+            "dimension": "service",
+            "type": "equal",
+            "value": "AWSELB"
+          },
+          {
+            "dimension": "resource_type",
+            "type": "equal",
+            "value": "Load Balancer-Application"
+          },
+          {
+            "dimension": "vendor_account",
+            "type": "equal",
+            "value": ds_aws_account['id']
+          }
+        ]
+      }
+    },
+    headers: {
+      "User-Agent": "RS Policies",
+      "Api-Version": "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
+datasource "ds_alb_costs_grouped" do
+  run_script $js_alb_costs_grouped, $ds_alb_costs
+end
+
+script "js_alb_costs_grouped", type: "javascript" do
+  parameters "ds_alb_costs"
+  result "result"
+  code <<-'EOS'
+  // Multiple a single day's cost by the average number of days in a month.
+  // The 0.25 is to account for leap years for extra precision.
+  cost_multiplier = 365.25 / 12
+
+  // Group cost data by resourceId for later use
+  result = {}
+
+  _.each(ds_alb_costs, function(item) {
+    id = item['id'].toLowerCase()
+
+    if (result[id] == undefined) { result[id] = 0.0 }
+    result[id] += item['cost'] * cost_multiplier
+  })
+EOS
+end
+
+datasource "ds_bad_albs" do
+  run_script $js_bad_albs, $ds_albs_combined, $ds_alb_costs_grouped, $ds_aws_account, $ds_currency, $ds_applied_policy, $param_loadbalancer_age, $param_min_savings
+end
+
+script "js_bad_albs", type: "javascript" do
+  parameters "ds_albs_combined", "ds_alb_costs_grouped", "ds_aws_account", "ds_currency", "ds_applied_policy", "param_loadbalancer_age", "param_min_savings"
+  result "result"
+  code <<-'EOS'
+  // Used for formatting numbers to look pretty
+  function formatNumber(number, separator){
+    numString = number.toString()
+    values = numString.split(".")
+    formatted_number = ''
+
+    while (values[0].length > 3) {
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      formatted_number = separator + chunk + formatted_number
+    }
+
+    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
+    if (values[1] == undefined) { return formatted_number }
+
+    return formatted_number + "." + values[1]
+  }
+
+  result = []
+  total_savings = 0.0
+
+  _.each(ds_albs_combined, function(lb) {
+    lb_id = lb['name'].toLowerCase()
+    savings = 0.0
+    if (ds_alb_costs_grouped[lb_id] != undefined) { savings = ds_alb_costs_grouped[lb_id] }
+
+    if (savings >= param_min_savings && (lb['listeners'].length == 0 || lb['healthy_groups'].length == 0)) {
+      total_savings += savings
+
+      recommendationDetails = [
+        "Delete AWS Application Load Balancer ", lb['name'], " ",
+        "in AWS Account ", ds_aws_account['name'], " ",
+        "(", ds_aws_account['id'], ")"
+      ].join('')
+
+      result.push({
+        accountID: ds_aws_account['id'],
+        accountName: ds_aws_account['name'],
+        resourceID: lb['name'],
+        resourceARN: lb['arn'],
+        scheme: lb['scheme'],
+        dns: lb['dns'],
+        vpc: lb['vpc'],
+        zones: lb['zones'].join(', '),
+        region: lb['region'],
+        savings: parseFloat(savings.toFixed(3)),
+        savingsCurrency: ds_currency['symbol'],
+        policy_name: ds_applied_policy['name'],
+        created: lb['created'],
+        tags: lb['tags'],
+        totalListeners: listeners.length,
+        totalGroups: lb['target_groups'].length,
+        totalHealthyGroups: lb['healthy_groups'].length,
+        type: "Application Load Balancer",
+        service: "ELB",
+        recommendationDetails: recommendationDetails,
+        // These are to avoid errors when we hash_exclude these fields
+        message: "",
+        total_savings: ""
+      })
+    }
+  })
+
+  // Message for incident output
+  total_lbs = ds_albs_combined.length.toString()
+  total_unused_lbs = result.length.toString()
+  unused_lbs_percentage = (total_unused_lbs / total_lbs * 100).toFixed(2).toString() + '%'
+
+  lb_noun = "Application Load Balancer"
+  if (total_lbs > 1) { lb_noun += "s" }
+
+  lb_verb = "is"
+  if (total_unused_lbs > 1) { lb_verb = "are" }
+
+  findings = [
+    "Out of ", total_lbs, " AWS ", lb_noun, " analyzed, ",
+    total_unused_lbs, " (", unused_lbs_percentage,
+    ") ", lb_verb, " unused and recommended for deletion. "
+  ].join('')
+
+  time_noun = "hours"
+  if (param_loadbalancer_age == 1) {time_noun = "hour" }
+
+  settings = "Results do not exclude recently created AWS Application Load Balancers.\n\n"
+
+  if (param_loadbalancer_age != 0) {
+    settings = [
+      "AWS Application Load Balancers older than ", param_loadbalancer_age, " ", time_noun,
+      " were excluded from the results.\n\n"
+    ].join('')
+  }
+
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+
+  total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['separator'])
+
+  // Dummy item to ensure the policy's check statement always executes at least once
+  result.push({
+    resourceID: "",
+    message: "",
+    total_savings: "",
+    tags: "",
+    savings: "",
+    savingsCurrency: ""
+  })
+
+  result[0]['message'] = findings + settings + disclaimer
+  result[0]['total_savings'] = total_savings
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_unused_albs" do
+  validate_each $ds_bad_albs do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Unused Application Load Balancers Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    escalate $esc_delete_albs
+    hash_exclude "instances", "message", "total_savings", "tags", "savings", "savingsCurrency"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Resource Name"
+      end
+      field "resourceARN" do
+        label "Resource ARN"
+      end
+      field "dns" do
+        label "DNS Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "type" do
+        label "Type"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "totalListeners" do
+        label "Listeners (#)"
+      end
+      field "totalGroups" do
+        label "Target Groups (#)"
+      end
+      field "totalHealthyGroups" do
+        label "Healthy Target Groups (#)"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "zones" do
+        label "Availability Zones"
+      end
+      field "vpc" do
+        label "VPC"
+      end
+      field "created" do
+        label "Creation Date"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_delete_albs" do
+  automatic contains($param_automatic_action, "Delete Unused Application Load Balancers")
+  label "Delete Unused Application Load Balancers"
+  description "Approval to delete all selected instances"
+  run "delete_albs", data
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define delete_albs($data) return $all_responses do
+  $$all_responses = []
+
+  foreach $alb in $data do
+    sub on_error: handle_error() do
+      call delete_alb($alb) retrieve $response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define delete_alb($alb) return $response do
+  $host = "elasticloadbalancing." + $alb["region"] + ".amazonaws.com"
+  $href = "/"
+  $params = "?Action=DeleteLoadBalancer&Version=2015-12-01&LoadBalancerName=" + $alb["resourceID"]
+  $url = $host + $href + $params
+  task_label("GET " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "get",
+    host: $host,
+    href: $href,
+    query_strings: {
+      "Action": "DeleteLoadBalancer",
+      "Version": "2015-12-01",
+      "LoadBalancerArn": $alb["resourceARN"]
+    }
+  )
+
+  task_label("GET AWS Application Load Balancer response: " + $alb["resourceID"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response from GET AWS Application Load Balancer: "+ $alb["resourceID"] + " " + to_json($response)
+  else
+    task_label("GET AWS Application Load Balancer successful: " + $alb["resourceID"])
+  end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
 end
