@@ -1,7 +1,7 @@
-name "AWS Unused Application Load Balancers"
+name "AWS Unused Network Load Balancers"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks AWS for unused Application Load Balancers and, optionally, deletes them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/unused_albs) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Checks AWS for unused Network Load Balancers and, optionally, deletes them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/unused_nlbs) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Cost"
 severity "low"
@@ -47,7 +47,7 @@ parameter "param_loadbalancer_age" do
   type "number"
   category "Filters"
   label "Load Balancer Age (Hours)"
-  description "Age, in hours, that an Application Load Balancer needs to be to include it in the results. This is to avoid reporting on very new Application Load Balancers that are still being configured."
+  description "Age, in hours, that an Network Load Balancer needs to be to include it in the results. This is to avoid reporting on very new Network Load Balancers that are still being configured."
   min_value 0
   default 1
 end
@@ -92,7 +92,7 @@ parameter "param_automatic_action" do
   category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Delete Unused Application Load Balancers"]
+  allowed_values ["Delete Unused Network Load Balancers"]
   default []
 end
 
@@ -382,22 +382,22 @@ datasource "ds_elbs_without_tags" do
   end
 end
 
-datasource "ds_albs_without_tags" do
-  run_script $js_albs_without_tags, $ds_elbs_without_tags
+datasource "ds_nlbs_without_tags" do
+  run_script $js_nlbs_without_tags, $ds_elbs_without_tags
 end
 
-script "js_albs_without_tags", type: "javascript" do
+script "js_nlbs_without_tags", type: "javascript" do
   parameters "ds_elbs_without_tags"
   result "result"
   code <<-'EOS'
-  result = _.filter(ds_elbs_without_tags, function(lb) { return lb['type'].toLowerCase() == 'application' })
+  result = _.filter(ds_elbs_without_tags, function(lb) { return lb['type'].toLowerCase() == 'network' })
 EOS
 end
 
-datasource "ds_albs" do
-  iterate $ds_albs_without_tags
+datasource "ds_nlbs" do
+  iterate $ds_nlbs_without_tags
   request do
-    run_script $js_albs, val(iter_item, 'region'), val(iter_item, 'arn')
+    run_script $js_nlbs, val(iter_item, 'region'), val(iter_item, 'arn')
   end
   result do
     encoding "json"
@@ -421,7 +421,7 @@ datasource "ds_albs" do
   end
 end
 
-script "js_albs", type: "javascript" do
+script "js_nlbs", type: "javascript" do
   parameters "region", "arn"
   result "request"
   code <<-EOS
@@ -439,34 +439,34 @@ script "js_albs", type: "javascript" do
 EOS
 end
 
-datasource "ds_albs_age_filtered" do
-  run_script $js_albs_age_filtered, $ds_albs, $param_loadbalancer_age
+datasource "ds_nlbs_age_filtered" do
+  run_script $js_nlbs_age_filtered, $ds_nlbs, $param_loadbalancer_age
 end
 
-script "js_albs_age_filtered", type: "javascript" do
-  parameters "ds_albs", "param_loadbalancer_age"
+script "js_nlbs_age_filtered", type: "javascript" do
+  parameters "ds_nlbs", "param_loadbalancer_age"
   result "result"
   code <<-'EOS'
   now = new Date()
 
   if (param_loadbalancer_age > 0) {
-    result = _.filter(ds_albs, function(lb) {
+    result = _.filter(ds_nlbs, function(lb) {
       hours = param_loadbalancer_age * 3600000
       created = new Date(Math.round(lb['created'] * 1000))
       return now - created > hours
     })
   } else {
-    result = ds_albs
+    result = ds_nlbs
   }
 EOS
 end
 
-datasource "ds_albs_tag_filtered" do
-  run_script $js_albs_tag_filtered, $ds_albs_age_filtered, $param_exclusion_tags, $param_exclusion_tags_boolean
+datasource "ds_nlbs_tag_filtered" do
+  run_script $js_nlbs_tag_filtered, $ds_nlbs_age_filtered, $param_exclusion_tags, $param_exclusion_tags_boolean
 end
 
-script "js_albs_tag_filtered", type: "javascript" do
-  parameters "ds_albs_age_filtered", "param_exclusion_tags", "param_exclusion_tags_boolean"
+script "js_nlbs_tag_filtered", type: "javascript" do
+  parameters "ds_nlbs_age_filtered", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-'EOS'
   comparators = _.map(param_exclusion_tags, function(item) {
@@ -500,7 +500,7 @@ script "js_albs_tag_filtered", type: "javascript" do
   })
 
   if (param_exclusion_tags.length > 0) {
-    result = _.reject(ds_albs_age_filtered, function(resource) {
+    result = _.reject(ds_nlbs_age_filtered, function(resource) {
       resource_tags = {}
 
       if (typeof(resource['tags']) == 'object') {
@@ -538,13 +538,13 @@ script "js_albs_tag_filtered", type: "javascript" do
       return all_tags_found || any_tags_found
     })
   } else {
-    result = ds_albs_age_filtered
+    result = ds_nlbs_age_filtered
   }
 EOS
 end
 
-datasource "ds_alb_listeners" do
-  iterate $ds_albs_tag_filtered
+datasource "ds_nlb_listeners" do
+  iterate $ds_nlbs_tag_filtered
   request do
     auth $auth_aws
     host join(["elasticloadbalancing.", val(iter_item, "region"), ".amazonaws.com"])
@@ -564,8 +564,8 @@ datasource "ds_alb_listeners" do
   end
 end
 
-datasource "ds_alb_target_groups" do
-  iterate $ds_albs_tag_filtered
+datasource "ds_nlb_target_groups" do
+  iterate $ds_nlbs_tag_filtered
   request do
     auth $auth_aws
     host join(["elasticloadbalancing.", val(iter_item, "region"), ".amazonaws.com"])
@@ -596,8 +596,8 @@ datasource "ds_alb_target_groups" do
   end
 end
 
-datasource "ds_alb_target_groups_health" do
-  iterate $ds_alb_target_groups
+datasource "ds_nlb_target_groups_health" do
+  iterate $ds_nlb_target_groups
   request do
     auth $auth_aws
     host join(["elasticloadbalancing.", val(iter_item, "region"), ".amazonaws.com"])
@@ -617,19 +617,19 @@ datasource "ds_alb_target_groups_health" do
   end
 end
 
-datasource "ds_albs_combined" do
-  run_script $js_albs_combined, $ds_albs_tag_filtered, $ds_alb_listeners, $ds_alb_target_groups, $ds_alb_target_groups_health
+datasource "ds_nlbs_combined" do
+  run_script $js_nlbs_combined, $ds_nlbs_tag_filtered, $ds_nlb_listeners, $ds_nlb_target_groups, $ds_nlb_target_groups_health
 end
 
-script "js_albs_combined", type: "javascript" do
-  parameters "ds_albs_tag_filtered", "ds_alb_listeners", "ds_alb_target_groups", "ds_alb_target_groups_health"
+script "js_nlbs_combined", type: "javascript" do
+  parameters "ds_nlbs_tag_filtered", "ds_nlb_listeners", "ds_nlb_target_groups", "ds_nlb_target_groups_health"
   result "result"
   code <<-'EOS'
-  listener_table = _.groupBy(ds_alb_listeners, 'arn')
-  group_table = _.groupBy(ds_alb_target_groups, 'arn')
-  health_table = _.groupBy(ds_alb_target_groups_health, 'targetGroupArn')
+  listener_table = _.groupBy(ds_nlb_listeners, 'arn')
+  group_table = _.groupBy(ds_nlb_target_groups, 'arn')
+  health_table = _.groupBy(ds_nlb_target_groups_health, 'targetGroupArn')
 
-  result = _.map(ds_albs_tag_filtered, function(lb) {
+  result = _.map(ds_nlbs_tag_filtered, function(lb) {
     listeners = []
     if (listener_table[lb['arn']] != undefined) { listeners = listener_table[lb['arn']] }
 
@@ -690,9 +690,9 @@ script "js_albs_combined", type: "javascript" do
 EOS
 end
 
-datasource "ds_alb_costs" do
+datasource "ds_nlb_costs" do
   request do
-    run_script $js_alb_costs, $ds_aws_account, $ds_top_level_bcs, rs_org_id, rs_optima_host
+    run_script $js_nlb_costs, $ds_aws_account, $ds_top_level_bcs, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -703,7 +703,7 @@ datasource "ds_alb_costs" do
   end
 end
 
-script "js_alb_costs", type:"javascript" do
+script "js_nlb_costs", type:"javascript" do
   parameters "ds_aws_account", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-'EOS'
@@ -739,7 +739,7 @@ script "js_alb_costs", type:"javascript" do
           {
             "dimension": "resource_type",
             "type": "equal",
-            "value": "Load Balancer-Application"
+            "value": "Load Balancer-Network"
           },
           {
             "dimension": "vendor_account",
@@ -758,12 +758,12 @@ script "js_alb_costs", type:"javascript" do
 EOS
 end
 
-datasource "ds_alb_costs_grouped" do
-  run_script $js_alb_costs_grouped, $ds_alb_costs
+datasource "ds_nlb_costs_grouped" do
+  run_script $js_nlb_costs_grouped, $ds_nlb_costs
 end
 
-script "js_alb_costs_grouped", type: "javascript" do
-  parameters "ds_alb_costs"
+script "js_nlb_costs_grouped", type: "javascript" do
+  parameters "ds_nlb_costs"
   result "result"
   code <<-'EOS'
   // Multiple a single day's cost by the average number of days in a month.
@@ -773,7 +773,7 @@ script "js_alb_costs_grouped", type: "javascript" do
   // Group cost data by resourceId for later use
   result = {}
 
-  _.each(ds_alb_costs, function(item) {
+  _.each(ds_nlb_costs, function(item) {
     id = item['id'].toLowerCase()
 
     if (result[id] == undefined) { result[id] = 0.0 }
@@ -782,12 +782,12 @@ script "js_alb_costs_grouped", type: "javascript" do
 EOS
 end
 
-datasource "ds_bad_albs" do
-  run_script $js_bad_albs, $ds_albs_combined, $ds_alb_costs_grouped, $ds_aws_account, $ds_currency, $ds_applied_policy, $param_loadbalancer_age, $param_min_savings
+datasource "ds_bad_nlbs" do
+  run_script $js_bad_nlbs, $ds_nlbs_combined, $ds_nlb_costs_grouped, $ds_aws_account, $ds_currency, $ds_applied_policy, $param_loadbalancer_age, $param_min_savings
 end
 
-script "js_bad_albs", type: "javascript" do
-  parameters "ds_albs_combined", "ds_alb_costs_grouped", "ds_aws_account", "ds_currency", "ds_applied_policy", "param_loadbalancer_age", "param_min_savings"
+script "js_bad_nlbs", type: "javascript" do
+  parameters "ds_nlbs_combined", "ds_nlb_costs_grouped", "ds_aws_account", "ds_currency", "ds_applied_policy", "param_loadbalancer_age", "param_min_savings"
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
@@ -811,16 +811,16 @@ script "js_bad_albs", type: "javascript" do
   result = []
   total_savings = 0.0
 
-  _.each(ds_albs_combined, function(lb) {
+  _.each(ds_nlbs_combined, function(lb) {
     lb_id = lb['name'].toLowerCase()
     savings = 0.0
-    if (ds_alb_costs_grouped[lb_id] != undefined) { savings = ds_alb_costs_grouped[lb_id] }
+    if (ds_nlb_costs_grouped[lb_id] != undefined) { savings = ds_nlb_costs_grouped[lb_id] }
 
     if (savings >= param_min_savings && (lb['listeners'].length == 0 || lb['healthy_groups'].length == 0)) {
       total_savings += savings
 
       recommendationDetails = [
-        "Delete AWS Application Load Balancer ", lb['name'], " ",
+        "Delete AWS Network Load Balancer ", lb['name'], " ",
         "in AWS Account ", ds_aws_account['name'], " ",
         "(", ds_aws_account['id'], ")"
       ].join('')
@@ -843,7 +843,7 @@ script "js_bad_albs", type: "javascript" do
         totalListeners: listeners.length,
         totalGroups: lb['target_groups'].length,
         totalHealthyGroups: lb['healthy_groups'].length,
-        type: "Application Load Balancer",
+        type: "Network Load Balancer",
         service: "ELB",
         recommendationDetails: recommendationDetails,
         // These are to avoid errors when we hash_exclude these fields
@@ -854,11 +854,11 @@ script "js_bad_albs", type: "javascript" do
   })
 
   // Message for incident output
-  total_lbs = ds_albs_combined.length.toString()
+  total_lbs = ds_nlbs_combined.length.toString()
   total_unused_lbs = result.length.toString()
   unused_lbs_percentage = (total_unused_lbs / total_lbs * 100).toFixed(2).toString() + '%'
 
-  lb_noun = "Application Load Balancer"
+  lb_noun = "Network Load Balancer"
   if (total_lbs > 1) { lb_noun += "s" }
 
   lb_verb = "is"
@@ -873,11 +873,11 @@ script "js_bad_albs", type: "javascript" do
   time_noun = "hours"
   if (param_loadbalancer_age == 1) {time_noun = "hour" }
 
-  settings = "Results do not exclude recently created AWS Application Load Balancers.\n\n"
+  settings = "Results do not exclude recently created AWS Network Load Balancers.\n\n"
 
   if (param_loadbalancer_age != 0) {
     settings = [
-      "AWS Application Load Balancers older than ", param_loadbalancer_age, " ", time_noun,
+      "AWS Network Load Balancers older than ", param_loadbalancer_age, " ", time_noun,
       " were excluded from the results.\n\n"
     ].join('')
   }
@@ -905,9 +905,9 @@ end
 # Policy
 ###############################################################################
 
-policy "pol_unused_albs" do
-  validate_each $ds_bad_albs do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Unused Application Load Balancers Found"
+policy "pol_unused_nlbs" do
+  validate_each $ds_bad_nlbs do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Unused Network Load Balancers Found"
     detail_template <<-'EOS'
     **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
 
@@ -915,7 +915,7 @@ policy "pol_unused_albs" do
     EOS
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
-    escalate $esc_delete_albs
+    escalate $esc_delete_nlbs
     hash_exclude "message", "total_savings", "tags", "savings", "savingsCurrency"
     export do
       resource_level true
@@ -992,23 +992,23 @@ escalation "esc_email" do
   email $param_email
 end
 
-escalation "esc_delete_albs" do
-  automatic contains($param_automatic_action, "Delete Unused Application Load Balancers")
-  label "Delete Unused Application Load Balancers"
-  description "Approval to delete all selected Application Load Balancers"
-  run "delete_albs", data
+escalation "esc_delete_nlbs" do
+  automatic contains($param_automatic_action, "Delete Unused Network Load Balancers")
+  label "Delete Unused Network Load Balancers"
+  description "Approval to delete all selected Network Load Balancers"
+  run "delete_nlbs", data
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define delete_albs($data) return $all_responses do
+define delete_nlbs($data) return $all_responses do
   $$all_responses = []
 
-  foreach $alb in $data do
+  foreach $nlb in $data do
     sub on_error: handle_error() do
-      call delete_alb($alb) retrieve $response
+      call delete_nlb($nlb) retrieve $response
     end
   end
 
@@ -1017,10 +1017,10 @@ define delete_albs($data) return $all_responses do
   end
 end
 
-define delete_alb($alb) return $response do
-  $host = "elasticloadbalancing." + $alb["region"] + ".amazonaws.com"
+define delete_nlb($nlb) return $response do
+  $host = "elasticloadbalancing." + $nlb["region"] + ".amazonaws.com"
   $href = "/"
-  $params = "?Action=DeleteLoadBalancer&Version=2015-12-01&LoadBalancerName=" + $alb["resourceID"]
+  $params = "?Action=DeleteLoadBalancer&Version=2015-12-01&LoadBalancerName=" + $nlb["resourceID"]
   $url = $host + $href + $params
   task_label("GET " + $url)
 
@@ -1033,17 +1033,17 @@ define delete_alb($alb) return $response do
     query_strings: {
       "Action": "DeleteLoadBalancer",
       "Version": "2015-12-01",
-      "LoadBalancerArn": $alb["resourceARN"]
+      "LoadBalancerArn": $nlb["resourceARN"]
     }
   )
 
-  task_label("GET AWS Application Load Balancer response: " + $alb["resourceID"] + " " + to_json($response))
+  task_label("GET AWS Network Load Balancer response: " + $nlb["resourceID"] + " " + to_json($response))
   $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
 
   if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
-    raise "Unexpected response from GET AWS Application Load Balancer: "+ $alb["resourceID"] + " " + to_json($response)
+    raise "Unexpected response from GET AWS Network Load Balancer: "+ $nlb["resourceID"] + " " + to_json($response)
   else
-    task_label("GET AWS Application Load Balancer successful: " + $alb["resourceID"])
+    task_label("GET AWS Network Load Balancer successful: " + $nlb["resourceID"])
   end
 end
 

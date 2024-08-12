@@ -4,7 +4,7 @@
 
 This policy template checks all Classic Load Balancers to determine if any are unused (have no healthy instances) and allows them to be deleted by the user after approval.
 
-Note: Elastic Load Balancing (ELB) supports three types of load balancers: Classic Load Balancers, Network Load Balancers and Application Load Balancers. This policy template only reports on Classic Load Balancers; please use the [AWS Unused Application Load Balancers](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/unused_albs) policy template to report on Application Load Balancers.
+Note: Elastic Load Balancing (ELB) supports three types of load balancers: Classic Load Balancers, Network Load Balancers and Application Load Balancers. This policy template only reports on Classic Load Balancers; please use the [AWS Unused Application Load Balancers](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/unused_albs) and [AWS Unused Network Load Balancers](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/unused_nlbs) policy templates to report on those.
 
 ## How It Works
 

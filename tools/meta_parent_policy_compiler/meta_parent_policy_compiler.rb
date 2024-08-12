@@ -30,6 +30,7 @@ default_child_policy_template_files = [
   "../../cost/aws/superseded_instances/aws_superseded_instances.pt",
   "../../cost/aws/unused_albs/aws_unused_albs.pt",
   "../../cost/aws/unused_clbs/aws_unused_clbs.pt",
+  "../../cost/aws/unused_nlbs/aws_unused_nlbs.pt",
   "../../cost/aws/unused_ip_addresses/aws_unused_ip_addresses.pt",
   "../../cost/aws/unused_rds/unused_rds.pt",
   "../../cost/aws/unused_volumes/aws_delete_unused_volumes.pt",
