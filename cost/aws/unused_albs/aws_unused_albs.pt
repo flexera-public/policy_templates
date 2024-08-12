@@ -1,0 +1,598 @@
+name "AWS Unused Application Load Balancers"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks AWS for unused Application Load Balancers and, optionally, deletes them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/unused_albs) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+category "Cost"
+severity "low"
+default_frequency "weekly"
+info(
+  version: "0.1.0",
+  provider: "AWS",
+  service: "Network",
+  policy_set: "Unused Load Balancers",
+  recommendation_type: "Usage Reduction"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_aws_account_number" do
+  type "string"
+  category "Policy Settings"
+  label "Account Number"
+  description "Leave blank; this is for automated use with Meta Policies. See README for more details."
+  default ""
+end
+
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation"
+  min_value 0
+  default 0
+end
+
+parameter "param_loadbalancer_age" do
+  type "number"
+  category "Filters"
+  label "Load Balancer Age (Hours)"
+  description "Age, in hours, that an Application Load Balancer needs to be to include it in the results. This is to avoid reporting on very new Application Load Balancers that are still being configured."
+  min_value 0
+  default 1
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  default []
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Delete Application Load Balancers"]
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws", "aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+  aws_account_number $param_aws_account_number
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get AWS account info
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account", xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_get_caller_identity
+end
+
+script "js_aws_account", type:"javascript" do
+  parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
+  result "result"
+  code <<-'EOS'
+  result = _.find(ds_cloud_vendor_accounts, function(account) {
+    return account['id'] == ds_get_caller_identity[0]['account']
+  })
+
+  // This is in case the API does not return the relevant account info
+  if (result == undefined) {
+    result = {
+      id: ds_get_caller_identity[0]['account'],
+      name: "",
+      tags: {}
+    }
+  }
+EOS
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
+end
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-'EOS'
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-'EOS'
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
+end
+
+datasource "ds_describe_regions" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "ec2.amazonaws.com"
+    path "/"
+    query "Action", "DescribeRegions"
+    query "Version", "2016-11-15"
+    query "Filter.1.Name", "opt-in-status"
+    query "Filter.1.Value.1", "opt-in-not-required"
+    query "Filter.1.Value.2", "opted-in"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
+      field "region", xpath(col_item, "regionName")
+    end
+  end
+end
+
+datasource "ds_regions" do
+  run_script $js_regions, $ds_describe_regions, $param_regions_list, $param_regions_allow_or_deny
+end
+
+script "js_regions", type:"javascript" do
+  parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
+  result "result"
+  code <<-'EOS'
+  allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_describe_regions, function(item) {
+      return _.contains(param_regions_list, item['region']) == allow_deny_test[param_regions_allow_or_deny]
+    })
+  } else {
+    result = ds_describe_regions
+  }
+EOS
+end
+
+datasource "ds_elbs_without_tags" do
+  iterate $ds_regions
+  request do
+    auth $auth_aws
+    host join(["elasticloadbalancing.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/"
+    query "Action", "DescribeLoadBalancers"
+    query "Version", "2015-12-01"
+    header "Accept", "application/json"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "DescribeLoadBalancersResponse.DescribeLoadBalancersResult.LoadBalancers[*]") do
+      field "name", jmes_path(col_item, "LoadBalancerName")
+      field "scheme", jmes_path(col_item, "Scheme")
+      field "created", jmes_path(col_item, "CreatedTime")
+      field "dns", jmes_path(col_item, "DNSName")
+      field "vpc", jmes_path(col_item, "VpcId")
+      field "elb_zones" do
+        collect jmes_path(col_item, "AvailabilityZones") do
+          field "subnetId", jmes_path(col_item, "SubnetId")
+          field "zoneName", jmes_path(col_item, "ZoneName")
+        end
+      end
+      field "instances", jmes_path(col_item, "Instances[*].InstanceId")
+      field "type", jmes_path(col_item, "Type")
+      field "arn", jmes_path(col_item, "LoadBalancerArn")
+      field "region", val(iter_item, "region")
+    end
+  end
+end
+
+datasource "ds_albs_without_tags" do
+  run_script $js_albs_without_tags, $ds_elbs_without_tags
+end
+
+script "js_albs_without_tags", type: "javascript" do
+  parameters "ds_elbs_without_tags"
+  result "result"
+  code <<-'EOS'
+  result = _.filter(ds_elbs_without_tags, function(lb) { return lb['type'].toLowerCase() == 'application' })
+EOS
+end
+
+datasource "ds_albs" do
+  iterate $ds_albs_without_tags
+  request do
+    run_script $js_albs, val(iter_item, 'region'), val(iter_item, 'arn')
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "DescribeTagsResponse.DescribeTagsResult.TagDescriptions[*]") do
+      field "tags" do
+        collect jmes_path(col_item, "Tags") do
+          field "key", jmes_path(col_item, "Key")
+          field "value", jmes_path(col_item, "Value")
+        end
+      end
+      field "name", val(iter_item, "name")
+      field "scheme", val(iter_item, "scheme")
+      field "created", val(iter_item, "created")
+      field "dns", val(iter_item, "dns")
+      field "vpc", val(iter_item, "vpc")
+      field "elb_zones", val(iter_item, "elb_zones")
+      field "instances", val(iter_item, "instances")
+      field "region", val(iter_item, "region")
+      field "type", val(iter_item, "type")
+      field "arn", val(iter_item, "arn")
+    end
+  end
+end
+
+script "js_albs", type: "javascript" do
+  parameters "region", "arn"
+  result "request"
+  code <<-EOS
+  var request = {
+    auth: "auth_aws",
+    host: "elasticloadbalancing." + region + ".amazonaws.com",
+    path: "/",
+    query_params: {
+      "Action": "DescribeTags",
+      "Version": "2015-12-01",
+      "ResourceArns.member.1": encodeURI(arn)
+    },
+    headers: { "Accept": "application/json" }
+  }
+EOS
+end
+
+datasource "ds_albs_tag_filtered" do
+  run_script $js_albs_tag_filtered, $ds_albs, $param_exclusion_tags, $param_exclusion_tags_boolean
+end
+
+script "js_albs_tag_filtered", type: "javascript" do
+  parameters "ds_albs", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  result "result"
+  code <<-'EOS'
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  if (param_exclusion_tags.length > 0) {
+    result = _.reject(ds_albs, function(resource) {
+      resource_tags = {}
+
+      if (typeof(resource['tags']) == 'object') {
+        _.each(resource['tags'], function(tag) {
+          resource_tags[tag['key']] = tag['value']
+        })
+      }
+
+      // Store a list of found tags
+      found_tags = []
+
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_tag = resource_tags[comparator['key']]
+
+        if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+        if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+        if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_tag == undefined) { found_tags.push(string) }
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+      })
+
+      all_tags_found = found_tags.length == comparators.length
+      any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+      return all_tags_found || any_tags_found
+    })
+  } else {
+    result = ds_albs
+  }
+EOS
+end
+
+datasource "ds_alb_listeners" do
+  iterate $ds_albs
+  request do
+    auth $auth_aws
+    host join(["elasticloadbalancing.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/"
+    query "Action", "DescribeListeners"
+    query "Version", "2015-12-01"
+    query "LoadBalancerArn", val(iter_item, "arn")
+    header "Accept", "application/json"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "DescribeListenersResponse.DescribeListenersResult.Listeners[*]") do
+      field "protocol", jmes_path(col_item, "Protocol")
+      field "port", jmes_path(col_item, "Port")
+      field "arn", val(iter_item, "arn")
+    end
+  end
+end
+
+datasource "ds_alb_target_groups" do
+  iterate $ds_albs
+  request do
+    auth $auth_aws
+    host join(["elasticloadbalancing.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/"
+    query "Action", "DescribeTargetGroups"
+    query "Version", "2015-12-01"
+    query "LoadBalancerArn", val(iter_item, "arn")
+    header "Accept", "application/json"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "DescribeTargetGroupsResponse.DescribeTargetGroupsResult.TargetGroups[*]") do
+      field "targetGroupArn", jmes_path(col_item, "TargetGroupArn")
+      field "targetGroupName", jmes_path(col_item, "TargetGroupName")
+      field "healthCheckTimeoutSeconds", jmes_path(col_item, "HealthCheckTimeoutSeconds")
+      field "healthCheckPort", jmes_path(col_item, "HealthCheckPort")
+      field "healthCheckProtocol", jmes_path(col_item, "HealthCheckProtocol")
+      field "healthCheckPath", jmes_path(col_item, "HealthCheckPath")
+      field "healthCheckIntervalSeconds", jmes_path(col_item, "HealthCheckIntervalSeconds")
+      field "healthyThresholdCount", jmes_path(col_item, "HealthyThresholdCount")
+      field "unhealthyThresholdCount", jmes_path(col_item, "UnhealthyThresholdCount")
+      field "matcher", jmes_path(col_item, "Matcher")
+      field "protocol", jmes_path(col_item, "Protocol")
+      field "port", jmes_path(col_item, "Port")
+      field "vpcId", jmes_path(col_item, "VpcId")
+      field "arn", val(iter_item, "arn")
+    end
+  end
+end
+
+datasource "ds_alb_target_groups_health" do
+  iterate $ds_alb_target_groups
+  request do
+    auth $auth_aws
+    host join(["elasticloadbalancing.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/"
+    query "Action", "DescribeTargetHealth"
+    query "Version", "2015-12-01"
+    query "TargetGroupArn", val(iter_item, "targetGroupArn")
+    header "Accept", "application/json"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "DescribeTargetHealthResponse.DescribeTargetHealthResult.TargetHealthDescriptions[*]") do
+      field "targetHealth", jmes_path(col_item, "TargetHealth.State")
+      field "targetGroupArn", val(iter_item, "targetGroupArn")
+      field "arn", val(iter_item, "arn")
+    end
+  end
+end
