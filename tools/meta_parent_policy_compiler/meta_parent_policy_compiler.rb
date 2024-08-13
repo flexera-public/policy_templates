@@ -161,6 +161,14 @@ def compile_meta_parent_policy(file_path)
   description = pt.scan(/^(?:short_description ")(.*?)(?:")/)[0][0]
   # Get the version string
   version = pt.scan(/version: "(.*?)"/)[0][0]
+  # get the publish string if it exists, defaulting to true if not present
+  publish_scan = pt.scan(/publish: "(.*?)"/)
+  publish = "true"
+  publish = publish_scan[0][0] if !publish_scan.empty?
+  # get the deprecated string if it exists, defaulting to false if not present
+  deprecated_scan = pt.scan(/publish: "(.*?)"/)
+  deprecated = "false"
+  deprecated = deprecated_scan[0][0] if !deprecated_scan.empty?
   # print("Name: #{name}\n")
   # print("Description: #{description}\n")
   # print("\n###########################\n")
@@ -394,6 +402,8 @@ end
   # Replace __PLACEHOLDER_FOR_CHILD_POLICY_NAME__ with the name of the child policy
   output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_NAME__", name)
   output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_VERSION__", version)
+  output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_PUBLISH__", publish)
+  output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_DEPRECATED__", deprecated)
   # Attempt to identify the URL to the child policy template file on github using the file_path provided
   # This would only work if the pt file is located under the `policy_templates` repo directory
   # If it is not, then the URL will be incorrect
