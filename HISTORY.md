@@ -6,6 +6,125 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#2472](https://github.com/flexera-public/policy_templates/pull/2472): POL-1297 Azure Security Policy Revamps: Part 4
+
+#### Description
+
+> This is a revamp of several Azure Security policy templates. Please see their respective CHANGELOGs and READMEs for details.
+>
+> Additionally, the `Azure Storage Accounts Without HTTPs Enforced` policy template is being deprecated because it is redundant.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2472) for these details.
+- **Merged At**: 2024-08-09 15:01:45 UTC
+
+---
+
+### PR [#2474](https://github.com/flexera-public/policy_templates/pull/2474): POL-1302 New Usage Revamp
+
+#### Description
+
+> This is a revamp of the `New Service Usage` policy template, which has been renamed to `New Usage`. From the CHANGELOG:
+>
+> - Policy template renamed to `New Usage` to better reflect its functionality
+> - Added ability to report new usage for any cost dimension
+> - Added ability to specify a cost metric and look back period
+> - Added ability to filter results by estimated monthly cost
+> - Improved Billing Center filtering options
+> - Added additional fields and text to incident output for added context
+> - Streamlined code for better readability and faster execution
+>
+> Note: Ignore the "run_script statements" error. The same script is invoked twice; once with a hard value, and once with a parameter value, so there's not a way to place them in the correct order in both situations without needlessly making two identical scripts.
+>
+
+#### Metadata
+
+- **Policies**: [New Usage](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/new_usage/README.md)
+- **Merged At**: 2024-08-09 13:13:00 UTC
+
+---
+
+### PR [#2503](https://github.com/flexera-public/policy_templates/pull/2503): POL-1313 SaaS Policy Revamps
+
+#### Description
+
+> These are revamps of the following policy templates:
+>
+> #### Office 365 Security Alerts
+> - Modified credential to correctly match Microsoft Graph credentials in the Flexera platform
+> - Several parameters altered to be more descriptive and human-readable
+> - Removed unused `Azure AD Tenant ID` parameter
+> - Updated Microsoft Graph API call to use production `/v1.0/security/alerts_v2` endpoint
+> - Fixed issue where policy template would report alerts unrelated to Office 365
+> - Streamlined code for better readability and faster execution
+>
+> #### Okta Inactive Users
+> - Several parameters altered to be more descriptive and human-readable
+> - Normalized incident export to be consistent with other policies
+> - Streamlined code for better readability and faster execution
+>
+> #### ServiceNow Inactive Approvers
+> - Several parameters altered to be more descriptive and human-readable
+> - Normalized incident export to be consistent with other policies
+> - Streamlined code for better readability and faster execution
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2503) for these details.
+- **Merged At**: 2024-08-09 13:12:36 UTC
+
+---
+
+### PR [#2504](https://github.com/flexera-public/policy_templates/pull/2504): POL-1314 Deprecate Budget Alerts by Cloud Account Policy Template
+
+#### Description
+
+> The `Budget Alerts by Cloud Account` policy template is being deprecated because its functionality can be entirely replicated in the `Budget Alerts` policy template, making it redundant.
+
+#### Metadata
+
+- **Policies**: [Budget Alerts by Cloud Account](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/budget_alerts_by_account/README.md)
+- **Merged At**: 2024-08-09 12:13:43 UTC
+
+---
+
+### PR [#2508](https://github.com/flexera-public/policy_templates/pull/2508): fix: minor wording fix on incident detail template
+
+#### Description
+
+> Updated incident message to be more relative for this policy template
+>
+
+#### Metadata
+
+- **Policies**: [Flexera Automation Outdated Applied Policies](https://github.com/flexera-public/policy_templates/tree/master/automation/flexera/outdated_applied_policies/README.md)
+- **Merged At**: 2024-08-08 17:02:13 UTC
+
+---
+
+### PR [#2501](https://github.com/flexera-public/policy_templates/pull/2501): POL-1309 Vendor Spend Commitment Forecast Revamp
+
+#### Description
+
+> This is a revamp of the Vendor Commitment Forecast policy template. From the CHANGELOG:
+>
+> - Renamed policy template to `Vendor Spend Commitment Forecast` to avoid confusion with policy templates for RIs/SPs
+> - Added ability to specify a cost metric to use when gathering spend data
+> - Several parameters altered to be more descriptive and human-readable
+> - Additional fields added to incident table for context
+> - Streamlined code for better readability and faster execution
+>
+
+#### Metadata
+
+- **Policies**: [Vendor Spend Commitment Forecast](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/forecasting/commitment_forecast/README.md)
+- **Merged At**: 2024-08-08 13:06:26 UTC
+
+---
+
 ### PR [#2468](https://github.com/flexera-public/policy_templates/pull/2468): POL-1297 Azure Security Policy Revamps: Part 3
 
 #### Description
@@ -1806,138 +1925,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [Google Recommenders](https://github.com/flexera-public/policy_templates/tree/master/cost/google/recommender/README.md), [Meta Parent: Google Recommenders](https://github.com/flexera-public/policy_templates/tree/master/cost/google/recommender/README.md)
 - **Merged At**: 2024-05-02 13:14:04 UTC
-
----
-
-### PR [#2153](https://github.com/flexera-public/policy_templates/pull/2153): POL-1221 Usage Report Policies - Update BC Filter to support Child Billing Centers
-
-#### Description
-
-> <!-- Describe what this change achieves below -->
-> Usage Reports for AWS and Azure (e.g., Amount of Instance Memory Used, Number of Instance vCPUs Used, etc.) currently allow the user to define a list of Billing Centers to report on which can either be allowed/filtered in or denied/filtered out.
->
-> The current logic only supports filtering on top-level billing centers, which means that child billing centers cannot be specifically reported on.
->
-> This is a change to add support for filtering on child billing centers when applying the policy to generate a report.
->
-> ### Issues Resolved
->
-> <!-- List any existing issues this PR resolves below -->
-> Fixes issue where only top-level billing centers could be filtered on. Policy now additionally supports filtering on child billing centers.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2153) for these details.
-- **Merged At**: 2024-05-02 12:29:40 UTC
-
----
-
-### PR [#2152](https://github.com/flexera-public/policy_templates/pull/2152): POL-1220 Fix AWS Untagged Resources in EU/AU
-
-#### Description
-
-> This policy had an API request with a hardcoded string pointing specifically to the Optima API host. This host varies based on region, so the policy was failing in EU/AU.
->
-> This hardcoded string has been replaced with the `rs_optima_host` keyword that automatically substitutes in the appropriate region-specific host.
->
-
-#### Metadata
-
-- **Policies**: [AWS Untagged Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/untagged_resources/README.md), [Meta Parent: AWS Untagged Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/untagged_resources/README.md)
-- **Merged At**: 2024-05-02 12:04:34 UTC
-
----
-
-### PR [#2146](https://github.com/flexera-public/policy_templates/pull/2146): POL-1099 Azure Expiring Certificates Revamp
-
-#### Description
-
-> This is a revamp of the Azure Expiring Certificates policy. From the CHANGELOG:
->
-> - Added ability to delete Azure certificates automatically or manually
-> - Several parameters altered to be more descriptive and human-readable
-> - Added ability to use Subscription filter as an allow or a deny list
-> - Added ability to filter resources by multiple tag key:value pairs
-> - Added ability to filter resources by region
-> - Added additional context to incident description
-> - Normalized incident export to be consistent with other policies
-> - Added human-readable recommendation to incident export
-> - Policy no longer raises new escalations if inconsequential metadata like tag values change
-> - Streamlined code for better readability and faster execution
->
-
-#### Metadata
-
-- **Policies**: [Azure Expiring Certificates](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/azure_certificates/README.md), [Meta Parent: Azure Expiring Certificates](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/azure_certificates/README.md)
-- **Merged At**: 2024-05-02 12:04:20 UTC
-
----
-
-### PR [#2117](https://github.com/flexera-public/policy_templates/pull/2117): POL-1105 Azure VMs Not Using Managed Disks Revamp
-
-#### Description
-
-> This is a revamp of the Azure VMs Not Using Managed Disks policy. From the CHANGELOG:
->
-> - Several parameters altered to be more descriptive and human-readable
-> - Improved ability to filter resources by subscription
-> - Added ability to filter resources by region
-> - Added ability to filter resources by multiple tag key:value pairs
-> - Added several fields to incident export to provide additional context
-> - Normalized incident export to be consistent with other policies
-> - Policy no longer raises new escalations for the same resource if incidental metadata has changed
-> - Streamlined code for better readability and faster execution
->
-
-#### Metadata
-
-- **Policies**: [Azure VMs Not Using Managed Disks](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/vms_without_managed_disks/README.md), [Meta Parent: Azure VMs Not Using Managed Disks](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/vms_without_managed_disks/README.md)
-- **Merged At**: 2024-05-02 12:04:06 UTC
-
----
-
-### PR [#2112](https://github.com/flexera-public/policy_templates/pull/2112): POL-1090 Azure Regulatory Compliance Revamp
-
-#### Description
-
-> This is a revamp of the AWS IAM Role Audit policy. From the CHANGELOG:
->
-> - Several parameters altered to be more descriptive and human-readable
-> - Normalized incident export to be consistent with other policies
-> - Added additional fields to incident export
-> - Streamlined code for better readability and faster execution
-> - Policy now requires a valid Flexera credential
->
-> Additionally, the policy now has meta policy support.
->
-
-#### Metadata
-
-- **Policies**: [Azure Regulatory Compliance](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/compliance_score/README.md), [Meta Parent: Azure Regulatory Compliance](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/compliance_score/README.md)
-- **Merged At**: 2024-05-02 12:03:30 UTC
-
----
-
-### PR [#2111](https://github.com/flexera-public/policy_templates/pull/2111): POL-1089 Azure Policy Audit Revamp
-
-#### Description
-
-> This is a revamp of the AWS IAM Role Audit policy. From the CHANGELOG:
->
-> - Several parameters altered to be more descriptive and human-readable
-> - Normalized incident export to be consistent with other policies
-> - Added additional fields to incident export
-> - Streamlined code for better readability and faster execution
-> - Policy now requires a valid Flexera credential
->
-> Additionally, the policy now has meta policy support.
->
-
-#### Metadata
-
-- **Policies**: [Azure Policy Audit](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/azure_policy_audit/README.md), [Meta Parent: Azure Policy Audit](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/azure_policy_audit/README.md)
-- **Merged At**: 2024-05-02 12:03:17 UTC
 
 ---
 

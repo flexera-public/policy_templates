@@ -16,6 +16,7 @@ default_child_policy_template_files = [
   "../../compliance/aws/untagged_resources/aws_untagged_resources.pt",
   "../../cost/aws/burstable_ec2_instances/aws_burstable_ec2_instances.pt",
   "../../cost/aws/cloudtrail_read_logging/aws_cloudtrail_read_logging.pt",
+  "../../cost/aws/ec2_compute_optimizer/aws_ec2_compute_optimizer.pt",
   "../../cost/aws/eks_without_spot/aws_eks_without_spot.pt",
   "../../cost/aws/gp3_volume_upgrade/aws_upgrade_to_gp3_volume.pt",
   "../../cost/aws/idle_compute_instances/idle_compute_instances.pt",
@@ -64,6 +65,7 @@ default_child_policy_template_files = [
   "../../compliance/azure/azure_long_stopped_instances/long_stopped_instances_azure.pt",
   "../../compliance/azure/compliance_score/azure_regulatory_compliance_report.pt",
   "../../compliance/azure/instances_without_fnm_agent/azure_instances_not_running_flexnet_inventory_agent.pt",
+  "../../cost/azure/advisor_compute/azure_advisor_compute.pt",
   "../../cost/azure/reserved_instances/recommendations/azure_reserved_instance_recommendations.pt",
   "../../cost/azure/idle_compute_instances/azure_idle_compute_instances.pt",
   "../../cost/azure/blob_storage_optimization/azure_blob_storage_optimization.pt",
@@ -160,6 +162,14 @@ def compile_meta_parent_policy(file_path)
   description = pt.scan(/^(?:short_description ")(.*?)(?:")/)[0][0]
   # Get the version string
   version = pt.scan(/version: "(.*?)"/)[0][0]
+  # get the publish string if it exists, defaulting to true if not present
+  publish_scan = pt.scan(/publish: "(.*?)"/)
+  publish = "true"
+  publish = publish_scan[0][0] if !publish_scan.empty?
+  # get the deprecated string if it exists, defaulting to false if not present
+  deprecated_scan = pt.scan(/publish: "(.*?)"/)
+  deprecated = "false"
+  deprecated = deprecated_scan[0][0] if !deprecated_scan.empty?
   # print("Name: #{name}\n")
   # print("Description: #{description}\n")
   # print("\n###########################\n")
@@ -393,6 +403,8 @@ end
   # Replace __PLACEHOLDER_FOR_CHILD_POLICY_NAME__ with the name of the child policy
   output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_NAME__", name)
   output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_VERSION__", version)
+  output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_PUBLISH__", publish)
+  output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_DEPRECATED__", deprecated)
   # Attempt to identify the URL to the child policy template file on github using the file_path provided
   # This would only work if the pt file is located under the `policy_templates` repo directory
   # If it is not, then the URL will be incorrect

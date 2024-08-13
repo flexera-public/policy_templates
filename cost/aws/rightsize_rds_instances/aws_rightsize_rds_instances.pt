@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "5.3.1",
+  version: "5.4.0",
   provider: "AWS",
   service: "RDS",
   policy_set: "Rightsize Database Instances",
@@ -689,7 +689,7 @@ script "js_rds_instances", type: "javascript" do
     if ((!any_tags_found && !all_tags_found) || param_exclusion_tags.length == 0) {
       tag_string = []
 
-      _.each(Object.keys(resource_tags), function(key) {
+      _.each(_.keys(resource_tags), function(key) {
         tag_string.push(key + '=' + resource_tags[key])
       })
 
@@ -795,7 +795,7 @@ script "js_cloudwatch_idle_queries", type: "javascript" do
 
   chunk_size = 500
 
-  _.each(Object.keys(queries), function(region) {
+  _.each(_.keys(queries), function(region) {
     for (i = 0; i < queries[region].length; i += chunk_size) {
       chunk = queries[region].slice(i, i + chunk_size)
 
@@ -942,17 +942,110 @@ script "js_rds_nonidle_instances", type: "javascript" do
 EOS
 end
 
-datasource "ds_cloudwatch_underutil_queries" do
-  run_script $js_cloudwatch_underutil_queries, $ds_rds_nonidle_instances, $param_stats_lookback
+datasource "ds_cloudwatch_underutil_cpu_queries" do
+  run_script $js_create_cloudwatch_underutil_queries, $ds_rds_nonidle_instances, $param_stats_lookback, "CPUUtilization", "extended"
 end
 
-script "js_cloudwatch_underutil_queries", type: "javascript" do
-  parameters "ds_rds_nonidle_instances", "param_stats_lookback"
+datasource "ds_cloudwatch_underutil_cpu_data" do
+  iterate $ds_cloudwatch_underutil_cpu_queries
+  request do
+    run_script $js_get_cloudwatch_underutil_data, val(iter_item, "region"), val(iter_item, "MetricDataQueries")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "MetricDataResults[*]") do
+      field "region", val(iter_item, "region")
+      field "id", jmes_path(col_item, "Id")
+      field "label", jmes_path(col_item, "Label")
+      field "values", jmes_path(col_item, "Values")
+    end
+  end
+end
+
+datasource "ds_cloudwatch_underutil_cpu_sorted" do
+  run_script $js_sort_cloudwatch_underutil_data, $ds_cloudwatch_underutil_cpu_data
+end
+
+datasource "ds_cloudwatch_underutil_mem_queries" do
+  run_script $js_create_cloudwatch_underutil_queries, $ds_rds_nonidle_instances, $param_stats_lookback, "FreeableMemory", "simple"
+end
+
+datasource "ds_cloudwatch_underutil_mem_data" do
+  iterate $ds_cloudwatch_underutil_mem_queries
+  request do
+    run_script $js_get_cloudwatch_underutil_data, val(iter_item, "region"), val(iter_item, "MetricDataQueries")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "MetricDataResults[*]") do
+      field "region", val(iter_item, "region")
+      field "id", jmes_path(col_item, "Id")
+      field "label", jmes_path(col_item, "Label")
+      field "values", jmes_path(col_item, "Values")
+    end
+  end
+end
+
+datasource "ds_cloudwatch_underutil_mem_sorted" do
+  run_script $js_sort_cloudwatch_underutil_data, $ds_cloudwatch_underutil_mem_data
+end
+
+datasource "ds_cloudwatch_underutil_netin_queries" do
+  run_script $js_create_cloudwatch_underutil_queries, $ds_rds_nonidle_instances, $param_stats_lookback, "NetworkReceiveThroughput", "simple"
+end
+
+datasource "ds_cloudwatch_underutil_netin_data" do
+  iterate $ds_cloudwatch_underutil_netin_queries
+  request do
+    run_script $js_get_cloudwatch_underutil_data, val(iter_item, "region"), val(iter_item, "MetricDataQueries")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "MetricDataResults[*]") do
+      field "region", val(iter_item, "region")
+      field "id", jmes_path(col_item, "Id")
+      field "label", jmes_path(col_item, "Label")
+      field "values", jmes_path(col_item, "Values")
+    end
+  end
+end
+
+datasource "ds_cloudwatch_underutil_netin_sorted" do
+  run_script $js_sort_cloudwatch_underutil_data, $ds_cloudwatch_underutil_netin_data
+end
+
+datasource "ds_cloudwatch_underutil_netout_queries" do
+  run_script $js_create_cloudwatch_underutil_queries, $ds_rds_nonidle_instances, $param_stats_lookback, "NetworkTransmitThroughput", "simple"
+end
+
+datasource "ds_cloudwatch_underutil_netout_data" do
+  iterate $ds_cloudwatch_underutil_netout_queries
+  request do
+    run_script $js_get_cloudwatch_underutil_data, val(iter_item, "region"), val(iter_item, "MetricDataQueries")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "MetricDataResults[*]") do
+      field "region", val(iter_item, "region")
+      field "id", jmes_path(col_item, "Id")
+      field "label", jmes_path(col_item, "Label")
+      field "values", jmes_path(col_item, "Values")
+    end
+  end
+end
+
+datasource "ds_cloudwatch_underutil_netout_sorted" do
+  run_script $js_sort_cloudwatch_underutil_data, $ds_cloudwatch_underutil_netout_data
+end
+
+script "js_create_cloudwatch_underutil_queries", type: "javascript" do
+  parameters "ds_rds_nonidle_instances", "param_stats_lookback", "metric", "stat_set"
   result "result"
   code <<-EOS
   queries = {}
-  metric = "CPUUtilization"
-  statistics = ["Average", "Minimum", "Maximum", "p99", "p95", "p90"]
+  statistics = [ "Average", "Minimum", "Maximum" ]
+  if (stat_set == "extended") { statistics = [ "Average", "Minimum", "Maximum", "p99", "p95", "p90" ] }
+
   lookback = param_stats_lookback * 86400
 
   _.each(ds_rds_nonidle_instances, function(resource) {
@@ -994,7 +1087,7 @@ script "js_cloudwatch_underutil_queries", type: "javascript" do
 
   chunk_size = 500
 
-  _.each(Object.keys(queries), function(region) {
+  _.each(_.keys(queries), function(region) {
     for (i = 0; i < queries[region].length; i += chunk_size) {
       chunk = queries[region].slice(i, i + chunk_size)
 
@@ -1007,23 +1100,7 @@ script "js_cloudwatch_underutil_queries", type: "javascript" do
 EOS
 end
 
-datasource "ds_cloudwatch_underutil_data" do
-  iterate $ds_cloudwatch_underutil_queries
-  request do
-    run_script $js_cloudwatch_underutil_data, val(iter_item, "region"), val(iter_item, "MetricDataQueries")
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "MetricDataResults[*]") do
-      field "region", val(iter_item, "region")
-      field "id", jmes_path(col_item, "Id")
-      field "label", jmes_path(col_item, "Label")
-      field "values", jmes_path(col_item, "Values")
-    end
-  end
-end
-
-script "js_cloudwatch_underutil_data", type: "javascript" do
+script "js_get_cloudwatch_underutil_data", type: "javascript" do
   parameters "region", "MetricDataQueries"
   result "request"
   code <<-EOS
@@ -1061,19 +1138,15 @@ script "js_cloudwatch_underutil_data", type: "javascript" do
 EOS
 end
 
-datasource "ds_cloudwatch_underutil_sorted" do
-  run_script $js_cloudwatch_underutil_sorted, $ds_cloudwatch_underutil_data
-end
-
-script "js_cloudwatch_underutil_sorted", type: "javascript" do
-  parameters "ds_cloudwatch_underutil_data"
+script "js_sort_cloudwatch_underutil_data", type: "javascript" do
+  parameters "gathered_data"
   result "result"
   code <<-EOS
   // Sort the CloudWatch data into an object with keys for regions and instance names.
   // This eliminates the need to "double loop" later on to match it with our instances list.
   result = {}
 
-  _.each(ds_cloudwatch_underutil_data, function(item) {
+  _.each(gathered_data, function(item) {
     region = item['region']
 
     // Metric name is always the last item in the id
@@ -1096,11 +1169,11 @@ EOS
 end
 
 datasource "ds_rds_nonidle_instances_with_metrics" do
-  run_script $js_rds_nonidle_instances_with_metrics, $ds_rds_nonidle_instances, $ds_cloudwatch_underutil_sorted, $ds_instance_costs_grouped, $ds_aws_instance_size_map
+  run_script $js_rds_nonidle_instances_with_metrics, $ds_rds_nonidle_instances, $ds_cloudwatch_underutil_cpu_sorted, $ds_cloudwatch_underutil_mem_sorted, $ds_cloudwatch_underutil_netin_sorted, $ds_cloudwatch_underutil_netout_sorted, $ds_instance_costs_grouped, $ds_aws_instance_size_map
 end
 
 script "js_rds_nonidle_instances_with_metrics", type: "javascript" do
-  parameters "ds_rds_nonidle_instances", "ds_cloudwatch_underutil_sorted", "ds_instance_costs_grouped", "ds_aws_instance_size_map"
+  parameters "ds_rds_nonidle_instances", "ds_cloudwatch_underutil_cpu_sorted", "ds_cloudwatch_underutil_mem_sorted", "ds_cloudwatch_underutil_netin_sorted", "ds_cloudwatch_underutil_netout_sorted", "ds_instance_costs_grouped", "ds_aws_instance_size_map"
   result "result"
   code <<-EOS
   // Merge original instance list with cloudwatch data into a single list
@@ -1119,9 +1192,12 @@ script "js_rds_nonidle_instances_with_metrics", type: "javascript" do
 
     // Only proceed if the CloudWatch data actually has the region and instance id.
     // Otherwise, we have no usage data on the instance and thus dont include it in the results.
-    if (ds_cloudwatch_underutil_sorted[region] != undefined) {
-      if (ds_cloudwatch_underutil_sorted[region][cloudwatch_name] != undefined) {
-        instance_metrics = ds_cloudwatch_underutil_sorted[region][cloudwatch_name]
+    if (ds_cloudwatch_underutil_cpu_sorted[region] != undefined) {
+      if (ds_cloudwatch_underutil_cpu_sorted[region][cloudwatch_name] != undefined) {
+        instance_cpu_metrics = ds_cloudwatch_underutil_cpu_sorted[region][cloudwatch_name]
+        instance_mem_metrics = ds_cloudwatch_underutil_mem_sorted[region][cloudwatch_name]
+        instance_netin_metrics = ds_cloudwatch_underutil_netin_sorted[region][cloudwatch_name]
+        instance_netout_metrics = ds_cloudwatch_underutil_netout_sorted[region][cloudwatch_name]
 
         savings = 0.0
 
@@ -1163,15 +1239,51 @@ script "js_rds_nonidle_instances_with_metrics", type: "javascript" do
         // Note: We don't simply name them the same as Cloudwatch does because
         // prior versions of this policy also didn't, and we want to ensure
         // that exported incident data looks the same as it used to.
-        stats_list = ["Average", "Minimum", "Maximum", "p99", "p95", "p90"]
+        cpu_stats_list = [ "Average", "Minimum", "Maximum", "p99", "p95", "p90" ]
 
-        _.each(stats_list, function(stat) {
+        _.each(cpu_stats_list, function(stat) {
           incident_statname = "cpu" + "_" + stat.toLowerCase()
 
           merged_instance[incident_statname] = null
 
-          if (typeof(instance_metrics[stat]) == 'number') {
-            merged_instance[incident_statname] = Number(instance_metrics[stat].toFixed(2))
+          if (typeof(instance_cpu_metrics[stat]) == 'number') {
+            merged_instance[incident_statname] = Math.round(instance_cpu_metrics[stat] * 100) / 100
+          }
+        })
+
+        mem_stats_list = [ "Average", "Minimum", "Maximum" ]
+
+        _.each(mem_stats_list, function(stat) {
+          incident_statname = "mem" + "_" + stat.toLowerCase()
+
+          merged_instance[incident_statname] = null
+
+          if (typeof(instance_mem_metrics[stat]) == 'number') {
+            merged_instance[incident_statname] = Math.round(instance_mem_metrics[stat] / 1024 / 1024 * 100) / 100
+          }
+        })
+
+        netin_stats_list = [ "Average", "Minimum", "Maximum" ]
+
+        _.each(netin_stats_list, function(stat) {
+          incident_statname = "netin" + "_" + stat.toLowerCase()
+
+          merged_instance[incident_statname] = null
+
+          if (typeof(instance_netin_metrics[stat]) == 'number') {
+            merged_instance[incident_statname] = Math.round(instance_netin_metrics[stat] * 100) / 100
+          }
+        })
+
+        netout_stats_list = [ "Average", "Minimum", "Maximum" ]
+
+        _.each(netout_stats_list, function(stat) {
+          incident_statname = "netout" + "_" + stat.toLowerCase()
+
+          merged_instance[incident_statname] = null
+
+          if (typeof(instance_netout_metrics[stat]) == 'number') {
+            merged_instance[incident_statname] = Math.round(instance_netout_metrics[stat] * 100) / 100
           }
         })
 
@@ -1496,6 +1608,15 @@ script "js_rds_underutil_incident", type: "javascript" do
         cpuP99: instance['cpu_p99'],
         cpuP95: instance['cpu_p95'],
         cpuP90: instance['cpu_p90'],
+        memMaximum: instance['mem_maximum'],
+        memMinimum: instance['mem_minimum'],
+        memAverage: instance['mem_average'],
+        netinMaximum: instance['netin_maximum'],
+        netinMinimum: instance['netin_minimum'],
+        netinAverage: instance['netin_average'],
+        netoutMaximum: instance['netout_maximum'],
+        netoutMinimum: instance['netout_minimum'],
+        netoutAverage: instance['netout_average'],
         availabilityZone: instance['availabilityZone'],
         licenseModel: instance['licenseModel'],
         processorFeatures: instance['processorFeatures'],
@@ -1645,6 +1766,33 @@ policy "pol_rightsize_rds" do
       end
       field "cpuP90" do
         label "CPU p90"
+      end
+      field "memMaximum" do
+        label "Available Memory Maximum (GiB)"
+      end
+      field "memMinimum" do
+        label "Available Memory Minimum (GiB)"
+      end
+      field "memAverage" do
+        label "Available Memory Average (GiB)"
+      end
+      field "netinMaximum" do
+        label "Network Inbound Throughput Maximum (Bytes/second)"
+      end
+      field "netinMinimum" do
+        label "Network Inbound Throughput Minimum (Bytes/second)"
+      end
+      field "netinAverage" do
+        label "Network Inbound Throughput Average (Bytes/second)"
+      end
+      field "netoutMaximum" do
+        label "Network Outbound Throughput Maximum (Bytes/second)"
+      end
+      field "netoutMinimum" do
+        label "Network Outbound Throughput Minimum (Bytes/second)"
+      end
+      field "netoutAverage" do
+        label "Network Outbound Throughput Average (Bytes/second)"
       end
       field "databaseEngine" do
         label "Database Engine"
