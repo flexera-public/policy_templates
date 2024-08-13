@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.3.1
+
+- Fixed issue that would sometimes cause execution to fail if an Azure Subscription or Resource Group had no tag keys
+
 ## v1.3.0
 
 - Added option to retain original casing of tag values instead of normalizing them all to lowercase
