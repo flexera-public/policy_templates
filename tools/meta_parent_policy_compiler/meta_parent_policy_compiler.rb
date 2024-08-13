@@ -78,6 +78,7 @@ default_child_policy_template_files = [
   #"../../cost/azure/rightsize_synapse_sql_pools/azure_rightsize_synapse_sql_pools.pt",
   "../../cost/azure/unoptimized_web_app_scaling/azure_unoptimized_web_app_scaling.pt",
   "../../cost/azure/sql_servers_without_elastic_pool/azure_sql_servers_without_elastic_pool.pt",
+  "../../cost/azure/unused_app_service_plans/azure_unused_app_service_plans.pt",
   "../../cost/azure/unused_firewalls/azure_unused_firewalls.pt",
   "../../cost/azure/unused_ip_addresses/azure_unused_ip_addresses.pt",
   "../../cost/azure/unused_sql_databases/azure_unused_sql_databases.pt",
