@@ -418,3 +418,514 @@ script "js_azure_vngs_region_filtered", type: "javascript" do
   }
 EOS
 end
+
+datasource "ds_azure_vng_connections" do
+  iterate $ds_azure_vngs_region_filtered
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join([val(iter_item, "id"), "/connections"])
+    query "api-version", "2024-01-01"
+    header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "type", jmes_path(col_item, "type")
+      field "provisioningState", jmes_path(col_item, "properties.provisioningState")
+      field "connectionType", jmes_path(col_item, "properties.connectionType")
+      field "routingWeight", jmes_path(col_item, "properties.routingWeight")
+      field "enableBgp", jmes_path(col_item, "properties.enableBgp")
+      field "virtualNetworkGateway1", jmes_path(col_item, "properties.virtualNetworkGateway1.id")
+      field "virtualNetworkGateway2", jmes_path(col_item, "properties.virtualNetworkGateway2.id")
+      field "ingressBytesTransferred", jmes_path(col_item, "properties.ingressBytesTransferred")
+      field "egressBytesTransferred", jmes_path(col_item, "properties.egressBytesTransferred")
+      field "usePolicyBasedTrafficSelectors", jmes_path(col_item, "properties.usePolicyBasedTrafficSelectors")
+      field "vngId", val(iter_item, "id")
+      field "region", val(iter_item, "region")
+      field "resourceGroup", val(iter_item, "resourceGroup")
+      field "subscriptionId", val(iter_item, "subscriptionId")
+      field "subscriptionName", val(iter_item, "subscriptionName")
+    end
+  end
+end
+
+datasource "ds_azure_vng_subscriptions" do
+  run_script $js_azure_vng_subscriptions, $ds_azure_vngs_region_filtered
+end
+
+script "js_azure_unused_vng_subscriptions", type: "javascript" do
+  parameters "ds_azure_vngs_region_filtered"
+  result "result"
+  code <<-EOS
+  subscriptions = _.uniq(_.pluck(ds_azure_vngs_region_filtered, 'subscriptionId'))
+  result = _.map(subscriptions, function(sub) { return { id: sub } })
+EOS
+end
+
+datasource "ds_azure_vng_costs" do
+  iterate $ds_azure_vng_subscriptions
+  request do
+    run_script $js_azure_vng_costs, val(iter_item, 'id'), $ds_top_level_bcs, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "resourceID", jmes_path(col_item, "dimensions.resource_id")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+    end
+  end
+end
+
+script "js_azure_vng_costs", type: "javascript" do
+  parameters "subscription_id", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
+    body_fields: {
+      dimensions: ["resource_id"],
+      granularity: "day",
+      start_at: start_date,
+      end_at: end_date,
+      metrics: ["cost_amortized_unblended_adj"],
+      billing_center_ids: ds_top_level_bcs,
+      limit: 100000,
+      filter: {
+        "type": "and",
+        "expressions": [
+          {
+            "type": "or",
+            "expressions": [
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "Microsoft.Network"
+              },
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "microsoft.network"
+              }
+            ]
+          },
+          {
+            "dimension": "vendor_account",
+            "type": "equal",
+            "value": subscription_id
+          },
+          {
+            "type": "not",
+            "expression": {
+              "dimension": "adjustment_name",
+              "type": "substring",
+              "substring": "Shared"
+            }
+          }
+        ]
+      }
+    },
+    headers: {
+      'User-Agent': "RS Policies",
+      'Api-Version': "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
+datasource "ds_azure_vng_costs_grouped" do
+  run_script $js_azure_vng_costs_grouped, $ds_azure_vng_costs
+end
+
+script "js_azure_vng_costs_grouped", type: "javascript" do
+  parameters "ds_azure_vng_costs"
+  result "result"
+  code <<-EOS
+  // Multiple a single day's cost by the average number of days in a month.
+  // The 0.25 is to account for leap years for extra precision.
+  cost_multiplier = 365.25 / 12
+
+  // Group cost data by resourceId for later use
+  result = {}
+
+  _.each(ds_azure_vng_costs, function(item) {
+    id = item['resourceID'].toLowerCase()
+
+    if (result[id] == undefined) { result[id] = 0.0 }
+    result[id] += item['cost'] * cost_multiplier
+  })
+EOS
+end
+
+datasource "ds_bad_azure_vngs" do
+  run_script $js_bad_azure_vngs, $ds_azure_vngs_region_filtered, $ds_azure_vng_connections, $ds_azure_vng_costs_grouped, $ds_currency, $ds_applied_policy, $param_min_savings
+end
+
+script "js_bad_azure_vngs", type: "javascript" do
+  parameters "ds_azure_vngs_region_filtered", "ds_azure_vng_connections", "ds_azure_vng_costs_grouped", "ds_currency", "ds_applied_policy", "param_min_savings"
+  result "result"
+  code <<-'EOS'
+  // Function for formatting currency numbers later
+  function formatNumber(number, separator) {
+    var numString = number.toString()
+    var values = numString.split(".")
+    var formatted_number = ''
+
+    while (values[0].length > 3) {
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      formatted_number = separator + chunk + formatted_number
+    }
+
+    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
+
+    if (values[1] == undefined) { return formatted_number }
+
+    return formatted_number + "." + values[1]
+  }
+
+  bad_vngs = _.reject(ds_azure_vngs_region_filtered, function(vng) {
+    return _.contains(_.pluck(ds_azure_vng_connections, 'vngId'), vng['id']) && vng['provisioningState'] == "Succeeded"
+  })
+
+  result = []
+  total_savings = 0.0
+
+  _.each(bad_vngs, function(vng) {
+    savings = ds_azure_vng_costs_grouped[vng['id'].toLowerCase()]
+    if (savings == null || savings == undefined) { savings = 0.0 }
+
+    if (savings >= param_min_savings) {
+      total_savings += savings
+
+      tags = []
+
+      if (typeof(vng['tags']) == 'object') {
+        tags = _.map(_.keys(vng['tags']), function(key) { return key + "=" + vng['tags'][key] })
+      }
+
+      recommendationDetails = [
+        "Delete Azure Virtual Network Gateway ", vng["name"], " ",
+        "in Azure Subscription ", vng["subscriptionName"],
+        " (", vng["subscriptionID"], ")"
+      ].join('')
+
+      result.push({
+        accountID: vng['subscriptionId'],
+        accountName: vng['subscriptionName'],
+        resourceGroup: vng['resourceGroup'],
+        resourceID: vng['id'],
+        resourceName: vng['name'],
+        type: vng['type'],
+        region: vng['region'],
+        state: vng['provisioningState'],
+        gatewayType: vng['gatewayType'],
+        vpnType: vng['vpnType'],
+        tags: tags.join(', '),
+        service: "Microsoft.Network",
+        recommendationDetails: recommendationDetails,
+        savings: Math.round(savings * 1000) / 1000,
+        savingsCurrency: ds_currency['symbol'],
+        policy_name: ds_applied_policy['name'],
+        total_savings: "",
+        message: ""
+      })
+    }
+  })
+
+  // Message for incident output
+  total_vngs = ds_azure_vngs_region_filtered.length.toString()
+  total_unused_vngs = result.length.toString()
+  unused_vngs_percentage = (total_unused_vngs / total_vngs * 100).toFixed(2).toString() + '%'
+
+  findings = [
+    "Out of ", total_vngs, " Azure Virtual Network Gateways analyzed, ",
+    total_unused_vngs, " (", unused_vngs_percentage,
+    ") either failed to provision or have no connections configured ",
+    "and are recommended for deletion.\n\n"
+  ].join('')
+
+  savings_message = [
+    ds_currency['symbol'], ' ',
+    formatNumber(Math.round(total_savings * 100) / 100, ds_currency['separator'])
+  ].join('')
+
+  // Sort by descending order of savings value
+  result = _.sortBy(result, 'savings').reverse()
+
+  // Dummy item to ensure that the check statement in the policy executes at least once
+  result.push({
+    accountID: "",
+    accountName: "",
+    resourceGroup: "",
+    resourceID: "",
+    resourceName: "",
+    type: "",
+    region: "",
+    state: "",
+    gatewayType: "",
+    vpnType: "",
+    tags: "",
+    service: "",
+    recommendationDetails: "",
+    savings: "",
+    savingsCurrency: "",
+    policy_name: "",
+    total_savings: "",
+    message: ""
+  })
+
+  result[0]['total_savings'] = savings_message
+  result[0]['message'] = findings
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_azure_unused_vngs" do
+  validate_each $ds_bad_azure_vngs do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Unused Virtual Network Gateways Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    escalate $esc_delete_firewall
+    hash_exclude "total_savings", "message", "tags", "savings", "savingsCurrency"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Subscription ID"
+      end
+      field "accountName" do
+        label "Subscription Name"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "state" do
+        label "Provisioning State"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "type" do
+        label "Resource Type"
+      end
+      field "gatewayType" do
+        label "Gateway Type"
+      end
+      field "vpnType" do
+        label "VPN Type"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_delete_firewall" do
+  automatic contains($param_automatic_action, "Delete Unused Virtual Network Gateways")
+  label "Delete Unused Virtual Network Gateways"
+  description "Approval to delete all selected Azure Virtual Network Gateways"
+  run "delete_vngs", data, $param_azure_endpoint
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define delete_vngs($data, $param_azure_endpoint) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call delete_vng($instance, $param_azure_endpoint) retrieve $delete_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define delete_vng($instance, $param_azure_endpoint) return $response do
+  $host = $param_azure_endpoint
+  $href = $instance["id"]
+  $params = "?api-version=2024-01-01"
+  $url = $host + $href + $params
+  task_label("DELETE " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "delete",
+    host: $host,
+    href: $href,
+    query_strings: { "api-version": "2024-01-01" }
+  )
+
+  task_label("Delete Azure Virtual Network Gateway response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response deleting Azure Virtual Network Gateway: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Delete Azure Virtual Network Gateway successful: " + $instance["id"])
+  end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
+end

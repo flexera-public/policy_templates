@@ -81,6 +81,7 @@ default_child_policy_template_files = [
   "../../cost/azure/unused_firewalls/azure_unused_firewalls.pt",
   "../../cost/azure/unused_ip_addresses/azure_unused_ip_addresses.pt",
   "../../cost/azure/unused_sql_databases/azure_unused_sql_databases.pt",
+  "../../cost/azure/unused_vngs/azure_unused_vngs.pt",
   "../../cost/azure/unused_volumes/azure_unused_volumes.pt",
   "../../cost/azure/hybrid_use_benefit/azure_hybrid_use_benefit.pt",
   "../../cost/azure/hybrid_use_benefit_linux/ahub_linux.pt",
