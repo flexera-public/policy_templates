@@ -1,0 +1,802 @@
+name "Azure Unused App Service Plans"
+rs_pt_ver 20180301
+type "policy"
+short_description "Reports unused Azure App Service Plans and, optionally, deletes them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/unused_app_service_plans/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+category "Cost"
+severity "low"
+default_frequency "weekly"
+info(
+  version: "0.1.0",
+  provider: "Azure",
+  service: "PaaS",
+  policy_set: "PaaS Optimization",
+  recommendation_type: "Usage Reduction"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  category "Policy Settings"
+  label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation"
+  min_value 0
+  default 0
+end
+
+parameter "param_subscriptions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Subscriptions"
+  description "Allow or Deny entered Subscriptions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_subscriptions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Subscriptions List"
+  description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Delete Unused App Service Plans"]
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_azure" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_azure" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
+end
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-EOS
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
+end
+
+datasource "ds_azure_subscriptions" do
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path "/subscriptions/"
+    query "api-version", "2020-01-01"
+    header "User-Agent", "RS Policies"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "subscriptionId")
+      field "name", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
+    end
+  end
+end
+
+datasource "ds_azure_subscriptions_filtered" do
+  run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
+end
+
+script "js_azure_subscriptions_filtered", type: "javascript" do
+  parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
+  result "result"
+  code <<-EOS
+  if (param_subscriptions_list.length > 0) {
+    result = _.filter(ds_azure_subscriptions, function(subscription) {
+      include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
+
+      if (param_subscriptions_allow_or_deny == "Deny") {
+        include_subscription = !include_subscription
+      }
+
+      return include_subscription
+    })
+  } else {
+    result = ds_azure_subscriptions
+  }
+EOS
+end
+
+datasource "ds_azure_app_service_plans" do
+  iterate $ds_azure_subscriptions_filtered
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Web/serverfarms"])
+    query "api-version", "2022-03-01"
+    header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "type", jmes_path(col_item, "type")
+      field "kind", jmes_path(col_item, "kind")
+      field "region", jmes_path(col_item, "location")
+      field "tags", jmes_path(col_item, "tags")
+      field "status", jmes_path(col_item, "properties.status")
+      field "maximumNumberOfWorkers", jmes_path(col_item, "properties.maximumNumberOfWorkers")
+      field "numberOfWorkers", jmes_path(col_item, "properties.numberOfWorkers")
+      field "numberOfSites", jmes_path(col_item, "properties.numberOfSites")
+      field "isSpot", jmes_path(col_item, "properties.isSpot")
+      field "reserved", jmes_path(col_item, "properties.reserved")
+      field "targetWorkerCount", jmes_path(col_item, "properties.targetWorkerCount")
+      field "targetWorkerSizeId", jmes_path(col_item, "properties.targetWorkerSizeId")
+      field "provisioningState", jmes_path(col_item, "properties.provisioningState")
+      field "skuName", jmes_path(col_item, "sku.name")
+      field "skuTier", jmes_path(col_item, "sku.tier")
+      field "skuSize", jmes_path(col_item, "sku.size")
+      field "skuFamily", jmes_path(col_item, "sku.family")
+      field "skuCapacity", jmes_path(col_item, "sku.capacity")
+      field "resourceGroup", get(4, split(jmes_path(col_item, "id"), "/"))
+      field "subscriptionId", val(iter_item, "id")
+      field "subscriptionName", val(iter_item, "name")
+    end
+  end
+end
+
+datasource "ds_azure_app_service_plans_tag_filtered" do
+  run_script $js_azure_app_service_plans_tag_filtered, $ds_azure_app_service_plans, $param_exclusion_tags, $param_exclusion_tags_boolean
+end
+
+script "js_azure_app_service_plans_tag_filtered", type: "javascript" do
+  parameters "ds_azure_app_service_plans", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  result "result"
+  code <<-EOS
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  if (param_exclusion_tags.length > 0) {
+    result = _.reject(ds_azure_app_service_plans, function(resource) {
+      resource_tags = {}
+      if (typeof(resource['tags']) == 'object') { resource_tags = resource['tags'] }
+
+      // Store a list of found tags
+      found_tags = []
+
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_tag = resource_tags[comparator['key']]
+
+        if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+        if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+        if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_tag == undefined) { found_tags.push(string) }
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+      })
+
+      all_tags_found = found_tags.length == comparators.length
+      any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+      return all_tags_found || any_tags_found
+    })
+  } else {
+    result = ds_azure_app_service_plans
+  }
+EOS
+end
+
+datasource "ds_azure_app_service_plans_region_filtered" do
+  run_script $js_azure_app_service_plans_region_filtered, $ds_azure_app_service_plans_tag_filtered, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_azure_app_service_plans_region_filtered", type: "javascript" do
+  parameters "ds_azure_app_service_plans_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_azure_app_service_plans_tag_filtered, function(resource) {
+      include_resource = _.contains(param_regions_list, resource['region'])
+      if (param_regions_allow_or_deny == "Deny") { include_resource = !include_resource }
+      return include_resource
+    })
+  } else {
+    result = ds_azure_app_service_plans_tag_filtered
+  }
+EOS
+end
+
+datasource "ds_azure_web_apps" do
+  iterate $ds_azure_app_service_plans_region_filtered
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join([val(iter_item, "id"), "/sites"])
+    query "api-version", "2022-03-01"
+    header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "type", jmes_path(col_item, "type")
+      field "kind", jmes_path(col_item, "kind")
+      field "tags", jmes_path(col_item, "tags")
+      field "servicePlanId", val(iter_item, "id")
+      field "region", val(iter_item, "region")
+      field "resourceGroup", val(iter_item, "resourceGroup")
+      field "subscriptionId", val(iter_item, "subscriptionId")
+      field "subscriptionName", val(iter_item, "subscriptionName")
+    end
+  end
+end
+
+datasource "ds_azure_app_service_plan_subscriptions" do
+  run_script $js_azure_app_service_plan_subscriptions, $ds_azure_app_service_plans_region_filtered
+end
+
+script "js_azure_app_service_plan_subscriptions", type: "javascript" do
+  parameters "ds_azure_app_service_plans_region_filtered"
+  result "result"
+  code <<-EOS
+  subscriptions = _.uniq(_.pluck(ds_azure_app_service_plans_region_filtered, 'subscriptionId'))
+  result = _.map(subscriptions, function(sub) { return { id: sub } })
+EOS
+end
+
+datasource "ds_azure_app_service_plan_costs" do
+  iterate $ds_azure_app_service_plan_subscriptions
+  request do
+    run_script $js_azure_app_service_plan_costs, val(iter_item, 'id'), $ds_top_level_bcs, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "resourceID", jmes_path(col_item, "dimensions.resource_id")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+    end
+  end
+end
+
+script "js_azure_app_service_plan_costs", type: "javascript" do
+  parameters "subscription_id", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
+    body_fields: {
+      dimensions: ["resource_id"],
+      granularity: "day",
+      start_at: start_date,
+      end_at: end_date,
+      metrics: ["cost_amortized_unblended_adj"],
+      billing_center_ids: ds_top_level_bcs,
+      limit: 100000,
+      filter: {
+        "type": "and",
+        "expressions": [
+          {
+            "type": "or",
+            "expressions": [
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "Microsoft.Network"
+              },
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "microsoft.network"
+              }
+            ]
+          },
+          {
+            "dimension": "vendor_account",
+            "type": "equal",
+            "value": subscription_id
+          },
+          {
+            "type": "not",
+            "expression": {
+              "dimension": "adjustment_name",
+              "type": "substring",
+              "substring": "Shared"
+            }
+          }
+        ]
+      }
+    },
+    headers: {
+      'User-Agent': "RS Policies",
+      'Api-Version': "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
+datasource "ds_azure_app_service_plan_costs_grouped" do
+  run_script $js_azure_app_service_plan_costs_grouped, $ds_azure_app_service_plan_costs
+end
+
+script "js_azure_app_service_plan_costs_grouped", type: "javascript" do
+  parameters "ds_azure_app_service_plan_costs"
+  result "result"
+  code <<-EOS
+  // Multiple a single day's cost by the average number of days in a month.
+  // The 0.25 is to account for leap years for extra precision.
+  cost_multiplier = 365.25 / 12
+
+  // Group cost data by resourceId for later use
+  result = {}
+
+  _.each(ds_azure_app_service_plan_costs, function(item) {
+    id = item['resourceID'].toLowerCase()
+
+    if (result[id] == undefined) { result[id] = 0.0 }
+    result[id] += item['cost'] * cost_multiplier
+  })
+EOS
+end
+
+datasource "ds_bad_azure_app_service_plans" do
+  run_script $js_bad_azure_app_service_plans, $ds_azure_app_service_plans_region_filtered, $ds_azure_web_apps, $ds_azure_app_service_plan_costs_grouped, $ds_currency, $ds_applied_policy, $param_min_savings
+end
+
+script "js_bad_azure_app_service_plans", type: "javascript" do
+  parameters "ds_azure_app_service_plans_region_filtered", "ds_azure_web_apps", "ds_azure_app_service_plan_costs_grouped", "ds_currency", "ds_applied_policy", "param_min_savings"
+  result "result"
+  code <<-'EOS'
+  // Function for formatting currency numbers later
+  function formatNumber(number, separator) {
+    var numString = number.toString()
+    var values = numString.split(".")
+    var formatted_number = ''
+
+    while (values[0].length > 3) {
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      formatted_number = separator + chunk + formatted_number
+    }
+
+    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
+
+    if (values[1] == undefined) { return formatted_number }
+
+    return formatted_number + "." + values[1]
+  }
+
+  bad_app_service_plans = _.reject(ds_azure_app_service_plans_region_filtered, function(app_service_plan) {
+    return _.contains(_.pluck(ds_azure_web_apps, 'servicePlanId'), app_service_plan['id']) && app_service_plan['provisioningState'] == "Succeeded"
+  })
+
+  result = []
+  total_savings = 0.0
+
+  _.each(bad_app_service_plans, function(app_service_plan) {
+    savings = ds_azure_app_service_plan_costs_grouped[app_service_plan['id'].toLowerCase()]
+    if (savings == null || savings == undefined) { savings = 0.0 }
+
+    if (savings >= param_min_savings) {
+      total_savings += savings
+
+      tags = []
+
+      if (typeof(app_service_plan['tags']) == 'object') {
+        tags = _.map(_.keys(app_service_plan['tags']), function(key) { return key + "=" + app_service_plan['tags'][key] })
+      }
+
+      recommendationDetails = [
+        "Delete Azure App Service Plan ", app_service_plan["name"], " ",
+        "in Azure Subscription ", app_service_plan["subscriptionName"],
+        " (", app_service_plan["subscriptionID"], ")"
+      ].join('')
+
+      web_apps = 0
+
+      if (_.contains(_.pluck(ds_azure_web_apps, 'servicePlanId'), app_service_plan['id'])) {
+        web_app_list = _.filter(ds_azure_web_apps, function(item) { return item['servicePlanId'] == app_service_plan['id'] })
+        web_apps = web_app_list.length
+      }
+
+      result.push({
+        accountID: app_service_plan['subscriptionId'],
+        accountName: app_service_plan['subscriptionName'],
+        resourceGroup: app_service_plan['resourceGroup'],
+        resourceID: app_service_plan['id'],
+        resourceName: app_service_plan['name'],
+        type: app_service_plan['type'],
+        region: app_service_plan['region'],
+        state: app_service_plan['status'],
+        provisioningState: app_service_plan['provisioningState'],
+        tags: tags.join(', '),
+        service: "Microsoft.Network",
+        web_apps: web_apps,
+        recommendationDetails: recommendationDetails,
+        savings: Math.round(savings * 1000) / 1000,
+        savingsCurrency: ds_currency['symbol'],
+        policy_name: ds_applied_policy['name'],
+        total_savings: "",
+        message: ""
+      })
+    }
+  })
+
+  // Message for incident output
+  total_app_service_plans = ds_azure_app_service_plans_region_filtered.length.toString()
+  total_unused_app_service_plans = result.length.toString()
+  unused_app_service_plans_percentage = (total_unused_app_service_plans / total_app_service_plans * 100).toFixed(2).toString() + '%'
+
+  findings = [
+    "Out of ", total_app_service_plans, " Azure App Service Plans analyzed, ",
+    total_unused_app_service_plans, " (", unused_app_service_plans_percentage,
+    ") either failed to provision or have no web apps configured ",
+    "and are recommended for deletion.\n\n"
+  ].join('')
+
+  savings_message = [
+    ds_currency['symbol'], ' ',
+    formatNumber(Math.round(total_savings * 100) / 100, ds_currency['separator'])
+  ].join('')
+
+  // Sort by descending order of savings value
+  result = _.sortBy(result, 'savings').reverse()
+
+  // Dummy item to ensure that the check statement in the policy executes at least once
+  result.push({
+    accountID: "",
+    accountName: "",
+    resourceGroup: "",
+    resourceID: "",
+    resourceName: "",
+    type: "",
+    region: "",
+    state: "",
+    provisioningState: "",
+    tags: "",
+    service: "",
+    web_apps: "",
+    recommendationDetails: "",
+    savings: "",
+    savingsCurrency: "",
+    policy_name: "",
+    total_savings: "",
+    message: ""
+  })
+
+  result[0]['total_savings'] = savings_message
+  result[0]['message'] = findings
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_unused_azure_app_service_plans" do
+  validate_each $ds_bad_azure_app_service_plans do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Unused App Service Plans Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    escalate $esc_delete_firewall
+    hash_exclude "total_savings", "message", "tags", "savings", "savingsCurrency"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Subscription ID"
+      end
+      field "accountName" do
+        label "Subscription Name"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "state" do
+        label "Provisioning State"
+      end
+      field "connections" do
+        label "Connections (#)"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "type" do
+        label "Resource Type"
+      end
+      field "gatewayType" do
+        label "Gateway Type"
+      end
+      field "vpnType" do
+        label "VPN Type"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_delete_firewall" do
+  automatic contains($param_automatic_action, "Delete Unused Virtual Network Gateways")
+  label "Delete Unused Virtual Network Gateways"
+  description "Approval to delete all selected Azure Virtual Network Gateways"
+  run "delete_vngs", data, $param_azure_endpoint
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
