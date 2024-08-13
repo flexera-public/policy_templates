@@ -64,6 +64,7 @@ default_child_policy_template_files = [
   "../../compliance/azure/azure_long_stopped_instances/long_stopped_instances_azure.pt",
   "../../compliance/azure/compliance_score/azure_regulatory_compliance_report.pt",
   "../../compliance/azure/instances_without_fnm_agent/azure_instances_not_running_flexnet_inventory_agent.pt",
+  "../../cost/azure/advisor_compute/azure_advisor_compute.pt",
   "../../cost/azure/reserved_instances/recommendations/azure_reserved_instance_recommendations.pt",
   "../../cost/azure/idle_compute_instances/azure_idle_compute_instances.pt",
   "../../cost/azure/blob_storage_optimization/azure_blob_storage_optimization.pt",
