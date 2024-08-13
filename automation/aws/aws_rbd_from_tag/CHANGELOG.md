@@ -2,7 +2,7 @@
 
 ## v2.3.1
 
-- Fixed issue that would sometimes cause execution to fail if an account had no tag keys
+- Fixed issue that would sometimes cause execution to fail if an AWS Account had no tag keys
 
 ## v2.3.0
 

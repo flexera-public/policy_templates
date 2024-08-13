@@ -2,7 +2,7 @@
 
 ## v1.3.1
 
-- Fixed issue that would sometimes cause execution to fail if an account had no tag keys
+- Fixed issue that would sometimes cause execution to fail if a Google Project had no label keys
 
 ## v1.3.0
 
