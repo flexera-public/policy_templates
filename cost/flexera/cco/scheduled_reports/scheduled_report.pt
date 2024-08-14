@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "monthly"
 info(
-  version: "3.4.1",
+  version: "3.5.0",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization"
@@ -49,6 +49,15 @@ parameter "param_dimension_graph_custom" do
   label "Custom Graph Dimension"
   description "Specify the name of the custom dimension you want to break costs out by. Spelling and capitalization must match what is shown in the Flexera CCO platform. Only applicable if 'Custom' is selected for the Graph Dimension."
   default ""
+end
+
+parameter "param_dimension_graph_value_count" do
+  type "number"
+  category "Policy Settings"
+  label "Graph Dimension Value Count"
+  description "The number of values to display on the graph for the selected dimension. The top N values will be displayed based on the cost metric selected. Enter 0 to display all values."
+  min_value 0
+  default 10
 end
 
 parameter "param_dimension_filter" do
@@ -93,6 +102,43 @@ parameter "param_billing_centers" do
   label "Billing Center List"
   description "List of Billing Center names or IDs you want to report on. Leave blank to select all top level Billing Centers."
   default []
+end
+
+parameter "param_percent_change_threshold" do
+  type "number"
+  category "Policy Settings"
+  label "Percent Change Threshold Value (%)"
+  description "The threshold (in percent) for the percent change in cost between time period(s) that will trigger the report. Default of `0` will send the report every time based on the applied policy schedule."
+  min_value 0
+  max_value 100
+  default 0
+end
+
+parameter "param_percent_change_consecutive_threshold" do
+  type "number"
+  category "Policy Settings"
+  label "Percent Change Consecutive Threshold"
+  description "The number of consecutive time period(s) where there was a percent change in cost between time period(s) that will trigger the report. Default of `1` will send the report every time based on the applied policy schedule."
+  min_value 1
+  default 1
+end
+
+parameter "param_percent_change_alert_metric" do
+  type "string"
+  category "Policy Settings"
+  label "Percent Change Alert Metric"
+  description "The metric to use for the percent change alert. Percent Change from Previous Time Period Daily Average is recommended to normalize between Month periods.  This has no affect if Billing Term is set to 'Day'."
+  allowed_values "Percent Change from Previous Time Period Daily Average", "Percent Change from Previous Time Period"
+  default "Percent Change from Previous Time Period Daily Average"
+end
+
+parameter "param_percent_change_alert_direction" do
+  type "string"
+  category "Policy Settings"
+  label "Percent Change Alert Direction"
+  description "Select the direction of percent change that will trigger the report."
+  allowed_values "Increase", "Decrease", "Both"
+  default "Increase"
 end
 
 ###############################################################################
@@ -143,7 +189,12 @@ script "js_data_tables", type:"javascript" do
     graph_colors: [
       'D05A5A', 'F78741', 'FCC419', '007D76', '37AA77', '92DA71',
       '0F77B3', '7BACD1', 'BCC7E1', 'B80C83', 'E06C96', 'FBB3BB',
-      '5F3DC4', '00A2F3', '99E9F2', '5C940D', '8EBF45', 'C0EB75'
+      '5F3DC4', '00A2F3', '99E9F2', '5C940D', '8EBF45', 'C0EB75',
+      'F2C80F', 'F7E7A8', 'F9D6B3', 'F2A0A1', 'F4C2C2', 'F8E0E0',
+      'A8A7A7', 'D9D8D8', 'EDEDED', '000000', '333333', '666666',
+      '999999', 'CCCCCC', 'FFFFFF', 'FF0000', '00FF00', '0000FF',
+      'FFFF00', 'FF00FF', '00FFFF', 'FF8000', 'FF0080', '80FF00',
+      '80FF00', '0080FF', '8000FF', 'FF8080', '80FF80', '8080FF'
     ],
     months_short: [
       'None', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -500,11 +551,11 @@ datasource "ds_pulled_costs" do
 end
 
 datasource "ds_collated_data" do
-  run_script $js_collated_data, $ds_pulled_costs, $ds_billing_centers, $ds_graph_dimension, $ds_data_tables, $ds_currency, $param_cost_metric, $param_billing_term
+  run_script $js_collated_data, $ds_pulled_costs, $ds_billing_centers, $ds_graph_dimension, $ds_data_tables, $ds_currency, $param_cost_metric, $param_billing_term, $param_percent_change_threshold, $param_percent_change_consecutive_threshold, $param_percent_change_alert_metric, $param_percent_change_alert_direction
 end
 
 script "js_collated_data", type: "javascript" do
-  parameters "ds_pulled_costs", "ds_billing_centers", "ds_graph_dimension", "ds_data_tables", "ds_currency", "param_cost_metric", "param_billing_term"
+  parameters "ds_pulled_costs", "ds_billing_centers", "ds_graph_dimension", "ds_data_tables", "ds_currency", "param_cost_metric", "param_billing_term", "param_percent_change_threshold", "param_percent_change_consecutive_threshold", "param_percent_change_alert_metric", "param_percent_change_alert_direction"
   result "result"
   code <<-'EOS'
   result = []
@@ -532,6 +583,14 @@ script "js_collated_data", type: "javascript" do
       }
     })
   }
+  // Sort pulled_costs by timestamp
+  // This ensures that the Percent Change calculations are accurate
+  pulled_costs = _.sortBy(pulled_costs, 'timestamp')
+
+  // Setup a placeholder for the previous period
+  // This is used to calculate percent change
+  // Each key is a graph dimension value and previous period is stored for each
+  var previousTimePeriod = {}
 
   // Collate the pulled_costs data.
   // Variables are mostly for keeping track of weeks to insert weekly data.
@@ -543,13 +602,94 @@ script "js_collated_data", type: "javascript" do
       month = timestamp.toISOString().split('-')[1]
       stringMonth = ds_data_tables['months_short'][Number(timestamp.toISOString().split('-')[1])]
       stringDay = stringMonth + "-" + day
+      // Get days in month for yearMonth
+      var daysinTimeUnit = new Date(year, month, 0).getDate()
 
       category_id = ds_graph_dimension['id']
       if (category_id == "billing_center_id") { category_id = "billing_center_name" }
       category = row['dimensions'][category_id]
 
-      if (param_billing_term == 'Day')   { timeUnit = timestamp.toISOString().split('T')[0] }
-      if (param_billing_term == 'Month') { timeUnit = [year, month].join('-') }
+      if (param_billing_term == 'Day')   {
+        timeUnit = timestamp.toISOString().split('T')[0]
+        // Override daysinTimeUnit for daily average calculation
+        // At param_billing_term Day, this Average is not useful and will match the cost
+        daysinTimeUnit = 1
+      } else if (param_billing_term == 'Month') {
+        timeUnit = [year, month].join('-')
+      }
+
+      // For this graph dimension value, if not yet defined create an empty object
+      if (typeof previousTimePeriod[category] == "undefined") {
+        previousTimePeriod[category] = {}
+      }
+
+      // Calculate daily average cost
+      var dailyAverageCost = row['metrics'][metric] / daysinTimeUnit
+
+      // Check if we can calculate Percent Change from previous time period
+      var percentChange = null
+      var percentChangeDailyAverageCost = null
+      var isPercentChangeAboveThreshold = false
+      if (typeof previousTimePeriod[category]["row"] == "object") {
+        var previousCost = previousTimePeriod[category]["row"]['metrics'][metric]
+        var previousDailyAverageCost = previousTimePeriod[category]['dailyAverageCost']
+        if (previousCost > 0) {
+          var currentCost = row['metrics'][metric]
+          percentChange = Number((((currentCost - previousCost) / previousCost) * 100 ).toFixed(3))
+          percentChangeDailyAverageCost = Number((((dailyAverageCost - previousDailyAverageCost) / previousDailyAverageCost) * 100 ).toFixed(3))
+        } else {
+          percentChange = Number(row['metrics'][metric].toFixed(3))
+          percentChangeDailyAverageCost = Number(dailyAverageCost.toFixed(3))
+        }
+
+        // checkThreshold() function to handle the threshold check
+        // This is helpful because the same logic is used for both percentChange and percentChangeDailyAverageCost
+        function checkThreshold(percent_change_value, percent_change_threshold, percent_change_direction) {
+          if (percent_change_value != null) {
+            switch (percent_change_direction) {
+              case "Increase":
+                if (parseFloat(percent_change_value) > parseFloat(percent_change_threshold)) {
+                  return true
+                }
+                break
+              case "Decrease":
+                if (parseFloat(percent_change_value) < parseFloat(percent_change_threshold)) {
+                  return true
+                }
+                break
+              default:
+                // Default is detect both Increase or Decrease percent changes
+                // We take the absolute value of percent_change_value and compare that to the change threshold
+                if (parseFloat(Math.abs(percent_change_value)) > parseFloat(percent_change_threshold)) {
+                  return true
+                }
+            }
+          }
+          return false
+        }
+
+        // See if the percent change is above the threshold
+        if (param_percent_change_alert_metric == "Percent Change from Previous Time Period Daily Average") {
+          isPercentChangeAboveThreshold = checkThreshold(percentChangeDailyAverageCost, param_percent_change_threshold, param_percent_change_alert_direction)
+        } else {
+          // Only two allowed param_percent_change_alert_metric values, so user selected "Percent Change from Previous Time Period"
+          isPercentChangeAboveThreshold = checkThreshold(percentChange, param_percent_change_threshold, param_percent_change_alert_direction)
+        }
+      }
+
+      // Store the current row for the next iteration
+      previousTimePeriod[category]["row"] = row
+      previousTimePeriod[category]["percentChange"] = percentChange
+      previousTimePeriod[category]["dailyAverageCost"] = dailyAverageCost
+      previousTimePeriod[category]["isPercentChangeAboveThreshold"] = isPercentChangeAboveThreshold
+      // Reset consecutivePercentChangeAboveThreshold if it is not above threshold
+      // This will also handle setting it to 0 if it is not defined (i.e. the first month)
+      if (!isPercentChangeAboveThreshold) {
+        previousTimePeriod[category]["consecutivePercentChangeAboveThreshold"] = 0
+      } else {
+        // Increment consecutivePercentChangeAboveThreshold if it is above threshold
+        previousTimePeriod[category]["consecutivePercentChangeAboveThreshold"] += 1
+      }
 
       result.push({
         stringMonth: stringMonth,
@@ -559,7 +699,13 @@ script "js_collated_data", type: "javascript" do
         category: category,
         cost: row['metrics'][metric],
         displayCost: Number(row['metrics'][metric].toFixed(3)),
-        currency: ds_currency['symbol']
+        percentChange: percentChange,
+        dailyAverageCost: Number(dailyAverageCost.toFixed(3)),
+        percentChangeDailyAverageCost: percentChangeDailyAverageCost,
+        isPercentChangeAboveThreshold: isPercentChangeAboveThreshold,
+        consecutivePercentChangeAboveThreshold: previousTimePeriod[category]["consecutivePercentChangeAboveThreshold"],
+        currency: ds_currency['symbol'],
+        triggerAlert: false
       })
     })
   }
@@ -576,6 +722,8 @@ script "js_collated_data", type: "javascript" do
       year = timestamp.toISOString().split('-')[0]
       month = timestamp.toISOString().split('-')[1]
       stringMonth = ds_data_tables['months_short'][Number(timestamp.toISOString().split('-')[1])]
+      // Get days in month for yearMonth
+      var daysInMonth = new Date(year, month, 0).getDate()
 
       if (count == -1) { count = 0; tempDayNo = day; stringWeek = stringMonth + "-" + day }
       if (day != tempDayNo) { count++; tempDayNo = day }
@@ -606,6 +754,53 @@ script "js_collated_data", type: "javascript" do
         costs = _.pluck(data_list[stringWeek][category], 'cost')
         sum = _.reduce(costs, function(memo, num) { return memo + num }, 0)
 
+        // Calculate Daily Average Cost
+        var dailyAverageCost = sum / 7
+
+        // For this graph value, if not yet defined create an empty object
+        if (typeof previousTimePeriod[category] == "undefined") {
+          previousTimePeriod[category] = {}
+        }
+
+        // Check if we can calcualte Percent Change from previous time period
+        var percentChange = null
+        var percentChangeDailyAverageCost = null
+        var isPercentChangeAboveThreshold = false
+        if (previousTimePeriod[category]["sum"] != undefined) {
+          var previousSum = previousTimePeriod[category]["sum"]
+          var previousDailyAverageCost = previousTimePeriod[category]["dailyAverageCost"]
+          percentChange = Number( (((sum - previousSum) / previousSum) * 100).toFixed(3)  )
+          percentChangeDailyAverageCost = Number( (((dailyAverageCost - previousDailyAverageCost) / previousDailyAverageCost) * 100).toFixed(3) )
+
+          // See if the percent change is above the threshold
+          // Take the absolute value of percentChange so we can compare it to the threshold.  Otherwise, by default and most use-cases any negative percent change would be below the threshold which would trigger a report which is not generally needed for downward change
+          if (param_percent_change_alert_metric == "Percent Change from Previous Time Period Daily Average") {
+            if (percentChangeDailyAverageCost != null && parseFloat(Math.abs(percentChangeDailyAverageCost)) >= parseFloat(param_percent_change_threshold)) {
+              isPercentChangeAboveThreshold = true
+            }
+          } else {
+            // Only two allowed param_percent_change_alert_metric values, so user selected "Percent Change from Previous Time Period"
+            if (percentChange != null && parseFloat(Math.abs(percentChange)) >= parseFloat(param_percent_change_threshold)) {
+              isPercentChangeAboveThreshold = true
+            }
+          }
+        }
+
+        // Store the current row for the next iteration
+        previousTimePeriod[category]["costs"] = costs
+        previousTimePeriod[category]["sum"] = sum
+        previousTimePeriod[category]["percentChange"] = percentChange
+        previousTimePeriod[category]["dailyAverageCost"] = dailyAverageCost
+        previousTimePeriod[category]["isPercentChangeAboveThreshold"] = isPercentChangeAboveThreshold
+        // Reset consecutivePercentChangeAboveThreshold if it is not above threshold
+        // This will also handle setting it to 0 if it is not defined (i.e. the first month)
+        if (!isPercentChangeAboveThreshold) {
+          previousTimePeriod[category]["consecutivePercentChangeAboveThreshold"] = 0
+        } else {
+          // Increment consecutivePercentChangeAboveThreshold if it is above threshold
+          previousTimePeriod[category]["consecutivePercentChangeAboveThreshold"] += 1
+        }
+
         result.push({
           stringWeek: stringWeek,
           timeUnit: data_list[stringWeek][category][0]['timeUnit'],
@@ -613,20 +808,55 @@ script "js_collated_data", type: "javascript" do
           category: category,
           cost: sum,
           displayCost: Number(sum.toFixed(3)),
-          currency: ds_currency['symbol']
+          percentChange: percentChange,
+          dailyAverageCost: Number(dailyAverageCost.toFixed(3)),
+          percentChangeDailyAverageCost: percentChangeDailyAverageCost,
+          isPercentChangeAboveThreshold: isPercentChangeAboveThreshold,
+          consecutivePercentChangeAboveThreshold: previousTimePeriod[category]["consecutivePercentChangeAboveThreshold"],
+          currency: ds_currency['symbol'],
+          triggerAlert: false
         })
       })
+    })
+  }
+  if (param_percent_change_consecutive_threshold > 0) {
+    // Loop through all rows to determine if last n periods (param_percent_change_consecutive_threshold) for each category is above threshold
+    var rowsGroupedByCategory = _.groupBy(result, 'category')
+    // Sort each category by timeUnit
+    _.each(_.keys(rowsGroupedByCategory), function(category) {
+      rowsGroupedByCategory[category] = _.sortBy(rowsGroupedByCategory[category], 'timeUnit')
+    })
+    // Loop through all rows to determine if last n period (param_percent_change_consecutive_threshold) for category is above threshold
+    _.each(result, function(row) {
+      var category = row['category']
+      var lastNRows = _.last(rowsGroupedByCategory[category], param_percent_change_consecutive_threshold)
+      var triggerAlert = false
+      // Don't check if we have fewer than param_percent_change_consecutive_threshold time periods
+      if (lastNRows.length == param_percent_change_consecutive_threshold) {
+        // Check to see if the row matches the last of the lastNRows
+        var lastRow = _.last(lastNRows)
+        // Pluck the timeUnit from lastNRows
+        var lastNRowsTimeUnits = _.pluck(lastNRows, 'timeUnit')
+        // If this row is one of the last timeUnit in the lastNRows, check if all rows are above threshold
+        if (_.contains(lastNRowsTimeUnits, row['timeUnit'])) {
+          // Trigger alert if all these recent, consecutive time periods are above threshold
+          triggerAlert = _.every(lastNRows, function(lastRow) {
+            return lastRow['isPercentChangeAboveThreshold']
+          })
+        }
+      }
+      row['triggerAlert'] = triggerAlert
     })
   }
 EOS
 end
 
 datasource "ds_generated_report" do
-  run_script $js_generated_report, $ds_collated_data, $ds_graph_dimension, $ds_data_tables, $ds_currency, $ds_applied_policy, $ds_flexera_domain, $param_cost_metric, $param_date_range, $param_billing_term, $param_billing_centers, $param_dimension_filter, $param_dimension_filter_boolean
+  run_script $js_generated_report, $ds_collated_data, $ds_graph_dimension, $ds_data_tables, $ds_currency, $ds_applied_policy, $ds_flexera_domain, $param_cost_metric, $param_date_range, $param_billing_term, $param_billing_centers, $param_dimension_filter, $param_dimension_filter_boolean, $param_percent_change_threshold, $param_dimension_graph_value_count
 end
 
 script "js_generated_report", type: "javascript" do
-  parameters "ds_collated_data", "ds_graph_dimension", "ds_data_tables", "ds_currency", "ds_applied_policy", "ds_flexera_domain", "param_cost_metric", "param_date_range", "param_billing_term", "param_billing_centers", "param_dimension_filter", "param_dimension_filter_boolean"
+  parameters "ds_collated_data", "ds_graph_dimension", "ds_data_tables", "ds_currency", "ds_applied_policy", "ds_flexera_domain", "param_cost_metric", "param_date_range", "param_billing_term", "param_billing_centers", "param_dimension_filter", "param_dimension_filter_boolean", "param_percent_change_threshold", "param_dimension_graph_value_count"
   result "result"
   code <<-'EOS'
   // Prepare date information for later use
@@ -642,7 +872,7 @@ script "js_generated_report", type: "javascript" do
   categories = []
 
   _.each(top_categories, function(item) {
-    if (!_.contains(categories, item['category']) && categories.length < 10) {
+    if (!_.contains(categories, item['category']) && ((categories.length < param_dimension_graph_value_count) || (param_dimension_graph_value_count == 0))) {
       categories.push(item['category'])
     }
   })
@@ -800,7 +1030,17 @@ script "js_generated_report", type: "javascript" do
     }
   }
 
+  // Determine if we should escalate this
+  // Using a string because that is more easily used in policy declaration `check` below
+  var escalate = "false"
+  var alerts = _.filter(ds_collated_data, function(item) { return item['triggerAlert'] == true })
+  if ((ds_collated_data.length > 0) && ((alerts.length > 0))) {
+    escalate = "true"
+  }
+
   result = {
+    alerts: alerts,
+    alertsLength: alerts.length,
     currentMonthName: currentMonthName,
     billingCenters: billingCenters,
     chartType: encodeURI('cht=bvs'),
@@ -822,7 +1062,8 @@ script "js_generated_report", type: "javascript" do
     policyName: ds_applied_policy['name'],
     today: new Date().toLocaleDateString('en-us', { year: 'numeric', month: 'long', day: 'numeric'}),
     domain: ds_flexera_domain,
-    filterMessage: filterMessage
+    filterMessage: filterMessage,
+    escalate: escalate
   }
 EOS
 end
@@ -835,7 +1076,7 @@ policy "pol_scheduled_report" do
   validate $ds_generated_report do
     summary_template "{{ data.policyName }}: {{ rs_org_name }} (Organization ID: {{ rs_org_id }})"
     detail_template <<-EOS
-# Cost Report for {{ rs_org_name }} (Organization ID: {{ rs_org_id }})
+# {{ data.policyName }}: {{ rs_org_name }} (Organization ID: {{ rs_org_id }})
 **Date Created:** {{ data.today }}\\
 **Date Range:** {{ parameters.param_date_range }}\\
 **Billing Term:** {{ parameters.param_billing_term }}\\
@@ -848,11 +1089,13 @@ policy "pol_scheduled_report" do
 ### For more detailed cost information, see [Dashboards](https://{{ data.domain }}/orgs/{{ rs_org_id }}/optima/dashboards) or [Tabular View](https://{{ data.domain }}/orgs/{{ rs_org_id }}/optima/tabular-view).
 For more information on this report, please view the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/scheduled_reports).
     EOS
-    check eq(val(data, "dataPresent"), 0)
+    # if dataPresent val is 0 then the report will not be generated
+    # check logic_and(eq(val(data, "escalate"), "false"), eq($param_percent_change_threshold, 0))
+    check ne($param_percent_change_threshold, 0)
     escalate $esc_email
     export "reportData" do
       field "timeUnit" do
-        label "Date"
+        label "Time Period"
       end
       field "category" do
         label "Graph Dimension Value"
@@ -860,8 +1103,75 @@ For more information on this report, please view the [README](https://github.com
       field "displayCost" do
         label "Cost"
       end
+      field "percentChange" do
+        label "Percent Change from Previous Time Period"
+      end
+      field "dailyAverageCost" do
+        label "Daily Average Cost for Time Period"
+      end
+      field "percentChangeDailyAverageCost" do
+        label "Percent Change from Previous Time Period for Daily Average Cost"
+      end
       field "currency" do
         label "Currency"
+      end
+    end
+  end
+
+  validate $ds_generated_report do
+    summary_template "Cost Alert for {{ data.policyName }}: {{ rs_org_name }} (Organization ID: {{ rs_org_id }})"
+    detail_template <<-EOS
+# Cost Alert for {{ data.policyName }}: {{ rs_org_name }} (Organization ID: {{ rs_org_id }})
+**Date Created:** {{ data.today }}\\
+**Date Range:** {{ parameters.param_date_range }}\\
+**Billing Term:** {{ parameters.param_billing_term }}\\
+**Cost Metric:** {{ parameters.param_cost_metric }}\\
+**Graph Dimension:** {{ data.graphDimension }}\\
+**Billing Centers:** {{ data.billingCenters }}\\
+**Filter:** {{ data.filterMessage }}\\
+**Bill Currency:** {{ data.currencyCode }}\\
+![Spending Overview Chart](https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id={{ rs_org_id }}&rs_project_id={{ rs_project_id }}&{{ data.chartType }}&{{ data.chartSize }}&{{ data.chartTitle }}&{{ data.chartAxis }}&{{ data.chartXAxis }}&{{ data.chartAxisFormat }}&{{ data.chartData }}&{{ data.chartCategories }}&{{ data.chartColors }}&{{ data.chartKeyLocation }}&{{ data.chartExtension }} "Spending Overview Chart")
+### For more detailed cost information, see [Dashboards](https://{{ data.domain }}/orgs/{{ rs_org_id }}/optima/dashboards) or [Tabular View](https://{{ data.domain }}/orgs/{{ rs_org_id }}/optima/tabular-view).
+For more information on this report, please view the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/scheduled_reports).
+    EOS
+    # if dataPresent val is 0 then the report will not be generated
+    # check logic_and(eq(val(data, "escalate"), "false"), eq($param_percent_change_threshold, 0))
+    # First use switch to check if $param_percent_change_threshold is 0, if it is then return true to pass check and NOT escalate
+    # If $param_percent_change_threshold is not 0,
+    # Check if val(data, "escalate") is false, if it is then return true to pass check and NOT escalate
+    # If val(data, "escalate") is true, return false to fail check and create escalation
+    check switch(eq($param_percent_change_threshold, 0), true, switch(eq(val(data, "escalate"), "false"), true, false)  )
+    escalate $esc_email
+    export "reportData" do
+      field "timeUnit" do
+        label "Time Period"
+      end
+      field "category" do
+        label "Graph Dimension Value"
+      end
+      field "displayCost" do
+        label "Cost"
+      end
+      field "percentChange" do
+        label "Percent Change from Previous Time Period"
+      end
+      field "dailyAverageCost" do
+        label "Daily Average Cost for Time Period"
+      end
+      field "percentChangeDailyAverageCost" do
+        label "Percent Change from Previous Time Period for Daily Average Cost"
+      end
+      field "currency" do
+        label "Currency"
+      end
+      field "isPercentChangeAboveThreshold" do
+        label "Percent Change Above Threshold (true/false)"
+      end
+      field "consecutivePercentChangeAboveThreshold" do
+        label "Consecutive Time Periods Above Threshold"
+      end
+      field "triggerAlert" do
+        label "Alert Triggered"
       end
     end
   end
