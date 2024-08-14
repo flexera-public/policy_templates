@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1.0
+
+- Updated Azure API versions to provide more up to date and accurate results
+
 ## v3.0.0
 
 - Recommendations can now be generated at the "Resource Group" scope

@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.4.1
+
+- Fixed minor issue with policy actions logging a patch action as a delete action
+
 ## v5.4.0
 
 - Added ability to set metrics granularity when gathering resource metrics from Azure

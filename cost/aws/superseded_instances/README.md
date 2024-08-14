@@ -2,31 +2,19 @@
 
 ## What It Does
 
-This policy checks all the EC2 instances in an AWS Account to determine if the instance type has been superseded. If it has, the virtual machine is recommended for resizing to a more modern instance type. An incident listing all of these superseded EC2 instances is emailed to the user.
+This policy template checks all the EC2 instances in an AWS Account to determine if the instance type has been superseded. If it has, the virtual machine is recommended for resizing to a more modern instance type. An incident listing all of these superseded EC2 instances is emailed to the user.
 
-## Functional Details
+## How It Works
 
 - The policy leverages the AWS API to retrieve all EC2 instances and then checks them against our internal database to see if their instance type has been superseded.
-- Optima billing data is pulled for these instances to assess the current cost of the instance as well as grab additional metadata about the instance, such as operating system, needed to calculate savings.
+- Flexera CCO billing data is pulled for these instances to assess the current cost of the instance as well as grab additional metadata about the instance, such as operating system, needed to calculate savings.
 - The recommendation provided for Superseded Instances is a Change Instance Type action; changing instance type can be performed in an automated manner or after approval.
-
-### Policy savings details
-
-The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the instance type is changed to the recommended instance type. The savings is calculated by taking the difference in the hourly list price between the current instance type and the recommended instance type. This value is then multiplied by 24 to get the daily savings, and then by 30.44 (the average number of days in a month) to get the monthly savings. The savings value is 0 if no cost information for the resource type was found in our internal database.
-
-The savings is displayed in the Estimated Monthly Savings column. The incident message detail includes the sum of each resource *Estimated Monthly Savings* as *Potential Monthly Savings*. If the Flexera organization is configured to use a currency other than USD, the savings values will be converted from USD using the exchange rate at the time that the policy executes.
 
 ### Policy Savings Details
 
-The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the instance type is changed to the recommended instance type.
+The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the instance type is changed to the recommended instance type. The savings isÂ calculated by taking the difference in the hourly list price between the current instance type and the recommended instance type. This value is then multiplied by 24 to get the daily savings, and then by 30.44 (the average number of days in a month) to get the monthly savings. The savings value is 0 if no cost information for the resource type was found in our internal database.
 
-- The `Estimated Monthly Cost` is calculated by multiplying the amortized cost of the resource for 1 day, as found within Flexera CCO, by 30.44, which is the average number of days in a month. This value is not used for calculating savings but is provided as a reference.
-- Since the `Estimated Monthly Cost` of individual resources is obtained from Flexera CCO, it will take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
-- The `Estimated Monthly Savings` is calculated by taking the difference in the hourly list price between the current instance type and the recommended instance type. This value is then multiplied by 24 to get the daily savings, and then by 30.44 (the average number of days in a month) to get the monthly savings.
-- If no cost information for the resource type was found in our internal database, the `Estimated Monthly Savings` is 0.
-- Since the savings is calculated from list prices rather than data obtained from Flexera CCO, they will *not* take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
-- The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
-- If the Flexera organization is configured to use a currency other than USD, the savings values will be converted from USD using the exchange rate at the time that the policy executes.
+The savings is displayed in the Estimated Monthly Savings column. The incident message detail includes the sum of each resource *Estimated Monthly Savings* as *Potential Monthly Savings*. If the Flexera organization is configured to use a currency other than USD, the savings values will be converted from USD using the exchange rate at the time that the policy executes.
 
 ## Input Parameters
 
@@ -37,6 +25,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
   - Next Gen: Recommend latest generation upgrade.
   - Burstable: Burstable instance type recommendations.
   - AMD: Recommend AMD-based latest generation upgrade. May provide additional savings.
+- *Fallback Instance Type Category* - Instance Type Category to pick from for recommended instance types if there are no valid recommendations for the primary category. Set to `None` to have no fallback.
 - *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation.
 - *Exclusion Tags* - The policy will filter resources containing the specified tags from the results. The following formats are supported:
   - `Key` - Filter all resources with the specified tag key.
@@ -61,10 +50,6 @@ For example if a user selects the "Change Instance Type" action while applying t
 
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
-### Credential configuration
-
-For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
-
 - [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
   - `ec2:DescribeRegions`
   - `ec2:DescribeInstances`
@@ -75,7 +60,7 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
   - `ec2:StopInstances`*
   - `sts:GetCallerIdentity`
 
-\* Only required for taking action (changing instance type); the policy will still function in a read-only capacity without these permissions.
+  \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
 
   Example IAM Permission Policy:
 

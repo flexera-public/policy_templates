@@ -11,6 +11,7 @@ This policy has the following input parameters required when launching the polic
 - *Effective Date* - The month and year in YYYY-MM format that you want the rules to apply. This should be left at its default value in most cases to ensure that the rules apply to all costs, including historical costs.
 - *Label Keys* - A list of Google Project label keys to create custom Rule-Based Dimensions for.
 - *Dimension Names* - A list of names to give the Rule-Based Dimensions in the Flexera platform. Enter names in the same order as the label keys in the `Label Keys` field. Dimension names will be derived from label keys directly if this list is left empty.
+- *Lowercase Values* - Whether or not to normalize all values by converting them to lowercase. Note that, if the same value appears multiple times with different casing, and this option is disabled, the rule-based dimension will be rejected and this policy template will fail.
 
 ## Policy Actions
 

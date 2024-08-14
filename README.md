@@ -98,8 +98,8 @@ These templates can generate savings estimates for your environment.
 
 #### Kubecost
 
-- [Kubecost Cluster Rightsizing Recommendations](./cost/kubecost/cluster)
-- [Kubecost Request Rightsizing Recommendations](./cost/kubecost/sizing)
+- [Kubecost Cluster Rightsizing Recommendation](./cost/kubecost/cluster)
+- [Kubecost Container Request Rightsizing Recommendations](./cost/kubecost/sizing)
 
 ### Policy Templates for Compliance
 
@@ -348,10 +348,10 @@ These templates can generate savings estimates for your environment.
   - [Flexera FOCUS Report](./cost/flexera/cco/focus_report)
   - [Low Service Usage](./cost/flexera/cco/low_service_usage)
   - [Low Usage Report](./cost/flexera/cco/low_usage)
-  - [New Service Usage](./cost/flexera/cco/new_service_usage)
+  - [New Usage](./cost/flexera/cco/new_usage)
   - [Scheduled Report](./cost/flexera/cco/scheduled_reports)
   - [Superseded Instances](./cost/flexera/cco/superseded_instance)
-  - [Vendor Commitment Forecast](./cost/flexera/cco/forecasting/commitment_forecast)
+  - [Vendor Spend Commitment Forecast](./cost/flexera/cco/forecasting/commitment_forecast)
 
 - Common Bill Ingestion
 
@@ -405,8 +405,8 @@ These templates can generate savings estimates for your environment.
 
 - Kubernetes
 
-  - [Kubecost Cluster Rightsizing Recommendations](./cost/kubecost/cluster)
-  - [Kubecost Request Rightsizing Recommendations](./cost/kubecost/sizing)
+  - [Kubecost Cluster Rightsizing Recommendation](./cost/kubecost/cluster)
+  - [Kubecost Container Request Rightsizing Recommendations](./cost/kubecost/sizing)
 
 #### Oracle
 
@@ -590,7 +590,7 @@ These templates can generate savings estimates for your environment.
 
 - App Service
 
-  - [Azure Web App Minimum TLS Version](./security/azure/webapp_tls_version_support)
+  - [Azure Web Apps Without Secure TLS](./security/azure/webapp_tls_version_support)
 
 - Compute
 
@@ -620,16 +620,16 @@ These templates can generate savings estimates for your environment.
 
 - SQL
 
-  - [Azure Ensure SQL Database Encryption](./security/azure/sql_db_encryption)
-  - [Azure Ensure SQL Server AD Admin Configured](./security/azure/sql_ad_admin)
-  - [Azure Ensure SQL Server ATP (Advanced Threat Protection) Enabled](./security/azure/sql_server_atp)
-  - [Azure Ensure SQL Server Auditing Enabled](./security/azure/sql_server_auditing)
-  - [Azure Ensure SQL Server Minimum Auditing Retention Of 90 Days](./security/azure/sql_auditing_retention)
-  - [Azure Ensure SQL Server VA Email Notifications](./security/azure/sql_server_va_emails)
-  - [Azure Ensure SQL Server VA Notify Admins/Subscription Owners](./security/azure/sql_server_va_admins)
-  - [Azure Ensure SQL Server VA Periodic Scans Enabled](./security/azure/sql_server_va_scans)
-  - [Azure Ensure SQL Server Vulnerability Assessment (VA) Enabled](./security/azure/sql_server_va)
-  - [Azure Publicly Accessible Managed SQL Instance](./security/azure/sql_publicly_accessible_managed_instance)
+  - [Azure Publicly-Accessible SQL Managed Instances](./security/azure/sql_publicly_accessible_managed_instance)
+  - [Azure SQL Databases Without Encryption](./security/azure/sql_db_encryption)
+  - [Azure SQL Servers Vulnerability Assessment Does Not Notify Admins](./security/azure/sql_server_va_admins)
+  - [Azure SQL Servers Vulnerability Assessment Without Email Notifications](./security/azure/sql_server_va_emails)
+  - [Azure SQL Servers Vulnerability Assessment Without Periodic Scans](./security/azure/sql_server_va_scans)
+  - [Azure SQL Servers With Insufficient Auditing Retention](./security/azure/sql_auditing_retention)
+  - [Azure SQL Servers Without Active Directory Admin](./security/azure/sql_ad_admin)
+  - [Azure SQL Servers Without Advanced Threat Protection (ATP)](./security/azure/sql_server_atp)
+  - [Azure SQL Servers Without Auditing Enabled](./security/azure/sql_server_auditing)
+  - [Azure SQL Servers Without Vulnerability Assessment (VA) Enabled](./security/azure/sql_server_va)
 
 - Security
 
@@ -640,14 +640,14 @@ These templates can generate savings estimates for your environment.
 - Storage
 
   - [Azure Blob Storage Accounts Without Logging Enabled](./security/azure/blob_storage_logging)
-  - [Azure Ensure Soft Delete Enabled For Azure Storage](./security/azure/storage_soft_delete)
-  - [Azure Ensure Storage Account Default Network Access Set To Deny](./security/azure/storage_network_deny)
-  - [Azure Ensure Storage Accounts Require Secure TLS Version](./security/azure/storage_tls_version)
-  - [Azure Ensure Storage Logging Enabled For Table Service](./security/azure/table_storage_logging)
-  - [Azure Ensure Trusted Microsoft Services Enabled](./security/azure/storage_trusted_services)
+  - [Azure Blob Storage Accounts Without Soft Delete Enabled](./security/azure/storage_soft_delete)
   - [Azure Publicly-Accessible Blob Containers](./security/azure/private_blob_containers)
   - [Azure Queue Storage Accounts Without Logging Enabled](./security/azure/queue_storage_logging)
+  - [Azure Storage Accounts Allowing Default Network Access](./security/azure/storage_network_deny)
+  - [Azure Storage Accounts Without Secure TLS](./security/azure/storage_tls_version)
   - [Azure Storage Accounts Without Secure Transfer](./security/azure/secure_transfer_required)
+  - [Azure Storage Accounts Without Trusted Microsoft Services Access](./security/azure/storage_trusted_services)
+  - [Azure Table Storage Accounts Without Logging Enabled](./security/azure/table_storage_logging)
 
 - Storage Accounts
 
@@ -670,7 +670,7 @@ These templates can generate savings estimates for your environment.
   Security: 74
 :optimization_count: 61
 :policy_sets:
-  '': 45
+  '': 46
   Allocate VMs: 3
   Automation: 1
   Autoscaling: 1
@@ -706,7 +706,6 @@ These templates can generate savings estimates for your environment.
   Open Buckets: 1
   Open S3 Buckets: 1
   PaaS Optimization: 1
-  Public Database Access: 1
   Reserved Instance: 3
   Reserved Instances: 8
   Rightsize Clusters: 1
