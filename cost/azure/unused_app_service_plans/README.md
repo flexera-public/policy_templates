@@ -2,13 +2,13 @@
 
 ## What It Does
 
-This policy template reports any Azure App Service Plans that either failed to provision correctly or have no Azure Web Apps configured. Optionally, this report can be emailed and the offending App Service Plans can be deleted.
+This policy template reports any Azure App Service Plans that have no Azure Web Apps configured. Optionally, this report can be emailed and the offending App Service Plans can be deleted.
 
 ## How It Works
 
 - The `Microsoft.Web/serverfarms` API endpoint is used to gather a list of all Azure App Service Plans.
 - The `Microsoft.Web/serverfarms/{id}/sites` API endpoint is used to get a list of Azure Web Apps for each App Service Plan.
-- The Azure App Service Plans list is filtered to just those plans that were not provisioned successfully or have no web apps configured.
+- The Azure App Service Plans list is filtered to just those plans that have no web apps configured.
 
 ### Policy Savings Details
 

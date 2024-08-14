@@ -313,11 +313,8 @@ datasource "ds_azure_app_service_plans" do
       field "maximumNumberOfWorkers", jmes_path(col_item, "properties.maximumNumberOfWorkers")
       field "numberOfWorkers", jmes_path(col_item, "properties.numberOfWorkers")
       field "numberOfSites", jmes_path(col_item, "properties.numberOfSites")
-      field "isSpot", jmes_path(col_item, "properties.isSpot")
-      field "reserved", jmes_path(col_item, "properties.reserved")
       field "targetWorkerCount", jmes_path(col_item, "properties.targetWorkerCount")
       field "targetWorkerSizeId", jmes_path(col_item, "properties.targetWorkerSizeId")
-      field "provisioningState", jmes_path(col_item, "properties.provisioningState")
       field "skuName", jmes_path(col_item, "sku.name")
       field "skuTier", jmes_path(col_item, "sku.tier")
       field "skuSize", jmes_path(col_item, "sku.size")
@@ -613,7 +610,14 @@ script "js_bad_azure_app_service_plans", type: "javascript" do
     savings = ds_azure_app_service_plan_costs_grouped[app_service_plan['id'].toLowerCase()]
     if (savings == null || savings == undefined) { savings = 0.0 }
 
-    if (savings >= param_min_savings) {
+    web_apps = 0
+
+    if (_.contains(_.pluck(ds_azure_web_apps, 'servicePlanId'), app_service_plan['id'])) {
+      web_app_list = _.filter(ds_azure_web_apps, function(item) { return item['servicePlanId'] == app_service_plan['id'] })
+      web_apps = web_app_list.length
+    }
+
+    if (savings >= param_min_savings && web_apps == 0) {
       total_savings += savings
 
       tags = []
@@ -628,12 +632,6 @@ script "js_bad_azure_app_service_plans", type: "javascript" do
         " (", app_service_plan["subscriptionID"], ")"
       ].join('')
 
-      web_apps = 0
-
-      if (_.contains(_.pluck(ds_azure_web_apps, 'servicePlanId'), app_service_plan['id'])) {
-        web_app_list = _.filter(ds_azure_web_apps, function(item) { return item['servicePlanId'] == app_service_plan['id'] })
-        web_apps = web_app_list.length
-      }
 
       result.push({
         accountID: app_service_plan['subscriptionId'],
@@ -644,7 +642,6 @@ script "js_bad_azure_app_service_plans", type: "javascript" do
         type: app_service_plan['type'],
         region: app_service_plan['region'],
         state: app_service_plan['status'],
-        provisioningState: app_service_plan['provisioningState'],
         tags: tags.join(', '),
         service: "Microsoft.Network",
         web_apps: web_apps,
@@ -688,7 +685,6 @@ script "js_bad_azure_app_service_plans", type: "javascript" do
     type: "",
     region: "",
     state: "",
-    provisioningState: "",
     tags: "",
     service: "",
     web_apps: "",
@@ -740,9 +736,6 @@ policy "pol_unused_azure_app_service_plans" do
       end
       field "region" do
         label "Region"
-      end
-      field "provisioningState" do
-        label "Provisioning State"
       end
       field "state" do
         label "Status"
