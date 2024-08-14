@@ -10,21 +10,10 @@ This policy template reports any Azure Virtual Network Gateways that either fail
 - The `Microsoft.Network/virtualNetworkGateways/{id}/connections` API endpoint is used to get a list of connections for each Virtual Network Gateway.
 - The Azure Virtual Network Gateways list is filtered to just those gateways that were not provisioned successfully or have no connections configured.
 
-### Policy Savings Details
-
-The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the resource is terminated.
-
-- The `Estimated Monthly Savings` is calculated by multiplying the amortized cost of the resource for 1 day, as found within Flexera CCO, by 30.44, which is the average number of days in a month.
-- Since the costs of individual resources are obtained from Flexera CCO, they will take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
-- If the resource cannot be found in Flexera CCO, the `Estimated Monthly Savings` is 0.
-- The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
-- Both `Estimated Monthly Savings` and `Potential Monthly Savings` will be reported in the currency of the Flexera organization the policy is applied in.
-
 ## Input Parameters
 
 - *Email Addresses* - A list of email addresses to notify
 - *Azure Endpoint* - Azure Endpoint to access resources
-- *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation.
 - *Allow/Deny Subscriptions* - Allow or Deny entered Subscriptions to filter results.
 - *Allow/Deny Subscriptions List* - A list of allowed or denied Subscription IDs/names. Leave blank to check all Subscriptions.
 - *Allow/Deny Regions* - Allow or Deny entered regions to filter results.
