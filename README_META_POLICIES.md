@@ -288,3 +288,23 @@ The Meta Parent Policy Template is a new policy template, that is associated wit
 When we want to create a new Meta Parent policy template regularly, we should append the list defined in [tools/meta_parent_policy_compiler/meta_parent_policy_compiler.rb](tools/meta_parent_policy_compiler/meta_parent_policy_compiler.rb)
 
 More information at [tools/meta_parent_policy_compiler/README.md](tools/meta_parent_policy_compiler/README.md)
+
+#### Custom Meta Parent Templates
+
+For generating meta parent policy templates in the Flexera catalog, a custom template file can be used for situations where the default template file produces undesired results. To take advantage of this functionality, you need to do the following:
+
+- Place the custom template file in the same directory as the policy template itself. For example, if the path to your policy template is `operational/aws/tag_cardinality/aws_tag_cardinality.pt`, the custom template file path should be `operational/aws/tag_cardinality/aws_tag_cardinality_meta_parent.pt.template`. There is no required naming convention but the convention implied with this example is recommended.
+
+- Add a `meta_template` field to the info() block of the child policy template containing the file name of the template. For the above example, this would look like the following:
+
+```
+info(
+  version: "3.2.0",
+  provider: "AWS",
+  service: "Tags",
+  policy_set: "Tag Cardinality",
+  meta_template: "aws_tag_cardinality_meta_parent.pt.template"
+)
+```
+
+- As long as the above has been done correctly, the automation for generating meta parent policy templates will automatically use the custom template instead of the default one.
