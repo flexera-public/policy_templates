@@ -295,7 +295,7 @@ For generating meta parent policy templates in the Flexera catalog, a custom tem
 
 - Place the custom template file in the same directory as the policy template itself. For example, if the path to your policy template is `operational/aws/tag_cardinality/aws_tag_cardinality.pt`, the custom template file path should be `operational/aws/tag_cardinality/aws_tag_cardinality_meta_parent.pt.template`. There is no required naming convention but the convention implied with this example is recommended.
 
-- Add a `meta_template` field to the info() block of the child policy template containing the file name of the template. For the above example, this would look like the following:
+- Add a `meta_template` field to the info() block of the child policy template containing the file name of the custom template. For the above example, this would look like the following:
 
 ```
 info(
