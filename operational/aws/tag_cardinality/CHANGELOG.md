@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2.0
+
+- Added metadata to facilitate custom meta parent policy. Functionality is otherwise unchanged.
+
 ## v3.1.1
 
 - Fixed bug related to pagination on the AWS Tagging API
