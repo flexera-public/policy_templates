@@ -791,20 +791,38 @@ script "js_ds_tag_report_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-EOS
-  result = []
+  consolidated_keys = {}
+
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
     // If the incident summary contains "AWS Tag Cardinality Report" then include it in the filter result
     if (s.indexOf("AWS Tag Cardinality Report") > -1) {
       _.each(incident["violation_data"], function(violation) {
-        violation["incident_id"] = incident["id"];
-        result.push(violation);
+        uid = violation['type'] + '___' + violation['key']
+
+        if (consolidated_keys[uid] == undefined) {
+          consolidated_keys[uid] = {
+            type: violation['type'],
+            key: violation['key'],
+            cardinality: violation['cardinality'],
+            value_list: violation['value_list'],
+            incident_id: incident["id"]
+          }
+        } else {
+          existing_values = consolidated_keys[uid]['value_list'].split(', ')
+          new_values = violation['value_list'].split(', ')
+          combined_values = _.uniq(existing_values.concat(new_values))
+
+          consolidated_keys[uid]['cardinality'] = combined_values.length
+          consolidated_keys[uid]['value_list'] = combined_values.join(', ')
+        }
       });
     }
   });
+
+  result = _.map(_.keys(consolidated_keys), function(key) { return consolidated_keys[key] })
 EOS
 end
-
 
 
 
