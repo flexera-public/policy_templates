@@ -7,7 +7,7 @@ severity "low"
 category "Operational"
 default_frequency "weekly"
 info(
-  version: "3.1.1",
+  version: "4.0.0",
   provider: "AWS",
   service: "Tags",
   policy_set: "Tag Cardinality"
@@ -51,6 +51,14 @@ parameter "param_regions_list" do
   default []
 end
 
+parameter "param_auth_aws_linked_account" do
+  type "string"
+  category "Credentials"
+  label "Optional: AWS Linked Account Credential"
+  description "The credential to use for authentication to AWS Organization Linked Account.  This is not expected to be needed, but if the IAM Role Name in the Linked Accounts differs from the one in the AWS Organization Master Account, you can specify the other Flexera Credential here that uses that IAM Role Name in the Credential ARN."
+  default ""
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -58,7 +66,7 @@ end
 credentials "auth_aws" do
   schemes "aws", "aws_sts"
   label "AWS"
-  description "Select the AWS credential."
+  description "Select the AWS credential. Note: This credential should be associated with an ARN in the AWS Organization Master Account."
   tags "provider=aws"
   aws_account_number $param_aws_account_number
 end
@@ -190,6 +198,22 @@ script "js_regions", type:"javascript" do
 EOS
 end
 
+datasource "ds_self_policy_information" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "name", jmes_path(response, "name")
+    field "credentials", jmes_path(response, "credentials")
+    field "options", jmes_path(response, "options")
+    field "policy_template", jmes_path(response, "policy_template")
+  end
+end
+
 datasource "ds_aws_resources" do
   iterate $ds_regions
   request do
@@ -213,12 +237,69 @@ datasource "ds_aws_resources" do
   end
 end
 
+datasource "ds_aws_resources_all" do
+  iterate $ds_aws_accounts_without_tags
+  request do
+    run_script $js_aws_resources_all, rs_governance_host, rs_project_id, iter_item, $ds_self_policy_information, $param_auth_aws_linked_account
+  end
+  result do
+    encoding "json"
+    collect jq(response, '.[0].data[]') do
+      field "complianceDetails", jq(col_item, ".complianceDetails")
+      field "arn", jq(col_item, ".arn")
+      field "tags_unsorted", jq(col_item, ".tags_unsorted")
+    end
+  end
+end
+
+script "js_aws_resources_all", type: "javascript" do
+  parameters "rs_governance_host", "rs_project_id", "iter_item", "ds_self_policy_information", "param_auth_aws_linked_account"
+  result "request"
+  code <<-EOS
+
+  var auth_aws_credential_id = ds_self_policy_information.credentials.auth_aws
+  // If the user has specified an AWS Linked Account Credential, use that instead
+  if (param_auth_aws_linked_account != "") {
+    auth_aws_credential_id = param_auth_aws_linked_account
+  }
+
+  var body = {
+    "credentials": {
+      "auth_aws": auth_aws_credential_id,
+      "auth_flexera": ds_self_policy_information.credentials.auth_flexera
+    },
+    "names": [
+      "ds_aws_resources"
+    ],
+    "options": ds_self_policy_information.options
+  }
+  _.each(body.options, function(option) {
+    if (option.name == "param_aws_account_number") {
+      option.value = iter_item.account_id
+    }
+  })
+  var request = {
+    auth:  'auth_flexera',
+    host:  rs_governance_host,
+    scheme: 'https',
+    verb: 'POST',
+    path:  ds_self_policy_information.policy_template.href+"/retrieve_data",
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+    body: JSON.stringify(body),
+    ignore_status: [422]
+  }
+  EOS
+end
+
 datasource "ds_aws_accounts_sorted" do
   run_script $js_tag_sorter, $ds_aws_accounts
 end
 
 datasource "ds_aws_resources_sorted" do
-  run_script $js_tag_sorter, $ds_aws_resources
+  run_script $js_tag_sorter, $ds_aws_resources_all
 end
 
 datasource "ds_aws_accounts_tag_list" do
