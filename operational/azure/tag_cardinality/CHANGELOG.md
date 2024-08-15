@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.3.0
+
+- Added metadata to facilitate custom meta parent policy. Functionality is otherwise unchanged.
+
 ## v3.2
 
 - Added support for region filtering and more robust support for Subscription filtering.
