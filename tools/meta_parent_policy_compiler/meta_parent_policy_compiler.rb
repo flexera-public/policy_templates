@@ -166,9 +166,13 @@ def compile_meta_parent_policy(file_path)
   publish = "true"
   publish = publish_scan[0][0] if !publish_scan.empty?
   # get the deprecated string if it exists, defaulting to false if not present
-  deprecated_scan = pt.scan(/publish: "(.*?)"/)
+  deprecated_scan = pt.scan(/deprecated: "(.*?)"/)
   deprecated = "false"
   deprecated = deprecated_scan[0][0] if !deprecated_scan.empty?
+  # get the deprecated string if it exists, defaulting to false if not present
+  meta_template_scan = pt.scan(/meta_template: "(.*?)"/)
+  meta_template = ""
+  meta_template = meta_template_scan[0][0] if !meta_template_scan.empty?
   # print("Name: #{name}\n")
   # print("Description: #{description}\n")
   # print("\n###########################\n")
@@ -384,16 +388,20 @@ end
   # print(credentials.join("\n---------\n"))
 
   # Replace Placeholders from Meta Parent Policy Template with values from Child Policy Template
-  parent_pt_path = "aws_meta_parent.pt.template"
-  if file_path.include?("aws")
+  if meta_template == ""
     parent_pt_path = "aws_meta_parent.pt.template"
-  elsif file_path.include?("azure")
-    parent_pt_path = "azure_meta_parent.pt.template"
-  elsif file_path.include?("google")
-    parent_pt_path = "google_meta_parent.pt.template"
+    if file_path.include?("aws")
+      parent_pt_path = "aws_meta_parent.pt.template"
+    elsif file_path.include?("azure")
+      parent_pt_path = "azure_meta_parent.pt.template"
+    elsif file_path.include?("google")
+      parent_pt_path = "google_meta_parent.pt.template"
+    else
+      print("Could not determine parent policy template to use for #{file_path}\n")
+      exit(1)
+    end
   else
-    print("Could not determine parent policy template to use for #{file_path}\n")
-    exit(1)
+    parent_pt_path = File.dirname(file_path) + "/" + meta_template
   end
   parent_pt = File.open(parent_pt_path, "rb").read
   # Copy the parent_pt to output_pt so we can manipulate it safely
