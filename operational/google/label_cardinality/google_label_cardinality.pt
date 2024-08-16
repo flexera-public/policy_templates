@@ -283,7 +283,7 @@ datasource "ds_google_sqladmin_resources" do
   end
   result do
     encoding "json"
-    collect jmes_path(response,"items[*]") do
+    collect jmes_path(response, "items[*]") do
       field "id", jmes_path(col_item, "name")
       field "name", jmes_path(col_item, "name")
       field "labels", jmes_path(col_item, "settings.userLabels")
@@ -383,15 +383,15 @@ EOS
 end
 
 datasource "ds_google_projects_label_list" do
-  run_script $js_label_lister, $ds_google_projects_filtered, "Project"
+  run_script $js_label_lister, $ds_google_projects_filtered, $ds_applied_policy, "Project"
 end
 
 datasource "ds_google_resources_label_list" do
-  run_script $js_label_lister, $ds_google_resources_combined, "Resource"
+  run_script $js_label_lister, $ds_google_resources_combined, $ds_applied_policy, "Resource"
 end
 
 script "js_label_lister", type: "javascript" do
-  parameters "labeled_list", "label_type"
+  parameters "labeled_list", "ds_applied_policy", "label_type"
   result "result"
   code <<-EOS
   labels = {}
@@ -408,10 +408,11 @@ script "js_label_lister", type: "javascript" do
 
   _.each(_.keys(labels), function(key) {
     result.push({
-      'type': label_type,
-      'key': key,
-      'cardinality': _.uniq(labels[key]).length,
-      'value_list': _.uniq(labels[key]).join(', ')
+      type: label_type,
+      key: key,
+      cardinality: _.uniq(labels[key]).length,
+      value_list: _.uniq(labels[key]).join(', '),
+      policy_name: ds_applied_policy['name']
     })
   })
 
@@ -436,9 +437,9 @@ end
 ###############################################################################
 
 policy "pol_google_label_cardinality_report" do
-  validate $ds_label_report do
-    summary_template "Google Label Cardinality Report"
-    check logic_or($ds_parent_policy_terminated, eq(1, 0))
+  validate_each $ds_label_report do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Google Label Keys Found"
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "key"), ""))
     escalate $esc_email
     export do
       resource_level false
