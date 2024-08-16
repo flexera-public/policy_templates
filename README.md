@@ -189,6 +189,10 @@ These templates can generate savings estimates for your environment.
   - [AWS Cheaper Regions](./cost/aws/cheaper_regions)
   - [AWS Resources Under Extended Support](./cost/aws/extended_support)
 
+- CloudTrail
+
+  - [AWS CloudTrails With Read Logging Enabled](./cost/aws/cloudtrail_read_logging)
+
 - Compute
 
   - [AWS Burstable EC2 Instances](./cost/aws/burstable_ec2_instances)
@@ -668,7 +672,7 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 33
-  Cost: 120
+  Cost: 121
   Operational: 27
   SaaS Management: 11
   Security: 74
@@ -701,6 +705,7 @@ These templates can generate savings estimates for your environment.
   Instances not running FlexNet Inventory Agent: 2
   Lambda: 1
   Lifecycle Management: 1
+  Logging: 1
   Long Running Instances: 2
   Long Stopped Instances: 3
   Native Recommendations: 1
@@ -736,7 +741,7 @@ These templates can generate savings estimates for your environment.
   Unused Volumes: 7
   Usage Report: 10
 :providers:
-  AWS: 96
+  AWS: 97
   Azure: 95
   Azure China: 1
   Flexera: 38
@@ -756,7 +761,7 @@ These templates can generate savings estimates for your environment.
   App Service: 1
   Automation: 1
   Cloud Cost Optimization: 19
-  CloudTrail: 7
+  CloudTrail: 8
   Common Bill Ingestion: 3
   Compute: 77
   Config: 1
@@ -790,7 +795,7 @@ These templates can generate savings estimates for your environment.
   Storage Accounts: 2
   Tags: 2
   Usage Discount: 6
-:total_count: 265
+:total_count: 266
 -->
 <!-- End Policy Template Stats -->
 
