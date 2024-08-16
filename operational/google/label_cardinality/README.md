@@ -20,6 +20,8 @@ Using the associated APIs, labels for Google Projects and for the following reso
   - VPN Tunnels
   - Virtual Machines
 - Database
+  - BigQuery Datasets
+  - BigQuery Tables
   - Cloud SQL for MySQL Instances
 - Storage
   - Object Storage Buckets
@@ -40,6 +42,11 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 
 - [**Google Cloud Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1121577) (*provider=gce*) which has the following:
   - `resourcemanager.projects.get`
+  - `resourcemanager.projects.list`
+  - `bigquery.datasets.get`
+  - `bigquery.datasets.list`
+  - `bigquery.tables.get`
+  - `bigquery.tables.list`
   - `cloudsql.instances.get`
   - `cloudsql.instances.list`
   - `compute.addresses.get`
@@ -69,6 +76,7 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 Additionally, this Policy Template requires that several APIs be enabled in your Google Cloud environment:
 
 - [Cloud Resource Manager API](https://console.cloud.google.com/flows/enableapi?apiid=cloudresourcemanager.googleapis.com)
+- [BigQuery API](https://console.cloud.google.com/flows/enableapi?apiid=bigquery.googleapis.com)
 - [Cloud SQL API](https://console.cloud.google.com/flows/enableapi?apiid=sqladmin.googleapis.com)
 - [Cloud Storage API](https://console.cloud.google.com/flows/enableapi?apiid=storage.googleapis.com)
 - [Compute Engine API](https://console.cloud.google.com/flows/enableapi?apiid=compute.googleapis.com)
