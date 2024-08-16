@@ -192,7 +192,7 @@ end
 script "js_google_aggregated_compute_resource_types", type: "javascript" do
   parameters "ds_google_projects_filtered"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   types = [
     "addresses",
     "disks",
@@ -229,7 +229,7 @@ datasource "ds_aggregated_google_compute_resources" do
   end
   result do
     encoding "json"
-    field "resources", jq(response, join(["[ .items | to_entries | map_values(.value) | map(select(has(\"", val(iter_item, 'type'), "\"))) | .[].", val(iter_item, 'type'), " | .[] | { id,name,labels,selfLink } ]"]))
+    field "resources", val(response, "items")
     field "type", val(iter_item, "type")
     field "projectId", val(iter_item, "id")
     field "projectName", val(iter_item, "name")
@@ -248,18 +248,22 @@ script "js_google_compute_resources", type: "javascript" do
   result = []
 
   _.each(aggregated_resources, function(response) {
-    result = result.concat(_.map(response['resources'], function(resource) {
-      return {
-        id: resource['id'],
-        name: resource['name'],
-        labels: resource['labels'],
-        selfLink: resource['selfLink'],
-        type: response['type'],
-        projectId: response['projectId'],
-        projectName: response['projectName'],
-        projectNumber: response['projectNumber']
+    _.each(_.keys(response['resources']), function(key) {
+      if (typeof(response['resources'][key][response['type']]) == 'object') {
+        result = result.concat(_.map(response['resources'][key][response['type']], function(resource) {
+          return {
+            id: resource['id'],
+            name: resource['name'],
+            labels: resource['labels'],
+            selfLink: resource['selfLink'],
+            type: response['type'],
+            projectId: response['projectId'],
+            projectName: response['projectName'],
+            projectNumber: response['projectNumber']
+          }
+        }))
       }
-    }))
+    })
   })
 
   result = result.concat(global_resources)
