@@ -490,6 +490,12 @@ These templates can generate savings estimates for your environment.
 
   - [Flexera One User Access Report](./operational/flexera/iam/iam_user_report)
 
+#### Google
+
+- Tags
+
+  - [Google Label Cardinality Report](./operational/google/label_cardinality)
+
 ### Policy Templates for SaaS Management
 
 #### Flexera
@@ -673,7 +679,7 @@ These templates can generate savings estimates for your environment.
 :categories:
   Compliance: 33
   Cost: 121
-  Operational: 27
+  Operational: 28
   SaaS Management: 11
   Security: 74
 :optimization_count: 61
@@ -731,7 +737,7 @@ These templates can generate savings estimates for your environment.
   Schedule Report: 2
   Storage Security: 1
   Superseded Compute Instances: 2
-  Tag Cardinality: 2
+  Tag Cardinality: 3
   Untagged Resources: 4
   Unused Containers: 1
   Unused Database Services: 3
@@ -748,7 +754,7 @@ These templates can generate savings estimates for your environment.
   Flexera Optima: 1
   GCE: 2
   GitHub: 7
-  Google: 19
+  Google: 20
   Kubecost: 2
   Microsoft: 1
   Okta: 1
@@ -793,9 +799,9 @@ These templates can generate savings estimates for your environment.
   Security: 3
   Storage: 28
   Storage Accounts: 2
-  Tags: 2
+  Tags: 3
   Usage Discount: 6
-:total_count: 266
+:total_count: 267
 -->
 <!-- End Policy Template Stats -->
 
