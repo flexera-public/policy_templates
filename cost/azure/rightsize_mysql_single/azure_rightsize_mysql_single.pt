@@ -1,7 +1,7 @@
-name "Azure Rightsize MySQL Flexible Servers"
+name "Azure Rightsize MySQL Single Servers"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks for Azure MySQL Flexible Servers that have inefficient utilization for a user-specified number of days and downsizes or deletes them after approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_mysql_flexible/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Checks for Azure MySQL Single Servers that have inefficient utilization for a user-specified number of days and downsizes or deletes them after approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_mysql_flexible/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Cost"
 severity "low"
@@ -362,14 +362,14 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
 EOS
 end
 
-datasource "ds_azure_mysql_flexible" do
+datasource "ds_azure_mysql_single" do
   iterate $ds_azure_subscriptions_filtered
   request do
     auth $auth_azure
     pagination $pagination_azure
     host $param_azure_endpoint
-    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.DBforMySQL/flexibleServers"])
-    query "api-version", "2023-12-30"
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.DBforMySQL/servers"])
+    query "api-version", "2020-01-01"
     header "User-Agent", "RS Policies"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
     ignore_status [400, 403, 404]
@@ -384,12 +384,12 @@ datasource "ds_azure_mysql_flexible" do
       field "tags", jmes_path(col_item, "tags")
       field "skuName", jmes_path(col_item, "sku.name")
       field "skuTier", jmes_path(col_item, "sku.tier")
-      field "availabilityZone", jmes_path(col_item, "properties.availabilityZone")
+      field "skuFamily", jmes_path(col_item, "sku.family")
+      field "skuCapacity", jmes_path(col_item, "sku.capacity")
       field "fqdn", jmes_path(col_item, "properties.fullyQualifiedDomainName")
-      field "publicNetworkAccess", jmes_path(col_item, "properties.network.publicNetworkAccess")
-      field "state", jmes_path(col_item, "properties.state")
+      field "publicNetworkAccess", jmes_path(col_item, "properties.publicNetworkAccess")
+      field "state", jmes_path(col_item, "properties.userVisibleState")
       field "replicationRole", jmes_path(col_item, "properties.replicationRole")
-      field "replicaCapacity", jmes_path(col_item, "properties.replicaCapacity")
       field "version", jmes_path(col_item, "properties.version")
       field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
       field "subscriptionID", val(iter_item, "id")
@@ -399,14 +399,14 @@ datasource "ds_azure_mysql_flexible" do
 end
 
 datasource "ds_azure_mysql_system_filtered" do
-  run_script $js_azure_mysql_system_filtered, $ds_azure_mysql_flexible
+  run_script $js_azure_mysql_system_filtered, $ds_azure_mysql_single
 end
 
 script "js_azure_mysql_system_filtered", type: "javascript" do
-  parameters "ds_azure_mysql_flexible"
+  parameters "ds_azure_mysql_single"
   result "result"
   code <<-EOS
-  result = _.reject(ds_azure_mysql_flexible, function(db) {
+  result = _.reject(ds_azure_mysql_single, function(db) {
     return db['skuName'] == 'System' || db['skuName'] == '' || typeof(db['skuName']) != 'string'
   })
 EOS
@@ -524,13 +524,13 @@ datasource "ds_azure_mysql_metrics" do
     field "tags", val(iter_item, "tags")
     field "skuName", val(iter_item, "skuName")
     field "skuTier", val(iter_item, "skuTier")
-    field "availabilityZone", val(iter_item, "availabilityZone")
+    field "skuFamily", val(iter_item, "skuFamily")
+    field "skuCapacity", val(iter_item, "skuCapacity")
     field "fqdn", val(iter_item, "fqdn")
     field "state", val(iter_item, "state")
     field "version", val(iter_item, "version")
     field "publicNetworkAccess", val(iter_item, "publicNetworkAccess")
     field "replicationRole", val(iter_item, "replicationRole")
-    field "replicaCapacity", val(iter_item, "replicaCapacity")
     field "resourceGroup", val(iter_item, "resourceGroup")
     field "subscriptionID", val(iter_item, "subscriptionID")
     field "subscriptionName", val(iter_item, "subscriptionName")
@@ -565,7 +565,7 @@ script "js_azure_mysql_metrics", type: "javascript" do
     query_params: {
       "api-version": "2018-01-01",
       "timespan": timespan,
-      "metricnames": "cpu_percent,total_connections",
+      "metricnames": "cpu_percent,active_connections",
       "aggregation": "Average,Minimum,Maximum,count",
       "interval": ds_stats_interval["api"]
     },
@@ -582,7 +582,7 @@ datasource "ds_azure_mysql_resize_map" do
   request do
     verb "GET"
     host "raw.githubusercontent.com"
-    path "/flexera-public/policy_templates/master/data/azure/mysql_flexible_tier_types.json"
+    path "/flexera-public/policy_templates/master/data/azure/sql_service_tier_types.json"
     header "User-Agent", "RS Policies"
   end
 end
@@ -607,12 +607,6 @@ script "js_merged_metrics", type: "javascript" do
     return arr[Math.ceil(index) - 1]
   }
 
-  // Function to extract capacity from MySQL SKUs
-  function getCapacityFromSKU(sku_name) {
-    if (sku_name.split('_')[1] == undefined || sku_name.split('_')[1].match(/\d+/) == null) { return null }
-    return Number(sku_name.split('_')[1].match(/\d+/)[0])
-  }
-
   result = []
 
   _.each(ds_azure_mysql_metrics, function(db) {
@@ -628,29 +622,28 @@ script "js_merged_metrics", type: "javascript" do
       region: db['region'],
       type: db['type'],
       tags: tags.join(', '),
+      skuName: db['skuName'],
       skuTier: db['skuTier'],
-      availabilityZone: db['availabilityZone'],
+      skuFamily: db['skuFamily'],
+      resourceType: db['skuCapacity'],
       fqdn: db['fqdn'],
       state: db['state'],
       version: db['version'],
       publicNetworkAccess: db['publicNetworkAccess'],
       replicationRole: db['replicationRole'],
-      replicaCapacity: db['replicaCapacity'],
       resourceGroup: db['resourceGroup'],
       subscriptionID: db['subscriptionID'],
       subscriptionName: db['subscriptionName'],
       lookbackPeriod: param_stats_lookback,
       threshold: param_stats_underutil_threshold_cpu_value,
-      policy_name: ds_applied_policy['name'],
-      resourceType: db['skuName'],
-      capacity: getCapacityFromSKU(db['skuName'])
+      policy_name: ds_applied_policy['name']
     }
 
     connection_metrics = null
     cpu_metrics = null
 
     _.each(db['value'], function(metric) {
-      if (metric['name']['value'] == 'total_connections') {
+      if (metric['name']['value'] == 'active_connections') {
         connection_metrics = metric['timeseries'][0]['data']
       }
 
@@ -673,7 +666,7 @@ script "js_merged_metrics", type: "javascript" do
         instance['newResourceType'] = 'Delete'
 
         instance["recommendationDetails"] = [
-          "Delete Azure MySQL Flexible Server ", instance["name"], " ",
+          "Delete Azure MySQL Single Server ", instance["name"], " ",
           "in Azure Subscription ", instance["subscriptionName"], " ",
           "(", instance["subscriptionID"], ")"
         ].join('')
@@ -732,16 +725,16 @@ script "js_merged_metrics", type: "javascript" do
           instance['recommendationType'] = 'Downsize'
 
           if (ds_azure_mysql_resize_map[instance['skuTier']] != undefined) {
-            if (ds_azure_mysql_resize_map[instance['skuTier']][instance['resourceType']] != undefined) {
-              if (typeof(ds_azure_mysql_resize_map[instance['skuTier']][instance['resourceType']]['down_sku']) == 'string') {
-                instance['newResourceType'] = ds_azure_mysql_resize_map[instance['skuTier']][instance['resourceType']]['down_sku']
-                instance['newCapacity'] = getCapacityFromSKU(instance['newResourceType'])
+            if (ds_azure_mysql_resize_map[instance['skuTier']][instance['skuName']] != undefined) {
+              if (typeof(ds_azure_mysql_resize_map[instance['skuTier']][instance['skuName']]['down']) == 'string') {
+                instance['newResourceType'] = ds_azure_mysql_resize_map[instance['skuTier']][instance['skuName']]['down']
 
                 instance["recommendationDetails"] = [
-                  "Downsize Azure MySQL Flexible Server ", instance["name"], " ",
+                  "Downsize Azure MySQL Single Server ", instance["name"], " ",
                   "in Azure Subscription ", instance["subscriptionName"], " ",
                   "(", instance["subscriptionID"], ") ",
-                  "from SKU ", instance["resourceType"], " to ", instance["newResourceType"]
+                  "from ", instance["resourceType"], " capacity ",
+                  "to ", instance["newResourceType"], " capacity"
                 ].join('')
               }
             }
@@ -914,7 +907,7 @@ script "js_downsize_mysql_incident", type: "javascript" do
 
     if (ds_mysql_costs_grouped[id] != null && ds_mysql_costs_grouped[id] != undefined) {
       cost = ds_mysql_costs_grouped[id]
-      savings = cost - (cost / db['capacity'] * db['newCapacity'])
+      savings = cost - (cost / db['resourceType'] * db['newResourceType'])
     }
 
     if (savings >= param_min_savings || param_min_savings == 0) {
@@ -925,11 +918,10 @@ script "js_downsize_mysql_incident", type: "javascript" do
         region: db['region'],
         resourceName: db['name'],
         type: db['type'],
+        skuName: db['skuName'],
         tier: db['skuTier'],
         resourceType: db['resourceType'],
         newResourceType: db['newResourceType'],
-        capacity: db['capacity'],
-        newCapacity: db['newCapacity'],
         tags: db['tags'],
         state: db['state'],
         fqdn: db['fqdn'],
@@ -952,7 +944,7 @@ script "js_downsize_mysql_incident", type: "javascript" do
         savings: Math.round(savings * 1000) / 1000,
         savingsCurrency: ds_currency['symbol'],
         service: "Microsoft.DBforMySQL",
-        platform: "Azure MySQL Flexible Server",
+        platform: "Azure MySQL Single Server",
         total_savings: "",
         message: ""
       })
@@ -973,7 +965,7 @@ script "js_downsize_mysql_incident", type: "javascript" do
   if (total_underutilized_dbs > 1) { db_verb = "are" }
 
   findings = [
-    "Out of ", total_dbs, " Azure MySQL Flexible ", db_message, " analyzed, ",
+    "Out of ", total_dbs, " Azure MySQL Single ", db_message, " analyzed, ",
     total_underutilized_dbs, " (", underutilized_dbs_percentage,
     ") ", db_verb, " underutilized and recommended for downsizing. "
   ].join('')
@@ -983,14 +975,14 @@ script "js_downsize_mysql_incident", type: "javascript" do
 
   if (param_unused_or_underutilized == 'Underutilized') {
     context_message = [
-      "An Azure MySQL Flexible Server is considered underutilized if it has a CPU usage " + param_stats_threshold.toLowerCase() + " below ",
+      "An Azure MySQL Single Server is considered underutilized if it has a CPU usage " + param_stats_threshold.toLowerCase() + " below ",
       param_stats_underutil_threshold_cpu_value, "% for the last ", param_stats_lookback, " ", day_message,
       ", regardless of whether it has had any connections to it in that same time period. ",
       "CPU metrics were gathered at a granularity of '", ds_stats_interval['pretty'], "'.\n\n"
     ].join('')
   } else {
     context_message = [
-      "An Azure MySQL Flexible Server is considered underutilized if it has had at least one connection to it ",
+      "An Azure MySQL Single Server is considered underutilized if it has had at least one connection to it ",
       "in the last ", param_stats_lookback, " ", day_message, " but has an average CPU usage below ",
       param_stats_underutil_threshold_cpu_value, "% for that same time period. ",
       "These metrics were gathered at a granularity of '", ds_stats_interval['pretty'], "'.\n\n"
@@ -1007,11 +999,10 @@ script "js_downsize_mysql_incident", type: "javascript" do
     region: "",
     resourceName: "",
     type: "",
+    skuName: "",
     tier: "",
     resourceType: "",
     newResourceType: "",
-    capacity: "",
-    newCapacity: "",
     tags: "",
     state: "",
     fqdn: "",
@@ -1095,11 +1086,10 @@ script "js_unused_mysql_incident", type: "javascript" do
         region: db['region'],
         resourceName: db['name'],
         type: db['type'],
+        skuName: db['skuName'],
         tier: db['skuTier'],
         resourceType: db['resourceType'],
         newResourceType: "Delete Instance",
-        capacity: db['capacity'],
-        newCapacity: db['newCapacity'],
         tags: db['tags'],
         state: db['state'],
         fqdn: db['fqdn'],
@@ -1115,7 +1105,7 @@ script "js_unused_mysql_incident", type: "javascript" do
         savings: parseFloat(savings.toFixed(3)),
         savingsCurrency: ds_currency['symbol'],
         service: "Microsoft.DBforMySQL",
-        platform: "Azure MySQL Flexible Server",
+        platform: "Azure MySQL Single Server",
         total_savings: "",
         message: ""
       })
@@ -1136,7 +1126,7 @@ script "js_unused_mysql_incident", type: "javascript" do
   if (total_unused_dbs > 1) { db_verb = "are" }
 
   findings = [
-    "Out of ", total_dbs, " Azure MySQL Flexible ", db_message, " analyzed, ",
+    "Out of ", total_dbs, " Azure MySQL Single ", db_message, " analyzed, ",
     total_unused_dbs, " (", unused_dbs_percentage,
     ") ", db_verb, " unused and recommended for deletion. "
   ].join('')
@@ -1145,7 +1135,7 @@ script "js_unused_mysql_incident", type: "javascript" do
   if (param_stats_lookback > 1) { day_message += "s" }
 
   context_message = [
-    "An Azure MySQL Flexible Server is considered unused if it has not had any connections ",
+    "An Azure MySQL Single Server is considered unused if it has not had any connections ",
     "for at least ", param_stats_lookback, " ", day_message, ". "
   ].join('')
 
@@ -1159,11 +1149,10 @@ script "js_unused_mysql_incident", type: "javascript" do
     region: "",
     resourceName: "",
     type: "",
+    skuName: "",
     tier: "",
     resourceType: "",
     newResourceType: "",
-    capacity: "",
-    newCapacity: "",
     tags: "",
     state: "",
     fqdn: "",
@@ -1196,7 +1185,7 @@ end
 
 policy "pol_azure_mysql_utilization" do
   validate_each $ds_downsize_mysql_incident do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Underutilized MySQL Flexible Servers Found"
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Underutilized MySQL Single Servers Found"
     detail_template <<-'EOS'
     **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
 
@@ -1231,20 +1220,17 @@ policy "pol_azure_mysql_utilization" do
       field "recommendationDetails" do
         label "Recommendation"
       end
-      field "tier" do
-        label "Tier"
-      end
       field "resourceType" do
-        label "Current SKU"
-      end
-      field "newResourceType" do
-        label "Recommended SKU"
-      end
-      field "capacity" do
         label "Current Capacity"
       end
-      field "newCapacity" do
+      field "newResourceType" do
         label "Recommended Capacity"
+      end
+      field "skuName" do
+        label "SKU - Name"
+      end
+      field "tier" do
+        label "SKU - Tier"
       end
       field "type" do
         label "Type"
@@ -1306,7 +1292,7 @@ policy "pol_azure_mysql_utilization" do
     end
   end
   validate_each $ds_unused_mysql_incident do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Unused MySQL Flexible Servers Found"
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Unused MySQL Single Servers Found"
     detail_template <<-'EOS'
     **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
 
@@ -1341,20 +1327,17 @@ policy "pol_azure_mysql_utilization" do
       field "recommendationDetails" do
         label "Recommendation"
       end
-      field "tier" do
-        label "Tier"
-      end
       field "resourceType" do
-        label "Current SKU"
-      end
-      field "newResourceType" do
-        label "Recommended SKU"
-      end
-      field "capacity" do
         label "Current Capacity"
       end
-      field "newCapacity" do
+      field "newResourceType" do
         label "Recommended Capacity"
+      end
+      field "skuName" do
+        label "SKU - Name"
+      end
+      field "tier" do
+        label "SKU - Tier"
       end
       field "type" do
         label "Type"
@@ -1439,7 +1422,7 @@ end
 define downsize_server($instance, $param_azure_endpoint) return $response do
   $host = $param_azure_endpoint
   $href = $instance["id"]
-  $params = "?api-version=2023-12-30"
+  $params = "?api-version=2020-01-01"
   $url = $host + $href + $params
   task_label("PATCH " + $url)
 
@@ -1449,26 +1432,27 @@ define downsize_server($instance, $param_azure_endpoint) return $response do
     verb: "patch",
     host: $host,
     href: $href,
-    query_strings: { "api-version": "2023-12-30" },
+    query_strings: { "api-version": "2020-01-01" },
     headers: {
       "cache-control": "no-cache",
       "content-type": "application/json"
     },
     body: {
       "sku": {
-        "name": $instance["newResourceType"],
-        "tier": $instance["skuTier"]
+        "name": $instance["skuName"],
+        "tier": $instance["tier"],
+        "capacity": $instance["newResourceType"]
       }
     }
   )
 
-  task_label("Patch Azure MySQL Flexible Server response: " + $instance["id"] + " " + to_json($response))
+  task_label("Patch Azure MySQL Single Server response: " + $instance["id"] + " " + to_json($response))
   $$all_responses << to_json({"req": "PATCH " + $url, "resp": $response})
 
   if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
-    raise "Unexpected response patching Azure MySQL Flexible Server: "+ $instance["id"] + " " + to_json($response)
+    raise "Unexpected response patching Azure MySQL Single Server: "+ $instance["id"] + " " + to_json($response)
   else
-    task_label("Patch Azure MySQL Flexible Server successful: " + $instance["id"])
+    task_label("Patch Azure MySQL Single Server successful: " + $instance["id"])
   end
 end
 
@@ -1489,7 +1473,7 @@ end
 define delete_server($instance, $param_azure_endpoint) return $response do
   $host = $param_azure_endpoint
   $href = $instance["id"]
-  $params = "?api-version=2023-12-30"
+  $params = "?api-version=2020-01-01"
   $url = $host + $href + $params
   task_label("DELETE " + $url)
 
@@ -1499,20 +1483,20 @@ define delete_server($instance, $param_azure_endpoint) return $response do
     verb: "delete",
     host: $host,
     href: $href,
-    query_strings: { "api-version": "2023-12-30" },
+    query_strings: { "api-version": "2020-01-01" },
     headers: {
       "cache-control": "no-cache",
       "content-type": "application/json"
     }
   )
 
-  task_label("Delete Azure MySQL Flexible Server response: " + $instance["id"] + " " + to_json($response))
+  task_label("Delete Azure MySQL Single Server response: " + $instance["id"] + " " + to_json($response))
   $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
 
   if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
-    raise "Unexpected response deleting Azure MySQL Flexible Server: "+ $instance["id"] + " " + to_json($response)
+    raise "Unexpected response deleting Azure MySQL Single Server: "+ $instance["id"] + " " + to_json($response)
   else
-    task_label("Delete Azure MySQL Flexible Server successful: " + $instance["id"])
+    task_label("Delete Azure MySQL Single Server successful: " + $instance["id"])
   end
 end
 

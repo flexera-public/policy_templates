@@ -74,6 +74,7 @@ default_child_policy_template_files = [
   "../../cost/azure/rightsize_managed_disks/azure_rightsize_managed_disks.pt",
   "../../cost/azure/rightsize_managed_sql/azure_rightsize_managed_sql.pt",
   "../../cost/azure/rightsize_mysql_flexible/azure_rightsize_mysql_flexible.pt",
+  "../../cost/azure/rightsize_mysql_single/azure_rightsize_mysql_single.pt",
   "../../cost/azure/rightsize_netapp_files/azure_rightsize_netapp_files.pt",
   "../../cost/azure/rightsize_sql_instances/azure_rightsize_sql_instances.pt",
   "../../cost/azure/rightsize_sql_storage/azure_rightsize_sql_storage.pt",
