@@ -594,7 +594,7 @@ end
 script "js_merged_metrics", type: "javascript" do
   parameters "ds_azure_mysql_metrics", "ds_azure_mysql_resize_map", "ds_applied_policy", "param_stats_underutil_threshold_cpu_value", "param_stats_lookback", "param_unused_or_underutilized", "param_stats_threshold"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   // Function to calculate percentiles from metrics
   function percentile(arr, p) {
     // array needs to be sorted to select based on percentile
@@ -619,9 +619,7 @@ script "js_merged_metrics", type: "javascript" do
     tags = []
 
     if (typeof(db['tags']) == 'object') {
-      _.each(Object.keys(db['tags']), function(key) {
-        tags.push([key, "=", db['tags'][key]].join(''))
-      })
+      tags = _.map(_.keys(db['tags']), function(key) { return key + "=" + db['tags'][key] })
     }
 
     instance = {
@@ -643,7 +641,7 @@ script "js_merged_metrics", type: "javascript" do
       subscriptionName: db['subscriptionName'],
       lookbackPeriod: param_stats_lookback,
       threshold: param_stats_underutil_threshold_cpu_value,
-      policy_name: ds_applied_policy['name'],
+      //policy_name: ds_applied_policy['name'],
       resourceType: db['skuName'],
       capacity: getCapacityFromSKU(db['skuName'])
     }
@@ -661,21 +659,16 @@ script "js_merged_metrics", type: "javascript" do
       }
     })
 
-    connections = _.filter(connection_metrics, function(metric) { return metric['count'] != 0 })
-    timeStamps = _.pluck(_.sortBy(connections, 'timeStamp').reverse(), 'timeStamp')
-
-    if (timeStamps.length > 0) {
-      instance['lastAccessed'] = new Date(timeStamps[0]).toISOString().split('T')[0]
-    }
-
     if (connection_metrics != null && param_unused_or_underutilized != "Underutilized") {
-      total_connections = 0
+      max_connections = 0
 
       _.each(connection_metrics, function(metric) {
-        if (typeof(metric['count']) == 'number') { total_connections += metric['count'] }
+        if (typeof(metric['maximum']) == 'number' && metric['maximum'] > max_connections) {
+          max_connections = metric['maximum']
+        }
       })
 
-      if (total_connections == 0) {
+      if (max_connections == 0) {
         instance['recommendationType'] = 'Delete'
         instance['newResourceType'] = 'Delete'
 
@@ -689,9 +682,9 @@ script "js_merged_metrics", type: "javascript" do
 
     if (cpu_metrics != null && instance['recommendationType'] != 'Delete' && param_unused_or_underutilized != "Unused") {
       if (cpu_metrics.length > 0) {
-        minimums = _.pluck(cpu_metrics, 'minimum')
-        maximums = _.pluck(cpu_metrics, 'maximum')
-        averages = _.pluck(cpu_metrics, 'average')
+        minimums = _.compact(_.pluck(cpu_metrics, 'minimum'))
+        maximums = _.compact(_.pluck(cpu_metrics, 'maximum'))
+        averages = _.compact(_.pluck(cpu_metrics, 'average'))
 
         cpu_minimum = null
         cpu_maximum = 0
@@ -1210,7 +1203,7 @@ policy "pol_azure_mysql_utilization" do
     {{ with index data 0 }}{{ .message }}{{ end }}
     EOS
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
-    check logic_or($ds_parent_policy_terminated, ne(val(item, "recommendationType"), "Downsize"))
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "id"), ""))
     escalate $esc_email
     escalate $esc_downsize_servers
     hash_exclude "savings", "savingsCurrency", "tags", "cpuAverage", "policy_name", "total_savings", "message"
@@ -1320,7 +1313,7 @@ policy "pol_azure_mysql_utilization" do
     {{ with index data 0 }}{{ .message }}{{ end }}
     EOS
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
-    check logic_or($ds_parent_policy_terminated, ne(val(item, "recommendationType"), "Delete"))
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "id"), ""))
     escalate $esc_email
     escalate $esc_delete_servers
     hash_exclude "savings", "savingsCurrency", "tags", "policy_name", "total_savings", "message"
