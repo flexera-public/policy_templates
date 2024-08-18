@@ -1,0 +1,1626 @@
+name "Azure Rightsize MySQL Flexible Servers"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks for Azure MySQL flexible servers that have inefficient utilization for a user-specified number of days and downsizes or deletes them after approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_mysql_flexible/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+category "Cost"
+severity "low"
+default_frequency "weekly"
+info(
+  version: "0.1.0",
+  provider: "Azure",
+  service: "MySQL",
+  policy_set: "Rightsize Database Instances",
+  recommendation_type: "Usage Reduction"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  category "Policy Settings"
+  label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation"
+  min_value 0
+  default 0
+end
+
+parameter "param_subscriptions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Subscriptions"
+  description "Allow or Deny entered Subscriptions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_subscriptions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Subscriptions List"
+  description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter servers containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
+parameter "param_unused_or_underutilized" do
+  type "string"
+  category "Filters"
+  label "Report Unused or Underutilized"
+  description "Whether to report on unused servers, underutilized servers, or both."
+  allowed_values "Unused & Underutilized", "Unused", "Underutilized"
+  default "Unused & Underutilized"
+end
+
+parameter "param_stats_underutil_threshold_cpu_value" do
+  type "number"
+  category "Statistics"
+  label "Underutilized Server CPU Threshold (%)"
+  description "The CPU threshold at which to consider an server to be 'underutilized' and therefore be flagged for downsizing."
+  min_value 0
+  max_value 100
+  default 60
+end
+
+parameter "param_stats_threshold" do
+  type "string"
+  category "Statistics"
+  label "Threshold Statistic"
+  description "Statistic to use when determining if a server is underutilized."
+  allowed_values "Average", "Maximum", "p99", "p95", "p90"
+  default "Average"
+end
+
+parameter "param_stats_interval" do
+  type "string"
+  category "Statistics"
+  label "Statistic Interval"
+  description "The interval to use when gathering Azure metrics data. Smaller intervals produce more accurate results at the expense of policy memory usage and completion time due to larger data sets."
+  allowed_values "1 Minute", "5 Minutes", "15 Minutes", "30 Minutes", "1 Hour", "6 Hours", "12 Hours", "1 Day"
+  default "15 Minutes"
+end
+
+parameter "param_stats_lookback" do
+  type "number"
+  category "Statistics"
+  label "Statistic Lookback Period"
+  description "How many days back to look at server metrics to determine if a server is underutilized or unused. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days."
+  min_value 1
+  max_value 90
+  default 30
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Downsize Underutilized Servers", "Delete Unused Servers"]
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_azure" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_azure" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
+end
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-EOS
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
+end
+
+datasource "ds_stats_interval" do
+  run_script $js_stats_interval, $param_stats_interval
+end
+
+script "js_stats_interval", type: "javascript" do
+  parameters "param_stats_interval"
+  result "result"
+  code <<-EOS
+  // Tables to convert human-readable parameter values to their API equivalents
+  interval_table = {
+    "1 Minute": "PT1M",
+    "5 Minutes": "PT5M",
+    "15 Minutes": "PT15M",
+    "30 Minutes": "PT30M",
+    "1 Hour": "PT1H",
+    "6 Hours": "PT6H",
+    "12 Hours": "PT12H",
+    "1 Day": "P1D"
+  }
+
+  result = {
+    pretty: param_stats_interval,
+    api: interval_table[param_stats_interval]
+  }
+EOS
+end
+
+datasource "ds_azure_subscriptions" do
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path "/subscriptions/"
+    query "api-version", "2020-01-01"
+    header "User-Agent", "RS Policies"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "subscriptionId")
+      field "name", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
+    end
+  end
+end
+
+datasource "ds_azure_subscriptions_filtered" do
+  run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
+end
+
+script "js_azure_subscriptions_filtered", type: "javascript" do
+  parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
+  result "result"
+  code <<-EOS
+  if (param_subscriptions_list.length > 0) {
+    result = _.filter(ds_azure_subscriptions, function(subscription) {
+      include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
+
+      if (param_subscriptions_allow_or_deny == "Deny") {
+        include_subscription = !include_subscription
+      }
+
+      return include_subscription
+    })
+  } else {
+    result = ds_azure_subscriptions
+  }
+EOS
+end
+
+datasource "ds_azure_mysql_flexible" do
+  iterate $ds_azure_subscriptions_filtered
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.DBforMySQL/flexibleServers"])
+    query "api-version", "2023-12-30"
+    header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400,403,404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "region", jmes_path(col_item, "location")
+      field "type", jmes_path(col_item, "type")
+      field "tags", jmes_path(col_item, "tags")
+      field "skuName", jmes_path(col_item, "sku.name")
+      field "skuTier", jmes_path(col_item, "sku.tier")
+      field "availabilityZone", jmes_path(col_item, "properties.availabilityZone")
+      field "fqdn", jmes_path(col_item, "properties.fullyQualifiedDomainName")
+      field "publicNetworkAccess", jmes_path(col_item, "properties.network.publicNetworkAccess")
+      field "state", jmes_path(col_item, "properties.state")
+      field "replicationRole", jmes_path(col_item, "properties.replicationRole")
+      field "replicaCapacity", jmes_path(col_item, "properties.replicaCapacity")
+      field "version", jmes_path(col_item, "properties.version")
+      field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
+      field "subscriptionID", val(iter_item, "id")
+      field "subscriptionName", val(iter_item, "name")
+    end
+  end
+end
+
+datasource "ds_azure_mysql_system_filtered" do
+  run_script $js_azure_mysql_system_filtered, $ds_azure_mysql_flexible
+end
+
+script "js_azure_mysql_system_filtered", type: "javascript" do
+  parameters "ds_azure_mysql_flexible"
+  result "result"
+  code <<-EOS
+  result = _.reject(ds_azure_mysql_flexible, function(db) {
+    return db['skuName'] == 'System' || db['skuName'] == '' || typeof(db['skuName']) != 'string'
+  })
+EOS
+end
+
+datasource "ds_azure_mysql_tag_filtered" do
+  run_script $js_azure_mysql_tag_filtered, $ds_azure_mysql_system_filtered, $param_exclusion_tags, $param_exclusion_tags_boolean
+end
+
+script "js_azure_mysql_tag_filtered", type: "javascript" do
+  parameters "ds_azure_mysql_system_filtered", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  result "result"
+  code <<-EOS
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  if (param_exclusion_tags.length > 0) {
+    result = _.reject(ds_azure_mysql_system_filtered, function(resource) {
+      resource_tags = {}
+      if (typeof(resource['tags']) == 'object') { resource_tags = resource['tags'] }
+
+      // Store a list of found tags
+      found_tags = []
+
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_tag = resource_tags[comparator['key']]
+
+        if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+        if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+        if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_tag == undefined) { found_tags.push(string) }
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+      })
+
+      all_tags_found = found_tags.length == comparators.length
+      any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+      return all_tags_found || any_tags_found
+    })
+  } else {
+    result = ds_azure_mysql_system_filtered
+  }
+EOS
+end
+
+datasource "ds_azure_mysql_region_filtered" do
+  run_script $js_azure_mysql_region_filtered, $ds_azure_mysql_tag_filtered, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_azure_mysql_region_filtered", type: "javascript" do
+  parameters "ds_azure_mysql_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_azure_mysql_tag_filtered, function(ip) {
+      include_db = _.contains(param_regions_list, db['region'])
+      if (param_regions_allow_or_deny == "Deny") { include_db = !include_db }
+      return include_db
+    })
+  } else {
+    result = ds_azure_mysql_tag_filtered
+  }
+EOS
+end
+
+datasource "ds_azure_mysql_metrics" do
+  iterate $ds_azure_mysql_region_filtered
+  request do
+    run_script $js_azure_mysql_metrics, val(iter_item, "id"), $ds_stats_interval, $param_azure_endpoint, $param_stats_lookback
+  end
+  result do
+    encoding "json"
+    field "value", jmes_path(response, "value")
+    field "id", val(iter_item, "id")
+    field "name", val(iter_item, "name")
+    field "region", val(iter_item, "region")
+    field "type", val(iter_item, "type")
+    field "tags", val(iter_item, "tags")
+    field "skuName", val(iter_item, "skuName")
+    field "skuTier", val(iter_item, "skuTier")
+    field "availabilityZone", val(iter_item, "availabilityZone")
+    field "fqdn", val(iter_item, "fqdn")
+    field "state", val(iter_item, "state")
+    field "version", val(iter_item, "version")
+    field "publicNetworkAccess", val(iter_item, "publicNetworkAccess")
+    field "replicationRole", val(iter_item, "replicationRole")
+    field "replicaCapacity", val(iter_item, "replicaCapacity")
+    field "resourceGroup", val(iter_item, "resourceGroup")
+    field "subscriptionID", val(iter_item, "subscriptionID")
+    field "subscriptionName", val(iter_item, "subscriptionName")
+  end
+end
+
+# https://learn.microsoft.com/en-us/azure/azure-monitor/reference/supported-metrics/microsoft-sql-servers-databases-metrics
+script "js_azure_mysql_metrics", type: "javascript" do
+  parameters "resource_id", "ds_stats_interval", "param_azure_endpoint", "param_stats_lookback"
+  result "request"
+  code <<-EOS
+  end_date = new Date()
+  end_date.setMilliseconds(999)
+  end_date.setSeconds(59)
+  end_date.setMinutes(59)
+  end_date.setHours(23)
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - param_stats_lookback)
+  start_date.setMilliseconds(0)
+  start_date.setSeconds(0)
+  start_date.setMinutes(0)
+
+  timespan = start_date.toISOString() + "/" + end_date.toISOString()
+
+  var request = {
+    auth: "auth_azure",
+    pagination: "pagination_azure",
+    host: param_azure_endpoint,
+    verb: "GET",
+    path: resource_id + "/providers/microsoft.insights/metrics",
+    query_params: {
+      "api-version": "2018-01-01",
+      "timespan": timespan,
+      "metricnames": "cpu_percent,connection_successful",
+      "aggregation": "Average,Minimum,Maximum,count",
+      "interval": ds_stats_interval["api"]
+    },
+    headers: {
+      "User-Agent": "RS Policies"
+    },
+    // Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status: [400, 403, 404]
+  }
+EOS
+end
+
+datasource "ds_azure_mysql_resize_map" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/azure/mysql_flexible_tier_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_merged_metrics" do
+  run_script $js_merged_metrics, $ds_azure_mysql_metrics, $ds_azure_mysql_resize_map, $ds_applied_policy, $param_stats_underutil_threshold_cpu_value, $param_stats_lookback, $param_unused_or_underutilized, $param_stats_threshold
+end
+
+script "js_merged_metrics", type: "javascript" do
+  parameters "ds_azure_mysql_metrics", "ds_azure_mysql_resize_map", "ds_applied_policy", "param_stats_underutil_threshold_cpu_value", "param_stats_lookback", "param_unused_or_underutilized", "param_stats_threshold"
+  result "result"
+  code <<-EOS
+  // Function to calculate percentiles from metrics
+  function percentile(arr, p) {
+    // array needs to be sorted to select based on percentile
+    arr.sort(function(a, b) { return a - b })
+
+    // Get the index using desired percentile and array length
+    index = (p / 100) * arr.length
+
+    // Round index value to nearest integer and return the value of that element in sorted array arr
+    return arr[Math.ceil(index) - 1]
+  }
+
+  // Function to extract capacity from MySQL SKUs
+  function getCapacityFromSKU(sku_name) {
+    if (sku_name.split('_')[1] == undefined || sku_name.split('_')[1].match(/\d+/) == null) { return null }
+    return Number(sku_name.split('_')[1].match(/\d+/)[0])
+  }
+
+  result = []
+
+  _.each(ds_azure_mysql_metrics, function(db) {
+    tags = []
+
+    if (typeof(db['tags']) == 'object') {
+      _.each(Object.keys(db['tags']), function(key) {
+        tags.push([key, "=", db['tags'][key]].join(''))
+      })
+    }
+
+    instance = {
+      id: db['id'],
+      name: db['name'],
+      region: db['region'],
+      type: db['type'],
+      tags: tags.join(', '),
+      skuTier: db['skuTier'],
+      availabilityZone: db['availabilityZone'],
+      fqdn: db['fqdn'],
+      state: db['state'],
+      version: db['version'],
+      publicNetworkAccess: db['publicNetworkAccess'],
+      replicationRole: db['replicationRole'],
+      replicaCapacity: db['replicaCapacity'],
+      resourceGroup: db['resourceGroup'],
+      subscriptionID: db['subscriptionID'],
+      subscriptionName: db['subscriptionName'],
+      lookbackPeriod: param_stats_lookback,
+      threshold: param_stats_underutil_threshold_cpu_value,
+      policy_name: ds_applied_policy['name'],
+      resourceType: db['skuName'],
+      capacity: getCapacityFromSKU(db['skuName'])
+    }
+
+    connection_metrics = null
+    cpu_metrics = null
+
+    _.each(db['value'], function(metric) {
+      if (metric['name']['value'] == 'connection_successful') {
+        connection_metrics = metric['timeseries'][0]['data']
+      }
+
+      if (metric['name']['value'] == 'cpu_percent') {
+        cpu_metrics = metric['timeseries'][0]['data']
+      }
+    })
+
+    connections = _.filter(connection_metrics, function(metric) { return metric['count'] != 0 })
+    timeStamps = _.pluck(_.sortBy(connections, 'timeStamp').reverse(), 'timeStamp')
+
+    if (timeStamps.length > 0) {
+      instance['lastAccessed'] = new Date(timeStamps[0]).toISOString().split('T')[0]
+    }
+
+    if (connection_metrics != null && param_unused_or_underutilized != "Underutilized") {
+      total_connections = 0
+
+      _.each(connection_metrics, function(metric) {
+        if (typeof(metric['count']) == 'number') { total_connections += metric['count'] }
+      })
+
+      if (total_connections == 0) {
+        instance['recommendationType'] = 'Delete'
+        instance['newResourceType'] = 'Delete'
+
+        instance["recommendationDetails"] = [
+          "Delete Azure MySQL Flexible Server ", instance["name"], " ",
+          "in Azure Subscription ", instance["subscriptionName"], " ",
+          "(", instance["subscriptionID"], ")"
+        ].join('')
+      }
+    }
+
+    if (cpu_metrics != null && instance['recommendationType'] != 'Delete' && param_unused_or_underutilized != "Unused") {
+      if (cpu_metrics.length > 0) {
+        minimums = _.pluck(cpu_metrics, 'minimum')
+        maximums = _.pluck(cpu_metrics, 'maximum')
+        averages = _.pluck(cpu_metrics, 'average')
+
+        cpu_minimum = null
+        cpu_maximum = 0
+        cpu_average = 0
+        cpu_p90 = 0
+        cpu_p95 = 0
+        cpu_p99 = 0
+
+        _.each(minimums, function(item) {
+          if (cpu_minimum == null || item < cpu_minimum) { cpu_minimum = item }
+        })
+
+        _.each(maximums, function(item) {
+          if (item > cpu_maximum) { cpu_maximum = item }
+        })
+
+        if (cpu_minimum == null) { cpu_minimum = 0 }
+
+        if (averages.length > 0) {
+          cpu_average = _.reduce(averages, function(memo, num) { return memo + num }, 0) / averages.length
+        }
+
+        if (minimums.length + maximums.length + averages.length > 0) {
+          // combine all points from minimums, maximums, averages
+          // use percentile() function to get the percentile values from all measured utilization points
+          cpu_p90 = percentile(minimums.concat(maximums, averages), 90)
+          cpu_p95 = percentile(minimums.concat(maximums, averages), 95)
+          cpu_p99 = percentile(minimums.concat(maximums, averages), 99)
+        }
+
+        if (param_stats_threshold == "Average") { cpu_test_value = cpu_average }
+        if (param_stats_threshold == "Maximum") { cpu_test_value = cpu_maximum }
+        if (param_stats_threshold == "p90") { cpu_test_value = cpu_p90 }
+        if (param_stats_threshold == "p95") { cpu_test_value = cpu_p95 }
+        if (param_stats_threshold == "p99") { cpu_test_value = cpu_p99 }
+
+        if (cpu_test_value <= param_stats_underutil_threshold_cpu_value) {
+          instance['cpu_minimum'] = cpu_minimum
+          instance['cpu_maximum'] = cpu_maximum
+          instance['cpu_average'] = cpu_average
+          instance['cpu_p90'] = cpu_p90
+          instance['cpu_p95'] = cpu_p95
+          instance['cpu_p99'] = cpu_p99
+          instance['thresholdType'] = param_stats_threshold
+          instance['recommendationType'] = 'Downsize'
+
+          if (ds_azure_mysql_resize_map[instance['skuTier']] != undefined) {
+            if (ds_azure_mysql_resize_map[instance['skuTier']][instance['resourceType']] != undefined) {
+              if (typeof(ds_azure_mysql_resize_map[instance['skuTier']][instance['resourceType']]['down_sku']) == 'string') {
+                instance['newResourceType'] = ds_azure_mysql_resize_map[instance['skuTier']][instance['resourceType']]['down_sku']
+                instance['newCapacity'] = getCapacityFromSKU(instance['newResourceType'])
+
+                instance["recommendationDetails"] = [
+                  "Downsize Azure MySQL Flexible Server ", instance["name"], " ",
+                  "in Azure Subscription ", instance["subscriptionName"], " ",
+                  "(", instance["subscriptionID"], ") ",
+                  "from SKU ", instance["resourceType"], " to ", instance["newResourceType"]
+                ].join('')
+              }
+            }
+          }
+        }
+      }
+    }
+
+    if (instance["recommendationDetails"] != undefined) { result.push(instance) }
+  })
+EOS
+end
+
+datasource "ds_cost_subscriptions" do
+  run_script $js_cost_subscriptions, $ds_merged_metrics
+end
+
+script "js_cost_subscriptions", type: "javascript" do
+  parameters "ds_merged_metrics"
+  result "result"
+  code <<-EOS
+  result = _.compact(_.uniq(_.pluck(ds_merged_metrics, 'subscriptionID')))
+EOS
+end
+
+datasource "ds_mysql_costs" do
+  iterate $ds_cost_subscriptions
+  request do
+    run_script $js_mysql_costs, iter_item, $ds_top_level_bcs, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "resourceId", jmes_path(col_item, "dimensions.resource_id")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+    end
+  end
+end
+
+script "js_mysql_costs", type:"javascript" do
+  parameters "subscriptionID", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split('T')[0]
+
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
+    body_fields: {
+      "dimensions": ["resource_id"],
+      "granularity": "day",
+      "start_at": start_date,
+      "end_at": end_date,
+      "metrics": ["cost_amortized_unblended_adj"],
+      "billing_center_ids": ds_top_level_bcs,
+      "limit": 100000,
+      "filter": {
+        "type": "and",
+        "expressions": [
+          {
+            "type": "or",
+            "expressions": [
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "Microsoft.DBforMySQL"
+              },
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "microsoft.dbformysql"
+              }
+            ]
+          },
+          {
+            "dimension": "vendor_account",
+            "type": "equal",
+            "value": subscriptionID
+          },
+          {
+            "type": "not",
+            "expression": {
+              "dimension": "adjustment_name",
+              "type": "substring",
+              "substring": "Shared"
+            }
+          }
+        ]
+      }
+    },
+    headers: {
+      "User-Agent": "RS Policies",
+      "Api-Version": "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
+datasource "ds_mysql_costs_grouped" do
+  run_script $js_mysql_costs_grouped, $ds_mysql_costs
+end
+
+script "js_mysql_costs_grouped", type: "javascript" do
+  parameters "ds_mysql_costs"
+  result "result"
+  code <<-EOS
+  // Multiple a single day's cost by the average number of days in a month.
+  // The 0.25 is to account for leap years for extra precision.
+  cost_multiplier = 365.25 / 12
+
+  // Group cost data by resourceId for later use
+  result = {}
+
+  _.each(ds_mysql_costs, function(item) {
+    id = item['resourceId'].toLowerCase()
+
+    if (result[id] == undefined) { result[id] = 0.0 }
+    result[id] += item['cost'] * cost_multiplier
+  })
+EOS
+end
+
+datasource "ds_downsize_mysql_incident" do
+  run_script $js_downsize_mysql_incident, $ds_merged_metrics, $ds_azure_mysql_region_filtered, $ds_mysql_costs_grouped, $ds_currency, $ds_stats_interval, $param_min_savings, $param_stats_lookback, $param_stats_underutil_threshold_cpu_value, $param_unused_or_underutilized, $param_stats_threshold
+end
+
+script "js_downsize_mysql_incident", type: "javascript" do
+  parameters "ds_merged_metrics", "ds_azure_mysql_region_filtered", "ds_mysql_costs_grouped", "ds_currency", "ds_stats_interval", "param_min_savings", "param_stats_lookback", "param_stats_underutil_threshold_cpu_value", "param_unused_or_underutilized", "param_stats_threshold"
+  result "result"
+  code <<-'EOS'
+  // Function for formatting currency numbers later
+  function formatNumber(number, separator) {
+    var numString = number.toString()
+    var values = numString.split(".")
+    var formatted_number = ''
+
+    while (values[0].length > 3) {
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      formatted_number = separator + chunk + formatted_number
+    }
+
+    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
+
+    if (values[1] == undefined) { return formatted_number }
+
+    return formatted_number + "." + values[1]
+  }
+
+  result = []
+
+  downsize_instances = _.filter(ds_merged_metrics, function(item) {
+    return item['recommendationType'] == 'Downsize'
+  })
+
+  total_savings = 0.0
+
+  _.each(downsize_instances, function(db) {
+    id = db['id'].toLowerCase()
+    savings = 0.0
+
+    if (ds_mysql_costs_grouped[id] != null && ds_mysql_costs_grouped[id] != undefined) {
+      cost = ds_mysql_costs_grouped[id]
+      savings = cost - (cost / db['capacity'] * db['newCapacity'])
+    }
+
+    if (savings >= param_min_savings || param_min_savings == 0) {
+      total_savings += savings
+
+      result.push({
+        id: db['id'],
+        region: db['region'],
+        resourceName: db['name'],
+        type: db['type'],
+        tier: db['skuTier'],
+        resourceType: db['resourceType'],
+        newResourceType: db['newResourceType'],
+        capacity: db['capacity'],
+        newCapacity: db['newCapacity'],
+        tags: db['tags'],
+        state: db['state'],
+        fqdn: db['fqdn'],
+        version: db['version'],
+        resourceGroup: db['resourceGroup'],
+        accountID: db['subscriptionID'],
+        accountName: db['subscriptionName'],
+        recommendationType: db['recommendationType'],
+        recommendationDetails: db['recommendationDetails'],
+        cpuAverage: Math.round(db['cpu_average'] * 100) / 100,
+        cpuMinimum: Math.round(db['cpu_minimum'] * 100) / 100,
+        cpuMaximum: Math.round(db['cpu_maximum'] * 100) / 100,
+        cpuP90: Math.round(db['cpu_p90'] * 100) / 100,
+        cpuP95: Math.round(db['cpu_p95'] * 100) / 100,
+        cpuP99: Math.round(db['cpu_p99'] * 100) / 100,
+        thresholdType: db['thresholdType'],
+        lookbackPeriod: db['lookbackPeriod'],
+        threshold: db['threshold'],
+        policy_name: db['policy_name'],
+        savings: Math.round(savings * 1000) / 1000,
+        savingsCurrency: ds_currency['symbol'],
+        service: "Microsoft.DBforMySQL",
+        platform: "Azure MySQL Flexible Server",
+        total_savings: "",
+        message: ""
+      })
+    }
+  })
+
+  result = _.sortBy(result, function(item) { return item['savings'] * -1 })
+
+  // Message for incident output
+  total_dbs = ds_azure_mysql_region_filtered.length.toString()
+  total_underutilized_dbs = result.length.toString()
+  underutilized_dbs_percentage = (total_underutilized_dbs / total_dbs * 100).toFixed(2).toString() + '%'
+
+  db_message = "Server"
+  db_verb = "is"
+
+  if (total_dbs > 1) { db_message += "s" }
+  if (total_underutilized_dbs > 1) { db_verb = "are" }
+
+  findings = [
+    "Out of ", total_dbs, " Azure MySQL Flexible ", db_message, " analyzed, ",
+    total_underutilized_dbs, " (", underutilized_dbs_percentage,
+    ") ", db_verb, " underutilized and recommended for downsizing. "
+  ].join('')
+
+  day_message = "day"
+  if (param_stats_lookback > 1) { day_message += "s" }
+
+  if (param_unused_or_underutilized == 'Underutilized') {
+    context_message = [
+      "An Azure MySQL Flexible Server is considered underutilized if it has a CPU usage " + param_stats_threshold.toLowerCase() + " below ",
+      param_stats_underutil_threshold_cpu_value, "% for the last ", param_stats_lookback, " ", day_message,
+      ", regardless of whether it has had any connections to it in that same time period. ",
+      "CPU metrics were gathered at a granularity of '", ds_stats_interval['pretty'], "'.\n\n"
+    ].join('')
+  } else {
+    context_message = [
+      "An Azure MySQL Flexible Server is considered underutilized if it has had at least one connection to it ",
+      "in the last ", param_stats_lookback, " ", day_message, " but has an average CPU usage below ",
+      param_stats_underutil_threshold_cpu_value, "% for that same time period. ",
+      "These metrics were gathered at a granularity of '", ds_stats_interval['pretty'], "'.\n\n"
+    ].join('')
+  }
+
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
+
+  savings_message = ds_currency['symbol'] + ' ' + formatNumber(Math.round(total_savings * 1000) / 1000, ds_currency['separator'])
+
+  // Dummy entry to ensure validation runs at least once
+  result.push({
+    id: "",
+    region: "",
+    resourceName: "",
+    type: "",
+    tier: "",
+    resourceType: "",
+    newResourceType: "",
+    capacity: "",
+    newCapacity: "",
+    tags: "",
+    state: "",
+    fqdn: "",
+    version: "",
+    resourceGroup: "",
+    accountID: "",
+    accountName: "",
+    recommendationType: "",
+    recommendationDetails: "",
+    cpuAverage: "",
+    cpuMinimum: "",
+    cpuMaximum: "",
+    cpuP90: "",
+    cpuP95: "",
+    cpuP99: "",
+    thresholdType: "",
+    lookbackPeriod: "",
+    threshold: "",
+    policy_name: "",
+    savings: "",
+    savingsCurrency: "",
+    service: "",
+    platform: "",
+    total_savings: "",
+    message: ""
+  })
+
+  result[0]['total_savings'] = savings_message
+  result[0]['message'] = findings + context_message + disclaimer
+EOS
+end
+
+datasource "ds_unused_mysql_incident" do
+  run_script $js_unused_mysql_incident, $ds_merged_metrics, $ds_azure_mysql_region_filtered, $ds_mysql_costs_grouped, $ds_currency, $param_min_savings, $param_stats_lookback
+end
+
+script "js_unused_mysql_incident", type: "javascript" do
+  parameters "ds_merged_metrics", "ds_azure_mysql_region_filtered", "ds_mysql_costs_grouped", "ds_currency", "param_min_savings", "param_stats_lookback"
+  result "result"
+  code <<-'EOS'
+  // Function for formatting currency numbers later
+  function formatNumber(number, separator) {
+    var numString = number.toString()
+    var values = numString.split(".")
+    var formatted_number = ''
+
+    while (values[0].length > 3) {
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      formatted_number = separator + chunk + formatted_number
+    }
+
+    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
+
+    if (values[1] == undefined) { return formatted_number }
+
+    return formatted_number + "." + values[1]
+  }
+
+  result = []
+
+  unused_instances = _.filter(ds_merged_metrics, function(item) {
+    return item['recommendationType'] == 'Delete'
+  })
+
+  total_savings = 0.0
+
+  _.each(unused_instances, function(db) {
+    id = db['id'].toLowerCase()
+    savings = 0.0
+
+    if (ds_mysql_costs_grouped[id] != null && ds_mysql_costs_grouped[id] != undefined) {
+      savings = ds_mysql_costs_grouped[id]
+    }
+
+    if (savings >= param_min_savings || param_min_savings == 0) {
+      total_savings += savings
+
+      result.push({
+        id: db['id'],
+        region: db['region'],
+        resourceName: db['name'],
+        type: db['type'],
+        tier: db['skuTier'],
+        resourceType: db['resourceType'],
+        newResourceType: "Delete Instance",
+        capacity: db['capacity'],
+        newCapacity: db['newCapacity'],
+        tags: db['tags'],
+        state: db['state'],
+        fqdn: db['fqdn'],
+        version: db['version'],
+        resourceGroup: db['resourceGroup'],
+        accountID: db['subscriptionID'],
+        accountName: db['subscriptionName'],
+        recommendationType: db['recommendationType'],
+        recommendationDetails: db['recommendationDetails'],
+        lookbackPeriod: db['lookbackPeriod'],
+        threshold: db['threshold'],
+        policy_name: db['policy_name'],
+        savings: parseFloat(savings.toFixed(3)),
+        savingsCurrency: ds_currency['symbol'],
+        service: "Microsoft.DBforMySQL",
+        platform: "Azure MySQL Flexible Server",
+        total_savings: "",
+        message: ""
+      })
+    }
+  })
+
+  result = _.sortBy(result, function(item) { return item['savings'] * -1 })
+
+  // Message for incident output
+  total_dbs = ds_azure_mysql_region_filtered.length.toString()
+  total_unused_dbs = result.length.toString()
+  unused_dbs_percentage = (total_unused_dbs / total_dbs * 100).toFixed(2).toString() + '%'
+
+  db_message = "Server"
+  db_verb = "is"
+
+  if (total_dbs > 1) { db_message += "s" }
+  if (total_unused_dbs > 1) { db_verb = "are" }
+
+  findings = [
+    "Out of ", total_dbs, " Azure MySQL Flexible ", db_message, " analyzed, ",
+    total_unused_dbs, " (", unused_dbs_percentage,
+    ") ", db_verb, " unused and recommended for deletion. "
+  ].join('')
+
+  day_message = "day"
+  if (param_stats_lookback > 1) { day_message += "s" }
+
+  context_message = [
+    "An Azure MySQL Flexible Server is considered unused if it has not had any connections ",
+    "for at least ", param_stats_lookback, " ", day_message, ". "
+  ].join('')
+
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
+
+  savings_message = ds_currency['symbol'] + ' ' + formatNumber(Math.round(total_savings * 1000) / 1000, ds_currency['separator'])
+
+  // Dummy entry to ensure validation runs at least once
+  result.push({
+    id: "",
+    region: "",
+    resourceName: "",
+    type: "",
+    tier: "",
+    resourceType: "",
+    newResourceType: "",
+    capacity: "",
+    newCapacity: "",
+    tags: "",
+    state: "",
+    fqdn: "",
+    version: "",
+    resourceGroup: "",
+    accountID: "",
+    accountName: "",
+    recommendationType: "",
+    recommendationDetails: "",
+    thresholdType: "",
+    lookbackPeriod: "",
+    threshold: "",
+    policy_name: "",
+    savings: "",
+    savingsCurrency: "",
+    service: "",
+    platform: "",
+    total_savings: "",
+    message: ""
+  })
+
+  result[0]['total_savings'] = savings_message
+  result[0]['message'] = findings + context_message + disclaimer
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_azure_mysql_utilization" do
+  validate_each $ds_downsize_mysql_incident do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Underutilized MySQL Flexible Servers Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
+    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
+    check logic_or($ds_parent_policy_terminated, ne(val(item, "recommendationType"), "Downsize"))
+    escalate $esc_email
+    escalate $esc_downsize_servers
+    hash_exclude "savings", "savingsCurrency", "tags", "cpuAverage", "policy_name", "total_savings", "message"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Subscription ID"
+      end
+      field "accountName" do
+        label "Subscription Name"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+        path "id"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "skuTier" do
+        label "Tier"
+      end
+      field "resourceType" do
+        label "Current SKU"
+      end
+      field "newResourceType" do
+        label "Recommended SKU"
+      end
+      field "capacity" do
+        label "Current Capacity"
+      end
+      field "newCapacity" do
+        label "Recommended Capacity"
+      end
+      field "type" do
+        label "Type"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "state" do
+        label "Status"
+      end
+      field "fqdn" do
+        label "FQDN"
+      end
+      field "version" do
+        label "Version"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "cpuMaximum" do
+        label "CPU Maximum %"
+      end
+      field "cpuMinimum" do
+        label "CPU Minimum %"
+      end
+      field "cpuAverage" do
+        label "CPU Average %"
+      end
+      field "cpuP90" do
+        label "CPU p90"
+      end
+      field "cpuP95" do
+        label "CPU p95"
+      end
+      field "cpuP99" do
+        label "CPU p99"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "platform" do
+        label "Platform"
+      end
+      field "id" do
+        label "Resource ID"
+      end
+      field "thresholdType" do
+        label "Threshold Statistic"
+      end
+      field "threshold" do
+        label "CPU Threshold"
+      end
+      field "lookbackPeriod" do
+        label "Lookback Period"
+      end
+    end
+  end
+  validate_each $ds_unused_mysql_incident do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Unused MySQL Flexible Servers Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
+    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
+    check logic_or($ds_parent_policy_terminated, ne(val(item, "recommendationType"), "Delete"))
+    escalate $esc_email
+    escalate $esc_delete_servers
+    hash_exclude "savings", "savingsCurrency", "tags", "policy_name", "total_savings", "message"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Subscription ID"
+      end
+      field "accountName" do
+        label "Subscription Name"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+        path "id"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "skuTier" do
+        label "Tier"
+      end
+      field "resourceType" do
+        label "Current SKU"
+      end
+      field "newResourceType" do
+        label "Recommended SKU"
+      end
+      field "capacity" do
+        label "Current Capacity"
+      end
+      field "newCapacity" do
+        label "Recommended Capacity"
+      end
+      field "type" do
+        label "Type"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "state" do
+        label "Status"
+      end
+      field "fqdn" do
+        label "FQDN"
+      end
+      field "version" do
+        label "Version"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "platform" do
+        label "Platform"
+      end
+      field "id" do
+        label "Resource ID"
+      end
+      field "lookbackPeriod" do
+        label "Lookback Period"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_downsize_servers" do
+  automatic contains($param_automatic_action, "Downsize Underutilized Servers")
+  label "Downsize Underutilized Servers"
+  description "Approval to downsize all selected underutilized instances"
+  run "downsize_servers", data, $param_azure_endpoint
+end
+
+escalation "esc_delete_servers" do
+  automatic contains($param_automatic_action, "Delete Unused Servers")
+  label "Delete Unused Servers"
+  description "Approval to delete all selected unused instances"
+  run "delete_servers", data, $param_azure_endpoint
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define downsize_servers($data, $param_azure_endpoint) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    if $instance["newResourceType"] != "Delete Instance"
+      sub on_error: handle_error() do
+        call downsize_server($instance, $param_azure_endpoint) retrieve $downsize_response
+      end
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define downsize_server($instance, $param_azure_endpoint) return $response do
+  $host = $param_azure_endpoint
+  $href = $instance["id"]
+  $params = "?api-version=2023-12-30"
+  $url = $host + $href + $params
+  task_label("PATCH " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "patch",
+    host: $host,
+    href: $href,
+    query_strings: { "api-version": "2023-12-30" },
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json"
+    },
+    body: {
+      "sku": {
+        "name": $instance["newResourceType"],
+        "tier": $instance["skuTier"]
+      }
+    }
+  )
+
+  task_label("Patch Azure MySQL Flexible Server response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "PATCH " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response patching Azure MySQL Flexible Server: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Patch Azure MySQL Flexible Server successful: " + $instance["id"])
+  end
+end
+
+define delete_servers($data, $param_azure_endpoint) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call delete_server($instance, $param_azure_endpoint) retrieve $delete_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define delete_server($instance, $param_azure_endpoint) return $response do
+  $host = $param_azure_endpoint
+  $href = $instance["id"]
+  $params = "?api-version=2023-12-30"
+  $url = $host + $href + $params
+  task_label("DELETE " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "delete",
+    host: $host,
+    href: $href,
+    query_strings: { "api-version": "2023-12-30" },
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json"
+    }
+  )
+
+  task_label("Delete Azure MySQL Flexible Server response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response deleting Azure MySQL Flexible Server: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Delete Azure MySQL Flexible Server successful: " + $instance["id"])
+  end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
+end
