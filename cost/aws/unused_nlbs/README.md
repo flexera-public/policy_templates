@@ -1,17 +1,18 @@
-# AWS Unused Classic Load Balancers
+# AWS Unused Network Load Balancers
 
 ## What It Does
 
-This policy template checks all Classic Load Balancers to determine if any are unused (have no healthy instances) and allows them to be deleted by the user after approval.
+This policy template checks all Network Load Balancers to determine if any are unused (have no listeners or have no healthy target groups) and allows them to be deleted by the user after approval.
 
-Note: Elastic Load Balancing (ELB) supports three types of load balancers: Classic Load Balancers, Network Load Balancers and Application Load Balancers. This policy template only reports on Classic Load Balancers; please use the [AWS Unused Application Load Balancers](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/unused_albs) and [AWS Unused Network Load Balancers](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/unused_nlbs) policy templates to report on those.
+Note: Elastic Load Balancing (ELB) supports three types of load balancers: Classic Load Balancers, Network Load Balancers and Application Load Balancers. This policy template only reports on Network Load Balancers; please use the [AWS Unused Application Load Balancers](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/unused_albs) and [AWS Unused Classic Load Balancers](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/unused_clbs) policy templates to report on those.
 
 ## How It Works
 
-- The policy leverages the AWS Elastic Load Balancing API to gather a list of Classic Load Balancers in the AWS account.
-- Each found Classic Load Balancer is assessed by reviewing the state of its attached instances.
-- A Classic Load Balancer is considered unused if it has no attached instances or if none of the attached instances are in an `InService` state.
-- The recommendation provided for unused Classic Load Balancers is deletion. These resources can be deleted in an automated manner or after approval.
+- The policy leverages the AWS Elastic Load Balancing API to gather a list of Network Load Balancers in the AWS account.
+- The same API is then used to gather information about the Network Load Balancer's listeners and target groups.
+- If the Network Load Balancer has no listeners, or has no target groups with a `healthy` status, it is considered unused.
+  - Note: Target Groups with no targets will not be considered `healthy` for the purposes of this assessment.
+- The recommendation provided for unused Network Load Balancers is deletion. These resources can be deleted in an automated manner or after approval.
 
 ### Policy Savings Details
 
@@ -31,7 +32,7 @@ This policy has the following input parameters required when launching the polic
 - *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
 - *Allow/Deny Regions List* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled. See [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
-- *Load Balancer Age (Hours)* - Age, in hours, that a Classic Load Balancer needs to be to include it in the results. This is to avoid reporting on very new Classic Load Balancers that are still being configured.
+- *Load Balancer Age (Hours)* - Age, in hours, that a Network Load Balancer needs to be to include it in the results. This is to avoid reporting on very new Network Load Balancers that are still being configured.
 - *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation.
 - *Exclusion Tags* - The policy will filter resources containing the specified tags from the results. The following formats are supported:
   - `Key` - Filter all resources with the specified tag key.
@@ -43,12 +44,12 @@ This policy has the following input parameters required when launching the polic
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
 Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave this parameter blank for *manual* action.
-For example if a user selects the "Delete Unused Classic Load Balancers" action while applying the policy, all the resources that didn't satisfy the policy condition will be terminated.
+For example if a user selects the "Delete Unused Network Load Balancers" action while applying the policy, all the resources that didn't satisfy the policy condition will be terminated.
 
 ## Policy Actions
 
 - Sends an email notification.
-- Deletes unused Classic Load Balancers after approval.
+- Deletes unused Network Load Balancers after approval.
 
 ## Prerequisites
 
@@ -58,8 +59,10 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   - `sts:GetCallerIdentity`
   - `ec2:DescribeRegions`
   - `elasticloadbalancing:DescribeLoadBalancers`
-  - `elasticloadbalancing:DescribeInstanceHealth`
+  - `elasticloadbalancing:DescribeListeners`
   - `elasticloadbalancing:DescribeTags`
+  - `elasticloadbalancing:DescribeTargetGroups`
+  - `elasticloadbalancing:DescribeTargetHealth`
   - `elasticloadbalancing:DeleteLoadBalancer`*
 
   \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
@@ -76,8 +79,10 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
                   "sts:GetCallerIdentity",
                   "ec2:DescribeRegions",
                   "elasticloadbalancing:DescribeLoadBalancers",
-                  "elasticloadbalancing:DescribeInstanceHealth",
+                  "elasticloadbalancing:DescribeListeners",
                   "elasticloadbalancing:DescribeTags",
+                  "elasticloadbalancing:DescribeTargetGroups",
+                  "elasticloadbalancing:DescribeTargetHealth",
                   "elasticloadbalancing:DeleteLoadBalancer"
               ],
               "Resource": "*"
