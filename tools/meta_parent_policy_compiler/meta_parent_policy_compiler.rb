@@ -15,6 +15,7 @@ default_child_policy_template_files = [
   "../../compliance/aws/rds_backup/aws_rds_backup.pt",
   "../../compliance/aws/untagged_resources/aws_untagged_resources.pt",
   "../../cost/aws/burstable_ec2_instances/aws_burstable_ec2_instances.pt",
+  "../../cost/aws/cloudtrail_read_logging/aws_cloudtrail_read_logging.pt",
   "../../cost/aws/ec2_compute_optimizer/aws_ec2_compute_optimizer.pt",
   "../../cost/aws/eks_without_spot/aws_eks_without_spot.pt",
   "../../cost/aws/gp3_volume_upgrade/aws_upgrade_to_gp3_volume.pt",
@@ -141,6 +142,7 @@ default_child_policy_template_files = [
   "../../cost/google/cud_recommendations/google_committed_use_discount_recommendations.pt",
   "../../cost/google/cud_report/google_committed_use_discount_report.pt",
   "../../cost/google/old_snapshots/google_delete_old_snapshots.pt",
+  "../../operational/google/label_cardinality/google_label_cardinality.pt",
   "../../security/google/public_buckets/google_public_buckets.pt"
 ]
 
