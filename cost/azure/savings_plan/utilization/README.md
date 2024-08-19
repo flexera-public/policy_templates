@@ -17,7 +17,7 @@ This policy has the following input parameters required when launching the polic
 
 The following policy actions are taken on any resources found to be out of compliance.
 
-- Send an email report
+- Sends an email report
 
 ## Prerequisites
 
