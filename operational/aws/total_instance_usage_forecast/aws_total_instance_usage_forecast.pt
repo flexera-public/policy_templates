@@ -1,0 +1,633 @@
+name "AWS Usage Forecast - Instance Time Used"
+rs_pt_ver 20180301
+type "policy"
+short_description "This policy uses a linear-regression model to produce a forecast of the amount of time used for AWS instances, categorized by Instance Family. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/total_instance_usage_forecast) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "low"
+category "Operational"
+default_frequency "monthly"
+info(
+  version: "1.0.1",
+  provider: "AWS",
+  service: "Compute",
+  policy_set: "Usage Report"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify."
+  default []
+end
+
+parameter "param_lookback_months" do
+  type "number"
+  category "Policy Settings"
+  label "Look Back Months (#)"
+  description "Number of months into the past to use for calculating forecast."
+  min_value 1
+  max_value 12
+  default 10
+end
+
+parameter "param_forecasted_months" do
+  type "number"
+  category "Policy Settings"
+  label "Forecast Months (#)"
+  description "Number of months in the future to forecast."
+  min_value 1
+  max_value 12
+  default 6
+end
+
+parameter "param_unit_instance" do
+  type "string"
+  category "Policy Settings"
+  label "Instance Unit"
+  description "Instance unit to normalize usage against. See README for more details."
+  allowed_values "Normalized Units (NFUs)", "vCPUs", "Memory (GiB)"
+  default "Normalized Units (NFUs)"
+end
+
+parameter "param_unit_time" do
+  type "string"
+  category "Policy Settings"
+  label "Time Unit"
+  description "Unit of time to use for results. See README for more details."
+  allowed_values "Hours", "Days", "Weeks", "Months", "Years"
+  default "Hours"
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. Example: 'US West (Oregon)'. Leave blank to check all regions."
+  default []
+end
+
+parameter "param_bc_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Billing Centers"
+  description "Allow or Deny entered Billing Centers."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_bc_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Billing Center List"
+  description "A list of allowed or denied Billing Center names/IDs. Leave blank to check all Billing Centers."
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+datasource "ds_billing_centers_filtered" do
+  run_script $js_billing_centers_filtered, $ds_billing_centers, $param_bc_allow_or_deny, $param_bc_list
+end
+
+script "js_billing_centers_filtered", type: "javascript" do
+  parameters "ds_billing_centers", "param_bc_allow_or_deny", "param_bc_list"
+  result "result"
+  code <<-EOS
+  allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_bc_list.length > 0) {
+    billing_centers = _.filter(ds_billing_centers, function(item) {
+      id_found = _.contains(param_bc_list, item['id']) == allow_deny_test[param_bc_allow_or_deny]
+      name_found = _.contains(param_bc_list, item['name']) == allow_deny_test[param_bc_allow_or_deny]
+      return id_found || name_found
+    })
+
+    // Check for conflicting parents/children and remove children if present
+    bc_ids = _.compact(_.pluck(billing_centers, 'id'))
+    bad_children = _.filter(ds_billing_centers, function(bc) { return _.contains(bc_ids, bc['parent_id']) })
+    bad_children_ids = _.pluck(bad_children, 'id')
+
+    // Create final result with the bad children removed
+    final_list = _.reject(billing_centers, function(bc) { return _.contains(bad_children_ids, bc['id']) })
+  } else {
+    // If we're not filtering at all, just grab all of the top level billing centers
+    final_list = _.filter(ds_billing_centers, function(bc) {
+      return bc['parent_id'] == null || bc['parent_id'] == undefined
+    })
+  }
+
+  result = _.compact(_.pluck(final_list, 'id'))
+EOS
+end
+
+datasource "ds_past_months" do
+  run_script $js_past_months, $param_lookback_months
+end
+
+script "js_past_months", type: "javascript" do
+  parameters "param_lookback_months"
+  result "result"
+  code <<-EOS
+  result = []
+
+  today = new Date().toISOString()
+  year = Number(today.split('-')[0])
+  month = Number(today.split('-')[1])
+
+  for (var i = 0; i < param_lookback_months; i++) {
+    end_month = month.toString()
+    if (month < 10) { end_month = "0" + month.toString() }
+    end_year = year.toString()
+
+    month -= 1
+    if (month == 0) { month = 12; year -= 1}
+
+    month_string = month.toString()
+    if (month < 10) { month_string = "0" + month.toString() }
+
+    result.push({
+      "start_date": year.toString() + '-' + month_string,
+      "end_date": end_year + '-' + end_month
+    })
+  }
+EOS
+end
+
+datasource "ds_usage_data" do
+  iterate $ds_past_months
+  request do
+    run_script $js_usage_data, val(iter_item, 'start_date'), val(iter_item, 'end_date'), $ds_billing_centers_filtered, $param_regions_allow_or_deny, $param_regions_list, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows") do
+      field "billing_center_id", jmes_path(col_item, "dimensions.billing_center_id")
+      field "instance_type", jmes_path(col_item, "dimensions.instance_type")
+      field "usage_unit", jmes_path(col_item, "dimensions.usage_unit")
+      field "cost", jmes_path(col_item, "metrics.cost_nonamortized_unblended_adj")
+      field "usage_amount", jmes_path(col_item, "metrics.usage_amount")
+      field "month", jmes_path(col_item, "timestamp")
+    end
+  end
+end
+
+script "js_usage_data", type: "javascript" do
+  parameters "start_date", "end_date", "ds_billing_centers_filtered", "param_regions_allow_or_deny", "param_regions_list", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  // Generate region filters if applicable
+  region_filters = []
+
+  if (param_regions_list.length > 0) {
+    subfilters = _.map(param_regions_list, function(region) {
+      return { dimension: "region", type: "equal", value: region }
+    })
+
+    // Create a collection of 'not' filters if deny list
+    if (param_regions_allow_or_deny == "Deny") {
+      region_filters = _.map(subfilters, function(subfilter) {
+        return { type: "not", expression: subfilter }
+      })
+    } else {
+      // Otherwise, create a single or filter if allow list
+      region_filters = [{ type: "or", expressions: subfilters }]
+    }
+  }
+
+  // Create full list of expressions for API Filter
+  expressions = region_filters.concat([
+    { dimension: "category", type: "equal", value: "Compute" },
+    { dimension: "resource_type", type: "equal", value: "Compute Instance" },
+    { dimension: "vendor", type: "equal", value: "AWS" },
+    {
+      type: "not",
+      expression: { dimension: "instance_type", type: "equal", value: "None" }
+    }
+  ])
+
+  // Payload to send to API
+  payload = {
+    dimensions: [ "instance_type", "usage_unit" ],
+    billing_center_ids: ds_billing_centers_filtered,
+    filter: { type: "and", expressions: expressions },
+    metrics: [ "cost_nonamortized_unblended_adj", "usage_amount" ],
+    granularity: "month",
+    end_at: end_date,
+    start_at: start_date
+  }
+
+  // Request
+  var request = {
+    auth: "auth_flexera",
+    verb: "POST",
+    host: rs_optima_host,
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
+    headers: {
+      "User-Agent": "RS Policies",
+    },
+    body_fields: payload
+  }
+EOS
+end
+
+datasource "ds_aws_instance_size_map" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/aws/instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_instance_units_per_family" do
+  run_script $js_instance_units_per_family, $ds_aws_instance_size_map, $ds_usage_data, $param_unit_time, $param_unit_instance
+end
+
+script "js_instance_units_per_family", type: "javascript" do
+  parameters "ds_aws_instance_size_map", "ds_usage_data", "param_unit_time", "param_unit_instance"
+  result "result"
+  code <<-'EOS'
+  // Tables to convert parameters to unites
+  time_unit = { "Hours": 1, "Days": 24, "Weeks": 168, "Months": 730, "Years": 8760 }
+  instance_unit = { "Normalized Units (NFUs)": "nfu", "vCPUs": "vcpu", "Memory (GiB)": "memory" }
+  result = []
+
+  // Get Normalization Factor units from Instance Data json
+  cpu_ratios = {}
+
+  _.each(_.keys(ds_aws_instance_size_map), function(instance_type) {
+    cpu = ds_aws_instance_size_map[instance_type][instance_unit[param_unit_instance]]
+    if (typeof(cpu) != 'number' && typeof(cpu) != 'string') { cpu = 1 }
+    cpu_ratios[instance_type] = Number(cpu)
+  })
+
+  // Enrich current data with Instance Family, and then calculate Normalized Instance Hours using NFU
+  enriched_usage_data = _.map(ds_usage_data, function(data) {
+    normalized_instance_units = 0
+
+    if (typeof(cpu_ratios[data['instance_type']]) == 'number') {
+      normalized_instance_units = (data['usage_amount'] / time_unit[param_unit_time]) * cpu_ratios[data['instance_type']]
+    }
+
+    return {
+      billing_center_id: data['billing_center_id'],
+      instance_type: data['instance_type'],
+      usage_unit: data['usage_unit'],
+      cost: data['cost'],
+      usage_amount: data['usage_amount'],
+      month: data['month'],
+      instance_family: data['instance_type'].split(".")[0],
+      normalized_instance_units: normalized_instance_units
+    }
+  })
+
+  // Sort data into two lists
+  full_list = []    // Data sorted by month, instance family, and total instance units
+  family_list = []  // Data sorted by instance family and total instance units
+  months = _.uniq(_.pluck(enriched_usage_data, 'month'))
+  families = _.uniq(_.pluck(enriched_usage_data, 'instance_family'))
+
+  _.each(families, function(family) {
+    // Store family data separately so we can find the top 8 families
+    family_data = _.filter(enriched_usage_data, function(data) { return data['instance_family'] == family })
+    family_units = _.pluck(family_data, 'normalized_instance_units')
+    family_instance_units = _.reduce(family_units, function(memo, num) { return memo + num }, 0)
+    family_list.push({ family: family, units: family_instance_units })
+
+    _.each(months, function(month) {
+      matched_data = _.filter(enriched_usage_data, function(data) {
+        return data['month'] == month && data['instance_family'] == family
+      })
+
+      normalized_units = _.pluck(matched_data, 'normalized_instance_units')
+      total_instance_units = _.reduce(normalized_units, function(memo, num) { return memo + num }, 0)
+      full_list.push({ month: month, instance_family: family, total_instance_units: total_instance_units })
+    })
+  })
+
+  // Find top 8 families and store their data in the result
+  family_list = _.sortBy(family_list, 'units').reverse()
+  top_eight_families = _.pluck(family_list.slice(0, 8), 'family')
+
+  result = _.filter(full_list, function(item) {
+    return _.contains(top_eight_families, item['instance_family'])
+  })
+
+  // Combine the data for the remaining families into "Other"
+  remaining_list = _.reject(full_list, function(item) {
+    return _.contains(top_eight_families, item['instance_family'])
+  })
+
+  if (remaining_list.length > 0) {
+    _.each(months, function(month) {
+      monthly_remaining = _.filter(remaining_list, function(item) { return item['month'] == month })
+      units = _.pluck(monthly_remaining, 'total_instance_units')
+      total_instance_units = _.reduce(units, function(memo, num) { return memo + num }, 0)
+      result.push({ month: month, instance_family: "Other", total_instance_units: total_instance_units })
+    })
+  }
+EOS
+end
+
+datasource "ds_forecast_data" do
+  run_script $js_forecast_data, $ds_instance_units_per_family, $param_forecasted_months, $param_unit_time
+end
+
+script "js_forecast_data", type: "javascript" do
+  parameters "ds_instance_units_per_family", "param_forecast_months", "param_unit_time"
+  result "result"
+  code <<-EOS
+  // Function to get future forecasted months
+  function future_month(counter) {
+    today = new Date().toISOString()
+    year = Number(today.split('-')[0])
+    month = Number(today.split('-')[1])
+
+    for (var i = 0; i < counter; i++) {
+      month += 1
+      if (month == 13) { month = 1; year += 1 }
+    }
+
+    if (month < 10) { month = "0" + month.toString() }
+
+    return year.toString() + '-' + month.toString()
+  }
+
+  result = []
+
+  // Aggregate historical data for each historical month
+  months = _.uniq(_.pluck(ds_instance_units_per_family, "month")).reverse()
+
+  _.each(months, function(month) {
+    month_data = _.filter(ds_instance_units_per_family, function(item) { return item['month'] == month })
+    unit_list = _.pluck(month_data, 'total_instance_units')
+    total_instance_units = _.reduce(unit_list, function(memo, num) { return memo + num }, 0)
+
+    result.push({
+      month: month.split("-")[0] + "-" + month.split("-")[1],
+      instance_family: "Historical Instance " + param_unit_time,
+      total_instance_units: total_instance_units
+    })
+  })
+
+  // Group data by Instance Family
+  data_by_family = _.groupBy(ds_instance_units_per_family, function(data) { return data['instance_family'] })
+
+  // Calculate linear regression line (line of best fit) across data
+  forecast_data = []
+
+  _.each(_.keys(data_by_family), function(family) {
+    num_months = 0
+    sum_x = 0
+    sum_x_squared = 0
+    x_mean = 0
+
+    sum_y = 0
+    sum_x_y = 0
+    y_mean = 0
+
+    _.each(data_by_family[family], function(fam) {
+      // Get the cost and the month (as an integer e.g. 2021-02 is x=1, 2021-03 is x=2, etc.)
+      x = data_by_family[family].length - num_months  // represents month on the x axis
+      y = fam['total_instance_units']                 // represents cost on the y axis
+
+      sum_x += x
+      sum_x_squared += x * x
+      sum_y += y
+      sum_x_y += x * y
+      num_months++
+    })
+
+    x_mean = sum_x / num_months
+    y_mean = sum_y / num_months
+
+    // Calculate Sxx and Sxy to then calculate Beta
+    s_xx = sum_x_squared - ((sum_x * sum_x) / num_months)
+    s_xy = sum_x_y - ((sum_x * sum_y) / num_months)
+    beta = s_xy / s_xx
+
+    // Calculate Alpha
+    alpha = y_mean - (beta * x_mean)
+
+    // Data required to calculate forecast costs
+    forecast_data.push({
+      instance_family: family,
+      historical_months: num_months,
+      alpha: alpha,
+      beta: beta
+    })
+  })
+
+  // Calculate forecasted costs for each future month
+  // For each month use linear regression line to extrapolate instance units for each instance family
+  for (var i = 0; i < param_forecast_months; i++) {
+    forecast_month = future_month(i)
+
+    _.each(forecast_data, function(data){
+      //'x' in y = bx + a (x represents forecasted month)
+      x_value = data['historical_months'] + (i + 1)
+
+      //'y' in y = bx + a (y represents forecasted cost)
+      y_value = (data['beta'] * x_value) + data['alpha']
+
+      if (y_value < 0) { y_value = 0 }  // To stop downward trends in cost from going below 0
+
+      result.push({
+        month: forecast_month,
+        instance_family: data['instance_family'],
+        total_instance_units: y_value
+      })
+    })
+  }
+  EOS
+end
+
+datasource "ds_chart_creation" do
+  run_script $js_chart_creation, $ds_forecast_data, $ds_applied_policy, $param_unit_time, $param_unit_instance, $param_lookback_months, $param_forecasted_months
+end
+
+script "js_chart_creation", type: "javascript" do
+  parameters "ds_forecast_data", "ds_applied_policy", "param_unit_time", "param_unit_instance", "param_lookback_months", "param_forecasted_months"
+  result "result"
+  code <<-'EOS'
+  instance_unit = { "Normalized Units (NFUs)": "NFU", "vCPUs": "vCPU", "Memory (GiB)": "Memory (GiB)" }
+
+  // Group data by Instance Family
+  group_by_family = _.groupBy(ds_forecast_data, function(data) {
+    return data['instance_family']
+  })
+
+  // Inject historical months into dimension forecast data
+  historical_months = _.pluck(group_by_family["Historical Instance " + param_unit_time], 'month')
+
+  non_historical_families = _.filter(_.keys(group_by_family), function(family) {
+    return family != "Historical Instance " + param_unit_time
+  })
+
+  _.each(non_historical_families, function(family) {
+    _.each(historical_months, function(month) {
+      group_by_family[family].push({
+        "month": month,
+        "instance_family": family,
+        "total_instance_units": "_"
+      })
+    })
+
+    group_by_family[family] = _.sortBy(group_by_family[family], "month")
+  })
+
+  // Create chart axis labels
+  months = _.uniq(_.pluck(ds_forecast_data, 'month'))
+  chart_axis_labels = "chxl=1:|" + _.map(months, function(name) { return name.substring(0, 7) }).join('|')
+
+  // Create legend
+  chart_legend = "chdl=" + _.keys(group_by_family).join('|')
+
+  // Create chart dataset
+  data_parts = _.map(group_by_family, function(family_list) {
+    return _.pluck(family_list, 'total_instance_units').join(',')
+  })
+
+  chart_data = "chd=t:" + data_parts.join('|')
+
+  //Create Chart Title
+  policy_title = "Total Instance " + instance_unit[param_unit_instance] + " " + param_unit_time + " Used Per Instance Family"
+  chart_title = "chtt=" + policy_title
+
+  // Complete Chart object
+  chart = {
+    chart_type: encodeURI("cht=bvs"),
+    chart_size: encodeURI("chs=999x450"),
+    chart_data: encodeURI(chart_data),
+    chart_title: encodeURI(chart_title).replace(/\(/g, "%28").replace(/\)/g, "%29"),
+    chart_image: encodeURI("chof=.png"),
+    chart_label_position: encodeURI("chdlp=b"),
+    chart_axis: encodeURI("chxt=y,x"),
+    chart_axis_label: encodeURI(chart_axis_labels),
+    chart_axis_format: encodeURI("chxs=0N*f" + "0sz* Hours|1,min40"),
+    chart_line_style: encodeURI("chls=3|3|3|3|3|3|3|3|3|3|3"),
+    chart_line_color: encodeURI("chco=777877,6929c4,9f1853,198038,b28600,1192e8,009d9a,005d5d,007d79,6929c4"),
+    chart_data_scale: encodeURI("chds=a"),
+    chart_legend: encodeURI(chart_legend),
+    chart_legend_size: encodeURI("chdls=000000,10"),
+    policy_title: policy_title
+  }
+
+  // Create final incident table and store chart in first entry
+  result = _.map(ds_forecast_data, function(item) {
+    return {
+      month: item['month'].split('-')[0] + '-' + item['month'].split('-')[1],
+      instance_family: item['instance_family'],
+      total_instance_units: Math.round(item['total_instance_units'] * 100) / 100,
+      time_unit: param_unit_time,
+      instance_unit: instance_unit[param_unit_instance],
+      lookback_months: param_lookback_months,
+      forecasted_months: param_forecasted_months
+    }
+  })
+
+  result[0]['chart_dimensions'] = chart
+  result[0]['policy_name'] = ds_applied_policy['name']
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_usage_forecast_inst_hrs" do
+  validate_each $ds_chart_creation do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: (Normalized - Forecasted {{ with index data 0 }}{{ .forecasted_months }}{{ end }} Months)"
+    detail_template <<-EOS
+# AWS Usage Forecast - {{ with index data 0 }}{{ .chart_dimensions.policy_title }}{{ end }} Report
+![AWS Usage Forecast - Instance {{ with index data 0 }}{{ .instance_unit }}{{ end }} {{ with index data 0 }}{{ .time_unit }}{{ end }} Used Per Instance Family Chart](https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id={{ rs_org_id }}&rs_project_id={{ rs_project_id }}&{{ with index data 0 }}{{ .chart_dimensions.chart_data }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_type }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_image }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_title }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_label_position }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_label }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_style }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_color }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_data_scale }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_format }}{{ end }})
+EOS
+    check eq(0, 1)
+    escalate $esc_email
+    export do
+      resource_level false
+      field "month" do
+        label "Month"
+      end
+      field "instance_family" do
+        label "Instance Family"
+      end
+      field "total_instance_units" do
+        label "Instance Units Used"
+      end
+      field "instance_unit" do
+        label "Instance Unit"
+      end
+      field "time_unit" do
+        label "Time Unit"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end

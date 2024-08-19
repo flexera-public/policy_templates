@@ -1,5 +1,25 @@
 # Changelog
 
+## v4.2.0
+
+- Added `Resource Hourly Cost` and `Currency` to incident table for added context
+
+## v4.1.0
+
+- Added ability to filter results by SQL resource type via `SQL Resource Types` parameter
+- Added ability to filter results by SQL Virtual Machine image SKU via `SQL Virtual Machine Image SKUs` parameter
+- Fixed bug where Elastic Pool recommendations were not properly reported in incident
+
+## v4.0
+
+- Fixed bug where databases ineligible for AHUB would appear in incident
+- Added support for Elastic Pool recommendations, including automated actions
+- Several parameters altered to be more descriptive and human-readable
+- Added improved subscription, region, and tag filtering for results
+- Normalized incident export to be consistent with other policies
+- Added human-readable recommendation to incident export
+- Streamlined code for better readability and faster execution
+
 ## v3.1
 
 - Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.

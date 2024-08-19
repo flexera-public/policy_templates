@@ -2,20 +2,21 @@ name "Azure Old Snapshots"
 rs_pt_ver 20180301
 type "policy"
 short_description "Checks for snapshots older than specified number of days and, optionally, deletes them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/old_snapshots) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
 severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "7.0",
+  version: "7.2.0",
   provider: "Azure",
   service: "Storage",
   policy_set: "Old Snapshots",
   recommendation_type: "Usage Reduction"
 )
 
-##############################################################################
+###############################################################################
 # Parameters
-##############################################################################
+###############################################################################
 
 parameter "param_email" do
   type "list"
@@ -162,9 +163,9 @@ datasource "ds_billing_centers" do
     auth $auth_flexera
     host rs_optima_host
     path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
     ignore_status [403]
   end
   result do
@@ -198,7 +199,7 @@ end
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
     header "User-Agent", "RS Policies"
   end
 end
@@ -314,7 +315,7 @@ datasource "ds_azure_snapshots" do
       field "resourceID", jmes_path(col_item, "id")
       field "resourceName", jmes_path(col_item, "name")
       field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
-      field "resourceType", jmes_path(col_item, "type")
+      field "type", jmes_path(col_item, "type")
       field "region", jmes_path(col_item, "location")
       field "tags", jmes_path(col_item, "tags")
       field "timeCreated", jmes_path(col_item, "properties.timeCreated")
@@ -448,12 +449,12 @@ script "js_azure_old_snapshots", type: "javascript" do
     snapshotTime = Date.parse(snapshot['timeCreated'])
     age = Math.round((new Date().getTime() - new Date(snapshotTime).getTime()) / (1000 * 3600 * 24))
 
-    service = snapshot['resourceType'].split("/")[0]
+    service = snapshot['type'].split("/")[0]
 
     if (age > param_snapshot_age) {
       result.push({
         resourceID: snapshot['resourceID'],
-        resourceType: snapshot['resourceType'],
+        type: snapshot['type'],
         resourceName: snapshot['resourceName'],
         region: snapshot['region'],
         resourceGroup: snapshot['resourceGroup'],
@@ -635,7 +636,7 @@ script "js_azure_snapshots_incident", type:"javascript" do
         resourceID: snapshot['resourceID'],
         resourceName: snapshot['resourceName'],
         resourceGroup: snapshot['resourceGroup'],
-        resourceType: snapshot['resourceType'],
+        type: snapshot['type'],
         region: snapshot['region'],
         age: snapshot['age'],
         tags: snapshot['tags'],
@@ -734,6 +735,9 @@ policy "pol_azure_old_snapshots" do
       field "size" do
         label "Size (GB)"
       end
+      field "type" do
+        label "Type"
+      end
       field "service" do
         label "Service"
       end
@@ -748,9 +752,6 @@ policy "pol_azure_old_snapshots" do
       end
       field "savingsCurrency" do
         label "Savings Currency"
-      end
-      field "resourceType" do
-        label "Resource Type"
       end
       field "lookbackPeriod" do
         label "Snapshot Age Threshold (Days)"
@@ -798,7 +799,7 @@ define delete_snapshots($data, $param_azure_endpoint) return $all_responses do
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -850,7 +851,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
     header "Api-Version", "1.0"
   end
   result do
@@ -858,7 +859,6 @@ datasource "ds_get_policy" do
     field "id", jmes_path(response, "id")
   end
 end
-
 
 datasource "ds_parent_policy_terminated" do
   run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id

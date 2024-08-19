@@ -1,5 +1,9 @@
 # Azure Migrate Integration
 
+## Deprecated
+
+This policy is no longer being updated.
+
 ## What it does
 
 This Policy will collect the resources from a RISC Foundations assessment and seed Azure Migrate with the discovered servers.

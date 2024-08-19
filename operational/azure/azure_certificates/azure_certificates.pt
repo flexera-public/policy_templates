@@ -1,16 +1,16 @@
-name "Expiring Azure Certificates"
+name "Azure Expiring Certificates"
 rs_pt_ver 20180301
 type "policy"
-short_description "Raise an incident if there are expired and almost expired certificates on the Azure account in active use. \n See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/azure_certificates) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Checks for expired and almost expired certificates on the Azure account in active use. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/azure_certificates) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Operational"
 severity "low"
 default_frequency "daily"
 info(
-  version: "3.2",
+  version: "4.0.0",
   provider: "Azure",
-  service: "Compute",
-  policy_set: ""
+  service: "PaaS",
+  policy_set: "Expiring Certificates"
 )
 
 ###############################################################################
@@ -19,33 +19,88 @@ info(
 
 parameter "param_email" do
   type "list"
-  label "Email addresses of the recipients you wish to notify."
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
 end
 
 parameter "param_azure_endpoint" do
   type "string"
+  category "Policy Settings"
   label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
   allowed_values "management.azure.com", "management.chinacloudapi.cn"
   default "management.azure.com"
 end
 
+parameter "param_expiration_days" do
+  type "number"
+  category "Policy Settings"
+  label "Days Until Expiration"
+  description "Number of days from expiration to include a certificate in the results. Set to \"0\" to only report certificates that have already expired."
+  min_value 0
+  default 30
+end
+
+parameter "param_subscriptions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Subscriptions"
+  description "Allow or Deny entered Subscriptions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
 parameter "param_subscriptions_list" do
-  label "Subscription Allowed List"
   type "list"
-  description "Allowed Subscriptions, if empty, all subscriptions will be checked"
+  category "Filters"
+  label "Allow/Deny Subscriptions List"
+  description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
 end
 
-parameter "param_numberofdays" do
+parameter "param_regions_allow_or_deny" do
   type "string"
-  label "Days"
-  description "Number of days from expiration to raise an incident."
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
 end
 
-parameter "param_exclusion_tag_key" do
-  category "User Inputs"
-  label "Exclusion Tag Key"
-  description "Azure-native instance tag to ignore instances that match the disallowed instance type. Only supply the tag key. The policy assumes that the tag value is irrelevant."
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
   type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Delete Expiring Azure Certificates"]
+  default []
 end
 
 ###############################################################################
@@ -61,7 +116,7 @@ end
 
 credentials "auth_flexera" do
   schemes "oauth2"
-  label "flexera"
+  label "Flexera"
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
@@ -83,13 +138,23 @@ end
 # Datasources & Scripts
 ###############################################################################
 
-datasource "ds_subscriptions" do
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_azure_subscriptions" do
   request do
     auth $auth_azure
     pagination $pagination_azure
     host $param_azure_endpoint
     path "/subscriptions/"
-    query "api-version", "2018-06-01"
+    query "api-version", "2020-01-01"
     header "User-Agent", "RS Policies"
     # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
     # Forces `ds_is_deleted` datasource to run first during policy execution
@@ -100,43 +165,45 @@ datasource "ds_subscriptions" do
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "subscriptionId", jmes_path(col_item,"subscriptionId")
-      field "subscriptionName", jmes_path(col_item,"displayName")
+      field "id", jmes_path(col_item, "subscriptionId")
+      field "name", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
     end
   end
 end
 
-datasource "ds_filtered_subscriptions" do
-  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscriptions_list
+datasource "ds_azure_subscriptions_filtered" do
+  run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
 end
 
-script "js_filtered_subscriptions", type: "javascript" do
-  parameters "ds_subscriptions", "param_subscriptions_list"
-  result "results"
+script "js_azure_subscriptions_filtered", type: "javascript" do
+  parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
+  result "result"
   code <<-EOS
-  var results = []
-  if ( param_subscriptions_list.length != 0){
-    results = []
-    _.each(param_subscriptions_list, function(sub){
-      var found = _.find(ds_subscriptions, function(item){
-        return item.subscriptionId == sub || item.subscriptionName.toLowerCase() == sub.toLowerCase();
-      })
-      results.push(found)
+  if (param_subscriptions_list.length > 0) {
+    result = _.filter(ds_azure_subscriptions, function(subscription) {
+      include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
+
+      if (param_subscriptions_allow_or_deny == "Deny") {
+        include_subscription = !include_subscription
+      }
+
+      return include_subscription
     })
   } else {
-    results = ds_subscriptions
+    result = ds_azure_subscriptions
   }
 EOS
 end
 
-datasource "ds_certificates" do
-  iterate $ds_filtered_subscriptions
+datasource "ds_azure_certificates" do
+  iterate $ds_azure_subscriptions_filtered
   request do
     auth $auth_azure
     pagination $pagination_azure
     host $param_azure_endpoint
-    path join(["/subscriptions/", val(iter_item, "subscriptionId"), "/providers/Microsoft.Web/certificates", ])
-    query "api-version", "2019-08-01"
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Web/certificates"])
+    query "api-version", "2023-01-01"
     header "User-Agent", "RS Policies"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
     ignore_status [400, 403, 404]
@@ -145,9 +212,7 @@ datasource "ds_certificates" do
     encoding "json"
     collect jmes_path(response, "value[*]") do
       field "id", jmes_path(col_item, "id")
-      field "subscriptionName", val(iter_item, "subscriptionName")
-      field "subscriptionId", val(iter_item, "subscriptionId")
-      field "location", jmes_path(col_item, "location")
+      field "region", jmes_path(col_item, "location")
       field "name", jmes_path(col_item, "name")
       field "tags", jmes_path(col_item, "tags")
       field "expirationDate", jmes_path(col_item, "properties.expirationDate")
@@ -159,41 +224,235 @@ datasource "ds_certificates" do
       field "keyVaultId", jmes_path(col_item, "properties.keyVaultId")
       field "keyVaultSecretName", jmes_path(col_item, "properties.keyVaultSecretName")
       field "keyVaultSecretStatus", jmes_path(col_item, "properties.keyVaultSecretStatus")
+      field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
+      field "subscriptionName", val(iter_item, "name")
+      field "subscriptionId", val(iter_item, "id")
     end
   end
 end
 
-datasource "ds_filtered_certificates" do
-  run_script $js_filter_certificates, $ds_certificates, $param_exclusion_tag_key, $param_numberofdays
+datasource "ds_azure_certificates_tag_filtered" do
+  run_script $js_azure_certificates_tag_filtered, $ds_azure_certificates, $param_exclusion_tags, $param_exclusion_tags_boolean
 end
 
-script "js_filter_certificates", type: "javascript" do
-  parameters "certificates", "exclusion_tag", "expire_days"
-  result "bad_certs"
+script "js_azure_certificates_tag_filtered", type: "javascript" do
+  parameters "ds_azure_certificates", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  result "result"
   code <<-EOS
-  var bad_certs = [];
-  nowDate = new Date();
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
 
-  _.each(certificates, function(test_cert) {
-    if (!(_.has(test_cert.tags, exclusion_tag))) {
-      cert = test_cert
-      cert["rgName"] = cert["id"].split('/')[4]
-      cert["id"] = cert["id"].split('/')[8]
-      cert["certStatus"] = "Active";
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
 
-      compareDate = new Date(cert["expirationDate"]);
-      if (nowDate > compareDate) {
-        cert["certStatus"] = "Expired";
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  if (param_exclusion_tags.length > 0) {
+    result = _.reject(ds_azure_certificates, function(resource) {
+      resource_tags = {}
+      if (typeof(resource['tags']) == 'object') { resource_tags = resource['tags'] }
+
+      // Store a list of found tags
+      found_tags = []
+
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_tag = resource_tags[comparator['key']]
+
+        if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+        if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+        if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_tag == undefined) { found_tags.push(string) }
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+      })
+
+      all_tags_found = found_tags.length == comparators.length
+      any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+      return all_tags_found || any_tags_found
+    })
+  } else {
+    result = ds_azure_certificates
+  }
+EOS
+end
+
+datasource "ds_azure_certificates_region_filtered" do
+  run_script $js_azure_certificates_region_filtered, $ds_azure_certificates_tag_filtered, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_azure_certificates_region_filtered", type: "javascript" do
+  parameters "ds_azure_certificates_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_azure_certificates_tag_filtered, function(resource) {
+      include_resource = _.contains(param_regions_list, resource['region'])
+      if (param_regions_allow_or_deny == "Deny") { include_resource = !include_resource }
+      return include_resource
+    })
+  } else {
+    result = ds_azure_certificates_tag_filtered
+  }
+EOS
+end
+
+datasource "ds_azure_certificates_expiring" do
+  run_script $js_azure_certificates_expiring, $ds_azure_certificates_region_filtered, $ds_applied_policy, $param_expiration_days
+end
+
+script "js_azure_certificates_expiring", type: "javascript" do
+  parameters "ds_azure_certificates_region_filtered", "ds_applied_policy", "param_expiration_days"
+  result "result"
+  code <<-'EOS'
+  today = new Date()
+
+  result = []
+
+  _.each(ds_azure_certificates_region_filtered, function(cert) {
+    expiration_date = new Date(cert["expirationDate"])
+    status = "Active"
+    days_until_expiration = 0
+
+    if (today >= expiration_date) {
+      status = "Expired"
+    } else {
+      days_until_expiration = Math.round((today - expiration_date) / 86400000)
+    }
+
+    if (status == "Expired" || days_until_expiration <= param_expiration_days) {
+      tags = []
+
+      if (typeof(cert['tags']) == 'object') {
+        _.each(Object.keys(cert['tags']), function(key) {
+          tags.push(key + '=' + cert['tags'][key])
+        })
       }
 
-      if ((expire_days > ((compareDate - nowDate) / 86400000)) || cert["certStatus"] == "Expired") {
-        bad_certs.push(cert)
-      }
+      recommendationDetails = recommendationDetails = [
+        "Renew or delete Azure Certificate ", cert["subjectName"], " ",
+        "in Azure Subscription ", cert["subscriptionName"], " ",
+        "(", cert["subscriptionId"], ")"
+      ].join('')
+
+      result.push({
+        accountID: cert["subscriptionId"],
+        accountName: cert["subscriptionName"],
+        resourceGroup: cert["resourceGroup"],
+        resourceName: cert["subjectName"],
+        resourceID: cert["id"],
+        region: cert["region"],
+        subjectName: cert["name"],
+        issuer: cert["issuer"],
+        issueDate: cert["issueDate"],
+        hostNames: cert["hostNames"],
+        thumbprint: cert["thumbprint"],
+        keyVaultId: cert["keyVaultId"],
+        keyVaultSecretName: cert["keyVaultSecretName"],
+        keyVaultSecretStatus: cert["keyVaultSecretStatus"],
+        expirationDate: expiration_date.toISOString(),
+        tags: tags.join(', '),
+        status: status,
+        days_until_expiration: days_until_expiration,
+        recommendationDetails: recommendationDetails,
+        policy_name: ds_applied_policy["name"],
+        lookbackPeriod: param_expiration_days,
+        service: "Microsoft.Web",
+        message: ""
+      })
     }
   })
 
-  bad_certs = _.sortBy(bad_certs, 'subscriptionName');
-  bad_certs = _.sortBy(bad_certs, 'rgName');
+  // Message for incident output
+  total_certificates = ds_azure_certificates_region_filtered.length.toString()
+  total_expiring_certificates = result.length.toString()
+  expiring_certificates_percentage = (total_expiring_certificates / total_certificates * 100).toFixed(2).toString() + '%'
+
+  if (param_expiration_days > 0) {
+    days_noun = "days"
+    if (param_expiration_days == 1) { days_noun = "day" }
+
+    findings = [
+      "Out of ", total_certificates, " certificates analyzed, ",
+      total_expiring_certificates, " (", expiring_certificates_percentage,
+      ") have expired or are going to expire in ", param_expiration_days, " ", days_noun, " ",
+      "and are recommended for either renewal or deletion.\n\n"
+    ].join('')
+  } else {
+    findings = [
+      "Out of ", total_certificates, " certificates analyzed, ",
+      total_expiring_certificates, " (", expiring_certificates_percentage,
+      ") have expired and are recommended for either renewal or deletion. ",
+      "Certificates that expire soon but have not expired yet are not included ",
+      "in the results.\n\n"
+    ].join('')
+  }
+
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+
+  result = _.sortBy(result, 'resourceName')
+  result = _.sortBy(result, 'resourceGroup')
+  result = _.sortBy(result, 'subscriptionName')
+
+  // Dummy entry to ensure validation occurs at least once
+  result.push({
+    accountID: "",
+    accountName: "",
+    resourceGroup: "",
+    resourceName: "",
+    resourceID: "",
+    region: "",
+    subjectName: "",
+    issuer: "",
+    issueDate: "",
+    hostNames: "",
+    thumbprint: "",
+    keyVaultId: "",
+    keyVaultSecretName: "",
+    keyVaultSecretStatus: "",
+    expirationDate: "",
+    tags: "",
+    status: "",
+    days_until_expiration: "",
+    recommendationDetails: "",
+    policy_name: "",
+    lookbackPeriod: "",
+    service: "",
+    message: ""
+  })
+
+  result[0]["message"] = findings + disclaimer
 EOS
 end
 
@@ -202,32 +461,51 @@ end
 ###############################################################################
 
 policy "pol_azure_certificate_policy" do
-  validate $ds_filtered_certificates do
-    summary_template "Expiring/Expired Certificates Found: {{ len data }} App Service Certificates"
+  validate_each $ds_azure_certificates_expiring do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Expiring/Expired Certificates Found"
+    detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
+    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
-    check logic_or($ds_parent_policy_terminated, eq(size(data), 0))
+    escalate $esc_delete_certificate
+    hash_exclude "tags", "days_until_expiration", "status"
     export do
       resource_level true
-      field "id" do
-        label "id"
+      field "accountID" do
+        label "Subscription ID"
       end
-      field "subscriptionName" do
+      field "accountName" do
         label "Subscription Name"
       end
-      field "rgName" do
+      field "resourceGroup" do
         label "Resource Group"
       end
-      field "location" do
-        label "Location"
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "subjectName" do
+        label "Subject"
+      end
+      field "status" do
+        label "Status"
       end
       field "expirationDate" do
         label "Expiration Date"
       end
-      field "name" do
-        label "Subject"
-      end
-      field "subjectName" do
-        label "Certificate Name"
+      field "days_until_expiration" do
+        label "Days Until Expiration"
       end
       field "issuer" do
         label "Issuer"
@@ -250,8 +528,15 @@ policy "pol_azure_certificate_policy" do
       field "keyVaultSecretStatus" do
         label "Key Vault Secret Status"
       end
-      field "certStatus" do
-        label "Certificate Status"
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
       end
     end
   end
@@ -268,6 +553,67 @@ escalation "esc_email" do
   email $param_email
 end
 
+escalation "esc_delete_certificate" do
+  automatic contains($param_automatic_action, "Delete Expiring Azure Certificates")
+  label "Delete Expiring Azure Certificates"
+  description "Approval to delete all selected Azure Certificates"
+  run "delete_certificates", data, $param_azure_endpoint
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define delete_certificates($data, $param_azure_endpoint) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call delete_certificate($instance, $param_azure_endpoint) retrieve $delete_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define delete_certificate($instance, $param_azure_endpoint) return $response do
+  $host = $param_azure_endpoint
+  $href = $instance["id"]
+  $params = "?api-version=2023-01-01"
+  $url = $host + $href + $params
+  task_label("DELETE " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "delete",
+    host: $host,
+    href: $href,
+    query_strings: { "api-version": "2023-01-01" }
+  )
+
+  task_label("Delete Azure certificate response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response deleting Azure certificate: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Delete Azure certificate successful: " + $instance["id"])
+  end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
+end
+
 ###############################################################################
 # Meta Policy [alpha]
 # Not intended to be modified or used by policy developers
@@ -280,7 +626,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
     header "Api-Version", "1.0"
   end
   result do

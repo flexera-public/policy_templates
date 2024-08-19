@@ -1,5 +1,29 @@
 # Changelog
 
+## v5.2.1
+
+- Fixed bug related to pagination on the AWS Tagging API
+
+## v5.2.0
+
+- Added parameter `Include Savings` to optionally allow the user to not report savings
+- Improved logic for finding savings for reported resources
+- Added currency field to incident report
+- Minor code cleanup and optimization
+
+## v5.1.2
+
+- Fixed issue with policy failing in EU/AU Flexera organizations due to invalid API host
+
+## v5.1.1
+
+- Fix bug for `ReferenceError: 'tag_dimension_tag_keys' is not defined`
+
+## v5.1.0
+
+- Added parameter for *Consider Tag Dimensions* to help mitigate/prevent seeing results for resources which have the tag key/tag value through a normalized Tag Dimension
+- Added *Estimated Savings* field for each resource in the results
+
 ## v5.0
 
 - Added ability to filter resources by tag key, tag key==value, or using regex

@@ -1,17 +1,17 @@
 # Azure Reserved Instances Utilization
 
-## What it does
+## What It Does
 
-This Policy Template leverages the Azure Cost Management APIs ([Reservation Transactions](https://learn.microsoft.com/en-us/rest/api/consumption/reservation-transactions/list?view=rest-consumption-2023-05-01&tabs=HTTP) and [Reservation Summaries](https://learn.microsoft.com/en-us/rest/api/consumption/reservations-summaries/list?view=rest-consumption-2023-05-01&tabs=HTTP#reservationsummariesdailywithbillingaccountid)). It will notify only if utilization of a Reserved Instance (RI) falls below the value specified in the `Show Reservations with utilization below this value (%)` field. It examines the RI utilization for the prior 7 days or 30 days (starting from 2 days ago) in making this determination.
+This Policy Template leverages the Azure Cost Management APIs ([Reservation Transactions](https://learn.microsoft.com/en-us/rest/api/consumption/reservation-transactions/list?view=rest-consumption-2023-05-01&tabs=HTTP) and [Reservation Summaries](https://learn.microsoft.com/en-us/rest/api/consumption/reservations-summaries/list?view=rest-consumption-2023-05-01&tabs=HTTP#reservationsummariesdailywithbillingaccountid)). It will notify only if utilization of a Reserved Instance (RI) falls below the value specified in the `Maximum Reservation Utilization Threshold` field. It examines the RI utilization for the prior 7 days or 30 days (starting from 2 days ago) in making this determination.
 
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
 - *Azure Endpoint* - Azure Endpoint to access resources
-- *Look Back Period* - The number of days of past Azure Reservation Utilization data to analyze
-- *Show Reservations with utilization below this value (%)* - Number between 1 and 100
-- *Email addresses* - A list of email addresses to notify
+- *Look Back Period* - Number of days of prior Azure Reservation usage to analyze.
+- *Maximum Reservation Utilization Threshold* - Show Reservations with utilization below this value (%).
+- *Email addresses to notify* - A list of email addresses to notify.
 
 ## Policy Actions
 

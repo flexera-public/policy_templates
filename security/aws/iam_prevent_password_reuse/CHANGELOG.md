@@ -1,5 +1,17 @@
 # Changelog
 
+## v3.0.0
+
+- Policy template renamed to `AWS IAM Password Policy Not Restricting Password Reuse` to better reflect its functionality
+- Added ability to set a specific number of stored passwords to test the password policy for
+- Improved readability of incident output with additional formatting and context
+- Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera credential
+
+## v2.6
+
+- fixed link to README in policy description
+
 ## v2.5
 
 - Updated description of `Account Number` parameter

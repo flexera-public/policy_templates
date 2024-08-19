@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "6.0",
+  version: "6.2.0",
   provider: "AWS",
   service: "Network",
   policy_set: "Unused Load Balancers",
@@ -57,8 +57,8 @@ parameter "param_regions_allow_or_deny" do
   category "Filters"
   label "Allow/Deny Regions"
   description "Allow or Deny entered regions. See the README for more details."
-  default "Allow"
   allowed_values "Allow", "Deny"
+  default "Allow"
 end
 
 parameter "param_regions_list" do
@@ -66,8 +66,8 @@ parameter "param_regions_list" do
   category "Filters"
   label "Allow/Deny Regions List"
   description "A list of allowed or denied regions. See the README for more details."
-  default []
   allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  default []
 end
 
 parameter "param_exclusion_tags" do
@@ -89,6 +89,7 @@ end
 
 parameter "param_automatic_action" do
   type "list"
+  category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
   allowed_values ["Delete Classic Load Balancers"]
@@ -180,9 +181,9 @@ datasource "ds_get_caller_identity" do
     verb "GET"
     host "sts.amazonaws.com"
     path "/"
-    header "User-Agent", "RS Policies"
     query "Action", "GetCallerIdentity"
     query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
   end
   result do
     encoding "xml"
@@ -220,9 +221,9 @@ datasource "ds_billing_centers" do
     auth $auth_flexera
     host rs_optima_host
     path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
     ignore_status [403]
   end
   result do
@@ -256,7 +257,7 @@ end
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
     header "User-Agent", "RS Policies"
   end
 end
@@ -356,10 +357,10 @@ datasource "ds_clbs_without_tags" do
     auth $auth_aws
     host join(["elasticloadbalancing.", val(iter_item, "region"), ".amazonaws.com"])
     path "/"
-    header "Accept", "application/json"
     query "Action", "DescribeLoadBalancers"
     # Newer versions of API will not list Classic Load Balancers
     query "Version", "2012-06-01"
+    header "Accept", "application/json"
   end
   result do
     encoding "json"
@@ -382,10 +383,10 @@ datasource "ds_clbs" do
     auth $auth_aws
     host join(["elasticloadbalancing.", val(iter_item, "region"), ".amazonaws.com"])
     path "/"
-    header "Accept", "application/json"
     query "Action", "DescribeTags"
     query "Version", "2012-06-01"
     query "LoadBalancerNames.member.1", val(iter_item, "name")
+    header "Accept", "application/json"
   end
   result do
     encoding "json"
@@ -586,9 +587,9 @@ datasource "ds_clb_costs" do
   end
   result do
     encoding "json"
-    collect jmes_path(response,"rows[*]") do
+    collect jmes_path(response, "rows[*]") do
       field "id", jmes_path(col_item, "dimensions.resource_id")
-      field "cost", jmes_path(col_item,"metrics.cost_amortized_blended_adj")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_blended_adj")
     end
   end
 end
@@ -742,7 +743,7 @@ script "js_unused_clb_cost_mapping", type: "javascript" do
         policy_name: ds_applied_policy['name'],
         created: created,
         tags: tags.join(', '),
-        resourceType: "Classic Load Balancer",
+        type: "Classic Load Balancer",
         service: "ELB",
         recommendationDetails: recommendationDetails,
         // These are to avoid errors when we hash_exclude these fields
@@ -805,7 +806,7 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_unused_clbs" do
+policy "pol_unused_clbs" do
   validate_each $ds_unused_clb_cost_mapping do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Unused Classic Load Balancers Found"
     detail_template <<-'EOS'
@@ -837,8 +838,8 @@ policy "policy_unused_clbs" do
       field "recommendationDetails" do
         label "Recommendation"
       end
-      field "resourceType" do
-        label "Resource Type"
+      field "type" do
+        label "Type"
       end
       field "region" do
         label "Region"
@@ -904,7 +905,7 @@ define delete_clbs($data) return $all_responses do
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -960,7 +961,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
     header "Api-Version", "1.0"
   end
   result do

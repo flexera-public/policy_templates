@@ -1,5 +1,18 @@
 # Changelog
 
+## v3.0.1
+
+- Added `deprecated` field to policy metadata. Functionality is unchanged.
+
+## v3.0.0
+
+- Deprecated policy. This is the final update.
+- Added support for Azure China
+- Subscription filter can now be used as an allow list or a deny list
+- Added additional fields and context to incident output
+- Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera One credential
+
 ## v2.10
 
 - Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.

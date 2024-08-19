@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.1
+
+- fixed link to README in policy description
+
 ## v4.0
 
 - Policy name changed to reference EC2 service directly

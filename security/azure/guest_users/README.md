@@ -1,38 +1,34 @@
-# Azure Guest Users Audit
+# Azure Guest Users
 
-## What it does
+## What It Does
 
-This policy pulls a list of all guest users on the Azure account. An incident is raised with the list of affected users if any exist so that said users can be reviewed to ensure that they still need to exist.
-
-## Functional Details
-
-A list of users is obtained via the Azure Graph API with a filter for "userType eq 'Guest'". If this list contains any entries, an incident is raised.
+This policy template reports any guest users that exist in the Azure organization. Optionally, this report can be emailed.
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+- *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
+- *Azure Graph API Endpoint* - The endpoint to send Azure Graph API requests to. Recommended to leave this at default unless using this policy with Azure China.
 
-- *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
-- *Azure Graph API Endpoint* - Azure Endpoint to access the Graph API
+## Policy Actions
 
-## Prerequesites
+- Send an email report
 
-This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+## Prerequisites
 
-### Credential configuration
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
-For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
+- [**Microsoft Graph Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121576) (*provider=azure_graph*) which has the following permissions:
+  - `User.Read.All`
+  - `Directory.Read.All`
 
-Provider tag value to match this policy: `azure_graph`
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - `billing_center_viewer`
 
-Required permissions in the provider:
-
-- User.Read.All
-- Directory.Read.All
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ## Supported Clouds
 
-- Microsoft Azure
+- Azure
 
 ## Cost
 

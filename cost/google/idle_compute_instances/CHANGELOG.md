@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.11.2
+
+- Added `deprecated` field to policy metadata. Functionality is unchanged.
+
+## v2.11.1
+
+- Deprecated: This policy is no longer being updated. Please see policy README for more information.
+
 ## v2.11
 
 - CPU and memory utilization data is now retrieved using GCP Monitoring Query Language

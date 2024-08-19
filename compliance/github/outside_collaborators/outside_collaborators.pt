@@ -1,39 +1,86 @@
-name "GitHub.com Unpermitted Outside Collaborators"
+name "GitHub Unpermitted Outside Collaborators"
 rs_pt_ver 20180301
-short_description "Gets all the Outside Collaborators (User that have been granted access to a repository, but are not a Member of the repository owner's Organization) under GitHub.com Organization(s) and creates an incident for each that are not included in the specified username whitelist.  See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/github/outside_collaborators) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+type "policy"
+short_description "Reports on any unpermitted outside collaborators for the specified Github.com organizations. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/github/outside_collaborators) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "medium"
 category "Compliance"
+default_frequency "weekly"
 info(
-  version: "2.4",
+  version: "3.0.0",
   provider: "GitHub",
-  service: "",
+  service: "Git",
   policy_set: ""
 )
 
+###############################################################################
+# Parameters
+###############################################################################
+
 parameter "param_email" do
-  label "Email addresses of the recipients you wish to notify"
   type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
 end
 
 parameter "param_orgs" do
   type "list"
-  label "GitHub.com Organizations to check"
+  category "Policy Settings"
+  label "GitHub Organizations"
+  description "A list of GitHub Organizations to check."
+  # No default value, user input required
 end
 
-parameter "param_whitelist" do
-  type "list"
-  label "GitHub.com user accounts that are whitelisted to be an outside collaborator"
+parameter "param_repos_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny GitHub Repositories"
+  description "Allow or Deny entered Github repositories. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
 end
+
+parameter "param_repos_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny GitHub Repositories List"
+  description "A list of allowed or denied Github repositories. See the README for more details."
+  default []
+end
+
+parameter "param_user_allowlist" do
+  type "list"
+  category "Filters"
+  label "User Allow List"
+  description "GitHub user accounts to exclude from the results."
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
 
 credentials "auth_github" do
   schemes "api_key"
   label "GitHub"
-  description "Select the Github Credential from the list."
+  description "Select the GitHub Credential from the list."
   tags "provider=github"
 end
 
-pagination "github_pagination" do
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_github" do
   get_page_marker do
     header "Link"
   end
@@ -42,100 +89,213 @@ pagination "github_pagination" do
   end
 end
 
-datasource "ds_orgs_array" do
-  run_script $js_orgs_array, $param_orgs
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
 end
 
-script "js_orgs_array", type: "javascript" do
+datasource "ds_org_list" do
+  run_script $js_org_list, $param_orgs
+end
+
+script "js_org_list", type: "javascript" do
   parameters "param_orgs"
-  result "orgs_array"
-  code <<-EOS
-var orgs_array = param_orgs;
-EOS
+  result "result"
+  code "result = param_orgs"
+end
+
+datasource "ds_github_orgs" do
+  iterate $ds_org_list
+  request do
+    auth $auth_github
+    pagination $pagination_github
+    host "api.github.com"
+    path join(["/orgs/", iter_item])
+    header "X-GitHub-Api-Version", "2022-11-28"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "name", jmes_path(response, "login")
+    field "company", jmes_path(response, "company")
+    field "blog", jmes_path(response, "blog")
+    field "location", jmes_path(response, "location")
+    field "email", jmes_path(response, "email")
+    field "html_url", jmes_path(response, "html_url")
+    field "created_at", jmes_path(response, "created_at")
+    field "type", jmes_path(response, "type")
+  end
 end
 
 datasource "ds_github_org_repos" do
-  iterate $ds_orgs_array
+  iterate $ds_github_orgs
   request do
     auth $auth_github
-    pagination $github_pagination
+    pagination $pagination_github
     host "api.github.com"
-    path join(["/orgs/",iter_item,"/repos"])
+    path join(["/orgs/", val(iter_item, "name"), "/repos"])
+    header "X-GitHub-Api-Version", "2022-11-28"
   end
   result do
     encoding "json"
     collect jmes_path(response, "[*]") do
-      field "repo_org", jmes_path(col_item, "owner.login")
-      field "repo_name", jmes_path(col_item, "name")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "full_name", jmes_path(col_item, "full_name")
+      field "html_url", jmes_path(col_item, "html_url")
+      field "description", jmes_path(col_item, "description")
+      field "default_branch", jmes_path(col_item, "default_branch")
+      field "created_at", jmes_path(col_item, "created_at")
+      field "org_id", val(iter_item, "id")
+      field "org_name", val(iter_item, "name")
+      field "org_company", val(iter_item, "company")
+      field "org_blog", val(iter_item, "blog")
+      field "org_location", val(iter_item, "location")
+      field "org_email", val(iter_item, "email")
+      field "org_url", val(iter_item, "html_url")
+      field "org_created_at", val(iter_item, "created_at")
     end
   end
 end
 
-datasource "ds_github_org_collaborators" do
-  iterate $ds_github_org_repos
-  request do
-      auth $auth_github
-      pagination $github_pagination
-      host "api.github.com"
-      path join(["/repos/",val(iter_item,"repo_org"),"/",val(iter_item,"repo_name"),"/collaborators"])
-      query "affiliation", "outside"
-  end
-  result do
-      encoding "json"
-      collect jmes_path(response, "[*]") do
-        field "id", jmes_path(col_item, "id")
-        field "username", jmes_path(col_item, "login")
-        field "repo_org", val(iter_item, "repo_org")
-        field "repo_name", val(iter_item, "repo_name")
-      end
-  end
+datasource "ds_github_org_repos_filtered" do
+  run_script $js_github_org_repos_filtered, $ds_github_org_repos, $param_repos_allow_or_deny, $param_repos_list
 end
 
-datasource "ds_invalid_collab" do
-  run_script $js_invalid_collab, $ds_github_org_collaborators, $param_whitelist
-end
-
-script "js_invalid_collab", type: "javascript" do
-    parameters "collaborators","param_whitelist"
-    result "invalid_collab"
-    code <<-EOS
-var invalid_collab=[];
-for (var index = 0; index < collaborators.length; index++) {
-    var user = collaborators[index];
-    // exclude white listed names
-    if( !_.contains(param_whitelist, user.username) ){
-        user["fullRepositoryName"] = "["+user.repo_org+"/"+user.repo_name+"](https://github.com/"+user.repo_org+"/"+user.repo_name+"/settings/collaboration)";
-        user["fullAuditLogLink"] = "[Audittt Log](https://github.com/organizations/"+user.repo_org+"/settings/audit-log?utf8=%E2%9C%93&q=repo%3A"+user.repo_org+"%2F"+user.repo_name+")"
-        invalid_collab.push(user)
-    }
-}
+script "js_github_org_repos_filtered", type: "javascript" do
+  parameters "ds_github_org_repos", "param_repos_allow_or_deny", "param_repos_list"
+  result "result"
+  code <<-EOS
+  if (param_repos_list.length > 0) {
+    result = _.filter(ds_github_org_repos, function(repo) {
+      include_repo = _.contains(param_repos_list, repo['name'])
+      if (param_repos_allow_or_deny == "Deny") { include_repo = !include_repo }
+      return include_repo
+    })
+  } else {
+    result = ds_github_org_repos
+  }
 EOS
 end
 
-policy "policy_outside_collaborator" do
-  validate_each $ds_invalid_collab do
-    summary_template "GitHub.com Outside Collaborator Report"
-    check lt(size($ds_invalid_collab),0)
-    escalate $email_report
+datasource "ds_github_org_collaborators" do
+  iterate $ds_github_org_repos_filtered
+  request do
+    auth $auth_github
+    pagination $pagination_github
+    host "api.github.com"
+    path join(["/repos/", val(iter_item, "org_name"), "/", val(iter_item, "name"), "/collaborators"])
+    query "affiliation", "outside"
+    header "X-GitHub-Api-Version", "2022-11-28"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "login")
+      field "html_url", jmes_path(col_item, "html_url")
+      field "type", jmes_path(col_item, "type")
+      field "site_admin", jmes_path(col_item, "site_admin")
+      field "permissions", jmes_path(col_item, "permissions")
+      field "role_name", jmes_path(col_item, "role_name")
+      field "repo_id", val(iter_item, "id")
+      field "repo_name", val(iter_item, "name")
+      field "repo_full_name", val(iter_item, "full_name")
+      field "repo_url", val(iter_item, "html_url")
+      field "repo_description", val(iter_item, "description")
+      field "repo_default_branch", val(iter_item, "default_branch")
+      field "repo_created_at", val(iter_item, "created_at")
+      field "org_id", val(iter_item, "id")
+      field "org_name", val(iter_item, "org_name")
+      field "org_company", val(iter_item, "org_company")
+      field "org_blog", val(iter_item, "org_blog")
+      field "org_location", val(iter_item, "org_location")
+      field "org_email", val(iter_item, "org_email")
+      field "org_url", val(iter_item, "org_url")
+      field "org_created_at", val(iter_item, "org_created_at")
+    end
+  end
+end
+
+datasource "ds_invalid_collaborators" do
+  run_script $js_invalid_collaborators, $ds_github_org_collaborators, $ds_applied_policy, $param_user_allowlist
+end
+
+script "js_invalid_collaborators", type: "javascript" do
+  parameters "ds_github_org_collaborators", "ds_applied_policy", "param_user_allowlist"
+  result "result"
+  code <<-EOS
+  users_cleaned = _.map(ds_github_org_collaborators, function(user) {
+    org_name = encodeURI(user["org_name"])
+    q_param = encodeURI("repo:" + user["org_name"] + "/" + user["repo_name"])
+    audit_log_url = "https://github.com/organizations/" + org_name + "/settings/audit-log?utf8=%E2%9C%93&q=" + q_param
+
+    new_user = user
+    new_user["policy_name"] = ds_applied_policy["name"]
+    new_user["user_link"] = "User||" + user["html_url"]
+    new_user["audit_log"] = "Audit Log||" + audit_log_url
+
+    return new_user
+  })
+
+  result = _.reject(users_cleaned, function(user) {
+    return _.contains(param_user_allowlist, user["name"])
+  })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_outside_collaborator" do
+  validate_each $ds_invalid_collaborators do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} GitHub Unpermitted Outside Collaborators Found"
+    check eq(val(item, "id"), "")
+    escalate $esc_email
     export do
       resource_level true
-      field "username" do
-        label "User"
-      end
-      field "fullRepositoryName" do
-        label "Organization / Repository"
-      end
-      field "fullAuditLogLink" do
-        label "Audit Log Link"
-      end
       field "id" do
-        label "ID"
+        label "User ID"
+      end
+      field "name" do
+        label "User Name"
+      end
+      field "role_name" do
+        label "User Role"
+      end
+      field "repo_name" do
+        label "Repository"
+      end
+      field "org_name" do
+        label "Organization"
+      end
+      field "audit_log" do
+        label "Audit Log"
+        format "link-external"
+      end
+      field "user_link" do
+        label "Link"
+        format "link-external"
       end
     end
   end
 end
 
-escalation "email_report" do
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"

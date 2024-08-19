@@ -1,5 +1,13 @@
 # Changelog
 
+## v8.2.0
+
+- Modified internal names for incident fields for more accurate scraping into Optimization dashboard
+
+## v8.1
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
 ## v8.0
 
 - Added support for regex when filtering resources by tag
@@ -141,8 +149,7 @@
 
 ## v2.8
 
-- Added `and resourceProvider eq 'Microsoft.Compute' and resourceType eq 'Microsoft.Compute/VirtualMachines'` to event filter
-  to get smaller but more specific result set to help with ExecutionTimeout.
+- Added `and resourceProvider eq 'Microsoft.Compute' and resourceType eq 'Microsoft.Compute/VirtualMachines'` to event filter to get smaller but more specific result set to help with ExecutionTimeout.
 
 ## v2.7
 

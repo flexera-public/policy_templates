@@ -1,5 +1,14 @@
 # Changelog
 
+## v3.0.0
+
+- Recommendations can now be generated at the "Resource Group" scope
+- Removed redundant API requests to speed up execution for "Shared" scope
+
+## v2.2
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
 ## v2.1
 
 - Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.

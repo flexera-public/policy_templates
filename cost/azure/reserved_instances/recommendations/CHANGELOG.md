@@ -1,5 +1,17 @@
 # Changelog
 
+## v4.0.0
+
+- Recommendations can now be generated at the "Resource Group" scope
+
+## v3.4.1
+
+- Incident fields for `Subscription ID` and `Subscription Name` no longer show a specific Azure Subscription when providing Shared recommendations.
+
+## v3.4
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
 ## v3.3
 
 - Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.

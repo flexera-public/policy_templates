@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1
+
+- fixed link to README in policy description
+
 ## v3.0
 
 - Several parameters altered to be more descriptive and human-readable

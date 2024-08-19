@@ -1,5 +1,25 @@
 # Changelog
 
+## v5.3.0
+
+- Added ability to set metrics granularity when gathering resource metrics from Azure
+- Added support for p90, p95, and p99 metrics for both CPU and memory.
+- Improved calculations for `Minimum` and `Maximum` for both CPU and memory.
+
+## v5.2.0
+
+- New `Exclude Stopped Virtual Machines` parameter to filter stopped virtual machines from results
+- New `Exclude Databricks` parameter to filter Azure Databricks virtual machines from results
+- `Power State` field added to results to indicate whether a virtual machine is running or stopped
+- Fields related to the image the virtual machine was created with added to results
+- Idle Virtual Machines incident now includes a `Recommended Instance Size` field with a value of `Delete Virtual Machine` for ease of analyzing recommendations from the Flexera Optimization dashboard
+- Added warning about invalid Databricks recommendations to incident description if `Exclude Databricks` parameter is set to `No`
+- Fixed issue that would cause downsize actions to fail
+
+## v5.1
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
 ## v5.0
 
 - Added support for regex when filtering resources by tag

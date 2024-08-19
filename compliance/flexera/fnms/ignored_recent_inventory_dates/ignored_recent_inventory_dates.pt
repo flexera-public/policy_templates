@@ -1,0 +1,136 @@
+name "ITAM Ignored Recent Inventory Dates"
+rs_pt_ver 20180301
+type "policy"
+short_description "Looks for machines that are ignored but have been inventoried recently and sends the result as an email.  See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/flexera/fnms/ignored_recent_inventory_dates/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "medium"
+category "Compliance"
+default_frequency "weekly"
+
+info(
+  version: "2.4",
+  provider: "Flexera",
+  service: "IT Asset Management",
+  policy_set: "IT Asset Management"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_days_active" do
+  type "number"
+  category "Policy Settings"
+  label "Days since last inventory"
+  description "Number of days since Last Inventory"
+  default 5
+end
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email addresses of the recipients you wish to notify"
+  description "A list of email addresse(s) to notify"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexeraone" do
+  schemes "oauth2"
+  label "flexera"
+  description "Select FlexeraOne OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_itam" do
+  get_page_marker do
+    body_path jq(response, "if .total == 0 then null else .offset + 10000 end")
+  end
+  set_page_marker do
+    query "offset"
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+datasource "ds_inventories" do
+  request do
+    auth $auth_flexeraone
+    pagination $pagination_itam
+    host join(["api.", get(1, split(f1_app_host, "app."))])
+    path join(["/fnms/v1/orgs/", rs_org_id, "/inventories"])
+    query "status", "Ignored"
+    query "limit", "10000"
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_check_date" do
+  run_script $js_check_date, $ds_inventories, $param_days_active
+end
+
+script "js_check_date", type: "javascript" do
+  parameters "ds_inventories", "param_days_active"
+  result "results"
+  code <<-EOF
+  var results = [];
+  _.each(ds_inventories[0].values, function (asset) {
+
+    var startDate = new Date(asset.inventorySourceData.lastInventoryDate); // Inventory Date
+    var endDate = new Date();
+    var timeDifference = endDate.getTime() - startDate.getTime();
+    var daysDifference = parseInt(timeDifference / (1000 * 3600 * 24));
+    if (daysDifference <= param_days_active) {
+      asset.ignored = 1;
+      results.push(asset);
+    }
+  });
+EOF
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy 'itam_policy' do
+  validate_each $ds_check_date do
+    summary_template 'ITAM - Ignored active machines'
+    check eq(to_n(val(item,"ignored")),0)
+    escalate $esc_send_report
+    export do
+      field "name"
+      field "os"
+      field "LastInventoryDate" do
+        path "inventorySourceData.lastInventoryDate"
+      end
+      field "LastInventorySource" do
+        path "inventorySourceData.lastInventorySource"
+      end
+      field "Status" do
+        path "inventorySourceData.status"
+      end
+      field "deviceType"
+    end
+  end
+end
+
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_send_report" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end

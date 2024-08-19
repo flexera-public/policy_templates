@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "8.0",
+  version: "8.3.0",
   provider: "AWS",
   service: "Storage",
   policy_set: "Old Snapshots",
@@ -15,7 +15,7 @@ info(
 )
 
 ###############################################################################
-# User inputs
+# Parameters
 ###############################################################################
 
 parameter "param_email" do
@@ -38,9 +38,9 @@ parameter "param_snapshot_age" do
   type "number"
   category "Policy Settings"
   label "Snapshot Age Threshold"
-  default 30
   description "The number of days since the snapshot was created to consider a snapshot old."
   min_value 1
+  default 30
 end
 
 parameter "param_snapshot_include_ami" do
@@ -74,8 +74,8 @@ parameter "param_regions_list" do
   type "list"
   category "Filters"
   label "Allow/Deny Regions List"
-  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   description "A list of allowed or denied regions. See the README for more details."
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   default []
 end
 
@@ -163,16 +163,6 @@ pagination "pagination_aws" do
   end
 end
 
-pagination "pagination_aws_describesnapshots_xml" do
-  get_page_marker do
-    body_path "//DescribeSnapshotsResponse/nextToken"
-  end
-  set_page_marker do
-    query "NextToken"
-  end
-end
-
-# https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeImages.html
 pagination "pagination_aws_describeimages_xml" do
   get_page_marker do
     body_path "//DescribeImagesResponse/nextToken"
@@ -182,7 +172,6 @@ pagination "pagination_aws_describeimages_xml" do
   end
 end
 
-# https://docs.aws.amazon.com/AmazonRDS/latest/APIReference/API_DescribeDBSnapshots.html
 pagination "pagination_aws_describe_db_snapshots_xml" do
   get_page_marker do
     body_path "//DescribeDBSnapshotsResponse/DescribeDBSnapshotsResult/Marker"
@@ -192,7 +181,6 @@ pagination "pagination_aws_describe_db_snapshots_xml" do
   end
 end
 
-# https://docs.aws.amazon.com/AmazonRDS/latest/APIReference/API_DescribeDBClusterSnapshots.html
 pagination "pagination_aws_describe_db_cluster_snapshots_xml" do
   get_page_marker do
     body_path "//DescribeDBClusterSnapshotsResponse/DescribeDBClusterSnapshotsResult/Marker"
@@ -268,9 +256,9 @@ datasource "ds_get_caller_identity" do
     verb "GET"
     host "sts.amazonaws.com"
     path "/"
-    header "User-Agent", "RS Policies"
     query "Action", "GetCallerIdentity"
     query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
   end
   result do
     encoding "xml"
@@ -308,9 +296,9 @@ datasource "ds_billing_centers" do
     auth $auth_flexera
     host rs_optima_host
     path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
     ignore_status [403]
   end
   result do
@@ -344,7 +332,7 @@ end
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
     header "User-Agent", "RS Policies"
   end
 end
@@ -441,7 +429,7 @@ end
 datasource "ds_describe_snapshots" do
   iterate $ds_regions
   request do
-    run_script $js_describe_snapshots, val(iter_item,"region"), $ds_aws_account
+    run_script $js_describe_snapshots, val(iter_item, "region"), $ds_aws_account
   end
   result do
     encoding "xml"
@@ -491,17 +479,17 @@ script "js_describe_snapshots", type: "javascript" do
 EOS
 end
 
-datasource "ds_describe_db_snapshots" do
+datasource "ds_describe_db_snapshots_unfiltered" do
   iterate $ds_regions
   request do
     auth $auth_aws
     pagination $pagination_aws_describe_db_snapshots_xml
     host join(["rds.", val(iter_item, "region"), ".amazonaws.com"])
     path "/"
-    header "User-Agent", "RS Policies"
-    header "Content-Type", "text/xml"
     query "Action", "DescribeDBSnapshots"
     query "Version", "2014-10-31"
+    header "User-Agent", "RS Policies"
+    header "Content-Type", "text/xml"
     ignore_status [403, 404]
   end
   result do
@@ -528,6 +516,31 @@ datasource "ds_describe_db_snapshots" do
   end
 end
 
+datasource "ds_describe_db_snapshots" do
+  run_script $js_describe_db_snapshots, $ds_describe_db_snapshots_unfiltered
+end
+
+script "js_describe_db_snapshots", type:"javascript" do
+  parameters "ds_describe_db_snapshots_unfiltered"
+  result "result"
+  code <<-EOS
+  result = []
+  sorted_by_parent = {}
+
+  _.each(ds_describe_db_snapshots_unfiltered, function(snapshot) {
+    parent = snapshot["parentId"]
+
+    if (sorted_by_parent[parent] == undefined) { sorted_by_parent[parent] = [] }
+    sorted_by_parent[parent].push(snapshot)
+  })
+
+  _.each(_.keys(sorted_by_parent), function(parent) {
+    sorted_parents = _.sortBy(sorted_by_parent[parent], "startTime").reverse()
+    result.push(sorted_parents[0])
+  })
+EOS
+end
+
 datasource "ds_describe_db_cluster_snapshots" do
   iterate $ds_regions
   request do
@@ -535,10 +548,10 @@ datasource "ds_describe_db_cluster_snapshots" do
     pagination $pagination_aws_describe_db_cluster_snapshots_xml
     host join(["rds.", val(iter_item, "region"), ".amazonaws.com"])
     path "/"
-    header "User-Agent", "RS Policies"
-    header "Content-Type", "text/xml"
     query "Action", "DescribeDBClusterSnapshots"
     query "Version", "2014-10-31"
+    header "User-Agent", "RS Policies"
+    header "Content-Type", "text/xml"
     ignore_status [403, 404]
   end
   result do
@@ -722,12 +735,12 @@ datasource "ds_get_snapshot_ami" do
     pagination $pagination_aws_describeimages_xml
     host join(["ec2.", val(iter_item, "region"), ".amazonaws.com"])
     path "/"
-    header "User-Agent", "RS Policies"
-    header "Content-Type", "text/xml"
     query "Action", "DescribeImages"
     query "Version", "2016-11-15"
     query "Filter.1.Name", "owner-id"
     query "Filter.1.Value.1", val($ds_aws_account, 'id')
+    header "User-Agent", "RS Policies"
+    header "Content-Type", "text/xml"
     ignore_status [403, 404]
   end
   result do
@@ -736,7 +749,7 @@ datasource "ds_get_snapshot_ami" do
       field "region", val(iter_item, "region")
       field "imageId", xpath(col_item, "imageId")
       field "ownerId", xpath(col_item, "ownerId")
-      field "snapshotIds",  xpath(col_item, "blockDeviceMapping/item/*//snapshotId", "array")
+      field "snapshotIds", xpath(col_item, "blockDeviceMapping/item/*//snapshotId", "array")
     end
   end
 end
@@ -967,7 +980,7 @@ script "js_snapshots_cost_mapping", type: "javascript" do
         service: snapshot['service'],
         recommendationDetails: recommendationDetails,
         lookbackPeriod: param_snapshot_age,
-        resourceType: "Storage Snapshot",
+        type: "Storage Snapshot",
         // These are to avoid errors when we hash_exclude these fields
         total_savings: '',
         message: '',
@@ -1090,8 +1103,8 @@ policy "pol_utilization" do
       field "resourceName" do
         label "Resource Name"
       end
-      field "resourceType" do
-        label "Resource Type"
+      field "type" do
+        label "Type"
       end
       field "imageId" do
         label "AMI"
@@ -1104,9 +1117,6 @@ policy "pol_utilization" do
       end
       field "savingsCurrency" do
         label "Savings Currency"
-      end
-      field "resourceType" do
-        label "Resource Type"
       end
       field "lookbackPeriod" do
         label "Snapshot Age Threshold (Days)"
@@ -1168,7 +1178,7 @@ define delete_snapshots($data, $param_snapshot_include_ami) return $all_response
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -1314,7 +1324,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
     header "Api-Version", "1.0"
   end
   result do
@@ -1322,7 +1332,6 @@ datasource "ds_get_policy" do
     field "id", jmes_path(response, "id")
   end
 end
-
 
 datasource "ds_parent_policy_terminated" do
   run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id

@@ -1,5 +1,17 @@
 # Changelog
 
+## v5.3.1
+
+- Unused RDS Instances incident now includes a `Recommended Instance Size` field with a value of `Terminate RDS Instance` for ease of analyzing recommendations from the Flexera Optimization dashboard
+
+## v5.3
+
+- Fixed issue with invalid API endpoint that caused policy to not work in Flexera APAC.
+
+## v5.2
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
 ## v5.1
 
 - Added Availability Zone, License Model, and vCPUs to incident output

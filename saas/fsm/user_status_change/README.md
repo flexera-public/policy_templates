@@ -8,7 +8,7 @@ This policy is no longer being updated. The [SaaS Manager - Deactivated Users](h
 
 This policy will create an incident when Flexera SaaS Manager identifies users whose status in the HR roster changes to inactive. The data includes user details as well as department so a third party admin can forward the notification to managers responsible for a user in a particular department.
 
-## Functional Description
+## How It Works
 
 This policy integrates with the Flexera SaaS Manager API to retrieve user details. Therefore the following are prerequisites for this policy to execute:
 
@@ -22,20 +22,27 @@ This policy has the following input parameters required when launching the polic
 - *Number of Days Back* - If a user's status changes to inactive during this time period, those user accounts will raise an incident
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify
 
+## Policy Actions
+
+- Send an email report
+
 ## Prerequisites
 
-This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
 ### Credential configuration
 
 For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
 
-Provider tag value to match this policy: `flexera_fsm`
+- [**Flexera SaaS Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera_fsm*) which has the following Flexera  permissions:
+  - Administrator, Application Administrator, Viewer, or Security Administrator
 
-Required permissions in the provider:
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
-- Administrator, Application Administrator, Viewer, or Security Administrator in FSM
+## Supported Clouds
 
-## Policy Actions
+- Flexera
 
-- Sends an email notification
+## Cost
+
+This Policy Template does not incur any cloud costs.

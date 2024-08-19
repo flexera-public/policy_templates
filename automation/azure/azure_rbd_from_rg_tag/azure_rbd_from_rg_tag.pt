@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "1.2",
+  version: "1.3.0",
   provider: "Flexera",
   service: "Optima",
   policy_set: "Automation",
@@ -20,12 +20,15 @@ info(
 
 parameter "param_tag_list" do
   type "list"
+  category "Policy Settings"
   label "Tag Keys"
   description "A list of Azure account tag keys to build Rule-Based Dimensions from"
+  # No default value, user input required
 end
 
 parameter "param_name_list" do
   type "list"
+  category "Policy Settings"
   label "Dimension Names"
   description "A list of names to give the Rule-Based Dimensions in the Flexera platform. Enter names in the same order as the tag keys in the 'Tag Keys' field. Dimension names will be derived from tag keys directly if this list is left empty."
   default []
@@ -33,6 +36,7 @@ end
 
 parameter "param_effective_date" do
   type "string"
+  category "Policy Settings"
   label "Effective Date"
   description "Year/month you want rules to start applying in YYYY-MM format"
   default "2010-01"
@@ -40,10 +44,20 @@ end
 
 parameter "param_subscription_fallback" do
   type "string"
+  category "Policy Settings"
   label "Subscription Fallback Rules"
   description "Whether or not to create rules for Subscription tags as a fallback for untagged Resource Groups."
   allowed_values "Yes", "No"
   default "No"
+end
+
+parameter "param_normalize_case" do
+  type "string"
+  category "Policy Settings"
+  label "Lowercase Values"
+  description "Whether or not to normalize all values by converting them to lowercase. Note that, if the same value appears multiple times with different casing, and this option is disabled, the rule-based dimension will be rejected and this policy template will fail."
+  allowed_values "Yes", "No"
+  default "Yes"
 end
 
 ###############################################################################
@@ -81,12 +95,39 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
 datasource "ds_existing_rbds" do
   request do
     auth $auth_flexera
     host rs_optima_host
     path join(["/bill-analysis/orgs/", rs_org_id, "/settings/rule_based_dimensions"])
-    verb "GET"
     header "Api-Version", "1.0"
     header "content-type", "application/json"
   end
@@ -223,11 +264,11 @@ EOS
 end
 
 datasource "ds_rbds" do
-  run_script $js_rbds, $ds_azure_resource_groups_normalized, $ds_azure_subscriptions_normalized, $ds_existing_rbds, $param_name_list, $param_tag_list, $param_effective_date, $param_subscription_fallback
+  run_script $js_rbds, $ds_azure_resource_groups_normalized, $ds_azure_subscriptions_normalized, $ds_existing_rbds, $param_name_list, $param_tag_list, $param_effective_date, $param_subscription_fallback, $param_normalize_case
 end
 
 script "js_rbds", type: "javascript" do
-  parameters "rgs", "accounts", "existing_rbds", "param_name_list", "param_tag_list", "param_effective_date", "param_subscription_fallback"
+  parameters "rgs", "accounts", "existing_rbds", "param_name_list", "param_tag_list", "param_effective_date", "param_subscription_fallback", "param_normalize_case"
   result "result"
   code <<-'EOS'
   result = []
@@ -245,57 +286,37 @@ script "js_rbds", type: "javascript" do
 
     tag_key = tag.toLowerCase().trim()
     verb = "POST"
-
-    if (_.contains(rbd_id_list, rbd_id)) {
-      verb = "PATCH"
-    }
+    if (_.contains(rbd_id_list, rbd_id)) { verb = "PATCH" }
 
     rules = []
 
     _.each(rgs, function(rg) {
       if (rg['tags'][tag_key] != undefined && rg['tags'][tag_key] != null) {
         if (rg['tags'][tag_key].trim() != '') {
+          value = rg['tags'][tag_key].trim()
+          if (param_normalize_case == "Yes") { value = value.toLowerCase() }
+
           rules.push({
-            "condition": {
-              "type": "and",
-              "expressions": [
-                {
-                  "type": "dimension_equals",
-                  "dimension": "resource_group",
-                  "value": rg['name'].trim()
-                },
-                {
-                  "type": "dimension_equals",
-                  "dimension": "vendor_account",
-                  "value": rg['subscriptionId'].trim().toLowerCase()
-                }
+            condition: {
+              type: "and",
+              expressions: [
+                { type: "dimension_equals", dimension: "resource_group", value: rg['name'].trim() },
+                { type: "dimension_equals", dimension: "vendor_account", value: rg['subscriptionId'].trim().toLowerCase() }
               ]
             },
-            "value": {
-              "text": rg['tags'][tag_key].toLowerCase().trim()
-            }
+            value: { text: value }
           })
 
           if (rg['name'].trim() != rg['name'].trim().toLowerCase()) {
             rules.push({
-              "condition": {
-                "type": "and",
-                "expressions": [
-                  {
-                    "type": "dimension_equals",
-                    "dimension": "resource_group",
-                    "value": rg['name'].trim().toLowerCase()
-                  },
-                  {
-                    "type": "dimension_equals",
-                    "dimension": "vendor_account",
-                    "value": rg['subscriptionId'].trim().toLowerCase()
-                  }
+              condition: {
+                type: "and",
+                expressions: [
+                  { type: "dimension_equals", dimension: "resource_group", value: rg['name'].trim().toLowerCase() },
+                  { type: "dimension_equals", dimension: "vendor_account", value: rg['subscriptionId'].trim().toLowerCase() }
                 ]
               },
-              "value": {
-                "text": rg['tags'][tag_key].toLowerCase().trim()
-              }
+              value: { text: value }
             })
           }
         }
@@ -306,15 +327,12 @@ script "js_rbds", type: "javascript" do
       _.each(accounts, function(account) {
         if (account['tags'][tag_key] != undefined && account['tags'][tag_key] != null) {
           if (account['tags'][tag_key].trim() != '') {
+            value = account['tags'][tag_key].trim()
+            if (param_normalize_case == "Yes") { value = value.toLowerCase() }
+
             rules.push({
-              "condition": {
-                "type": "dimension_equals",
-                "dimension": "vendor_account",
-                "value": account['id']
-              },
-              "value": {
-                "text": account['tags'][tag_key].toLowerCase().trim()
-              }
+              condition: { type: "dimension_equals", dimension: "vendor_account", value: account['id'] },
+              value: { text: value }
             })
           }
         }
@@ -326,22 +344,43 @@ script "js_rbds", type: "javascript" do
         id: rbd_id,
         name: rbd_name,
         verb: verb,
-        dated_rules: [
-          {
-            "effective_at": param_effective_date,
-            "rules": rules
-          }
-        ]
+        effective_at: param_effective_date,
+        rules: rules
       })
     }
   })
 EOS
 end
 
+datasource "ds_create_rbds" do
+  iterate $ds_rbds
+  request do
+    run_script $js_create_rbds, val(iter_item, "id"), val(iter_item, "verb"), val(iter_item, "name"), val($ds_flexera_api_hosts, "flexera"), rs_org_id
+  end
+  result do
+    encoding "text"
+  end
+end
+
+script "js_create_rbds", type: "javascript" do
+  parameters "rbd_id", "verb", "name", "api_host", "rs_org_id"
+  result "request"
+  code <<-EOS
+  var request = {
+    auth: "auth_flexera",
+    verb: verb,
+    host: api_host,
+    path: ["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions/", rbd_id].join(''),
+    body_fields: { name: name }
+  }
+EOS
+end
+
 datasource "ds_apply_rbds" do
   iterate $ds_rbds
   request do
-    run_script $js_apply_rbds, val(iter_item, "id"), val(iter_item, "verb"), val(iter_item, "name"), val(iter_item, "dated_rules"), rs_optima_host, rs_org_id
+    # ds_create_rbds is a parameter to ensure that it executes before ds_apply_rbds does
+    run_script $js_apply_rbds, val(iter_item, "id"), val(iter_item, "effective_at"), val(iter_item, "rules"), val($ds_flexera_api_hosts, "flexera"), $ds_create_rbds, rs_org_id
   end
   result do
     encoding "text"
@@ -349,22 +388,15 @@ datasource "ds_apply_rbds" do
 end
 
 script "js_apply_rbds", type: "javascript" do
-  parameters "id", "verb", "name", "dated_rules", "rs_optima_host", "rs_org_id"
+  parameters "rbd_id", "effective_at", "rules", "api_host", "ds_create_rbds", "rs_org_id"
   result "request"
   code <<-EOS
-  request = {
+  var request = {
     auth: "auth_flexera",
-    host: rs_optima_host,
-    path: ["/bill-analysis/orgs/", rs_org_id, "/settings/rule_based_dimensions/", id].join(''),
-    verb: verb,
-    headers: {
-      "Api-Version": "1.0",
-      "content-type": "application/json"
-    },
-    body_fields: {
-      "name": name,
-      "dated_rules": dated_rules
-    }
+    verb: "PUT",
+    host: api_host,
+    path: ["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions/", rbd_id, "/rules/", effective_at].join(''),
+    body_fields: { rules: rules }
   }
 EOS
 end
@@ -376,7 +408,7 @@ end
 policy "pol_rbds" do
   validate $ds_apply_rbds do
     summary_template "RBDs Generated & Applied"
+    detail_template ""
     check eq(0, 0)
-    detail_template ''
   end
 end

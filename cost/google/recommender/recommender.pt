@@ -1,14 +1,15 @@
-name "Google Recommender Policy"
+name "Google Recommenders"
 rs_pt_ver 20180301
 type "policy"
-short_description "This Policy finds Google Recommendations and reports when it finds them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/google/recommender) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
-category "Cost"
+short_description "Provides a report of all current Google Recommendations. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/google/recommender) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
 severity "low"
-default_frequency "daily"
+category "Cost"
+default_frequency "weekly"
 info(
-  version: "2.5",
-  provider:"Google",
-  service: "Storage",
+  version: "3.0.1",
+  provider: "Google",
+  service: "All",
   policy_set: "Native Recommendations"
 )
 
@@ -18,41 +19,61 @@ info(
 
 parameter "param_email" do
   type "list"
-  label "Email addresses to notify"
-  description "Email addresses of the recipients you wish to notify when new incidents are created"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation."
+  min_value 0
+  default 0
 end
 
 parameter "param_recommenders" do
+  type "list"
+  category "Policy Settings"
+  label "Recommenders"
+  description "Google Recommenders to report on. At least one recommender needs to be selected."
+  allowed_values [ "Account Security", "Committed Use Discount", "IAM", "Idle Custom Image", "Idle Cloud SQL Instance", "Overprovisioned Cloud SQL Instance", "Cloud SQL Instance Out-of-Disk", "Idle IP Address", "Idle Persistent Disk", "Idle VM", "VM Machine Type", "Idle GKE Cluster", "Managed Instance Group Machine Type", "Product Suggestion - Container", "Product Suggestion - Compute", "Unattended Project" ]
+  default []
+end
+
+parameter "param_projects_allow_or_deny" do
   type "string"
-  label "Recommender to Check"
-  description "Google recommender to run the policy against"
-  allowed_values [
-    "Account security recommender",
-    "Cloud SQL out-of-disk recommender",
-    "Committed use discount recommender",
-    "IAM recommender",
-    "Idle custom image recommender",
-    "Idle IP address recommender",
-    "Idle persistent disk recommender",
-    "Idle VM recommender",
-    "Managed instance group machine type recommender",
-    "Product suggestion recommender - Container",
-    "Product suggestion recommender - Compute",
-    "VM machine type recommender",
-    "Unattended project recommender"
-  ]
+  category "Filters"
+  label "Allow/Deny Projects"
+  description "Allow or Deny entered Projects. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
 end
 
-parameter "param_location_whitelist" do
+parameter "param_projects_list" do
   type "list"
-  label "Location"
-  description "Location to check, it can be the zone, region or global"
+  category "Filters"
+  label "Allow/Deny Projects List"
+  description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
 end
 
-parameter "param_project" do
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
   type "list"
-  label "Project ID"
-  description "Google Projects to Query. Leave blank to query all projects."
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
   default []
 end
 
@@ -60,7 +81,6 @@ end
 # Authentication
 ###############################################################################
 
-# authenticate with Google
 credentials "auth_google" do
   schemes "oauth2"
   label "Google"
@@ -68,11 +88,18 @@ credentials "auth_google" do
   tags "provider=gce"
 end
 
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
 ###############################################################################
 # Pagination
 ###############################################################################
 
-pagination "google_pagination" do
+pagination "pagination_google" do
   get_page_marker do
     body_path "nextPageToken"
   end
@@ -85,159 +112,479 @@ end
 # Datasources & Scripts
 ###############################################################################
 
-#get all google project
-datasource "ds_google_project" do
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Gather local currency info
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency_target" do
+  run_script $js_currency_target, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency_target", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  // Default to USD if currency is not found
+  result = ds_currency_reference['USD']
+
+  if (ds_currency_code['value'] != undefined && ds_currency_reference[ds_currency_code['value']] != undefined) {
+    result = ds_currency_reference[ds_currency_code['value']]
+  }
+EOS
+end
+
+datasource "ds_google_projects" do
   request do
     auth $auth_google
-    pagination $google_pagination
+    pagination $pagination_google
     host "cloudresourcemanager.googleapis.com"
     path "/v1/projects/"
+    query "filter", "(lifecycleState:ACTIVE)"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
   end
   result do
     encoding "json"
     collect jmes_path(response, "projects[*]") do
-      field "projectNumber", jmes_path(col_item,"projectNumber")
-      field "projectId", jmes_path(col_item,"projectId")
+      field "number", jmes_path(col_item, "projectNumber")
+      field "id", jmes_path(col_item, "projectId")
+      field "name", jmes_path(col_item, "name")
     end
   end
 end
 
-datasource "ds_recommenders" do
-  run_script $js_recommenders, $param_location_whitelist, $param_recommenders, $ds_google_project, $param_project
+datasource "ds_google_projects_filtered" do
+  run_script $js_google_projects_filtered, $ds_google_projects, $param_projects_allow_or_deny, $param_projects_list
 end
 
-script "js_recommenders", type: "javascript" do
-  parameters "param_location_whitelist", "param_recommenders", "ds_google_project", "param_project"
-  result "results"
+script "js_google_projects_filtered", type: "javascript" do
+  parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list"
+  result "result"
+  code <<-EOS
+  if (param_projects_list.length > 0) {
+    result = _.filter(ds_google_projects, function(project) {
+      include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name']) || _.contains(param_projects_list, project['number'])
+
+      if (param_projects_allow_or_deny == "Deny") {
+        include_project = !include_project
+      }
+
+      return include_project
+    })
+  } else {
+    result = ds_google_projects
+  }
+EOS
+end
+
+datasource "ds_google_regions" do
+  iterate $ds_google_projects_filtered
+  request do
+    auth $auth_google
+    pagination $pagination_google
+    host "compute.googleapis.com"
+    path join(["/compute/v1/projects/", val(iter_item, "id"), "/regions"])
+    ignore_status [403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "projectId", val(iter_item, "id")
+      field "projectName", val(iter_item, "name")
+      field "projectNumber", val(iter_item, "number")
+    end
+  end
+end
+
+datasource "ds_google_regions_filtered" do
+  run_script $js_google_regions_filtered, $ds_google_regions, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_google_regions_filtered", type: "javascript" do
+  parameters "ds_google_regions", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_google_regions, function(region) {
+      include_region = _.contains(param_regions_list, region['id']) || _.contains(param_projects_list, region['name'])
+      if (param_projects_allow_or_deny == "Deny") { include_region = !include_region }
+      return include_region
+    })
+  } else {
+    result = ds_google_regions
+  }
+EOS
+end
+
+datasource "ds_recommender_requests" do
+  run_script $js_recommender_requests, $ds_google_regions_filtered, $param_recommenders
+end
+
+script "js_recommender_requests", type: "javascript" do
+  parameters "ds_google_regions_filtered", "param_recommenders"
+  result "result"
   code <<-EOF
-  var results = []
-  var global_inserted = 0
-  var recommender_map = {
-    "Account security recommender": "google.accounts.security.SecurityKeyRecommender",
-    "Cloud SQL out-of-disk recommender": "google.cloudsql.instance.OutOfDiskRecommender",
-    "Committed use discount recommender": "google.compute.commitment.UsageCommitmentRecommender",
-    "IAM recommender": "google.iam.policy.Recommender",
-    "Idle custom image recommender": "google.compute.image.IdleResourceRecommender",
-    "Idle IP address recommender": "google.compute.address.IdleResourceRecommender",
-    "Idle persistent disk recommender": "google.compute.disk.IdleResourceRecommender",
-    "Idle VM recommender": "google.compute.instance.IdleResourceRecommender",
-    "Managed instance group machine type recommender": "google.compute.instanceGroupManager.MachineTypeRecommender",
-    "Product suggestion recommender - Container": "google.logging.productSuggestion.ContainerRecommender",
-    "Product suggestion recommender - Compute": "google.monitoring.productSuggestion.ComputeRecommender",
-    "VM machine type recommender": "google.compute.instance.MachineTypeRecommender",
-    "Unattended project recommender": "google.resourcemanager.projectUtilization.Recommender",
+  recommender_map = {
+    "Account Security": "google.accounts.security.SecurityKeyRecommender",
+    "Cloud SQL Instance Out-of-Disk": "google.cloudsql.instance.OutOfDiskRecommender",
+    "Committed Use Discount": "google.compute.commitment.UsageCommitmentRecommender",
+    "IAM": "google.iam.policy.Recommender",
+    "Idle Custom Image": "google.compute.image.IdleResourceRecommender",
+    "Idle IP Address": "google.compute.address.IdleResourceRecommender",
+    "Idle Persistent Disk": "google.compute.disk.IdleResourceRecommender",
+    "Idle VM": "google.compute.instance.IdleResourceRecommender",
+    "Idle Cloud SQL Instance": "google.cloudsql.instance.IdleRecommender",
+    "Idle GKE Cluster": "google.container.DiagnosisRecommender",
+    "Managed Instance Group Machine Type": "google.compute.instanceGroupManager.MachineTypeRecommender",
+    "Product Suggestion - Container": "google.logging.productSuggestion.ContainerRecommender",
+    "Product Suggestion - Compute": "google.monitoring.productSuggestion.ComputeRecommender",
+    "Overprovisioned Cloud SQL Instance": "google.cloudsql.instance.OverprovisionedRecommender",
+    "VM Machine Type": "google.compute.instance.MachineTypeRecommender",
+    "Unattended Project": "google.resourcemanager.projectUtilization.Recommender",
   }
 
-  recommenders = recommender_map[param_recommenders]
-  _.each(ds_google_project, function(project){
-    if (_.contains(param_project, project.projectId) || param_project.length == 0) {
-      _.each(param_location_whitelist, function(location){
-        results.push({
-          projectNumber: project.projectNumber,
-          projectId: project.projectId,
-          location: location,
-          recommender: recommenders,
-          requestNumber: results.length + 1
-        })
+  result = []
+
+  _.each(ds_google_regions_filtered, function(region) {
+    _.each(param_recommenders, function(recommender) {
+      result.push({
+        projectId: region["projectId"],
+        projectName: region["projectName"],
+        projectNumber: region["projectNumber"],
+        region: region["name"],
+        recommender: recommender_map[recommender],
+        recommenderPretty: recommender,
+        requestNumber: result.length + 1
       })
-    }
+    })
   })
 EOF
 end
 
 datasource "ds_recommendations" do
-  iterate $ds_recommenders
+  iterate $ds_recommender_requests
   request do
-    run_script $js_recommender_call, val(iter_item,"projectId"), val(iter_item, "location"), val(iter_item, "recommender"), val(iter_item, "requestNumber")
+    run_script $js_recommendations, val(iter_item, "projectId"), val(iter_item, "region"), val(iter_item, "recommender"), val(iter_item, "requestNumber")
   end
   result do
     encoding "json"
     collect jmes_path(response, "recommendations[*]") do
-      field "projectId", val(iter_item, "projectId")
-      field "projectNumber", val(iter_item, "projectNumber")
-      field "location", val(iter_item, "location")
       field "id", jmes_path(col_item, "name")
-      field "resource", jmes_path(col_item, "content.overview.resource")
-      field "resourceName", jmes_path(col_item, "content.overview.resourceName")
       field "description", jmes_path(col_item, "description")
+      field "resourceLink", jmes_path(col_item, "content.overview.resource")
+      field "resourceName", jmes_path(col_item, "content.overview.resourceName")
       field "primaryImpact", jmes_path(col_item, "primaryImpact")
       field "costUnits", jmes_path(col_item, "primaryImpact.costProjection.cost.units")
+      field "costNanos", jmes_path(col_item, "primaryImpact.costProjection.cost.nanos")
+      field "duration", jmes_path(col_item, "primaryImpact.costProjection.duration")
       field "currency", jmes_path(col_item, "primaryImpact.costProjection.cost.currencyCode")
       field "priority", jmes_path(col_item, "priority")
       field "recommenderSubtype", jmes_path(col_item, "recommenderSubtype")
       field "state", jmes_path(col_item, "stateInfo.state")
+      field "projectId", val(iter_item, "projectId")
+      field "projectName", val(iter_item, "projectName")
+      field "projectNumber", val(iter_item, "projectNumber")
+      field "region", val(iter_item, "region")
+      field "recommender", val(iter_item, "recommenderPretty")
     end
   end
 end
 
-script "js_recommender_call", type: "javascript" do
-  parameters "projectId", "location", "recommender", "requestNumber"
+script "js_recommendations", type: "javascript" do
+  parameters "projectId", "region", "recommender", "requestNumber"
   result "request"
-  code <<-EOF
+  code <<-EOS
   // If 100 requests have been made, wait
-  if (requestNumber % 100 === 0) {
-    var now = new Date().getTime();
+  if (requestNumber % 100 == 0) {
+    var now = new Date().getTime()
     var sleepDuration = 60000
-    while(new Date().getTime() < now + sleepDuration){ /* Do nothing */ }
+    while(new Date().getTime() < now + sleepDuration) { /* Do nothing */ }
   }
+
   var request = {
     auth: "auth_google",
     pagination: "google_pagination",
     host: "recommender.googleapis.com",
-    ignore_status: 403,
-    path: "/v1/projects/"+ projectId +"/locations/" + location + "/recommenders/" + recommender + "/recommendations",
+    ignore_status: [400, 403, 404],
+    path: "/v1/projects/" + projectId + "/locations/" + region + "/recommenders/" + recommender + "/recommendations",
     query_strings: { alt: "json" }
   }
-EOF
+EOS
+end
+
+# Branching logic:
+# This datasource returns an empty array if the target currency is USD.
+# This prevents ds_currency_conversion from running if it's not needed.
+datasource "ds_conditional_currency_conversion" do
+  run_script $js_conditional_currency_conversion, $ds_currency_target, $ds_recommendations
+end
+
+script "js_conditional_currency_conversion", type: "javascript" do
+  parameters "ds_currency_target", "ds_recommendations"
+  result "result"
+  code <<-EOS
+  result = []
+  from_currency = "USD"
+  currencies = _.compact(_.pluck(ds_recommendations, 'currency'))
+  if (currencies.length > 0) { from_currency = currencies[0] }
+
+  // Make the request only if the target currency is not USD
+  if (ds_currency_target['code'] != from_currency) { result = [{ from: from_currency }] }
+EOS
+end
+
+datasource "ds_currency_conversion" do
+  # Only make a request if the target currency is not USD
+  iterate $ds_conditional_currency_conversion
+  request do
+    host "api.xe-auth.flexeraeng.com"
+    path "/prod/{proxy+}"
+    query "from", val(iter_item, 'from')
+    query "to", val($ds_currency_target, 'code')
+    query "amount", "1"
+    # Ignore currency conversion if API has issues
+    ignore_status [400, 404, 502]
+  end
+  result do
+    encoding "json"
+    field "from", jmes_path(response, "from")
+    field "to", jmes_path(response, "to")
+    field "amount", jmes_path(response, "amount")
+    field "year", jmes_path(response, "year")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_target, $ds_currency_conversion
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_target", "ds_currency_conversion"
+  result "result"
+  code <<-EOS
+  result = ds_currency_target
+  result['exchange_rate'] = 1
+
+  if (ds_currency_conversion.length > 0) {
+    currency_code = ds_currency_target['code']
+    current_month = parseInt(new Date().toISOString().split('-')[1])
+
+    conversion_block = _.find(ds_currency_conversion[0]['to'][currency_code], function(item) {
+      return item['month'] == current_month
+    })
+
+    if (conversion_block != undefined) {
+      result['exchange_rate'] = conversion_block['monthlyAverage']
+    }
+  }
+EOS
+end
+
+datasource "ds_recommendations_incident" do
+  run_script $js_recommendations_incident, $ds_recommendations, $ds_currency, $ds_applied_policy, $param_min_savings, $param_recommenders
+end
+
+script "js_recommendations_incident", type: "javascript" do
+  parameters "ds_recommendations", "ds_currency", "ds_applied_policy", "param_min_savings", "param_recommenders"
+  result "result"
+  code <<-'EOS'
+  // Function for formatting currency numbers later
+  function formatNumber(number, separator) {
+    var numString = number.toString()
+    var values = numString.split(".")
+    var formatted_number = ''
+
+    while (values[0].length > 3) {
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      formatted_number = separator + chunk + formatted_number
+    }
+
+    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
+
+    if (values[1] == undefined) { return formatted_number }
+
+    return formatted_number + "." + values[1]
+  }
+
+  result = []
+  total_savings = 0.0
+
+  _.each(ds_recommendations, function(recommendation) {
+    savings = 0.0
+    costNanos = recommendation['costNanos']
+    costUnits = recommendation['costUnits']
+
+    if (costNanos != null && costNanos != undefined && costUnits != null && costUnits != undefined && recommendation['duration'] != null && recommendation['duration'] != undefined) {
+      if (costNanos == null || costNanos == undefined) { costNanos = 0 }
+      if (costNanos != null && costNanos != undefined) { costNanos = Number(costNanos) * -1 }
+
+      if (costUnits == null || costUnits == undefined) { costUnits = 0 }
+      if (costUnits != null && costUnits != undefined) { costUnits = Number(costUnits) * -1 }
+
+      duration = parseFloat(recommendation['duration'].replace("s", "")) / 2628288
+      if (duration != 0) { savings = (costUnits + costNanos * Math.pow(10, -9)) / duration * ds_currency['exchange_rate']}
+    }
+
+    if (savings >= param_min_savings) {
+      total_savings += savings
+
+      result.push({
+        accountID: recommendation["projectId"],
+        accountName: recommendation["projectName"],
+        projectNumber: recommendation["projectNumber"],
+        region: recommendation["region"],
+        resourceName: recommendation["resourceName"],
+        priority: recommendation['priority'],
+        primaryImpact: recommendation['primaryImpact'],
+        primaryImpactCategory: recommendation['primaryImpact']['category'],
+        recommendationDetails: recommendation['description'],
+        recommender: recommendation["recommender"],
+        recommenderSubtype: recommendation['recommenderSubtype'],
+        state: recommendation['state'],
+        id: recommendation["id"],
+        selfLink: recommendation["resourceLink"],
+        savings: parseFloat(savings.toFixed(3)),
+        savingsCurrency: ds_currency['symbol'],
+        policy_name: ds_applied_policy['name'],
+        total_savings: "",
+        message: ""
+      })
+    }
+  })
+
+  // Sort by descending order of savings value
+  result = _.sortBy(result, function(item) { return item['savings'] * -1 })
+
+  savings_message = [
+    ds_currency['symbol'], ' ',
+    formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['t_separator'])
+  ].join('')
+
+  message = "The following Google recommenders were checked: " + param_recommenders.join(', ') + "\n\n"
+
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters. Recommendations are generated by Google Cloud; please refer to Google's documentation if different recommendations are desired."
+
+  // Dummy item to ensure that the check statement in the policy executes at least once
+  result.push({
+    accountID: "",
+    accountName: "",
+    projectNumber: "",
+    region: "",
+    resourceName: "",
+    priority: "",
+    primaryImpact: "",
+    primaryImpactCategory: "",
+    recommendationDetails: "",
+    recommender: "",
+    recommenderSubtype: "",
+    state: "",
+    id: "",
+    resourceLink: "",
+    savings: "",
+    savingsCurrency: "",
+    policy_name: "",
+    total_savings: "",
+    message: ""
+  })
+
+  result[0]['total_savings'] = savings_message
+  result[0]['message'] = message + disclaimer
+EOS
 end
 
 ###############################################################################
 # Policy
 ###############################################################################
 
-policy "policy_recommendations" do
-  validate $ds_recommendations do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows found for {{parameters.param_recommenders}}"
-    check eq(size(data), 0)
+policy "pol_recommendations" do
+  validate_each $ds_recommendations_incident do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Google Recommendations Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceName"), ""))
     escalate $esc_email
+    hash_exclude "savings", "savingsCurrency", "total_savings", "message"
     export do
       resource_level true
-      field "projectId" do
+      field "accountID" do
         label "Project ID"
       end
-      field "location" do
-        label "Location"
+      field "accountName" do
+        label "Project Name"
+      end
+      field "projectNumber" do
+        label "Project Number"
       end
       field "resourceName" do
         label "Resource Name"
       end
-      field "description" do
-        label "Description"
+      field "region" do
+        label "Region"
       end
-      field "primary_impact" do
-        label "Primary Impact"
-        path "primaryImpact.category"
+      field "primaryImpactCategory" do
+        label "Primary Impact Category"
       end
-      field "costUnits" do
-        label "Cost"
+      field "savings" do
+        label "Estimated Monthly Savings"
       end
-      field "currency" do
+      field "savingsCurrency" do
         label "Currency"
       end
       field "priority" do
         label "Priority"
       end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
       field "recommenderSubtype" do
-        label "Sub Type"
+        label "Recommendation Sub Type"
       end
       field "state" do
         label "State"
       end
-      field "resource" do
-        label "resource"
-      end
       field "id" do
-        label "Name"
+        label "Recommendation ID"
+      end
+      field "selfLink" do
+        label "Resource Link"
       end
     end
   end
@@ -255,5 +602,91 @@ escalation "esc_email" do
 end
 
 ###############################################################################
-# Cloud Workflow
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
 ###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
+end

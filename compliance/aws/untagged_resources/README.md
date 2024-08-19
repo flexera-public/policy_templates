@@ -14,6 +14,7 @@ This policy template checks for AWS resources missing the user-specified tags. A
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
+- *Include Savings* - Whether or not to include the total estimated savings opportunities for each resource in the results. Disabling this can speed up policy execution but will result in the relevant fields in the report being empty.
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
 - *Allow/Deny Regions List* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled. See [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
 - *Tags* - The policy will report resources missing the specified tags. The following formats are supported:
@@ -23,6 +24,16 @@ This policy template checks for AWS resources missing the user-specified tags. A
   - `Key=~/Regex/` - Find all resources where the value for the specified key does not match the specified regex string and all resources missing the specified tag key.
   - `Key!~/Regex/` - Find all resources where the value for the specified key matches the specified regex string.
 - *Any / All* - Whether to report on instances missing any of the specified tags or all of them. Only applicable if more than one value is entered in the `Tags` field.
+- *Consider Tag Dimensions* - Exclude results when a resource is tagged with a tag key that is normalized by a Tag Dimension.
+  - Considers resource tags which are normalized under tag dimensions and excludes those matching from the missing tags results.
+  - Mitigates/prevents seeing resources that are tagged using some tag key which is normalized under a matching Tag Dimension.
+  - `Tags` parameter value must match a Tag Dimension Name ("Cost Center") or Tag Dimension ID ("tag_cost_center") for the lookup to occur
+
+  For example,
+   - A resource tagged `app=prod-cluster`
+   - A Tag Dimension named "Application" (tag_application) which normalizes tag resource tag keys `app`, `Application`, `App`, `application`, etc...
+
+  If Exclude Tag Dimensions is enabled and `Tags=["Application"]` the example resource would be considered to **not** be missing the `Application` tag, because it has the `app` tag which is normalized under the "Application" tag dimension
 
 ## Policy Actions
 

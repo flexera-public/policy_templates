@@ -1,5 +1,17 @@
 # Changelog
 
+## v5.0.0
+
+- Policy template renamed to `AWS Unencrypted EBS Volumes` to better reflect its functionality
+- Expanded region and tag filtering options
+- Several parameters altered to be more descriptive and human-readable
+- Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera credential
+
+## v4.2.1
+
+- Added default value for parameters that do not require user input
+
 ## v4.2
 
 - Changed internal name of escalation code to ensure "Meta Policy" works as expected

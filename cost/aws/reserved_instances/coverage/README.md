@@ -1,21 +1,16 @@
-# Reserved Instances Coverage
+# AWS Reserved Instances Coverage
 
-## What it does
+## What It Does
 
-This Policy Template leverages the Reserved Instance Coverage report. Retrieves the reservation coverage for your account.
-It will email the user specified in `Email addresses of the recipients you wish to notify`
+This policy template uses the [AWS Billing and Cost Management API](https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_GetReservationCoverage.html) to retrieve AWS Reserved Instances coverage information and presents it in a simple, easy-to-read report. Optionally, this report is emailed.
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
-
-- *Number of days in the past to view Reserved Instance Coverage* - allowed values 7,14,30,90,180,365
-- *Email addresses* - A list of email addresses of the recipients you wish to notify
-- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [more](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
+- *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
+- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
+- *Look Back Period (Days)* - Number of days in the past to assess AWS Reserved Instances coverage. Coverage will be assessed from this point in time until today.
 
 ## Policy Actions
-
-The following policy actions are taken on any resources found to be out of compliance.
 
 - Send an email report
 
@@ -43,10 +38,15 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   }
   ```
 
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - `billing_center_viewer`
+
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+
 ## Supported Clouds
 
 - AWS
 
 ## Cost
 
-This Policy Template does not launch any instances, and so does not incur any cloud costs.
+This Policy Template does not incur any cloud costs.

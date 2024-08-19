@@ -4,7 +4,7 @@
 
 This policy checks all the Azure SQL single database instances in Azure Subscriptions for the average CPU usage and number of connections over a user-specified number of days. If there were no connections to the instance, the instance is recommended for deletion. If there were connections but the average CPU usage was below a user-specified threshold, the instance is recommended for downsizing. Both sets of instances returned from this policy are emailed to the user.
 
-## Functional Details
+## How It Works
 
 - The policy leverages the Azure API to check all Azure SQL single database instances and then checks the number of connections and average CPU utilization over a user-specified number of days.
 - The policy identifies all instances that either have had no connections over a user-specified number of days and provides the relevant recommendation.
@@ -41,6 +41,8 @@ The policy includes the estimated monthly savings. The estimated monthly savings
   - `Key=~/Regex/` - Filter all resources where the value for the specified key matches the specified regex string.
   - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified tag key.
 - *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
+- *Threshold Statistic* - Statistic to use when determining if a SQL instance is underutilized.
+- *Statistic Interval* - The interval to use when gathering Azure metrics data. Smaller intervals produce more accurate results at the expense of policy memory usage and completion time due to larger data sets.
 - *Statistic Lookback Period* - How many days back to look at connection and CPU utilization data for instances. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days.
 - *Report Unused or Underutilized* - Whether to report on unused instances, underutilized instances, or both. If both are selected, unused instances will not appear in the list of underutilized instances regardless of CPU usage.
 - *Underutilized Instance CPU Threshold (%)* - The CPU threshold at which to consider an instance to be underutilized and therefore be flagged for downsizing.
@@ -49,7 +51,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
 For example if a user selects the "Delete Unused Instances" action while applying the policy, all the resources that didn't satisfy the policy condition will be deleted.
 
-## Actions
+## Policy Actions
 
 - Sends an email notification
 - Delete Azure SQL single database instance (if unused) after approval
@@ -57,20 +59,21 @@ For example if a user selects the "Delete Unused Instances" action while applyin
 
 ## Prerequisites
 
-This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
 ### Credential configuration
 
 For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
 
 - [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:
+  - `Microsoft.Sql/servers/read`
   - `Microsoft.Sql/servers/databases/read`
   - `Microsoft.Sql/servers/databases/metrics/read`
   - `Microsoft.Sql/servers/databases/update`*
   - `Microsoft.Sql/servers/databases/delete`*
   - `Microsoft.Insights/metrics/read`
 
-\* Only required for taking action (deleting or downsizing); the policy will still function in a read-only capacity without these permissions.
+  \* Only required for taking action (deleting or downsizing); the policy will still function in a read-only capacity without these permissions.
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`

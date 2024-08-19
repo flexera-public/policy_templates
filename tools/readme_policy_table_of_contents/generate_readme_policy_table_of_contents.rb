@@ -1,6 +1,6 @@
 require 'uri'
 require 'yaml'
-require_relative '../lib/policy_parser'
+require_relative '../../.dangerfile/policy_parser'
 
 
 pp = PolicyParser.new
@@ -21,8 +21,8 @@ if (pt_files.length != 0)
     # Exclude Policies that have publish: "false" in the metadata
     if open(file).grep(/publish: \"false\"/).length > 0 then next end
 
-    # Exclude Policies that are no longer being updated
-    if open(file).grep(/This policy is no longer being updated/).length > 0 then next end
+    # Exclude Meta Parent Policies
+    if file.include?("meta_parent") then next end
     ## End Policy Exclusions ##
 
     # After all exclusions, we can assume the policy should be in the output
@@ -167,4 +167,3 @@ puts pt_stats.to_yaml
 puts "-->"
 puts "<!-- End Policy Template Stats -->"
 puts ""
-
