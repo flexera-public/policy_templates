@@ -40,8 +40,10 @@ These templates can generate savings estimates for your environment.
 - [AWS Superseded EBS Volumes](./cost/aws/superseded_ebs_volumes)
 - [AWS Superseded EC2 Instances](./cost/aws/superseded_instances)
 - [AWS Untagged Resources](./compliance/aws/untagged_resources)
+- [AWS Unused Application Load Balancers](./cost/aws/unused_albs)
 - [AWS Unused Classic Load Balancers](./cost/aws/unused_clbs)
 - [AWS Unused IP Addresses](./cost/aws/unused_ip_addresses)
+- [AWS Unused Network Load Balancers](./cost/aws/unused_nlbs)
 - [AWS Unused RDS Instances](./cost/aws/unused_rds)
 - [AWS Unused Volumes](./cost/aws/unused_volumes)
 - [Turbonomic Allocate Virtual Machine Recommendations AWS](./cost/turbonomics/allocate_virtual_machines_recommendations/aws)
@@ -230,7 +232,9 @@ These templates can generate savings estimates for your environment.
 - Network
 
   - [AWS Idle NAT Gateways](./cost/aws/idle_nat_gateways)
+  - [AWS Unused Application Load Balancers](./cost/aws/unused_albs)
   - [AWS Unused Classic Load Balancers](./cost/aws/unused_clbs)
+  - [AWS Unused Network Load Balancers](./cost/aws/unused_nlbs)
 
 - RDS
 
@@ -678,11 +682,11 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 33
-  Cost: 121
+  Cost: 123
   Operational: 28
   SaaS Management: 11
   Security: 74
-:optimization_count: 61
+:optimization_count: 63
 :policy_sets:
   '': 46
   Allocate VMs: 3
@@ -743,11 +747,11 @@ These templates can generate savings estimates for your environment.
   Unused Database Services: 3
   Unused Firewalls: 1
   Unused IP Addresses: 3
-  Unused Load Balancers: 1
+  Unused Load Balancers: 3
   Unused Volumes: 7
   Usage Report: 10
 :providers:
-  AWS: 97
+  AWS: 99
   Azure: 95
   Azure China: 1
   Flexera: 38
@@ -786,7 +790,7 @@ These templates can generate savings estimates for your environment.
   Marketplace: 2
   MySQL: 2
   NetApp Files: 1
-  Network: 6
+  Network: 8
   Network Security Group: 2
   Office 365: 1
   Organization: 1
@@ -801,7 +805,7 @@ These templates can generate savings estimates for your environment.
   Storage Accounts: 2
   Tags: 3
   Usage Discount: 6
-:total_count: 267
+:total_count: 269
 -->
 <!-- End Policy Template Stats -->
 
