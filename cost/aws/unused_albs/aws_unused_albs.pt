@@ -1,13 +1,13 @@
-name "AWS Unused Classic Load Balancers"
+name "AWS Unused Application Load Balancers"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks AWS for unused Classic Load Balancers and, optionally, deletes them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/unused_clbs) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Checks AWS for unused Application Load Balancers and, optionally, deletes them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/unused_albs) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "6.3.0",
+  version: "0.1.0",
   provider: "AWS",
   service: "Network",
   policy_set: "Unused Load Balancers",
@@ -47,7 +47,7 @@ parameter "param_loadbalancer_age" do
   type "number"
   category "Filters"
   label "Load Balancer Age (Hours)"
-  description "Age, in hours, that a Classic Load Balancer needs to be to include it in the results. This is to avoid reporting on very new Classic Load Balancers that are still being configured."
+  description "Age, in hours, that an Application Load Balancer needs to be to include it in the results. This is to avoid reporting on very new Application Load Balancers that are still being configured."
   min_value 0
   default 1
 end
@@ -92,7 +92,7 @@ parameter "param_automatic_action" do
   category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Delete Unused Classic Load Balancers"]
+  allowed_values ["Delete Unused Application Load Balancers"]
   default []
 end
 
@@ -351,42 +351,53 @@ script "js_regions", type:"javascript" do
 EOS
 end
 
-datasource "ds_clbs_without_tags" do
+datasource "ds_elbs_without_tags" do
   iterate $ds_regions
   request do
     auth $auth_aws
     host join(["elasticloadbalancing.", val(iter_item, "region"), ".amazonaws.com"])
     path "/"
     query "Action", "DescribeLoadBalancers"
-    # Newer versions of API will not list Classic Load Balancers
-    query "Version", "2012-06-01"
+    query "Version", "2015-12-01"
     header "Accept", "application/json"
   end
   result do
     encoding "json"
-    collect jmes_path(response, "DescribeLoadBalancersResponse.DescribeLoadBalancersResult.LoadBalancerDescriptions[*]") do
+    collect jmes_path(response, "DescribeLoadBalancersResponse.DescribeLoadBalancersResult.LoadBalancers[*]") do
       field "name", jmes_path(col_item, "LoadBalancerName")
       field "scheme", jmes_path(col_item, "Scheme")
       field "created", jmes_path(col_item, "CreatedTime")
       field "dns", jmes_path(col_item, "DNSName")
-      field "vpc", jmes_path(col_item, "VPCId")
-      field "zones", jmes_path(col_item, "AvailabilityZones")
-      field "instances", jmes_path(col_item, "Instances[*].InstanceId")
+      field "vpc", jmes_path(col_item, "VpcId")
+      field "elb_zones" do
+        collect jmes_path(col_item, "AvailabilityZones") do
+          field "subnetId", jmes_path(col_item, "SubnetId")
+          field "zoneName", jmes_path(col_item, "ZoneName")
+        end
+      end
+      field "type", jmes_path(col_item, "Type")
+      field "arn", jmes_path(col_item, "LoadBalancerArn")
       field "region", val(iter_item, "region")
     end
   end
 end
 
-datasource "ds_clbs" do
-  iterate $ds_clbs_without_tags
+datasource "ds_albs_without_tags" do
+  run_script $js_albs_without_tags, $ds_elbs_without_tags
+end
+
+script "js_albs_without_tags", type: "javascript" do
+  parameters "ds_elbs_without_tags"
+  result "result"
+  code <<-'EOS'
+  result = _.filter(ds_elbs_without_tags, function(lb) { return lb['type'].toLowerCase() == 'application' })
+EOS
+end
+
+datasource "ds_albs" do
+  iterate $ds_albs_without_tags
   request do
-    auth $auth_aws
-    host join(["elasticloadbalancing.", val(iter_item, "region"), ".amazonaws.com"])
-    path "/"
-    query "Action", "DescribeTags"
-    query "Version", "2012-06-01"
-    query "LoadBalancerNames.member.1", val(iter_item, "name")
-    header "Accept", "application/json"
+    run_script $js_albs, val(iter_item, 'region'), val(iter_item, 'arn')
   end
   result do
     encoding "json"
@@ -402,19 +413,60 @@ datasource "ds_clbs" do
       field "created", val(iter_item, "created")
       field "dns", val(iter_item, "dns")
       field "vpc", val(iter_item, "vpc")
-      field "zones", val(iter_item, "zones")
-      field "instances", val(iter_item, "instances")
+      field "zones", val(iter_item, "elb_zones")
       field "region", val(iter_item, "region")
+      field "type", val(iter_item, "type")
+      field "arn", val(iter_item, "arn")
     end
   end
 end
 
-datasource "ds_clbs_tag_filtered" do
-  run_script $js_clbs_tag_filtered, $ds_clbs, $param_exclusion_tags, $param_exclusion_tags_boolean
+script "js_albs", type: "javascript" do
+  parameters "region", "arn"
+  result "request"
+  code <<-EOS
+  var request = {
+    auth: "auth_aws",
+    host: "elasticloadbalancing." + region + ".amazonaws.com",
+    path: "/",
+    query_params: {
+      "Action": "DescribeTags",
+      "Version": "2015-12-01",
+      "ResourceArns.member.1": encodeURI(arn)
+    },
+    headers: { "Accept": "application/json" }
+  }
+EOS
 end
 
-script "js_clbs_tag_filtered", type: "javascript" do
-  parameters "ds_clbs", "param_exclusion_tags", "param_exclusion_tags_boolean"
+datasource "ds_albs_age_filtered" do
+  run_script $js_albs_age_filtered, $ds_albs, $param_loadbalancer_age
+end
+
+script "js_albs_age_filtered", type: "javascript" do
+  parameters "ds_albs", "param_loadbalancer_age"
+  result "result"
+  code <<-'EOS'
+  now = new Date()
+
+  if (param_loadbalancer_age > 0) {
+    result = _.filter(ds_albs, function(lb) {
+      hours = param_loadbalancer_age * 3600000
+      created = new Date(Math.round(lb['created'] * 1000))
+      return now - created > hours
+    })
+  } else {
+    result = ds_albs
+  }
+EOS
+end
+
+datasource "ds_albs_tag_filtered" do
+  run_script $js_albs_tag_filtered, $ds_albs_age_filtered, $param_exclusion_tags, $param_exclusion_tags_boolean
+end
+
+script "js_albs_tag_filtered", type: "javascript" do
+  parameters "ds_albs_age_filtered", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-'EOS'
   comparators = _.map(param_exclusion_tags, function(item) {
@@ -448,7 +500,7 @@ script "js_clbs_tag_filtered", type: "javascript" do
   })
 
   if (param_exclusion_tags.length > 0) {
-    result = _.reject(ds_clbs, function(resource) {
+    result = _.reject(ds_albs_age_filtered, function(resource) {
       resource_tags = {}
 
       if (typeof(resource['tags']) == 'object') {
@@ -486,104 +538,181 @@ script "js_clbs_tag_filtered", type: "javascript" do
       return all_tags_found || any_tags_found
     })
   } else {
-    result = ds_clbs
+    result = ds_albs_age_filtered
   }
 EOS
 end
 
-datasource "ds_clbs_age_filtered" do
-  run_script $js_clbs_age_filtered, $ds_clbs_tag_filtered, $param_loadbalancer_age
-end
-
-script "js_clbs_age_filtered", type: "javascript" do
-  parameters "ds_clbs_tag_filtered", "param_loadbalancer_age"
-  result "result"
-  code <<-'EOS'
-  if (param_loadbalancer_age > 0) {
-    result = _.filter(ds_clbs_tag_filtered, function(clb) {
-      hours = param_loadbalancer_age * 3600000
-      now = new Date()
-      created = new Date(Math.round(clb['created'] * 1000))
-
-      return now - created > hours
-    })
-  } else {
-    result = ds_clbs_tag_filtered
-  }
-EOS
-end
-
-datasource "ds_instances_health" do
-  iterate $ds_clbs_age_filtered
+datasource "ds_alb_listeners" do
+  iterate $ds_albs_tag_filtered
   request do
     auth $auth_aws
     host join(["elasticloadbalancing.", val(iter_item, "region"), ".amazonaws.com"])
     path "/"
-    query "Action", "DescribeInstanceHealth"
-    query "Version", "2012-06-01"
-    query "LoadBalancerName", val(iter_item, "name")
+    query "Action", "DescribeListeners"
+    query "Version", "2015-12-01"
+    query "LoadBalancerArn", val(iter_item, "arn")
     header "Accept", "application/json"
   end
   result do
     encoding "json"
-    collect jmes_path(response, "DescribeInstanceHealthResponse.DescribeInstanceHealthResult.InstanceStates[*]") do
-      field "description", jmes_path(col_item, "Description")
-      field "state", jmes_path(col_item, "State")
-      field "id", jmes_path(col_item, "InstanceId")
-      field "lb_name", val(iter_item, "name")
+    collect jmes_path(response, "DescribeListenersResponse.DescribeListenersResult.Listeners[*]") do
+      field "protocol", jmes_path(col_item, "Protocol")
+      field "port", jmes_path(col_item, "Port")
+      field "arn", val(iter_item, "arn")
     end
   end
 end
 
-datasource "ds_instances_by_clb" do
-  run_script $js_instances_by_clb, $ds_instances_health
+datasource "ds_alb_target_groups" do
+  iterate $ds_albs_tag_filtered
+  request do
+    auth $auth_aws
+    host join(["elasticloadbalancing.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/"
+    query "Action", "DescribeTargetGroups"
+    query "Version", "2015-12-01"
+    query "LoadBalancerArn", val(iter_item, "arn")
+    header "Accept", "application/json"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "DescribeTargetGroupsResponse.DescribeTargetGroupsResult.TargetGroups[*]") do
+      field "targetGroupArn", jmes_path(col_item, "TargetGroupArn")
+      field "targetGroupName", jmes_path(col_item, "TargetGroupName")
+      field "healthCheckTimeoutSeconds", jmes_path(col_item, "HealthCheckTimeoutSeconds")
+      field "healthCheckPort", jmes_path(col_item, "HealthCheckPort")
+      field "healthCheckProtocol", jmes_path(col_item, "HealthCheckProtocol")
+      field "healthCheckPath", jmes_path(col_item, "HealthCheckPath")
+      field "healthCheckIntervalSeconds", jmes_path(col_item, "HealthCheckIntervalSeconds")
+      field "healthyThresholdCount", jmes_path(col_item, "HealthyThresholdCount")
+      field "unhealthyThresholdCount", jmes_path(col_item, "UnhealthyThresholdCount")
+      field "matcher", jmes_path(col_item, "Matcher")
+      field "protocol", jmes_path(col_item, "Protocol")
+      field "port", jmes_path(col_item, "Port")
+      field "vpcId", jmes_path(col_item, "VpcId")
+      field "arn", val(iter_item, "arn")
+      field "region", val(iter_item, "region")
+    end
+  end
 end
 
-script "js_instances_by_clb", type: "javascript" do
-  parameters "ds_instances_health"
-  result "result"
-  code <<-'EOS'
-  result = {}
+datasource "ds_alb_target_groups_health" do
+  iterate $ds_alb_target_groups
+  request do
+    run_script $js_alb_target_groups_health, val(iter_item, 'region'), val(iter_item, 'targetGroupArn')
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "DescribeTargetHealthResponse.DescribeTargetHealthResult.TargetHealthDescriptions[*]") do
+      field "targetHealth", jmes_path(col_item, "TargetHealth.State")
+      field "targetGroupArn", val(iter_item, "targetGroupArn")
+      field "arn", val(iter_item, "arn")
+      field "region", val(iter_item, "region")
+    end
+  end
+end
 
-  _.each(ds_instances_health, function(instance) {
-    lb_name = instance['lb_name']
-
-    if (result[lb_name] == undefined) { result[lb_name] = [] }
-    result[lb_name].push(instance)
-  })
+script "js_alb_target_groups_health", type: "javascript" do
+  parameters "region", "targetGroupArn"
+  result "request"
+  code <<-EOS
+  var request = {
+    auth: "auth_aws",
+    host: "elasticloadbalancing." + region + ".amazonaws.com",
+    path: "/",
+    query_params: {
+      "Action": "DescribeTargetHealth",
+      "Version": "2015-12-01",
+      "TargetGroupArn": encodeURI(targetGroupArn)
+    },
+    headers: { "Accept": "application/json" }
+  }
 EOS
 end
 
-datasource "ds_unused_clbs" do
-  run_script $js_unused_clbs, $ds_clbs_age_filtered, $ds_instances_by_clb
+datasource "ds_albs_combined" do
+  run_script $js_albs_combined, $ds_albs_tag_filtered, $ds_alb_listeners, $ds_alb_target_groups, $ds_alb_target_groups_health
 end
 
-script "js_unused_clbs", type: "javascript" do
-  parameters "ds_clbs_age_filtered", "ds_instances_by_clb"
+script "js_albs_combined", type: "javascript" do
+  parameters "ds_albs_tag_filtered", "ds_alb_listeners", "ds_alb_target_groups", "ds_alb_target_groups_health"
   result "result"
   code <<-'EOS'
-  result = _.filter(ds_clbs_age_filtered, function(clb) {
-    name = clb['name']
-    unused = false
+  listener_table = _.groupBy(ds_alb_listeners, 'arn')
+  group_table = _.groupBy(ds_alb_target_groups, 'arn')
+  health_table = _.groupBy(ds_alb_target_groups_health, 'targetGroupArn')
 
-    if (typeof(clb['instances']) != 'object') {
-      unused = true
-    } else if (clb['instances'].length == 0) {
-      unused = true
-    } else if (ds_instances_by_clb[name] == undefined) {
-      unused = true
-    } else if (_.contains(_.pluck(ds_instances_by_clb[name], 'state'), 'InService') == false) {
-      unused = true
+  result = _.map(ds_albs_tag_filtered, function(lb) {
+    listeners = []
+    if (listener_table[lb['arn']] != undefined) { listeners = listener_table[lb['arn']] }
+
+    target_groups_without_health = []
+    if (group_table[lb['arn']] != undefined) { target_groups_without_health = group_table[lb['arn']] }
+
+    target_groups = _.map(target_groups_without_health, function(group) {
+      healthStatus = "unknown"
+
+      if (health_table[group['targetGroupArn']] != undefined) {
+        healthStatus = health_table[group['targetGroupArn']][0]['targetHealth']
+      }
+
+      return {
+        targetGroupArn: group['targetGroupArn'],
+        targetGroupName: group['targetGroupName'],
+        healthCheckTimeoutSeconds: group['healthCheckTimeoutSeconds'],
+        healthCheckPort: group['healthCheckPort'],
+        healthCheckProtocol: group['healthCheckProtocol'],
+        healthCheckPath: group['healthCheckPath'],
+        healthCheckIntervalSeconds: group['healthCheckIntervalSeconds'],
+        healthyThresholdCount: group['healthyThresholdCount'],
+        unhealthyThresholdCount: group['unhealthyThresholdCount'],
+        matcher: group['matcher'],
+        protocol: group['protocol'],
+        port: group['port'],
+        vpcId: group['vpcId'],
+        healthStatus: healthStatus
+      }
+    })
+
+    healthy_groups = _.filter(target_groups, function(group) { return group['healthStatus'] == 'healthy' })
+
+    tags = []
+
+    if (typeof(lb['tags']) == 'object') {
+      tags = _.map(lb['tags'], function(tag) { return tag['key'] + '=' + tag['value'] })
     }
 
-    return unused
+    created = new Date(Math.round(lb['created'] * 1000)).toISOString()
+
+    zones = []
+
+    if (typeof(lb['zones']) == 'object') {
+      zones = _.map(lb['zones'], function(zone) { return 'subnet:' + zone['subnetId'] + ' ' + 'zone:' + zone['zoneName'] })
+    }
+
+    return {
+      name: lb['name'],
+      scheme: lb['scheme'],
+      dns: lb['dns'],
+      vpc: lb['vpc'],
+      region: lb['region'],
+      type: lb['type'],
+      arn: lb['arn'],
+      zones: zones.join(', '),
+      tags: tags.join(', '),
+      created: created,
+      listeners: listeners,
+      target_groups: target_groups,
+      healthy_groups: healthy_groups
+    }
   })
 EOS
 end
 
-datasource "ds_clb_costs" do
+datasource "ds_alb_costs" do
   request do
-    run_script $js_clb_costs, $ds_aws_account, $ds_top_level_bcs, rs_org_id, rs_optima_host
+    run_script $js_alb_costs, $ds_aws_account, $ds_top_level_bcs, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -594,7 +723,7 @@ datasource "ds_clb_costs" do
   end
 end
 
-script "js_clb_costs", type:"javascript" do
+script "js_alb_costs", type:"javascript" do
   parameters "ds_aws_account", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-'EOS'
@@ -630,7 +759,7 @@ script "js_clb_costs", type:"javascript" do
           {
             "dimension": "resource_type",
             "type": "equal",
-            "value": "Load Balancer"
+            "value": "Load Balancer-Application"
           },
           {
             "dimension": "vendor_account",
@@ -649,12 +778,12 @@ script "js_clb_costs", type:"javascript" do
 EOS
 end
 
-datasource "ds_clb_costs_grouped" do
-  run_script $js_clb_costs_grouped, $ds_clb_costs
+datasource "ds_alb_costs_grouped" do
+  run_script $js_alb_costs_grouped, $ds_alb_costs
 end
 
-script "js_clb_costs_grouped", type: "javascript" do
-  parameters "ds_clb_costs"
+script "js_alb_costs_grouped", type: "javascript" do
+  parameters "ds_alb_costs"
   result "result"
   code <<-'EOS'
   // Multiple a single day's cost by the average number of days in a month.
@@ -664,7 +793,7 @@ script "js_clb_costs_grouped", type: "javascript" do
   // Group cost data by resourceId for later use
   result = {}
 
-  _.each(ds_clb_costs, function(item) {
+  _.each(ds_alb_costs, function(item) {
     id = item['id'].toLowerCase()
 
     if (result[id] == undefined) { result[id] = 0.0 }
@@ -673,12 +802,12 @@ script "js_clb_costs_grouped", type: "javascript" do
 EOS
 end
 
-datasource "ds_unused_clb_cost_mapping" do
-  run_script $js_unused_clb_cost_mapping, $ds_clbs_age_filtered, $ds_unused_clbs, $ds_clb_costs_grouped, $ds_applied_policy, $ds_aws_account, $ds_currency, $param_min_savings, $param_loadbalancer_age
+datasource "ds_bad_albs" do
+  run_script $js_bad_albs, $ds_albs_combined, $ds_alb_costs_grouped, $ds_aws_account, $ds_currency, $ds_applied_policy, $param_loadbalancer_age, $param_min_savings
 end
 
-script "js_unused_clb_cost_mapping", type: "javascript" do
-  parameters "ds_clbs_age_filtered", "ds_unused_clbs", "ds_clb_costs_grouped", "ds_applied_policy", "ds_aws_account", "ds_currency", "param_min_savings", "param_loadbalancer_age"
+script "js_bad_albs", type: "javascript" do
+  parameters "ds_albs_combined", "ds_alb_costs_grouped", "ds_aws_account", "ds_currency", "ds_applied_policy", "param_loadbalancer_age", "param_min_savings"
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
@@ -700,50 +829,41 @@ script "js_unused_clb_cost_mapping", type: "javascript" do
   }
 
   result = []
-
   total_savings = 0.0
 
-  _.each(ds_unused_clbs, function(clb) {
-    clb_id = clb['name'].toLowerCase()
-
+  _.each(ds_albs_combined, function(lb) {
+    lb_id = lb['name'].toLowerCase()
     savings = 0.0
-    if (ds_clb_costs_grouped[clb_id] != undefined) {
-      savings = ds_clb_costs_grouped[clb_id]
-    }
+    if (ds_alb_costs_grouped[lb_id] != undefined) { savings = ds_alb_costs_grouped[lb_id] }
 
-    if (savings >= param_min_savings) {
+    if (savings >= param_min_savings && (lb['listeners'].length == 0 || lb['healthy_groups'].length == 0)) {
       total_savings += savings
 
       recommendationDetails = [
-        "Delete AWS Classic Load Balancer ", clb['name'], " ",
+        "Delete AWS Application Load Balancer ", lb['name'], " ",
         "in AWS Account ", ds_aws_account['name'], " ",
         "(", ds_aws_account['id'], ")"
       ].join('')
 
-      tags = []
-
-      _.each(clb['tags'], function(tag) {
-        tags.push(tag['key'] + '=' + tag['value'])
-      })
-
-      created = new Date(Math.round(clb['created'] * 1000)).toISOString()
-
       result.push({
         accountID: ds_aws_account['id'],
         accountName: ds_aws_account['name'],
-        resourceID: clb['name'],
-        scheme: clb['scheme'],
-        dns: clb['dns'],
-        vpc: clb['vpc'],
-        zones: clb['zones'].join(', '),
-        instances: clb['instances'].join(', '),
-        region: clb['region'],
+        resourceName: lb['name'],
+        resourceID: lb['arn'],
+        scheme: lb['scheme'],
+        dns: lb['dns'],
+        vpc: lb['vpc'],
+        zones: lb['zones'],
+        region: lb['region'],
         savings: Math.round(savings * 1000) / 1000,
         savingsCurrency: ds_currency['symbol'],
         policy_name: ds_applied_policy['name'],
-        created: created,
-        tags: tags.join(', '),
-        type: "Classic Load Balancer",
+        created: lb['created'],
+        tags: lb['tags'],
+        totalListeners: lb['listeners'].length,
+        totalGroups: lb['target_groups'].length,
+        totalHealthyGroups: lb['healthy_groups'].length,
+        type: "Application Load Balancer",
         service: "ELB",
         recommendationDetails: recommendationDetails,
         // These are to avoid errors when we hash_exclude these fields
@@ -754,30 +874,33 @@ script "js_unused_clb_cost_mapping", type: "javascript" do
   })
 
   // Message for incident output
-  total_clbs = ds_clbs_age_filtered.length.toString()
-  total_unused_clbs = result.length.toString()
-  unused_clbs_percentage = (total_unused_clbs / total_clbs * 100).toFixed(2).toString() + '%'
+  total_lbs = ds_albs_combined.length.toString()
+  total_unused_lbs = result.length.toString()
+  unused_lbs_percentage = (total_unused_lbs / total_lbs * 100).toFixed(2).toString() + '%'
 
-  lb_noun = "Classic Load Balancer"
-  if (total_clbs > 1) { lb_noun += "s" }
+  lb_noun = "Application Load Balancer"
+  if (total_lbs > 1) { lb_noun += "s" }
 
   lb_verb = "is"
-  if (total_unused_clbs > 1) { lb_verb = "are" }
+  if (total_unused_lbs > 1) { lb_verb = "are" }
 
   findings = [
-    "Out of ", total_clbs, " AWS ", lb_noun, " analyzed, ",
-    total_unused_clbs, " (", unused_clbs_percentage,
-    ") ", lb_verb, " unused and recommended for deletion. "
+    "Out of ", total_lbs, " AWS ", lb_noun, " analyzed, ",
+    total_unused_lbs, " (", unused_lbs_percentage,
+    ") ", lb_verb, " unused and recommended for deletion. ",
+    "Application Load Balancers are considered unused if they either have ",
+    "no listeners configured or have no target groups in a 'healthy' status ",
+    "with at least one target. "
   ].join('')
 
   time_noun = "hours"
   if (param_loadbalancer_age == 1) {time_noun = "hour" }
 
-  settings = "Results do not exclude recently created AWS Classic Load Balancers.\n\n"
+  settings = "Results do not exclude recently created AWS Application Load Balancers.\n\n"
 
   if (param_loadbalancer_age != 0) {
     settings = [
-      "AWS Classic Load Balancers older than ", param_loadbalancer_age, " ", time_noun,
+      "AWS Application Load Balancers older than ", param_loadbalancer_age, " ", time_noun,
       " were excluded from the results.\n\n"
     ].join('')
   }
@@ -789,7 +912,6 @@ script "js_unused_clb_cost_mapping", type: "javascript" do
   // Dummy item to ensure the policy's check statement always executes at least once
   result.push({
     resourceID: "",
-    instances: "",
     message: "",
     total_savings: "",
     tags: "",
@@ -806,9 +928,9 @@ end
 # Policy
 ###############################################################################
 
-policy "pol_unused_clbs" do
-  validate_each $ds_unused_clb_cost_mapping do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Unused Classic Load Balancers Found"
+policy "pol_unused_albs" do
+  validate_each $ds_bad_albs do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Unused Application Load Balancers Found"
     detail_template <<-'EOS'
     **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
 
@@ -816,8 +938,8 @@ policy "pol_unused_clbs" do
     EOS
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
-    escalate $esc_delete_clbs
-    hash_exclude "instances", "message", "total_savings", "tags", "savings", "savingsCurrency"
+    escalate $esc_delete_albs
+    hash_exclude "message", "total_savings", "tags", "savings", "savingsCurrency"
     export do
       resource_level true
       field "accountID" do
@@ -826,8 +948,11 @@ policy "pol_unused_clbs" do
       field "accountName" do
         label "Account Name"
       end
-      field "resourceID" do
+      field "resourceName" do
         label "Resource Name"
+      end
+      field "resourceID" do
+        label "Resource ARN"
       end
       field "dns" do
         label "DNS Name"
@@ -844,6 +969,15 @@ policy "pol_unused_clbs" do
       field "region" do
         label "Region"
       end
+      field "totalListeners" do
+        label "Listeners (#)"
+      end
+      field "totalGroups" do
+        label "Target Groups (#)"
+      end
+      field "totalHealthyGroups" do
+        label "Healthy Target Groups (#)"
+      end
       field "savings" do
         label "Estimated Monthly Savings"
       end
@@ -852,9 +986,6 @@ policy "pol_unused_clbs" do
       end
       field "zones" do
         label "Availability Zones"
-      end
-      field "instances" do
-        label "Attached Instances"
       end
       field "vpc" do
         label "VPC"
@@ -884,23 +1015,23 @@ escalation "esc_email" do
   email $param_email
 end
 
-escalation "esc_delete_clbs" do
-  automatic contains($param_automatic_action, "Delete Unused Classic Load Balancers")
-  label "Delete Unused Classic Load Balancers"
-  description "Approval to delete all selected Classic Load Balancers"
-  run "delete_clbs", data
+escalation "esc_delete_albs" do
+  automatic contains($param_automatic_action, "Delete Unused Application Load Balancers")
+  label "Delete Unused Application Load Balancers"
+  description "Approval to delete all selected Application Load Balancers"
+  run "delete_albs", data
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define delete_clbs($data) return $all_responses do
+define delete_albs($data) return $all_responses do
   $$all_responses = []
 
-  foreach $clb in $data do
+  foreach $alb in $data do
     sub on_error: handle_error() do
-      call delete_clb($clb) retrieve $response
+      call delete_alb($alb) retrieve $response
     end
   end
 
@@ -909,10 +1040,10 @@ define delete_clbs($data) return $all_responses do
   end
 end
 
-define delete_clb($clb) return $response do
-  $host = "elasticloadbalancing." + $clb["region"] + ".amazonaws.com"
+define delete_alb($alb) return $response do
+  $host = "elasticloadbalancing." + $alb["region"] + ".amazonaws.com"
   $href = "/"
-  $params = "?Action=DeleteLoadBalancer&Version=2012-06-01&LoadBalancerName=" + $clb["resourceID"]
+  $params = "?Action=DeleteLoadBalancer&Version=2015-12-01&LoadBalancerArn=" + $alb["resourceID"]
   $url = $host + $href + $params
   task_label("GET " + $url)
 
@@ -924,18 +1055,18 @@ define delete_clb($clb) return $response do
     href: $href,
     query_strings: {
       "Action": "DeleteLoadBalancer",
-      "Version": "2012-06-01",
-      "LoadBalancerName": $clb["resourceID"]
+      "Version": "2015-12-01",
+      "LoadBalancerArn": $alb["resourceID"]
     }
   )
 
-  task_label("GET AWS Classic Load Balancer response: " + $clb["resourceID"] + " " + to_json($response))
+  task_label("GET AWS Application Load Balancer response: " + $alb["resourceID"] + " " + to_json($response))
   $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
 
   if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
-    raise "Unexpected response from GET AWS Classic Load Balancer: "+ $clb["resourceID"] + " " + to_json($response)
+    raise "Unexpected response from GET AWS Application Load Balancer: "+ $alb["resourceID"] + " " + to_json($response)
   else
-    task_label("GET AWS Classic Load Balancer successful: " + $clb["resourceID"])
+    task_label("GET AWS Application Load Balancer successful: " + $alb["resourceID"])
   end
 end
 
