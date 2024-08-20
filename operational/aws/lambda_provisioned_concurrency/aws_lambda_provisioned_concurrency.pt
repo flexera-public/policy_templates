@@ -247,16 +247,12 @@ datasource "ds_functions" do
       field "architectures", jmes_path(col_item, "Architectures")
       field "description", jmes_path(col_item, "Description")
       field "lastModified", jmes_path(col_item, "LastModified")
-      field "masterArn", jmes_path(col_item, "MasterArn")
       field "memorySize", jmes_path(col_item, "MemorySize")
       field "packageType", jmes_path(col_item, "PackageType")
       field "revisionId", jmes_path(col_item, "RevisionId")
       field "role", jmes_path(col_item, "Role")
-      field "signingJobArn", jmes_path(col_item, "SigningJobArn")
       field "signingProfileVersionArn", jmes_path(col_item, "SigningProfileVersionArn")
-      field "state", jmes_path(col_item, "State")
       field "timeout", jmes_path(col_item, "Timeout")
-      field "version", jmes_path(col_item, "Version")
       field "region", val(iter_item, "region")
     end
   end
@@ -278,16 +274,12 @@ datasource "ds_functions_with_tags" do
     field "architectures", val(iter_item, "architectures")
     field "description", val(iter_item, "description")
     field "lastModified", val(iter_item, "lastModified")
-    field "masterArn", val(iter_item, "masterArn")
     field "memorySize", val(iter_item, "memorySize")
     field "packageType", val(iter_item, "packageType")
     field "revisionId", val(iter_item, "revisionId")
     field "role", val(iter_item, "role")
-    field "signingJobArn", val(iter_item, "signingJobArn")
     field "signingProfileVersionArn", val(iter_item, "signingProfileVersionArn")
-    field "state", val(iter_item, "state")
     field "timeout", val(iter_item, "timeout")
-    field "version", val(iter_item, "version")
     field "region", val(iter_item, "region")
   end
 end
@@ -369,47 +361,95 @@ script "js_functions_tag_filtered", type: "javascript" do
 EOS
 end
 
-datasource "ds_functions_with_concurrency" do
+datasource "ds_function_versions" do
   iterate $ds_functions_tag_filtered
   request do
     auth $auth_aws
     host join(["lambda.", val(iter_item, "region"), ".amazonaws.com"])
-    path join(["/2019-09-30/functions/", val(iter_item, "arn"), "/provisioned-concurrency"])
+    path join(["/2015-03-31/functions/", val(iter_item, "arn"), "/versions"])
     header "Accept", "application/json"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "Versions[*]") do
+      field "version", jmes_path(col_item, "Version")
+      field "arn", val(iter_item, "arn")
+      field "name", val(iter_item, "name")
+      field "architectures", val(iter_item, "architectures")
+      field "description", val(iter_item, "description")
+      field "lastModified", val(iter_item, "lastModified")
+      field "memorySize", val(iter_item, "memorySize")
+      field "packageType", val(iter_item, "packageType")
+      field "revisionId", val(iter_item, "revisionId")
+      field "role", val(iter_item, "role")
+      field "signingProfileVersionArn", val(iter_item, "signingProfileVersionArn")
+      field "timeout", val(iter_item, "timeout")
+      field "region", val(iter_item, "region")
+      field "tags", val(iter_item, "tags")
+    end
+  end
+end
+
+datasource "ds_function_published_versions" do
+  run_script $js_function_published_versions, $ds_function_versions
+end
+
+script "js_function_published_versions", type: "javascript" do
+  parameters "ds_function_versions"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_function_versions, function(item) { return item['version'] != "$LATEST" })
+EOS
+end
+
+datasource "ds_function_versions_with_concurrency" do
+  iterate $ds_function_published_versions
+  request do
+    auth $auth_aws
+    host join(["lambda.", val(iter_item, "region"), ".amazonaws.com"])
+    path join(["/2019-09-30/functions/", val(iter_item, "arn"), "/provisioned-concurrency"])
+    query "Qualifier", val(iter_item, "version")
+    header "Accept", "application/json"
+    ignore_status [404]
   end
   result do
     encoding "json"
     field "concurrencyConfigs", jmes_path(response, "ProvisionedConcurrencyConfigs")
     field "arn", val(iter_item, "arn")
     field "name", val(iter_item, "name")
-    field "architectures", val(iter_item, "architectures")
-    field "description", val(iter_item, "description")
-    field "lastModified", val(iter_item, "lastModified")
-    field "masterArn", val(iter_item, "masterArn")
-    field "memorySize", val(iter_item, "memorySize")
-    field "packageType", val(iter_item, "packageType")
-    field "revisionId", val(iter_item, "revisionId")
-    field "role", val(iter_item, "role")
-    field "signingJobArn", val(iter_item, "signingJobArn")
-    field "signingProfileVersionArn", val(iter_item, "signingProfileVersionArn")
-    field "state", val(iter_item, "state")
-    field "timeout", val(iter_item, "timeout")
     field "version", val(iter_item, "version")
     field "region", val(iter_item, "region")
-    field "tags", val(iter_item, "tags")
   end
 end
 
+datasource "ds_concurrency_table" do
+  run_script $js_concurrency_table, $ds_function_versions_with_concurrency
+end
+
+script "js_concurrency_table", type: "javascript" do
+  parameters "ds_function_versions_with_concurrency"
+  result "result"
+  code <<-EOS
+  result = {}
+
+  _.each(ds_function_versions_with_concurrency, function(item) {
+    id = item['arn'] + '___' + item['version']
+    result[id] = item['concurrencyConfigs']
+  })
+EOS
+end
+
 datasource "ds_functions_without_concurrency" do
-  run_script $js_functions_without_concurrency, $ds_functions_with_concurrency, $ds_aws_account, $ds_applied_policy
+  run_script $js_functions_without_concurrency, $ds_function_published_versions, $ds_concurrency_table, $ds_aws_account, $ds_applied_policy
 end
 
 script "js_functions_without_concurrency", type: "javascript" do
-  parameters "ds_functions_with_concurrency", "ds_aws_account", "ds_applied_policy"
+  parameters "ds_function_published_versions", "ds_concurrency_table", "ds_aws_account", "ds_applied_policy"
   result "result"
   code <<-'EOS'
-  bad_functions = _.filter(ds_functions_with_concurrency, function(item) {
-    return typeof(item['concurrencyConfigs']) != 'object' || item['concurrencyConfigs'].length == 0
+  bad_functions = _.filter(ds_function_published_versions, function(item) {
+    id = item['arn'] + '___' + item['version']
+    return typeof(ds_concurrency_table[id]) != 'object' || ds_concurrency_table[id].length == 0
   })
 
   result = _.map(bad_functions, function(item) {
@@ -434,7 +474,6 @@ script "js_functions_without_concurrency", type: "javascript" do
       role: item['role'],
       signingJobArn: item['signingJobArn'],
       signingProfileVersionArn: item['signingProfileVersionArn'],
-      state: item['state'],
       timeout: item['timeout'],
       version: item['version'],
       region: item['region'],
@@ -452,7 +491,7 @@ end
 
 policy "pol_functions_without_concurrency" do
   validate_each $ds_functions_without_concurrency do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Lambda Functions Without Provisioned Concurrency Found"
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Lambda Function Versions Without Provisioned Concurrency Found"
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     hash_exclude "lastModified", "tags"
@@ -470,6 +509,9 @@ policy "pol_functions_without_concurrency" do
       field "resourceName" do
         label "Name"
       end
+      field "version" do
+        label "Version"
+      end
       field "region" do
         label "Region"
       end
@@ -478,12 +520,6 @@ policy "pol_functions_without_concurrency" do
       end
       field "lastModified" do
         label "Last Modified"
-      end
-      field "state" do
-        label "State"
-      end
-      field "version" do
-        label "Version"
       end
       field "service" do
         label "Service"

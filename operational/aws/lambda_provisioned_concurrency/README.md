@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy template reports any AWS Lambda Functions that do not have provisioned concurrency enabled. Optionally, it emails this report.
+This policy template reports any published AWS Lambda Function versions that do not have provisioned concurrency enabled. Optionally, it emails this report.
 
 ## Input Parameters
 
@@ -32,6 +32,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   - `lambda:ListFunctions`
   - `lambda:ListTags`
   - `lambda:ListProvisionedConcurrencyConfigs`
+  - `lambda:ListVersionsByFunction`
 
   Example IAM Permission Policy:
 
@@ -46,7 +47,8 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
                   "ec2:DescribeRegions",
                   "lambda:ListFunctions",
                   "lambda:ListTags",
-                  "lambda:ListProvisionedConcurrencyConfigs"
+                  "lambda:ListProvisionedConcurrencyConfigs",
+                  "lambda:ListVersionsByFunction"
               ],
               "Resource": "*"
           }
