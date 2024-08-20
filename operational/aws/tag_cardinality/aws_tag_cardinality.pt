@@ -7,10 +7,11 @@ severity "low"
 category "Operational"
 default_frequency "weekly"
 info(
-  version: "3.1.1",
+  version: "3.2.0",
   provider: "AWS",
   service: "Tags",
-  policy_set: "Tag Cardinality"
+  policy_set: "Tag Cardinality",
+  meta_template: "aws_tag_cardinality_meta_parent.pt.template"
 )
 
 ###############################################################################
@@ -221,22 +222,6 @@ datasource "ds_aws_resources_sorted" do
   run_script $js_tag_sorter, $ds_aws_resources
 end
 
-datasource "ds_aws_accounts_tag_list" do
-  run_script $js_tag_lister, $ds_aws_accounts_sorted, "Account"
-end
-
-datasource "ds_aws_resources_tag_list" do
-  run_script $js_tag_lister, $ds_aws_resources_sorted, "Resource"
-end
-
-datasource "ds_tag_report" do
-  run_script $js_tag_report, $ds_aws_accounts_tag_list, $ds_aws_resources_tag_list
-end
-
-###############################################################################
-# Scripts
-###############################################################################
-
 script "js_tag_sorter", type: "javascript" do
   parameters "tagged_list"
   result "result"
@@ -255,6 +240,14 @@ script "js_tag_sorter", type: "javascript" do
     result.push(item)
   })
 EOS
+end
+
+datasource "ds_aws_accounts_tag_list" do
+  run_script $js_tag_lister, $ds_aws_accounts_sorted, "Account"
+end
+
+datasource "ds_aws_resources_tag_list" do
+  run_script $js_tag_lister, $ds_aws_resources_sorted, "Resource"
 end
 
 script "js_tag_lister", type: "javascript" do
@@ -278,15 +271,20 @@ script "js_tag_lister", type: "javascript" do
 
   _.each(Object.keys(tags), function(key) {
     result.push({
-      'type': tag_type,
-      'key': key,
-      'cardinality': _.uniq(tags[key]).length,
-      'value_list': _.uniq(tags[key]).join(', ')
+      type: tag_type,
+      key: key,
+      cardinality: _.uniq(tags[key]).length,
+      value_list: _.uniq(tags[key]).join(', '),
+      value_list_object: _.uniq(tags[key])
     })
   })
 
   result = _.sortBy(result, 'cardinality').reverse()
 EOS
+end
+
+datasource "ds_tag_report" do
+  run_script $js_tag_report, $ds_aws_accounts_tag_list, $ds_aws_resources_tag_list
 end
 
 script "js_tag_report", type: "javascript" do
@@ -319,6 +317,9 @@ policy "pol_aws_tag_cardinality_report" do
       end
       field "value_list" do
         label "Unique Values"
+      end
+      field "value_list_object" do
+        label "Unique Values (Object)"
       end
     end
   end
