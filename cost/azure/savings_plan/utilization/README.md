@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This Policy Template leverages the Azure Billing API ([Savings Plans By Savings Plan Order](https://learn.microsoft.com/en-us/rest/api/billing/savings-plans/list-by-savings-plan-order?view=rest-billing-2024-04-01&tabs=HTTP)). It will notify only if utilization of a Savings Plan falls below the value specified in the `Maximum Savings Plan Utilization Threshold` field. It examines the Savings Plan utilization for the prior 1 day, 7 days or 30 days in making this determination.
+This Policy Template leverages the Azure Billing API ([Savings Plans By Savings Plan Order](https://learn.microsoft.com/en-us/rest/api/billing/savings-plans/list-by-savings-plan-order?view=rest-billing-2024-04-01&tabs=HTTP)) to report on Savings Plan utilization. It will notify only if utilization of a Savings Plan falls below the value specified in the `Maximum Savings Plan Utilization Threshold` field. It examines the Savings Plan utilization for the prior 1 day, 7 days or 30 days in making this determination.
 
 ## Input Parameters
 
