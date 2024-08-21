@@ -26,6 +26,7 @@ This policy has the following input parameters required when launching the polic
 - *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
 - *CPU Surplus Credits* - Number of CPU Surplus Credits to report on. Set to -1 to ignore CPU burst credits.
 - *Check Burst Credit Balance* - Whether to check burst credit balance against max_earnable_credits
+- *Statistic Lookback Period* - How many days back to look at CloudWatch data for instances. This value cannot be set higher than 90 because AWS does not retain metrics for longer than 90 days.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
 Please note that the "*Automatic Actions*" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.

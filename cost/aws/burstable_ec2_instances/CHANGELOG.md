@@ -2,7 +2,8 @@
 
 ## v4.2.0
 
-- Improved policy execution speed by batching CloudWatch requests. Functionality is unchanged.
+- Added parameter `Statistic Lookback Period` to specify how many days of CloudWatch data to gather.
+- Improved policy execution speed by batching CloudWatch requests.
 
 ## v4.1
 
