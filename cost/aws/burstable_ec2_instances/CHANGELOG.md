@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.2.0
+
+- Improved policy execution speed by batching CloudWatch requests. Functionality is unchanged.
+
 ## v4.1
 
 - fixed link to README in policy description

@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "monthly"
 info(
-  version: "4.1",
+  version: "4.2.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Burstable Compute Instances"
@@ -84,6 +84,16 @@ parameter "param_cpu_burst_credit_balance" do
   description "Whether to check burst credit balance against max_earnable_credits"
   allowed_values "Yes", "No"
   default "No"
+end
+
+parameter "param_stats_lookback" do
+  type "number"
+  category "Statistics"
+  label "Statistic Lookback Period"
+  description "How many days back to look at CPU and/or memory data for instances. This value cannot be set higher than 90 because AWS does not retain metrics for longer than 90 days."
+  min_value 1
+  max_value 90
+  default 30
 end
 
 parameter "param_automatic_action" do
@@ -421,158 +431,210 @@ script "js_instances", type: "javascript" do
 EOS
 end
 
-datasource "ds_instances_cpu_usage" do
-  iterate $ds_instances
-  request do
-    run_script $js_get_instance_stats, val(iter_item, "region"), val(iter_item, "instanceId"), "CPUUtilization"
-  end
-  result do
-    encoding "json"
-    field "cpuUsageStats", jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints")
-    field "region", val(iter_item, "region")
-    field "instanceId", val(iter_item, "instanceId")
-    field "imageId", val(iter_item, "imageId")
-    field "resourceType", val(iter_item, "resourceType")
-    field "resourceTypeInfo", val(iter_item, "resourceTypeInfo")
-    field "platform", val(iter_item, "platform")
-    field "privateDnsName", val(iter_item, "privateDnsName")
-    field "launchTime", val(iter_item, "launchTime")
-    field "tags", val(iter_item, "tags")
-  end
+datasource "ds_cloudwatch_queries" do
+  run_script $js_cloudwatch_queries, $ds_instances, $param_stats_lookback
 end
 
-datasource "ds_instances_cpu_credit_balance" do
-  iterate $ds_instances_cpu_usage
-  request do
-    run_script $js_get_instance_stats, val(iter_item, "region"), val(iter_item, "instanceId"), "CPUCreditBalance"
-  end
-  result do
-    encoding "json"
-    field "cpuCreditBalanceStats", jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints")
-    field "cpuUsageStats", val(iter_item, "cpuUsageStats")
-    field "region", val(iter_item, "region")
-    field "instanceId", val(iter_item, "instanceId")
-    field "imageId", val(iter_item, "imageId")
-    field "resourceType", val(iter_item, "resourceType")
-    field "resourceTypeInfo", val(iter_item, "resourceTypeInfo")
-    field "platform", val(iter_item, "platform")
-    field "privateDnsName", val(iter_item, "privateDnsName")
-    field "launchTime", val(iter_item, "launchTime")
-    field "tags", val(iter_item, "tags")
-  end
-end
-
-datasource "ds_instances_cpu_credit_surplus" do
-  iterate $ds_instances_cpu_credit_balance
-  request do
-    run_script $js_get_instance_stats, val(iter_item, "region"), val(iter_item, "instanceId"), "CPUSurplusCreditBalance"
-  end
-  result do
-    field "cpuSurplusCreditBalanceStats", jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints")
-    field "cpuCreditBalanceStats", val(iter_item, "cpuCreditBalanceStats")
-    field "cpuUsageStats", val(iter_item, "cpuUsageStats")
-    field "region", val(iter_item, "region")
-    field "instanceId", val(iter_item, "instanceId")
-    field "imageId", val(iter_item, "imageId")
-    field "resourceType", val(iter_item, "resourceType")
-    field "resourceTypeInfo", val(iter_item, "resourceTypeInfo")
-    field "platform", val(iter_item, "platform")
-    field "privateDnsName", val(iter_item, "privateDnsName")
-    field "launchTime", val(iter_item, "launchTime")
-    field "tags", val(iter_item, "tags")
-  end
-end
-
-datasource "ds_instances_cpu_credits_charged" do
-  iterate $ds_instances_cpu_credit_surplus
-  request do
-    run_script $js_get_instance_stats, val(iter_item, "region"), val(iter_item, "instanceId"), "CPUSurplusCreditsCharged"
-  end
-  result do
-    field "cpuSurplusCreditsChargedStats", jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints")
-    field "cpuSurplusCreditBalanceStats", val(iter_item, "cpuSurplusCreditBalanceStats")
-    field "cpuCreditBalanceStats", val(iter_item, "cpuCreditBalanceStats")
-    field "cpuUsageStats", val(iter_item, "cpuUsageStats")
-    field "region", val(iter_item, "region")
-    field "instanceId", val(iter_item, "instanceId")
-    field "imageId", val(iter_item, "imageId")
-    field "resourceType", val(iter_item, "resourceType")
-    field "resourceTypeInfo", val(iter_item, "resourceTypeInfo")
-    field "platform", val(iter_item, "platform")
-    field "privateDnsName", val(iter_item, "privateDnsName")
-    field "launchTime", val(iter_item, "launchTime")
-    field "tags", val(iter_item, "tags")
-  end
-end
-
-script "js_get_instance_stats", type: "javascript" do
-  result "request"
-  parameters "region", "instanceId", "metricName"
+script "js_cloudwatch_queries", type: "javascript" do
+  parameters "ds_instances", "param_stats_lookback"
+  result "result"
   code <<-EOS
-  start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString()
-  end_date = new Date().toISOString()
+  metrics = ["CPUUtilization", "CPUCreditBalance", "CPUSurplusCreditBalance", "CPUSurplusCreditsCharged"]
+  stats = ["Average", "Minimum", "Maximum"]
+  lookback = param_stats_lookback * 86400
+
+  // Create the various queries we're going to send to CloudWatch for each instance
+  result = {}
+
+  _.each(ds_instances, function(instance) {
+    // Make sure the queries object has an array for the region to push items to
+    if (result[instance['region']] == undefined || result[instance['region']] == null) {
+      result[instance['region']] = []
+    }
+
+    _.each(metrics, function(metric) {
+      _.each(stats, function(stat) {
+        result[instance['region']].push({
+          "Id": instance['instanceId'].replace('-', '_') + "_" + metric + "_" + stat,
+          "MetricStat": {
+            "Metric": {
+              "Namespace": "AWS/EC2",
+              "MetricName": metric,
+              "Dimensions": [
+                { "Name": "InstanceId", "Value": instance['instanceId'] }
+              ]
+            },
+            "Period": lookback,
+            "Stat": stat
+          },
+          "ReturnData": true
+        })
+      })
+    })
+  })
+EOS
+end
+
+# Combine queries into 500 item blocks so we can make bulk requests to Cloudwatch
+datasource "ds_instances_requests" do
+  run_script $js_instances_requests, $ds_cloudwatch_queries, $param_stats_lookback
+end
+
+script "js_instances_requests", type: "javascript" do
+  parameters "queries", "param_stats_lookback"
+  result "result"
+  code <<-EOS
+  // Organize the queries into discrete requests to send in.
+  // Queries are first sorted by region and then split into 500 item blocks.
+  result = []
+  query_block_size = 500
+
+  // Round down to beginning of the hour to avoid getting multiple values
+  // from CloudWatch due to how the data is sliced
+  end_date = new Date()
+  end_date.setMinutes(0, 0, 0)
+  end_date = parseInt(end_date.getTime() / 1000)
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - param_stats_lookback)
+  start_date.setMinutes(0, 0, 0)
+  start_date = parseInt(start_date.getTime() / 1000)
+
+  _.each(_.keys(queries), function(region) {
+    for (i = 0; i < queries[region].length; i += query_block_size) {
+      chunk = queries[region].slice(i, i + query_block_size)
+
+      result.push({
+        body: {
+          "StartTime": start_date,
+          "EndTime": end_date,
+          "MetricDataQueries": chunk
+        },
+        region: region
+      })
+    }
+  })
+EOS
+end
+
+datasource "ds_cloudwatch_data" do
+  iterate $ds_instances_requests
+  request do
+    run_script $js_cloudwatch_data, val(iter_item, "region"), val(iter_item, "body")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "MetricDataResults[*]") do
+      field "region", val(iter_item, "region")
+      field "id", jmes_path(col_item, "Id")
+      field "label", jmes_path(col_item, "Label")
+      field "values", jmes_path(col_item, "Values")
+    end
+  end
+end
+
+script "js_cloudwatch_data", type: "javascript" do
+  parameters "region", "body"
+  result "request"
+  code <<-EOS
+  // Slow down rate of requests to prevent
+  api_wait = 5
+  var now = new Date().getTime()
+  while(new Date().getTime() < now + (api_wait * 1000)) { /* Do nothing */ }
 
   var request = {
     auth: "auth_aws",
-    host: "monitoring." + region + ".amazonaws.com",
+    host: 'monitoring.' + region + '.amazonaws.com',
+    pagination: "pagination_aws_getmetricdata",
+    verb: "POST",
     path: "/",
     headers: {
       "User-Agent": "RS Policies",
       "Content-Type": "application/json",
-      "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
+      "x-amz-target": "GraniteServiceVersion20100801.GetMetricData",
       "Accept": "application/json",
       "Content-Encoding": "amz-1.0"
-    },
-    query_params: {
-      "Action": "GetMetricStatistics",
-      "Version": "2010-08-01",
-      "Namespace": "AWS/EC2",
-      "MetricName": metricName,
-      "Dimensions.member.1.Name": "InstanceId",
-      "Dimensions.member.1.Value": instanceId,
-      "StartTime": start_date,
-      "EndTime": end_date,
-      "Period": "2592000",
-      "Statistics.member.1": "Maximum",
-      "Statistics.member.2": "Average",
-      "Statistics.member.3": "Minimum"
     }
+    query_params: {
+      'Action': 'GetMetricData',
+      'Version': '2010-08-01'
+    },
+    body: JSON.stringify(body)
   }
 EOS
 end
 
+datasource "ds_cloudwatch_data_sorted" do
+  run_script $js_cloudwatch_data_sorted, $ds_cloudwatch_data
+end
+
+script "js_cloudwatch_data_sorted", type: "javascript" do
+  parameters "ds_cloudwatch_data"
+  result "result"
+  code <<-EOS
+  // Sort the CloudWatch data into an object with keys for regions and instance names.
+  // This eliminates the need to "double loop" later on to match it with our instances list.
+  result = {}
+
+  _.each(ds_cloudwatch_data, function(item) {
+    region = item['region']
+    instanceId = item['id'].split('_')[0] + '-' + item['id'].split('_')[1]
+    metric = item['id'].split('_')[2]
+    stat = item['id'].split('_')[3]
+
+    // Grabbing index 0 SHOULD be safe because we should only get one result.
+    // Just in case AWS slices the data weirdly and returns 2 results, we make
+    // sure we grab the last item every time, which contains the actual data we need.
+    value = item['values'][item['values'].length - 1]
+
+    if (result[region] == undefined) { result[region] = {} }
+    if (result[region][instanceId] == undefined) { result[region][instanceId] = {} }
+    if (result[region][instanceId][metric] == undefined) { result[region][instanceId][metric] = {} }
+    result[region][instanceId][metric][stat] = value
+  })
+EOS
+end
+
 datasource "ds_instances_with_stats" do
-  run_script $js_instances_with_stats, $ds_instances_cpu_credits_charged
+  run_script $js_instances_with_stats, $ds_instances, $ds_cloudwatch_data_sorted
 end
 
 script "js_instances_with_stats", type: "javascript" do
-  parameters "ds_instances_cpu_credits_charged"
+  parameters "ds_instances", "ds_cloudwatch_data_sorted"
   result "result"
   code <<-'EOS'
-  result = _.map(ds_instances_cpu_credits_charged, function(instance) {
-    // Grab last item in case data slicing was imperfect
-    cpuSurplusCreditsChargedStats = instance['cpuSurplusCreditsChargedStats'][instance['cpuSurplusCreditsChargedStats'].length - 1]
-    cpuSurplusCreditBalanceStats = instance['cpuSurplusCreditBalanceStats'][instance['cpuSurplusCreditBalanceStats'].length - 1]
-    cpuCreditBalanceStats = instance['cpuCreditBalanceStats'][instance['cpuCreditBalanceStats'].length - 1]
-    cpuUsageStats = instance['cpuUsageStats'][instance['cpuUsageStats'].length - 1]
+  result = _.map(ds_instances, function(instance) {
+    cpuSurplusCreditsChargedMaximum = null
+    cpuSurplusCreditsChargedMinimum = null
+    cpuSurplusCreditsChargedAverage = null
+    cpuSurplusCreditBalanceMaximum = null
+    cpuSurplusCreditBalanceMinimum = null
+    cpuSurplusCreditBalanceAverage = null
+    cpuCreditBalanceMaximum = null
+    cpuCreditBalanceMinimum = null
+    cpuCreditBalanceAverage = null
+    cpuMaximum = null
+    cpuMinimum = null
+    cpuAverage = null
+
+    if (ds_cloudwatch_data_sorted[instance['region']] != undefined && ds_cloudwatch_data_sorted[instance['region']][instance['instanceId']] != undefined) {
+      metrics = ds_cloudwatch_data_sorted[instance['region']][instance['instanceId']]
+
+      cpuSurplusCreditsChargedMaximum = metrics["CPUSurplusCreditsCharged"]["Maximum"]
+      cpuSurplusCreditsChargedMinimum = metrics["CPUSurplusCreditsCharged"]["Minimum"]
+      cpuSurplusCreditsChargedAverage = metrics["CPUSurplusCreditsCharged"]["Average"]
+      cpuSurplusCreditBalanceMaximum = metrics["CPUSurplusCreditBalance"]["Maximum"]
+      cpuSurplusCreditBalanceMinimum = metrics["CPUSurplusCreditBalance"]["Minimum"]
+      cpuSurplusCreditBalanceAverage = metrics["CPUSurplusCreditBalance"]["Average"]
+      cpuCreditBalanceMaximum = metrics["CPUCreditBalance"]["Maximum"]
+      cpuCreditBalanceMinimum = metrics["CPUCreditBalance"]["Minimum"]
+      cpuCreditBalanceAverage = metrics["CPUCreditBalance"]["Average"]
+      cpuMaximum = metrics["CPUUtilization"]["Maximum"]
+      cpuMinimum = metrics["CPUUtilization"]["Minimum"]
+      cpuAverage = metrics["CPUUtilization"]["Average"]
+    }
 
     return {
-      cpuSurplusCreditsChargedUnit: cpuSurplusCreditsChargedStats['Unit'],
-      cpuSurplusCreditsChargedMaximum: cpuSurplusCreditsChargedStats['Maximum'],
-      cpuSurplusCreditsChargedMinimum: cpuSurplusCreditsChargedStats['Minimum'],
-      cpuSurplusCreditsChargedAverage: cpuSurplusCreditsChargedStats['Average'],
-      cpuSurplusCreditBalanceUnit: cpuSurplusCreditBalanceStats['Unit'],
-      cpuSurplusCreditBalanceMaximum: cpuSurplusCreditBalanceStats['Maximum'],
-      cpuSurplusCreditBalanceMinimum: cpuSurplusCreditBalanceStats['Minimum'],
-      cpuSurplusCreditBalanceAverage: cpuSurplusCreditBalanceStats['Average'],
-      cpuCreditBalanceUnit: cpuCreditBalanceStats['Unit'],
-      cpuCreditBalanceMaximum: cpuCreditBalanceStats['Maximum'],
-      cpuCreditBalanceMinimum: cpuCreditBalanceStats['Minimum'],
-      cpuCreditBalanceAverage: cpuCreditBalanceStats['Average'],
-      cpuUnit: cpuUsageStats['Unit'],
-      cpuMaximum: cpuUsageStats['Maximum'],
-      cpuMinimum: cpuUsageStats['Minimum'],
-      cpuAverage: cpuUsageStats['Average'],
       region: instance['region'],
       instanceId: instance['instanceId'],
       imageId: instance['imageId'],
@@ -581,7 +643,19 @@ script "js_instances_with_stats", type: "javascript" do
       platform: instance['platform'],
       privateDnsName: instance['privateDnsName'],
       launchTime: instance['launchTime'],
-      tags: instance['tags']
+      tags: instance['tags'],
+      cpuSurplusCreditsChargedMaximum: cpuSurplusCreditsChargedMaximum,
+      cpuSurplusCreditsChargedMinimum: cpuSurplusCreditsChargedMinimum,
+      cpuSurplusCreditsChargedAverage: cpuSurplusCreditsChargedAverage,
+      cpuSurplusCreditBalanceMaximum: cpuSurplusCreditBalanceMaximum,
+      cpuSurplusCreditBalanceMinimum: cpuSurplusCreditBalanceMinimum,
+      cpuSurplusCreditBalanceAverage: cpuSurplusCreditBalanceAverage,
+      cpuCreditBalanceMaximum: cpuCreditBalanceMaximum,
+      cpuCreditBalanceMinimum: cpuCreditBalanceMinimum,
+      cpuCreditBalanceAverage: cpuCreditBalanceAverage,
+      cpuMaximum: cpuMaximum,
+      cpuMinimum: cpuMinimum,
+      cpuAverage: cpuAverage
     }
   })
 EOS
@@ -642,19 +716,15 @@ script "js_instance_recommendations", type: "javascript" do
         privateDnsName: instance['privateDnsName'],
         hostname: instance['privateDnsName'].split('.')[0],
         launchTime: instance['launchTime'],
-        cpuUnit: instance['cpuUnit'],
         cpuMaximum: Number(instance['cpuMaximum'].toFixed(2)),
         cpuMinimum: Number(instance['cpuMinimum'].toFixed(2)),
         cpuAverage: Number(instance['cpuAverage'].toFixed(2)),
-        cpuCreditBalanceUnit: instance['cpuCreditBalanceUnit'],
         cpuCreditBalanceMaximum: instance['cpuCreditBalanceMaximum'],
         cpuCreditBalanceMinimum: instance['cpuCreditBalanceMinimum'],
         cpuCreditBalanceAverage: instance['cpuCreditBalanceAverage'],
-        cpuSurplusCreditBalanceUnit: instance['cpuSurplusCreditBalanceUnit'],
         cpuSurplusCreditBalanceMaximum: instance['cpuSurplusCreditBalanceMaximum'],
         cpuSurplusCreditBalanceMinimum: instance['cpuSurplusCreditBalanceMinimum'],
         cpuSurplusCreditBalanceAverage: instance['cpuSurplusCreditBalanceAverage'],
-        cpuSurplusCreditsChargedUnit: instance['cpuSurplusCreditsChargedUnit'],
         cpuSurplusCreditsChargedMaximum: instance['cpuSurplusCreditsChargedMaximum'],
         cpuSurplusCreditsChargedMinimum: instance['cpuSurplusCreditsChargedMinimum'],
         cpuSurplusCreditsChargedAverage: instance['cpuSurplusCreditsChargedAverage'],
