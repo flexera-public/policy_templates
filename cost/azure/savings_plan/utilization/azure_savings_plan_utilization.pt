@@ -64,6 +64,13 @@ credentials "auth_azure" do
   tags "provider=azure_rm"
 end
 
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
 ###############################################################################
 # Pagination
 ###############################################################################
@@ -81,7 +88,17 @@ end
 # Datasources & Scripts
 ###############################################################################
 
-# GET CURRENCY REFERENCE AND CURRENCY CODE
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get currency reference
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
@@ -90,7 +107,7 @@ datasource "ds_currency_reference" do
   end
 end
 
-# GET LIST OF BILLING ACCOUNTS
+# Get list of Billing Accounts
 datasource "ds_billing_accounts" do
   request do
     auth $auth_azure
@@ -109,7 +126,7 @@ datasource "ds_billing_accounts" do
   end
 end
 
-# GET LIST OF BILLING PROFILES (IF TYPE IS MICROSOFT CUSTOMER AGREEMENT)
+# Get list of Billing Profiles (if Type is Microsoft Customer Agreement)
 datasource "ds_billing_profiles" do
   iterate $ds_billing_accounts
   request do
@@ -133,7 +150,7 @@ datasource "ds_billing_profiles" do
   end
 end
 
-# IDENTIFY WHETHER ENTERPRISE AGREEMENT (EA) OR MICROSOFT CUSTOMER AGREEMENT (MCA)
+# Identify whether Billing Account is Enterprise Agreement (EA) or Microsoft Customer Agreement (MCA)
 datasource "ds_billing_details" do
   run_script $js_billing_details, $ds_billing_profiles, $ds_billing_accounts
 end
@@ -171,7 +188,7 @@ script "js_billing_details", type: "javascript" do
   EOS
 end
 
-# GET SAVINGS PLAN ORDER DETAILS
+# Get list of Savings Plan Order details
 datasource "ds_savings_plan_details" do
   iterate $ds_billing_details
   request do
@@ -225,7 +242,7 @@ script "js_savings_plan_details", type: "javascript" do
   EOS
 end
 
-# GET SAVINGS PLAN DETAILS
+# Get list of Savings Plans for each Savings Plan Order
 datasource "ds_savings_plan_order_details" do
   iterate $ds_savings_plan_details
   request do
@@ -265,7 +282,7 @@ datasource "ds_savings_plan_order_details" do
   end
 end
 
-# FILTER SAVINGS PLANS BASED ON USER-DEFINED PARAMETER
+# Filter Savings Plans based on user-defined Lookback Days parameter
 datasource "ds_filtered_savings_plans" do
   run_script $js_filtered_savings_plans, $ds_savings_plan_order_details, $param_lookback_days
 end
@@ -323,13 +340,13 @@ script "js_filtered_savings_plans", type: "javascript" do
   EOS
 end
 
-# ORGANIZE DATA FOR POLICY INCIDENT
+# Organize data for Policy Incident
 datasource "ds_sp_data_for_incident" do
-  run_script $js_sp_data_for_incident, $ds_filtered_savings_plans, $ds_currency_reference, $param_utilization_threshold
+  run_script $js_sp_data_for_incident, $ds_filtered_savings_plans, $ds_currency_reference, $ds_applied_policy, $param_utilization_threshold
 end
 
 script "js_sp_data_for_incident", type: "javascript" do
-  parameters "ds_filtered_savings_plans", "ds_currency_reference", "param_utilization_threshold"
+  parameters "ds_filtered_savings_plans", "ds_currency_reference", "ds_applied_policy", "param_utilization_threshold"
   result "result"
   code <<-EOS
 
@@ -384,6 +401,8 @@ script "js_sp_data_for_incident", type: "javascript" do
     if (sp.commitmentAmount && sp.commitmentAmount != null) {
       total_wastage += Number(sp.commitmentAmount)
     }
+    
+    sp["policyName"] = ds_applied_policy.name
   })
 
   total_wastage = cur + " " + formatNumber((Math.round(total_wastage * 100) / 100), separator)
@@ -401,7 +420,7 @@ end
 
 policy "pol_azure_sp_utilization" do
   validate $ds_sp_data_for_incident do
-    summary_template "Azure Savings Plan Utilization Details: {{ len data.savings_plan_details }} Azure Savings Plans - Last {{ parameters.param_lookback_days}} days"
+    summary_template "{{ with index data.savings_plan_details 0 }}{{ .policyName }}{{ end }}: {{ len data.savings_plan_details }} Azure Savings Plans - Last {{ parameters.param_lookback_days}} days"
     detail_template <<-EOS
 # Azure Savings Plan Utilization
 {{ data.message }}
