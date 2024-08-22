@@ -404,78 +404,180 @@ script "js_aws_buckets_tag_filtered", type: "javascript" do
 EOS
 end
 
-datasource "ds_aws_bucket_sizes" do
-  iterate $ds_aws_buckets
+datasource "ds_cloudwatch_queries" do
+  run_script $js_cloudwatch_queries, $ds_aws_buckets_tag_filtered
+end
+
+script "js_cloudwatch_queries", type: "javascript" do
+  parameters "ds_instances"
+  result "result"
+  code <<-EOS
+  // Create the various queries we're going to send to CloudWatch for each instance
+  result = {}
+
+  _.each(ds_aws_buckets_tag_filtered, function(bucket) {
+    // Make sure the queries object has an array for the region to push items to
+    if (result[bucket['region']] == undefined || result[bucket['region']] == null) {
+      result[bucket['region']] = []
+    }
+
+    result[bucket['region']].push({
+      "Id": bucket['name'],
+      "MetricStat": {
+        "Metric": {
+          "Namespace": "AWS/EC2",
+          "MetricName": "BucketSizeBytes",
+          "Dimensions": [
+            { "Name": "BucketName", "Value": bucket['name'] },
+            { "Name": "StorageType", "Value": "StandardStorage" }
+          ]
+        },
+        "Period": 2592000,
+        "Stat": "Average"
+      },
+      "ReturnData": true
+    })
+  })
+EOS
+end
+
+# Combine queries into 500 item blocks so we can make bulk requests to Cloudwatch
+datasource "ds_cloudwatch_requests" do
+  run_script $js_cloudwatch_requests, $ds_cloudwatch_queries
+end
+
+script "js_cloudwatch_requests", type: "javascript" do
+  parameters "ds_cloudwatch_queries"
+  result "result"
+  code <<-EOS
+  // Organize the queries into discrete requests to send in.
+  // Queries are first sorted by region and then split into 500 item blocks.
+  result = []
+  query_block_size = 500
+
+  // Round down to beginning of the hour to avoid getting multiple values
+  // from CloudWatch due to how the data is sliced
+  end_date = new Date()
+  end_date.setMinutes(0, 0, 0)
+  end_date = parseInt(end_date.getTime() / 1000)
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 30)
+  start_date.setMinutes(0, 0, 0)
+  start_date = parseInt(start_date.getTime() / 1000)
+
+  _.each(_.keys(ds_cloudwatch_queries), function(region) {
+    for (i = 0; i < ds_cloudwatch_queries[region].length; i += query_block_size) {
+      chunk = ds_cloudwatch_queries[region].slice(i, i + query_block_size)
+
+      result.push({
+        body: {
+          "StartTime": start_date,
+          "EndTime": end_date,
+          "MetricDataQueries": chunk
+        },
+        region: region
+      })
+    }
+  })
+EOS
+end
+
+datasource "ds_cloudwatch_data" do
+  iterate $ds_cloudwatch_requests
   request do
-    run_script $js_aws_bucket_sizes, val(iter_item, "name"), val(iter_item, "region")
+    run_script $js_cloudwatch_data, val(iter_item, "region"), val(iter_item, "body")
   end
   result do
     encoding "json"
-    collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
-      field "maximum", jmes_path(col_item, "Maximum")
-      field "minimum", jmes_path(col_item, "Minimum")
-      field "average", jmes_path(col_item, "Average")
-      field "name", val(iter_item, "name")
+    collect jmes_path(response, "MetricDataResults[*]") do
       field "region", val(iter_item, "region")
-      field "creation_date", val(iter_item, "creation_date")
-      field "host", val(iter_item, "host")
-      field "tags", val(iter_item, "tags")
+      field "id", jmes_path(col_item, "Id")
+      field "label", jmes_path(col_item, "Label")
+      field "values", jmes_path(col_item, "Values")
     end
   end
 end
 
-script "js_aws_bucket_sizes", type: "javascript" do
-  parameters "name", "region"
+script "js_cloudwatch_data", type: "javascript" do
+  parameters "region", "body"
   result "request"
   code <<-EOS
-  end_date = new Date().toISOString()
-  start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString()
+  // Slow down rate of requests to prevent
+  api_wait = 5
+  var now = new Date().getTime()
+  while(new Date().getTime() < now + (api_wait * 1000)) { /* Do nothing */ }
 
   var request = {
-    "auth": "auth_aws",
-    "host": 'monitoring.' + region + '.amazonaws.com',
-    "verb": "GET",
-    "path": "/",
-    "headers": {
+    auth: "auth_aws",
+    host: 'monitoring.' + region + '.amazonaws.com',
+    pagination: "pagination_aws_getmetricdata",
+    verb: "POST",
+    path: "/",
+    headers: {
       "User-Agent": "RS Policies",
       "Content-Type": "application/json",
-      "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
+      "x-amz-target": "GraniteServiceVersion20100801.GetMetricData",
       "Accept": "application/json",
       "Content-Encoding": "amz-1.0"
     }
-    "query_params": {
-      'Action': 'GetMetricStatistics',
-      'Version': '2010-08-01',
-      'Namespace': 'AWS/S3',
-      'MetricName': 'BucketSizeBytes',
-      'Dimensions.member.1.Name': 'BucketName',
-      'Dimensions.member.1.Value': name,
-      'Dimensions.member.2.Name': 'StorageType',
-      'Dimensions.member.2.Value': 'StandardStorage',
-      'Period': '2592000',
-      'Statistics.member.1': 'Maximum',
-      'Statistics.member.2': 'Average',
-      'Statistics.member.3': 'Minimum',
-      'StartTime': start_date,
-      'EndTime': end_date
-    }
+    query_params: {
+      'Action': 'GetMetricData',
+      'Version': '2010-08-01'
+    },
+    body: JSON.stringify(body)
   }
-  EOS
+EOS
+end
+
+datasource "ds_cloudwatch_data_sorted" do
+  run_script $js_cloudwatch_data_sorted, $ds_cloudwatch_data
+end
+
+script "js_cloudwatch_data_sorted", type: "javascript" do
+  parameters "ds_cloudwatch_data"
+  result "result"
+  code <<-EOS
+  // Sort the CloudWatch data into an object with keys for regions and instance names.
+  // This eliminates the need to "double loop" later on to match it with our instances list.
+  result = {}
+
+  _.each(ds_cloudwatch_data, function(item) {
+    region = item['region']
+    name = item['id'].split('_')[0]
+
+    // Grabbing index 0 SHOULD be safe because we should only get one result.
+    // Just in case AWS slices the data weirdly and returns 2 results, we make
+    // sure we grab the last item every time, which contains the actual data we need.
+    value = item['values'][item['values'].length - 1]
+
+    if (result[region] == undefined) { result[region] = {} }
+    result[region][name] = value
+  })
+EOS
 end
 
 datasource "ds_aws_oversized_buckets" do
-  run_script $js_aws_oversized_buckets, $ds_aws_bucket_sizes, $ds_aws_account, $ds_applied_policy, $param_size_threshold
+  run_script $js_aws_oversized_buckets, $ds_aws_buckets_tag_filtered, $ds_cloudwatch_data_sorted, $ds_aws_account, $ds_applied_policy, $param_size_threshold
 end
 
 script "js_aws_oversized_buckets", type: "javascript" do
-  parameters "ds_aws_bucket_sizes", "ds_aws_account", "ds_applied_policy", "param_size_threshold"
+  parameters "ds_aws_buckets_tag_filtered", "ds_cloudwatch_data_sorted", "ds_aws_account", "ds_applied_policy", "param_size_threshold"
   result "result"
   code <<-EOS
   // Convert user-specified threshold to bytes
   size_threshold = param_size_threshold * 1073741824
 
-  oversized_buckets = _.filter(ds_aws_bucket_sizes, function(bucket) {
-    return bucket['average'] > size_threshold
+  oversized_buckets = _.filter(ds_aws_buckets_tag_filtered, function(bucket) {
+    oversized = false
+    name = bucket['name']
+    region = bucket['region']
+
+    if (ds_cloudwatch_data_sorted[region] && ds_cloudwatch_data_sorted[region][name]) {
+      oversized = ds_cloudwatch_data_sorted[region][name] > size_threshold
+    }
+
+    return oversized
   })
 
   result = _.map(oversized_buckets, function(bucket) {
@@ -485,15 +587,18 @@ script "js_aws_oversized_buckets", type: "javascript" do
       tags = _.map(bucket['tags'], function(tag) { return [tag['key'], tag['value']].join('=') })
     }
 
+    name = bucket['name']
+    region = bucket['region']
+
     return {
-      resourceID: bucket['name'],
-      name: bucket['name'],
-      region: bucket['region'],
-      tags: tags.join(", "),
+      resourceID: name,
+      name: name,
+      region: region,
+      tags: tags.join(', '),
       creation_date: new Date(bucket['creation_date']).toISOString(),
       threshold: param_size_threshold,
       // Convert size from bytes to GiB
-      size: Math.round(bucket['average'] / 1073741824),
+      size: Math.round(ds_cloudwatch_data_sorted[region][name] / 1073741824 * 100) / 100,
       accountID: ds_aws_account['id'],
       accountName: ds_aws_account['name'],
       policy_name: ds_applied_policy['name'],
