@@ -1,4 +1,4 @@
-# AWS Bucket Size Check
+# AWS Oversized S3 Buckets
 
 ## What It Does
 
