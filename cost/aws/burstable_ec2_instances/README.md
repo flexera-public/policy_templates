@@ -47,7 +47,7 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
 
 - [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
   - `sts:GetCallerIdentity`
-  - `cloudwatch:GetMetricStatistics`
+  - `cloudwatch:GetMetricData`
   - `cloudwatch:ListMetrics`
   - `ec2:DescribeRegions`
   - `ec2:DescribeInstances`
@@ -69,7 +69,7 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
               "Effect": "Allow",
               "Action": [
                   "sts:GetCallerIdentity",
-                  "cloudwatch:GetMetricStatistics",
+                  "cloudwatch:GetMetricData",
                   "cloudwatch:ListMetrics",
                   "ec2:DescribeRegions",
                   "ec2:DescribeInstances",
