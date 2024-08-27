@@ -11,7 +11,7 @@ This policy has the following input parameters required when launching the polic
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Azure Endpoint* - The endpoint to send Azure API requests to. Recommended to leave this at default unless using this policy with Azure China.
 - *Look Back Period* - Number of days of prior Azure Savings Plan usage to analyze.
-- *Maximum Savings Plan Utilization Threshold* - Show Savings Plans with utilization below this value (%).
+- *Maximum Savings Plan Utilization Threshold (%)* - Show Savings Plans with utilization below this value.
 
 ## Policy Actions
 
