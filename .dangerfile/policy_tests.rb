@@ -7,11 +7,8 @@
 
 ### Deprecated test
 # Utility method. Returns true if policy is deprecated and false if it isn't
-def policy_deprecated?(file)
-  pp = PolicyParser.new
-  pp.parse(file)
-
-  info = pp.parsed_info
+def policy_deprecated?(file_parsed)
+  info = file_parsed.parsed_info
 
   deprecated = false
 
@@ -26,12 +23,9 @@ end
 ### Deprecated without info flag test
 # Returns true if policy is described as deprecated in short_description
 # but lacks deprecated field in info() block
-def policy_missing_deprecated_field?(file)
-  pp = PolicyParser.new
-  pp.parse(file)
-
-  info = pp.parsed_info
-  short_description = pp.parsed_short_description
+def policy_missing_deprecated_field?(file_parsed)
+  info = file_parsed.parsed_info
+  short_description = file_parsed.parsed_short_description
 
   fail_message = ""
 
@@ -150,12 +144,10 @@ end
 
 ### README Link test
 # Verify that the readme in the short_description is valid
-def policy_bad_readme_link?(file)
+def policy_bad_readme_link?(file, file_parsed)
   fail_message = ""
 
-  pp = PolicyParser.new
-  pp.parse(file)
-  short_description = pp.parsed_short_description
+  short_description = file_parsed.parsed_short_description
 
   file_path = file.split('/')
   file_path.pop
@@ -184,11 +176,8 @@ end
 
 ### Publish test
 # Return false if policy info block is missing publish field or publish is set to a value other than "false"
-def policy_unpublished?(file)
-  pp = PolicyParser.new
-  pp.parse(file)
-
-  info = pp.parsed_info
+def policy_unpublished?(file_parsed)
+  info = file_parsed.parsed_info
 
   fail_message = ""
 
@@ -204,13 +193,10 @@ end
 
 ### Name change test
 # Return false if policy's name has not changed
-def policy_name_changed?(file)
-  # Get the diff to see only the new changes
-  diff = git.diff_for_file(file)
-
+def policy_name_changed?(file_diff)
   fail_message = ""
 
-  diff.patch.each_line do |line|
+  file_diff.patch.each_line do |line|
     if line.start_with?('-name "')
       fail_message = "Policy's name has been changed. Please ensure that this is intentional and that the README has been updated accordingly."
       break
@@ -223,10 +209,7 @@ end
 
 ### Bad Indentation test
 # Verify that everything is properly indented
-def policy_bad_indentation?(file)
-  # Store contents of file for direct analysis
-  policy_code = File.read(file)
-
+def policy_bad_indentation?(file_lines)
   # Message to return of test fails
   fail_message = ""
 
@@ -235,7 +218,7 @@ def policy_bad_indentation?(file)
   eos_block = false
   define_block = false
 
-  policy_code.each_line.with_index do |line, index|
+  file_lines.each_with_index do |line, index|
     break if line.strip.start_with?('# Meta Policy [alpha]') # Break out of definition when enounter meta policy code at the bottom
     next if line.strip.start_with?('#') # Skip comment lines
 
@@ -275,17 +258,14 @@ end
 
 ### Consecutive Empty Lines test
 # Verify that the policy does not have multiple blank lines in a row
-def policy_consecutive_empty_lines?(file)
-  # Store contents of file for direct analysis
-  policy_code = File.read(file)
-
+def policy_consecutive_empty_lines?(file_lines)
   # Message to return of test fails
   fail_message = ""
 
   blank_lines_count = 0
   blank_line_number = nil
 
-  policy_code.each_line.with_index do |line, index|
+  file_lines.each_with_index do |line, index|
     line_number = index + 1
 
     blank_lines_count += 1 if line.strip.empty?
@@ -305,23 +285,20 @@ end
 
 ### Metadata test
 # Return false if policy metadata has missing or problematic field
-def policy_bad_metadata?(file, field_name)
+def policy_bad_metadata?(file_parsed, field_name)
   # Valid values
   # https://docs.flexera.com/flexera/EN/Automation/PoliciesList.htm
   categories = [ 'cost', 'compliance', 'operational', 'saas management', 'security' ]
   frequencies = [ '15 minutes', 'hourly', 'daily', 'weekly', 'monthly' ]
   severities = [ 'low', 'medium', 'high', 'critical' ]
 
-  pp = PolicyParser.new
-  pp.parse(file)
-
-  name = pp.parsed_name
-  short_description = pp.parsed_short_description
-  long_description = pp.parsed_long_description
-  category = pp.parsed_category
-  default_frequency = pp.parsed_default_frequency
-  severity = pp.parsed_severity
-  info = pp.parsed_info
+  name = file_parsed.parsed_name
+  short_description = file_parsed.parsed_short_description
+  long_description = file_parsed.parsed_long_description
+  category = file_parsed.parsed_category
+  default_frequency = file_parsed.parsed_default_frequency
+  severity = file_parsed.parsed_severity
+  info = file_parsed.parsed_info
 
   fail_message = ""
 
@@ -368,11 +345,8 @@ end
 
 ### Info block test
 # Return false if policy info block has missing or problematic fields
-def policy_missing_info_field?(file, field_name)
-  pp = PolicyParser.new
-  pp.parse(file)
-
-  info = pp.parsed_info
+def policy_missing_info_field?(file_parsed, field_name)
+  info = file_parsed.parsed_info
 
   fail_message = ""
 
@@ -404,14 +378,12 @@ end
 
 ### Semantic Version Test
 # Return false if policy's version number is compliant with semantic versioning
-def policy_nonsemantic_version?(file)
+def policy_nonsemantic_version?(file_parsed)
   fail_message = ""
 
   semantic_regex = /^\d+\.\d+\.\d+$/
 
-  pp = PolicyParser.new
-  pp.parse(file)
-  policy_version = pp.parsed_info[:version] if pp.parsed_info
+  policy_version = file_parsed.parsed_info[:version] if file_parsed.parsed_info
 
   if !policy_version.match?(semantic_regex)
     fail_message = "Policy template version number is not compliant with [semantic versioning](https://github.com/flexera-public/policy_templates/blob/master/VERSIONING.md). Please update the version number accordingly."
@@ -423,7 +395,7 @@ end
 
 ### Changelog Version Test
 # Return false if policy's version number matches the latest entry in the CHANGELOG
-def policy_changelog_mismatch?(file)
+def policy_changelog_mismatch?(file, file_parsed)
   fail_message = ""
 
   # Derive path to CHANGELOG file from file name/path
@@ -436,10 +408,7 @@ def policy_changelog_mismatch?(file)
 
   # Get version number from policy
   policy_version = nil
-
-  pp = PolicyParser.new
-  pp.parse(file)
-  policy_version = pp.parsed_info[:version] if pp.parsed_info
+  policy_version = file_parsed.parsed_info[:version] if file_parsed.parsed_info
 
   # Get version number from changelog
   changelog_version = nil
@@ -460,7 +429,7 @@ end
 
 ### README Credential Test
 # Return false if policy's README has documentation for all of the credentials in the policy itself
-def policy_readme_missing_credentials?(file)
+def policy_readme_missing_credentials?(file, file_lines)
   fail_message = ""
 
   # Derive path to CHANGELOG file from file name/path
@@ -469,8 +438,7 @@ def policy_readme_missing_credentials?(file)
   readme_file = file_parts.join('/') + "/README.md"
 
   # Store contents of files for direct analysis
-  policy_code = File.read(file)
-  readme_text = File.read(readme_file)
+  readme_text = File.readlines(readme_file)
 
   # Find out which providers have credentials in the policy
   pol_flexera_credential = false
@@ -479,7 +447,7 @@ def policy_readme_missing_credentials?(file)
   pol_google_credential = false
   pol_oracle_credential = false
 
-  policy_code.each_line.with_index do |line, index|
+  file_lines.each_with_index do |line, index|
     line_number = index + 1
 
     if line.start_with?("credentials ")
@@ -508,7 +476,7 @@ def policy_readme_missing_credentials?(file)
   google_regex = /(?i)(?=.*google)(?=.*credential)(?=.*provider=gce).*/
   oracle_regex = /(?i)(?=.*oracle)(?=.*credential)(?=.*provider=oracle).*/
 
-  readme_text.each_line.with_index do |line, index|
+  readme_text.each_with_index do |line, index|
     line_number = index + 1
 
     readme_flexera_credential = true if line.strip.match?(flexera_regex)
@@ -567,10 +535,7 @@ end
 
 ### Section order test
 # Return false if policy sections are in the correct order.
-def policy_sections_out_of_order?(file)
-  # Store contents of file for direct analysis
-  policy_code = File.read(file)
-
+def policy_sections_out_of_order?(file_lines)
   # Message to return of test fails
   fail_message = ""
 
@@ -595,7 +560,7 @@ def policy_sections_out_of_order?(file)
   # Failsafe for meta policy code which won't be in the correct order by design
   found_meta = false
 
-  policy_code.each_line.with_index do |line, index|
+  file_lines.each_with_index do |line, index|
     line_number = index + 1
 
     found_meta = true if line.strip.start_with?('# Meta Policy [alpha]')
@@ -650,17 +615,14 @@ end
 
 ### Orphaned block test
 # Return false if code blocks of the specified block_name are all referenced elsewhere in the policy
-def policy_orphaned_blocks?(file, block_name)
+def policy_orphaned_blocks?(file_lines, block_name)
   # Store failure message
   fail_message = ""
-
-  # Store contents of file for direct analysis
-  policy_code = File.read(file)
 
   # Get a full list of names for all of the blocks of the specified type
   block_list = []
 
-  policy_code.each_line.with_index do |line, index|
+  file_lines.each_with_index do |line, index|
     if line.start_with?(block_name + " ")
       block_list << line.split('"')[1] if block_name != "define"
       block_list << line.split("(")[0].split(" ")[1] if block_name == "define"
@@ -670,7 +632,7 @@ def policy_orphaned_blocks?(file, block_name)
   block_list.each do |block|
     reference_found = false
 
-    policy_code.each_line.with_index do |line, index|
+    file_lines.each_with_index do |line, index|
       if !line.start_with?(block_name + " ") && line.include?(block)
         reference_found = true
         break
@@ -688,10 +650,7 @@ end
 
 ### Block grouping test
 # Return false if code blocks are all grouped together by type.
-def policy_blocks_ungrouped?(file)
-  # Store contents of file for direct analysis
-  policy_code = File.read(file)
-
+def policy_blocks_ungrouped?(file_lines)
   # Store failure message
   fail_message = ""
 
@@ -708,7 +667,7 @@ def policy_blocks_ungrouped?(file)
     # Failsafe for meta policy code which won't be in the correct order by design
     found_meta = false
 
-    policy_code.each_line.with_index do |line, index|
+    file_lines.each_with_index do |line, index|
       line_number = index + 1
 
       found_meta = true if line.strip.start_with?('# Meta Policy [alpha]')
@@ -744,10 +703,7 @@ end
 
 ### Section comment test
 # Return false if all required policy section comments are present.
-def policy_missing_section_comments?(file, section_name)
-  # Store contents of file for direct analysis
-  policy_code = File.read(file)
-
+def policy_missing_section_comments?(file_text, section_name)
   fail_message = ""
 
   # Set values based on which section we're checking.
@@ -790,7 +746,7 @@ def policy_missing_section_comments?(file, section_name)
   end
 
   # Failure message to return if problem is detected
-  if block_regex.match?(policy_code) && !comment_regex.match?(policy_code)
+  if block_regex.match?(file_text) && !comment_regex.match?(file_text)
     hash_string = "###############################################################################"
     fail_message += "Policy Template does **not** have a comment indicating where the #{pretty_name} section begins. Please add a comment like the below before the parameters blocks:\n\n#{hash_string}<br>\# #{pretty_name}<br>#{hash_string}\n\n"
   end
@@ -803,10 +759,7 @@ end
 
 ### Bad block name test
 # Return false if no invalidly named code blocks are found.
-def policy_bad_block_name?(file, block_name)
-  # Store contents of file for direct analysis
-  policy_code = File.read(file)
-
+def policy_bad_block_name?(file_lines, block_name)
   fail_message = ""
 
   # Set values based on which section we're checking.
@@ -839,7 +792,7 @@ def policy_bad_block_name?(file, block_name)
     block_regex = /.*/
   end
 
-  policy_code.each_line.with_index do |line, index|
+  file_lines.each_with_index do |line, index|
     line_number = index + 1
     fail_message += "Line #{line_number.to_s}\n" if block_regex.match?(line)
   end
@@ -852,16 +805,13 @@ end
 
 ### Deprecated block test
 # Return false if no deprecated blocks are found.
-def policy_deprecated_code_blocks?(file, block_name)
-  # Store contents of file for direct analysis
-  policy_code = File.read(file)
-
+def policy_deprecated_code_blocks?(file_lines, block_name)
   permission_regex = /^permission\s+"[^"]*"\s+do$/
   resources_regex = /^resources\s+"[^"]*",\s+type:\s+"[^"]*"\s+do$/
 
   fail_message = ""
 
-  policy_code.each_line.with_index do |line, index|
+  file_lines.each_with_index do |line, index|
     line_number = index + 1
     fail_message += "Line #{line_number.to_s}: Permission block found\n" if permission_regex.match?(line)
     fail_message += "Line #{line_number.to_s}: Resources block found\n" if resources_regex.match?(line)
@@ -875,16 +825,13 @@ end
 
 ### Missing block field test
 # Return false if specified field is not missing from any of the specified blocks.
-def policy_block_missing_field?(file, block_name, field_name)
-  # Store contents of file for direct analysis
-  policy_code = File.read(file)
-
+def policy_block_missing_field?(file_lines, block_name, field_name)
   fail_message = ""
 
   present = false
   line_number = nil
 
-  policy_code.each_line.with_index do |line, index|
+  file_lines.each_with_index do |line, index|
     # Check if we're entering the block
     if line.strip.start_with?(block_name + ' ') && line.strip.end_with?('do')
       present = false
@@ -923,17 +870,14 @@ end
 
 ### Datasource/script name matching test
 # Return message if datasource and script do not have matching names. Otherwise, return false
-def policy_ds_js_name_mismatch?(file)
-  # Store contents of file for direct analysis
-  policy_code = File.read(file)
-
+def policy_ds_js_name_mismatch?(file_lines)
   fail_message = ""
   ds_name = nil
   js_name = nil
   line_number = nil
   found_mismatches = []
 
-  policy_code.each_line.with_index do |line, index|
+  file_lines.each_with_index do |line, index|
     # Stop doing the check once we hit the Meta Policy section
     if line.strip.start_with?('# Meta Policy [alpha]')
       break
@@ -987,14 +931,11 @@ end
 
 ### Script parameter order test
 # Return message if script parameters are not in the correct order. Otherwise, return false
-def policy_run_script_incorrect_order?(file)
-  # Store contents of file for direct analysis
-  policy_code = File.read(file)
-
+def policy_run_script_incorrect_order?(file_lines)
   fail_message = ""
   ds_name = nil
 
-  policy_code.each_line.with_index do |line, index|
+  file_lines.each_with_index do |line, index|
     line_number = index + 1
 
     # Stop doing the check if we've reached the meta policy section
@@ -1055,10 +996,7 @@ end
 
 ### Code block field order test
 # Return message if fields for the specified code block type are not in the proper order
-def policy_block_fields_incorrect_order?(file, block_type)
-  # Store contents of file for direct analysis
-  policy_code = File.read(file)
-
+def policy_block_fields_incorrect_order?(file_lines, block_type)
   fail_message = ""
 
   field_list = []
@@ -1092,7 +1030,7 @@ def policy_block_fields_incorrect_order?(file, block_type)
 
   if correct_order
     block_names.each do |block_name|
-      policy_code.each_line.with_index do |line, index|
+      file_lines.each_with_index do |line, index|
         line_number = index + 1
 
         break if line.strip.start_with?('# Meta Policy [alpha]') # Break out of definition when enounter meta policy code at the bottom
@@ -1148,15 +1086,10 @@ end
 
 ### Recommendation policy export field test
 # Return message if required recommendation policy fields are missing
-def policy_missing_recommendation_fields?(file, field_type)
-  # Store contents of file for direct analysis
-  policy_code = File.read(file)
-
+def policy_missing_recommendation_fields?(file_lines, file_parsed, field_type)
   fail_message = ""
 
-  pp = PolicyParser.new
-  pp.parse(file)
-  info = pp.parsed_info
+  info = file_parsed.parsed_info
 
   required_fields = []
 
@@ -1182,7 +1115,7 @@ def policy_missing_recommendation_fields?(file, field_type)
 
     export_info = []
 
-    policy_code.each_line.with_index do |line, index|
+    file_lines.each_with_index do |line, index|
       line_number = index + 1
 
       if line.strip.start_with?("export do")
@@ -1232,13 +1165,10 @@ end
 
 ### Improper Comma Spacing Test
 # Return false if all comma separated items have a space between them like so: one, two, three
-def policy_bad_comma_spacing?(file)
-  # Store contents of file for direct analysis
-  policy_code = File.read(file)
-
+def policy_bad_comma_spacing?(file_lines)
   fail_message = ""
 
-  policy_code.each_line.with_index do |line, index|
+  file_lines.each_with_index do |line, index|
     line_number = index + 1
 
     if line.include?(",") && !line.include?("allowed_pattern") && !line.include?('= ","') && !line.include?("(',')") && !line.include?('(",")') && !line.include?("jq(") && !line.include?("/,/")
@@ -1256,17 +1186,14 @@ end
 
 ### Outdated Links
 # Return false if no outdated links are found
-def policy_outdated_links?(file)
-  # Store contents of file for direct analysis
-  policy_code = File.read(file)
-
+def policy_outdated_links?(file_lines)
   fail_message = ""
 
   within_datasource = false
   github_host = false
   datasource_line = nil
 
-  policy_code.each_line.with_index do |line, index|
+  file_lines.each_with_index do |line, index|
     line_number = index + 1
 
     if line.include?("https://image-charts.com")
@@ -1310,17 +1237,14 @@ end
 
 ### Insecure HTTP Test
 # Return false if all datasources use HTTPS instead of HTTP
-def policy_http_connections?(file)
-  # Store contents of file for direct analysis
-  policy_code = File.read(file)
-
+def policy_http_connections?(file_lines)
   fail_message = ""
 
   within_datasource = false
   within_script = false
   within_cwf = false
 
-  policy_code.each_line.with_index do |line, index|
+  file_lines.each_with_index do |line, index|
     line_number = index + 1
 
     within_datasource = true if line.start_with?("datasource ")
@@ -1359,9 +1283,6 @@ end
 ### Master permissions test
 # Return false if master permissions have been recorded for the policy
 def policy_missing_master_permissions?(file, permissions_yaml)
-  # Get the diff to see only the new changes
-  diff = git.diff_for_file(file)
-
   fail_message = ""
 
   # Use regex to look for blocks that have a "datasource", "request", and "auth" sections of the datasource
@@ -1385,9 +1306,6 @@ end
 ### New datasource test
 # Return false if no new datasources are found.
 def policy_new_datasource?(file, permissions_yaml)
-  # Get the diff to see only the new changes
-  diff = git.diff_for_file(file)
-
   fail_message = ""
 
   # Use regex to look for blocks that have a "datasource", "request", and "auth" sections of the datasource
@@ -1398,7 +1316,7 @@ def policy_new_datasource?(file, permissions_yaml)
   # First check if the PT file has been manually validated and enabled for permission generation
   pt_file_enabled = permissions_yaml["validated_policy_templates"].select { |pt| pt.include?(file) }
 
-  if diff && diff.patch =~ regex && !pt_file_enabled.empty?
+  if file_diff && file_diff.patch =~ regex && !pt_file_enabled.empty?
     # If the PT file has been manually validated, but there are new datasources, then print a warning message
     fail_message = "Detected new request datasource(s) in Policy Template file. Please verify the README.md has any new permissions that may be required."
   end
@@ -1409,14 +1327,11 @@ end
 
 ### Console.log test
 # Return false if the console.log function is never invoked in the policy template
-def policy_console_log?(file)
-  # Store contents of file for direct analysis
-  policy_code = File.read(file)
-
+def policy_console_log?(file_lines)
   # Message to return of test fails
   fail_message = ""
 
-  policy_code.each_line.with_index do |line, index|
+  file_lines.each_with_index do |line, index|
     line_number = index + 1
     fail_message += "Line #{line_number.to_s}\n" if line.include?("console.log")
   end
