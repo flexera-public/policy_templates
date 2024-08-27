@@ -59,6 +59,7 @@ default_child_policy_template_files = [
   "../../cost/aws/superseded_ebs_volumes/aws_superseded_ebs_volumes.pt",
   "../../cost/aws/rightsize_ebs_volumes/aws_rightsize_ebs_volumes.pt",
   # Azure Policy Templates
+  "../../compliance/azure/advisor_carbon/azure_advisor_carbon.pt",
   "../../compliance/azure/azure_disallowed_regions/azure_disallowed_regions.pt",
   "../../compliance/azure/azure_policy_audit/azure_policy_audit.pt",
   "../../compliance/azure/azure_untagged_vms/untagged_vms.pt",
