@@ -1305,7 +1305,7 @@ end
 
 ### New datasource test
 # Return false if no new datasources are found.
-def policy_new_datasource?(file, permissions_yaml)
+def policy_new_datasource?(file, file_diff, permissions_yaml)
   fail_message = ""
 
   # Use regex to look for blocks that have a "datasource", "request", and "auth" sections of the datasource
