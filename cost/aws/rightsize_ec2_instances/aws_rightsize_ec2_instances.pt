@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "5.1.1",
+  version: "5.1.2",
   provider: "AWS",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -172,6 +172,19 @@ credentials "auth_flexera" do
   label "Flexera"
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_aws_getmetricdata" do
+  get_page_marker do
+    body_path "NextToken"
+  end
+  set_page_marker do
+    body_field "NextToken"
+  end
 end
 
 ###############################################################################
@@ -626,6 +639,11 @@ script "js_cloudwatch_queries", type: "javascript" do
         ]
       }
 
+      // If instance.tags contains object with key value == aws:autoscaling:groupName
+      if (typeof(instance['tags']) == 'object' && instance['tags']['aws:autoscaling:groupName']) {
+        dimensions.push({ "Name": "AutoScalingGroupName", "Value": asg_name['value'] })
+      }
+
       _.each(stats, function(stat) {
         query = {
           "Id": instance['instanceId'].replace('-', '_') + "_mem" + stat,
@@ -718,6 +736,7 @@ script "js_cloudwatch_data", type: "javascript" do
   var request = {
     auth: "auth_aws",
     host: 'monitoring.' + region + '.amazonaws.com',
+    pagination: "pagination_aws_getmetricdata",
     verb: "POST",
     path: "/",
     headers: {

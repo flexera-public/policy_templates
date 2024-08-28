@@ -6,6 +6,72 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#2567](https://github.com/flexera-public/policy_templates/pull/2567): POL-1325 AWS Oversized S3 Buckets: Switch to GetMetricData
+
+#### Description
+
+> This updates the `AWS Oversized S3 Buckets` policy template to use batched GetMetricData requests to gather metrics in order to speed up execution.
+>
+> Various small tweaks were also made to bring it in compliance with current Dangerfile tests.
+>
+
+#### Metadata
+
+- **Policies**: [AWS Oversized S3 Buckets](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_bucket_size/README.md), [Meta Parent: AWS Oversized S3 Buckets](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_bucket_size/README.md)
+- **Merged At**: 2024-08-22 18:51:35 UTC
+
+---
+
+### PR [#2566](https://github.com/flexera-public/policy_templates/pull/2566): POL-1324 AWS Burstable EC2 Instances: Switch to GetMetricData
+
+#### Description
+
+> This updates the `AWS Burstable EC2 Instances` policy template to use batched GetMetricData requests to gather metrics in order to speed up execution.
+>
+> Various small tweaks were also made to bring it in compliance with current Dangerfile tests.
+>
+
+#### Metadata
+
+- **Policies**: [AWS Burstable EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/burstable_ec2_instances/README.md), [Meta Parent: AWS Burstable EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/burstable_ec2_instances/README.md)
+- **Merged At**: 2024-08-22 18:51:26 UTC
+
+---
+
+### PR [#2557](https://github.com/flexera-public/policy_templates/pull/2557): POL-1323 - fix: AWS Rightsize EC2 get memory metrics for Autoscaling groups
+
+#### Description
+
+> Fix bug preventing Memory metrics from being included in result for some EC2 Instances created by Autoscaling Group
+>
+> ### Issues Resolved
+>
+> https://flexera.atlassian.net/browse/POL-1323
+>
+
+#### Metadata
+
+- **Policies**: [AWS Rightsize EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/README.md)
+- **Merged At**: 2024-08-20 13:21:54 UTC
+
+---
+
+### PR [#2531](https://github.com/flexera-public/policy_templates/pull/2531): POL-980 New AWS Load Balancer Policy Templates
+
+#### Description
+
+> This PR adds two new policy templates, `AWS Unused Application Load Balancers` and `AWS Unused Network Load Balancers`. It also modifies the existing `AWS Unused Classic Load Balancers` policy template to bring it more in alignment with the new policy templates.
+>
+> I opted for 3 separate templates because there are enough differences between the three, especially when it comes to Classic vs App/Network, that a single policy template for all of them would be complex and cumbersome to maintain. The simplest way to offer users an intuitive experience while making the templates themselves maintainable was to simply have a separate policy template for each.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2531) for these details.
+- **Merged At**: 2024-08-19 18:05:12 UTC
+
+---
+
 ### PR [#2547](https://github.com/flexera-public/policy_templates/pull/2547): POL-1322 New Policy: Google Label Cardinality Report
 
 #### Description
@@ -1809,82 +1875,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [Scheduled Report for Unallocated Costs](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/scheduled_report_unallocated/README.md)
 - **Merged At**: 2024-05-14 13:06:01 UTC
-
----
-
-### PR [#2187](https://github.com/flexera-public/policy_templates/pull/2187): FOPTS-3939 Update: List of cheaper regions for Azure and AWS vendors
-
-#### Description
-
-> Issue reported in this support question: https://flexera.atlassian.net/browse/SQ-7976 by Albertsons.
-> Policy is returning empty results, checking the code it's because some regions for Azure and AWS are outdated, previously we had for example: `US West`, `US West 2`, etc. But now those are named `West US`, `West US 2`, etc. Also few `console.log` statements were removed.
->
-> ### Issues Resolved
->
-> Policy is returning empty results because of outdated regions for Azure and AWS vendors.
->
-
-#### Metadata
-
-- **Policies**: [Cheaper Regions](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/cheaper_regions/README.md)
-- **Merged At**: 2024-05-10 17:12:38 UTC
-
----
-
-### PR [#2194](https://github.com/flexera-public/policy_templates/pull/2194): POL-1224 Azure RightsizeSQL bug fix
-
-#### Description
-
-> Bug was present causing all recommendations to return 0$
->
-> ### Issues Resolved
->
-> Line 743 changed subscriptionId to subscriptionID
->
-
-#### Metadata
-
-- **Policies**: [Azure Rightsize SQL Databases](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_sql_instances/README.md), [Meta Parent: Azure Rightsize SQL Databases](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_sql_instances/README.md)
-- **Merged At**: 2024-05-10 15:54:23 UTC
-
----
-
-### PR [#2195](https://github.com/flexera-public/policy_templates/pull/2195): POL-1228 feat: Unallocated Cost Report enhancements
-
-#### Description
-
-> - Fixed bug that related to Summarized Unallocated amount and Unallocated Percent of Total in report
-> - Added filter for excluding rows that are below a certain percent of total costs
-> - Added Time Period and Filters to report output
-> - Added `unallocated` (bool) and `unallocated_details` (string) columns to report output
-> - Report column order will match the order user provided in parameter input
->
->
-
-#### Metadata
-
-- **Policies**: [Scheduled Report for Unallocated Costs](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/scheduled_report_unallocated/README.md)
-- **Merged At**: 2024-05-10 12:36:55 UTC
-
----
-
-### PR [#2189](https://github.com/flexera-public/policy_templates/pull/2189): POL-1108 Google Expiring Committed Use Discounts (CUD) Revamp
-
-#### Description
-
-> This is a revamp of the Google Expiring Committed Use Discounts (CUD). From the CHANGELOG:
->
-> - Added ability to filter recommendations by project
-> - Added ability to filter recommendations by region
-> - Normalized incident export to be consistent with other policies
-> - Streamlined code for better readability and faster execution
-> - Policy now requires a valid Flexera credential
->
-
-#### Metadata
-
-- **Policies**: [Google Expiring Committed Use Discounts (CUD)](https://github.com/flexera-public/policy_templates/tree/master/cost/google/cud_expiration/README.md), [Meta Parent: Google Expiring Committed Use Discounts (CUD)](https://github.com/flexera-public/policy_templates/tree/master/cost/google/cud_expiration/README.md)
-- **Merged At**: 2024-05-10 12:28:06 UTC
 
 ---
 
