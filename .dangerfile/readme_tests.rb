@@ -8,7 +8,7 @@
 ### Deprecated README test
 # Utility method. Returns true if README is for a deprecated policy
 def readme_deprecated?(file, file_lines)
-  puts "*** " + Time.now.strftime("%H:%M:%S.%L") + " Testing whether README file is deprecated..."
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** " + " Testing whether README file is deprecated..."
 
   file_lines.each do |line|
     return true if line.start_with?("## Deprecated")
@@ -20,7 +20,7 @@ end
 ### Missing README Sections
 # Verify that README file has all required sections
 def readme_missing_sections?(file, file_lines)
-  puts "*** " + Time.now.strftime("%H:%M:%S.%L") + " Testing whether README file is missing required sections..."
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** " + " Testing whether README file is missing required sections..."
 
   fail_message = ""
 
@@ -60,7 +60,7 @@ end
 ### Out of order README Sections
 # Verify that README file has the various sections in the correct order
 def readme_sections_out_of_order?(file, file_lines)
-  puts "*** " + Time.now.strftime("%H:%M:%S.%L") + " Testing whether README file sections are in the correct order..."
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** " + " Testing whether README file sections are in the correct order..."
 
   fail_message = ""
 
@@ -147,7 +147,7 @@ end
 ### README Credentials formatting
 # Verify that README file has credentials in the proper formatting
 def readme_invalid_credentials?(file, file_lines)
-  puts "*** " + Time.now.strftime("%H:%M:%S.%L") + " Testing whether README file has properly formatted credentials..."
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** " + " Testing whether README file has properly formatted credentials..."
 
   fail_message = ""
 
