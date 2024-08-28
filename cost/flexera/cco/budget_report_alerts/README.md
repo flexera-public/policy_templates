@@ -1,6 +1,4 @@
-# Budget Alerts Policys
-
-asjhfkjaf
+# Budget Alerts Policy
 
 ## What it does
 
