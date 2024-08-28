@@ -1,23 +1,15 @@
-# Bill Processing Error Notification
+# Cloud Bill Processing Error Notification
 
-## What it does
+## What It Does
 
-Analyzes all configured cloud bill connects and raises an incident for any in an error state.
-
-## Functional Details
-
-This policy collects all cloud bill connects, checks the state of each bill connect, and compares when the bill was downloaded to the policy execution time. If there is an error, or the processing time exceeds a user-specified number of hours for any cloud bill connects, an incident will be raised.
+This policy template reports on any Flexera Cloud Cost Optimization bill connections that are in an error state or have not successfully processed a bill for the user-specified number of hours. Optionally, this report can be emailed.
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
-
 - *Email Addresses* - A list of email addresses to notify if bill processing errors are found.
-- *Processing Time (Hours)* - Amount of time (hours) to consider a bill connect in an error state if it has failed to complete processing of a bill.
+- *Processing Time (Hours)* - Amount of time in hours to consider a bill connection in an error state if it has failed to complete processing of a bill.
 
 ## Policy Actions
-
-The following policy actions are taken on any resources found to be out of compliance:
 
 - Send an email report
 
@@ -30,14 +22,16 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
-  - View Policies
-  - Manage Organization
+  - `ca_user`
+  - `csm_bill_upload_admin`
+  - `enterprise_manager`
+  - `observer`
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ## Supported Clouds
 
-- NA
+- Flexera
 
 ## Cost
 

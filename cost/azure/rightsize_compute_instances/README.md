@@ -40,6 +40,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Underutilized Instance Memory Threshold (%)* - The Memory threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing. Set to -1 to ignore memory utilization for underutilized instance recommendations.
 - *Idle/Utilized for both CPU/Memory or either* - Set whether an instance should be considered idle and/or underutilized only if both CPU and memory are under the thresholds or if either CPU or memory are under. Has no effect if other parameters are configured such that only CPU or memory is being considered.
 - *Threshold Statistic* - Statistic to use when determining if an instance is idle/underutilized.
+- *Statistic Interval* - The interval to use when gathering Azure metrics data. Smaller intervals produce more accurate results at the expense of policy memory usage and completion time due to larger data sets.
 - *Statistic Lookback Period* - How many days back to look at CPU and/or memory data for instances. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days.
 - *Exclusion Tags* - The policy will filter resources containing the specified tags from the results. The following formats are supported:
   - `Key` - Filter all resources with the specified tag key.

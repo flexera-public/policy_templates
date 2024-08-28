@@ -1,17 +1,16 @@
-name "Flexera IAM Explicit User Roles"
+name "Flexera Users With Explicit Roles"
 rs_pt_ver 20180301
 type "policy"
-short_description "Identifies users in Flexera IAM that have explicit user roles assigned. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/flexera/iam/iam_explicit_user_roles) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Reports Flexera users that have explicit user roles assigned. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/flexera/iam/iam_explicit_user_roles) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Compliance"
 severity "medium"
-tenancy "single"
-default_frequency "hourly"
+default_frequency "daily"
 info(
-    version: "3.2",
-    provider: "Flexera",
-    service: "Identity & Access Management",
-    policy_set: "Identity & Access Management"
+  version: "4.0.0",
+  provider: "Flexera",
+  service: "Identity & Access Management",
+  policy_set: "Identity & Access Management"
 )
 
 ###############################################################################
@@ -20,7 +19,18 @@ info(
 
 parameter "param_email" do
   type "list"
-  label "Email addresses of the recipients you wish to notify"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify."
+  default []
+end
+
+parameter "param_role_ignorelist" do
+  type "list"
+  category "Policy Settings"
+  label "Role Ignore List"
+  description "A list of role names/IDs to not consider when checking users for explicit roles. Leave blank to report all users with any explicit roles."
+  default []
 end
 
 ###############################################################################
@@ -29,194 +39,145 @@ end
 
 credentials "auth_flexera" do
   schemes "oauth2"
-  label "flexera"
+  label "Flexera"
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
-datasource "ds_iam_users" do
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
   request do
     auth $auth_flexera
-    host "governance.rightscale.com"
-    path join(["grs/orgs/",rs_org_id,"/users"])
-    header "X-Api-Version", "2.0"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "email", jmes_path(col_item, "email")
-      field "id", jmes_path(col_item, "id")
-      field "href", jmes_path(col_item, "href")
-      field "first_name", jmes_path(col_item, "first_name")
-      field "last_name", jmes_path(col_item, "last_name")
-    end
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
   end
 end
 
-datasource "ds_iam_roles" do
-  request do
-    auth $auth_flexera
-    host "governance.rightscale.com"
-    path join(["grs/orgs/",rs_org_id,"/roles"])
-    header "X-Api-Version", "2.0"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "id", jmes_path(col_item, "id")
-      field "href", jmes_path(col_item, "href")
-      field "name", jmes_path(col_item, "name")
-    end
-  end
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
 end
 
-datasource "ds_iam_org_access_rules" do
-  request do
-    auth $auth_flexera
-    host "governance.rightscale.com"
-    path join(["grs/orgs/",rs_org_id,"/access_rules"])
-    header "X-Api-Version", "2.0"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "subject_href", jmes_path(col_item, "links.subject.href")
-      field "subject_kind", jmes_path(col_item, "links.subject.kind")
-      field "role_href", jmes_path(col_item, "links.role.href")
-      field "scope", jmes_path(col_item, "links.scope.href")
-    end
-  end
-end
-
-datasource "ds_iam_projects" do
-  request do
-    auth $auth_flexera
-    host "governance.rightscale.com"
-    path join(["grs/orgs/",rs_org_id,"/projects"])
-    header "X-Api-Version", "2.0"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "id", jmes_path(col_item, "id")
-      field "href", jmes_path(col_item, "href")
-      field "name", jmes_path(col_item, "name")
-    end
-  end
-end
-
-datasource "ds_iam_project_access_rules" do
-  iterate $ds_iam_projects
-  request do
-    auth $auth_flexera
-    host "governance.rightscale.com"
-    path join(["grs/orgs/",rs_org_id,"/projects/",val(iter_item, "id"),"/access_rules"])
-    header "X-Api-Version", "2.0"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "subject_href", jmes_path(col_item, "links.subject.href")
-      field "subject_kind", jmes_path(col_item, "links.subject.kind")
-      field "role_href", jmes_path(col_item, "links.role.href")
-      field "scope", jmes_path(col_item, "links.scope.href")
-    end
-  end
-end
-
-datasource "ds_combined_access_rules" do
-  run_script $js_combined_access_rules, $ds_iam_org_access_rules, $ds_iam_project_access_rules
-end
-
-datasource "ds_filtered_user_access_rules" do
-  run_script $js_filtered_user_access_rules, $ds_combined_access_rules, $ds_iam_users, $ds_iam_projects, $ds_iam_roles
-end
-
-###############################################################################
-# Scripts
-###############################################################################
-
-script "js_combined_access_rules", type: "javascript" do
-  parameters "ds_iam_org_access_rules", "ds_iam_project_access_rules"
-  result "results"
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
   code <<-EOS
-    var results = [];
-    // Filter out group access rules
-    // Combine org and project access rules
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
 
-    var iam_org_access_rules =
-      _.reject(ds_iam_org_access_rules, function(access_rule){ return access_rule.subject_kind === "group" });
-
-    var iam_project_access_rules =
-      _.reject(ds_iam_project_access_rules, function(access_rule){ return access_rule.subject_kind === "group" });
-
-    results = iam_org_access_rules.concat(iam_project_access_rules)
+  result = host_table[rs_optima_host]
 EOS
 end
 
-script "js_filtered_user_access_rules", type: "javascript" do
-  parameters "ds_combined_access_rules", "ds_iam_users", "ds_iam_projects", "ds_iam_roles"
-  result "results"
+datasource "ds_users" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/iam/v1/orgs/", rs_org_id, "/users"])
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "kind", jmes_path(col_item, "kind")
+      field "email", jmes_path(col_item, "email")
+      field "firstName", jmes_path(col_item, "firstName")
+      field "lastName", jmes_path(col_item, "lastName")
+      field "lastAPILogin", jmes_path(col_item, "lastAPILogin")
+      field "lastUILogin", jmes_path(col_item, "lastUILogin")
+      field "ref", jmes_path(col_item, "ref")
+      field "createdAt", jmes_path(col_item, "createdAt")
+      field "updatedAt", jmes_path(col_item, "updatedAt")
+    end
+  end
+end
+
+datasource "ds_access_rules" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/iam/v1/orgs/", rs_org_id, "/access-rules"])
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "roleId", jmes_path(col_item, "role.id")
+      field "roleKind", jmes_path(col_item, "role.kind")
+      field "roleName", jmes_path(col_item, "role.name")
+      field "roleDisplayName", jmes_path(col_item, "role.displayName")
+      field "roleCategory", jmes_path(col_item, "role.category")
+      field "scopeId", jmes_path(col_item, "scope.id")
+      field "scopeKind", jmes_path(col_item, "scope.kind")
+      field "scopeRef", jmes_path(col_item, "scope.ref")
+      field "subjectId", jmes_path(col_item, "subject.id")
+      field "subjectKind", jmes_path(col_item, "subject.kind")
+      field "subjectRef", jmes_path(col_item, "subject.ref")
+      field "kind", jmes_path(col_item, "kind")
+      field "createdAt", jmes_path(col_item, "createdAt")
+    end
+  end
+end
+
+datasource "ds_bad_users" do
+  run_script $js_bad_users, $ds_users, $ds_access_rules, $ds_applied_policy, $param_role_ignorelist
+end
+
+script "js_bad_users", type: "javascript" do
+  parameters "ds_users", "ds_access_rules", "ds_applied_policy", "param_role_ignorelist"
+  result "result"
   code <<-EOS
-    var results = [];
-    var users = [];
-    // Return a list of users and scopes and the roles they explicitly have applied
+  relevant_rules = _.filter(ds_access_rules, function(rule) {
+    return _.contains(param_role_ignorelist, rule['roleId']) == false && _.contains(param_role_ignorelist, rule['roleName']) == false && _.contains(param_role_ignorelist, rule['roleDisplayName']) == false && rule['subjectKind'] == 'iam:user'
+  })
 
-    _.each(ds_iam_users, function(user){
-      var userRoles = []
-      var userScopes = []
-      var userHref = user["href"]
+  rule_table = _.groupBy(relevant_rules, 'subjectId')
 
-      userRoles = _.where(ds_combined_access_rules, {"subject_href": userHref})
-      userScopes = _.unique(_.pluck(userRoles, 'scope'))
-      if (userRoles && userScopes) {
-        _.each(userScopes, function(scope){
-          var scopeRoles = []
-          var roleNames = []
-          var roleHrefs = []
+  bad_users = _.filter(ds_users, function(user) { return rule_table[user['id']] != undefined })
 
-          var scopeName = "Organization"
-          console.log("Scope: " + scope)
-          if ( scope.match(/projects/) ) {
-            var projectName =_.findWhere(ds_iam_projects, { "href": scope })["name"]
-            console.log("Project Name", projectName)
-            scopeName = "Project (" + projectName + ")"
-          }
+  result = _.map(bad_users, function(user) {
+    createdAt = new Date(user['createdAt']).toISOString()
+    updatedAt = new Date(user['updatedAt']).toISOString()
+    lastAPILogin = new Date(user['lastAPILogin']).toISOString()
+    lastUILogin = new Date(user['lastUILogin']).toISOString()
 
-          scopeRoles = _.pluck(_.where(userRoles, { "scope": scope }), "role_href")
-          console.log("Scope Roles:", scopeRoles)
-          _.each(scopeRoles, function(scopeRole){
-            console.log("Scope Role: ", scopeRole )
-            var tmpScopeRole = _.findWhere(ds_iam_roles, { href: scopeRole })
-            if (tmpScopeRole) {
-              roleNames.push(tmpScopeRole["name"])
-            }
-          })
+    if (user['createdAt'] == null) { createdAt = '' }
+    if (user['updatedAt'] == null) { updatedAt = '' }
+    if (user['lastAPILogin'] == null) { lastAPILogin = '' }
+    if (user['lastUILogin'] == null) { lastUILogin = '' }
 
-          results.push({
-            id: user["id"],
-            href: user["href"],
-            first_name: user["first_name"],
-            last_name: user["last_name"],
-            email: user["email"],
-            scope_name: scopeName,
-            scope_href: scope,
-            role_names: roleNames.join(", "),
-            role_hrefs: scopeRoles
-          })
-        })
-      }
-    })
-    results = _.sortBy(results, 'last_name')
+    return {
+      id: user['id'],
+      email: user['email'],
+      firstName: user['firstName'],
+      lastName: user['lastName'],
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+      lastAPILogin: lastAPILogin,
+      lastUILogin: lastUILogin,
+      roleIds: _.pluck(rule_table[user['id']], 'roleName').join(', '),
+      roleNames: _.pluck(rule_table[user['id']], 'roleDisplayName').join(', '),
+      policy_name: ds_applied_policy['name']
+    }
+  })
 EOS
 end
 
@@ -224,33 +185,43 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_flexera_iam_explicit" do
-  validate $ds_filtered_user_access_rules do
-    summary_template "{{ len data }} explicit Flexera IAM Access Rules applied"
-    escalate $esc_report_flexera_iam_explicit
-    check eq(size(data),0)
+policy "pol_bad_users" do
+  validate_each $ds_bad_users do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Flexera Users With Explicit Roles Found"
+    check eq(val(item, "id"), "")
+    escalate $esc_email
+    hash_exclude "updatedAt", "lastAPILogin", "lastUILogin"
     export do
       resource_level true
-      field "last_name" do
-        label "Last Name"
-      end
-      field "first_name" do
-        label "First Name"
+      field "id" do
+        label "ID"
       end
       field "email" do
         label "Email"
       end
-      field "id" do
-        label "User ID"
+      field "firstName" do
+        label "First Name"
       end
-      field "scope_name" do
-        label "Scope Name"
+      field "lastName" do
+        label "Last Name"
       end
-      field "scope_href" do
-        label "Scope HREF"
+      field "createdAt" do
+        label "Created At"
       end
-      field "role_names" do
-        label "Role Names"
+      field "updatedAt" do
+        label "Last Updated"
+      end
+      field "lastUILogin" do
+        label "Last UI Login"
+      end
+      field "lastAPILogin" do
+        label "Last API Login"
+      end
+      field "roleIds" do
+        label "Explicit Role IDs"
+      end
+      field "roleNames" do
+        label "Explicit Role Names"
       end
     end
   end
@@ -260,7 +231,7 @@ end
 # Escalations
 ###############################################################################
 
-escalation "esc_report_flexera_iam_explicit" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"

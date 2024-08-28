@@ -1,5 +1,14 @@
 # Changelog
 
+## v6.3.0
+
+- Changed default value of `Automatic Actions` parameter to conform with other similar policy templates
+- Modified incident title to explicitly indicate `AWS` as the cloud provider
+
+## v6.2.1
+
+- Fixed minor spelling issue in policy template description
+
 ## v6.2.0
 
 - Modified internal names for incident fields for more accurate scraping into Optimization dashboard

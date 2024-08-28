@@ -8,6 +8,8 @@
 #### Textlint test
 # Return false if linter finds no problems
 def general_textlint?(file)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing file using text linter..."
+
   fail_message = ""
 
   # Run text lint and store results in log file
@@ -28,24 +30,40 @@ end
 ### Spell check test
 # Run the Danger spell checker on a file
 def general_spellcheck?(file)
-  # Import the ignore list from a file but ignore entries starting with #
-  # This is so we can have comments in this file
-  prose.ignored_words = File.readlines('.spellignore').map(&:chomp).select{ |entry| !entry.start_with?("#") }
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing file using aspell spell checker..."
 
-  # Disable functionality to prevent a lot of pointless results
-  prose.ignore_numbers = true
-  prose.ignore_acronyms = true
+  fail_message = ""
 
-  # Set language
-  prose.language = "en-us"
+  # Run aspell and store results in log file
+  ignore_file = ".spellignore"
 
-  # Check spelling
-  prose.check_spelling(file)
+  # Build full command to run aspell and rework output to something usable
+  command = %(
+    awk '{print NR ": " $0}' #{file} |
+    aspell --master=en_US --lang=en_US --ignore-case --mode=markdown list -l en |
+    sort |
+    uniq |
+    grep -vFf #{ignore_file} |
+    while read word; do
+      awk -v word="$word" '{for (i=1; i<=NF; i++) if ($i == word) print "Line " NR ": " word}' #{file}
+    done |
+    sort -n -k2,2 1> aspell.log
+  )
+
+  if system(command)
+    error_list = `cat aspell.log`
+    fail_message = "Spelling errors found:\n\n#{error_list}" if !error_list.strip.empty?
+  end
+
+  return fail_message.strip if !fail_message.empty?
+  return false
 end
 
 ### Markdown lint test
 # Return false if linter finds no problems
 def general_bad_markdown?(file)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing file using markdown linter..."
+
   # Adjust testing based on which file we're doing
   case file
   when "README.md"
@@ -67,7 +85,9 @@ end
 
 ### Bad URL test
 # Return false if no invalid URLs are found.
-def general_bad_urls?(file)
+def general_bad_urls?(file, file_diff)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing file for bad or invalid URLs..."
+
   # List of hosts to ignore in the analysis
   exclude_hosts = [
     'api.loganalytics.io',          'management.azure.com',
@@ -78,12 +98,11 @@ def general_bad_urls?(file)
     'us-3.rightscale.com',          'us-4.rightscale.com'
   ]
 
-  diff = git.diff_for_file(file)
   regex = /(^\+)/
   fail_message = ""
 
-  if diff && diff.patch =~ regex
-    diff.patch.each_line.with_index do |line, index|
+  if file_diff && file_diff.patch =~ regex
+    file_diff.patch.each_line.with_index do |line, index|
       line_number = index + 1
 
       if line =~ regex
@@ -130,15 +149,14 @@ end
 
 ### Outdated Terminology test
 # Return false if no outdated terminology, such as RightScale, is found in the file
-def general_outdated_terminology?(file)
-  fail_message = ""
+def general_outdated_terminology?(file, file_lines)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing file for outdated terminology..."
 
-  # Store contents of file for direct analysis
-  file_text = File.read(file)
+  fail_message = ""
 
   # Exclude files not worth checking
   if !file.include?("Dangerfile") && !file.include?(".dangerfile") && !file.start_with?("data/") && !file.start_with?("tools/")
-    file_text.each_line.with_index do |line, index|
+    file_lines.each_with_index do |line, index|
       line_number = index + 1
       test_line = line.strip.downcase
 
