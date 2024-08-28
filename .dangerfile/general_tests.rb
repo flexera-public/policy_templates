@@ -8,7 +8,7 @@
 #### Textlint test
 # Return false if linter finds no problems
 def general_textlint?(file)
-  puts "* Testing file using text linter..."
+  puts "* " + Time.now.strftime("%H:%M:%S.%L") + " Testing file using text linter..."
 
   fail_message = ""
 
@@ -29,12 +29,12 @@ end
 
 ### Spell check test
 # Run the Danger spell checker on a file
-def general_spellcheck?(file)
-  puts "* Perfoming spell check on file..."
+def general_spellcheck?(file, spellcheck_ignore)
+  puts "* " + Time.now.strftime("%H:%M:%S.%L") + " Perfoming spell check on file..."
 
   # Import the ignore list from a file but ignore entries starting with #
   # This is so we can have comments in this file
-  prose.ignored_words = File.readlines('.spellignore').map(&:chomp).select{ |entry| !entry.start_with?("#") }
+  prose.ignored_words = spellcheck_ignore
 
   # Disable functionality to prevent a lot of pointless results
   prose.ignore_numbers = true
@@ -50,7 +50,7 @@ end
 ### Markdown lint test
 # Return false if linter finds no problems
 def general_bad_markdown?(file)
-  puts "* Testing file using markdown linter..."
+  puts "* " + Time.now.strftime("%H:%M:%S.%L") + " Testing file using markdown linter..."
 
   # Adjust testing based on which file we're doing
   case file
@@ -74,7 +74,7 @@ end
 ### Bad URL test
 # Return false if no invalid URLs are found.
 def general_bad_urls?(file, file_diff)
-  puts "* Testing file for bad or invalid URLs..."
+  puts "* " + Time.now.strftime("%H:%M:%S.%L") + " Testing file for bad or invalid URLs..."
 
   # List of hosts to ignore in the analysis
   exclude_hosts = [
@@ -138,7 +138,7 @@ end
 ### Outdated Terminology test
 # Return false if no outdated terminology, such as RightScale, is found in the file
 def general_outdated_terminology?(file, file_lines)
-  puts "* Testing file for outdated terminology..."
+  puts "* " + Time.now.strftime("%H:%M:%S.%L") + " Testing file for outdated terminology..."
 
   fail_message = ""
 
