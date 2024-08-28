@@ -2,14 +2,14 @@
 
 ## What It Does
 
-This Policy Template leverages the Savings Plan API for savings plan information. It will notify only if expiration is within the timeframe specified in `Number of days to prior to expiration date to trigger incident` field. It will email the user specified in `Email addresses of the recipients you wish to notify`.
+This policy template reports on any AWS Savings Plans that have expired or are about to expire. Optionally, it emails a copy of this report.
 
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
-- *Number of days to prior to expiration date to trigger incident* - enter the number of days you want before the Savings Plan expires.
-- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
+- *Email Addresses* - enter the number of days you want before the Savings Plan expires.
+- *Days Until Expiration* - The number of days until expiration to include a Savings Plan in the report. Set to '0' to only report expired Savings Plans.
 
 ## Policy Actions
 
@@ -41,6 +41,9 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   }
   ```
 
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - `billing_center_viewer`
+
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ## Supported Clouds
@@ -49,4 +52,4 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ## Cost
 
-This Policy Template does not launch any instances, and so does not incur any cloud costs.
+This Policy Template does not incur any cloud costs.

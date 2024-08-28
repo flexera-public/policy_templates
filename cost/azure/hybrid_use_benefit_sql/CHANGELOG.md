@@ -1,5 +1,15 @@
 # Changelog
 
+## v4.2.0
+
+- Added `Resource Hourly Cost` and `Currency` to incident table for added context
+
+## v4.1.0
+
+- Added ability to filter results by SQL resource type via `SQL Resource Types` parameter
+- Added ability to filter results by SQL Virtual Machine image SKU via `SQL Virtual Machine Image SKUs` parameter
+- Fixed bug where Elastic Pool recommendations were not properly reported in incident
+
 ## v4.0
 
 - Fixed bug where databases ineligible for AHUB would appear in incident

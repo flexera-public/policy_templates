@@ -1,13 +1,13 @@
-name "AWS IAM Report Regions Without Access Analyzer"
+name "AWS Regions Without Access Analyzer Enabled"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report affected regions if no Access Analyzer is enabled. \n See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/iam_access_analyzer_enabled) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Reports regions with no Access Analyzer enabled. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/iam_access_analyzer_enabled) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Security"
 severity "high"
 default_frequency "daily"
 info(
-  version: "3.1",
+  version: "4.0.0",
   provider: "AWS",
   service: "IAM",
   policy_set: "CIS",
@@ -25,8 +25,10 @@ info(
 
 parameter "param_email" do
   type "list"
-  label "Email Address"
-  description "Email addresses of the recipients you wish to notify"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify."
+  default []
 end
 
 parameter "param_aws_account_number" do
@@ -37,19 +39,22 @@ parameter "param_aws_account_number" do
   default ""
 end
 
-parameter "param_allowed_regions_allow_or_deny" do
+parameter "param_regions_allow_or_deny" do
   type "string"
+  category "Filters"
   label "Allow/Deny Regions"
   description "Allow or Deny entered regions. See the README for more details"
   allowed_values "Allow", "Deny"
   default "Allow"
 end
 
-parameter "param_allowed_regions" do
+parameter "param_regions_list" do
   type "list"
-  label "Regions"
-  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  category "Filters"
+  label "Allow/Deny Regions List"
   description "A list of allowed or denied regions. See the README for more details"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  default []
 end
 
 ###############################################################################
@@ -57,22 +62,124 @@ end
 ###############################################################################
 
 credentials "auth_aws" do
-  schemes "aws","aws_sts"
+  schemes "aws", "aws_sts"
   label "AWS"
   description "Select the AWS Credential from the list"
   tags "provider=aws"
   aws_account_number $param_aws_account_number
 end
 
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
-# ds_region_list is a list of regions that are opted-in or opt-in-not-required
-datasource "ds_regions_list" do
-  # https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeRegions.html
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get AWS account info
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+
+datasource "ds_get_caller_identity" do
   request do
     auth $auth_aws
     verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account", xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_get_caller_identity
+end
+
+script "js_aws_account", type:"javascript" do
+  parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+  result = _.find(ds_cloud_vendor_accounts, function(account) {
+    return account['id'] == ds_get_caller_identity[0]['account']
+  })
+
+  // This is in case the API does not return the relevant account info
+  if (result == undefined) {
+    result = {
+      id: ds_get_caller_identity[0]['account'],
+      name: "",
+      tags: {}
+    }
+  }
+EOS
+end
+
+datasource "ds_describe_regions" do
+  request do
+    auth $auth_aws
     host "ec2.amazonaws.com"
     path "/"
     query "Action", "DescribeRegions"
@@ -89,119 +196,76 @@ datasource "ds_regions_list" do
   end
 end
 
-# Retrieve the id number of the account being tested
-datasource "ds_get_caller_identity" do
-  request do
-    auth $auth_aws
-    verb "GET"
-    host "sts.amazonaws.com"
-    path "/"
-    header "User-Agent", "RS Policies"
-    query "Action", "GetCallerIdentity"
-    query "Version", "2011-06-15"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
-      field "account",xpath(col_item, "Account")
-    end
-  end
-end
-
-# Places param_allowed_regions into a datasource for iteration
 datasource "ds_regions" do
-  run_script $js_regions, $param_allowed_regions, $ds_regions_list, $param_allowed_regions_allow_or_deny
+  run_script $js_regions, $ds_describe_regions, $param_regions_list, $param_regions_allow_or_deny
 end
 
-datasource "ds_list_analyzers" do
+script "js_regions", type:"javascript" do
+  parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
+  result "result"
+  code <<-EOS
+  allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_describe_regions, function(item) {
+      return _.contains(param_regions_list, item['region']) == allow_deny_test[param_regions_allow_or_deny]
+    })
+  } else {
+    result = ds_describe_regions
+  }
+EOS
+end
+
+datasource "ds_regions_with_analyzers" do
   iterate $ds_regions
   request do
     auth $auth_aws
-    verb "GET"
-    host join(["access-analyzer.",val(iter_item, "region") ,".amazonaws.com"])
+    host join(["access-analyzer.", val(iter_item, "region"), ".amazonaws.com"])
     path "/analyzer"
-    header "User-Agent", "RS Policies"
-    header "Accept", "application/json"
     query "Action", "GetCallerIdentity"
     query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
+    header "Accept", "application/json"
   end
   result do
     encoding "json"
-    field "region", iter_item
+    field "region", val(iter_item, "region")
     field "analyzers", jmes_path(response, "analyzers")
   end
 end
 
-datasource "ds_checked_analyzers" do
-  run_script $js_analyzers, $ds_get_caller_identity, $ds_list_analyzers
+datasource "ds_aws_regions_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/aws/regions.json"
+    header "User-Agent", "RS Policies"
+  end
 end
 
-###############################################################################
-# Scripts
-###############################################################################
-
-script "js_regions", type:"javascript" do
-  parameters "user_entered_regions", "all_regions", "regions_allow_or_deny"
-  result "regions"
-  code <<-EOS
-    if(_.isEmpty(user_entered_regions)){
-      regions = all_regions;
-    }else{
-      //Filter unique regions
-      var uniqueRegions = _.uniq(user_entered_regions);
-      var all_regions_list = [];
-      //Filter and remove denied regions from all_regions
-      if (regions_allow_or_deny == "Deny"){
-        var all_regions = all_regions.filter(function(obj){
-          return user_entered_regions.indexOf(obj.region) === -1;
-        });
-      }
-      all_regions.forEach(function(all_region){
-        all_regions_list.push(all_region.region)
-      })
-      //Filter valid regions
-      var valid_regions = [];
-      _.map(uniqueRegions, function(uniqueRegion){
-        if(all_regions_list.indexOf(uniqueRegion) > -1){
-          valid_regions.push({"region": uniqueRegion})
-        }
-      })
-
-      //Throw an error if no valid regions found
-      if (_.isEmpty(valid_regions)) {
-        regions = all_regions;
-      }else{
-        regions = valid_regions
-      }
-    }
-  EOS
+datasource "ds_bad_regions" do
+  run_script $js_bad_regions, $ds_regions_with_analyzers, $ds_aws_regions_reference, $ds_aws_account, $ds_applied_policy
 end
 
-# Script to combine ds_get_caller_identity and ds_iam_accesskeys into a single datasource
-script "js_analyzers", type:"javascript" do
-  parameters "ds_get_caller_identity", "ds_list_analyzers"
+script "js_bad_regions", type:"javascript" do
+  parameters "ds_regions_with_analyzers", "ds_aws_regions_reference", "ds_aws_account", "ds_applied_policy"
   result "result"
   code <<-EOS
-    var regions=[]
+  region_names = {}
+  _.each(ds_aws_regions_reference, function(region) { region_names[region['region']] = region['name'] })
 
-    _.each(ds_list_analyzers, function(item) {
-      region_bad = 1
+  bad_regions = _.reject(ds_regions_with_analyzers, function(region) {
+    return _.contains(_.pluck(region['analyzers'], 'status'), 'ACTIVE')
+  })
 
-      _.each(item.analyzers, function(analyzer) {
-        if (analyzer.status == "ACTIVE") {
-          region_bad = 0
-        }
-      })
-
-      if (region_bad == 1) {
-        regions.push(item.region)
-      }
-    })
-
-    result={
-      id: ds_get_caller_identity[0]['account'],
-      regions: regions
+  result = _.map(bad_regions, function(region) {
+    return {
+      accountID: ds_aws_account['id'],
+      accountName: ds_aws_account['name'],
+      id: region['region'],
+      name: region_names[region['region']],
+      policy_name: ds_applied_policy['name']
     }
+  })
 EOS
 end
 
@@ -209,24 +273,24 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_access_analyzer_enabled" do
-  validate $ds_checked_analyzers do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Regions Without Access Analyzers Found"
-    escalate $esc_report_access_analyzer_enabled
-    detail_template <<-EOS
-Regions without active Access Analyzers found.
-
-Affected Account ID: {{data.id}}
-Affected Regions: {{data.regions}}
-EOS
-    check eq(size(val(data, "regions")),0)
+policy "pol_access_analyzer_enabled" do
+  validate_each $ds_bad_regions do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Regions Without Access Analyzer Enabled Found"
+    check eq(val(item, "id"), "")
+    escalate $esc_email
     export do
       resource_level true
-      field "id" do
-        label "id"
+      field "accountID" do
+        label "Account ID"
       end
-      field "regions" do
-        label "regions"
+      field "accountName" do
+        label "Account Name"
+      end
+      field "id" do
+        label "Region ID"
+      end
+      field "name" do
+        label "Region Name"
       end
     end
   end
@@ -236,7 +300,7 @@ end
 # Escalations
 ###############################################################################
 
-escalation "esc_report_access_analyzer_enabled" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"

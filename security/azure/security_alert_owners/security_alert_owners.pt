@@ -1,13 +1,13 @@
-name "Azure Ensure Owners Receive Security Alerts"
+name "Azure Subscriptions Without Owner Security Alerts"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report if any subscriptions are not configured to send security alerts to their owners. \n See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/azure/security_alert_owners) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+short_description "Reports any Azure Subscriptions that are not configured to send security alerts to their owners. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/azure/security_alert_owners) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
 long_description ""
 category "Security"
 severity "high"
 default_frequency "daily"
 info(
-  version: "2.3",
+  version: "3.0.0",
   provider: "Azure",
   service: "Security",
   policy_set: "CIS",
@@ -24,32 +24,61 @@ info(
 
 parameter "param_email" do
   type "list"
-  label "Email addresses of the recipients you wish to notify"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
 end
 
 parameter "param_azure_endpoint" do
   type "string"
+  category "Policy Settings"
   label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
   allowed_values "management.azure.com", "management.chinacloudapi.cn"
   default "management.azure.com"
+end
+
+parameter "param_subscriptions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Subscriptions"
+  description "Allow or Deny entered Subscriptions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_subscriptions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Subscriptions List"
+  description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-credentials "azure_auth" do
+credentials "auth_azure" do
   schemes "oauth2"
   label "Azure"
   description "Select the Azure Resource Manager Credential from the list."
   tags "provider=azure_rm"
 end
 
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
 ###############################################################################
 # Pagination
 ###############################################################################
 
-pagination "azure_pagination" do
+pagination "pagination_azure" do
   get_page_marker do
     body_path "nextLink"
   end
@@ -59,17 +88,30 @@ pagination "azure_pagination" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
-datasource "ds_subscriptions" do
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
   request do
-    auth $azure_auth
-    pagination $azure_pagination
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_azure_subscriptions" do
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
     host $param_azure_endpoint
     path "/subscriptions/"
-    query "api-version", "2019-06-01"
+    query "api-version", "2020-01-01"
     header "User-Agent", "RS Policies"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
     ignore_status [400, 403, 404]
   end
@@ -77,81 +119,97 @@ datasource "ds_subscriptions" do
     encoding "json"
     collect jmes_path(response, "value[*]") do
       field "id", jmes_path(col_item, "subscriptionId")
-      field "displayName", jmes_path(col_item, "displayName")
+      field "name", jmes_path(col_item, "displayName")
       field "state", jmes_path(col_item, "state")
     end
   end
 end
 
+datasource "ds_azure_subscriptions_filtered" do
+  run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
+end
+
+script "js_azure_subscriptions_filtered", type: "javascript" do
+  parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
+  result "result"
+  code <<-EOS
+  if (param_subscriptions_list.length > 0) {
+    result = _.filter(ds_azure_subscriptions, function(subscription) {
+      include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
+
+      if (param_subscriptions_allow_or_deny == "Deny") {
+        include_subscription = !include_subscription
+      }
+
+      return include_subscription
+    })
+  } else {
+    result = ds_azure_subscriptions
+  }
+EOS
+end
+
 datasource "ds_security_contacts" do
-  iterate $ds_subscriptions
+  iterate $ds_azure_subscriptions_filtered
   request do
-    auth $azure_auth
-    pagination $azure_pagination
+    auth $auth_azure
+    pagination $pagination_azure
     host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Security/securityContacts"])
-    query "api-version", "2020-01-01-preview"
+    query "api-version", "2023-12-01-preview"
     header "User-Agent", "RS Policies"
     header "Content-Type", "application/json"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
     ignore_status [400, 403, 404]
   end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "type", jmes_path(col_item, "type")
+      field "isEnabled", jmes_path(col_item, "properties.isEnabled")
+      field "emails", jmes_path(col_item, "properties.emails")
+      field "notificationsSources", jmes_path(col_item, "properties.notificationsSources")
+      field "notificationsByRole", jmes_path(col_item, "properties.notificationsByRole")
+      field "subscriptionId", val(iter_item, "id")
+      field "subscriptionName", val(iter_item, "name")
+    end
+  end
 end
 
-datasource "ds_bad_security_contacts" do
-  run_script $js_bad_security_contacts, $ds_security_contacts, $ds_subscriptions
+datasource "ds_bad_subscriptions" do
+  run_script $js_bad_subscriptions, $ds_security_contacts, $ds_azure_subscriptions_filtered, $ds_applied_policy
 end
 
-###############################################################################
-# Scripts
-###############################################################################
-
-script "js_bad_security_contacts", type: "javascript" do
-  parameters "ds_security_contacts", "ds_subscriptions"
+script "js_bad_subscriptions", type: "javascript" do
+  parameters "ds_security_contacts", "ds_azure_subscriptions_filtered", "ds_applied_policy"
   result "result"
   code <<-EOS
+  contacts = _.groupBy(ds_security_contacts, 'subscriptionId')
+
   result = []
 
-  _.each(ds_security_contacts, function(sec) {
-    if (sec['id'] != undefined) {
-      if (sec['name'] == 'default') {
-        owner_not_found = true
-        role_list = ''
+  _.each(ds_azure_subscriptions_filtered, function(sub) {
+    roles = []
 
-        _.each(sec['properties']['notificationsByRole']['roles'], function(role) {
-          if (role_list == '') {
-            role_list = role
-          } else {
-            role_list += ', ' + role
+    if (contacts[sub['id']] != undefined) {
+      _.each(contacts[sub['id']], function(contact) {
+        if (typeof(contact['notificationsByRole']) == 'object') {
+          if (typeof(contact['notificationsByRole']['roles']) == 'object') {
+            roles = roles.concat(contact['notificationsByRole']['roles'])
           }
-
-          if (role == "Owner") {
-            owner_not_found = false
-          }
-        })
-
-        subscriptionId = sec['id'].split('/')[2]
-        subscriptionName = ''
-
-        _.each(ds_subscriptions, function(sub) {
-          if (subscriptionId == sub['id']) {
-            subscriptionName = sub['displayName']
-          }
-        })
-
-        if (owner_not_found) {
-          result.push({
-            id: sec['id'],
-            subscriptionId: subscriptionId,
-            subscriptionName: subscriptionName,
-            etag: sec['etag'],
-            location: sec['location'],
-            name: sec['name'],
-            type: sec['type'],
-            roles: role_list
-          })
         }
-      }
+      })
+    }
+
+    if (_.contains(roles, 'Owner') == false) {
+      result.push({
+        id: sub['id'],
+        name: sub['name'],
+        roles: _.uniq(_.compact(roles)).sort().join(', '),
+        policy_name: ds_applied_policy['name']
+      })
     }
   })
 EOS
@@ -161,20 +219,18 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_security_contacts" do
-  validate $ds_bad_security_contacts do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure Subscription(s) Not Configured To Send Security Alerts To Their Owners Found"
-    escalate $esc_security_contacts
-    check eq(size(data),0)
+policy "pol_bad_subscriptions" do
+  validate_each $ds_bad_subscriptions do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Subscriptions Without Owner Security Alerts Found"
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "id"), ""))
+    escalate $esc_email
     export do
-      field "subscriptionId" do
-        label "ID"
+      resource_level true
+      field "id" do
+        label "Subscription ID"
       end
-      field "subscriptionName" do
-        label "Name"
-      end
-      field "location" do
-        label "Location"
+      field "name" do
+        label "Subscription Name"
       end
       field "roles" do
         label "Roles Alerted"
@@ -187,9 +243,99 @@ end
 # Escalations
 ###############################################################################
 
-escalation "esc_security_contacts" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
   email $param_email
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
 end

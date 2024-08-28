@@ -12,8 +12,11 @@ default_child_policy_template_files = [
   "../../compliance/aws/iam_role_audit/aws_iam_role_audit.pt",
   "../../compliance/aws/instances_without_fnm_agent/aws_instances_not_running_flexnet_inventory_agent.pt",
   "../../compliance/aws/long_stopped_instances/aws_long_stopped_instances.pt",
+  "../../compliance/aws/rds_backup/aws_rds_backup.pt",
   "../../compliance/aws/untagged_resources/aws_untagged_resources.pt",
   "../../cost/aws/burstable_ec2_instances/aws_burstable_ec2_instances.pt",
+  "../../cost/aws/cloudtrail_read_logging/aws_cloudtrail_read_logging.pt",
+  "../../cost/aws/ec2_compute_optimizer/aws_ec2_compute_optimizer.pt",
   "../../cost/aws/eks_without_spot/aws_eks_without_spot.pt",
   "../../cost/aws/gp3_volume_upgrade/aws_upgrade_to_gp3_volume.pt",
   "../../cost/aws/idle_compute_instances/idle_compute_instances.pt",
@@ -27,7 +30,9 @@ default_child_policy_template_files = [
   "../../cost/aws/s3_storage_policy/aws_s3_bucket_policy_check.pt",
   "../../cost/aws/schedule_instance/aws_schedule_instance.pt",
   "../../cost/aws/superseded_instances/aws_superseded_instances.pt",
+  "../../cost/aws/unused_albs/aws_unused_albs.pt",
   "../../cost/aws/unused_clbs/aws_unused_clbs.pt",
+  "../../cost/aws/unused_nlbs/aws_unused_nlbs.pt",
   "../../cost/aws/unused_ip_addresses/aws_unused_ip_addresses.pt",
   "../../cost/aws/unused_rds/unused_rds.pt",
   "../../cost/aws/unused_volumes/aws_delete_unused_volumes.pt",
@@ -36,9 +41,21 @@ default_child_policy_template_files = [
   "../../operational/aws/long_running_instances/long_running_instances.pt",
   "../../operational/aws/scheduled_ec2_events/aws_scheduled_ec2_events.pt",
   "../../operational/aws/tag_cardinality/aws_tag_cardinality.pt",
+  "../../security/aws/aws_config_enabled/aws_config_enabled.pt",
+  "../../security/aws/ebs_ensure_encryption_default/ebs_ensure_encryption_default.pt",
   "../../security/aws/ebs_unencrypted_volumes/aws_unencrypted_volumes.pt",
+  "../../security/aws/elb_unencrypted/aws_elb_encryption.pt",
   "../../security/aws/rds_publicly_accessible/aws_publicly_accessible_rds_instances.pt",
+  "../../security/aws/rds_unencrypted/aws_unencrypted_rds_instances.pt",
+  "../../security/aws/loadbalancer_internet_facing/aws_internet_facing_elbs.pt",
   "../../security/aws/public_buckets/aws_public_buckets.pt",
+  "../../security/aws/rds_publicly_accessible/aws_publicly_accessible_rds_instances.pt",
+  "../../security/aws/s3_buckets_deny_http/s3_buckets_deny_http.pt",
+  "../../security/aws/s3_buckets_without_server_access_logging/aws_s3_buckets_without_server_access_logging.pt",
+  "../../security/aws/s3_ensure_buckets_block_public_access/s3_ensure_buckets_block_public_access.pt",
+  "../../security/aws/s3_ensure_mfa_delete_enabled/s3_ensure_mfa_delete_enabled.pt",
+  "../../security/aws/unencrypted_s3_buckets/aws_unencrypted_s3_buckets.pt",
+  "../../security/aws/vpcs_without_flow_logs_enabled/aws_vpcs_without_flow_logs_enabled.pt",
   "../../cost/aws/superseded_ebs_volumes/aws_superseded_ebs_volumes.pt",
   "../../cost/aws/rightsize_ebs_volumes/aws_rightsize_ebs_volumes.pt",
   # Azure Policy Templates
@@ -50,14 +67,18 @@ default_child_policy_template_files = [
   "../../compliance/azure/azure_long_stopped_instances/long_stopped_instances_azure.pt",
   "../../compliance/azure/compliance_score/azure_regulatory_compliance_report.pt",
   "../../compliance/azure/instances_without_fnm_agent/azure_instances_not_running_flexnet_inventory_agent.pt",
+  "../../cost/azure/advisor_compute/azure_advisor_compute.pt",
   "../../cost/azure/reserved_instances/recommendations/azure_reserved_instance_recommendations.pt",
   "../../cost/azure/idle_compute_instances/azure_idle_compute_instances.pt",
   "../../cost/azure/blob_storage_optimization/azure_blob_storage_optimization.pt",
   "../../cost/azure/old_snapshots/azure_delete_old_snapshots.pt",
   "../../cost/azure/rightsize_compute_instances/azure_compute_rightsizing.pt",
   "../../cost/azure/rightsize_managed_disks/azure_rightsize_managed_disks.pt",
+  "../../cost/azure/rightsize_managed_sql/azure_rightsize_managed_sql.pt",
   "../../cost/azure/rightsize_netapp_files/azure_rightsize_netapp_files.pt",
   "../../cost/azure/rightsize_sql_instances/azure_rightsize_sql_instances.pt",
+  "../../cost/azure/rightsize_sql_storage/azure_rightsize_sql_storage.pt",
+  #"../../cost/azure/rightsize_synapse_sql_pools/azure_rightsize_synapse_sql_pools.pt",
   "../../cost/azure/unoptimized_web_app_scaling/azure_unoptimized_web_app_scaling.pt",
   "../../cost/azure/sql_servers_without_elastic_pool/azure_sql_servers_without_elastic_pool.pt",
   "../../cost/azure/unused_firewalls/azure_unused_firewalls.pt",
@@ -67,6 +88,7 @@ default_child_policy_template_files = [
   "../../cost/azure/hybrid_use_benefit/azure_hybrid_use_benefit.pt",
   "../../cost/azure/hybrid_use_benefit_linux/ahub_linux.pt",
   "../../cost/azure/hybrid_use_benefit_sql/ahub_sql.pt",
+  "../../cost/azure/savings_plan/recommendations/azure_savings_plan_recommendations.pt",
   "../../cost/azure/schedule_instance/azure_schedule_instance.pt",
   "../../cost/azure/superseded_instances/azure_superseded_instances.pt",
   "../../cost/azure/storage_account_lifecycle_management/storage_account_lifecycle_management.pt",
@@ -78,6 +100,36 @@ default_child_policy_template_files = [
   "../../operational/azure/compute_poweredoff_report/azure_compute_poweredoff_report.pt",
   "../../operational/azure/tag_cardinality/azure_tag_cardinality.pt",
   "../../operational/azure/vms_without_managed_disks/azure_vms_without_managed_disks.pt",
+  "../../security/azure/blob_storage_logging/blob_storage_logging.pt",
+  "../../security/azure/mysql_ssl/mysql_ssl.pt",
+  "../../security/azure/mysql_tls_version/mysql_tls_version.pt",
+  "../../security/azure/pg_conn_throttling/pg_conn_throttling.pt",
+  "../../security/azure/pg_infra_encryption/pg_infra_encryption.pt",
+  "../../security/azure/pg_log_retention/pg_log_retention.pt",
+  "../../security/azure/pg_log_settings/pg_log_settings.pt",
+  "../../security/azure/private_blob_containers/private_blob_containers.pt",
+  "../../security/azure/queue_storage_logging/queue_storage_logging.pt",
+  "../../security/azure/restrict_rdp_internet/azure_restrict_rdp_inet.pt",
+  "../../security/azure/restrict_ssh_internet/azure_restrict_ssh_inet.pt",
+  "../../security/azure/secure_transfer_required/secure_transfer_required.pt",
+  "../../security/azure/security_alert_owners/security_alert_owners.pt",
+  "../../security/azure/security_contact_email/security_contact_email.pt",
+  "../../security/azure/sql_ad_admin/sql_ad_admin.pt",
+  "../../security/azure/sql_auditing_retention/sql_auditing_retention.pt",
+  "../../security/azure/sql_db_encryption/sql_db_encryption.pt",
+  "../../security/azure/sql_publicly_accessible_managed_instance/sql_publicly_accessible_managed_instance.pt",
+  "../../security/azure/sql_server_atp/sql_server_atp.pt",
+  "../../security/azure/sql_server_auditing/sql_server_auditing.pt",
+  "../../security/azure/sql_server_va/sql_server_va.pt",
+  "../../security/azure/sql_server_va_admins/sql_server_va_admins.pt",
+  "../../security/azure/sql_server_va_emails/sql_server_va_emails.pt",
+  "../../security/azure/sql_server_va_scans/sql_server_va_scans.pt",
+  "../../security/azure/storage_network_deny/storage_network_deny.pt",
+  "../../security/azure/storage_soft_delete/storage_soft_delete.pt",
+  "../../security/azure/storage_tls_version/storage_tls_version.pt",
+  "../../security/azure/storage_trusted_services/storage_trusted_services.pt",
+  "../../security/azure/table_storage_logging/table_storage_logging.pt",
+  "../../security/azure/webapp_tls_version_support/azure_webapp_min_tls_version.pt",
   # Google Policy Templates
   "../../compliance/google/long_stopped_instances/google_long_stopped_instances.pt",
   "../../compliance/google/unlabeled_resources/unlabeled_resources.pt",
@@ -92,6 +144,7 @@ default_child_policy_template_files = [
   "../../cost/google/cud_recommendations/google_committed_use_discount_recommendations.pt",
   "../../cost/google/cud_report/google_committed_use_discount_report.pt",
   "../../cost/google/old_snapshots/google_delete_old_snapshots.pt",
+  "../../operational/google/label_cardinality/google_label_cardinality.pt",
   "../../security/google/public_buckets/google_public_buckets.pt"
 ]
 
@@ -112,6 +165,14 @@ def compile_meta_parent_policy(file_path)
   description = pt.scan(/^(?:short_description ")(.*?)(?:")/)[0][0]
   # Get the version string
   version = pt.scan(/version: "(.*?)"/)[0][0]
+  # get the publish string if it exists, defaulting to true if not present
+  publish_scan = pt.scan(/publish: "(.*?)"/)
+  publish = "true"
+  publish = publish_scan[0][0] if !publish_scan.empty?
+  # get the deprecated string if it exists, defaulting to false if not present
+  deprecated_scan = pt.scan(/publish: "(.*?)"/)
+  deprecated = "false"
+  deprecated = deprecated_scan[0][0] if !deprecated_scan.empty?
   # print("Name: #{name}\n")
   # print("Description: #{description}\n")
   # print("\n###########################\n")
@@ -345,6 +406,8 @@ end
   # Replace __PLACEHOLDER_FOR_CHILD_POLICY_NAME__ with the name of the child policy
   output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_NAME__", name)
   output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_VERSION__", version)
+  output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_PUBLISH__", publish)
+  output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_DEPRECATED__", deprecated)
   # Attempt to identify the URL to the child policy template file on github using the file_path provided
   # This would only work if the pt file is located under the `policy_templates` repo directory
   # If it is not, then the URL will be incorrect

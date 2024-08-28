@@ -1,5 +1,9 @@
 # Azure Resources with public IP address
 
+## Deprecated
+
+This policy is no longer being updated.
+
 ## What it does
 
 This policy checks all the resources in the Azure Subscription with a public IP address, so that those IP's can be removed.

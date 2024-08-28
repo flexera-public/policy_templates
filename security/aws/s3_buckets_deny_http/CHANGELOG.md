@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.0.0
+
+- Policy template renamed to `AWS S3 Buckets Accepting HTTP Requests` to better reflect its functionality
+- Buckets can now be filtered by region, tag, or name
+- Added additional fields to incident table for added context
+- Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera credential
+
 ## v2.5
 
 - Updated description of `Account Number` parameter

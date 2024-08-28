@@ -1,0 +1,450 @@
+name "Low Usage Report"
+rs_pt_ver 20180301
+type "policy"
+short_description "Report on segments of cost whose spend is below a user-specified threshold. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/low_usage/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+category "Cost"
+severity "low"
+default_frequency "daily"
+info(
+  version: "3.0.0",
+  provider: "Flexera",
+  service: "Cloud Cost Optimization",
+  policy_set: "Cloud Cost Optimization"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_cost_metric" do
+  type "string"
+  category "Policy Settings"
+  label "Cost Metric"
+  description "The cost metric to use when assessing usage."
+  allowed_values "Unamortized Unblended", "Amortized Unblended", "Unamortized Blended", "Amortized Blended"
+  default "Amortized Blended"
+end
+
+parameter "param_usage_days" do
+  type "number"
+  category "Policy Settings"
+  label "Days of Usage"
+  description "How many days of past usage to consider when assessing spend."
+  min_value 1
+  default 30
+end
+
+parameter "param_bc_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Billing Centers"
+  description "Allow or Deny entered Billing Centers."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_bc_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Billing Center List"
+  description "A list of allowed or denied Billing Center names/IDs. Leave blank to run report across entire Flexera organization."
+  default []
+end
+
+parameter "param_threshold" do
+  type "number"
+  category "Policy Settings"
+  label "Low Account Spend Threshold"
+  description "Threshold to consider the user-specified dimension to be low spend. Only values with spend lower than this number will be reported."
+  min_value 1
+  default 1000
+end
+
+parameter "param_minimum_spend" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Spend Threshold"
+  description "Threshold to consider the user-specified dimension to be worth actioning on. Only values with spend higher than this number will be reported."
+  min_value 0
+  default 1
+end
+
+parameter "param_dimension" do
+  type "string"
+  category "Policy Settings"
+  label "Dimension"
+  description "The name or ID of the Flexera dimension whose values you want to check for low usage; for example, 'Cloud Vendor Account Name'. Enter 'Billing Center' to split costs by Billing Center."
+  default ""
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Gather applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-'EOS'
+  code = "USD"
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      code = ds_currency_reference[ds_currency_code['value']]['code']
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    code: code,
+    symbol: symbol,
+    separator: separator
+  }
+EOS
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+datasource "ds_billing_centers_filtered" do
+  run_script $js_billing_centers_filtered, $ds_billing_centers, $param_bc_allow_or_deny, $param_bc_list
+end
+
+script "js_billing_centers_filtered", type: "javascript" do
+  parameters "ds_billing_centers", "param_bc_allow_or_deny", "param_bc_list"
+  result "result"
+  code <<-EOS
+  allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_bc_list.length > 0) {
+    billing_centers = _.filter(ds_billing_centers, function(item) {
+      id_found = _.contains(param_bc_list, item['id']) == allow_deny_test[param_bc_allow_or_deny]
+      name_found = _.contains(param_bc_list, item['name']) == allow_deny_test[param_bc_allow_or_deny]
+      return id_found || name_found
+    })
+
+    // Check for conflicting parents/children and remove children if present
+    bc_ids = _.compact(_.pluck(billing_centers, 'id'))
+    bad_children = _.filter(ds_billing_centers, function(bc) { return _.contains(bc_ids, bc['parent_id']) })
+    bad_children_ids = _.pluck(bad_children, 'id')
+
+    // Create final result with the bad children removed
+    result = _.reject(billing_centers, function(bc) { return _.contains(bad_children_ids, bc['id']) })
+  } else {
+    // If we're not filtering at all, just grab all of the top level billing centers
+    result = _.filter(ds_billing_centers, function(bc) {
+      return bc['parent_id'] == null || bc['parent_id'] == undefined
+    })
+  }
+EOS
+end
+
+datasource "ds_dimensions_list" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/costs/dimensions"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "dimensions[].{id: id, name: name}") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+    end
+  end
+end
+
+datasource "ds_dimension" do
+  run_script $js_dimension, $ds_dimensions_list, $param_dimension
+end
+
+script "js_dimension", type: "javascript" do
+  parameters "ds_dimensions_list", "param_dimension"
+  result "result"
+  code <<-EOS
+  if (param_dimension == "Billing Center") {
+    result = { id: "billing_center_id", name: "Billing Center" }
+  } else {
+    result = _.find(ds_dimensions_list, function(item) { return item['id'] == param_dimension })
+
+    // If user-specified dimension isn't a valid dimension ID, check for name instead
+    if (result == undefined) {
+      result = _.find(ds_dimensions_list, function(item) { return item['name'] == param_dimension })
+    }
+
+    // If user-specified dimension isn't a valid dimension ID *or* name, check for name without case
+    if (result == undefined) {
+      result = _.find(ds_dimensions_list, function(item) { return item['name'].toLowerCase() == param_dimension.toLowerCase() })
+    }
+
+    // If the above has failed, place dummy values indicating a problematic input
+    if (result == undefined) { result = { id: "zzz_unknown", name: "Unknown" } }
+  }
+EOS
+end
+
+datasource "ds_costs" do
+  request do
+    run_script $js_costs, $ds_billing_centers_filtered, $ds_dimension, $param_cost_metric, $param_usage_days, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "metrics", jmes_path(col_item, "metrics")
+      field "dimensions", jmes_path(col_item, "dimensions")
+    end
+  end
+end
+
+script "js_costs", type: "javascript" do
+  parameters "ds_billing_centers_filtered", "ds_dimension", "param_cost_metric", "param_usage_days", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  cost_metric_table = {
+    "Unamortized Unblended": "cost_nonamortized_unblended_adj",
+    "Amortized Unblended": "cost_amortized_unblended_adj",
+    "Unamortized Blended": "cost_nonamortized_blended_adj",
+    "Amortized Blended": "cost_amortized_blended_adj"
+  }
+
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().substring(0, 10)
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - param_usage_days - 2)
+  start_date = start_date.toISOString().substring(0, 10)
+
+  dimensions = _.uniq(['billing_center_id', 'vendor', ds_dimension["id"]])
+
+  var request = {
+    auth: "auth_flexera",
+    verb: "POST",
+    host: rs_optima_host,
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
+    headers: { "Api-Version": "1.0", "User-Agent": "RS Policies" },
+    body_fields: {
+      "dimensions": dimensions,
+      "granularity": "day",
+      "metrics": [ cost_metric_table[param_cost_metric] ],
+      "billing_center_ids": _.pluck(ds_billing_centers_filtered, "id"),
+      "start_at": start_date,
+      "end_at": end_date
+    }
+  }
+EOS
+end
+
+datasource "ds_costs_sorted" do
+  run_script $js_costs_sorted, $ds_costs, $ds_dimension, $ds_billing_centers, $ds_currency, $ds_applied_policy, $param_cost_metric, $param_usage_days, $param_threshold
+end
+
+script "js_costs_sorted", type: "javascript" do
+  parameters "ds_costs", "ds_dimension", "ds_billing_centers", "ds_currency", "ds_applied_policy", "param_cost_metric", "param_usage_days", "param_threshold"
+  result "result"
+  code <<-EOS
+  cost_metric_table = {
+    "Unamortized Unblended": "cost_nonamortized_unblended_adj",
+    "Amortized Unblended": "cost_amortized_unblended_adj",
+    "Unamortized Blended": "cost_nonamortized_blended_adj",
+    "Amortized Blended": "cost_amortized_blended_adj"
+  }
+
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().substring(0, 10)
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - param_usage_days - 2)
+  start_date = start_date.toISOString().substring(0, 10)
+
+  billing_center_names = {}
+
+  _.each(ds_billing_centers, function(bc) {
+    billing_center_names[bc['id']] = bc['name']
+  })
+
+  spend_by_value = {}
+
+  _.each(ds_costs, function(item) {
+    billing_center = billing_center_names[item['dimensions']['billing_center_id']]
+    value = item['dimensions'][ds_dimension['id']]
+    if (ds_dimension['id'] == 'billing_center_id') { value = billing_center }
+
+    if (spend_by_value[value] == undefined) {
+      spend_by_value[value] = { spend: 0.0, billing_centers: [], vendors: [] }
+    }
+
+    spend_by_value[value]['spend'] += item['metrics'][cost_metric_table[param_cost_metric]]
+    spend_by_value[value]['billing_centers'].push(billing_center)
+    spend_by_value[value]['vendors'].push(item['dimensions']['vendor'])
+  })
+
+  result = _.map(_.keys(spend_by_value), function(key) {
+    return {
+      dimension: ds_dimension['name'],
+      id: key,
+      spend: Math.round(spend_by_value[key]['spend'] * 1000) / 1000,
+      vendors: _.uniq(spend_by_value[key]['vendors']).join(', '),
+      billing_centers: _.uniq(spend_by_value[key]['billing_centers']).join(', '),
+      start_date: start_date,
+      end_date: end_date,
+      policy_name: ds_applied_policy['name'],
+      currency: ds_currency['symbol'],
+      threshold: param_threshold
+    }
+  })
+EOS
+end
+
+datasource "ds_low_usage" do
+  run_script $js_low_usage, $ds_costs_sorted, $param_minimum_spend, $param_threshold
+end
+
+script "js_low_usage", type: "javascript" do
+  parameters "ds_costs_sorted", "param_minimum_spend", "param_threshold"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_costs_sorted, function(item) {
+    return item['spend'] >= param_minimum_spend && item['spend'] < param_threshold
+  })
+
+  result = _.sortBy(result, 'spend').reverse()
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_low_usage" do
+  validate_each $ds_low_usage do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} {{ with index data 0 }}{{ .dimension }}{{ end }} Dimension Values With Low Spend Found"
+    check eq(val(item, "id"), "")
+    escalate $esc_email
+    export do
+      resource_level true
+      field "dimension" do
+        label "Dimension Name"
+      end
+      field "id" do
+        label "Dimension Value"
+      end
+      field "spend" do
+        label "Total Spend"
+      end
+      field "currency" do
+        label "Currency"
+      end
+      field "vendors" do
+        label "Associated Cloud Vendors"
+      end
+      field "billing_centers" do
+        label "Associated Billing Centers"
+      end
+      field "start_date" do
+        label "Start Date"
+      end
+      field "end_date" do
+        label "End Date"
+      end
+      field "threshold" do
+        label "Spend Threshold"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end

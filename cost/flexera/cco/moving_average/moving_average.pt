@@ -1,0 +1,410 @@
+name "Cloud Spend Moving Average Report"
+rs_pt_ver 20180301
+type "policy"
+short_description "Pulls the cost data for lookback period then generates a moving average report of cloud spend for the specified months. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/moving_average/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "low"
+category "Cost"
+default_frequency "weekly"
+info(
+  version: "4.0.0",
+  provider: "Flexera",
+  service: "Cloud Cost Optimization",
+  policy_set: ""
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to send the scheduled report to."
+  default []
+end
+
+parameter "param_cost_metric" do
+  type "string"
+  category "Policy Settings"
+  label "Cost Metric"
+  description "The cost metric to use when calculating and reporting the moving average."
+  allowed_values "Unamortized Unblended", "Amortized Unblended", "Unamortized Blended", "Amortized Blended"
+  default "Unamortized Unblended"
+end
+
+parameter "param_bc_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Billing Centers"
+  description "Allow or Deny entered Billing Centers."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_bc_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Billing Center List"
+  description "A list of allowed or denied Billing Center names/IDs. Leave blank to produce forecast for entire Flexera organization."
+  default []
+end
+
+parameter "param_lookback" do
+  type "number"
+  category "Policy Settings"
+  label "Look Back Months (#)"
+  description "Number of months into the past to use for generating forecast."
+  min_value 1
+  default 15
+end
+
+parameter "param_average_months" do
+  type "number"
+  category "Policy Settings"
+  label "Moving Average Months"
+  description "Number of prior months to use to calculate moving average."
+  min_value 2
+  max_value 6
+  default 3
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Gather applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-'EOS'
+  code = "USD"
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      code = ds_currency_reference[ds_currency_code['value']]['code']
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    code: code,
+    symbol: symbol,
+    separator: separator
+  }
+EOS
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+datasource "ds_billing_centers_filtered" do
+  run_script $js_billing_centers_filtered, $ds_billing_centers, $param_bc_allow_or_deny, $param_bc_list
+end
+
+script "js_billing_centers_filtered", type: "javascript" do
+  parameters "ds_billing_centers", "param_bc_allow_or_deny", "param_bc_list"
+  result "result"
+  code <<-EOS
+  allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_bc_list.length > 0) {
+    billing_centers = _.filter(ds_billing_centers, function(item) {
+      id_found = _.contains(param_bc_list, item['id']) == allow_deny_test[param_bc_allow_or_deny]
+      name_found = _.contains(param_bc_list, item['name']) == allow_deny_test[param_bc_allow_or_deny]
+      return id_found || name_found
+    })
+
+    // Check for conflicting parents/children and remove children if present
+    bc_ids = _.compact(_.pluck(billing_centers, 'id'))
+    bad_children = _.filter(ds_billing_centers, function(bc) { return _.contains(bc_ids, bc['parent_id']) })
+    bad_children_ids = _.pluck(bad_children, 'id')
+
+    // Create final result with the bad children removed
+    result = _.reject(billing_centers, function(bc) { return _.contains(bad_children_ids, bc['id']) })
+  } else {
+    // If we're not filtering at all, just grab all of the top level billing centers
+    result = _.filter(ds_billing_centers, function(bc) {
+      return bc['parent_id'] == null || bc['parent_id'] == undefined
+    })
+  }
+EOS
+end
+
+datasource "ds_past_month_list" do
+  run_script $js_past_month_list, $param_lookback
+end
+
+script "js_past_month_list", type: "javascript" do
+  parameters "param_lookback"
+  result "result"
+  code <<-EOS
+  // Simple function to advance date in YYYY-MM format ahead or behind one month
+  // Avoids issues caused by using setMonth() functionality
+  function change_month(date, change) {
+    year = Number(date.split('-')[0])
+    month = Number(date.split('-')[1])
+
+    month = month + change
+    if (month == 0) { year -= 1; month = 12 }
+    if (month == 13) { year += 1; month = 1 }
+
+    if (month < 10) { month = "0" + month.toString() }
+    return year.toString() + '-' + month.toString()
+  }
+
+  result = []
+
+  iterating_month = new Date().toISOString().substring(0, 7)
+
+  for (var i = 0; i < param_lookback; i++) {
+    iterating_month = change_month(iterating_month, -1)
+    result.push({ start_date: iterating_month, end_date: change_month(iterating_month, 1) })
+  }
+EOS
+end
+
+datasource "ds_costs" do
+  iterate $ds_past_month_list
+  request do
+    run_script $js_costs, val(iter_item, "start_date"), val(iter_item, "end_date"), $ds_billing_centers_filtered, $param_cost_metric, rs_optima_host, rs_org_id
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "cost_amortized_unblended_adj", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+      field "cost_amortized_blended_adj", jmes_path(col_item, "metrics.cost_amortized_blended_adj")
+      field "cost_nonamortized_unblended_adj", jmes_path(col_item, "metrics.cost_nonamortized_unblended_adj")
+      field "cost_nonamortized_blended_adj", jmes_path(col_item, "metrics.cost_nonamortized_blended_adj")
+      field "billing_center_id", jmes_path(col_item, "dimensions.billing_center_id")
+      field "timestamp", jmes_path(col_item, "timestamp")
+      field "start_date", val(iter_item, "start_date")
+      field "end_date", val(iter_item, "end_date")
+    end
+  end
+end
+
+script "js_costs", type: "javascript" do
+  parameters "start_date", "end_date", "ds_billing_centers_filtered", "param_cost_metric", "rs_optima_host", "rs_org_id"
+  result "request"
+  code <<-EOS
+  cost_metric = {
+    "Unamortized Unblended": "cost_nonamortized_unblended_adj",
+    "Amortized Unblended": "cost_amortized_unblended_adj",
+    "Unamortized Blended": "cost_nonamortized_blended_adj",
+    "Amortized Blended": "cost_amortized_blended_adj"
+  }
+
+  var request = {
+    auth: "auth_flexera",
+    verb: "POST",
+    host: rs_optima_host,
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
+    headers: { "Api-Version": "1.0", "User-Agent": "RS Policies" },
+    body_fields: {
+      "dimensions": [ "billing_center_id" ],
+      "granularity": "month",
+      "metrics": [ cost_metric[param_cost_metric] ],
+      "billing_center_ids": _.pluck(ds_billing_centers_filtered, "id"),
+      "start_at": start_date,
+      "end_at": end_date
+    }
+  }
+EOS
+end
+
+datasource "ds_costs_calculated" do
+  run_script $js_costs_calculated, $ds_costs, $ds_currency, $param_cost_metric, $param_average_months
+end
+
+script "js_costs_calculated", type: "javascript" do
+  parameters "ds_costs", "ds_currency", "param_cost_metric", "param_average_months"
+  result "result"
+  code <<-EOS
+  // Basic function to calculate moving average for a given item in a list of numbers
+  function moving_average(arr, index, lookback) {
+    start = Math.max(0, index - lookback + 1)
+    sum = _.reduce(arr.slice(start, index + 1), function (memo, num) { return memo + num }, 0)
+    return sum / (index - start + 1)
+  }
+
+  cost_metric = {
+    "Unamortized Unblended": "cost_nonamortized_unblended_adj",
+    "Amortized Unblended": "cost_amortized_unblended_adj",
+    "Unamortized Blended": "cost_nonamortized_blended_adj",
+    "Amortized Blended": "cost_amortized_blended_adj"
+  }
+
+  costs = _.map(_.groupBy(ds_costs, 'start_date'), function(group) {
+    plucked_costs = _.pluck(group, cost_metric[param_cost_metric])
+
+    return {
+      month: group[0]["start_date"],
+      cost: _.reduce(plucked_costs, function (memo, num) { return memo + num }, 0)
+    }
+  })
+
+  costs = _.sortBy(costs, 'month')
+
+  result = []
+
+  for (var i = 0; i < costs.length; i++) {
+    result.push({
+      month: costs[i]["month"],
+      cost: Math.round(costs[i]["cost"] * 1000) / 1000,
+      average: Math.round(moving_average(_.pluck(costs, "cost"), i, param_average_months) * 1000) / 1000,
+      currency: ds_currency["symbol"]
+    })
+  }
+EOS
+end
+
+datasource "ds_moving_average_chart" do
+  run_script $js_moving_average_chart, $ds_costs_calculated, $ds_billing_centers_filtered, $ds_applied_policy, $param_bc_list, $param_average_months, rs_org_name
+end
+
+script "js_moving_average_chart", type: "javascript" do
+  parameters "ds_costs_calculated", "ds_billing_centers_filtered", "ds_applied_policy", "param_bc_list", "param_average_months", "rs_org_name"
+  result "result"
+  code <<-EOS
+  billingCenters = "All"
+  if (param_bc_list.length > 0) { billingCenters = _.pluck(ds_billing_centers_filtered, 'name').join(', ') }
+
+  chartTitle = 'chtt=Cloud Cost Moving Average for ' + rs_org_name
+  chartData = 'chd=a:' + _.pluck(ds_costs_calculated, 'average').join(',') + '|' + _.pluck(ds_costs_calculated, 'cost').join(',')
+  chartXAxis = 'chxl=0:|' + _.pluck(ds_costs_calculated, 'month').join('|')
+
+  result = {
+    chartType: encodeURI('cht=lc'),
+    chartSize: encodeURI('chs=900x500'),
+    chartTitle: encodeURI(chartTitle),
+    chartLabel: encodeURI('chdl=Moving Average|Actual Spend&chdlp=t'),
+    chartAxis: encodeURI('chxt=x,y'),
+    chartXAxis: encodeURI(chartXAxis),
+    chartAxisFormat: encodeURI("chxs=1N*cUSD0sz*|0,min40"),
+    chartData: encodeURI(chartData),
+    chartColors: encodeURI('chco=3072F3,ff0000,00aaaa'),
+    chartExtension: encodeURI('chof=.png'),
+    billingCenters: billingCenters,
+    reportData: ds_costs_calculated,
+    policy_name: ds_applied_policy['name'],
+    param_average_months: param_average_months
+  }
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_moving_average_chart" do
+  validate $ds_moving_average_chart do
+    summary_template "{{ data.policy_name }}"
+    detail_template <<-EOS
+# Cloud Cost Moving Average Report for {{ rs_org_name }}
+### Billing Centers: {{ data.billingCenters }}
+#### Average calculated from previous {{ data.param_average_months }} months
+![Moving Average](https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id={{ rs_org_id }}&rs_project_id={{ rs_project_id }}&{{ data.chartType }}&{{ data.chartLabel }}&{{ data.chartSize }}&{{ data.chartTitle }}&{{ data.chartAxis }}&{{ data.chartXAxis }}&{{ data.chartAxisFormat }}&{{ data.chartData }}&{{ data.chartColors }}&{{ data.chartExtension }} "Moving Average Spend Chart")
+EOS
+    check eq(1, 0)
+    escalate $esc_email
+    export "reportData" do
+      field "month" do
+        label "Month"
+      end
+      field "cost" do
+        label "Cloud Cost"
+      end
+      field "average" do
+        label "Moving Average"
+      end
+      field "currency" do
+        label "Currency"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end

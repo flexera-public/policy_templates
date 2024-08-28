@@ -1,4 +1,4 @@
-# AWS Bucket Size Check
+# AWS Oversized S3 Buckets
 
 ## What It Does
 
@@ -38,7 +38,7 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
   - `s3:GetBucketLocation`
   - `s3:GetBucketTagging`
   - `cloudwatch:ListMetrics`
-  - `cloudwatch:GetMetricStatistics`
+  - `cloudwatch:GetMetricData`
   - `sts:GetCallerIdentity`
 
   Example IAM Permission Policy:
@@ -54,7 +54,7 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
                   "s3:GetBucketLocation",
                   "s3:GetBucketTagging",
                   "cloudwatch:ListMetrics",
-                  "cloudwatch:GetMetricStatistics",
+                  "cloudwatch:GetMetricData",
                   "sts:GetCallerIdentity"
               ],
               "Resource": "*"

@@ -1,0 +1,401 @@
+name "Flexera One User Access Report"
+rs_pt_ver 20180301
+type "policy"
+short_description "Reports all Flexera users, their roles, and which products they have access to. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/iam/iam_user_report) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+category "Operational"
+severity "low"
+default_frequency "weekly"
+info(
+  version: "0.1.0",
+  provider: "Flexera",
+  service: "Identity & Access Management",
+  policy_set: "Identity & Access Management"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify."
+  default []
+end
+
+parameter "param_inactive_roles" do
+  type "string"
+  category "Policy Settings"
+  label "Report Inactive Roles"
+  description "Whether to include roles that are not active for users in the results. If enabled, the report will contain an entry for every possible role for every user, regardless of whether it is active for that user. The 'Role Status' field will indicate if the role is active or not."
+  allowed_values "Yes", "No"
+  default "No"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+datasource "ds_roles" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/flexera/iam_roles.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_users" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/iam/v1/orgs/", rs_org_id, "/users"])
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "kind", jmes_path(col_item, "kind")
+      field "email", jmes_path(col_item, "email")
+      field "firstName", jmes_path(col_item, "firstName")
+      field "lastName", jmes_path(col_item, "lastName")
+      field "lastAPILogin", jmes_path(col_item, "lastAPILogin")
+      field "lastUILogin", jmes_path(col_item, "lastUILogin")
+      field "ref", jmes_path(col_item, "ref")
+      field "createdAt", jmes_path(col_item, "createdAt")
+      field "updatedAt", jmes_path(col_item, "updatedAt")
+    end
+  end
+end
+
+datasource "ds_groups" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "grs")
+    path join(["/grs/orgs/", rs_org_id, "/groups"])
+    query "view", "extended"
+    header "X-Api-Version", "2.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "href", jmes_path(col_item, "href")
+      field "name", jmes_path(col_item, "name")
+      field "description", jmes_path(col_item, "description")
+      field "kind", jmes_path(col_item, "kind")
+      field "users", jmes_path(col_item, "users")
+      field "createdAt", jmes_path(col_item, "timestamps.created_at")
+      field "updatedAt", jmes_path(col_item, "timestamps.updated_at")
+      field "orgId", jmes_path(col_item, "org.id")
+      field "orgHref", jmes_path(col_item, "org.href")
+      field "orgName", jmes_path(col_item, "org.name")
+      field "orgKind", jmes_path(col_item, "org.kind")
+      field "orgCreatedAt", jmes_path(col_item, "org.timestamps.created_at")
+      field "orgUpdatedAt", jmes_path(col_item, "org.timestamps.updated_at")
+    end
+  end
+end
+
+datasource "ds_access_rules" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/iam/v1/orgs/", rs_org_id, "/access-rules"])
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "roleId", jmes_path(col_item, "role.id")
+      field "roleKind", jmes_path(col_item, "role.kind")
+      field "roleName", jmes_path(col_item, "role.name")
+      field "roleDisplayName", jmes_path(col_item, "role.displayName")
+      field "roleCategory", jmes_path(col_item, "role.category")
+      field "scopeId", jmes_path(col_item, "scope.id")
+      field "scopeKind", jmes_path(col_item, "scope.kind")
+      field "scopeRef", jmes_path(col_item, "scope.ref")
+      field "subjectId", jmes_path(col_item, "subject.id")
+      field "subjectKind", jmes_path(col_item, "subject.kind")
+      field "subjectRef", jmes_path(col_item, "subject.ref")
+      field "kind", jmes_path(col_item, "kind")
+      field "createdAt", jmes_path(col_item, "createdAt")
+    end
+  end
+end
+
+datasource "ds_rules_by_subject" do
+  run_script $js_rules_by_subject, $ds_access_rules
+end
+
+script "js_rules_by_subject", type: "javascript" do
+  parameters "ds_access_rules"
+  result "result"
+  code <<-'EOS'
+  // Sort rules by subject (user or group) to reference later
+  result = {}
+
+  _.each(ds_access_rules, function(rule) {
+    type = null
+
+    if (typeof(rule['subjectKind']) == 'string') {
+      if (rule['subjectKind'].indexOf('user') != -1) { type = 'user' }
+      if (rule['subjectKind'].indexOf('group') != -1) { type = 'group' }
+    }
+
+    if (type != null) {
+      subject = type + ':' + rule['subjectId']
+      if (result[subject] == undefined) { result[subject] = [] }
+      result[subject].push(rule)
+    }
+  })
+EOS
+end
+
+datasource "ds_groups_by_user" do
+  run_script $js_groups_by_user, $ds_groups, $ds_rules_by_subject
+end
+
+script "js_groups_by_user", type: "javascript" do
+  parameters "ds_groups", "ds_rules_by_subject"
+  result "result"
+  code <<-'EOS'
+  // Sort groups by user and include the rules from the above table specific to each group
+  result = {}
+
+  _.each(ds_groups, function(group) {
+    group_with_rules = group
+    group_with_rules['rules'] = []
+
+    if (ds_rules_by_subject['group:' + group['id']] != undefined) {
+      group_with_rules['rules'] = ds_rules_by_subject['group:' + group['id']]
+    }
+
+    _.each(group['users'], function(user) {
+      if (result[user['id'].toString()] == undefined) { result[user['id'].toString()] = [] }
+      result[user['id'].toString()].push(group_with_rules)
+    })
+  })
+EOS
+end
+
+datasource "ds_roles_with_metadata" do
+  run_script $js_roles_with_metadata, $ds_users, $ds_roles, $ds_rules_by_subject, $ds_groups_by_user, $ds_applied_policy, $param_inactive_roles
+end
+
+script "js_roles_with_metadata", type: "javascript" do
+  parameters "ds_users", "ds_roles", "ds_rules_by_subject", "ds_groups_by_user", "ds_applied_policy", "param_inactive_roles"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  _.each(ds_users, function(user) {
+    // Create a full list of existing rules for the user
+    rules = []
+
+    if (ds_rules_by_subject['user:' + user['id']] != undefined) {
+      rules = _.map(ds_rules_by_subject['user:' + user['id']], function(rule) {
+        new_rule = rule
+        new_rule['source'] = "User"
+        new_rule['sourceId'] = user['id']
+        new_rule['sourceName'] = user['email']
+        return new_rule
+      })
+    }
+
+    groups = []
+    if (ds_groups_by_user[user['id'].toString()] != undefined) { groups = ds_groups_by_user[user['id'].toString()] }
+
+    _.each(groups, function(group) {
+      rules = rules.concat(_.map(group['rules'], function(rule) {
+        new_rule = rule
+        new_rule['source'] = "Group"
+        new_rule['sourceId'] = group['id']
+        new_rule['sourceName'] = group['name']
+        return new_rule
+      }))
+    })
+
+    // Add each found rule to the incident result
+    _.each(rules, function(rule) {
+      result.push({
+        userId: user['id'],
+        userEmail: user['email'],
+        userFirstName: user['firstName'],
+        userLastName: user['lastName'],
+        userLastAPILogin: user['lastAPILogin'],
+        userLastUILogin: user['lastUILogin'],
+        userCreatedAt: user['createdAt'],
+        userUpdatedAt: user['updatedAt'],
+        source: rule['source'],
+        sourceId: rule['sourceId'],
+        sourceName: rule['sourceName'],
+        id: rule['roleName'],
+        name: rule['roleDisplayName'],
+        category: rule['roleCategory'],
+        policy_name: ds_applied_policy['name'],
+        state: "Active"
+      })
+    })
+
+    // Add each missing rules to the incident result
+    if (param_inactive_roles == "Yes") {
+      missing_rules = _.reject(ds_roles, function(role) {
+        return _.contains(_.pluck(rules, 'roleName'), role['name'])
+      })
+
+      _.each(missing_rules, function(rule) {
+        result.push({
+          userId: user['id'],
+          userEmail: user['email'],
+          userFirstName: user['firstName'],
+          userLastName: user['lastName'],
+          userLastAPILogin: user['lastAPILogin'],
+          userLastUILogin: user['lastUILogin'],
+          userCreatedAt: user['createdAt'],
+          userUpdatedAt: user['updatedAt'],
+          source: null,
+          sourceId: null,
+          sourceName: null,
+          id: rule['name'],
+          name: rule['displayName'],
+          category: rule['category'],
+          policy_name: ds_applied_policy['name'],
+          state: "Inactive"
+        })
+      })
+    }
+  })
+
+  result = _.sortBy(result, 'name')
+  result = _.sortBy(result, 'category')
+  result = _.sortBy(result, 'userEmail')
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_user_report" do
+  validate_each $ds_roles_with_metadata do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}"
+    check eq(val(item, "userId"), "")
+    escalate $esc_email
+    hash_exclude "userUpdatedAt", "userLastAPILogin", "userLastUILogin"
+    export do
+      resource_level true
+      field "userId" do
+        label "User ID"
+      end
+      field "userEmail" do
+        label "User Email"
+      end
+      field "userFirstName" do
+        label "User First Name"
+      end
+      field "userLastName" do
+        label "User Last Name"
+      end
+      field "userLastAPILogin" do
+        label "User Last API Login"
+      end
+      field "userLastUILogin" do
+        label "User Last UI Login"
+      end
+      field "userCreatedAt" do
+        label "User Created At"
+      end
+      field "userUpdatedAt" do
+        label "User Updated At"
+      end
+      field "category" do
+        label "Role Category"
+      end
+      field "id" do
+        label "Role Name"
+      end
+      field "name" do
+        label "Role Display Name"
+      end
+      field "state" do
+        label "Role Status"
+      end
+      field "source" do
+        label "Role Source"
+      end
+      field "sourceId" do
+        label "Role Source ID"
+      end
+      field "sourceName" do
+        label "Role Source Name"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end

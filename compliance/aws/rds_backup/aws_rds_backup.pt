@@ -1,0 +1,726 @@
+name "AWS RDS Instances With Unapproved Backup Settings"
+rs_pt_ver 20180301
+type "policy"
+short_description "Report on AWS RDS Instances that have unapproved backup settings. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/rds_backup) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+category "Compliance"
+severity "medium"
+default_frequency "weekly"
+info(
+  version: "3.0.0",
+  provider: "AWS",
+  service: "RDS",
+  policy_set: ""
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_aws_account_number" do
+  type "string"
+  category "Policy Settings"
+  label "Account Number"
+  description "Leave blank; this is for automated use with Meta Policies. See README for more details."
+  default ""
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  default []
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
+parameter "param_backup_settings" do
+  type "string"
+  category "Policy Settings"
+  label "Backup Settings"
+  description "Whether to report AWS RDS instances with invalid backup retention periods, invalid backup windows, or both."
+  allowed_values "Both", "Backup Retention Period", "Backup Window"
+  default "Both"
+end
+
+parameter "param_backup_retention_period" do
+  type "number"
+  category "Policy Settings"
+  label "Backup Retention Period (Days)"
+  description "The backup retention period, in days, that AWS RDS instances should be configured with. Has no effect if `Backup Window` is selected for the Backup Settings parameter."
+  min_value 1
+  # No default value, user input required
+end
+
+parameter "param_backup_window" do
+  type "string"
+  category "Policy Settings"
+  label "Backup Window (HH:MM-HH:MM)"
+  description "The backup window, in HH:MM-HH:MM format, that AWS RDS instances should be configured with. Has no effect if 'Backup Retention Period' is selected for the Backup Settings parameter. Ex: '08:00-08:30'"
+  allowed_pattern /^(\d{2}:\d{2}-\d{2}:\d{2})?$/
+  # No default value, user input required
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws", "aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+  aws_account_number $param_aws_account_number
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_aws" do
+  get_page_marker do
+    body_path "//DescribeDBInstancesResult/Marker"
+  end
+  set_page_marker do
+    query "Marker"
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-au.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get AWS RDS instance sizes
+datasource "ds_aws_instance_size_map" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/aws/instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+# Get AWS account info
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account", xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_get_caller_identity
+end
+
+script "js_aws_account", type:"javascript" do
+  parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+  result = _.find(ds_cloud_vendor_accounts, function(account) {
+    return account['id'] == ds_get_caller_identity[0]['account']
+  })
+
+  // This is in case the API does not return the relevant account info
+  if (result == undefined) {
+    result = {
+      id: ds_get_caller_identity[0]['account'],
+      name: "",
+      tags: {}
+    }
+  }
+EOS
+end
+
+datasource "ds_describe_regions" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "ec2.amazonaws.com"
+    path "/"
+    query "Action", "DescribeRegions"
+    query "Version", "2016-11-15"
+    query "Filter.1.Name", "opt-in-status"
+    query "Filter.1.Value.1", "opt-in-not-required"
+    query "Filter.1.Value.2", "opted-in"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
+      field "region", xpath(col_item, "regionName")
+    end
+  end
+end
+
+datasource "ds_regions" do
+  run_script $js_regions, $ds_describe_regions, $param_regions_list, $param_regions_allow_or_deny
+end
+
+script "js_regions", type:"javascript" do
+  parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
+  result "result"
+  code <<-EOS
+  allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_describe_regions, function(item) {
+      return _.contains(param_regions_list, item['region']) == allow_deny_test[param_regions_allow_or_deny]
+    })
+  } else {
+    result = ds_describe_regions
+  }
+EOS
+end
+
+datasource "ds_rds_instances_set" do
+  iterate $ds_regions
+  request do
+    auth $auth_aws
+    pagination $pagination_aws
+    host join(["rds.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/"
+    query "Action", "DescribeDBInstances"
+    query "Version", "2014-10-31"
+    header "User-Agent", "RS Policies"
+    header "Content-Type", "text/xml"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeDBInstancesResponse/DescribeDBInstancesResult/DBInstances/DBInstance[*]", "array") do
+      field "instanceId", xpath(col_item, "DbiResourceId")
+      field "instanceArn", xpath(col_item, "DBInstanceArn")
+      field "resourceType", xpath(col_item, "DBInstanceClass")
+      field "name", xpath(col_item, "DBInstanceIdentifier")
+      field "status", xpath(col_item, "DBInstanceStatus")
+      field "privateDnsName", xpath(col_item, "Endpoint/Address")
+      field "databaseEngine", xpath(col_item, "Engine")
+      field "engineVersion", xpath(col_item, "EngineVersion")
+      field "availabilityZone", xpath(col_item, "AvailabilityZone")
+      field "licenseModel", xpath(col_item, "LicenseModel")
+      field "backupRetentionPeriod", xpath(col_item, "BackupRetentionPeriod")
+      field "preferredBackupWindow", xpath(col_item, "PreferredBackupWindow")
+      field "processorFeatures" do
+        collect xpath(col_item, "ProcessorFeatures/ProcessorFeature") do
+          field "name", xpath(col_item, "Name")
+          field "value", xpath(col_item, "Value")
+        end
+      end
+      field "region", val(iter_item, "region")
+    end
+  end
+end
+
+datasource "ds_resource_tags" do
+  iterate $ds_rds_instances_set
+  request do
+    auth $auth_aws
+    host join(["rds.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/"
+    query "Action", "ListTagsForResource"
+    query "Version", "2014-10-31"
+    query "ResourceName", val(iter_item, "instanceArn")
+    header "User-Agent", "RS Policies"
+    header "Content-Type", "text/xml"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//ListTagsForResourceResponse/ListTagsForResourceResult/TagList/Tag[*]", "array") do
+      field "instanceId", val(iter_item, "instanceId")
+      field "key", xpath(col_item, "Key")
+      field "value", xpath(col_item, "Value")
+    end
+  end
+end
+
+datasource "ds_rds_instances" do
+  run_script $js_rds_instances, $ds_rds_instances_set, $ds_resource_tags, $ds_aws_instance_size_map, $ds_aws_account, $ds_applied_policy, $param_exclusion_tags, $param_exclusion_tags_boolean, $param_backup_retention_period, $param_backup_window, $param_backup_settings
+end
+
+script "js_rds_instances", type: "javascript" do
+  parameters "ds_rds_instances_set", "ds_resource_tags", "ds_aws_instance_size_map", "ds_aws_account", "ds_applied_policy", "param_exclusion_tags", "param_exclusion_tags_boolean", "param_backup_retention_period", "param_backup_window", "param_backup_settings"
+  result "result"
+  code <<-EOS
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  tag_object = {}
+
+  _.each(ds_resource_tags, function(item) {
+    id = item['instanceId'].toLowerCase()
+    key = item['key']
+    value = item['value']
+
+    if (tag_object[id] == undefined) {
+      tag_object[id] = {}
+    }
+
+    tag_object[id][key] = value
+  })
+
+  result = []
+
+  _.each(ds_rds_instances_set, function(instance) {
+    id = instance['instanceId'].toLowerCase()
+
+    resource_tags = {}
+    if (tag_object[id] != undefined) { resource_tags = tag_object[id] }
+
+    // Store a list of found tags
+    found_tags = []
+
+    _.each(comparators, function(comparator) {
+      comparison = comparator['comparison']
+      value = comparator['value']
+      string = comparator['string']
+      resource_tag = resource_tags[comparator['key']]
+
+      if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+      if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+      if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+      if (comparison == '=~') {
+        if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+      }
+
+      if (comparison == '!~') {
+        if (resource_tag == undefined) { found_tags.push(string) }
+        if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+      }
+    })
+
+    all_tags_found = found_tags.length == comparators.length
+    any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+    if ((!any_tags_found && !all_tags_found) || param_exclusion_tags.length == 0) {
+      tag_string = []
+
+      _.each(Object.keys(resource_tags), function(key) {
+        tag_string.push(key + '=' + resource_tags[key])
+      })
+
+      tag_string = tag_string.join(', ')
+
+      vcpus = null
+
+      if (instance["processorFeatures"] != null && instance["processorFeatures"] != undefined) {
+        cores = _.findWhere(instance["processorFeatures"], { "name": "coreCount" })
+        threads = _.findWhere(instance["processorFeatures"], { "name": "threadsPerCore" })
+
+        if (cores != undefined && threads != undefined) {
+          vcpus = cores["value"] * threads["value"]
+        }
+      }
+
+      if (vcpus == null && ds_aws_instance_size_map[instance["resourceType"]] != undefined) {
+        vcpus = ds_aws_instance_size_map[instance["resourceType"]]["vcpu"]
+      }
+
+      result.push({
+        accountID: ds_aws_account['id'],
+        accountName: ds_aws_account['name'],
+        resourceID: instance['instanceId'],
+        arn: instance['instanceArn'],
+        resourceType: instance['resourceType'],
+        resourceName: instance['name'],
+        state: instance['status'],
+        databaseEngine: instance['databaseEngine'],
+        platform: instance['databaseEngine'],
+        engineVersion: instance['engineVersion'],
+        privateDnsName: instance['privateDnsName'],
+        region: instance['region'],
+        availabilityZone: instance['availabilityZone'],
+        licenseModel: instance['licenseModel'],
+        processorFeatures: instance['processorFeatures'],
+        backupRetentionPeriod: Number(instance['backupRetentionPeriod']),
+        preferredBackupWindow: instance['preferredBackupWindow'],
+        vcpus: vcpus,
+        tags: tag_string,
+        policy_name: ds_applied_policy['name'],
+        required_backup_settings: param_backup_settings,
+        required_retention_period: param_backup_retention_period,
+        required_backup_window: param_backup_window,
+        service: "AmazonRDS"
+      })
+    }
+  })
+EOS
+end
+
+datasource "ds_unapproved_rds" do
+  run_script $js_unapproved_rds, $ds_rds_instances
+end
+
+script "js_unapproved_rds", type: "javascript" do
+  parameters "ds_rds_instances"
+  result "result"
+  code <<-EOS
+  bad_rds = _.filter(ds_rds_instances, function(db) {
+    mismatched_retention = false
+    mismatched_window = false
+
+    if (db['required_backup_settings'] != 'Backup Window') {
+      mismatched_retention = db['backupRetentionPeriod'] != db['required_retention_period']
+    }
+
+    if (db['required_backup_settings'] != 'Backup Retention Period') {
+      mismatched_window = db['preferredBackupWindow'] != db['required_backup_window']
+    }
+
+    return mismatched_retention || mismatched_window
+  })
+
+  result = _.map(bad_rds, function(db) {
+    required_retention_period = db['required_retention_period']
+    required_backup_window = db['required_backup_window']
+    if (db['required_backup_settings'] == 'Backup Window') { required_retention_period = "N/A" }
+    if (db['required_backup_settings'] == 'Backup Retention Period') { required_backup_window = "N/A" }
+
+    return {
+      accountID: db['accountID'],
+      accountName: db['accountName'],
+      resourceID: db['resourceID'],
+      arn: db['arn'],
+      resourceType: db['resourceType'],
+      resourceName: db['resourceName'],
+      state: db['state'],
+      databaseEngine: db['databaseEngine'],
+      platform: db['platform'],
+      engineVersion: db['engineVersion'],
+      privateDnsName: db['privateDnsName'],
+      region: db['region'],
+      availabilityZone: db['availabilityZone'],
+      licenseModel: db['licenseModel'],
+      processorFeatures: db['processorFeatures'],
+      backupRetentionPeriod: db['backupRetentionPeriod'],
+      preferredBackupWindow: db['preferredBackupWindow'],
+      vcpus: db['vcpus'],
+      tags: db['tags'],
+      policy_name: db['policy_name'],
+      required_backup_settings: db['required_backup_settings'],
+      required_retention_period: required_retention_period,
+      required_backup_window: required_backup_window,
+      service: db['service']
+    }
+  })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_unapproved_rds" do
+  validate_each $ds_unapproved_rds do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS RDS Instances With Unapproved Backup Settings Found"
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    hash_exclude "tags"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "availabilityZone" do
+        label "Availability Zone"
+      end
+      field "state" do
+        label "State"
+      end
+      field "privateDnsName" do
+        label "Private DNS Name"
+      end
+      field "backupRetentionPeriod" do
+        label "Backup Retention Period"
+      end
+      field "preferredBackupWindow" do
+        label "Backup Window"
+      end
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "databaseEngine" do
+        label "Database Engine"
+      end
+      field "engineVersion" do
+        label "Engine Version"
+      end
+      field "vcpus" do
+        label "vCPUs"
+      end
+      field "licenseModel" do
+        label "License Model"
+      end
+      field "arn" do
+        label "ARN"
+      end
+      field "platform" do
+        label "Platform"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "required_retention_period" do
+        label "Required Backup Retention Period"
+      end
+      field "required_backup_window" do
+        label "Required Backup Window"
+      end
+      field "id" do
+        label "id"
+        path "resourceID"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
+end
