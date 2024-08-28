@@ -15,5 +15,5 @@ gem "mdl", "~> 0.13"
 gem "octokit", "~> 9.1"
 
 # Removed for now since we don't use them. May be readded later if we decide to use them again.
-#gem "danger-prose", "~> 2.0.7"
-#gem "danger-rubocop", "~> 0.13.0"
+#gem "danger-prose", "~> 2.0"
+#gem "danger-rubocop", "~> 0.13"
