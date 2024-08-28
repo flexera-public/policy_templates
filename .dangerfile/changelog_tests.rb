@@ -7,11 +7,8 @@
 
 ### Deprecated CHANGELOG test
 # Utility method. Returns true if CHANGELOG is for a deprecated policy
-def changelog_deprecated?(file)
-  # Store contents of file for direct analysis
-  changelog_text = File.read(file)
-
-  changelog_text.each_line do |line|
+def changelog_deprecated?(file_lines)
+  file_lines.each do |line|
     return true if line.include?("Deprecated: This policy is no longer being updated")
   end
 
@@ -21,16 +18,13 @@ end
 ### Bad CHANGELOG Formatting test
 # Verify that CHANGELOG is formatted correctly
 # This only covers details that won't be picked up by the Markdown linter
-def changelog_bad_formatting?(file)
+def changelog_bad_formatting?(file_lines)
   fail_message = ""
-
-  # Store contents of file for direct analysis
-  changelog_text = File.read(file)
 
   # Regex to test proper formatting of version numbers
   version_tester = /^\d+\.\d+(\.\d+)?$/
 
-  changelog_text.each_line.with_index do |line, index|
+  file_lines.each_with_index do |line, index|
     line_number = index + 1
 
     if line_number == 1

@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.1.2
+
+- Fix bug preventing Memory metrics from being included in result for some EC2 Instances created by Autoscaling Group
+
 ## v5.1.1
 
 - Idle EC2 Instances incident now includes a `Recommended Instance Size` field with a value of `Terminate EC2 Instance` for ease of analyzing recommendations from the Flexera Optimization dashboard

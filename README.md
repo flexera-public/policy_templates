@@ -275,6 +275,7 @@ These templates can generate savings estimates for your environment.
   - [Azure Reserved Instances Utilization MCA](./cost/azure/reserved_instances/utilization_mca)
   - [Azure Rightsize Compute Instances](./cost/azure/rightsize_compute_instances)
   - [Azure Savings Plan Recommendations](./cost/azure/savings_plan/recommendations)
+  - [Azure Savings Plan Utilization](./cost/azure/savings_plan/utilization)
   - [Azure Savings Realized from Reservations](./cost/azure/savings_realized)
   - [Azure Schedule Instance](./cost/azure/schedule_instance)
   - [Azure Superseded Compute Instances](./cost/azure/superseded_instances)
@@ -682,7 +683,7 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 33
-  Cost: 123
+  Cost: 124
   Operational: 28
   SaaS Management: 11
   Security: 74
@@ -735,7 +736,7 @@ These templates can generate savings estimates for your environment.
   Rightsize Storage: 2
   Rightsize Synapse SQL Pools: 1
   Rightsize Volumes: 2
-  Savings Plans: 4
+  Savings Plans: 5
   Savings Realized: 1
   Schedule Instance: 3
   Schedule Report: 2
@@ -752,7 +753,7 @@ These templates can generate savings estimates for your environment.
   Usage Report: 10
 :providers:
   AWS: 99
-  Azure: 95
+  Azure: 96
   Azure China: 1
   Flexera: 38
   Flexera Optima: 1
@@ -773,7 +774,7 @@ These templates can generate savings estimates for your environment.
   Cloud Cost Optimization: 19
   CloudTrail: 8
   Common Bill Ingestion: 3
-  Compute: 77
+  Compute: 78
   Config: 1
   DBS: 1
   Databricks: 1
@@ -805,7 +806,7 @@ These templates can generate savings estimates for your environment.
   Storage Accounts: 2
   Tags: 3
   Usage Discount: 6
-:total_count: 269
+:total_count: 270
 -->
 <!-- End Policy Template Stats -->
 
