@@ -64,8 +64,21 @@ new_pt_files = git.added_files.select{ |file| file.end_with?(".pt") && !file.end
 # File Loading
 ###############################################################################
 
+puts "*** " + Time.now.strftime("%H:%M:%S.%L") + " Loading reference files..."
+
 permissions_yaml = YAML.load_file('tools/policy_master_permission_generation/validated_policy_templates.yaml')
 spellcheck_ignore = File.readlines('.spellignore').map(&:chomp).select{ |entry| !entry.start_with?("#") }
+
+###############################################################################
+# Preparing Spell Check
+###############################################################################
+
+puts "*** " + Time.now.strftime("%H:%M:%S.%L") + " Configuring prose spell checker..."
+
+prose.ignored_words = spellcheck_ignore
+prose.ignore_numbers = true
+prose.ignore_acronyms = true
+prose.language = "en-us"
 
 ###############################################################################
 # Github Pull Request Testing
@@ -250,7 +263,8 @@ changed_readme_files.each do |file|
   # Don't run tests against deprecated READMEs
   unless readme_deprecated?(file, file_lines)
     # Run Danger spell check on file
-    general_spellcheck?(file, spellcheck_ignore)
+    puts "* " + Time.now.strftime("%H:%M:%S.%L") + " Perfoming spell check on file..."
+    prose.check_spelling(file)
 
     # Raise warning if outdated terminology found
     test = general_outdated_terminology?(file, file_lines); warnings << test if test
@@ -330,7 +344,8 @@ changed_misc_md_files.each do |file|
   file_diff = git.diff_for_file(file)
 
   # Run Danger spell check on file
-  general_spellcheck?(file, spellcheck_ignore)
+  puts "* " + Time.now.strftime("%H:%M:%S.%L") + " Perfoming spell check on file..."
+  prose.check_spelling(file)
 
   # Raise warning if outdated terminology found
   test = general_outdated_terminology?(file, file_lines); warnings << test if test

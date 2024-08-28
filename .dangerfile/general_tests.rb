@@ -27,26 +27,6 @@ def general_textlint?(file)
   return false
 end
 
-### Spell check test
-# Run the Danger spell checker on a file
-def general_spellcheck?(file, spellcheck_ignore)
-  puts "* " + Time.now.strftime("%H:%M:%S.%L") + " Perfoming spell check on file..."
-
-  # Import the ignore list from a file but ignore entries starting with #
-  # This is so we can have comments in this file
-  prose.ignored_words = spellcheck_ignore
-
-  # Disable functionality to prevent a lot of pointless results
-  prose.ignore_numbers = true
-  prose.ignore_acronyms = true
-
-  # Set language
-  prose.language = "en-us"
-
-  # Check spelling
-  prose.check_spelling(file)
-end
-
 ### Markdown lint test
 # Return false if linter finds no problems
 def general_bad_markdown?(file)
