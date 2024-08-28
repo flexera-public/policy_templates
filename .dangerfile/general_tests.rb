@@ -36,9 +36,20 @@ def general_spellcheck?(file)
 
   # Run aspell and store results in log file
   ignore_file = ".spellignore"
-  `awk '{print NR ": " $0}' #{file} | aspell --master=en_US --lang=en_US --mode=markdown list -l en | sort | uniq | grep -vFf #{ignore_file} | while read word; do awk -v word="$word" '{for (i=1; i<=NF; i++) if ($i == word) print "Line #" NR ": " word}' #{file}; done | sort -n -k2,2 1> aspell.log`
 
-  if $?.exitstatus != 0
+  command = %(
+    awk '{print NR ": " $0}' #{file} |
+    aspell --master=en_US --lang=en_US --mode=markdown list -l en |
+    sort |
+    uniq |
+    grep -vFf #{ignore_file} |
+    while read word; do
+      awk -v word="$word" '{for (i=1; i<=NF; i++) if ($i == word) print "Line #" NR ": " word}' #{file}
+    done |
+    sort -n -k2,2 1> aspell.log
+  )
+
+  if system(command)
     error_list = `cat aspell.log`.split("\n").join("\n\n")
     fail_message = "Spelling errors found:\n\n#{error_list}"
   end
