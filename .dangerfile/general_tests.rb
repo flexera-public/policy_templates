@@ -27,6 +27,25 @@ def general_textlint?(file)
   return false
 end
 
+### Spell check test
+# Run the Danger spell checker on a file
+def general_spellcheck?(file)
+  puts "* " + Time.now.strftime("%H:%M:%S.%L") + " Testing file using aspell spell checker..."
+
+  fail_message = ""
+
+  # Run aspell and store results in log file
+  `awk '{print NR ": " $0}' #{file} | aspell --master=en_US --lang=en_US --mode=markdown list -l en | sort | uniq | grep -vFf .spellignore | while read word; do awk -v word="$word" '{for (i=1; i<=NF; i++) if ($i == word) print "Line #" NR ": " word}' #{file}; done | sort -n -k2,2 1> aspell.log`
+
+  if $?.exitstatus != 0
+    error_list = `cat aspell.log`.split("\n").join("\n\n")
+    fail_message = "Spelling errors found:\n\n#{error_list}"
+  end
+
+  return fail_message.strip if !fail_message.strip.empty?
+  return false
+end
+
 ### Markdown lint test
 # Return false if linter finds no problems
 def general_bad_markdown?(file)
