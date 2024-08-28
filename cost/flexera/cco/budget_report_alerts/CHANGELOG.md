@@ -1,4 +1,4 @@
-# Changelog
+# Changelogs
 
 ## v3.3
 

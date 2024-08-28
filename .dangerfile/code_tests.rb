@@ -8,7 +8,7 @@
 ### Ruby lint test
 # Return false if Ruby linter finds no problems
 def code_ruby_errors?(file)
-  puts Time.now.strftime("%H:%M:%S.%L") + " *** " + " Testing Ruby file using standard linter..."
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing Ruby file using standard linter..."
 
   linter = `ruby -c #{file}`
 
@@ -21,7 +21,7 @@ end
 # Return false if Rubocop linter finds no problems
 # Currently not in use due to extremely verbose and thorough output
 # def code_rubocop_problems?(file)
-#   puts Time.now.strftime("%H:%M:%S.%L") + " *** " + " Testing Ruby file using Rubocop linter..."
+#   puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing Ruby file using Rubocop linter..."
 
 #   linter = `rubocop #{file}`
 
@@ -43,7 +43,7 @@ end
 ### Python lint test
 # Return false if Python linter finds no problems
 def code_python_errors?(file)
-  puts Time.now.strftime("%H:%M:%S.%L") + " *** " + " Testing Python file using pylint linter..."
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing Python file using pylint linter..."
 
   linter = `pylint --errors-only #{file}`
 
@@ -63,7 +63,7 @@ end
 ###############################################################################
 
 def code_json_bad_location?(file)
-  puts Time.now.strftime("%H:%M:%S.%L") + " *** " + " Testing JSON file location..."
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing JSON file location..."
 
   fail_message = ""
 
@@ -76,7 +76,7 @@ def code_json_bad_location?(file)
 end
 
 def code_yaml_bad_location?(file)
-  puts Time.now.strftime("%H:%M:%S.%L") + " *** " + " Testing YAML file location..."
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing YAML file location..."
 
   fail_message = ""
 
@@ -89,7 +89,7 @@ def code_yaml_bad_location?(file)
 end
 
 def code_json_errors?(file)
-  puts Time.now.strftime("%H:%M:%S.%L") + " *** " + " Linting JSON file..."
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Linting JSON file..."
 
   linter = `jsonlint #{file}`
 
@@ -99,7 +99,7 @@ def code_json_errors?(file)
 end
 
 def code_yaml_errors?(file)
-  puts Time.now.strftime("%H:%M:%S.%L") + " *** " + " Linting YAML file..."
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Linting YAML file..."
 
   linter = `yaml-lint -q #{file}`
 
