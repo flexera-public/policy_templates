@@ -1,0 +1,517 @@
+name "AWS CloudTrails With Read Logging Enabled"
+rs_pt_ver 20180301
+type "policy"
+short_description "Reports AWS CloudTrail trails that are logging read events. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/cloudtrail_read_logging) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+category "Cost"
+severity "low"
+default_frequency "weekly"
+info(
+  version: "0.1.0",
+  provider: "AWS",
+  service: "CloudTrail",
+  policy_set: "Logging"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_aws_account_number" do
+  type "string"
+  category "Policy Settings"
+  label "Account Number"
+  description "Leave blank; this is for automated use with Meta Policies. See README for more details."
+  default ""
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details"
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  default []
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Disable Read Logging"]
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws", "aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+  aws_account_number $param_aws_account_number
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get AWS account info
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account", xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_get_caller_identity
+end
+
+script "js_aws_account", type:"javascript" do
+  parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
+  result "result"
+  code <<-'EOS'
+  result = _.find(ds_cloud_vendor_accounts, function(account) {
+    return account['id'] == ds_get_caller_identity[0]['account']
+  })
+
+  // This is in case the API does not return the relevant account info
+  if (result == undefined) {
+    result = {
+      id: ds_get_caller_identity[0]['account'],
+      name: "",
+      tags: {}
+    }
+  }
+EOS
+end
+
+datasource "ds_trail_list" do
+  request do
+    auth $auth_aws
+    host "cloudtrail.us-east-1.amazonaws.com"
+    path "/"
+    query "Action", "DescribeTrails"
+    header "User-Agent", "RS Policies"
+    header "Accept", "application/json"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "DescribeTrailsResponse.DescribeTrailsResult.trailList") do
+      field "name", jmes_path(col_item, "Name")
+      field "arn", jmes_path(col_item, "TrailARN")
+      field "region", jmes_path(col_item, "HomeRegion")
+      field "s3_bucket", jmes_path(col_item, "S3BucketName")
+    end
+  end
+end
+
+datasource "ds_trail_list_region_filtered" do
+  run_script $js_trail_list_region_filtered, $ds_trail_list, $param_regions_list, $param_regions_allow_or_deny
+end
+
+script "js_trail_list_region_filtered", type:"javascript" do
+  parameters "ds_trail_list", "param_regions_list", "param_regions_allow_or_deny"
+  result "result"
+  code <<-EOS
+  allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_trail_list, function(item) {
+      return _.contains(param_regions_list, item['region']) == allow_deny_test[param_regions_allow_or_deny]
+    })
+  } else {
+    result = ds_trail_list
+  }
+EOS
+end
+
+datasource "ds_trail_list_with_selectors" do
+  iterate $ds_trail_list_region_filtered
+  request do
+    auth $auth_aws
+    verb "POST"
+    host join(["cloudtrail.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/"
+    header "User-Agent", "RS Policies"
+    header "X-Amz-Target", "com.amazonaws.cloudtrail.v20131101.CloudTrail_20131101.GetEventSelectors"
+    header "Content-Type", "application/x-amz-json-1.1"
+    body_field "TrailName", val(iter_item, "arn")
+  end
+  result do
+    encoding "json"
+    field "event_selectors", jmes_path(response, "EventSelectors")
+    field "name", val(iter_item, "name")
+    field "arn", val(iter_item, "arn")
+    field "region", val(iter_item, "region")
+    field "s3_bucket", val(iter_item, "s3_bucket")
+  end
+end
+
+datasource "ds_trails_incident" do
+  run_script $js_trails_incident, $ds_trail_list_with_selectors, $ds_aws_account, $ds_applied_policy
+end
+
+script "js_trails_incident", type:"javascript" do
+  parameters "ds_trail_list_with_selectors", "ds_aws_account", "ds_applied_policy"
+  result "result"
+  code <<-EOS
+  result = []
+
+  _.each(ds_trail_list_with_selectors, function(trail) {
+    has_selectors = typeof(trail['event_selectors']) == 'object'
+    logging_read = false
+    logging_write = false
+    logging_all = false
+    event_selectors = []
+    fixed_selectors = []
+
+    if (has_selectors) {
+      event_selectors = trail['event_selectors']
+      selector_types = _.pluck(event_selectors, 'ReadWriteType')
+      logging_all = _.contains(selector_types, 'All')
+      logging_read = _.contains(selector_types, 'ReadOnly') || logging_all
+      logging_write = _.contains(selector_types, 'WriteOnly') || logging_all
+
+      _.each(event_selectors, function(selector) {
+        if (selector['ReadWriteType'] == 'All' || selector['ReadWriteType'] == 'WriteOnly') {
+          fixed_selectors.push({
+            "DataResources": selector['DataResources'],
+            "ExcludeManagementEventSources": selector['ExcludeManagementEventSources'],
+            "IncludeManagementEvents": selector['IncludeManagementEvents'],
+            "ReadWriteType": "WriteOnly"
+          })
+        }
+      })
+    }
+
+    if (logging_read) {
+      result.push({
+        accountID: ds_aws_account['id'],
+        accountName: ds_aws_account['name'],
+        name: trail['name'],
+        id: trail['arn'],
+        region: trail['region'],
+        has_selectors: has_selectors,
+        logging_read: logging_read,
+        logging_write: logging_write,
+        logging_all: logging_all,
+        event_selectors: JSON.stringify(event_selectors),
+        fixed_selectors: JSON.stringify(fixed_selectors),
+        selectors_object: fixed_selectors,
+        policy_name: ds_applied_policy['name']
+      })
+    }
+  })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_trails_incident" do
+  validate_each $ds_trails_incident do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS CloudTrails With Read Logging Enabled Found"
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "id"), ""))
+    escalate $esc_email
+    escalate $esc_disable_read_logging
+    export do
+      resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "name" do
+        label "Name"
+      end
+      field "id" do
+        label "ARN"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "logging_read" do
+        label "Read Logging"
+      end
+      field "logging_write" do
+        label "Write Logging"
+      end
+      field "has_selectors" do
+        label "Has Event Selectors?"
+      end
+      field "event_selectors" do
+        label "Current Event Selectors"
+      end
+      field "fixed_selectors" do
+        label "Suggested Event Selectors"
+      end
+      field "selectors_object" do
+        label "Suggested Event Selectors (Object)"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_disable_read_logging" do
+  automatic contains($param_automatic_action, "Disable Read Logging")
+  label "Disable Read Logging"
+  description "Approval to disable read logging on all selected CloudTrails"
+  run "disable_read_logging_on_trails", data
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define disable_read_logging_on_trails($data) return $all_responses do
+  $$all_responses = []
+
+  foreach $clb in $data do
+    sub on_error: handle_error() do
+      call disable_read_logging_on_trail($trail) retrieve $response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define disable_read_logging_on_trail($trail) return $response do
+  $host = "cloudtrail." + $trail["region"] + ".amazonaws.com"
+  $href = "/"
+  $url = $host + $href
+  task_label("POST " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    host: $host,
+    href: $href,
+    body: {
+      "TrailName": $trail["name"],
+      "EventSelectors": $trail["selectors_object"]
+    }
+  )
+
+  task_label("POST AWS CloudTrail response: " + $trail["name"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response from POST AWS CloudTrail: "+ $trail["name"] + " " + to_json($response)
+  else
+    task_label("POST AWS CloudTrail successful: " + $trail["name"])
+  end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
+end

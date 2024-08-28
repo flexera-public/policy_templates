@@ -1,5 +1,9 @@
 # Changelog
 
+## v9.1.0
+
+- Modified internal names for incident fields for more accurate scraping into Optimization dashboard
+
 ## v9.0.0
 
 - Fixed issue where policy would fail during execution due to changes in AWS Price List API

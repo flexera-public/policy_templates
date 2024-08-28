@@ -1,6 +1,8 @@
 # Changelog
 
-## v5.5.1
+## v5.5.2
+
+- Added `deprecated` field to policy metadata. Functionality is unchanged.
 
 ## v5.5
 

@@ -1,15 +1,15 @@
-name "AWS Publicly Accessible RDS Instances Meta Parent"
+name "Meta Parent: AWS Publicly Accessible RDS Instances"
 rs_pt_ver 20180301
 type "policy"
-short_description "Applies and manages \"child\" [AWS Publicly Accessible RDS Instances](https://github.com/flexera-public/policy_templates/tree/master/security/aws/rds_publicly_accessible) Policies."
+short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** Applies and manages \"child\" [AWS Publicly Accessible RDS Instances](https://github.com/flexera-public/policy_templates/tree/master/security/aws/rds_publicly_accessible) Policies."
 severity "low"
-category "Cost"
-tenancy "single"
+category "Meta"
 default_frequency "15 minutes"
 info(
   provider: "AWS",
-  version: "4.2.1", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
-  publish: "false"
+  version: "5.0.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  publish: "true",
+  deprecated: "false"
 )
 
 ##############################################################################
@@ -68,30 +68,39 @@ parameter "param_template_source" do
 end
 
 ## Child Policy Parameters
-parameter "param_allowed_regions_allow_or_deny" do
+parameter "param_regions_allow_or_deny" do
   type "string"
-  category "Policy Settings"
+  category "Filters"
   label "Allow/Deny Regions"
-  description "Allow or Deny entered regions. See the README for more details"
+  description "Allow or Deny entered regions. See the README for more details."
   allowed_values "Allow", "Deny"
   default "Allow"
 end
 
-parameter "param_allowed_regions" do
+parameter "param_regions_list" do
   type "list"
-  category "Policy Settings"
-  label "Regions"
-  description "A list of allowed or denied regions. See the README for more details"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
   allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   default []
 end
 
-parameter "param_exclude_tags" do
+parameter "param_exclusion_tags" do
   type "list"
-  category "Policy Settings"
-  label "Tags to ignore"
-  description "List of tags that will exclude resources from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test, env=dev'"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
   default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
 end
 
 parameter "param_automatic_action" do
@@ -99,7 +108,7 @@ parameter "param_automatic_action" do
   category "Policy Settings"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Update RDS Instances"]
+  allowed_values ["Remove RDS Instances Public Access", "Terminate RDS Instances"]
   default []
 end
 
@@ -413,6 +422,7 @@ datasource "ds_get_existing_policies_incidents" do
     collect jq(response, '.items[]?') do
       field "incident_id", jq(col_item, ".id")
       field "applied_policy_id", jq(col_item, ".applied_policy.id")
+      field "summary", jq(col_item, ".summary")
       field "state", jq(col_item, ".state")
       field "violation_data_count", jq(col_item, ".violation_data_count")
       field "updated_at", jq(col_item, ".updated_at")
@@ -430,11 +440,15 @@ script "js_format_existing_policies_incidents", type: "javascript" do
   result "formatted"
   code <<-EOS
   formatted={}
-  for (x=0;x<unformatted.length; x++) {
-    current = unformatted[x]
-    formatted[current.applied_policy_id] = {incident_id: current.incident_id, state: current.state, violation_data_count: current.violation_data_count, updated_at: current.updated_at}
-  }
-  EOS
+
+  _.each(unformatted, function(incident) {
+    if (formatted[incident['applied_policy_id']] == undefined) {
+      formatted[incident['applied_policy_id']] = []
+    }
+
+    formatted[incident['applied_policy_id']].push(incident)
+  })
+EOS
 end
 
 datasource "ds_format_existing_policies" do
@@ -467,13 +481,24 @@ script "js_format_existing_policies", type: "javascript" do
     options = format_options_keyvalue(ds_get_existing_policies[x].options);
 
     aws_account_id=options["param_aws_account_number"]
+
+    incident = null
+    incident2 = null
+    incidents = ds_format_incidents[ds_get_existing_policies[x]["applied_policy_id"]]
+
+    if (incidents != undefined) {
+      incident = ds_format_incidents[ds_get_existing_policies[x]["applied_policy_id"]][0]
+      incident2 = ds_format_incidents[ds_get_existing_policies[x]["applied_policy_id"]][1]
+    }
+
     if (formatted[aws_account_id] == undefined) {
       formatted[aws_account_id] = {
         "applied_policy_id":ds_get_existing_policies[x]["applied_policy_id"],
         "applied_policy_name":ds_get_existing_policies[x]["name"],
         "status":ds_get_existing_policies[x]["status"],
         "updated_at":ds_get_existing_policies[x]["updated_at"],
-        "incident": ds_format_incidents[ds_get_existing_policies[x]["applied_policy_id"]],
+        "incident": incident,
+        "incident2": incident2,
         "options": options
       }
       tracking[aws_account_id] = false
@@ -489,7 +514,8 @@ script "js_format_existing_policies", type: "javascript" do
           "applied_policy_name":ds_get_existing_policies[x]["name"],
           "status":ds_get_existing_policies[x]["status"],
           "updated_at":ds_get_existing_policies[x]["updated_at"],
-          "incident": ds_format_incidents[ds_get_existing_policies[x]["applied_policy_id"]]
+          "incident": incident,
+          "incident2": incident2
         })
       } else {
         duplicates.push({
@@ -497,14 +523,16 @@ script "js_format_existing_policies", type: "javascript" do
           "applied_policy_name":current["applied_policy_name"],
           "status":current["status"],
           "updated_at":current["updated_at"],
-          "incident": current["incident"]
+          "incident": current["incident"],
+          "incident2": current["incident2"]
         })
         formatted[aws_account_id] = {
           "applied_policy_id":ds_get_existing_policies[x]["applied_policy_id"],
           "applied_policy_name":ds_get_existing_policies[x]["name"],
           "status":ds_get_existing_policies[x]["status"],
           "updated_at":ds_get_existing_policies[x]["updated_at"],
-          "incident": ds_format_incidents[ds_get_existing_policies[x]["applied_policy_id"]],
+          "incident": incident,
+          "incident2": incident2,
           "options": options
         }
 
@@ -556,18 +584,35 @@ script "js_take_in_parameters", type: "javascript" do
 
   function add_to_grid(ep, action) {
     policy_status={
-      "policy_name": ep["applied_policy_name"],
-      "policy_link": applied_policy_url_prefix + ep["applied_policy_id"],
+      "id": ep["applied_policy_id"],
+      "policy_name": ep["applied_policy_name"] + '||' + applied_policy_url_prefix + ep["applied_policy_id"],
       "meta_policy_status": action,
       "policy_status": ep["status"],
       "policy_last_update": ep["updated_at"],
     };
-    if (ep.incident != null) {
-      policy_status["incident_link"] = incident_url_prefix + ep.incident.incident_id;
+
+    if (ep.incident != null && ep.incident != undefined) {
+      // Remove policy name from summary when applicable
+      summary_parts = ep.incident.summary.split(':')
+      summary = summary_parts[summary_parts.length - 1].trim()
+
+      policy_status["incident_summary"] = summary + '||' + incident_url_prefix + ep.incident.incident_id;
       policy_status["incident_state"] = ep.incident.state;
       policy_status["incident_violation_data_count"] = ep.incident.violation_data_count;
       policy_status["incident_last_update"] = ep.incident.updated_at;
     }
+
+    if (ep.incident2 != null && ep.incident2 != undefined) {
+      // Remove policy name from summary when applicable
+      summary_parts = ep.incident2.summary.split(':')
+      summary = summary_parts[summary_parts.length - 1].trim()
+
+      policy_status["incident_summary"] = summary + '||' + incident_url_prefix + ep.incident2.incident_id;
+      policy_status["incident_state"] = ep.incident2.state;
+      policy_status["incident2_violation_data_count"] = ep.incident2.violation_data_count;
+      policy_status["incident2_last_update"] = ep.incident2.updated_at;
+    }
+
     grid_and_cwf.grid.push(policy_status);
   }
 
@@ -764,19 +809,19 @@ datasource "ds_child_incident_details" do
   end
 end
 
-datasource "ds_rds_publicly_accessible_instance_map_combined_incidents" do
-  run_script $js_ds_rds_publicly_accessible_instance_map_combined_incidents, $ds_child_incident_details
+datasource "ds_bad_rds_instances_combined_incidents" do
+  run_script $js_ds_bad_rds_instances_combined_incidents, $ds_child_incident_details
 end
 
-script "js_ds_rds_publicly_accessible_instance_map_combined_incidents", type: "javascript" do
+script "js_ds_bad_rds_instances_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-EOS
   result = []
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
-    // If the incident summary contains "Publicly Accessible RDS Instances Found in AWS" then include it in the filter result
-    if (s.indexOf("Publicly Accessible RDS Instances Found in AWS") > -1) {
+    // If the incident summary contains "AWS Publicly Accessible RDS Instances Found" then include it in the filter result
+    if (s.indexOf("AWS Publicly Accessible RDS Instances Found") > -1) {
       _.each(incident["violation_data"], function(violation) {
         violation["incident_id"] = incident["id"];
         result.push(violation);
@@ -787,32 +832,32 @@ EOS
 end
 
 
-# Escalation for Update Instance
+# Escalation for Remove RDS Instances Public Access
 escalation "esc_modify" do
   automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
-  label "Update Instance"
-  description "Approve selected RDS public access rule configuration change"
+  label "Remove RDS Instances Public Access"
+  description "Approval to disable public access for all selected RDS instances"
 
   # Run declaration should go at end, after any parameters that may exist
   run "esc_modify", data, rs_governance_host, rs_project_id
 end
 define esc_modify($data, $governance_host, $rs_project_id) do
   $actions_options = []
-  call child_run_action($data, $governance_host, $rs_project_id, "Update Instance", $action_options)
+  call child_run_action($data, $governance_host, $rs_project_id, "Remove RDS Instances Public Access", $action_options)
 end
 
-# Escalation for Delete Instance
-escalation "esc_delete" do
+# Escalation for Terminate RDS Instances
+escalation "esc_terminate" do
   automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
-  label "Delete Instance"
-  description "Delete selected publicly accessible RDS-instances"
+  label "Terminate RDS Instances"
+  description "Approval to terminate all selected RDS instances"
 
   # Run declaration should go at end, after any parameters that may exist
-  run "esc_delete", data, rs_governance_host, rs_project_id
+  run "esc_terminate", data, rs_governance_host, rs_project_id
 end
-define esc_delete($data, $governance_host, $rs_project_id) do
+define esc_terminate($data, $governance_host, $rs_project_id) do
   $actions_options = []
-  call child_run_action($data, $governance_host, $rs_project_id, "Delete Instance", $action_options)
+  call child_run_action($data, $governance_host, $rs_project_id, "Terminate RDS Instances", $action_options)
 end
 
 
@@ -822,44 +867,77 @@ end
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
-    # Consolidated incident for Publicly Accessible RDS Instances Found in AWS
-  validate $ds_rds_publicly_accessible_instance_map_combined_incidents do
-    summary_template "Consolidated Incident: {{ len data }} Publicly Accessible RDS Instances Found in AWS"
+    # Consolidated incident for AWS Publicly Accessible RDS Instances Found
+  validate $ds_bad_rds_instances_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} AWS Publicly Accessible RDS Instances Found"
     escalate $esc_email
     escalate $esc_modify
-    escalate $esc_delete
+    escalate $esc_terminate
     check eq(size(data), 0)
     export do
       resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
       field "region" do
         label "Region"
       end
-      field "id" do
-        label "DB Instance Identifier"
+      field "state" do
+        label "State"
       end
-      field "availability_zone" do
+      field "publiclyAccessible" do
+        label "Publicly Accessible"
+      end
+      field "deletionProtection" do
+        label "Deletion Protection"
+      end
+      field "storageEncrypted" do
+        label "Storage Encrypted"
+      end
+      field "availabilityZone" do
         label "Availability Zone"
       end
-      field "sec_availability_zone" do
-        label "Secondary Availability Zone"
+      field "privateDnsName" do
+        label "Private DNS Name"
       end
-      field "storage_encrypted" do
-        label "Enable Encryption"
+      field "resourceType" do
+        label "Resource Type"
       end
-      field "db_engine_name" do
-        label "DB Engine Name"
+      field "databaseEngine" do
+        label "Database Engine"
       end
-      field "db_instance_status" do
-        label "DB Instance Status"
+      field "engineVersion" do
+        label "Engine Version"
       end
-      field "delete_protection" do
-        label "Delete Protection Enabled"
+      field "vcpus" do
+        label "vCPUs"
       end
-      field "Tags" do
-        label "tagKeyValue"
+      field "licenseModel" do
+        label "License Model"
       end
-      field "db_cluster_identifier" do
-        label "DB Cluster Identifier"
+      field "arn" do
+        label "ARN"
+      end
+      field "platform" do
+        label "Platform"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "id"
       end
       field "incident_id" do
         label "Child Incident ID"
@@ -874,50 +952,53 @@ policy "policy_scheduled_report" do
 The current status of Child Policies for **{{ data.parent_policy.name }}**:
 
 Total Child Applied Policies: {{ len data.grid }}
-
-| Applied Policy | Meta Child Policy Status | Policy Status | Policy Last Update | Incident | Incident State | Violation Count | Incident Last Update |
-| -------------- | ------------------------ | ------------- | ------------------ | -------- | -------------- | --------------- | -------------------- |
-{{ range data.grid -}}
-| {{- if .policy_link }} [{{ .policy_name }}]({{ .policy_link }}) {{ else }} {{ .policy_name }} {{- end }} | {{- if .meta_policy_status }} {{ .meta_policy_status }} {{ else }} No value {{- end }} | {{- if .policy_status }} {{ .policy_status }} {{ else }} No value {{- end }} | {{- if .policy_last_update }} {{ .policy_last_update }} {{ else }} No value {{- end }} | {{- if .incident_link }} [Incident]({{ .incident_link }}) {{ else }} No Incident {{- end }} | {{- if .incident_state }} {{ .incident_state }} {{ else }} No Incident {{- end }} | {{- if .incident_last_update }} {{ .incident_violation_data_count }} {{ else }} No Incident {{- end }} | {{- if .incident_last_update }} {{ .incident_last_update }} {{ else }} No Incident {{- end }} |
-{{ end -}}
-
 EOS
     check false # always trigger this status incident
-    # Export Table disabled for now until UI can support URL / linking
-    # Without linking the `policy_link`, `incident_link` values are not usable directly from UI
-    # export "grid" do
-    #   resource_level true
-    #   field "id" do
-    #     label "Applied Policy ID"
-    #   end
-    #   field "policy_name" do
-    #     label "Applied Policy Name"
-    #   end
-    #   field "policy_link" do
-    #     label "Applied Policy Link"
-    #   end
-    #   field "meta_policy_status" do
-    #     label "Meta Child Policy Status"
-    #   end
-    #   field "policy_status" do
-    #     label "Policy Status"
-    #   end
-    #   field "policy_last_update" do
-    #     label "Policy Last Update"
-    #   end
-    #   field "incident_link" do
-    #     label "Incident Link"
-    #   end
-    #   field "incident_state" do
-    #     label "Incident State"
-    #   end
-    #   field "incident_violation_data_count" do
-    #     label "Incident Violation Count"
-    #   end
-    #   field "incident_last_update" do
-    #     label "Incident Last Update"
-    #   end
-    # end
+    export "grid" do
+      resource_level true
+      field "id" do
+        label "Applied Policy ID"
+      end
+      field "policy_name" do
+        label "Applied Policy Name"
+        format "link-external"
+      end
+      field "meta_policy_status" do
+        label "Meta Child Policy Status"
+      end
+      field "policy_status" do
+        label "Policy Status"
+      end
+      field "policy_last_update" do
+        label "Policy Last Update"
+      end
+      field "incident_summary" do
+        label "Incident Summary"
+        format "link-external"
+      end
+      field "incident_state" do
+        label "Incident State"
+      end
+      field "incident_violation_data_count" do
+        label "Incident Violation Count"
+      end
+      field "incident_last_update" do
+        label "Incident Last Update"
+      end
+      field "incident2_summary" do
+        label "Incident 2 Summary"
+        format "link-external"
+      end
+      field "incident2_state" do
+        label "Incident 2 State"
+      end
+      field "incident2_violation_data_count" do
+        label "Incident 2 Violation Count"
+      end
+      field "incident2_last_update" do
+        label "Incident 2 Last Update"
+      end
+    end
   end
 
   # Create Child Policies Incident Check
@@ -1050,7 +1131,7 @@ define runActions($incidents, $action_label, $governance_host, $rs_project_id, $
         body: { "options":[{ "name": "ids",  "value": $incident["resource_ids"] }] }
       }
       # If the action has parameters, add them to the request body
-      if size($action_options) > 0
+      if type($action_options) == "array" && size($action_options) > 0
         $request["body"]["options"] = $request["body"]["options"] + $action_options
       end
       $response = http_request($request)

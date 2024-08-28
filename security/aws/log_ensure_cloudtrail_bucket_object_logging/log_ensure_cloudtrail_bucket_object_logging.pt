@@ -1,13 +1,13 @@
-name "AWS Ensure Object-level Events Logging Enabled For CloudTrails"
+name "AWS CloudTrails Without Object-level Events Logging Enabled"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report if CloudTrail does not have object-level logging for read and write events enabled. \n See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/log_ensure_cloudtrail_bucket_object_logging) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+short_description "Report CloudTrail trails that do not have object-level logging for read and write events enabled. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/log_ensure_cloudtrail_bucket_object_logging) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
 long_description ""
 category "Security"
 severity "high"
 default_frequency "daily"
 info(
-  version: "2.1",
+  version: "3.0.0",
   provider: "AWS",
   service: "CloudTrail",
   policy_set: "CIS",
@@ -20,13 +20,23 @@ info(
 )
 
 ###############################################################################
-# User inputs
+# Parameters
 ###############################################################################
 
 parameter "param_email" do
   type "list"
-  label "Email Address"
-  description "Email addresses of the recipients you wish to notify"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify."
+  default []
+end
+
+parameter "param_aws_account_number" do
+  type "string"
+  category "Policy Settings"
+  label "Account Number"
+  description "Leave blank; this is for automated use with Meta Policies. See README for more details."
+  default ""
 end
 
 ###############################################################################
@@ -34,32 +44,137 @@ end
 ###############################################################################
 
 credentials "auth_aws" do
-  schemes "aws","aws_sts"
+  schemes "aws", "aws_sts"
   label "AWS"
   description "Select the AWS Credential from the list"
   tags "provider=aws"
+  aws_account_number $param_aws_account_number
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get AWS account info
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account", xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_get_caller_identity
+end
+
+script "js_aws_account", type:"javascript" do
+  parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+  result = _.find(ds_cloud_vendor_accounts, function(account) {
+    return account['id'] == ds_get_caller_identity[0]['account']
+  })
+
+  // This is in case the API does not return the relevant account info
+  if (result == undefined) {
+    result = {
+      id: ds_get_caller_identity[0]['account'],
+      name: "",
+      tags: {}
+    }
+  }
+EOS
+end
 
 datasource "ds_trail_list" do
   request do
     auth $auth_aws
-    verb "GET"
     host "cloudtrail.us-east-1.amazonaws.com"
     path "/"
+    query "Action", "DescribeTrails"
     header "User-Agent", "RS Policies"
     header "Accept", "application/json"
-    query "Action", "DescribeTrails"
   end
   result do
     encoding "json"
     collect jmes_path(response, "DescribeTrailsResponse.DescribeTrailsResult.trailList") do
       field "name", jmes_path(col_item, "Name")
-      field "id", jmes_path(col_item, "TrailARN")
-      field "region", jmes_path(col_item, "HomeRegion")
+      field "arn", jmes_path(col_item, "TrailARN")
+      field "homeregion", jmes_path(col_item, "HomeRegion")
+      field "s3_bucket", jmes_path(col_item, "S3BucketName")
     end
   end
 end
@@ -69,68 +184,58 @@ datasource "ds_trail_list_with_selectors" do
   request do
     auth $auth_aws
     verb "POST"
-    host join(["cloudtrail.", val(iter_item, "region"), ".amazonaws.com"])
+    host join(["cloudtrail.", val(iter_item, "homeregion"), ".amazonaws.com"])
     path "/"
     header "User-Agent", "RS Policies"
-    header 'X-Amz-Target', 'com.amazonaws.cloudtrail.v20131101.CloudTrail_20131101.GetEventSelectors'
-    header 'Content-Type', 'application/x-amz-json-1.1'
-    body join(['{ "TrailName": "', val(iter_item, "name"), '" }'])
+    header "X-Amz-Target", "com.amazonaws.cloudtrail.v20131101.CloudTrail_20131101.GetEventSelectors"
+    header "Content-Type", "application/x-amz-json-1.1"
+    body_field "TrailName", val(iter_item, "arn")
   end
   result do
     encoding "json"
-    field "name", val(iter_item, "name")
-    field "id", val(iter_item, "id")
-    field "region", val(iter_item, "region")
     field "event_selectors", jmes_path(response, "EventSelectors")
+    field "name", val(iter_item, "name")
+    field "arn", val(iter_item, "arn")
+    field "homeregion", val(iter_item, "homeregion")
+    field "s3_bucket", val(iter_item, "s3_bucket")
   end
 end
 
-# Places param_regions into a datasource for iteration
 datasource "ds_trails_without_ol" do
-  run_script $js_trails_without_ol, $ds_trail_list_with_selectors
+  run_script $js_trails_without_ol, $ds_trail_list_with_selectors, $ds_aws_account, $ds_applied_policy
 end
 
-###############################################################################
-# Scripts
-###############################################################################
-
 script "js_trails_without_ol", type:"javascript" do
-  parameters "ds_trail_list_with_selectors"
+  parameters "ds_trail_list_with_selectors", "ds_aws_account", "ds_applied_policy"
   result "result"
   code <<-EOS
-    result = []
+  result = []
 
-    _.each(ds_trail_list_with_selectors, function(trail) {
-      has_selectors = false
-      object_logging_read = false
-      object_logging_write = false
+  _.each(ds_trail_list_with_selectors, function(trail) {
+    has_selectors = typeof(trail['event_selectors']) == 'object'
+    object_logging_read = false
+    object_logging_write = false
 
-      if (trail.event_selectors != null) {
-        has_selectors = true
+    if (has_selectors) {
+      selector_types = _.pluck(trail['event_selectors'], 'ReadWriteType')
+      object_logging_read = _.contains(selector_types, "All") || _.contains(selector_types, "ReadOnly")
+      object_logging_write = _.contains(selector_types, "All") || _.contains(selector_types, "WriteOnly")
+    }
 
-        _.each(trail.event_selectors, function(selector) {
-          if (selector.ReadWriteType == "All") {
-            object_logging_read = true
-            object_logging_write = true
-          } else if (selector.ReadWriteType == "ReadOnly") {
-            object_logging_read = true
-          } else if (selector.ReadWriteType == "WriteOnly") {
-            object_logging_write = true
-          }
-        })
-      }
-
-      if (has_selectors == false || object_logging_read == false || object_logging_write == false) {
-        result.push({
-          name: trail.name,
-          id: trail.id,
-          region: trail.region,
-          has_selectors: has_selectors,
-          object_logging_read: object_logging_read,
-          object_logging_write: object_logging_write
-        })
-      }
-    })
+    if (!has_selectors || !object_logging_read || !object_logging_write) {
+      result.push({
+        accountID: ds_aws_account['id'],
+        accountName: ds_aws_account['name'],
+        name: trail['name'],
+        id: trail['arn'],
+        region: trail['homeregion'],
+        has_selectors: has_selectors,
+        object_logging_read: object_logging_read,
+        object_logging_write: object_logging_write,
+        policy_name: ds_applied_policy['name']
+      })
+    }
+  })
 EOS
 end
 
@@ -138,13 +243,19 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_trails_without_ol" do
-  validate $ds_trails_without_ol do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} CloudTrails Found Without Complete Object Logging"
-    escalate $esc_report_trails_without_ol
-    check eq(size(data),0)
+policy "pol_trails_without_ol" do
+  validate_each $ds_trails_without_ol do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS CloudTrails Without Object-level Events Logging Enabled Found"
+    check eq(val(item, "id"), "")
+    escalate $esc_email
     export do
       resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
       field "name" do
         label "Name"
       end
@@ -171,7 +282,7 @@ end
 # Escalations
 ###############################################################################
 
-escalation "esc_report_trails_without_ol" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"

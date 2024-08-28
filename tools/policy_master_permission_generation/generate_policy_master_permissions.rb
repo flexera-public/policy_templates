@@ -58,8 +58,14 @@ def extract_permissions_from_readme(readme_content)
     "[**AWS Credential**]",
     "[**Azure Resource Manager Credential**]",
     "[**Azure Storage Credential**]",
+    "[**Azure China Enterprise Agreement Credential**]",
+    "[**Microsoft Graph Credential**]",
     "[**Google Cloud Credential**]",
-    "[**Flexera Credential**]"
+    "[**Flexera Credential**]",
+    "[**Turbonomic Credential**]",
+    "[**GitHub Credential**]",
+    "[**ServiceNow Credential**]",
+    "[**Okta Credential**]"
   ]
 
   sections.each do |section|
@@ -70,10 +76,22 @@ def extract_permissions_from_readme(readme_content)
       provider = "azure_rm"
     when "[**Azure Storage Credential**]"
       provider = "azure_storage"
+    when "[**Azure China Enterprise Agreement Credential**]"
+      provider = "azure_ea_china"
+    when "[**Microsoft Graph Credential**]"
+      provider = "azure_graph"
     when "[**Google Cloud Credential**]"
       provider = "gce"
     when "[**Flexera Credential**]"
       provider = "flexera"
+    when "[**Turbonomic Credential**]"
+      provider = "turbonomic"
+    when "[**GitHub Credential**]"
+      provider = "github"
+    when "[**ServiceNow Credential**]"
+      provider = "servicenow"
+    when "[**Okta Credential**]"
+      provider = "okta"
     end
 
     # If the Credential Section exists...

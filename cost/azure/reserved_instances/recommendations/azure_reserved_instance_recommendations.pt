@@ -7,7 +7,7 @@ severity "medium"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "3.4",
+  version: "4.1.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Reserved Instances",
@@ -83,8 +83,8 @@ parameter "param_days" do
   category "Reservation Settings"
   label "Look Back Period"
   description "Number of days of prior usage to analyze."
-  default "Last 30 Days"
   allowed_values "Last 7 Days", "Last 30 Days", "Last 60 Days"
+  default "Last 30 Days"
 end
 
 parameter "param_service" do
@@ -92,8 +92,8 @@ parameter "param_service" do
   category "Reservation Settings"
   label "Resource Types"
   description "Types of resources to provide recommendations for. Items can be removed by clicking X to the right of the name."
-  default ["Virtual Machines", "SQL Databases", "PostgreSQL", "Managed Disks", "MySQL", "Red Hat", "MariaDB", "Redis Cache", "CosmosDB", "SQL Data Warehouse", "SUSE Linux", "App Service", "Block Blob", "Azure Data Explorer", "VMware CloudSimple"]
   allowed_values ["Virtual Machines", "SQL Databases", "PostgreSQL", "Managed Disks", "MySQL", "Red Hat", "MariaDB", "Redis Cache", "CosmosDB", "SQL Data Warehouse", "SUSE Linux", "App Service", "Block Blob", "Azure Data Explorer", "VMware CloudSimple"]
+  default ["Virtual Machines", "SQL Databases", "PostgreSQL", "Managed Disks", "MySQL", "Red Hat", "MariaDB", "Redis Cache", "CosmosDB", "SQL Data Warehouse", "SUSE Linux", "App Service", "Block Blob", "Azure Data Explorer", "VMware CloudSimple"]
 end
 
 parameter "param_term" do
@@ -101,17 +101,17 @@ parameter "param_term" do
   category "Reservation Settings"
   label "Reservation Term"
   description "Length of reservation term to provide recommendations for."
-  default "1 Year"
   allowed_values "1 Year", "3 Year"
+  default "1 Year"
 end
 
 parameter "param_scope" do
   type "string"
   category "Reservation Settings"
   label "Reservation Scope"
-  description "The scope to provide recommendations for."
-  default "Single"
-  allowed_values "Single", "Shared"
+  description "The scope to provide recommendations for. Select 'Shared' to not have recommendations scoped to individual Subscriptions or Resource Groups."
+  allowed_values "Subscription", "Resource Group", "Shared"
+  default "Subscription"
 end
 
 ###############################################################################
@@ -235,7 +235,7 @@ datasource "ds_azure_billing_accounts" do
     pagination $pagination_azure
     host $param_azure_endpoint
     path "/providers/Microsoft.Billing/billingAccounts"
-    query "api-version", "2019-10-01-preview"
+    query "api-version", "2024-04-01"
     header "User-Agent", "RS Policies"
     ignore_status [400, 401, 402, 403, 404, 405, 409, 422]
   end
@@ -352,7 +352,7 @@ datasource "ds_azure_subscriptions" do
     pagination $pagination_azure
     host $param_azure_endpoint
     path "/subscriptions/"
-    query "api-version", "2020-01-01"
+    query "api-version", "2022-12-01"
     header "User-Agent", "RS Policies"
     # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
     # Forces `ds_is_deleted` datasource to run first during policy execution
@@ -394,31 +394,86 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
 EOS
 end
 
+# Only request the resource groups in each subscription if we're doing "Resource Group" scope
+datasource "ds_azure_resource_groups_requests" do
+  run_script $js_azure_resource_groups_requests, $ds_azure_subscriptions_filtered, $param_scope
+end
+
+script "js_azure_resource_groups_requests", type: "javascript" do
+  parameters "ds_azure_subscriptions_filtered", "param_scope"
+  result "result"
+  code <<-EOS
+  result = []
+  if (param_scope == "Resource Group") { result = ds_azure_subscriptions_filtered }
+EOS
+end
+
+datasource "ds_azure_resource_groups" do
+  iterate $ds_azure_resource_groups_requests
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "id"), "/resourcegroups"])
+    query "api-version", "2021-04-01"
+    header "User-Agent", "RS Policies"
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "resourceGroup", jmes_path(col_item, "name")
+      field "id", val(iter_item, "id")
+      field "name", val(iter_item, "name")
+    end
+  end
+end
+
 datasource "ds_ri_requests" do
-  run_script $js_ri_requests, $ds_azure_subscriptions_filtered, $ds_service_table, $param_service, $param_scope
+  run_script $js_ri_requests, $ds_azure_subscriptions_filtered, $ds_azure_resource_groups, $ds_service_table, $param_service, $param_scope
 end
 
 script "js_ri_requests", type: "javascript" do
-  parameters "ds_azure_subscriptions_filtered", "ds_service_table", "param_service", "param_scope"
+  parameters "ds_azure_subscriptions_filtered", "ds_azure_resource_groups", "ds_service_table", "param_service", "param_scope"
   result "result"
   code <<-EOS
   result = []
 
   if (param_scope == "Shared") {
+    // Remove subscriptions that don't contain actual resources
+    good_subs = _.filter(ds_azure_subscriptions_filtered, function(sub) {
+      return sub['name'].toLowerCase().indexOf("visual studio") == -1 && sub['name'].indexOf("365") == -1
+    })
+
     _.each(param_service, function(service) {
       result.push({
         service: ds_service_table[service],
-        subscriptionId: ds_azure_subscriptions_filtered[0]['id'],
-        subscriptionName: ds_azure_subscriptions_filtered[0]['name']
+        id: good_subs[0]['id'],
+        name: good_subs[0]['name']
       })
     })
-  } else {
+  }
+
+  if (param_scope == "Subscription") {
     _.each(ds_azure_subscriptions_filtered, function(subscription) {
       _.each(param_service, function(service) {
         result.push({
           service: ds_service_table[service],
-          subscriptionId: subscription['id'],
-          subscriptionName: subscription['name']
+          id: subscription['id'],
+          name: subscription['name']
+        })
+      })
+    })
+  }
+
+  if (param_scope == "Resource Group") {
+    _.each(ds_azure_resource_groups, function(rg) {
+      _.each(param_service, function(service) {
+        result.push({
+          service: ds_service_table[service],
+          id: rg['id'],
+          name: rg['name'],
+          resourceGroup: rg['resourceGroup']
         })
       })
     })
@@ -429,7 +484,7 @@ end
 datasource "ds_ri_recommendations" do
   iterate $ds_ri_requests
   request do
-    run_script $js_ri_recommendations, val(iter_item,"service"), val(iter_item, "subscriptionId"), $param_days, $param_scope, $param_azure_endpoint
+    run_script $js_ri_recommendations, iter_item, $param_days, $param_scope, $param_azure_endpoint
   end
   result do
     encoding "json"
@@ -451,14 +506,15 @@ datasource "ds_ri_recommendations" do
       field "normalizedSize", jmes_path(col_item, "properties.normalizedSize")
       field "recommendedQuantityNormalized", jmes_path(col_item, "properties.recommendedQuantityNormalized")
       field "service", val(iter_item, "service")
-      field "subscriptionId", val(iter_item, "subscriptionId")
-      field "subscriptionName", val(iter_item, "subscriptionName")
+      field "resourceGroup", val(iter_item, "resourceGroup")
+      field "subscriptionId", val(iter_item, "id")
+      field "subscriptionName", val(iter_item, "name")
     end
   end
 end
 
 script "js_ri_recommendations", type: "javascript" do
-  parameters "service", "subscriptionId", "param_days", "param_scope", "param_azure_endpoint"
+  parameters "account", "param_days", "param_scope", "param_azure_endpoint"
   result "request"
   code <<-EOS
   // Slow down rate of requests to prevent throttling
@@ -466,11 +522,17 @@ script "js_ri_recommendations", type: "javascript" do
   var now = new Date().getTime()
   while(new Date().getTime() < now + (api_wait * 1000)) { /* Do nothing */ }
 
+  scope = param_scope
+  if (scope != "Shared") { scope = "Single" }
+
   filter = [
-    "properties/resourceType eq '", service, "' ",
-    "and properties/scope eq '", param_scope, "' ",
+    "properties/resourceType eq '", account['service'], "' ",
+    "and properties/scope eq '", scope, "' ",
     "and properties/lookBackPeriod eq '", param_days.replace(' ', '').replace(' ', ''), "'"
   ].join('')
+
+  path_prefix = "/subscriptions/" + account['id']
+  if (param_scope == "Resource Group") { path_prefix += "/resourceGroups/" + account['resourceGroup'] }
 
   var request = {
     auth: "auth_azure",
@@ -478,14 +540,9 @@ script "js_ri_recommendations", type: "javascript" do
     host: param_azure_endpoint,
     // Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
     ignore_status: [400, 403, 404, 422],
-    path: "/subscriptions/" + subscriptionId + "/providers/Microsoft.Consumption/reservationRecommendations",
-    query_params: {
-      "api-version": "2021-10-01",
-      "$filter": filter
-    },
-    headers: {
-      "User-Agent": "RS Policies"
-    }
+    path: path_prefix + "/providers/Microsoft.Consumption/reservationRecommendations",
+    query_params: { "api-version": "2023-05-01", "$filter": filter },
+    headers: { "User-Agent": "RS Policies" }
   }
 EOS
 end
@@ -566,16 +623,28 @@ script "js_ri_incident", type: "javascript" do
       totalCostWithRI = Math.round(totalCostWithRI * exchange_rate * 100) / 100
       netSavings = Math.round(netSavings * exchange_rate * 100) / 100
 
+      accountID = recommendation['subscriptionId']
+      accountName = recommendation['subscriptionName']
+      resourceGroup = recommendation['resourceGroup']
+
+      if (param_scope == "Shared") {
+        id = recommendation['name']
+        accountID = ""
+        accountName = "All"
+        resourceGroup = ""
+      }
+
       result.push({
-        accountID: recommendation["subscriptionId"],
-        accountName: recommendation["subscriptionName"],
+        accountID: accountID,
+        accountName: accountName,
+        resourceGroup: resourceGroup,
         service: recommendation["service"],
         resourceType: recommendation["skuName"],
         region: recommendation["region"],
         scope: recommendation["scope"],
         recommendedQuantity: recommendation["recommendedQuantity"],
         firstUsageDate: recommendation["firstUsageDate"],
-        id: recommendation["meterId"],
+        resourceID: recommendation["meterId"],
         instanceFlexibilityGroup: recommendation["instanceFlexibilityGroup"],
         instanceFlexibilityRatio: recommendation["instanceFlexibilityRatio"],
         normalizedSize: recommendation["normalizedSize"],
@@ -664,6 +733,9 @@ policy "pol_azure_ri_recommendations" do
       field "accountName" do
         label "Subscription Name"
       end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
       field "service" do
         label "Service"
       end
@@ -694,7 +766,7 @@ policy "pol_azure_ri_recommendations" do
       field "firstUsageDate" do
         label "First Usage Date"
       end
-      field "id" do
+      field "resourceID" do
         label "Resource Meter ID"
       end
       field "scope" do
@@ -715,12 +787,16 @@ policy "pol_azure_ri_recommendations" do
       field "lookbackPeriod" do
         label "Look Back Period"
       end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
     end
   end
 end
 
 ###############################################################################
-# Escalation
+# Escalations
 ###############################################################################
 
 escalation "esc_email" do
@@ -742,7 +818,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
     header "Api-Version", "1.0"
   end
   result do
@@ -750,7 +826,6 @@ datasource "ds_get_policy" do
     field "id", jmes_path(response, "id")
   end
 end
-
 
 datasource "ds_parent_policy_terminated" do
   run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id

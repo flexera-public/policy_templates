@@ -1,13 +1,13 @@
 name "AWS Reserved Instances Utilization"
 rs_pt_ver 20180301
 type "policy"
-short_description "A policy that sends email notifications when utilization falls below a threshold. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/reserved_instances/utilization) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Reports when Reserved Instance utilization falls below a threshold. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/reserved_instances/utilization) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "high"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.2",
+  version: "3.0.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Reserved Instances"
@@ -28,18 +28,27 @@ end
 parameter "param_utilization" do
   type "number"
   category "Policy Settings"
-  label "Utilization Percentage"
-  description "Show Reservations with utilization below this value (%)"
+  label "Utilization Threshold (%)"
+  description "Reservations with utilization below this percentage will be included in the results."
   min_value 1
   max_value 100
   default 100
 end
 
+parameter "param_bc_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Billing Centers"
+  description "Allow or Deny entered Billing Centers."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
 parameter "param_billing_centers" do
   type "list"
-  category "Policy Settings"
-  label "Billing Center Name"
-  description "Filter reservations for a specific Billing Center/s by entering Billing Center names"
+  category "Filters"
+  label "Allow/Deny Billing Center List"
+  description "A list of allowed or denied Billing Center names/IDs. Leave blank to report on reservations in all Billing Centers."
   default []
 end
 
@@ -58,13 +67,21 @@ end
 # Datasources & Scripts
 ###############################################################################
 
-#GET ALL BILLING CENTERS FOR ORG
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
 datasource "ds_billing_centers" do
   request do
     auth $auth_flexera
     host rs_optima_host
     path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
-    query "view", "allocation_table"
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
   end
@@ -75,55 +92,48 @@ datasource "ds_billing_centers" do
       field "id", jmes_path(col_item, "id")
       field "name", jmes_path(col_item, "name")
       field "parent_id", jmes_path(col_item, "parent_id")
-      field "ancestor_ids", jmes_path(col_item, "ancestor_ids")
-      field "allocation_table", jmes_path(col_item, "allocation_table")
     end
   end
 end
 
-#FILTER USING BILLING CENTERS PARAMETER IF APPLICABLE
-datasource "ds_filtered_billing_centers" do
-  run_script $js_filtered_billing_centers, $ds_billing_centers, $param_billing_centers
+datasource "ds_billing_centers_filtered" do
+  run_script $js_billing_centers_filtered, $ds_billing_centers, $param_bc_allow_or_deny, $param_billing_centers
 end
 
-script "js_filtered_billing_centers", type: "javascript" do
-  parameters "ds_billing_centers", "param_billing_centers"
+script "js_billing_centers_filtered", type: "javascript" do
+  parameters "ds_billing_centers", "param_bc_allow_or_deny", "param_billing_centers"
   result "result"
   code <<-EOS
-  //Get billing centers. If user specifies no billing centers, retrieve all billing centers. Else get array of billing centers that match the names stated in BC param
-  if (param_billing_centers.length === 0) {
-    result = ds_billing_centers
+  allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_billing_centers.length > 0) {
+    billing_centers = _.filter(ds_billing_centers, function(item) {
+      id_found = _.contains(param_billing_centers, item['id']) == allow_deny_test[param_bc_allow_or_deny]
+      name_found = _.contains(param_billing_centers, item['name']) == allow_deny_test[param_bc_allow_or_deny]
+      return id_found || name_found
+    })
+
+    // Check for conflicting parents/children and remove children if present
+    bc_ids = _.compact(_.pluck(billing_centers, 'id'))
+    bad_children = _.filter(ds_billing_centers, function(bc) { return _.contains(bc_ids, bc['parent_id']) })
+    bad_children_ids = _.pluck(bad_children, 'id')
+
+    // Create final result with the bad children removed
+    final_list = _.reject(billing_centers, function(bc) { return _.contains(bad_children_ids, bc['id']) })
   } else {
-    var billing_center_names_ids = _.map(param_billing_centers, function(name) { return name.toLowerCase() })
-    var filtered_bcs = _.filter(ds_billing_centers, function(bc) {
-      return _.contains(billing_center_names_ids, bc.name.toLowerCase()) || _.contains(billing_center_names_ids, bc.id.toLowerCase())
+    // If we're not filtering at all, just grab all of the top level billing centers
+    final_list = _.filter(ds_billing_centers, function(bc) {
+      return bc['parent_id'] == null || bc['parent_id'] == undefined
     })
-
-    //Check that there are no child billing centers specified that conflict with parent billing centers specified
-    var bc_ids = _.map(filtered_bcs, function(bc) { return bc.id.toLowerCase() })
-
-    var conflicting_child_bcs = _.filter(filtered_bcs, function(bc) {
-      if (!(bc.parent_id == null || bc.parent_id == undefined)) {
-        return _.contains(bc_ids, bc.parent_id.toLowerCase())
-      }
-    })
-
-    if (conflicting_child_bcs != undefined) {
-      conflicting_child_bc_ids = _.pluck(conflicting_child_bcs, "id")
-      result = _.reject(filtered_bcs, function(bc) {
-        return _.contains(conflicting_child_bc_ids, bc.id)
-      })
-    } else {
-      result = filtered_bcs
-    }
   }
+
+  result = _.compact(_.pluck(final_list, 'id'))
 EOS
 end
 
-#GET LIST OF ACCOUNTS FOR BILLING CENTERS
 datasource "ds_accounts_by_billing_center" do
   request do
-    run_script $js_accounts_by_billing_center, $ds_filtered_billing_centers, rs_org_id, rs_optima_host
+    run_script $js_accounts_by_billing_center, $ds_billing_centers_filtered, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -138,48 +148,36 @@ datasource "ds_accounts_by_billing_center" do
 end
 
 script "js_accounts_by_billing_center", type: "javascript" do
-  parameters "ds_filtered_billing_centers", "rs_org_id", "rs_optima_host"
+  parameters "ds_billing_centers_filtered", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
-  //Get start and end date for previous month
-  var date = new Date()
+  start_date = new Date().toISOString()
+  start_date = start_date.split('-')[0] + '-' + start_date.split('-')[1]
 
-  var start_date = new Date(date.getFullYear(), date.getMonth(), 1);  // Set to the 1st of the current month
-  start_date.setMonth( date.getMonth() - 1 )  // Subtract a month
-  var start_month = start_date.toISOString().split("T")[0].split("-")[0] + "-" + start_date.toISOString().split("T")[0].split("-")[1]
+  end_year = Number(start_date.split('-')[0])
+  end_month = Number(start_date.split('-')[1]) + 1
+  if (end_month == 13) { end_month = 1; end_year++ }
+  if (end_month < 10) { end_month = '0' + end_month.toString() }
+  end_date = end_year.toString() + '-' + end_month.toString()
 
-  var end_date = new Date(date.getFullYear(), date.getMonth(), 1)  // Set to the 1st of the next month
-  var end_month = end_date.toISOString().split("T")[0].split("-")[0] + "-" + end_date.toISOString().split("T")[0].split("-")[1]
-
-  var billing_center_ids = _.pluck(ds_filtered_billing_centers, "id")
-
-  //Dimensions
-  var dimensions = [
-    "billing_center_id",
-    "vendor_account",
-    "vendor_account_name"
-  ]
-
-  //POST Request
   var request = {
     auth: "auth_flexera",
     verb: "POST",
     host: rs_optima_host,
     path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
     body_fields: {
-      "dimensions": dimensions,
+      "dimensions": [ "billing_center_id", "vendor_account", "vendor_account_name" ],
       "granularity": "month",
       "metrics": [ "cost_amortized_unblended_adj" ],
-      "billing_center_ids": billing_center_ids,
-      "start_at": start_month,
-      "end_at": end_month
+      "billing_center_ids": ds_billing_centers_filtered,
+      "start_at": start_date,
+      "end_at": end_date
     }
   }
 EOS
 end
 
-#GET LIST OF EXISTING RESERVATIONS
-datasource "ds_reservations" do
+datasource "ds_aws_reservations" do
   request do
     auth $auth_flexera
     host rs_optima_host
@@ -188,77 +186,126 @@ datasource "ds_reservations" do
   result do
     encoding "json"
     collect jmes_path(response, "[*]") do
-      field "utilization_percentage", jmes_path(col_item, "utilization.utilization_percentage")
-      field "end_datetime", jmes_path(col_item, "end_datetime")
-      field "start_datetime", jmes_path(col_item, "start_datetime")
-      field "account_name", jmes_path(col_item, "account_name")
-      field "account_id", jmes_path(col_item, "account_id")
+      field "end_date", jmes_path(col_item, "end_datetime")
+      field "start_date", jmes_path(col_item, "start_datetime")
+      field "accountName", jmes_path(col_item, "account_name")
+      field "accountID", jmes_path(col_item, "account_id")
+      field "id", jmes_path(col_item, "lease_id")
       field "region", jmes_path(col_item, "region")
-      field "instance_type", jmes_path(col_item, "instance_type")
-      field "instance_count", jmes_path(col_item, "number_of_instances")
+      field "instanceType", jmes_path(col_item, "instance_type")
+      field "instanceCount", jmes_path(col_item, "number_of_instances")
       field "scope", jmes_path(col_item, "scope")
-      field "type", jmes_path(col_item, "offering_type")
+      field "tenancy", jmes_path(col_item, "tenancy")
+      field "resourceType", jmes_path(col_item, "offering_type")
+      field "purchased_hours", jmes_path(col_item, "utilization.purchased_hours")
+      field "total_actual_hours", jmes_path(col_item, "utilization.total_actual_hours")
+      field "unused_hours", jmes_path(col_item, "utilization.unused_hours")
+      field "utilization", jmes_path(col_item, "utilization.utilization_percentage")
     end
   end
 end
 
-#FILTER RESERVATIONS BASED ON THEIR ACCOUNT IDS BY MATCHING THEM WITH BILLING CENTER ACCOUNT IDS
-datasource "ds_filtered_reservations" do
-  run_script $js_filtered_reservations, $ds_accounts_by_billing_center, $ds_reservations
+datasource "ds_filtered_aws_reservations" do
+  run_script $js_filtered_aws_reservations, $ds_accounts_by_billing_center, $ds_aws_reservations
 end
 
-script "js_filtered_reservations", type: "javascript" do
-  parameters "ds_accounts_by_billing_center", "ds_reservations"
+script "js_filtered_aws_reservations", type: "javascript" do
+  parameters "ds_accounts_by_billing_center", "ds_aws_reservations"
   result "result"
   code <<-EOS
+  bc_account_ids = _.uniq(_.pluck(ds_accounts_by_billing_center, "vendor_account_id"))
 
-  //Filter reservations for billing centers that contain a matching account ID
-  var bc_account_ids = _.uniq(_.pluck(ds_accounts_by_billing_center, "vendor_account_id"))
-  var filtered_reservations = _.filter(ds_reservations, function(ri) {
-    return _.contains(bc_account_ids, ri.account_id);
+  result = _.filter(ds_aws_reservations, function(ri) {
+    return _.contains(bc_account_ids, ri['accountID'])
   })
-
-  result = filtered_reservations
-  EOS
+EOS
 end
 
-#ENRICH FILTERED RESERVATION DATA WITH BILLING CENTER DATA
-datasource "ds_enriched_reservation_data" do
-  run_script $js_enriched_reservation_data, $ds_filtered_reservations, $ds_accounts_by_billing_center, $ds_filtered_billing_centers
+datasource "ds_account_list" do
+  run_script $js_account_list, $ds_accounts_by_billing_center, $ds_billing_centers
 end
 
-script "js_enriched_reservation_data", type: "javascript" do
-  parameters "ds_filtered_reservations", "ds_accounts_by_billing_center", "ds_filtered_billing_centers"
+script "js_account_list", type: "javascript" do
+  parameters "ds_accounts_by_billing_center", "ds_billing_centers"
   result "result"
   code <<-EOS
-  _.each(ds_filtered_reservations, function(ri) {
+  bc_object = {}
 
-    //Get associated billing centers for reservation
-    var associated_billing_centers = _.filter(ds_accounts_by_billing_center, function(bc) {
-      return bc.vendor_account_id == ri.account_id
-    })
+  _.each(ds_billing_centers, function(bc) { bc_object[bc['id']] = bc['name'] })
 
-    //Get list of associated billing center names and convert the list to a string
-    var list_of_associated_bcs_string = ""
-    _.each(associated_billing_centers, function(bc) {
-      var billing_center_name = ""
-      var billing_center_details = _.find(ds_filtered_billing_centers, function(fbc) { return bc.billing_center_id == fbc.id })
-      if (billing_center_details != undefined) {
-        billing_center_name = billing_center_details.name
-      }
+  result = {}
 
-      if (list_of_associated_bcs_string == "") {
-        list_of_associated_bcs_string = billing_center_name
-      } else {
-        list_of_associated_bcs_string += ", " + billing_center_name
-      }
-    })
+  _.each(ds_accounts_by_billing_center, function(account) {
+    if (result[account['vendor_account_id']] == undefined) {
+      result[account['vendor_account_id']] = []
+    }
 
-    //Add list of associated billing center names string to reservation object for policy incident
-    ri["billing_centers"] = list_of_associated_bcs_string
+    result[account['vendor_account_id']].push(bc_object[account['billing_center_id']])
+  })
+EOS
+end
+
+datasource "ds_underutil_reservations" do
+  run_script $js_underutil_reservations, $ds_filtered_aws_reservations, $ds_account_list, $ds_applied_policy, $param_utilization
+end
+
+script "js_underutil_reservations", type: "javascript" do
+  parameters "ds_filtered_aws_reservations", "ds_account_list", "ds_applied_policy", "param_utilization"
+  result "result"
+  code <<-'EOS'
+  underutil_ris = _.filter(ds_filtered_aws_reservations, function(ri) {
+    return ri['utilization'] < param_utilization
   })
 
-  result = ds_filtered_reservations
+  result = _.map(underutil_ris, function(ri) {
+    billing_centers = ""
+
+    if (ds_account_list[ri['accountID']] != undefined) {
+      billing_centers = ds_account_list[ri['accountID']].join(', ')
+    }
+
+    return {
+      accountID: ri['accountID'],
+      accountName: ri['accountName'],
+      id: ri['id'],
+      purchased_hours: Math.round(ri['purchased_hours'] * 100) / 100,
+      total_actual_hours: Math.round(ri['total_actual_hours'] * 100) / 100,
+      unused_hours: Math.round(ri['unused_hours'] * 100) / 100,
+      utilization: Math.round(ri['utilization'] * 100) / 100,
+      end_date: ri['end_date'],
+      start_date: ri['start_date'],
+      region: ri['region'],
+      instanceType: ri['instanceType'],
+      instanceCount: ri['instanceCount'],
+      scope: ri['scope'],
+      tenancy: ri['tenancy'],
+      resourceType: ri['resourceType'],
+      billing_centers: billing_centers,
+      policy_name: ds_applied_policy['name'],
+      threshold: param_utilization,
+      message: ""
+    }
+  })
+
+  result = _.sortBy(result, 'utilization')
+
+  // Message for incident output
+  if (result.length > 0) {
+    total_ris = ds_filtered_aws_reservations.length.toString()
+    total_underutil_ris = result.length.toString()
+    underutil_ris_percentage = (total_underutil_ris / total_ris * 100).toFixed(2).toString() + '%'
+
+    ri_verb = "have"
+    if (total_underutil_ris == 1) { ri_verb = "has" }
+
+    result[0]['message'] = [
+      "Out of ", total_ris, " AWS Reservations analyzed, ",
+      total_underutil_ris, " (", underutil_ris_percentage,
+      ") ", ri_verb, " less than ", param_utilization, "% utilization.\n\n",
+      "The above settings can be modified by editing the applied policy and ",
+      "changing the appropriate parameters."
+    ].join('')
+  }
 EOS
 end
 
@@ -267,39 +314,63 @@ end
 ###############################################################################
 
 policy "pol_ri_utilization" do
-  validate_each $ds_enriched_reservation_data do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Reserved Instance Utilization"
-    check gt(to_n(val(item, "utilization_percentage")), $param_utilization)
+  validate_each $ds_underutil_reservations do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Underutilized Reservations Found"
+    detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
+    check eq(val(item, "instanceType"), "")
     escalate $esc_email
     export do
       resource_level true
-      field "region" do
-        label "Region"
+      field "accountID" do
+        label "Account ID"
       end
-      field "account_name" do
+      field "accountName" do
         label "Account Name"
-      end
-      field "id" do
-        label "Account Id"
-        path "account_id"
       end
       field "billing_centers" do
         label "Associated Billing Center(s)"
       end
+      field "id" do
+        label "Lease ID"
+      end
+      field "region" do
+        label "Region"
+      end
       field "scope" do
         label "Scope"
       end
-      field "type" do
+      field "tenancy" do
+        label "Tenancy"
+      end
+      field "resourceType" do
         label "Type"
       end
-      field "instance_type" do
+      field "start_date" do
+        label "Start Date"
+      end
+      field "end_date" do
+        label "End Date"
+      end
+      field "instanceType" do
         label "Instance Type"
       end
-      field "instance_count" do
+      field "instanceCount" do
         label "Instance Count"
       end
-      field "utilization_percentage" do
-        label "Utilization Percentage"
+      field "utilization" do
+        label "Utilization (%)"
+      end
+      field "purchased_hours" do
+        label "Purchased Hours"
+      end
+      field "total_actual_hours" do
+        label "Actual Hours"
+      end
+      field "unused_hours" do
+        label "Unused Hours"
+      end
+      field "threshold" do
+        label "Utilization Threshold (%)"
       end
     end
   end

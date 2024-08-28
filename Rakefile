@@ -18,6 +18,15 @@ task :generate_policy_list do
   github_api_token = ENV["GITHUB_API_TOKEN"]
   github_client = Octokit::Client.new(access_token: github_api_token)
 
+  # Get the list of recommended policy templates
+  generally_recommended_templates_json = File.read('data/active_policy_list/generally_recommended_templates.json')
+  generally_recommended_templates = JSON.parse(generally_recommended_templates_json)
+  # generally_recommended_template_names is all the PT Names for all the providers in generally_recommended_templates
+  generally_recommended_template_names = []
+  generally_recommended_templates.each do |key, value|
+    generally_recommended_template_names.concat(value)
+  end
+
   FileUtils.mkdir_p 'dist'
   file_list = []
 
@@ -38,13 +47,12 @@ task :generate_policy_list do
       policy_set = pp.parsed_info[:policy_set]
       recommendation_type = pp.parsed_info[:recommendation_type]
       publish = pp.parsed_info[:publish]
+      deprecated = pp.parsed_info[:deprecated]
 
-      # Set publish to false unless publish is missing or set to true in policy metadata
-      if !publish.nil? && publish != 'true' && publish != true
-        publish = false
-      else
-        publish = true
-      end
+      # 'publish' defaults to true unless explicitly set to false
+      # 'deprecated' defaults to false unless explicitly set to true
+      publish = !(publish == 'false' || publish == false)
+      deprecated = deprecated == 'true' || deprecated == true
     end
 
     # Get version from long description
@@ -59,6 +67,7 @@ task :generate_policy_list do
       # Get datetime for last time file was modified
       commits = github_client.commits(repo_name, branch, path: file)
       updated_at = commits.first.commit.author.date.utc.iso8601 if !commits.empty?
+      generally_recommended = generally_recommended_template_names.include?(pp.parsed_name) && !deprecated
 
       puts "Adding #{pp.parsed_name}"
 
@@ -75,7 +84,9 @@ task :generate_policy_list do
         "service": service,
         "policy_set": policy_set,
         "recommendation_type": recommendation_type,
-        "updated_at": updated_at
+        "updated_at": updated_at,
+        "generally_recommended": generally_recommended,
+        "deprecated": deprecated
       }
     end
   end

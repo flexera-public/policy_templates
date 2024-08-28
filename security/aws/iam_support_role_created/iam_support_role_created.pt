@@ -1,13 +1,13 @@
-name "AWS IAM Support Role Created"
+name "AWS IAM Account Missing Support Role"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report if no support roles exist in the AWS account. \n See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/iam_support_role_created) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Report if no support roles exist in the AWS account. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/iam_support_role_created) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Security"
 severity "low"
 default_frequency "daily"
 info(
-  version: "2.5",
+  version: "3.0.0",
   provider: "AWS",
   service: "IAM",
   policy_set: "CIS",
@@ -25,8 +25,10 @@ info(
 
 parameter "param_email" do
   type "list"
-  label "Email Address"
-  description "Email addresses of the recipients you wish to notify"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify."
+  default []
 end
 
 parameter "param_aws_account_number" do
@@ -42,40 +44,124 @@ end
 ###############################################################################
 
 credentials "auth_aws" do
-  schemes "aws","aws_sts"
+  schemes "aws", "aws_sts"
   label "AWS"
   description "Select the AWS Credential from the list"
   tags "provider=aws"
   aws_account_number $param_aws_account_number
 end
 
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
-# Retrieve the id number of the account being tested
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get AWS account info
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+
 datasource "ds_get_caller_identity" do
   request do
     auth $auth_aws
     verb "GET"
     host "sts.amazonaws.com"
     path "/"
-    header "User-Agent", "RS Policies"
     query "Action", "GetCallerIdentity"
     query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
   end
   result do
     encoding "xml"
     collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
-      field "account",xpath(col_item, "Account")
+      field "account", xpath(col_item, "Account")
     end
   end
 end
 
-datasource "ds_iam_listpolicies" do
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_get_caller_identity
+end
+
+script "js_aws_account", type:"javascript" do
+  parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+  result = _.find(ds_cloud_vendor_accounts, function(account) {
+    return account['id'] == ds_get_caller_identity[0]['account']
+  })
+
+  // This is in case the API does not return the relevant account info
+  if (result == undefined) {
+    result = {
+      id: ds_get_caller_identity[0]['account'],
+      name: "",
+      tags: {}
+    }
+  }
+EOS
+end
+
+datasource "ds_iam_policies" do
   request do
     auth $auth_aws
-    verb "GET"
     host "iam.amazonaws.com"
     path "/"
     query "Action", "ListPolicies"
@@ -87,18 +173,32 @@ datasource "ds_iam_listpolicies" do
   result do
     encoding "json"
     collect jmes_path(response, "ListPoliciesResponse.ListPoliciesResult.Policies[*]") do
-      field "policyName", jmes_path(col_item, "PolicyName")
+      field "id", jmes_path(col_item, "PolicyId")
+      field "name", jmes_path(col_item, "PolicyName")
       field "arn", jmes_path(col_item, "Arn")
+      field "createDate", jmes_path(col_item, "CreateDate")
+      field "attachmentCount", jmes_path(col_item, "AttachmentCount")
+      field "defaultVersionId", jmes_path(col_item, "DefaultVersionId")
     end
   end
 end
 
-datasource "ds_iam_supportpolicies" do
-  run_script $js_find_support, $ds_iam_listpolicies
+datasource "ds_iam_support_policies" do
+  run_script $js_iam_support_policies, $ds_iam_policies
+end
+
+script "js_iam_support_policies", type:"javascript" do
+  parameters "ds_iam_policies"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_iam_policies, function(policy) {
+    return policy['name'] == 'AWSSupportAccess'
+  })
+EOS
 end
 
 datasource "ds_iam_entities" do
-  iterate $ds_iam_supportpolicies
+  iterate $ds_iam_support_policies
   request do
     auth $auth_aws
     verb "GET"
@@ -112,49 +212,33 @@ datasource "ds_iam_entities" do
   end
   result do
     encoding "json"
-    field "policyName", jmes_path(iter_item, "policyName")
+    field "roles", jmes_path(response, "ListEntitiesForPolicyResponse.ListEntitiesForPolicyResult.PolicyRoles")
+    field "id", jmes_path(iter_item, "id")
+    field "name", jmes_path(iter_item, "name")
     field "arn", jmes_path(iter_item, "arn")
-    field "policyRoles", jmes_path(response, "ListEntitiesForPolicyResponse.ListEntitiesForPolicyResult.PolicyRoles")
+    field "createDate", jmes_path(iter_item, "createDate")
+    field "attachmentCount", jmes_path(iter_item, "attachmentCount")
+    field "defaultVersionId", jmes_path(iter_item, "defaultVersionId")
   end
 end
 
-datasource "ds_iam_policies" do
-  run_script $js_iam_policies, $ds_iam_entities, $ds_get_caller_identity
+datasource "ds_support_role_missing" do
+  run_script $js_support_role_missing, $ds_iam_entities, $ds_aws_account, $ds_applied_policy
 end
 
-###############################################################################
-# Scripts
-###############################################################################
-
-script "js_find_support", type:"javascript" do
-  parameters "ds_iam_listpolicies"
+script "js_support_role_missing", type:"javascript" do
+  parameters "ds_iam_entities", "ds_aws_account", "ds_applied_policy"
   result "result"
   code <<-EOS
-    var result = [];
-
-    _.each(ds_iam_listpolicies, function(policy) {
-      if (policy['policyName'] == 'AWSSupportAccess') {
-        result.push(policy);
-      }
-    })
-EOS
-end
-
-script "js_iam_policies", type:"javascript" do
-  parameters "ds_iam_entities", "ds_get_caller_identity"
-  result "result"
-  code <<-EOS
-  var support_role_found = 0
-
-  _.each(ds_iam_entities, function(policy){
-    if (policy['policyRoles'].length > 0) {
-      support_role_found = 1
-    }
+  policies_with_support_roles = _.filter(ds_iam_entities, function(policy) {
+    return policy['policyRoles'] != null && policy['policyRoles'] != undefined && policy['policyRoles'].length > 0
   })
 
   result = {
-    id: ds_get_caller_identity[0]['account'],
-    support_role_found: support_role_found
+    accountID: ds_aws_account['id'],
+    accountName: ds_aws_account['name'],
+    policies_with_support_roles: policies_with_support_roles.length,
+    policy_name: ds_applied_policy['name']
   }
 EOS
 end
@@ -163,25 +247,17 @@ end
 # Policy
 ###############################################################################
 
-policy "pol_support_role_created" do
-  validate $ds_iam_policies do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): No Support Role Found"
-    escalate $esc_support_role_created
+policy "pol_support_role_missing" do
+  validate $ds_support_role_missing do
+    summary_template "{{ data.policy_name }}: AWS Account Missing IAM Support Role Found"
     detail_template <<-EOS
-No Support Role found! The AWSSupportAccess policy is not attached to any role.
+No support roles found for the following AWS account:
 
-Affected Account: {{data.id}}
+**AWS Account:** {{ data.accountName }} ({{ data.accountID }})\\
+**Support Roles Found:** {{ data.policies_with_support_roles }}
 EOS
-    check eq(val(data, "support_role_found"),1)
-    export do
-      resource_level true
-      field "id" do
-        label "id"
-      end
-      field "support_role_found" do
-        label "support_role_found"
-      end
-    end
+    check gt(val(data, "policies_with_support_roles"), 0)
+    escalate $esc_email
   end
 end
 
@@ -189,7 +265,7 @@ end
 # Escalations
 ###############################################################################
 
-escalation "esc_support_role_created" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"

@@ -17,3 +17,4 @@ There are automated workflows that run once per week for each script and automat
 - [AWS RDS Pricing Workflow](https://github.com/flexera-public/policy_templates/blob/master/.github/workflows/generate-aws-rds-pricing-json.yaml)
 - [Azure VM Pricing Workflow](https://github.com/flexera-public/policy_templates/blob/master/.github/workflows/generate-azure-vm-pricing-json.yaml)
 - [Azure MD Pricing Workflow](https://github.com/flexera-public/policy_templates/blob/master/.github/workflows/generate-azure-md-pricing-json.yaml)
+- [Azure DB Storage Pricing Workflow](https://github.com/flexera-public/policy_templates/blob/master/.github/workflows/generate-azure-db-storage-pricing-json.yaml)

@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.13.1
+
+- Added `deprecated` field to policy metadata. Functionality is unchanged.
+
 ## v1.13
 
 - fixed link to README in policy description

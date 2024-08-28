@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.1.3
+
+- Added `deprecated` field to policy metadata. Functionality is unchanged.
+
+## v2.1.2
+
+- Deprecated: This policy is no longer being updated. Please see policy README for more information.
+
 ## v2.1.1
 
 - Fixed issue where only top-level billing centers could be filtered on. Policy now additionally supports filtering on child billing centers.

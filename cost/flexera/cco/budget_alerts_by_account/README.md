@@ -1,5 +1,9 @@
 # Budget Alerts by Cloud Account
 
+## Deprecated
+
+This policy template is no longer being updated. The [Budget Alerts](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/budget_report_alerts/) policy template can be used instead by specifying a cloud account in the relevant filtering parameter.
+
 ## What it does
 
 This Policy uses Optima to determine if a Cloud Account has exceeded its monthly cost budget. The policy should be run daily and will take into account data from 3 days ago to ensure there is a complete set.

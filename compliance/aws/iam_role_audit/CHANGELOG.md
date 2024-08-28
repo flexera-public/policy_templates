@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.0.1
+
+- Add default value for `IAM Role Names/IDs/ARNs` param
+
 ## v3.0.0
 
 - Several parameters altered to be more descriptive and human-readable
