@@ -67,7 +67,7 @@ end
 
 ### Bad URL test
 # Return false if no invalid URLs are found.
-def general_bad_urls?(file)
+def general_bad_urls?(file_diff)
   # List of hosts to ignore in the analysis
   exclude_hosts = [
     'api.loganalytics.io',          'management.azure.com',
@@ -78,12 +78,11 @@ def general_bad_urls?(file)
     'us-3.rightscale.com',          'us-4.rightscale.com'
   ]
 
-  diff = git.diff_for_file(file)
   regex = /(^\+)/
   fail_message = ""
 
-  if diff && diff.patch =~ regex
-    diff.patch.each_line.with_index do |line, index|
+  if file_diff && file_diff.patch =~ regex
+    file_diff.patch.each_line.with_index do |line, index|
       line_number = index + 1
 
       if line =~ regex
@@ -130,15 +129,12 @@ end
 
 ### Outdated Terminology test
 # Return false if no outdated terminology, such as RightScale, is found in the file
-def general_outdated_terminology?(file)
+def general_outdated_terminology?(file, file_lines)
   fail_message = ""
-
-  # Store contents of file for direct analysis
-  file_text = File.read(file)
 
   # Exclude files not worth checking
   if !file.include?("Dangerfile") && !file.include?(".dangerfile") && !file.start_with?("data/") && !file.start_with?("tools/")
-    file_text.each_line.with_index do |line, index|
+    file_lines.each_with_index do |line, index|
       line_number = index + 1
       test_line = line.strip.downcase
 
