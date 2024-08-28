@@ -7,7 +7,9 @@
 
 ### Deprecated test
 # Utility method. Returns true if policy is deprecated and false if it isn't
-def policy_deprecated?(file_parsed)
+def policy_deprecated?(file, file_parsed)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file is deprecated..."
+
   info = file_parsed.parsed_info
 
   deprecated = false
@@ -23,7 +25,9 @@ end
 ### Deprecated without info flag test
 # Returns true if policy is described as deprecated in short_description
 # but lacks deprecated field in info() block
-def policy_missing_deprecated_field?(file_parsed)
+def policy_missing_deprecated_field?(file, file_parsed)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file is deprecated but lacks appropriate setting in info() block..."
+
   info = file_parsed.parsed_info
   short_description = file_parsed.parsed_short_description
 
@@ -50,6 +54,8 @@ end
 ### Nested directory test
 # Return false if policy is correctly sorted within the directory structure
 def policy_bad_directory?(file)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file is in the correct location..."
+
   fail_message = ""
   parts = file.split('/')
 
@@ -74,6 +80,8 @@ end
 ### Unmodified README test
 # Verify that .pt file also has an updated README
 def policy_unmodified_readme?(file, changed_readme_files)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has an updated README file..."
+
   fail_message = ""
 
   # Get file path for readme file
@@ -94,6 +102,8 @@ end
 ### Unmodified CHANGELOG test
 # Verify that .pt file also has an updated CHANGELOG
 def policy_unmodified_changelog?(file, changed_changelog_files)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has an updated CHANGELOG file..."
+
   fail_message = ""
 
   # Get file path for changelog file
@@ -114,6 +124,8 @@ end
 ### Policy syntax error test
 # Return false if no syntax errors are found using fpt.
 def policy_fpt_syntax_error?(file, meta_policy = "child")
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing Policy Template file for syntax errors with fpt..."
+
   fail_message = ""
   fpt = `[ -x ./fpt ] && ./fpt check #{file} | grep -v Checking`
 
@@ -132,6 +144,8 @@ end
 ### Filename Casing test
 # Verify that the filename is in lowercase
 def policy_bad_filename_casing?(file)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file name is in lowercase..."
+
   fail_message = ""
 
   if file.match?(/[A-Z]/)
@@ -145,6 +159,8 @@ end
 ### README Link test
 # Verify that the readme in the short_description is valid
 def policy_bad_readme_link?(file, file_parsed)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has valid link to README in short_description..."
+
   fail_message = ""
 
   short_description = file_parsed.parsed_short_description
@@ -176,7 +192,9 @@ end
 
 ### Publish test
 # Return false if policy info block is missing publish field or publish is set to a value other than "false"
-def policy_unpublished?(file_parsed)
+def policy_unpublished?(file, file_parsed)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file is configured to not be published..."
+
   info = file_parsed.parsed_info
 
   fail_message = ""
@@ -193,7 +211,9 @@ end
 
 ### Name change test
 # Return false if policy's name has not changed
-def policy_name_changed?(file_diff)
+def policy_name_changed?(file, file_diff)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file name has changed..."
+
   fail_message = ""
 
   file_diff.patch.each_line do |line|
@@ -209,7 +229,9 @@ end
 
 ### Bad Indentation test
 # Verify that everything is properly indented
-def policy_bad_indentation?(file_lines)
+def policy_bad_indentation?(file, file_lines)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has improper indentation..."
+
   # Message to return of test fails
   fail_message = ""
 
@@ -258,7 +280,9 @@ end
 
 ### Consecutive Empty Lines test
 # Verify that the policy does not have multiple blank lines in a row
-def policy_consecutive_empty_lines?(file_lines)
+def policy_consecutive_empty_lines?(file, file_lines)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has consecutive empty lines..."
+
   # Message to return of test fails
   fail_message = ""
 
@@ -285,7 +309,9 @@ end
 
 ### Metadata test
 # Return false if policy metadata has missing or problematic field
-def policy_bad_metadata?(file_parsed, field_name)
+def policy_bad_metadata?(file, file_parsed, field_name)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing Policy Template file metadata configuration..."
+
   # Valid values
   # https://docs.flexera.com/flexera/EN/Automation/PoliciesList.htm
   categories = [ 'cost', 'compliance', 'operational', 'saas management', 'security' ]
@@ -345,7 +371,9 @@ end
 
 ### Info block test
 # Return false if policy info block has missing or problematic fields
-def policy_missing_info_field?(file_parsed, field_name)
+def policy_missing_info_field?(file, file_parsed, field_name)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing Policy Template file info() block configuration..."
+
   info = file_parsed.parsed_info
 
   fail_message = ""
@@ -378,7 +406,9 @@ end
 
 ### Semantic Version Test
 # Return false if policy's version number is compliant with semantic versioning
-def policy_nonsemantic_version?(file_parsed)
+def policy_nonsemantic_version?(file, file_parsed)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template has valid version number..."
+
   fail_message = ""
 
   semantic_regex = /^\d+\.\d+\.\d+$/
@@ -396,6 +426,8 @@ end
 ### Changelog Version Test
 # Return false if policy's version number matches the latest entry in the CHANGELOG
 def policy_changelog_mismatch?(file, file_parsed)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file version number matches CHANGELOG..."
+
   fail_message = ""
 
   # Derive path to CHANGELOG file from file name/path
@@ -430,6 +462,8 @@ end
 ### README Credential Test
 # Return false if policy's README has documentation for all of the credentials in the policy itself
 def policy_readme_missing_credentials?(file, file_lines)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file's README is missing required credentials..."
+
   fail_message = ""
 
   # Derive path to CHANGELOG file from file name/path
@@ -535,7 +569,9 @@ end
 
 ### Section order test
 # Return false if policy sections are in the correct order.
-def policy_sections_out_of_order?(file_lines)
+def policy_sections_out_of_order?(file, file_lines)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file sections are in correct order..."
+
   # Message to return of test fails
   fail_message = ""
 
@@ -615,7 +651,9 @@ end
 
 ### Orphaned block test
 # Return false if code blocks of the specified block_name are all referenced elsewhere in the policy
-def policy_orphaned_blocks?(file_lines, block_name)
+def policy_orphaned_blocks?(file, file_lines, block_name)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has unused " + block_name + " code blocks..."
+
   # Store failure message
   fail_message = ""
 
@@ -650,7 +688,9 @@ end
 
 ### Block grouping test
 # Return false if code blocks are all grouped together by type.
-def policy_blocks_ungrouped?(file_lines)
+def policy_blocks_ungrouped?(file, file_lines)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file code blocks are properly grouped together..."
+
   # Store failure message
   fail_message = ""
 
@@ -703,7 +743,9 @@ end
 
 ### Section comment test
 # Return false if all required policy section comments are present.
-def policy_missing_section_comments?(file_text, section_name)
+def policy_missing_section_comments?(file, file_text, section_name)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has required " + section_name + " section comment..."
+
   fail_message = ""
 
   # Set values based on which section we're checking.
@@ -759,7 +801,9 @@ end
 
 ### Bad block name test
 # Return false if no invalidly named code blocks are found.
-def policy_bad_block_name?(file_lines, block_name)
+def policy_bad_block_name?(file, file_lines, block_name)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has invalidly named " + block_name + " code blocks..."
+
   fail_message = ""
 
   # Set values based on which section we're checking.
@@ -805,7 +849,9 @@ end
 
 ### Deprecated block test
 # Return false if no deprecated blocks are found.
-def policy_deprecated_code_blocks?(file_lines, block_name)
+def policy_deprecated_code_blocks?(file, file_lines, block_name)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has deprecated " + block_name + " code blocks..."
+
   permission_regex = /^permission\s+"[^"]*"\s+do$/
   resources_regex = /^resources\s+"[^"]*",\s+type:\s+"[^"]*"\s+do$/
 
@@ -825,7 +871,9 @@ end
 
 ### Missing block field test
 # Return false if specified field is not missing from any of the specified blocks.
-def policy_block_missing_field?(file_lines, block_name, field_name)
+def policy_block_missing_field?(file, file_lines, block_name, field_name)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has any " + block_name + " code blocks midding the " + field_name + " field..."
+
   fail_message = ""
 
   present = false
@@ -870,7 +918,9 @@ end
 
 ### Datasource/script name matching test
 # Return message if datasource and script do not have matching names. Otherwise, return false
-def policy_ds_js_name_mismatch?(file_lines)
+def policy_ds_js_name_mismatch?(file, file_lines)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has any datasources and scripts that do not have matching names..."
+
   fail_message = ""
   ds_name = nil
   js_name = nil
@@ -931,7 +981,9 @@ end
 
 ### Script parameter order test
 # Return message if script parameters are not in the correct order. Otherwise, return false
-def policy_run_script_incorrect_order?(file_lines)
+def policy_run_script_incorrect_order?(file, file_lines)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has any scripts with parameters in the wrong order..."
+
   fail_message = ""
   ds_name = nil
 
@@ -996,7 +1048,9 @@ end
 
 ### Code block field order test
 # Return message if fields for the specified code block type are not in the proper order
-def policy_block_fields_incorrect_order?(file_lines, block_type)
+def policy_block_fields_incorrect_order?(file, file_lines, block_type)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has any " + block_type + " code blocks with fields in the wrong order..."
+
   fail_message = ""
 
   field_list = []
@@ -1086,7 +1140,9 @@ end
 
 ### Recommendation policy export field test
 # Return message if required recommendation policy fields are missing
-def policy_missing_recommendation_fields?(file_lines, file_parsed, field_type)
+def policy_missing_recommendation_fields?(file, file_lines, file_parsed, field_type)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has any missing " + field_type + " fields from the incident table..."
+
   fail_message = ""
 
   info = file_parsed.parsed_info
@@ -1165,7 +1221,9 @@ end
 
 ### Improper Comma Spacing Test
 # Return false if all comma separated items have a space between them like so: one, two, three
-def policy_bad_comma_spacing?(file_lines)
+def policy_bad_comma_spacing?(file, file_lines)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has improper comma spacing..."
+
   fail_message = ""
 
   file_lines.each_with_index do |line, index|
@@ -1186,7 +1244,9 @@ end
 
 ### Outdated Links
 # Return false if no outdated links are found
-def policy_outdated_links?(file_lines)
+def policy_outdated_links?(file, file_lines)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has any outdated links..."
+
   fail_message = ""
 
   within_datasource = false
@@ -1237,7 +1297,9 @@ end
 
 ### Insecure HTTP Test
 # Return false if all datasources use HTTPS instead of HTTP
-def policy_http_connections?(file_lines)
+def policy_http_connections?(file, file_lines)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has any insecure requests not using HTTPS..."
+
   fail_message = ""
 
   within_datasource = false
@@ -1283,6 +1345,8 @@ end
 ### Master permissions test
 # Return false if master permissions have been recorded for the policy
 def policy_missing_master_permissions?(file, permissions_yaml)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has been included in the verified permissions file..."
+
   fail_message = ""
 
   # Use regex to look for blocks that have a "datasource", "request", and "auth" sections of the datasource
@@ -1306,6 +1370,8 @@ end
 ### New datasource test
 # Return false if no new datasources are found.
 def policy_new_datasource?(file, file_diff, permissions_yaml)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has new datasources..."
+
   fail_message = ""
 
   # Use regex to look for blocks that have a "datasource", "request", and "auth" sections of the datasource
@@ -1327,7 +1393,9 @@ end
 
 ### Console.log test
 # Return false if the console.log function is never invoked in the policy template
-def policy_console_log?(file_lines)
+def policy_console_log?(file, file_lines)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has any console.log() statements..."
+
   # Message to return of test fails
   fail_message = ""
 
