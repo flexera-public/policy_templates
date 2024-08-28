@@ -67,7 +67,7 @@ end
 
 ### Bad URL test
 # Return false if no invalid URLs are found.
-def general_bad_urls?(file_diff)
+def general_bad_urls?(file, file_diff)
   # List of hosts to ignore in the analysis
   exclude_hosts = [
     'api.loganalytics.io',          'management.azure.com',

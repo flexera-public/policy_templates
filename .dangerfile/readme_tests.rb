@@ -7,7 +7,7 @@
 
 ### Deprecated README test
 # Utility method. Returns true if README is for a deprecated policy
-def readme_deprecated?(file_lines)
+def readme_deprecated?(file, file_lines)
   file_lines.each do |line|
     return true if line.start_with?("## Deprecated")
   end
@@ -17,7 +17,7 @@ end
 
 ### Missing README Sections
 # Verify that README file has all required sections
-def readme_missing_sections?(file_lines)
+def readme_missing_sections?(file, file_lines)
   fail_message = ""
 
   # Flags for whether sections are found
@@ -55,7 +55,7 @@ end
 
 ### Out of order README Sections
 # Verify that README file has the various sections in the correct order
-def readme_sections_out_of_order?(file_lines)
+def readme_sections_out_of_order?(file, file_lines)
   fail_message = ""
 
   # Flags for whether sections are found
@@ -140,7 +140,7 @@ end
 
 ### README Credentials formatting
 # Verify that README file has credentials in the proper formatting
-def readme_invalid_credentials?(file_lines)
+def readme_invalid_credentials?(file, file_lines)
   fail_message = ""
 
   prereq_line_number = -100
