@@ -8,7 +8,7 @@
 ### Bad Github PR summary
 # Verify that the pull request has properly formatted title
 def github_pr_bad_title?(github)
-  puts "* " + Time.now.strftime("%H:%M:%S.%L") + " Testing Github pull request for bad title..."
+  puts "*** " + Time.now.strftime("%H:%M:%S.%L") + " Testing Github pull request for bad title..."
 
   fail_message = ""
 
@@ -28,7 +28,7 @@ end
 ### Missing Github PR summary
 # Verify that the pull request has a summary
 def github_pr_missing_summary?(github)
-  puts "* " + Time.now.strftime("%H:%M:%S.%L") + " Testing Github pull request for missing summary..."
+  puts "*** " + Time.now.strftime("%H:%M:%S.%L") + " Testing Github pull request for missing summary..."
 
   fail_message = ""
   fail_message = "**Github Pull Request**\nPull Request is missing summary. Please provide a summary of your Pull Request." if github.pr_body.length < 10
@@ -40,7 +40,7 @@ end
 ### Missing Github PR labels
 # Verify that the pull request has labels
 def github_pr_missing_labels?(github)
-  puts "* " + Time.now.strftime("%H:%M:%S.%L") + " Testing Github pull request for presence of labels..."
+  puts "*** " + Time.now.strftime("%H:%M:%S.%L") + " Testing Github pull request for presence of labels..."
 
   fail_message = ""
   fail_message = "**Github Pull Request**\nPull Request is missing labels. Please add labels to this Pull Request." if github.pr_labels.empty?
@@ -52,7 +52,7 @@ end
 ### Missing Github PR Ready label
 # Verify that the pull request has ready for review label
 def github_pr_missing_ready_label?(github)
-  puts "* " + Time.now.strftime("%H:%M:%S.%L") + " Testing Github pull request for READY-FOR-REVIEW label..."
+  puts "*** " + Time.now.strftime("%H:%M:%S.%L") + " Testing Github pull request for READY-FOR-REVIEW label..."
 
   fail_message = ""
   fail_message = "**Github Pull Request**\nPull Request is missing `READY-FOR-REVIEW` label. Please add this label if this Pull Request is ready for review.\n\nPlease note that this message may be a false positive if you've added the label after Dangerfile tests were run, since adding labels does not trigger them to run again. In these cases, simply ignore this message." if !github.pr_labels.include?("READY-FOR-REVIEW")

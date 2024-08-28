@@ -25,7 +25,7 @@ require_relative '.dangerfile/policy_tests'
 # File Sorting
 ###############################################################################
 
-puts "*** " + Time.now.strftime("%H:%M:%S.%L") + " Sorting files for testing..."
+puts "* " + Time.now.strftime("%H:%M:%S.%L") + " Sorting files for testing..."
 
 # Create lists of files based on specific attributes for testing
 # Renamed Files.
@@ -64,7 +64,7 @@ new_pt_files = git.added_files.select{ |file| file.end_with?(".pt") && !file.end
 # File Loading
 ###############################################################################
 
-puts "*** " + Time.now.strftime("%H:%M:%S.%L") + " Loading reference files..."
+puts "* " + Time.now.strftime("%H:%M:%S.%L") + " Loading file-based assets..."
 
 permissions_yaml = YAML.load_file('tools/policy_master_permission_generation/validated_policy_templates.yaml')
 
@@ -72,7 +72,7 @@ permissions_yaml = YAML.load_file('tools/policy_master_permission_generation/val
 # Github Pull Request Testing
 ###############################################################################
 
-puts "*** " + Time.now.strftime("%H:%M:%S.%L") + " Testing Github pull request..."
+puts "* " + Time.now.strftime("%H:%M:%S.%L") + " Testing Github pull request..."
 
 test = github_pr_bad_title?(github); warn test if test
 test = github_pr_missing_summary?(github); fail test if test
@@ -83,19 +83,19 @@ test = github_pr_missing_ready_label?(github); message test if test
 # Modified Important Files Testing
 ###############################################################################
 
-puts "*** " + Time.now.strftime("%H:%M:%S.%L") + " Testing if important files were modified..."
+puts "* " + Time.now.strftime("%H:%M:%S.%L") + " Testing if important files were modified..."
 
 modified_important_files = changed_dangerfiles + changed_dot_files + changed_config_files
 modified_important_files = modified_important_files.join("\n")
 
 # Consolidate changed files into a single warning to save space
-warn "**Important Files Modified**\nPlease make sure these modifications were intentional and have been tested. These files are necessary for configuring the Github repository and managing automation.\n\n" + modified_important_files.strip if !modified_important_files.empty?
+warn "### **Important Files Modified**\n\nPlease make sure these modifications were intentional and have been tested. These files are necessary for configuring the Github repository and managing automation.\n\n" + modified_important_files.strip if !modified_important_files.empty?
 
 ###############################################################################
 # All Files Testing
 ###############################################################################
 
-puts "*** " + Time.now.strftime("%H:%M:%S.%L") + " Testing all changed files..."
+puts "* " + Time.now.strftime("%H:%M:%S.%L") + " Testing all changed files..."
 
 changed_files.each do |file|
   puts "** " + Time.now.strftime("%H:%M:%S.%L") + " Testing " + file + "..."
@@ -115,7 +115,7 @@ end
 # Ruby File Testing
 ###############################################################################
 
-puts "*** " + Time.now.strftime("%H:%M:%S.%L") + " Testing all changed Ruby files..."
+puts "* " + Time.now.strftime("%H:%M:%S.%L") + " Testing all changed Ruby files..."
 
 # Perform a lint check on changed Ruby files
 changed_rb_files.each do |file|
@@ -147,7 +147,7 @@ end
 # Python File Testing
 ###############################################################################
 
-puts "*** " + Time.now.strftime("%H:%M:%S.%L") + " Testing all changed Python files..."
+puts "* " + Time.now.strftime("%H:%M:%S.%L") + " Testing all changed Python files..."
 
 # Perform a lint check on changed Python files
 changed_py_files.each do |file|
@@ -176,7 +176,7 @@ end
 # JSON/YAML File Testing
 ###############################################################################
 
-puts "*** " + Time.now.strftime("%H:%M:%S.%L") + " Testing all changed JSON files..."
+puts "* " + Time.now.strftime("%H:%M:%S.%L") + " Testing all changed JSON files..."
 
 changed_json_files.each do |file|
   puts "** " + Time.now.strftime("%H:%M:%S.%L") + " Testing " + file + "..."
@@ -203,7 +203,7 @@ changed_json_files.each do |file|
   warn "### **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
 end
 
-puts "*** " + Time.now.strftime("%H:%M:%S.%L") + " Testing all changed YAML files..."
+puts "* " + Time.now.strftime("%H:%M:%S.%L") + " Testing all changed YAML files..."
 
 changed_yaml_files.each do |file|
   puts "** " + Time.now.strftime("%H:%M:%S.%L") + " Testing " + file + "..."
@@ -234,7 +234,7 @@ end
 # README Testing
 ###############################################################################
 
-puts "*** " + Time.now.strftime("%H:%M:%S.%L") + " Testing all changed README.md files..."
+puts "* " + Time.now.strftime("%H:%M:%S.%L") + " Testing all changed README.md files..."
 
 # Check README.md for issues for each file
 changed_readme_files.each do |file|
@@ -281,7 +281,7 @@ end
 # CHANGELOG Testing
 ###############################################################################
 
-puts "*** " + Time.now.strftime("%H:%M:%S.%L") + " Testing all changed CHANGELOG.md files..."
+puts "* " + Time.now.strftime("%H:%M:%S.%L") + " Testing all changed CHANGELOG.md files..."
 
 # Check CHANGELOG.md for issues for each file
 changed_changelog_files.each do |file|
@@ -316,7 +316,7 @@ end
 # Misc. Markdown Testing
 ###############################################################################
 
-puts "*** " + Time.now.strftime("%H:%M:%S.%L") + " Testing all changed misc MD files..."
+puts "* " + Time.now.strftime("%H:%M:%S.%L") + " Testing all changed misc MD files..."
 
 # Check Markdown files for issues for each file
 changed_misc_md_files.each do |file|
@@ -351,7 +351,7 @@ end
 # Policy Testing
 ###############################################################################
 
-puts "*** " + Time.now.strftime("%H:%M:%S.%L") + " Testing all changed Policy Template files..."
+puts "* " + Time.now.strftime("%H:%M:%S.%L") + " Testing all changed Policy Template files..."
 
 # Check policies for issues for each file
 changed_pt_files.each do |file|
@@ -545,7 +545,7 @@ end
 # Meta Policy Testing
 ###############################################################################
 
-puts "*** " + Time.now.strftime("%H:%M:%S.%L") + " Testing all changed Meta Parent Policy Template files..."
+puts "* " + Time.now.strftime("%H:%M:%S.%L") + " Testing all changed Meta Parent Policy Template files..."
 
 # Check meta policies for issues for each file
 changed_meta_pt_files.each do |file|
