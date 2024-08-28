@@ -37,6 +37,7 @@ def general_spellcheck?(file)
   # Run aspell and store results in log file
   ignore_file = ".spellignore"
 
+  # Build full command to run aspell and rework output to something usable
   command = %(
     awk '{print NR ": " $0}' #{file} |
     aspell --master=en_US --lang=en_US --ignore-case --mode=markdown list -l en |
