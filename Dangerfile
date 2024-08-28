@@ -75,7 +75,7 @@ spellcheck_ignore = File.readlines('.spellignore').map(&:chomp).select{ |entry| 
 
 puts "*** " + Time.now.strftime("%H:%M:%S.%L") + " Configuring prose spell checker..."
 
-prose.ignored_words = spellcheck_ignore
+#prose.ignored_words = spellcheck_ignore
 prose.ignore_numbers = true
 prose.ignore_acronyms = true
 prose.language = "en-us"
