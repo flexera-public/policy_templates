@@ -15,6 +15,7 @@ default_child_policy_template_files = [
   "../../compliance/aws/rds_backup/aws_rds_backup.pt",
   "../../compliance/aws/untagged_resources/aws_untagged_resources.pt",
   "../../cost/aws/burstable_ec2_instances/aws_burstable_ec2_instances.pt",
+  "../../cost/aws/cloudtrail_read_logging/aws_cloudtrail_read_logging.pt",
   "../../cost/aws/ec2_compute_optimizer/aws_ec2_compute_optimizer.pt",
   "../../cost/aws/eks_without_spot/aws_eks_without_spot.pt",
   "../../cost/aws/gp3_volume_upgrade/aws_upgrade_to_gp3_volume.pt",
@@ -29,7 +30,9 @@ default_child_policy_template_files = [
   "../../cost/aws/s3_storage_policy/aws_s3_bucket_policy_check.pt",
   "../../cost/aws/schedule_instance/aws_schedule_instance.pt",
   "../../cost/aws/superseded_instances/aws_superseded_instances.pt",
+  "../../cost/aws/unused_albs/aws_unused_albs.pt",
   "../../cost/aws/unused_clbs/aws_unused_clbs.pt",
+  "../../cost/aws/unused_nlbs/aws_unused_nlbs.pt",
   "../../cost/aws/unused_ip_addresses/aws_unused_ip_addresses.pt",
   "../../cost/aws/unused_rds/unused_rds.pt",
   "../../cost/aws/unused_volumes/aws_delete_unused_volumes.pt",
@@ -142,6 +145,7 @@ default_child_policy_template_files = [
   "../../cost/google/cud_recommendations/google_committed_use_discount_recommendations.pt",
   "../../cost/google/cud_report/google_committed_use_discount_report.pt",
   "../../cost/google/old_snapshots/google_delete_old_snapshots.pt",
+  "../../operational/google/label_cardinality/google_label_cardinality.pt",
   "../../security/google/public_buckets/google_public_buckets.pt"
 ]
 
@@ -162,6 +166,14 @@ def compile_meta_parent_policy(file_path)
   description = pt.scan(/^(?:short_description ")(.*?)(?:")/)[0][0]
   # Get the version string
   version = pt.scan(/version: "(.*?)"/)[0][0]
+  # get the publish string if it exists, defaulting to true if not present
+  publish_scan = pt.scan(/publish: "(.*?)"/)
+  publish = "true"
+  publish = publish_scan[0][0] if !publish_scan.empty?
+  # get the deprecated string if it exists, defaulting to false if not present
+  deprecated_scan = pt.scan(/publish: "(.*?)"/)
+  deprecated = "false"
+  deprecated = deprecated_scan[0][0] if !deprecated_scan.empty?
   # print("Name: #{name}\n")
   # print("Description: #{description}\n")
   # print("\n###########################\n")
@@ -395,6 +407,8 @@ end
   # Replace __PLACEHOLDER_FOR_CHILD_POLICY_NAME__ with the name of the child policy
   output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_NAME__", name)
   output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_VERSION__", version)
+  output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_PUBLISH__", publish)
+  output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_DEPRECATED__", deprecated)
   # Attempt to identify the URL to the child policy template file on github using the file_path provided
   # This would only work if the pt file is located under the `policy_templates` repo directory
   # If it is not, then the URL will be incorrect

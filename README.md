@@ -40,8 +40,10 @@ These templates can generate savings estimates for your environment.
 - [AWS Superseded EBS Volumes](./cost/aws/superseded_ebs_volumes)
 - [AWS Superseded EC2 Instances](./cost/aws/superseded_instances)
 - [AWS Untagged Resources](./compliance/aws/untagged_resources)
+- [AWS Unused Application Load Balancers](./cost/aws/unused_albs)
 - [AWS Unused Classic Load Balancers](./cost/aws/unused_clbs)
 - [AWS Unused IP Addresses](./cost/aws/unused_ip_addresses)
+- [AWS Unused Network Load Balancers](./cost/aws/unused_nlbs)
 - [AWS Unused RDS Instances](./cost/aws/unused_rds)
 - [AWS Unused Volumes](./cost/aws/unused_volumes)
 - [Turbonomic Allocate Virtual Machine Recommendations AWS](./cost/turbonomics/allocate_virtual_machines_recommendations/aws)
@@ -189,6 +191,10 @@ These templates can generate savings estimates for your environment.
   - [AWS Cheaper Regions](./cost/aws/cheaper_regions)
   - [AWS Resources Under Extended Support](./cost/aws/extended_support)
 
+- CloudTrail
+
+  - [AWS CloudTrails With Read Logging Enabled](./cost/aws/cloudtrail_read_logging)
+
 - Compute
 
   - [AWS Burstable EC2 Instances](./cost/aws/burstable_ec2_instances)
@@ -226,7 +232,9 @@ These templates can generate savings estimates for your environment.
 - Network
 
   - [AWS Idle NAT Gateways](./cost/aws/idle_nat_gateways)
+  - [AWS Unused Application Load Balancers](./cost/aws/unused_albs)
   - [AWS Unused Classic Load Balancers](./cost/aws/unused_clbs)
+  - [AWS Unused Network Load Balancers](./cost/aws/unused_nlbs)
 
 - RDS
 
@@ -267,6 +275,7 @@ These templates can generate savings estimates for your environment.
   - [Azure Reserved Instances Utilization MCA](./cost/azure/reserved_instances/utilization_mca)
   - [Azure Rightsize Compute Instances](./cost/azure/rightsize_compute_instances)
   - [Azure Savings Plan Recommendations](./cost/azure/savings_plan/recommendations)
+  - [Azure Savings Plan Utilization](./cost/azure/savings_plan/utilization)
   - [Azure Savings Realized from Reservations](./cost/azure/savings_realized)
   - [Azure Schedule Instance](./cost/azure/schedule_instance)
   - [Azure Superseded Compute Instances](./cost/azure/superseded_instances)
@@ -482,6 +491,16 @@ These templates can generate savings estimates for your environment.
 
   - [Schedule ITAM Report](./operational/flexera/itam/schedule_itam_report)
 
+- Identity & Access Management
+
+  - [Flexera One User Access Report](./operational/flexera/iam/iam_user_report)
+
+#### Google
+
+- Tags
+
+  - [Google Label Cardinality Report](./operational/google/label_cardinality)
+
 ### Policy Templates for SaaS Management
 
 #### Flexera
@@ -664,11 +683,11 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 33
-  Cost: 120
-  Operational: 26
+  Cost: 124
+  Operational: 28
   SaaS Management: 11
   Security: 74
-:optimization_count: 61
+:optimization_count: 63
 :policy_sets:
   '': 46
   Allocate VMs: 3
@@ -689,7 +708,7 @@ These templates can generate savings estimates for your environment.
   GP3 Volumes: 1
   Hybrid Use Benefit: 5
   IT Asset Management: 5
-  Identity & Access Management: 3
+  Identity & Access Management: 4
   Idle Compute Instances: 4
   Idle NAT Gateways: 1
   Inefficient Disk Usage: 1
@@ -697,6 +716,7 @@ These templates can generate savings estimates for your environment.
   Instances not running FlexNet Inventory Agent: 2
   Lambda: 1
   Lifecycle Management: 1
+  Logging: 1
   Long Running Instances: 2
   Long Stopped Instances: 3
   Native Recommendations: 1
@@ -716,30 +736,30 @@ These templates can generate savings estimates for your environment.
   Rightsize Storage: 2
   Rightsize Synapse SQL Pools: 1
   Rightsize Volumes: 2
-  Savings Plans: 4
+  Savings Plans: 5
   Savings Realized: 1
   Schedule Instance: 3
   Schedule Report: 2
   Storage Security: 1
   Superseded Compute Instances: 2
-  Tag Cardinality: 2
+  Tag Cardinality: 3
   Untagged Resources: 4
   Unused Containers: 1
   Unused Database Services: 3
   Unused Firewalls: 1
   Unused IP Addresses: 3
-  Unused Load Balancers: 1
+  Unused Load Balancers: 3
   Unused Volumes: 7
   Usage Report: 10
 :providers:
-  AWS: 96
-  Azure: 95
+  AWS: 99
+  Azure: 96
   Azure China: 1
-  Flexera: 37
+  Flexera: 38
   Flexera Optima: 1
   GCE: 2
   GitHub: 7
-  Google: 19
+  Google: 20
   Kubecost: 2
   Microsoft: 1
   Okta: 1
@@ -752,9 +772,9 @@ These templates can generate savings estimates for your environment.
   App Service: 1
   Automation: 1
   Cloud Cost Optimization: 19
-  CloudTrail: 7
+  CloudTrail: 8
   Common Bill Ingestion: 3
-  Compute: 77
+  Compute: 78
   Config: 1
   DBS: 1
   Databricks: 1
@@ -764,14 +784,14 @@ These templates can generate savings estimates for your environment.
   Git: 7
   IAM: 20
   IT Asset Management: 6
-  Identity & Access Management: 1
+  Identity & Access Management: 2
   KMS: 1
   Kubernetes: 2
   Managed Disks: 1
   Marketplace: 2
   MySQL: 2
   NetApp Files: 1
-  Network: 6
+  Network: 8
   Network Security Group: 2
   Office 365: 1
   Organization: 1
@@ -784,9 +804,9 @@ These templates can generate savings estimates for your environment.
   Security: 3
   Storage: 28
   Storage Accounts: 2
-  Tags: 2
+  Tags: 3
   Usage Discount: 6
-:total_count: 264
+:total_count: 270
 -->
 <!-- End Policy Template Stats -->
 

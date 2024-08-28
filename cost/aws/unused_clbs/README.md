@@ -2,11 +2,11 @@
 
 ## What It Does
 
-This policy checks all Classic Load Balancers to determine if any are unused (have no healthy instances) and allows them to be deleted by the user after approval.
+This policy template checks all Classic Load Balancers to determine if any are unused (have no healthy instances) and allows them to be deleted by the user after approval.
 
-Note: Elastic Load Balancing (ELB) supports three types of load balancers: Application Load Balancers, Network Load Balancers and Classic Load Balancers. This policy only reports on Classic Load Balancers.
+Note: Elastic Load Balancing (ELB) supports three types of load balancers: Classic Load Balancers, Network Load Balancers and Application Load Balancers. This policy template only reports on Classic Load Balancers; please use the [AWS Unused Application Load Balancers](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/unused_albs) and [AWS Unused Network Load Balancers](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/unused_nlbs) policy templates to report on those.
 
-## Functional Details
+## How It Works
 
 - The policy leverages the AWS Elastic Load Balancing API to gather a list of Classic Load Balancers in the AWS account.
 - Each found Classic Load Balancer is assessed by reviewing the state of its attached instances.
@@ -42,10 +42,13 @@ This policy has the following input parameters required when launching the polic
 - *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave this parameter blank for *manual* action.
+For example if a user selects the "Delete Unused Classic Load Balancers" action while applying the policy, all the resources that didn't satisfy the policy condition will be terminated.
+
 ## Policy Actions
 
 - Sends an email notification.
-- Delete unused Classic Load Balancer after approval.
+- Deletes unused Classic Load Balancers after approval.
 
 ## Prerequisites
 
@@ -59,7 +62,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   - `elasticloadbalancing:DescribeTags`
   - `elasticloadbalancing:DeleteLoadBalancer`*
 
-\* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
+  \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
 
   Example IAM Permission Policy:
 
