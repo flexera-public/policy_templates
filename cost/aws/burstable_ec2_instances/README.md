@@ -1,10 +1,10 @@
 # AWS Burstable EC2 Instances
 
-## What It does
+## What It Does
 
 This Policy Template gathers AWS CloudWatch CPU and Burst Credit data for instances on 30 day intervals. Information on Burst Credits can be found [here](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/burstable-performance-instances-monitoring-cpu-credits.html). This policy will then take the appropriate actions based on which check fails and resize the instance.
 
-## Functional Details
+## How It Works
 
 - This policy identifies all instances reporting performance metrics to CloudWatch whose CPU, Burst Credit Balance, Surplus Burst Credit Balance meet specified thresholds set forth in the parameters.
 - If you get an **N/A** in a field you will need to install the [CloudWatch Agent](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Install-CloudWatch-Agent.html) on the instance to get those metrics.
@@ -26,6 +26,7 @@ This policy has the following input parameters required when launching the polic
 - *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
 - *CPU Surplus Credits* - Number of CPU Surplus Credits to report on. Set to -1 to ignore CPU burst credits.
 - *Check Burst Credit Balance* - Whether to check burst credit balance against max_earnable_credits
+- *Statistic Lookback Period* - How many days back to look at CloudWatch data for instances. This value cannot be set higher than 90 because AWS does not retain metrics for longer than 90 days.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
 Please note that the "*Automatic Actions*" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
@@ -46,7 +47,7 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
 
 - [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
   - `sts:GetCallerIdentity`
-  - `cloudwatch:GetMetricStatistics`
+  - `cloudwatch:GetMetricData`
   - `cloudwatch:ListMetrics`
   - `ec2:DescribeRegions`
   - `ec2:DescribeInstances`
@@ -56,7 +57,7 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
   - `ec2:StartInstances`*
   - `ec2:StopInstances`*
 
-\* Only required for taking action (resizing); the policy will still function in a read-only capacity without these permissions.
+  \* Only required for taking action (resizing); the policy will still function in a read-only capacity without these permissions.
 
   Example IAM Permission Policy:
 
@@ -68,7 +69,7 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
               "Effect": "Allow",
               "Action": [
                   "sts:GetCallerIdentity",
-                  "cloudwatch:GetMetricStatistics",
+                  "cloudwatch:GetMetricData",
                   "cloudwatch:ListMetrics",
                   "ec2:DescribeRegions",
                   "ec2:DescribeInstances",

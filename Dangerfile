@@ -102,8 +102,13 @@ changed_rb_files.each do |file|
   warnings = []
   failures = []
 
+  # Preread file to avoid reading it multiple times for each method
+  file_text = File.read(file)
+  file_lines = File.readlines(file)
+  file_diff = git.diff_for_file(file)
+
   # Raise warning if outdated terminology found
-  test = general_outdated_terminology?(file); warnings << test if test
+  test = general_outdated_terminology?(file, file_lines); warnings << test if test
 
   # Raise error if code errors found
   test = code_ruby_errors?(file); failures << test if test
@@ -125,8 +130,13 @@ changed_py_files.each do |file|
   warnings = []
   failures = []
 
+  # Preread file to avoid reading it multiple times for each method
+  file_text = File.read(file)
+  file_lines = File.readlines(file)
+  file_diff = git.diff_for_file(file)
+
   # Raise warning if outdated terminology found
-  test = general_outdated_terminology?(file); warnings << test if test
+  test = general_outdated_terminology?(file, file_lines); warnings << test if test
 
   # Raise error if code errors found
   test = code_python_errors?(file); failures << test if test
@@ -144,8 +154,13 @@ changed_json_files.each do |file|
   warnings = []
   failures = []
 
+  # Preread file to avoid reading it multiple times for each method
+  file_text = File.read(file)
+  file_lines = File.readlines(file)
+  file_diff = git.diff_for_file(file)
+
   # Raise warning if outdated terminology found
-  test = general_outdated_terminology?(file); warnings << test if test
+  test = general_outdated_terminology?(file, file_lines); warnings << test if test
 
   # Look for out of place JSON files
   test = code_json_bad_location?(file); failures << test if test
@@ -162,8 +177,13 @@ changed_yaml_files.each do |file|
   warnings = []
   failures = []
 
+  # Preread file to avoid reading it multiple times for each method
+  file_text = File.read(file)
+  file_lines = File.readlines(file)
+  file_diff = git.diff_for_file(file)
+
   # Raise warning if outdated terminology found
-  test = general_outdated_terminology?(file); warnings << test if test
+  test = general_outdated_terminology?(file, file_lines); warnings << test if test
 
   # Look for out of place YAML files
   test = code_yaml_bad_location?(file); failures << test if test
@@ -185,28 +205,33 @@ changed_readme_files.each do |file|
   warnings = []
   failures = []
 
+  # Preread file to avoid reading it multiple times for each method
+  file_text = File.read(file)
+  file_lines = File.readlines(file)
+  file_diff = git.diff_for_file(file)
+
   # Don't run tests against deprecated READMEs
-  unless readme_deprecated?(file)
+  unless readme_deprecated?(file_lines)
     # Run Danger spell check on file
     general_spellcheck?(file)
 
     # Raise warning if outdated terminology found
-    test = general_outdated_terminology?(file); warnings << test if test
+    test = general_outdated_terminology?(file, file_lines); warnings << test if test
 
     # Raise error if the file contains any bad urls
-    test = general_bad_urls?(file); failures << test if test
+    test = general_bad_urls?(file_diff); failures << test if test
 
     # Raise error if improper markdown is found via linter
     test = general_bad_markdown?(file); failures << test if test
 
     # Raise error if README is missing required sections
-    test = readme_missing_sections?(file); failures << test if test
+    test = readme_missing_sections?(file_lines); failures << test if test
 
     # Raise error if README sections are out of order
-    test = readme_sections_out_of_order?(file); failures << test if test
+    test = readme_sections_out_of_order?(file_lines); failures << test if test
 
     # Raise error if README credentials are formatted incorrectly
-    test = readme_invalid_credentials?(file); failures << test if test
+    test = readme_invalid_credentials?(file_lines); failures << test if test
   end
 
   # Output final list of failures and warnings
@@ -223,16 +248,21 @@ changed_changelog_files.each do |file|
   warnings = []
   failures = []
 
+  # Preread file to avoid reading it multiple times for each method
+  file_text = File.read(file)
+  file_lines = File.readlines(file)
+  file_diff = git.diff_for_file(file)
+
   # Don't run tests against deprecated CHANGELOGs
-  unless changelog_deprecated?(file)
+  unless changelog_deprecated?(file_lines)
     # Raise error if the file contains any bad urls
-    test = general_bad_urls?(file); failures << test if test
+    test = general_bad_urls?(file_diff); failures << test if test
 
     # Raise error if improper markdown is found via linter
     test = general_bad_markdown?(file); failures << test if test
 
     # Raise error if CHANGELOG is incorrectly formatted
-    test = changelog_bad_formatting?(file); failures << test if test
+    test = changelog_bad_formatting?(file_lines); failures << test if test
   end
 
   # Output final list of failures and warnings
@@ -249,14 +279,19 @@ changed_misc_md_files.each do |file|
   warnings = []
   failures = []
 
+  # Preread file to avoid reading it multiple times for each method
+  file_text = File.read(file)
+  file_lines = File.readlines(file)
+  file_diff = git.diff_for_file(file)
+
   # Run Danger spell check on file
   general_spellcheck?(file)
 
   # Raise warning if outdated terminology found
-  test = general_outdated_terminology?(file); warnings << test if test
+  test = general_outdated_terminology?(file, file_lines); warnings << test if test
 
   # Raise error if the file contains any bad urls
-  test = general_bad_urls?(file); failures << test if test
+  test = general_bad_urls?(file_diff); failures << test if test
 
   # Raise error if improper markdown is found via linter
   test = general_bad_markdown?(file); failures << test if test
@@ -278,24 +313,30 @@ changed_pt_files.each do |file|
   # Run policy through various methods that test for problems.
   # These methods will return false if no problems are found.
   # Otherwise, they return the warning or error message that should be raised.
-
   warnings = []
   failures = []
 
+  # Preread file to avoid reading it multiple times for each method
+  file_parsed = PolicyParser.new
+  file_parsed.parse(file)
+  file_text = File.read(file)
+  file_lines = File.readlines(file)
+  file_diff = git.diff_for_file(file)
+
   # Raise error if policy is deprecated but missing deprecated field in info() block
-  test = policy_missing_deprecated_field?(file); failures << test if test
+  test = policy_missing_deprecated_field?(file_parsed); failures << test if test
 
   # Raise error if policy changed but changelog has not been
   test = policy_unmodified_changelog?(file, changed_changelog_files); failures << test if test
 
   # Raise error if policy and changelog do not have matching version numbers
-  test = policy_changelog_mismatch?(file); failures << test if test
+  test = policy_changelog_mismatch?(file, file_parsed); failures << test if test
 
   # Run policy through fpt testing. Only raise error if there is a syntax error.
   test = policy_fpt_syntax_error?(file); failures << test if test
 
   # Don't run remaining tests against deprecated policies
-  unless policy_deprecated?(file)
+  unless policy_deprecated?(file_parsed)
     # Raise error if policy is not in a valid directory within the repo directory structure
     test = policy_bad_directory?(file); failures << test if test
 
@@ -306,91 +347,91 @@ changed_pt_files.each do |file|
     # Raise warning if policy is in this file, but datasources have been added.
     # Only raise the above warning if the more general warning about updating the README doesn't exist.
     test = policy_missing_master_permissions?(file, permissions_yaml); failures << test if test
-    ds_test = policy_new_datasource?(file, permissions_yaml); warnings << ds_test if ds_test && !test && !rd_test
+    ds_test = policy_new_datasource?(file, file_diff, permissions_yaml); warnings << ds_test if ds_test && !test && !rd_test
 
     # Raise error if policy filename/path contains any uppercase letters
     test = policy_bad_filename_casing?(file); failures << test if test
 
     # Raise error if policy short_description is missing valid README link
-    test = policy_bad_readme_link?(file); failures << test if test
+    test = policy_bad_readme_link?(file, file_parsed); failures << test if test
 
     # Raise warning if policy won't be published
-    test = policy_unpublished?(file); warnings << test if test
+    test = policy_unpublished?(file_parsed); warnings << test if test
 
     # Raise warning if policy's name has changed
-    test = policy_name_changed?(file); warnings << test if test
+    test = policy_name_changed?(file_diff); warnings << test if test
 
     # Raise warning if outdated terminology found
-    test = general_outdated_terminology?(file); warnings << test if test
+    test = general_outdated_terminology?(file, file_lines); warnings << test if test
 
     # Raise error if the file contains any bad urls
-    test = general_bad_urls?(file); failures << test if test
+    test = general_bad_urls?(file_diff); failures << test if test
 
     # Raise warning if policy contains invalid indentation
-    test = policy_bad_indentation?(file); warnings << test if test
+    test = policy_bad_indentation?(file_lines); warnings << test if test
 
     # Raise error if policy contains multiple blank lines
-    test = policy_consecutive_empty_lines?(file); failures << test if test
+    test = policy_consecutive_empty_lines?(file_lines); failures << test if test
 
     # Raise errors or warnings if bad metadata is found
-    test = policy_bad_metadata?(file, "name"); failures << test if test
-    test = policy_bad_metadata?(file, "short_description"); failures << test if test
-    test = policy_bad_metadata?(file, "long_description"); failures << test if test
-    test = policy_bad_metadata?(file, "category"); failures << test if test
-    test = policy_bad_metadata?(file, "default_frequency"); failures << test if test
-    test = policy_bad_metadata?(file, "severity"); failures << test if test
-    test = policy_bad_metadata?(file, "info"); failures << test if test
+    test = policy_bad_metadata?(file_parsed, "name"); failures << test if test
+    test = policy_bad_metadata?(file_parsed, "short_description"); failures << test if test
+    test = policy_bad_metadata?(file_parsed, "long_description"); failures << test if test
+    test = policy_bad_metadata?(file_parsed, "category"); failures << test if test
+    test = policy_bad_metadata?(file_parsed, "default_frequency"); failures << test if test
+    test = policy_bad_metadata?(file_parsed, "severity"); failures << test if test
+    test = policy_bad_metadata?(file_parsed, "info"); failures << test if test
 
     # Raise errors or warnings if bad info block metadata is found
     if !test
-      info_test = policy_missing_info_field?(file, "version"); failures << info_test if info_test
-      info_test = policy_missing_info_field?(file, "provider"); failures << info_test if info_test
-      info_test = policy_missing_info_field?(file, "service"); warnings << info_test if info_test
-      info_test = policy_missing_info_field?(file, "policy_set"); warnings << info_test if info_test
+      info_test = policy_missing_info_field?(file_parsed, "version"); failures << info_test if info_test
+      info_test = policy_missing_info_field?(file_parsed, "provider"); failures << info_test if info_test
+      info_test = policy_missing_info_field?(file_parsed, "service"); warnings << info_test if info_test
+      info_test = policy_missing_info_field?(file_parsed, "policy_set"); warnings << info_test if info_test
     end
 
     # Raise error if policy version number does not use semantic versioning
-    test = policy_nonsemantic_version?(file); failures << test if test
+    test = policy_nonsemantic_version?(file_parsed); failures << test if test
 
     # Raise error if there is a mismatch between the policy's credentials and the README
-    test = policy_readme_missing_credentials?(file); failures << test if test
+    test = policy_readme_missing_credentials?(file, file_lines); failures << test if test
 
     # Raise error if policy sections are out of order
-    test = policy_sections_out_of_order?(file); failures << test if test
+    test = policy_sections_out_of_order?(file_lines); failures << test if test
 
     # Raise error of code blocks exist in policy that aren't used anywhere
-    test = policy_orphaned_blocks?(file, "parameter"); failures << test if test
-    test = policy_orphaned_blocks?(file, "credentials"); failures << test if test
-    test = policy_orphaned_blocks?(file, "pagination"); failures << test if test
-    test = policy_orphaned_blocks?(file, "datasource"); failures << test if test
-    test = policy_orphaned_blocks?(file, "script"); failures << test if test
-    test = policy_orphaned_blocks?(file, "escalation"); failures << test if test
-    test = policy_orphaned_blocks?(file, "define"); failures << test if test
+    test = policy_orphaned_blocks?(file_lines, "parameter"); failures << test if test
+    test = policy_orphaned_blocks?(file_lines, "credentials"); failures << test if test
+    test = policy_orphaned_blocks?(file_lines, "pagination"); failures << test if test
+    test = policy_orphaned_blocks?(file_lines, "datasource"); failures << test if test
+    test = policy_orphaned_blocks?(file_lines, "script"); failures << test if test
+    test = policy_orphaned_blocks?(file_lines, "escalation"); failures << test if test
+    test = policy_orphaned_blocks?(file_lines, "define"); failures << test if test
 
     # Raise error if policy blocks are not grouped together by type
-    test = policy_blocks_ungrouped?(file); failures << test if test
+    test = policy_blocks_ungrouped?(file_lines); failures << test if test
 
     # Report on missing policy section comments
-    test = policy_missing_section_comments?(file, "parameter"); failures << test if test
-    test = policy_missing_section_comments?(file, "credentials"); failures << test if test
-    test = policy_missing_section_comments?(file, "pagination"); failures << test if test
-    test = policy_missing_section_comments?(file, "datasource"); failures << test if test
-    test = policy_missing_section_comments?(file, "policy"); failures << test if test
-    test = policy_missing_section_comments?(file, "escalation"); failures << test if test
-    test = policy_missing_section_comments?(file, "cwf"); failures << test if test
+    test = policy_missing_section_comments?(file_text, "parameter"); failures << test if test
+    test = policy_missing_section_comments?(file_text, "credentials"); failures << test if test
+    test = policy_missing_section_comments?(file_text, "pagination"); failures << test if test
+    test = policy_missing_section_comments?(file_text, "datasource"); failures << test if test
+    test = policy_missing_section_comments?(file_text, "policy"); failures << test if test
+    test = policy_missing_section_comments?(file_text, "escalation"); failures << test if test
+    test = policy_missing_section_comments?(file_text, "cwf"); failures << test if test
 
     # Report on invalidly named code blocks
-    test = policy_bad_block_name?(file, "parameter"); failures << test if test
-    test = policy_bad_block_name?(file, "credentials"); failures << test if test
-    test = policy_bad_block_name?(file, "pagination"); failures << test if test
-    test = policy_bad_block_name?(file, "datasource"); failures << test if test
-    test = policy_bad_block_name?(file, "script"); failures << test if test
-    test = policy_bad_block_name?(file, "policy"); failures << test if test
-    test = policy_bad_block_name?(file, "escalation"); failures << test if test
+    test = policy_bad_block_name?(file_lines, "parameter"); failures << test if test
+    test = policy_bad_block_name?(file_lines, "credentials"); failures << test if test
+    test = policy_bad_block_name?(file_lines, "pagination"); failures << test if test
+    test = policy_bad_block_name?(file_lines, "datasource"); failures << test if test
+    test = policy_bad_block_name?(file_lines, "script"); failures << test if test
+    test = policy_bad_block_name?(file_lines, "policy"); failures << test if test
+    test = policy_bad_block_name?(file_lines, "escalation"); failures << test if test
 
     # Report on invalid/deprecated code blocks
-    test = policy_deprecated_code_blocks?(file, "permission"); warnings << test if test
-    test = policy_deprecated_code_blocks?(file, "resources"); warnings << test if test
+    test = policy_deprecated_code_blocks?(file_lines, "permission"); warnings << test if test
+    test = policy_deprecated_code_blocks?(file_lines, "resources"); warnings << test if test
 
     # Report on missing fields in code blocks
     fields_to_check = [
@@ -401,13 +442,13 @@ changed_pt_files.each do |file|
 
     fields_to_check.each do |item|
       item[:fields].each do |field|
-        test = policy_block_missing_field?(file, item[:block], field); failures << test if test
+        test = policy_block_missing_field?(file_lines, item[:block], field); failures << test if test
       end
     end
 
     # Raise warning, not error, if parameter block is missing a default field.
     # This is because there are occasionally legitimate reasons to not have a default
-    test = policy_block_missing_field?(file, "parameter", "default")
+    test = policy_block_missing_field?(file_lines, "parameter", "default")
 
     if test
       warnings << test + "\n\nWhile not required, it is recommended that every parameter have a default value unless user input for that parameter is required and too specific for any default value to make sense"
@@ -415,37 +456,37 @@ changed_pt_files.each do |file|
 
     # Raise warning, not error, if a datasource and the script it calls have mismatched names.
     # Warning because there are occasionally legitimate reasons to do this.
-    test = policy_ds_js_name_mismatch?(file); warnings << test if test
+    test = policy_ds_js_name_mismatch?(file_lines); warnings << test if test
 
     # Raise error if run_script statements with incorrect parameter ordering are found
-    test = policy_run_script_incorrect_order?(file); failures << test if test
+    test = policy_run_script_incorrect_order?(file_lines); failures << test if test
 
     # Raise error if code blocks have fields in improper order
-    test = policy_block_fields_incorrect_order?(file, "parameter"); failures << test if test
-    test = policy_block_fields_incorrect_order?(file, "credentials"); failures << test if test
-    test = policy_block_fields_incorrect_order?(file, "pagination"); failures << test if test
-    test = policy_block_fields_incorrect_order?(file, "datasource"); failures << test if test
-    test = policy_block_fields_incorrect_order?(file, "script"); failures << test if test
-    test = policy_block_fields_incorrect_order?(file, "policy"); failures << test if test
-    test = policy_block_fields_incorrect_order?(file, "escalation"); failures << test if test
+    test = policy_block_fields_incorrect_order?(file_lines, "parameter"); failures << test if test
+    test = policy_block_fields_incorrect_order?(file_lines, "credentials"); failures << test if test
+    test = policy_block_fields_incorrect_order?(file_lines, "pagination"); failures << test if test
+    test = policy_block_fields_incorrect_order?(file_lines, "datasource"); failures << test if test
+    test = policy_block_fields_incorrect_order?(file_lines, "script"); failures << test if test
+    test = policy_block_fields_incorrect_order?(file_lines, "policy"); failures << test if test
+    test = policy_block_fields_incorrect_order?(file_lines, "escalation"); failures << test if test
 
     # Raise error if recommendation policy is missing required export fields
-    test = policy_missing_recommendation_fields?(file, "required"); failures << test if test
+    test = policy_missing_recommendation_fields?(file_lines, file_parsed, "required"); failures << test if test
 
     # Raise warning if recommendation policy is missing recommended export fields
-    test = policy_missing_recommendation_fields?(file, "recommended"); warnings << test if test
+    test = policy_missing_recommendation_fields?(file_lines, file_parsed, "recommended"); warnings << test if test
 
     # Raise error if policy has outdated links
-    test = policy_outdated_links?(file); failures << test if test
+    test = policy_outdated_links?(file_lines); failures << test if test
 
     # Raise warning if policy has any datasources using http instead of https
-    test = policy_http_connections?(file); warnings << test if test
+    test = policy_http_connections?(file_lines); warnings << test if test
 
     # Raise warning if improper spacing between comma-separated items found
-    test = policy_bad_comma_spacing?(file); warnings << test if test
+    test = policy_bad_comma_spacing?(file_lines); warnings << test if test
 
     # Raise error if policy has console.log() statements
-    test = policy_console_log?(file); failures << test if test
+    test = policy_console_log?(file_lines); failures << test if test
   end
 
   # Output final list of failures and warnings
@@ -462,7 +503,6 @@ changed_meta_pt_files.each do |file|
   # Run meta policy through various methods that test for problems.
   # These methods will return false if no problems are found.
   # Otherwise, they return the warning or error message that should be raised.
-
   warnings = []
   failures = []
 
