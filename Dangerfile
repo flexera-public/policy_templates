@@ -25,6 +25,8 @@ require_relative '.dangerfile/policy_tests'
 # File Sorting
 ###############################################################################
 
+puts "*** Sorting files for testing..."
+
 # Create lists of files based on specific attributes for testing
 # Renamed Files.
 renamed_files = git.renamed_files.collect{ |r| r[:before] }

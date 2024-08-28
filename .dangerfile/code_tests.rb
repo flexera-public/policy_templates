@@ -8,6 +8,8 @@
 ### Ruby lint test
 # Return false if Ruby linter finds no problems
 def code_ruby_errors?(file)
+  puts "* Testing Ruby file using standard linter..."
+
   linter = `ruby -c #{file}`
 
   # Return the problems found if applicable
@@ -18,6 +20,8 @@ end
 ### Rubocop lint test
 # Return false if Rubocop linter finds no problems
 def code_rubocop_problems?(file)
+  puts "* Testing Ruby file using Rubocop linter..."
+
   linter = `rubocop #{file}`
 
   fail_message = ""
@@ -38,6 +42,8 @@ end
 ### Python lint test
 # Return false if Python linter finds no problems
 def code_python_errors?(file)
+  puts "* Testing Python file using pylint linter..."
+
   linter = `pylint --errors-only #{file}`
 
   fail_message = ""
@@ -56,6 +62,8 @@ end
 ###############################################################################
 
 def code_json_bad_location?(file)
+  puts "* Testing JSON file location..."
+
   fail_message = ""
 
   if file.start_with?("automation/") || file.start_with?("compliance/") || file.start_with?("cost/") || file.start_with?("operational/") || file.start_with?("saas/") || file.start_with?("security/")
@@ -67,6 +75,8 @@ def code_json_bad_location?(file)
 end
 
 def code_yaml_bad_location?(file)
+  puts "* Testing YAML file location..."
+
   fail_message = ""
 
   if file.start_with?("automation/") || file.start_with?("compliance/") || file.start_with?("cost/") || file.start_with?("operational/") || file.start_with?("saas/") || file.start_with?("security/")
@@ -78,6 +88,8 @@ def code_yaml_bad_location?(file)
 end
 
 def code_json_errors?(file)
+  puts "* Linting JSON file..."
+
   linter = `jsonlint #{file}`
 
   # Return the problems found if applicable
@@ -86,6 +98,8 @@ def code_json_errors?(file)
 end
 
 def code_yaml_errors?(file)
+  puts "* Linting YAML file..."
+
   linter = `yaml-lint -q #{file}`
 
   # Return the problems found if applicable
