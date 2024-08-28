@@ -52,10 +52,10 @@ def general_spellcheck?(file)
 
   if system(command)
     error_list = `cat aspell.log`
-    fail_message = "Spelling errors found:\n\n#{error_list}"
+    fail_message = "Spelling errors found:\n\n#{error_list}" if !error_list.strip.empty?
   end
 
-  return fail_message.strip if !fail_message.strip.empty?
+  return fail_message.strip if !fail_message.empty?
   return false
 end
 
