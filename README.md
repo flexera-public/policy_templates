@@ -1,4 +1,4 @@
-# Flexera Policy Templates
+# Flexera Policy Templatess
 
 This repository contains a library of open source [Flexera Policy Templates](https://docs.flexera.com/flexera/EN/Automation/AboutPolicies.htm). All contributions are shared under the MIT license.
 
