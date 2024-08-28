@@ -19,21 +19,22 @@ end
 
 ### Rubocop lint test
 # Return false if Rubocop linter finds no problems
-def code_rubocop_problems?(file)
-  puts "*** " + Time.now.strftime("%H:%M:%S.%L") + " Testing Ruby file using Rubocop linter..."
+# Currently not in use due to extremely verbose and thorough output
+# def code_rubocop_problems?(file)
+#   puts "*** " + Time.now.strftime("%H:%M:%S.%L") + " Testing Ruby file using Rubocop linter..."
 
-  linter = `rubocop #{file}`
+#   linter = `rubocop #{file}`
 
-  fail_message = ""
+#   fail_message = ""
 
-  linter.each_line do |line|
-    fail_message += line.strip + "\n" if line.start_with?(file)
-  end
+#   linter.each_line do |line|
+#     fail_message += line.strip + "\n" if line.start_with?(file)
+#   end
 
-  # Return the problems found if applicable
-  return "Rubocop linting found problems:\n\n#{fail_message}" if !fail_message.empty?
-  return false
-end
+#   # Return the problems found if applicable
+#   return "Rubocop linting found problems:\n\n#{fail_message}" if !fail_message.empty?
+#   return false
+# end
 
 ###############################################################################
 # Methods: Python
