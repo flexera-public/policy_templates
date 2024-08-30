@@ -303,6 +303,7 @@ These templates can generate savings estimates for your environment.
 - Network
 
   - [Azure Unused Firewalls](./cost/azure/unused_firewalls)
+  - [Azure Unused Virtual Network Gateways](./cost/azure/unused_vngs)
 
 - PaaS
 
@@ -685,7 +686,7 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 33
-  Cost: 125
+  Cost: 126
   Operational: 28
   SaaS Management: 11
   Security: 74
@@ -751,11 +752,12 @@ These templates can generate savings estimates for your environment.
   Unused Firewalls: 1
   Unused IP Addresses: 3
   Unused Load Balancers: 3
+  Unused Virtual Networks: 1
   Unused Volumes: 7
   Usage Report: 10
 :providers:
   AWS: 99
-  Azure: 97
+  Azure: 98
   Azure China: 1
   Flexera: 38
   Flexera Optima: 1
@@ -793,7 +795,7 @@ These templates can generate savings estimates for your environment.
   Marketplace: 2
   MySQL: 2
   NetApp Files: 1
-  Network: 8
+  Network: 9
   Network Security Group: 2
   Office 365: 1
   Organization: 1
@@ -808,7 +810,7 @@ These templates can generate savings estimates for your environment.
   Storage Accounts: 2
   Tags: 3
   Usage Discount: 6
-:total_count: 271
+:total_count: 272
 -->
 <!-- End Policy Template Stats -->
 
