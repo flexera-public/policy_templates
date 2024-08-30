@@ -1,5 +1,9 @@
 # Changelog
 
+## v9.2.0
+
+- Added `Resource ARN` to incident table.
+
 ## v9.1.0
 
 - Modified internal names for incident fields for more accurate scraping into Optimization dashboard

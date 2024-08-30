@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.3.0
+
+- Added `Resource ARN` to incident table.
+
 ## v4.2.0
 
 - Added parameter `Statistic Lookback Period` to specify how many days of CloudWatch data to gather.

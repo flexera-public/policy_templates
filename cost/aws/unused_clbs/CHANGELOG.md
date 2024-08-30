@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.4.0
+
+- Added `Resource ARN` to incident table.
+
 ## v6.3.0
 
 - Changed default value of `Automatic Actions` parameter to conform with other similar policy templates
