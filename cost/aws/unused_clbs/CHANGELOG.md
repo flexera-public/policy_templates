@@ -2,7 +2,7 @@
 
 ## v6.4.0
 
-- Added `Resource ARN` to incident table.
+- Added `Resource ARN` and `Resource Name` to incident table.
 
 ## v6.3.0
 
