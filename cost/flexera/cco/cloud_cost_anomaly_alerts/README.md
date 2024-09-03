@@ -15,7 +15,7 @@ For more details on Flexera Cloud Cost Anomaly Detection, please see the [docume
 
 The policy queries the `/anomalies/report` endpoint of the Flexera CCO Bill Analysis API. User parameters are included in this API request to color the results.
 
-### Input Parameters
+## Input Parameters
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Time Period* - Number of days back to analyze for anomalies.
@@ -53,6 +53,6 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 - All
 
-### Cost
+## Cost
 
 This policy template does not incur any cloud costs.
