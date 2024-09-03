@@ -7,7 +7,7 @@ category "Cost"
 severity "high"
 default_frequency "daily"
 info(
-  version: "3.6",
+  version: "3.7.0",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization"
@@ -20,7 +20,7 @@ info(
 parameter "param_email" do
   type "list"
   category "Policy Settings"
-  label "Email addresses to notify"
+  label "Email Addresses"
   description "A list of email addresses to notify."
   default []
 end
@@ -42,6 +42,24 @@ parameter "param_min_spend" do
   description "Minimum spend over the time period required to include anomaly in results"
   min_value 0
   default 1000
+end
+
+parameter "param_min_spend_variance" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Period Spend Variance"
+  description "Minimum spend variance over the time period required to include anomaly in results"
+  min_value 0
+  default 0
+end
+
+parameter "param_anomaly_types" do
+  type "string"
+  category "Policy Settings"
+  label "Anomalies To Report"
+  description "Whether to report on anomalies above the upper limit, below the lower limit, or both."
+  allowed_values "All Anomalies", "Anomalies Above Upper Limit", "Anomalies Below Lower Limit"
+  default "All Anomalies"
 end
 
 parameter "param_cost_metric" do
@@ -383,11 +401,11 @@ EOS
 end
 
 datasource "ds_filter_anomalies" do
-  run_script $js_filter_anomalies, $ds_get_anomalies, $ds_dimensions, $ds_filter_dimensions, $ds_request_variables, $ds_billing_centers, $ds_currency, $ds_applied_policy, $param_min_spend, $param_days, $param_dimensions, $param_cost_metric, $param_anomaly_limit, rs_org_id, f1_app_host
+  run_script $js_filter_anomalies, $ds_get_anomalies, $ds_dimensions, $ds_filter_dimensions, $ds_request_variables, $ds_billing_centers, $ds_currency, $ds_applied_policy, $param_min_spend, $param_min_spend_variance, $param_anomaly_types, $param_days, $param_dimensions, $param_cost_metric, $param_anomaly_limit, rs_org_id, f1_app_host
 end
 
 script "js_filter_anomalies", type: "javascript" do
-  parameters "ds_get_anomalies", "ds_dimensions", "ds_filter_dimensions", "ds_request_variables", "ds_billing_centers", "ds_currency", "ds_applied_policy", "param_min_spend", "param_days", "param_dimensions", "param_cost_metric", "param_anomaly_limit", "rs_org_id", "f1_app_host"
+  parameters "ds_get_anomalies", "ds_dimensions", "ds_filter_dimensions", "ds_request_variables", "ds_billing_centers", "ds_currency", "ds_applied_policy", "param_min_spend", "param_min_spend_variance", "param_anomaly_types", "param_days", "param_dimensions", "param_cost_metric", "param_anomaly_limit", "rs_org_id", "f1_app_host"
   result "result"
   code <<-EOS
   dimensions = ds_filter_dimensions['ids']
@@ -424,7 +442,25 @@ script "js_filter_anomalies", type: "javascript" do
     timeSeries = timeSeriesEntry['timeSeries']
 
     anomalous = _.filter(timeSeries['data'], function(data) {
-      return data['anomalous'] && data['value'] >= param_min_spend
+      include_anomaly = false
+
+      if (data['anomalous']) {
+        include_anomaly = true
+        variance = data['value'] - data['annotations']['movingAverage']
+        if (variance < 0) { variance = variance * -1 }
+
+        if (data['value'] < param_min_spend) {
+          include_anomaly = false
+        } else if (variance < param_min_spend_variance) {
+          include_anomaly = false
+        } else if (param_anomaly_types == "Anomalies Above Upper Limit" && data['value'] < data['annotations']['lowerLimit']) {
+          include_anomaly = false
+        } else if (param_anomaly_types == "Anomalies Below Lower Limit" && data['value'] > data['annotations']['upperLimit']) {
+          include_anomaly = false
+        }
+      }
+
+      return include_anomaly
     })
 
     if (anomalous.length > 0) {
@@ -441,14 +477,19 @@ script "js_filter_anomalies", type: "javascript" do
       }).join('; ')
 
       _.each(anomalous, function(data){
+        variance = data['value'] - data['annotations']['movingAverage']
+        if (variance < 0) { variance = variance * -1 }
+
         anomalies.push({
           id: dimension_key,
           cost: Math.round(data['value'] * 1000) / 1000,
           date: data['date'].split('T')[0],
+          variance: Math.round(variance * 1000) / 1000,
           movingAverage: Math.round(data['annotations']['movingAverage'] * 100) / 100,
           upperLimit: Math.round(data['annotations']['upperLimit'] * 100) / 100,
           lowerLimit: Math.round(data['annotations']['lowerLimit'] * 100) / 100,
           metric: param_cost_metric,
+          anomaly_types: param_anomaly_types,
           currency: ds_currency['symbol']
         })
       })
@@ -501,6 +542,9 @@ policy "pol_anomaly_alert" do
       end
       field "cost" do
         label "Cost"
+      end
+      field "variance" do
+        label "Variance From Average"
       end
       field "currency" do
         label "Currency"
