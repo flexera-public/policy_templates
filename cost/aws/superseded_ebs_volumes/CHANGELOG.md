@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.3.0
+
+- Added `Resource ARN` to incident table.
+
 ## v6.2.0
 
 - Policy Template name renamed from `AWS Rightsize EBS Volumes` to `AWS Superseded EBS Volumes`
