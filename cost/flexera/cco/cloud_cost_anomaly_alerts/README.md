@@ -2,7 +2,13 @@
 
 ## What It Does
 
-The Cloud Cost Anomaly Alerts policy analyzes the spend in an organization over a specified time period and sends email notifications if anomalies were detected. The cost anomalies are identified using [Bollinger Bands](https://en.wikipedia.org/wiki/Bollinger_Bands). The bands are defined as follows:
+This policy template reports any cloud cost anomalies in Flexera CCO that meet the criteria specified in the parameters. Optionally, it emails this report.
+
+## How It Works
+
+The policy queries the `/anomalies/report` endpoint of the Flexera CCO Bill Analysis API. User parameters are included in this API request to color the results.
+
+The cost anomalies are identified using [Bollinger Bands](https://en.wikipedia.org/wiki/Bollinger_Bands). The bands are defined as follows:
 
 - The moving average is calculated using a window size specified.
 - The upper and lower band are calculated as distance of a given number of standard deviations from the moving average.
@@ -10,10 +16,6 @@ The Cloud Cost Anomaly Alerts policy analyzes the spend in an organization over 
 - Additionally, a URL link is provided to a graphical report where all detected anomalies are shown.
 
 For more details on Flexera Cloud Cost Anomaly Detection, please see the [documentation](https://docs.flexera.com/flexera/EN/Optima/CostAnomaly.htm).
-
-## How It Works
-
-The policy queries the `/anomalies/report` endpoint of the Flexera CCO Bill Analysis API. User parameters are included in this API request to color the results.
 
 ## Input Parameters
 
