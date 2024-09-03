@@ -69,6 +69,7 @@ These templates can generate savings estimates for your environment.
 - [Azure Rightsize Synapse SQL Pools](./cost/azure/rightsize_synapse_sql_pools)
 - [Azure Savings Plan Recommendations](./cost/azure/savings_plan/recommendations)
 - [Azure Superseded Compute Instances](./cost/azure/superseded_instances)
+- [Azure Unused App Service Plans](./cost/azure/unused_app_service_plans)
 - [Azure Unused Firewalls](./cost/azure/unused_firewalls)
 - [Azure Unused IP Addresses](./cost/azure/unused_ip_addresses)
 - [Azure Unused SQL Databases](./cost/azure/unused_sql_databases)
@@ -302,9 +303,11 @@ These templates can generate savings estimates for your environment.
 - Network
 
   - [Azure Unused Firewalls](./cost/azure/unused_firewalls)
+  - [Azure Unused Virtual Network Gateways](./cost/azure/unused_vngs)
 
 - PaaS
 
+  - [Azure Unused App Service Plans](./cost/azure/unused_app_service_plans)
   - [Azure Web Apps With Unoptimized Scaling](./cost/azure/unoptimized_web_app_scaling)
 
 - SQL
@@ -683,11 +686,11 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 33
-  Cost: 124
+  Cost: 126
   Operational: 28
   SaaS Management: 11
   Security: 74
-:optimization_count: 63
+:optimization_count: 64
 :policy_sets:
   '': 46
   Allocate VMs: 3
@@ -725,7 +728,7 @@ These templates can generate savings estimates for your environment.
   Old Snapshots: 3
   Open Buckets: 1
   Open S3 Buckets: 1
-  PaaS Optimization: 1
+  PaaS Optimization: 2
   Reserved Instance: 3
   Reserved Instances: 8
   Rightsize Clusters: 1
@@ -749,11 +752,12 @@ These templates can generate savings estimates for your environment.
   Unused Firewalls: 1
   Unused IP Addresses: 3
   Unused Load Balancers: 3
+  Unused Virtual Networks: 1
   Unused Volumes: 7
   Usage Report: 10
 :providers:
   AWS: 99
-  Azure: 96
+  Azure: 98
   Azure China: 1
   Flexera: 38
   Flexera Optima: 1
@@ -791,11 +795,11 @@ These templates can generate savings estimates for your environment.
   Marketplace: 2
   MySQL: 2
   NetApp Files: 1
-  Network: 8
+  Network: 9
   Network Security Group: 2
   Office 365: 1
   Organization: 1
-  PaaS: 3
+  PaaS: 4
   PostgreSQL: 4
   RDS: 6
   S3: 1
@@ -806,7 +810,7 @@ These templates can generate savings estimates for your environment.
   Storage Accounts: 2
   Tags: 3
   Usage Discount: 6
-:total_count: 270
+:total_count: 272
 -->
 <!-- End Policy Template Stats -->
 
