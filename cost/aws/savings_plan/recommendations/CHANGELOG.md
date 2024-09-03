@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.3.0
+
+- Removed invalid "Any" option from the `Savings Plan Term` parameter.
+
 ## v3.2
 
 - Updated policy to use new source for currency information. Policy functionality is unchanged.
