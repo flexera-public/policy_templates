@@ -48,12 +48,9 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 
 - [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
   - `sts:GetCallerIdentity`
-  - `config:TagResource`
   - `ec2:DescribeRegions`
   - `tag:GetResources`
-  - `ec2:CreateTags`*
   - `tag:TagResources`*
-  - `rds:AddTagsToResources`*
 
   \* Only required for taking action (adding tags); the policy will still function in a read-only capacity without these permissions.
 
@@ -67,12 +64,9 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
               "Effect": "Allow",
               "Action": [
                   "sts:GetCallerIdentity",
-                  "config:TagResource",
                   "ec2:DescribeRegions",
                   "tag:GetResources",
-                  "ec2:CreateTags",
-                  "tag:TagResources",
-                  "rds:AddTagsToResource"
+                  "tag:TagResources"
               ],
               "Resource": "*"
           }
