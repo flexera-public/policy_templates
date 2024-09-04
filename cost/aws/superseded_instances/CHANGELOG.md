@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.3.0
+
+- Added `Resource ARN` to incident table.
+
 ## v2.2.0
 
 - Fixed bug where invalid recommendations with no new resource type would sometimes be included in results
