@@ -2,7 +2,13 @@
 
 ## What It Does
 
-The Cloud Cost Anomaly Alerts policy analyzes the spend in an organization over a specified time period and sends email notifications if anomalies were detected. The cost anomalies are identified using [Bollinger Bands](https://en.wikipedia.org/wiki/Bollinger_Bands). The bands are defined as follows:
+This policy template reports any cloud cost anomalies in Flexera CCO that meet the criteria specified in the parameters. Optionally, it emails this report.
+
+## How It Works
+
+The policy queries the `/anomalies/report` endpoint of the Flexera CCO Bill Analysis API. User parameters are included in this API request to color the results.
+
+The cost anomalies are identified using [Bollinger Bands](https://en.wikipedia.org/wiki/Bollinger_Bands). The bands are defined as follows:
 
 - The moving average is calculated using a window size specified.
 - The upper and lower band are calculated as distance of a given number of standard deviations from the moving average.
@@ -11,15 +17,13 @@ The Cloud Cost Anomaly Alerts policy analyzes the spend in an organization over 
 
 For more details on Flexera Cloud Cost Anomaly Detection, please see the [documentation](https://docs.flexera.com/flexera/EN/Optima/CostAnomaly.htm).
 
-## Functional Details
-
-The policy queries the `/anomalies/report` endpoint of the Flexera CCO Bill Analysis API. User parameters are included in this API request to color the results.
-
-### Input Parameters
+## Input Parameters
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Time Period* - Number of days back to analyze for anomalies.
 - *Minimum Period Spend* - Minimum spend over the time period required to include anomaly in results.
+- *Minimum Period Spend Variance* - Minimum spend variance over the time period required to include anomaly in results. Variance is calculated as the difference (absolute value) between the total cost and the moving average.
+- *Anomalies To Report* - Whether to report on anomalies above the upper limit, below the lower limit, or both.
 - *Cost Metric* - Cost metric to use when analyzing spend for anomalies.
 - *Cost Anomaly Dimensions* - Dimension names/IDs to report anomalies for.
   - Both dimension names, such as `Cloud Vendor Account`, and dimension IDs, such as `vendor_account`, can be used.
@@ -49,8 +53,8 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ## Supported Clouds
 
-All cloud providers whose costs have been imported into Flexera CCO are supported. Some dimensions may only be useful or relevant for specific providers. For example, `Resource Group` is only applicable to Microsoft Azure.
+- All
 
-### Cost
+## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.

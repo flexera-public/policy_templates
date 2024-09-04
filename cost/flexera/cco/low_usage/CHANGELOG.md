@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1.0
+
+- Added link to Resource Analyzer Dashboard to incident table to facilitate easy viewing of resources
+
 ## v3.0.0
 
 - Policy template renamed to `Low Usage Report`

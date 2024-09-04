@@ -1,5 +1,11 @@
 # Changelog
 
+## v3.7.0
+
+- Added `Minimum Period Spend Variance` parameter to optionally limit results based on amount of variance
+- Added `Anomalies To Report` parameter to optionally limit results based on whether the anomaly is upward or downward
+- Added `Variance From Average` field to incident table containing the difference (absolute value) between the total cost and the moving average
+
 ## v3.6
 
 - Fixed bug where incident link was redirecting to wrong url
