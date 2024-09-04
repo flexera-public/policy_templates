@@ -132,6 +132,10 @@ These templates can generate savings estimates for your environment.
 
 - [Azure Regulatory Compliance](./compliance/azure/compliance_score)
 
+- All
+
+  - [Azure Advisor Carbon Reduction Recommendations](./compliance/azure/advisor_carbon)
+
 - Compute
 
   - [Azure AHUB Utilization with Manual Entry](./compliance/azure/ahub_manual)
@@ -685,7 +689,7 @@ These templates can generate savings estimates for your environment.
 <!--
 ---
 :categories:
-  Compliance: 33
+  Compliance: 34
   Cost: 126
   Operational: 28
   SaaS Management: 11
@@ -745,6 +749,7 @@ These templates can generate savings estimates for your environment.
   Schedule Report: 2
   Storage Security: 1
   Superseded Compute Instances: 2
+  Sustainability: 1
   Tag Cardinality: 3
   Untagged Resources: 4
   Unused Containers: 1
@@ -757,7 +762,7 @@ These templates can generate savings estimates for your environment.
   Usage Report: 10
 :providers:
   AWS: 99
-  Azure: 98
+  Azure: 99
   Azure China: 1
   Flexera: 38
   Flexera Optima: 1
@@ -772,7 +777,7 @@ These templates can generate savings estimates for your environment.
 :services:
   '': 5
   AKS: 2
-  All: 5
+  All: 6
   App Service: 1
   Automation: 1
   Cloud Cost Optimization: 19
@@ -810,7 +815,7 @@ These templates can generate savings estimates for your environment.
   Storage Accounts: 2
   Tags: 3
   Usage Discount: 6
-:total_count: 272
+:total_count: 273
 -->
 <!-- End Policy Template Stats -->
 
