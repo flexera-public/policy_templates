@@ -41,9 +41,13 @@ Create a custom view in FlexNet Manager that could look like this: ![Alt text][F
 
 Once saved note the report number in the URL field : ![Alt text][ReportNumber] you need it when activating the Policy
 
+## Supported Clouds
+
+- Flexera
+
 ## Cost
 
-This Policy Template does not launch any instances, and so does not incur any cloud costs.
+This Policy Template does not incur any cloud costs.
 
 <!-- Image references -->
 [emailoutput]: images/email_output.png "email output"

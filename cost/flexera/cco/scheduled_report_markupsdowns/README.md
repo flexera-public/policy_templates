@@ -2,9 +2,9 @@
 
 ## What It Does
 
-This Policy Template leverages the the RightScale cost APIs to import Cloud vendor services import service costs and add a markup or markdown by category.
+This Policy Template leverages the the Flexera Cloud Cost Optimization APIs to import Cloud vendor services import service costs and add a markup or markdown by category.
 
-For a detailed explanation regarding categories and their mapping to the different cloud service please check the following link: [RightScale categories](https://helpnet.flexerasoftware.com/Optima/#helplibrary/RightScale_generated_Cost_Dimension__Category.htm#)
+For a detailed explanation regarding categories and their mapping to the different cloud service please check the following link: [Flexera Cloud Cost Optimization categories](https://docs.flexera.com/flexera/EN/Optima/costdimcat.htm#optimabilling_2682776915_1151644)
 
 ## Cost Metrics
 
