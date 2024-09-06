@@ -20,8 +20,7 @@ There are four cost metrics to choose from.
 This policy has the following input parameters required when launching the policy.
 
 - *Email list* - Email addresses of the recipients you wish to notify
-- *Billing Center List* - List of top level Billing Center names you want to report on.  Names must be exactly as shown in Optima.
-Leave the field blank to report on all top level Billing Centers.
+- *Billing Center List* - List of top level Billing Center names you want to report on.  Names must be exactly as shown in Flexera Cloud Cost Optimization. Leave the field blank to report on all top level Billing Centers.
 - *Cost Metric* - See cost metrics above for details on selection.
 - *Compute markup or markdown percentage* - markup for the compute category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markup).
 - *Application Service markup or markdown percentage* - markup for the Application service category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markup).
@@ -38,6 +37,12 @@ Leave the field blank to report on all top level Billing Centers.
 - *Support markup or markdown percentage* - markup for the support category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markup).
 - *IOT markup or markdown percentage* - markup for the IOT category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markup).
 - *Other markup or markdown percentage* - markup for the Other category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markup).
+
+## Policy Actions
+
+The following policy actions are taken on any resources found to be out of compliance.
+
+- Send an email report
 
 ## Prerequisites
 

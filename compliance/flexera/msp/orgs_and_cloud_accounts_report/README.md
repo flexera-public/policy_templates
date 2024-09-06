@@ -2,8 +2,7 @@
 
 ## What It Does
 
-This policy generates a list of cross organization Cloud Vendor Accounts connected to Flexera Optima based on
-the bill connection settings for Azure and Google, as well as full list of AWS accounts under the payer account connected for each Flexera Organization.
+This policy generates a list of cross organization Cloud Vendor Accounts connected to Flexera Cloud Cost Optimization based on the bill connection settings for Azure and Google, as well as full list of AWS accounts under the payer account connected for each Flexera Organization.
 
 _Note 1: 'enterprise_manager' user role is required for each organization._
 

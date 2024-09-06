@@ -1,6 +1,6 @@
 # Schedule FlexNet Manager Report
 
-## What it does
+## What It Does
 
 This policy uses the SOAP version of the FlexNet Manager Cloud APIs, will run a FlexNet Manager report (Custom view), and send the result via email.
 
@@ -13,21 +13,6 @@ Current limitations:
 
 - Output is limited to max 100,000 rows.
 
-## Prerequisites
-
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
-
-- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
-  - `Web Service` or equivalent role in IT Asset Accounts (for calling ITAM SOAP APIs)
-
-The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
-
-## How to setup FlexNet Manager Custom View for this policy
-
-Create a custom view in FlexNet Manager that could look like this: ![Alt text][FNMSReport]
-
-Once saved note the report number in the URL field : ![Alt text][ReportNumber] you need it when activating the Policy
-
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
@@ -39,7 +24,22 @@ This policy has the following input parameters required when launching the polic
 
 ## Policy Actions
 
-- send an email
+- Send an email
+
+## Prerequisites
+
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - `Web Service` or equivalent role in IT Asset Accounts (for calling ITAM SOAP APIs)
+
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+
+### How to setup FlexNet Manager Custom View for this policy
+
+Create a custom view in FlexNet Manager that could look like this: ![Alt text][FNMSReport]
+
+Once saved note the report number in the URL field : ![Alt text][ReportNumber] you need it when activating the Policy
 
 ## Cost
 

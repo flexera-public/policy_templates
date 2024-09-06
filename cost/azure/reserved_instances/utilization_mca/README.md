@@ -1,6 +1,6 @@
 # Azure Reserved Instances Utilization MCA
 
-## What it does
+## What It Does
 
 This Policy Template leverages the [Azure API for Reserved Instance Utilization and Details](https://learn.microsoft.com/en-us/rest/api/reserved-vm-instances/reservation/list-all). It will notify only if utilization of a RI falls below the value specified in the `Show Reservations with utilization below this value (%)` field. It examines the RI utilization for the prior 7 days or 30 days.
 
@@ -35,4 +35,3 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 ## Cost
 
 This Policy Template does not launch any instances, and so does not incur any cloud costs.
-
