@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.3.0
+
+- Added option to include the AWS account in the results alongside AWS resources
+
 ## v5.2.1
 
 - Fixed bug related to pagination on the AWS Tagging API
