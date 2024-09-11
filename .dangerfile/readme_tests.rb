@@ -7,11 +7,10 @@
 
 ### Deprecated README test
 # Utility method. Returns true if README is for a deprecated policy
-def readme_deprecated?(file)
-  # Store contents of file for direct analysis
-  readme_text = File.read(file)
+def readme_deprecated?(file, file_lines)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether README file is deprecated..."
 
-  readme_text.each_line do |line|
+  file_lines.each do |line|
     return true if line.start_with?("## Deprecated")
   end
 
@@ -20,11 +19,10 @@ end
 
 ### Missing README Sections
 # Verify that README file has all required sections
-def readme_missing_sections?(file)
-  fail_message = ""
+def readme_missing_sections?(file, file_lines)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether README file is missing required sections..."
 
-  # Store contents of file for direct analysis
-  readme_text = File.read(file)
+  fail_message = ""
 
   # Flags for whether sections are found
   name_found = false
@@ -35,7 +33,7 @@ def readme_missing_sections?(file)
   supported_clouds_found = false
   cost_found = false
 
-  readme_text.each_line.with_index do |line, index|
+  file_lines.each_with_index do |line, index|
     name_found = true if index == 0 && line.start_with?("# ")
     what_it_does_found = true if line.start_with?("## What It Does")
     input_parameters_found = true if line.start_with?("## Input Parameters")
@@ -61,11 +59,10 @@ end
 
 ### Out of order README Sections
 # Verify that README file has the various sections in the correct order
-def readme_sections_out_of_order?(file)
-  fail_message = ""
+def readme_sections_out_of_order?(file, file_lines)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether README file sections are in the correct order..."
 
-  # Store contents of file for direct analysis
-  readme_text = File.read(file)
+  fail_message = ""
 
   # Flags for whether sections are found
   name_found = false
@@ -87,7 +84,7 @@ def readme_sections_out_of_order?(file)
   supported_clouds_raised = false
   cost_raised = false
 
-  readme_text.each_line.with_index do |line, index|
+  file_lines.each_with_index do |line, index|
     line_number = index + 1
 
     name_found = true if index == 0 && line.start_with?("# ")
@@ -149,11 +146,10 @@ end
 
 ### README Credentials formatting
 # Verify that README file has credentials in the proper formatting
-def readme_invalid_credentials?(file)
-  fail_message = ""
+def readme_invalid_credentials?(file, file_lines)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether README file has properly formatted credentials..."
 
-  # Store contents of file for direct analysis
-  readme_text = File.read(file)
+  fail_message = ""
 
   prereq_line_number = -100
 
@@ -178,7 +174,7 @@ def readme_invalid_credentials?(file)
 
   credential_footnote = false
 
-  readme_text.each_line.with_index do |line, index|
+  file_lines.each_with_index do |line, index|
     line_number = index + 1
 
     credential_footnote = true if line.start_with?("The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.")
