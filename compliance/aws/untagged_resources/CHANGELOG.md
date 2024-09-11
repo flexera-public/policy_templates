@@ -3,6 +3,7 @@
 ## v5.3.0
 
 - Added option to include the AWS account in the results alongside AWS resources
+- Updated search logic for savings to speed up policy template execution
 
 ## v5.2.1
 
