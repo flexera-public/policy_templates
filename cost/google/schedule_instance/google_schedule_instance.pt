@@ -400,36 +400,37 @@ script "js_instances_with_schedule", type: "javascript" do
       timezone = ds_timezones_list[timezone]
     }
 
-    var r = {
-      start_hour: start_hour,
-      start_minute: start_minute,
-      start_rule: start_rule,
-      stop_hour: stop_hour,
-      stop_minute: stop_minute,
-      stop_rule: stop_rule,
-      tz: timezone,
-      resourceID: instance['id'],
-      resourceName: instance['name'],
-      description: instance['description'],
-      status: instance['status'],
-      selfLink: instance['selfLink'],
-      platform: instance['cpuPlatform'],
-      resourceType: instance['machineType'],
-      hostname: instance['hostname'],
-      kind: instance['kind'],
-      accountID: instance['projectId'],
-      accountName: instance['projectName'],
-      projectNumber: instance['projectNumber'],
-      zone: instance['zone'],
-      region: instance['region'],
-      tags: labels.join(', '),
-      policy_name: ds_applied_policy['name'],
-      schedule: schedule,
-      service: "Compute Engine"
-    }
-
     if (schedule != null) {
-      result.push(r)
+
+      result.push({
+        // Request Fields
+        start_hour: start_hour,
+        start_minute: start_minute,
+        start_rule: start_rule,
+        stop_hour: stop_hour,
+        stop_minute: stop_minute,
+        stop_rule: stop_rule,
+        tz: timezone,
+        // Resource Fields
+        resourceID: instance['id'],
+        resourceName: instance['name'],
+        description: instance['description'],
+        status: instance['status'],
+        selfLink: instance['selfLink'],
+        platform: instance['cpuPlatform'],
+        resourceType: instance['machineType'],
+        hostname: instance['hostname'],
+        kind: instance['kind'],
+        accountID: instance['projectId'],
+        accountName: instance['projectName'],
+        projectNumber: instance['projectNumber'],
+        zone: instance['zone'],
+        region: instance['region'],
+        tags: labels.join(', '),
+        policy_name: ds_applied_policy['name'],
+        schedule: schedule,
+        service: "Compute Engine"
+      })
     }
   })
 
@@ -465,6 +466,7 @@ datasource "ds_instances_schedule_result" do
   end
   result do
     encoding "json"
+    # Request Fields
     field "start_hour", val(iter_item, "start_hour")
     field "start_minute", val(iter_item, "start_minute")
     field "start_rule", val(iter_item, "start_rule")
@@ -472,6 +474,7 @@ datasource "ds_instances_schedule_result" do
     field "stop_minute", val(iter_item, "stop_minute")
     field "stop_rule", val(iter_item, "stop_rule")
     field "tz", val(iter_item, "tz")
+    # Resource Fields
     field "resourceID", val(iter_item, "resourceID")
     field "resourceName", val(iter_item, "resourceName")
     field "description", val(iter_item, "description")
@@ -490,6 +493,7 @@ datasource "ds_instances_schedule_result" do
     field "policy_name", val(iter_item, "policy_name")
     field "schedule", val(iter_item, "schedule")
     field "service", val(iter_item, "service")
+    # Resource Response Fields
     field "next_stop", val(response, "next_stop")
     field "next_start", val(response, "next_start")
     field "event_active", val(response, "event_active")
@@ -500,12 +504,9 @@ end
 # Policy
 ###############################################################################
 
-
-
-
 policy "pol_schedule_instance" do
   validate_each $ds_instances_schedule_result do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Actionable Google VM Instances"
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Google Scheduled VM Instances"
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
@@ -1001,7 +1002,7 @@ define stop_instance($instance) return $response do
   call get_instance_info($instance) retrieve $state_response, $current_state, $labels, $fingerprint
   sleep(5)
 
-  sub task_prefix: "loop", timeout: 5m, on_timeout: handle_timeout() do
+  sub timeout: 5m, on_timeout: handle_timeout() do
     while $current_state != "STOPPED" && $current_state != "TERMINATED" do
       call get_instance_info($instance) retrieve $state_response, $current_state, $labels, $fingerprint
       sleep(5)
