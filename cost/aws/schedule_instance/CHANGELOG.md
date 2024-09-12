@@ -1,5 +1,12 @@
 # Changelog
 
+## v7.0.0
+
+- Remove `next_stop`, `next_start` label requirements
+- Remove static zone to region mapping logic
+- Add task labels to improve status updates and debugging for CWF actions
+- Add error capture, graceful timeout handling for CWF actions
+
 ## v6.0
 
 - Added support for regex when filtering resources by tag
