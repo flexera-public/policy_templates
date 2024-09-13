@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1.2
+
+- Fixed issue that returned a `TypeError: Cannot access member 'toFixed' of undefined` when calculating the utilization of the virtual machines.
+
 ## v3.1.1
 
 - Idle VM Instances incident now includes a `Recommended Resource Type` field with a value of `Delete VM Instance` for ease of analyzing recommendations from the Flexera Optimization dashboard
