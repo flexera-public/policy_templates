@@ -8,7 +8,7 @@ This policy schedules AWS EC2 instances to start and stop at specific times base
 
 This policy uses the schedule tag value (default key: schedule) for scheduling the instance. The appropriate value should be added to as a tag to every instance you want to manage via this policy.
 
-### EXample Schedule Tables
+### Example Schedule Tables
 
 - `schedule` = `00:00-12:00;SU,SA`
   Start at 12am (midnight) and stop at 12pm (noon) on Saturday and Sunday (default timezone is UTC)
@@ -24,7 +24,7 @@ The Schedule Label value is a string consisting of 2 or 3 semicolin-separated (`
 
 - *Hours* - Start and stop hours are 24 hour format. For example, a value of `8:15-17:30` will start instances at 8:15 and stop them at 17:30 (5:30 pm). If the minute field is left blank, the minute value of `00` will be assumed.
 - *Days of the Week* - Comma-separated list of days indicated by their two-letter abbreviation value from the following list: SU,MO,TU,WE,TH,FR,SA. For example, a value of `MO,TU,WE,TH,FR` will start and stop the instances on weekdays but not on weekends.
-- *Timezone* - Timezone in [tz database format](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones). For example, a value of `America/New_York` would specify US Eastern Time. Defaults to UTC if no Timezone field is provided.
+- Optional: *Timezone* - Timezone in [tz database format](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones). For example, a value of `America/New_York` would specify US Eastern Time. Defaults to UTC if no Timezone field is provided.
 
 ## Input Parameters
 
