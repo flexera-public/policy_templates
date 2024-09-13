@@ -8,6 +8,7 @@ This policy template reports on any Flexera Cloud Cost Optimization bill connect
 
 - *Email Addresses* - A list of email addresses to notify if bill processing errors are found.
 - *Processing Time (Hours)* - Amount of time in hours to consider a bill connection in an error state if it has failed to complete processing of a bill.
+- *Bill Connection Ignore List* - A list of Bill Connection IDs to never check for errors or report on. Leave blank to check all Bill Connections.
 
 ## Policy Actions
 

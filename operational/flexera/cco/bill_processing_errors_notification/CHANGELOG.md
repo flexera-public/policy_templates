@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.4.0
+
+- Added `Bill Connection Ignore List` parameter to allow user to ignore specific bill connections.
+
 ## v2.3.0
 
 - Renamed to `Cloud Bill Processing Error Notification` to better indicate that it is specific to Cloud Cost Optimization
