@@ -6,7 +6,7 @@ This policy template checks for Azure resources missing the user-specified tags.
 
 NOTE: This policy is a general policy with only general functionality for finding and repairing broken tags on Azure resources. The [Azure Untagged Virtual Machines](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/azure_untagged_vms/) policy is recommended for use cases focused specifically on untagged virtual machines.
 
-## Functional Details
+## How It Works
 
 - The policy leverages the Azure API to retrieve a list of all resources in the Azure estate.
 - The policy then filters that list based on user-specified parameters.
@@ -24,6 +24,7 @@ This policy has the following input parameters required when launching the polic
 - *Allow/Deny Subscriptions List* - A list of allowed or denied Subscription IDs/names. If empty, no filtering will occur and recommendations will be produced for all subscriptions.
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
 - *Allow/Deny Regions List* - Filter results by region, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all the regions.
+- *Include Subscription/Resource Group Tags* - Whether or not to include Azure Subscriptions and Resource Groups as resources whose tags are checked and reported on.
 - *Tags* - The policy will report resources missing the specified tags. The following formats are supported:
   - `Key` - Find all resources missing the specified tag key.
   - `Key==Value` - Find all resources missing the specified tag key:value pair and all resources missing the specified tag key.
@@ -57,7 +58,7 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
   - `Microsoft.Resources/subscriptions/resources/read`
   - `Microsoft.Resources/tags/write`*
 
-\* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
+  \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`

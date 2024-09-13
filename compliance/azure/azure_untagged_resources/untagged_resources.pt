@@ -102,6 +102,15 @@ parameter "param_regions_list" do
   default []
 end
 
+parameter "param_include_account" do
+  type "string"
+  category "Filters"
+  label "Include Subscription/Resource Group Tags"
+  description "Whether or not to include Azure Subscriptions and Resource Groups as resources whose tags are checked and reported on."
+  allowed_values "Include Subscription/Resource Group", "Do Not Include Subscription/Resource Group"
+  default "Do Not Include Subscription/Resource Group"
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -220,6 +229,8 @@ datasource "ds_azure_subscriptions_with_tags" do
     field "id", val(iter_item, "id")
     field "name", val(iter_item, "name")
     field "state", val(iter_item, "state")
+    field "subscriptionId", val(iter_item, "id")
+    field "subscriptionName", val(iter_item, "name")
     field "type", "Subscription"
     field "resourceType", "Subscription"
   end
@@ -244,6 +255,7 @@ datasource "ds_azure_resource_groups" do
       field "id", jmes_path(col_item, "id")
       field "name", jmes_path(col_item, "name")
       field "tags", jmes_path(col_item, "tags")
+      field "resourceGroup", jmes_path(col_item, "name")
       field "type", "Resource Group"
       field "resourceType", "Resource Group"
     end
@@ -326,11 +338,11 @@ EOS
 end
 
 datasource "ds_azure_resources_missing_tags" do
-  run_script $js_azure_resources_missing_tags, $ds_azure_subscriptions_with_tags, $ds_azure_resources_type_filtered, $param_tags, $param_tags_boolean
+  run_script $js_azure_resources_missing_tags, $ds_azure_subscriptions_with_tags, $ds_azure_resource_groups, $ds_azure_resources_type_filtered, $param_tags, $param_tags_boolean, $param_include_account
 end
 
 script "js_azure_resources_missing_tags", type: "javascript" do
-  parameters "ds_azure_resources_type_filtered", "ds_azure_resources_type_filtered", "param_tags", "param_tags_boolean"
+  parameters "ds_azure_subscriptions_with_tags", "ds_azure_resource_groups", "ds_azure_resources_type_filtered", "param_tags", "param_tags_boolean", "param_include_account"
   result "result"
   code <<-'EOS'
   result = []
@@ -366,8 +378,14 @@ script "js_azure_resources_missing_tags", type: "javascript" do
   })
 
   if (comparators.length > 0) {
+    if (param_include_account == "Include Subscription/Resource Group") {
+      resources = ds_azure_resources_type_filtered.concat(ds_azure_subscriptions_with_tags, ds_azure_resource_groups)
+    } else {
+      resources = [].concat(ds_azure_resources_type_filtered)
+    }
+
     // Check each VM for missing tags
-    _.each(ds_azure_resources_type_filtered, function(resource) {
+    _.each(resources, function(resource) {
       resource_tags = resource['tags']
       if (typeof(resource_tags) != 'object') { resource_tags = {} }
 
@@ -468,28 +486,52 @@ script "js_missing_tags_incident", type: "javascript" do
       })
     }
 
+    if (resource['type'] == "Subscription") {
+      resourceID = "/subscriptions/" + resource['id']
+      api_version = "2021-01-01"
+      region = ""
+    } else if (resource['type'] == "Resource Group") {
+      resourceID = "/subscriptions/" + resource['subscriptionId'] + "/resourceGroups/" + resource['name']
+      api_version = "2021-04-01"
+      region = ""
+    } else {
+      resourceID = resource['id']
+      api_version = ds_azure_api_versions[resource['resourceType'].toLowerCase().trim()]
+      region = resource['region']
+    }
+
     return {
       accountID: resource['subscriptionId'],
       accountName: resource['subscriptionName'],
       resourceGroup: resource['resourceGroup'],
       resourceName: resource['name'],
-      resourceID: resource['id'],
+      resourceID: resourceID,
       resourceType: resource['resourceType'],
-      region: resource['region'],
+      region: region,
+      type: resource['type'],
       tags_object: resource['tags'],
       tags: resource_tags.join(', '),
       missing_tags: resource['missing_tags'].join(', '),
       policy_name: ds_applied_policy['name'],
-      api_version: ds_azure_api_versions[resource['resourceType'].toLowerCase().trim()],
+      api_version: api_version,
       message: ""
     }
   })
 
   // Dummy item to ensure that the check statement in the policy executes at least once
   result.push({
-    accountID: "",    accountName: "",   resourceGroup: "",  resourceName: "",
-    resourceID: "",   resourceType: "",  region: "",         tags_object: "",
-    tags: "",         policy_name: "",   api_version: "",    missing_tags: "",
+    accountID: "",
+    accountName: "",
+    resourceGroup: "",
+    resourceName: "",
+    resourceID: "",
+    resourceType: "",
+    region: "",
+    tags_object: "",
+    tags: "",
+    policy_name: "",
+    api_version: "",
+    missing_tags: "",
     message: ""
   })
 
@@ -519,6 +561,9 @@ policy "pol_azure_missing_tags" do
     hash_exclude "message", "api_version"
     export do
       resource_level true
+      field "type" do
+        label "Type"
+      end
       field "accountID" do
         label "Subscription ID"
       end
