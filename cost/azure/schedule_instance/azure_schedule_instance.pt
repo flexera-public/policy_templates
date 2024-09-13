@@ -5,9 +5,9 @@ short_description "Schedules Azure virtual machines to start and stop at specifi
 long_description ""
 category "Cost"
 severity "low"
-default_frequency "daily"
+default_frequency "15 minutes"
 info(
-  version: "5.0",
+  version: "6.0.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Schedule Instance"
@@ -40,22 +40,6 @@ parameter "param_tag_schedule" do
   label "Schedule Tag Key"
   description "Tag key that schedule information is stored in. Default is recommended for most use cases."
   default "schedule"
-end
-
-parameter "param_tag_next_start" do
-  type "string"
-  category "Tag Keys"
-  label "Next Start Tag Key"
-  description "Tag key to use for scheduling instance to start. Default is recommended for most use cases."
-  default "next_start"
-end
-
-parameter "param_tag_next_stop" do
-  type "string"
-  category "Tag Keys"
-  label "Next Stop Tag Key"
-  description "Tag key to use for scheduling instance to stop. Default is recommended for most use cases."
-  default "next_stop"
 end
 
 parameter "param_exclusion_tags" do
@@ -124,7 +108,7 @@ parameter "param_automatic_action" do
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action."
   allowed_values ["Execute Schedules"]
-  default []
+  default ["Execute Schedules"]
 end
 
 ###############################################################################
@@ -386,12 +370,12 @@ datasource "ds_azure_instances_with_status" do
   end
 end
 
-datasource "ds_instances_to_schedule" do
-  run_script $js_instances_to_schedule, $ds_azure_instances_with_status, $ds_applied_policy, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop
+datasource "ds_instances_with_schedule" do
+  run_script $js_instances_with_schedule, $ds_azure_instances_with_status, $ds_applied_policy, $param_tag_schedule
 end
 
-script "js_instances_to_schedule", type: "javascript" do
-  parameters "ds_azure_instances_with_status", "ds_applied_policy", "param_tag_schedule", "param_tag_next_start", "param_tag_next_stop"
+script "js_instances_with_schedule", type: "javascript" do
+  parameters "ds_azure_instances_with_status", "ds_applied_policy", "param_tag_schedule"
   result "result"
   code <<-EOS
   result = []
@@ -399,34 +383,90 @@ script "js_instances_to_schedule", type: "javascript" do
 
   _.each(ds_azure_instances_with_status, function(instance) {
     schedule = null
-    next_start = null
-    next_stop = null
-
-    tags_object = {}
-    if (typeof(instance['tags']) == 'object') { tags_object = instance['tags'] }
 
     tags = []
 
+    tags_object = {}
     if (typeof(instance['tags']) == 'object') {
+      // Store a copy of the tags object for export
+      tags_object = instance['tags']
+
+      // Loop through tags to build tags string for export
       _.each(_.keys(instance['tags']), function(key) {
         value = instance['tags'][key]
 
         tags.push(key + '=' + value)
 
-        if (key == param_tag_schedule)   { schedule = value   }
-        if (key == param_tag_next_start) { next_start = value }
-        if (key == param_tag_next_stop)  { next_stop = value  }
+        // If tag is the schedule tag, set schedule var for parsing
+        if (key == param_tag_schedule) { schedule = value }
       })
     }
 
-    if (next_start != null) { next_start = new Date(next_start) }
-    if (next_stop != null)  { next_stop = new Date(next_stop)   }
+    // Check that we have a schedule and it is not explicitely disabled before attempting to parse the schedule tag value
+    if (schedule != null) {
+      console.log(JSON.stringify(instance))
+      // schedule="8:00-17:30;MO,TU,WE,TH,FR;America/Los_Angeles"
+      var schedule_split = schedule.split(';')
 
-    if (now > next_start || now > next_stop || next_start == null || next_stop == null) {
-      if (next_start != null) { next_start = next_start.toISOString() }
-      if (next_stop != null)  { next_stop = next_stop.toISOString()   }
+      // Parse Time - first part of schedule
+      // Should always exist but check anyways
+      if (schedule_split.length > 0) {
+        var time = schedule_split[0]
+        // start time is first part of time string split by '-'
+        var start_time = time.split('-')[0]
+        var start_time_split = start_time.split(':')
+        if (start_time_split.length == 1) {
+          var start_hour = start_time_split[0]
+          var start_minute = '00'
+        } else {
+          var start_hour = start_time_split[0]
+          var start_minute = start_time_split[1]
+        }
+        if (start_minute == null) { start_minute = '00' }
+
+        // stop time is second part of time string split by '-'
+        var stop_time = time.split('-')[1]
+        // Handle both HH:mm-HH:mm and HH formats (8:00-9:00 or 8-9)
+        var stop_time_split = stop_time.split(':')
+        if (stop_time_split.length == 1) {
+          var stop_hour = stop_time_split[0]
+          var stop_minute = '00'
+        } else {
+          var stop_hour = stop_time_split[0]
+          var stop_minute = stop_time_split[1]
+        }
+        if (stop_minute == null) { stop_minute = '00' }
+      }
+
+      // Parse Days - second part of schedule
+      // Default to Everyday
+      days = "SU,MO,TU,WE,TH,FR,SA"
+      if (schedule_split.length > 1) {
+        var days = schedule_split[1]
+        // replace all '-' with ','
+        // this is not needed as README calls out comma `,`, but may be helpful for some users that are also using GCP which uses dash separator `-`
+        days = days.replace(/-/g, ',')
+      }
+      var start_rule = 'FREQ=WEEKLY;BYDAY=' + days.toUpperCase()
+      var stop_rule = 'FREQ=WEEKLY;BYDAY=' + days.toUpperCase()
+
+      // Parse Timezone (if defined)
+      // Default to UTC
+      var timezone = "UTC"
+      if (schedule_split.length > 2) {
+        timezone = schedule_split[2]
+      }
 
       result.push({
+        // Request Fields
+        start_hour: start_hour,
+        start_minute: start_minute,
+        start_rule: start_rule,
+        stop_hour: stop_hour,
+        stop_minute: stop_minute,
+        stop_rule: stop_rule,
+        tz: timezone,
+        // Resource Fields
         accountID: instance['subscriptionId'],
         accountName: instance['subscriptionName'],
         resourceGroup: instance['resourceGroup'],
@@ -440,8 +480,6 @@ script "js_instances_to_schedule", type: "javascript" do
         tags: tags.join(', '),
         tags_object: tags_object,
         policy_name: ds_applied_policy['name'],
-        next_start: next_start,
-        next_stop: next_stop,
         schedule: schedule
       })
     }
@@ -454,12 +492,67 @@ script "js_instances_to_schedule", type: "javascript" do
 EOS
 end
 
+datasource "ds_timezones_list" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/tz_database/timezones_list.json"
+    header "Content-Type", "application/json"
+  end
+end
+
+datasource "ds_instances_schedule_result" do
+  iterate $ds_instances_with_schedule
+  request do
+    verb "POST"
+    host "bjlaftw4kh.execute-api.us-east-1.amazonaws.com"
+    path "/production"
+    header "Content-Type", "application/json"
+    body_field "start_hour", val(iter_item, "start_hour")
+    body_field "start_minute", val(iter_item, "start_minute")
+    body_field "start_rule", val(iter_item, "start_rule")
+    body_field "stop_hour", val(iter_item, "stop_hour")
+    body_field "stop_minute", val(iter_item, "stop_minute")
+    body_field "stop_rule", val(iter_item, "stop_rule")
+    body_field "tz", val(iter_item, "tz")
+  end
+  result do
+    encoding "json"
+    # Request Fields
+    field "start_hour", val(iter_item, "start_hour")
+    field "start_minute", val(iter_item, "start_minute")
+    field "start_rule", val(iter_item, "start_rule")
+    field "stop_hour", val(iter_item, "stop_hour")
+    field "stop_minute", val(iter_item, "stop_minute")
+    field "stop_rule", val(iter_item, "stop_rule")
+    field "tz", val(iter_item, "tz")
+    # Resource Fields
+    field "accountID", val(iter_item, "accountID")
+    field "accountName", val(iter_item, "accountName")
+    field "resourceGroup", val(iter_item, "resourceGroup")
+    field "resourceName", val(iter_item, "resourceName")
+    field "resourceID", val(iter_item, "resourceID")
+    field "resourceType", val(iter_item, "resourceType")
+    field "resourceKind", val(iter_item, "resourceKind")
+    field "region", val(iter_item, "region")
+    field "osType", val(iter_item, "osType")
+    field "service", "Microsoft.Compute"
+    field "tags", val(iter_item, "tags")
+    field "tags_object", val(iter_item, "tags_object")
+    field "policy_name", val(iter_item, "policy_name")
+    field "schedule", val(iter_item, "schedule")
+    # Resource Response Fields
+    field "next_stop", val(response, "next_stop")
+    field "next_start", val(response, "next_start")
+    field "event_active", val(response, "event_active")
+  end
+end
+
 ###############################################################################
 # Policy
 ###############################################################################
 
 policy "pol_schedule_instance" do
-  validate_each $ds_instances_to_schedule do
+  validate_each $ds_instances_schedule_result do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Scheduled Instances"
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
@@ -467,8 +560,8 @@ policy "pol_schedule_instance" do
     escalate $esc_execute_schedules
     escalate $esc_update_schedules
     escalate $esc_delete_schedules
-    escalate $esc_poweron_instances
-    escalate $esc_poweroff_instances
+    escalate $esc_start_instances
+    escalate $esc_stop_instances
     escalate $esc_delete_instances
     hash_exclude "tags", "tags_object"
     export do
@@ -522,6 +615,9 @@ policy "pol_schedule_instance" do
       field "tags_object" do
         label "Tags (Object)"
       end
+      field "event_active" do
+        label "Event Active"
+      end
     end
   end
 end
@@ -541,7 +637,7 @@ escalation "esc_execute_schedules" do
   automatic contains($param_automatic_action, "Execute Schedules")
   label "Execute Schedules"
   description "Approval to start or stop all selected instances based on schedule"
-  run "execute_schedules", data, $param_azure_endpoint, $param_skipshutdown, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop
+  run "execute_schedules", data, $param_azure_endpoint, $param_skipshutdown, $param_tag_schedule
 end
 
 escalation "esc_update_schedules" do
@@ -554,28 +650,28 @@ escalation "esc_update_schedules" do
     label "New Schedule"
     description "Enter a new value for the schedule tag. See README for more details"
   end
-  run "update_schedules", data, $param_azure_endpoint, $param_schedule, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop
+  run "update_schedules", data, $param_azure_endpoint, $param_schedule, $param_tag_schedule
 end
 
 escalation "esc_delete_schedules" do
   automatic false
   label "Delete Schedules"
   description "Approval to delete the schedule tags on all selected instances"
-  run "delete_schedules", data, $param_azure_endpoint, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop
+  run "delete_schedules", data, $param_azure_endpoint, $param_tag_schedule
 end
 
-escalation "esc_poweron_instances" do
+escalation "esc_start_instances" do
   automatic false
   label "Power On Instances"
   description "Approval to power on all selected instances"
-  run "poweron_instances", data, $param_azure_endpoint
+  run "start_instances", data, $param_azure_endpoint
 end
 
-escalation "esc_poweroff_instances" do
+escalation "esc_stop_instances" do
   automatic false
   label "Power Off Instances"
   description "Approval to power off all selected instances"
-  run "poweroff_instances", data, $param_azure_endpoint, $param_skipshutdown
+  run "stop_instances", data, $param_azure_endpoint, $param_skipshutdown
 end
 
 escalation "esc_delete_instances" do
@@ -590,12 +686,12 @@ end
 ###############################################################################
 
 # Core CWF functions for iterating through items
-define execute_schedules($data, $param_azure_endpoint, $param_skipshutdown, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop) return $all_responses do
+define execute_schedules($data, $param_azure_endpoint, $param_skipshutdown, $param_tag_schedule) return $all_responses do
   $$all_responses = []
 
   foreach $instance in $data do
     sub on_error: handle_error() do
-      call execute_schedule($instance, $param_azure_endpoint, $param_skipshutdown, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop)
+      call execute_schedule($instance, $param_azure_endpoint, $param_skipshutdown, $param_tag_schedule)
     end
   end
 
@@ -604,12 +700,12 @@ define execute_schedules($data, $param_azure_endpoint, $param_skipshutdown, $par
   end
 end
 
-define update_schedules($data, $param_azure_endpoint, $param_schedule, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop) return $all_responses do
+define update_schedules($data, $param_azure_endpoint, $param_schedule, $param_tag_schedule) return $all_responses do
   $$all_responses = []
 
   foreach $instance in $data do
     sub on_error: handle_error() do
-      call update_schedule($instance, $param_azure_endpoint, $param_schedule, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop) retrieve $update_response, $window_active
+      call update_schedule($instance, $param_azure_endpoint, $param_schedule, $param_tag_schedule)
     end
   end
 
@@ -618,12 +714,12 @@ define update_schedules($data, $param_azure_endpoint, $param_schedule, $param_ta
   end
 end
 
-define delete_schedules($data, $param_azure_endpoint, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop) return $all_responses do
+define delete_schedules($data, $param_azure_endpoint, $param_tag_schedule) return $all_responses do
   $$all_responses = []
 
   foreach $instance in $data do
     sub on_error: handle_error() do
-      call delete_schedule($instance, $param_azure_endpoint, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop)
+      call delete_schedule($instance, $param_azure_endpoint, $param_tag_schedule)
     end
   end
 
@@ -632,12 +728,12 @@ define delete_schedules($data, $param_azure_endpoint, $param_tag_schedule, $para
   end
 end
 
-define poweron_instances($data, $param_azure_endpoint) return $all_responses do
+define start_instances($data, $param_azure_endpoint) return $all_responses do
   $$all_responses = []
 
   foreach $instance in $data do
     sub on_error: handle_error() do
-      call poweron_instance($instance, $param_azure_endpoint)
+      call start_instance($instance, $param_azure_endpoint)
     end
   end
 
@@ -646,12 +742,12 @@ define poweron_instances($data, $param_azure_endpoint) return $all_responses do
   end
 end
 
-define poweroff_instances($data, $param_azure_endpoint, $param_skipshutdown) return $all_responses do
+define stop_instances($data, $param_azure_endpoint, $param_skipshutdown) return $all_responses do
   $$all_responses = []
 
   foreach $instance in $data do
     sub on_error: handle_error() do
-      call poweroff_instance($instance, $param_azure_endpoint, $param_skipshutdown)
+      call stop_instance($instance, $param_azure_endpoint, $param_skipshutdown)
     end
   end
 
@@ -675,56 +771,88 @@ define delete_instances($data, $param_azure_endpoint) return $all_responses do
 end
 
 # Secondary CWF functions for taking action on individual instances
-define execute_schedule($instance, $param_azure_endpoint, $param_skipshutdown, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop) return $response do
-  call update_schedule($instance, $param_azure_endpoint, $instance['schedule'], $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop) retrieve $update_response, $window_active
-
-  if $window_active
-    call poweron_instance($instance, $param_azure_endpoint) retrieve $start_response
+define execute_schedule($instance, $param_azure_endpoint, $param_skipshutdown, $param_tag_schedule) return $response do
+  if $instance['schedule'] == null
+    call task_label("Skipping instance without schedule: " + $instance["resourceName"])
   else
-    call poweroff_instance($instance, $param_azure_endpoint, $param_skipshutdown) retrieve $stop_response
+    call task_label("Start executing schedule for instance: " + $instance["resourceName"])
+    call get_instance_state($instance, $param_azure_endpoint) retrieve $state
+    if $state =~ /^(deallocate|deallocating)$/
+      call task_label("Skipping attempting to modify a deallocated instance: " + $instance["resourceName"] + " " + $status)
+    else
+      call parse_schedule($instance['schedule']) retrieve $start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $schedule_days, $timezone
+
+      call window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone) retrieve $window_active
+
+      if $window_active
+        # if window active, should be running
+        if $state == "running"
+          call task_label("Skipping starting a running instance: " + $instance["resourceName"] + " " + $state)
+        else
+          if $state !~ /^(stopped|stopping)$/
+            call task_label("Skipping starting an instance that is not stopped or stopping: " + $instance["resourceName"] + " " + $state)
+          else
+            call start_instance($instance, $param_azure_endpoint)
+          end
+        end
+      else
+        if $state =~ /^(stopped|stopping)$/
+          call task_label("Skipping stopping a stopped instance: " + $instance["resourceName"] + " " + $state)
+        else
+          # else window not active, should NOT be running
+          if $state !~ /^(running|creating)$/
+            call task_label("Skipping stopping an instance that not running or creating: " + $instance["resourceName"]+ " " + $state)
+          else
+            call stop_instance($instance, $param_azure_endpoint, $param_skipshutdown)
+          end
+        end
+      end
+    end
+    call task_label("Finished executing schedule for instance: " + $instance["resourceName"])
   end
 end
 
-define update_schedule($instance, $param_azure_endpoint, $schedule, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop) return $response, $window_active do
-  $rule = split($schedule, ';')[1]
-  $time_range = split($schedule, ';')[0]
+define parse_schedule($schedule) return $start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $schedule_days, $timezone do
+  # Time
+  $schedule_time = split($schedule, ";")[0]
 
-  $start_time = split($time_range, '-')[0]
-  $start_hour = split($start_time, ':')[0]
-  $start_minute = split($start_time, ':')[1]
-
-  if $start_minute == null
-    $start_minute = '00'
+  $start_time = split($schedule_time, "-")[0]
+  $start_hour = split($start_time, ":")[0]
+  $start_minute = split($start_time, ":")[1]
+  if ! $start_minute
+    $start_minute = "00"
   end
 
-  $stop_time = split($time_range, '-')[1]
-  $stop_hour = split($stop_time, ':')[0]
-  $stop_minute = split($stop_time, ':')[1]
-
-  if $stop_minute == null
-    $stop_minute = '00'
+  $stop_time = split($schedule_time, "-")[1]
+  $stop_hour = split($stop_time, ":")[0]
+  $stop_minute = split($stop_time, ":")[1]
+  if ! $stop_minute
+    $stop_minute = "00"
   end
 
-  $start_rule = join(["FREQ=WEEKLY;BYDAY=", $rule])
-  $stop_rule = join(["FREQ=WEEKLY;BYDAY=", $rule])
-  $timezone = split($schedule, ';')[2]
+  # Days
+  $schedule_days = split($schedule, ";")[1]
+  $start_rule = "FREQ=WEEKLY;BYDAY=" + $schedule_days
+  $stop_rule = "FREQ=WEEKLY;BYDAY=" + $schedule_days
 
-  if ! $timezone
-    $timezone = "UTC"
+  # Timezone
+  $timezone = "UTC"
+  if size(split($schedule, ";")) >= 3
+    $timezone = split($schedule, ";")[2]
   end
+end
 
-  call window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone) retrieve $window_active, $next_start, $next_stop
+define update_schedule($instance, $param_azure_endpoint, $schedule, $param_tag_schedule) do
+  call parse_schedule($schedule) retrieve $start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $schedule_days, $timezone
 
   $new_tags = $instance["tags_object"]
   $new_tags[$param_tag_schedule] = $schedule
-  $new_tags[$param_tag_next_start] = $next_start
-  $new_tags[$param_tag_next_stop] = $next_stop
 
   $host = $param_azure_endpoint
   $href = $instance["id"]
   $params = "?api-version=2020-06-01"
   $url = $host + $href + $params
-  task_label("PATCH " + $url)
+  call task_label("PATCH " + $url)
 
   $response = http_request(
     auth: $$auth_azure,
@@ -742,21 +870,21 @@ define update_schedule($instance, $param_azure_endpoint, $schedule, $param_tag_s
     body: { "tags": $new_tags }
   )
 
-  task_label("Update Azure instance tags response: " + $instance["id"] + " " + to_json($response))
+  call task_label("Update Azure instance tags response: " + to_s($response["code"]))
   $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
 
   if $response["code"] != 202 && $response["code"] != 200
     raise "Unexpected response updating Azure instance tags: " + $instance["id"] + " " + to_json($response)
   else
-    task_label("Updating Azure instance tags successful: " + $instance["id"])
+    call task_label("Updating Azure instance tags successful: " + $instance["resourceName"])
   end
 end
 
-define delete_schedule($instance, $param_azure_endpoint, $param_tag_schedule, $param_tag_next_start, $param_tag_next_stop) return $response do
+define delete_schedule($instance, $param_azure_endpoint, $param_tag_schedule) return $response do
   $new_tags = {}
 
   foreach $tag_key in keys($instance["tags_object"]) do
-    if $tag_key != $param_tag_next_start && $tag_key != $param_tag_next_stop && $tag_key != $param_tag_schedule
+    if $tag_key != $param_tag_schedule
       $new_tags[$tag_key] = $instance["tags_object"][$tag_key]
     end
   end
@@ -765,7 +893,7 @@ define delete_schedule($instance, $param_azure_endpoint, $param_tag_schedule, $p
   $href = $instance["id"]
   $params = "?api-version=2020-06-01"
   $url = $host + $href + $params
-  task_label("PATCH " + $url)
+  call task_label("PATCH " + $url)
 
   $response = http_request(
     auth: $$auth_azure,
@@ -783,22 +911,22 @@ define delete_schedule($instance, $param_azure_endpoint, $param_tag_schedule, $p
     body: { "tags": $new_tags }
   )
 
-  task_label("Delete Azure instance tags response: " + $instance["id"] + " " + to_json($response))
+  call task_label("Delete Azure instance tags response: " + to_s($response["code"]))
   $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
 
   if $response["code"] != 202 && $response["code"] != 200
     raise "Unexpected response deleting Azure instance tags: " + $instance["id"] + " " + to_json($response)
   else
-    task_label("Deleting Azure instance tags successful: " + $instance["id"])
+    call task_label("Deleting Azure instance tags successful: " + $instance["resourceName"])
   end
 end
 
-define delete_instance($instance, $param_azure_endpoint) return $response do
+define delete_instance($instance, $param_azure_endpoint) do
   $host = $param_azure_endpoint
   $href = $instance["id"]
   $params = "?api-version=2023-07-01"
   $url = $host + $href + $params
-  task_label("DELETE " + $url)
+  call task_label("DELETE " + $url)
 
   $response = http_request(
     auth: $$auth_azure,
@@ -809,22 +937,22 @@ define delete_instance($instance, $param_azure_endpoint) return $response do
     query_strings: { "api-version": "2023-07-01" }
   )
 
-  task_label("Delete Azure VM instance response: " + $instance["id"] + " " + to_json($response))
+  call task_label("Delete Azure VM instance response: " + to_s($response["code"]))
   $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
 
   if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
     raise "Unexpected response deleting Azure VM instance: "+ $instance["id"] + " " + to_json($response)
   else
-    task_label("Delete Azure VM instance successful: " + $instance["id"])
+    call task_label("Delete Azure VM instance successful: " + $instance["resourceName"])
   end
 end
 
 # Tertiary CWF functions for specific tasks
-define window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $tz) return $window_active, $next_start, $next_stop do
+define window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $tz) return $window_active do
   $host = "bjlaftw4kh.execute-api.us-east-1.amazonaws.com"
   $href = "/production"
   $url = $host + $href
-  task_label("POST " + $url)
+  call task_label("POST " + $url)
 
   $response = http_request(
     https: true,
@@ -843,25 +971,58 @@ define window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_
     }
   )
 
-  task_label("Post AWS API Gateway response: " + $host + " " + to_json($response))
+  call task_label("Post AWS API Gateway response: " + to_s($response["code"]))
   $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
 
   if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
     raise "Unexpected response posting AWS API Gateway: " + $host + " " + to_json($response)
   else
-    task_label("Post AWS API Gateway successful: " + $host)
     $window_active = to_b($response['body']['event_active'])
-    $next_start = $response['body']['next_start']
-    $next_stop = $response['body']['next_stop']
+    call task_label("Post AWS API Gateway successful: window_active=" + $response['body']['event_active'])
   end
 end
 
-define poweron_instance($instance, $param_azure_endpoint) return $response do
+define get_instance_state($instance, $param_azure_endpoint) return $state do
+  $host = $param_azure_endpoint
+  $href = $instance["id"] + "/instanceView"
+  $params = "?api-version=2023-07-01"
+  $url = $host + $href + $params
+  call task_label("GET " + $url)
+
+  $query_strings = { "api-version": "2019-03-01" }
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "get",
+    host: $host,
+    href: $href,
+    query_strings: $query_strings
+  )
+
+  call task_label("Get Azure VM instance status response: " + to_s($response["code"]))
+  $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
+
+  $state = null
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response getting Azure VM instance status: "+ $instance["id"] + " " + to_json($response)
+  else
+    foreach $status in $response["body"]["statuses"] do
+      if $status["code"] =~ /PowerState/
+        $state = $status["code"]
+        $state = split($state, "/")[1]
+        call task_label("Get Azure VM instance status successful: " + $instance["resourceName"] + " " + $state)
+      end
+    end
+  end
+end
+
+define start_instance($instance, $param_azure_endpoint) do
   $host = $param_azure_endpoint
   $href = $instance["id"] + "/start"
   $params = "?api-version=2023-07-01"
   $url = $host + $href + $params
-  task_label("POST " + $url)
+  call task_label("POST " + $url)
 
   $query_strings = { "api-version": "2023-07-01" }
 
@@ -874,22 +1035,30 @@ define poweron_instance($instance, $param_azure_endpoint) return $response do
     query_strings: $query_strings
   )
 
-  task_label("Power on Azure VM instance response: " + $instance["id"] + " " + to_json($response))
+  call task_label("Power on Azure VM instance request response: " + to_s($response["code"]))
   $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
 
   if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
     raise "Unexpected response powering on Azure VM instance: "+ $instance["id"] + " " + to_json($response)
   else
-    task_label("Power on Azure VM instance successful: " + $instance["id"])
+    call task_label("Power on Azure VM instance request successful: " + $instance["resourceName"])
+    call get_instance_state($instance, $param_azure_endpoint) retrieve $instance_state
+
+    sub timeout: 5m, on_timeout: handle_timeout() do
+      while $instance_state != "running" do
+        call get_instance_state($instance, $param_azure_endpoint) retrieve $instance_state
+        sleep(10)
+      end
+    end
   end
 end
 
-define poweroff_instance($instance, $param_azure_endpoint, $param_skipshutdown) return $response do
+define stop_instance($instance, $param_azure_endpoint, $param_skipshutdown) do
   $host = $param_azure_endpoint
   $href = $instance["id"] + "/powerOff"
   $params = "?api-version=2023-07-01"
   $url = $host + $href + $params
-  task_label("POST " + $url)
+  call task_label("POST " + $url)
 
   $query_strings = { "api-version": "2023-07-01" }
 
@@ -907,13 +1076,21 @@ define poweroff_instance($instance, $param_azure_endpoint, $param_skipshutdown) 
     query_strings: $query_strings
   )
 
-  task_label("Power off Azure VM instance response: " + $instance["id"] + " " + to_json($response))
+  call task_label("Power off Azure VM instance response: " + to_s($response["code"]))
   $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
 
   if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
     raise "Unexpected response powering off Azure VM instance: "+ $instance["id"] + " " + to_json($response)
   else
-    task_label("Power off Azure VM instance successful: " + $instance["id"])
+    call task_label("Power off Azure VM instance request successful: " + $instance["resourceName"])
+    call get_instance_state($instance, $param_azure_endpoint) retrieve $instance_state
+
+    sub timeout: 5m, on_timeout: handle_timeout() do
+      while $instance_state != "stopped" do
+        call get_instance_state($instance, $param_azure_endpoint) retrieve $instance_state
+        sleep(10)
+      end
+    end
   end
 end
 
@@ -925,6 +1102,23 @@ define handle_error() do
   # We check for errors at the end, and raise them all together
   # Skip errors handled by this definition
   $_error_behavior = "skip"
+end
+
+define handle_timeout() do
+  $err = "Timeout reached. Skipping item and continuing."
+  call task_label($err)
+  raise $err
+  $_timeout_behavior = "skip"
+end
+
+define task_label($label) do
+  $now = strftime(now(), "%Y/%m/%d %H:%M:%S")
+  if !$$label_log
+    $$label_log = "[" + $now + "] "+ $label
+  else
+    $$label_log = $$label_log + "\n" + "[" + $now + "] "+ $label
+  end
+  task_label($label)
 end
 
 ###############################################################################
