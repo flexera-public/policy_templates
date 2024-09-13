@@ -7,7 +7,7 @@ category "Compliance"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "3.1",
+  version: "3.2.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Untagged Resources"
@@ -203,8 +203,55 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
 EOS
 end
 
-datasource "ds_azure_resources" do
+datasource "ds_azure_subscriptions_with_tags" do
   iterate $ds_azure_subscriptions_filtered
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Resources/tags/default"])
+    query "api-version", "2021-04-01"
+    header "User-Agent", "RS Policies"
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    field "tags", jmes_path(response, "properties.tags")
+    field "id", val(iter_item, "id")
+    field "name", val(iter_item, "name")
+    field "state", val(iter_item, "state")
+    field "type", "Subscription"
+    field "resourceType", "Subscription"
+  end
+end
+
+datasource "ds_azure_resource_groups" do
+  iterate $ds_azure_subscriptions_with_tags
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host "management.azure.com"
+    path join(["/subscriptions/", val(iter_item, "id"), "/resourcegroups"])
+    query "api-version", "2021-04-01"
+    header "User-Agent", "RS Policies"
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscriptionId", val(iter_item, "id")
+      field "subscriptionName", val(iter_item, "name")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+      field "type", "Resource Group"
+      field "resourceType", "Resource Group"
+    end
+  end
+end
+
+datasource "ds_azure_resources" do
+  iterate $ds_azure_subscriptions_with_tags
   request do
     auth $auth_azure
     pagination $pagination_azure
@@ -218,15 +265,16 @@ datasource "ds_azure_resources" do
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "subscriptionId", val(iter_item, "id")
-      field "subscriptionName", val(iter_item, "name")
       field "id", jmes_path(col_item,"id")
-      field "resourceGroup", get(4, split(jmes_path(col_item,"id"), '/'))
       field "namespace", get(6, split(jmes_path(col_item,"id"), '/'))
       field "region", jmes_path(col_item, "location")
       field "name", jmes_path(col_item, "name")
       field "tags", jmes_path(col_item, "tags")
-      field "type", jmes_path(col_item, "type")
+      field "resourceType", jmes_path(col_item, "type")
+      field "resourceGroup", get(4, split(jmes_path(col_item,"id"), '/'))
+      field "subscriptionId", val(iter_item, "id")
+      field "subscriptionName", val(iter_item, "name")
+      field "type", "Resource"
     end
   end
 end
@@ -242,11 +290,7 @@ script "js_azure_resources_region_filtered", type: "javascript" do
   if (param_regions_list.length > 0) {
     result = _.filter(ds_azure_resources, function(resource) {
       include_resource = _.contains(param_regions_list, resource['region'])
-
-      if (param_regions_allow_or_deny == "Deny") {
-        include_resource = !include_resource
-      }
-
+      if (param_regions_allow_or_deny == "Deny") { include_resource = !include_resource }
       return include_resource
     })
   } else {
@@ -269,14 +313,11 @@ script "js_azure_resources_type_filtered", type: "javascript" do
         return type.toLowerCase().trim()
       })
 
-      include_resource = _.contains(resourcetypes_list, resource['type'].toLowerCase().trim())
-
-      if (param_resourcetypes_allow_or_deny == "Deny") {
-        include_resource = !include_resource
-      }
+      include_resource = _.contains(resourcetypes_list, resource['resourceType'].toLowerCase().trim())
+      if (param_resourcetypes_allow_or_deny == "Deny") { include_resource = !include_resource }
 
       // Filter out resources with untaggable resource types based on our list
-      return include_resource && ds_azure_resource_types[resource['type']]['supportsTags']
+      return include_resource && ds_azure_resource_types[resource['resourceType']]['supportsTags']
     })
   } else {
     result = ds_azure_resources_region_filtered
@@ -285,11 +326,11 @@ EOS
 end
 
 datasource "ds_azure_resources_missing_tags" do
-  run_script $js_azure_resources_missing_tags, $ds_azure_resources_type_filtered, $param_tags, $param_tags_boolean
+  run_script $js_azure_resources_missing_tags, $ds_azure_subscriptions_with_tags, $ds_azure_resources_type_filtered, $param_tags, $param_tags_boolean
 end
 
 script "js_azure_resources_missing_tags", type: "javascript" do
-  parameters "ds_azure_resources_type_filtered", "param_tags", "param_tags_boolean"
+  parameters "ds_azure_resources_type_filtered", "ds_azure_resources_type_filtered", "param_tags", "param_tags_boolean"
   result "result"
   code <<-'EOS'
   result = []
@@ -433,13 +474,13 @@ script "js_missing_tags_incident", type: "javascript" do
       resourceGroup: resource['resourceGroup'],
       resourceName: resource['name'],
       resourceID: resource['id'],
-      resourceType: resource['type'],
+      resourceType: resource['resourceType'],
       region: resource['region'],
       tags_object: resource['tags'],
       tags: resource_tags.join(', '),
       missing_tags: resource['missing_tags'].join(', '),
       policy_name: ds_applied_policy['name'],
-      api_version: ds_azure_api_versions[resource['type'].toLowerCase().trim()],
+      api_version: ds_azure_api_versions[resource['resourceType'].toLowerCase().trim()],
       message: ""
     }
   })
