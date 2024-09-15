@@ -62,6 +62,8 @@ These templates can generate savings estimates for your environment.
 - [Azure Reserved Instances Recommendations](./cost/azure/reserved_instances/recommendations)
 - [Azure Rightsize Compute Instances](./cost/azure/rightsize_compute_instances)
 - [Azure Rightsize Managed Disks](./cost/azure/rightsize_managed_disks)
+- [Azure Rightsize MySQL Flexible Servers](./cost/azure/rightsize_mysql_flexible)
+- [Azure Rightsize MySQL Single Servers](./cost/azure/rightsize_mysql_single)
 - [Azure Rightsize NetApp Files](./cost/azure/rightsize_netapp_files)
 - [Azure Rightsize SQL Database Storage](./cost/azure/rightsize_sql_storage)
 - [Azure Rightsize SQL Databases](./cost/azure/rightsize_sql_instances)
@@ -300,6 +302,11 @@ These templates can generate savings estimates for your environment.
 
   - [Azure New Marketplace Products](./operational/azure/marketplace_new_products)
 
+- MySQL
+
+  - [Azure Rightsize MySQL Flexible Servers](./cost/azure/rightsize_mysql_flexible)
+  - [Azure Rightsize MySQL Single Servers](./cost/azure/rightsize_mysql_single)
+
 - NetApp Files
 
   - [Azure Rightsize NetApp Files](./cost/azure/rightsize_netapp_files)
@@ -448,6 +455,7 @@ These templates can generate savings estimates for your environment.
 - PaaS
 
   - [AWS Lambda Functions With High Error Rate](./operational/aws/lambda_functions_with_high_error_rate)
+  - [AWS Lambda Functions Without Provisioned Concurrency](./operational/aws/lambda_provisioned_concurrency)
 
 - Tags
 
@@ -690,11 +698,11 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 34
-  Cost: 126
-  Operational: 28
+  Cost: 128
+  Operational: 29
   SaaS Management: 11
   Security: 74
-:optimization_count: 64
+:optimization_count: 66
 :policy_sets:
   '': 46
   Allocate VMs: 3
@@ -721,7 +729,7 @@ These templates can generate savings estimates for your environment.
   Inefficient Disk Usage: 1
   Inefficient Instance Usage: 2
   Instances not running FlexNet Inventory Agent: 2
-  Lambda: 1
+  Lambda: 2
   Lifecycle Management: 1
   Logging: 1
   Long Running Instances: 2
@@ -738,7 +746,7 @@ These templates can generate savings estimates for your environment.
   Rightsize Clusters: 1
   Rightsize Compute Instances: 6
   Rightsize Containers: 1
-  Rightsize Database Instances: 6
+  Rightsize Database Instances: 8
   Rightsize Database Services: 1
   Rightsize Storage: 2
   Rightsize Synapse SQL Pools: 1
@@ -761,8 +769,8 @@ These templates can generate savings estimates for your environment.
   Unused Volumes: 7
   Usage Report: 10
 :providers:
-  AWS: 99
-  Azure: 99
+  AWS: 100
+  Azure: 101
   Azure China: 1
   Flexera: 38
   Flexera Optima: 1
@@ -798,13 +806,13 @@ These templates can generate savings estimates for your environment.
   Kubernetes: 2
   Managed Disks: 1
   Marketplace: 2
-  MySQL: 2
+  MySQL: 4
   NetApp Files: 1
   Network: 9
   Network Security Group: 2
   Office 365: 1
   Organization: 1
-  PaaS: 4
+  PaaS: 5
   PostgreSQL: 4
   RDS: 6
   S3: 1
@@ -815,7 +823,7 @@ These templates can generate savings estimates for your environment.
   Storage Accounts: 2
   Tags: 3
   Usage Discount: 6
-:total_count: 273
+:total_count: 276
 -->
 <!-- End Policy Template Stats -->
 

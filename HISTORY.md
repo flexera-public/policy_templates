@@ -6,6 +6,24 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#2617](https://github.com/flexera-public/policy_templates/pull/2617): POL-1344 Account Support for AWS Untagged Resources Policy Template
+
+#### Description
+
+> `AWS Untagged Resources`: This adds the option to include the AWS account itself in the results and adds the necessary cloud workflow logic to enable accounts to be tagged.
+>
+> Should natively work as expected with the meta parent, since each child incident would include one account, and the consolidated incident would include all of them.
+>
+> Additionally, significant modifications were made to speed up policy execution when the savings option is enabled. The previous method took a very long time due to inefficient searching techniques.
+>
+
+#### Metadata
+
+- **Policies**: [AWS Untagged Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/untagged_resources/README.md), [Meta Parent: AWS Untagged Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/untagged_resources/README.md)
+- **Merged At**: 2024-09-12 12:21:20 UTC
+
+---
+
 ### PR [#2576](https://github.com/flexera-public/policy_templates/pull/2576): POL-1331 New Policy: Azure Advisor Carbon Reduction Recommendations
 
 #### Description
@@ -1813,33 +1831,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2238) for these details.
 - **Merged At**: 2024-05-20 17:12:07 UTC
-
----
-
-### PR [#2177](https://github.com/flexera-public/policy_templates/pull/2177): POL-1101 Azure SQL Servers Without Elastic Pools Revamp
-
-#### Description
-
-> This is a revamp of the `Azure SQL Servers Without Elastic Pools` policy. From the CHANGELOG:
->
-> - Policy renamed to more accurately indicate that it reports SQL Servers and not SQL Databases
-> - Several parameters altered to be more descriptive and human-readable
-> - Improved and more robust filtering for subscriptions and tags
-> - Added ability to filter resources by region
-> - Normalized incident export to be consistent with other policies
-> - Policy no longer raises new escalations if tag data has changed but nothing else has
-> - Streamlined code for better readability and faster execution
-> - Policy now requires a valid Flexera credential
->
-> Additionally, the policy has been moved from `/operational` to `/cost` in the repository. The policy category was already `Cost` and this makes sense, since the purpose of this policy is to find opportunities to save money via elastic pools.
->
-> NOTE: Changelog error can be ignored. It's weirdness caused by the CHANGELOG technically having been moved.
->
-
-#### Metadata
-
-- **Policies**: [Azure SQL Servers Without Elastic Pools](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/sql_servers_without_elastic_pool/README.md), [Meta Parent: Azure SQL Servers Without Elastic Pools](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/sql_servers_without_elastic_pool/README.md)
-- **Merged At**: 2024-05-20 12:18:05 UTC
 
 ---
 
