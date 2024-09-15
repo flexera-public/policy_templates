@@ -37,13 +37,16 @@ Updating an outdated policy is done as follows:
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
-
 - *Email Addresses* - A list of email addresses to notify.
 - *Policy Ignore List* - A list of applied policy names and/or IDs to ignore and not report on. Leave blank to assess all applied policies.
 - *Policy Templates To Report* - Whether to report outdated policy templates, deprecated policy templates, or both. Separate incidents will be raised/emailed if both are selected and found.
 - *Allow Automated Major Version Updates* - Whether to allow actions to automatically update outdated policy templates when there's been a major version change. This is not recommended in most cases.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
+
+## Policy Actions
+
+- Send an email report
+- Update applied policy to the newest version after approval
 
 ## Prerequisites
 
