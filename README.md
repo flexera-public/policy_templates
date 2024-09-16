@@ -455,6 +455,7 @@ These templates can generate savings estimates for your environment.
 - PaaS
 
   - [AWS Lambda Functions With High Error Rate](./operational/aws/lambda_functions_with_high_error_rate)
+  - [AWS Lambda Functions Without Provisioned Concurrency](./operational/aws/lambda_provisioned_concurrency)
 
 - Tags
 
@@ -698,7 +699,7 @@ These templates can generate savings estimates for your environment.
 :categories:
   Compliance: 34
   Cost: 128
-  Operational: 28
+  Operational: 29
   SaaS Management: 11
   Security: 74
 :optimization_count: 66
@@ -728,7 +729,7 @@ These templates can generate savings estimates for your environment.
   Inefficient Disk Usage: 1
   Inefficient Instance Usage: 2
   Instances not running FlexNet Inventory Agent: 2
-  Lambda: 1
+  Lambda: 2
   Lifecycle Management: 1
   Logging: 1
   Long Running Instances: 2
@@ -768,7 +769,7 @@ These templates can generate savings estimates for your environment.
   Unused Volumes: 7
   Usage Report: 10
 :providers:
-  AWS: 99
+  AWS: 100
   Azure: 101
   Azure China: 1
   Flexera: 38
@@ -811,7 +812,7 @@ These templates can generate savings estimates for your environment.
   Network Security Group: 2
   Office 365: 1
   Organization: 1
-  PaaS: 4
+  PaaS: 5
   PostgreSQL: 4
   RDS: 6
   S3: 1
@@ -822,7 +823,7 @@ These templates can generate savings estimates for your environment.
   Storage Accounts: 2
   Tags: 3
   Usage Discount: 6
-:total_count: 275
+:total_count: 276
 -->
 <!-- End Policy Template Stats -->
 
