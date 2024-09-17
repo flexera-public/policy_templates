@@ -74,6 +74,7 @@ These templates can generate savings estimates for your environment.
 - [Azure Unused App Service Plans](./cost/azure/unused_app_service_plans)
 - [Azure Unused Firewalls](./cost/azure/unused_firewalls)
 - [Azure Unused IP Addresses](./cost/azure/unused_ip_addresses)
+- [Azure Unused Load Balancers](./cost/azure/unused_load_balancers)
 - [Azure Unused SQL Databases](./cost/azure/unused_sql_databases)
 - [Azure Unused Volumes](./cost/azure/unused_volumes)
 - [Turbonomic Allocate Virtual Machine Recommendations Azure](./cost/turbonomics/allocate_virtual_machines_recommendations/azure)
@@ -314,6 +315,7 @@ These templates can generate savings estimates for your environment.
 - Network
 
   - [Azure Unused Firewalls](./cost/azure/unused_firewalls)
+  - [Azure Unused Load Balancers](./cost/azure/unused_load_balancers)
   - [Azure Unused Virtual Network Gateways](./cost/azure/unused_vngs)
 
 - PaaS
@@ -698,11 +700,11 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 34
-  Cost: 128
+  Cost: 129
   Operational: 29
   SaaS Management: 11
   Security: 74
-:optimization_count: 66
+:optimization_count: 67
 :policy_sets:
   '': 46
   Allocate VMs: 3
@@ -764,13 +766,13 @@ These templates can generate savings estimates for your environment.
   Unused Database Services: 3
   Unused Firewalls: 1
   Unused IP Addresses: 3
-  Unused Load Balancers: 3
+  Unused Load Balancers: 4
   Unused Virtual Networks: 1
   Unused Volumes: 7
   Usage Report: 10
 :providers:
   AWS: 100
-  Azure: 101
+  Azure: 102
   Azure China: 1
   Flexera: 38
   Flexera Optima: 1
@@ -808,7 +810,7 @@ These templates can generate savings estimates for your environment.
   Marketplace: 2
   MySQL: 4
   NetApp Files: 1
-  Network: 9
+  Network: 10
   Network Security Group: 2
   Office 365: 1
   Organization: 1
@@ -823,7 +825,7 @@ These templates can generate savings estimates for your environment.
   Storage Accounts: 2
   Tags: 3
   Usage Discount: 6
-:total_count: 276
+:total_count: 277
 -->
 <!-- End Policy Template Stats -->
 
