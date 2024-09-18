@@ -7,7 +7,7 @@ category "Compliance"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "5.2.1",
+  version: "5.3.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Untagged Resources"
@@ -84,6 +84,15 @@ parameter "param_consider_tag_dimensions" do
   description "Exclude results when a tag has a value for a tag key normalized by a Tag Dimension. Please see README for more details."
   allowed_values "Consider Tag Dimensions", "Do Not Consider Tag Dimensions"
   default "Consider Tag Dimensions"
+end
+
+parameter "param_include_account" do
+  type "string"
+  category "Filters"
+  label "Include Account Tags"
+  description "Whether or not to include the AWS account itself as a resource whose tags are checked and reported on."
+  allowed_values "Include Account", "Do Not Include Account"
+  default "Do Not Include Account"
 end
 
 ###############################################################################
@@ -276,6 +285,7 @@ datasource "ds_recommendations_all" do
     verb "GET"
     host rs_optima_host
     path join(["/recommendations/orgs/", rs_org_id, "/recommendations"])
+    query "view", "extended"
     header "Api-Version", "1.0"
     header "content-type", "application/json"
   end
@@ -284,20 +294,26 @@ datasource "ds_recommendations_all" do
     collect jmes_path(response, "[*]") do
       field "resourceID", jmes_path(col_item, "resourceID")
       field "savings", jmes_path(col_item, "savings")
-      field "details", jmes_path(col_item, "details")
+      field "detailsExtended", jmes_path(col_item, "detailsExtended")
     end
   end
 end
 
 datasource "ds_recommendation_resources_total_savings" do
-  run_script $js_recommendation_resources_total_savings, $ds_recommendations_all
+  run_script $js_recommendation_resources_total_savings, $ds_recommendations_all, $ds_regions
 end
 
 script "js_recommendation_resources_total_savings", type: "javascript" do
-  parameters "ds_recommendations_all"
+  parameters "ds_recommendations_all", "ds_regions"
   result "result"
   code <<-EOS
-  recs_with_resource = _.reject(ds_recommendations_all, function(rec) {
+  region_list = _.pluck(ds_regions, 'region')
+
+  recs_in_region = _.filter(ds_recommendations_all, function(rec) {
+    return rec["detailsExtended"]["region"] != undefined && _.contains(region_list, rec["detailsExtended"]["region"]["value"])
+  })
+
+  recs_with_resource = _.reject(recs_in_region, function(rec) {
     return rec['resourceID'] == "" || rec['resourceID'] == null || rec['resourceID'] == undefined
   })
 
@@ -311,13 +327,37 @@ script "js_recommendation_resources_total_savings", type: "javascript" do
 
   result = []
 
-  _.each(_.keys(rec_object), function(id) {
-    savings_numbers = _.compact(_.pluck(rec_object[id], 'savings'))
+  _.each(_.keys(rec_object), function(resourceID) {
+    savings_numbers = _.compact(_.pluck(rec_object[resourceID], 'savings'))
     savings = _.reduce(savings_numbers, function(memo, num) { return memo + num }, 0)
 
+    arn = ""
+    if (rec_object[resourceID][0]["detailsExtended"]["resourceARN"] != undefined) {
+      arn = rec_object[resourceID][0]["detailsExtended"]["resourceARN"]["value"]
+    }
+
+    if (arn == "" && rec_object[resourceID][0]["detailsExtended"]["resourcearn"] != undefined) {
+      arn = rec_object[resourceID][0]["detailsExtended"]["resourcearn"]["value"]
+    }
+
+    if (arn == "" && rec_object[resourceID][0]["detailsExtended"]["arn"] != undefined) {
+      arn = rec_object[resourceID][0]["detailsExtended"]["arn"]["value"]
+    }
+
+    if (arn == "" && rec_object[resourceID][0]["detailsExtended"]["ARN"] != undefined) {
+      arn = rec_object[resourceID][0]["detailsExtended"]["ARN"]["value"]
+    }
+
+    id = ""
+    if (rec_object[resourceID][0]["detailsExtended"]["id"] != undefined) {
+      id = rec_object[resourceID][0]["detailsExtended"]["id"]["value"]
+    }
+
     result.push({
-      resourceID: id,
-      details: rec_object[id][0]["details"],
+      id: id,
+      resourceID: resourceID,
+      arn: arn,
+      detailsExtended: rec_object[resourceID][0]["detailsExtended"],
       savings: savings
     })
   })
@@ -359,8 +399,13 @@ script "js_aws_account", type:"javascript" do
     result = {
       id: ds_get_caller_identity[0]['account'],
       name: "",
-      tags: {}
+      tags: {},
+      type: "Account",
+      region: ""
     }
+  } else {
+    result["type"] = "Account"
+    result["region"] = ""
   }
 EOS
 end
@@ -424,7 +469,7 @@ datasource "ds_aws_resources" do
   result do
     encoding "json"
     collect jmes_path(response, "ResourceTagMappingList[*]") do
-      field "arn", jmes_path(col_item, "ResourceARN")
+      field "id", jmes_path(col_item, "ResourceARN")
       field "tags" do
         collect jmes_path(col_item, "Tags[*]") do
           field "key", jmes_path(col_item, "Key")
@@ -432,16 +477,17 @@ datasource "ds_aws_resources" do
         end
       end
       field "region", val(iter_item, "region")
+      field "type", "Resource"
     end
   end
 end
 
 datasource "ds_aws_resources_missing_tags" do
-  run_script $js_aws_resources_missing_tags, $ds_aws_resources, $ds_tag_dimensions, $param_tags, $param_tags_boolean, $param_consider_tag_dimensions
+  run_script $js_aws_resources_missing_tags, $ds_aws_resources, $ds_aws_account, $ds_tag_dimensions, $param_tags, $param_tags_boolean, $param_consider_tag_dimensions, $param_include_account
 end
 
 script "js_aws_resources_missing_tags", type:"javascript" do
-  parameters "ds_aws_resources", "ds_tag_dimensions", "param_tags", "param_tags_boolean", "param_consider_tag_dimensions"
+  parameters "ds_aws_resources", "ds_aws_account", "ds_tag_dimensions", "param_tags", "param_tags_boolean", "param_consider_tag_dimensions", "param_include_account"
   result "result"
   code <<-EOS
   result = []
@@ -477,14 +523,21 @@ script "js_aws_resources_missing_tags", type:"javascript" do
   })
 
   if (comparators.length > 0) {
-    // Check each VM for missing tags
-    _.each(ds_aws_resources, function(resource) {
+    // Check each resource for missing tags. Include account when appropriate.
+    resources = [].concat(ds_aws_resources)
+    if (param_include_account == "Include Account") { resources.push(ds_aws_account) }
+
+    _.each(resources, function(resource) {
       resource_tags = {}
 
       if (typeof(resource['tags']) == 'object') {
-        _.each(resource['tags'], function(tag) {
-          resource_tags[tag['key']] = tag['value']
-        })
+        if (resource["type"] == "Account") {
+          resource_tags = resource['tags']
+        } else {
+          _.each(resource['tags'], function(tag) {
+            resource_tags[tag['key']] = tag['value']
+          })
+        }
       }
 
       // Store a list of missing tags
@@ -562,49 +615,70 @@ script "js_missing_tags_incident", type:"javascript" do
   parameters "ds_aws_resources_missing_tags", "ds_aws_account", "ds_applied_policy", "ds_recommendation_resources_total_savings", "ds_currency", "param_tags", "param_tags_boolean", "param_include_savings"
   result "result"
   code <<-'EOS'
+  recommendations_id = {}
+  recommendations_resourceid = {}
+  recommendations_arn = {}
+
+  _.each(ds_recommendation_resources_total_savings, function(rec) {
+    if (typeof(rec['id']) == 'string' && rec['id'] != '') {
+      recommendations_id[rec['id']] = rec
+    }
+
+    if (typeof(rec['resourceID']) == 'string' && rec['resourceID'] != '') {
+      recommendations_resourceid[rec['resourceID']] = rec
+    }
+
+    if (typeof(rec['arn']) == 'string' && rec['arn'] != '') {
+      recommendations_arn[rec['arn']] = rec
+    }
+  })
+
   result = _.map(ds_aws_resources_missing_tags, function(resource) {
     tags = []
-    name = ''
+    name = resource['name']
 
     if (typeof(resource['tags']) == 'object') {
       _.each(Object.keys(resource['tags']), function(key) {
         tags.push(key + '=' + resource['tags'][key])
       })
 
-      if (typeof(resource['tags']['name']) == 'string') {
+      if (typeof(resource['tags']['name']) == 'string' && typeof(name) != 'string') {
         name = resource['tags']['name']
       }
     }
 
-    arn_parts = resource['arn'].split(':')
-    service = arn_parts[2]
-    resourceType = arn_parts[5].split('/')[0]
+    resourceType = resource['type']
+    service = "AWS Account"
+
+    if (resourceType == 'Resource') {
+      arn_parts = resource['id'].split(':')
+      service = arn_parts[2]
+      resourceType = arn_parts[5].split('/')[0]
+    }
 
     currency = null
     savings = null
 
-    if (param_include_savings == "Include Savings") {
+    if (param_include_savings == "Include Savings" && resourceType != "Account" && typeof(resource['id']) == 'string' && resource['id'] != '') {
       currency = ds_currency['symbol']
       savings = 0.0
 
-      savings_resource = _.find(ds_recommendation_resources_total_savings, function(item) {
-        id_match = resource['arn'].indexOf(item['resourceID']) != -1
-        inc_id_match = resource['arn'].indexOf(item['details']['ID']) != -1
-        inc_resid_match = resource['arn'].indexOf(item['details']['Resource ID']) != -1
-        inc_arn_match = resource['arn'].indexOf(item['details']['Resource ARN']) != -1
-
-        return id_match || inc_id_match || inc_resid_match || inc_arn_match
-      })
-
-      if (savings_resource != undefined) { savings = savings_resource['savings'] }
+      if (recommendations_arn[resource['id']] != undefined) {
+        savings = recommendations_arn[resource['id']]['savings']
+      } else if (recommendations_resourceid[resource['id']] != undefined) {
+        savings = recommendations_resourceid[resource['id']]['savings']
+      } else if (recommendations_id[resource['id']] != undefined) {
+        savings = recommendations_id[resource['id']]['savings']
+      }
     }
 
     return {
       accountID: ds_aws_account['id'],
       accountName: ds_aws_account['name'],
-      resourceID: resource['arn'],
+      resourceID: resource['id'],
       resourceName: name,
       resourceType: resourceType,
+      type: resource['type'],
       service: service,
       region: resource['region'],
       tags: tags.join(', '),
@@ -661,6 +735,9 @@ policy "pol_untagged_resources" do
     hash_exclude "message"
     export do
       resource_level true
+      field "type" do
+        label "Type"
+      end
       field "accountID" do
         label "Account ID"
       end
@@ -668,7 +745,7 @@ policy "pol_untagged_resources" do
         label "Account Name"
       end
       field "resourceID" do
-        label "Resource ARN"
+        label "Resource ID/ARN"
       end
       field "resourceName" do
         label "Resource Name"
@@ -737,7 +814,11 @@ define tag_resources($data, $param_tags_to_add) return $all_responses do
 
   foreach $resource in $data do
     sub on_error: handle_error() do
-      call tag_resource($resource, $param_tags_to_add) retrieve $tag_response
+      if $resource["type"] == "Resource"
+        call tag_resource($resource, $param_tags_to_add) retrieve $tag_response
+      else
+        call tag_account($resource, $param_tags_to_add) retrieve $tag_response
+      end
     end
   end
 
@@ -783,6 +864,49 @@ define tag_resource($resource, $param_tags_to_add) return $response do
     raise "Unexpected response posting AWS resource: "+ $resource["resourceID"] + " " + to_json($response)
   else
     task_label("Post AWS resource successful: " + $resource["resourceID"])
+  end
+end
+
+define tag_account($resource, $param_tags_to_add) return $response do
+  $tags_to_add = []
+
+  foreach $tag in $param_tags_to_add do
+    $new_tag = {
+      "Key": first(split($tag, "=" )),
+      "Value": last(split($tag, "="))
+    }
+
+    $tags_to_add << $new_tag
+  end
+
+  $host = "organizations.us-east-1.amazonaws.com"
+  $href = "/v1/account/tags"
+  $url = $host + $href
+  task_label("POST " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    host: $host,
+    href: $href,
+    headers:{
+      "X-Amz-Target": "AWSOrganizationsV20161128.TagResource",
+      "content-type": "application/x-amz-json-1.1"
+    },
+    body: {
+      "ResourceId": $resource["resourceID"],
+      "Tags": $tags_to_add
+    }
+  )
+
+  task_label("Post AWS account response: " + $resource["resourceID"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response posting AWS account: "+ $resource["resourceID"] + " " + to_json($response)
+  else
+    task_label("Post AWS account successful: " + $resource["resourceID"])
   end
 end
 
