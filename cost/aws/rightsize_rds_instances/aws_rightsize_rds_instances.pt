@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "5.4.1",
+  version: "5.5.0",
   provider: "AWS",
   service: "RDS",
   policy_set: "Rightsize Database Instances",
@@ -755,7 +755,7 @@ script "js_cloudwatch_idle_queries", type: "javascript" do
   code <<-EOS
   queries = {}
   metric = "DatabaseConnections"
-  statistic = "Average"
+  statistic = "Sum"
   lookback = param_stats_lookback * 86400
 
   _.each(ds_rds_instances_to_check, function(resource) {
@@ -889,7 +889,6 @@ script "js_rds_idle_instances", type: "javascript" do
 
   _.each(ds_rds_instances_to_check, function(instance) {
     cloudwatch_name = instance['name'].toLowerCase()
-    instance_activity = cloudwatch_activity[cloudwatch_name]
     savings_name = "db:" + instance['name'].toLowerCase()
     savings = 0.0
 
@@ -897,7 +896,10 @@ script "js_rds_idle_instances", type: "javascript" do
       savings = ds_instance_costs_grouped[savings_name]
     }
 
-    if (instance_activity == undefined || instance_activity == 0) {
+    connectionCount = cloudwatch_activity[cloudwatch_name]
+    if (connectionCount == undefined) { connectionCount = 0 }
+
+    if (connectionCount == 0) {
       result.push({
         instanceId: instance['instanceId'],
         instanceArn: instance['instanceArn'],
@@ -914,7 +916,7 @@ script "js_rds_idle_instances", type: "javascript" do
         processorFeatures: instance['processorFeatures'],
         vcpus: instance['vcpus'],
         savings: savings,
-        instance_activity: instance_activity
+        connectionCount: connectionCount
       })
     }
   })
@@ -1480,6 +1482,7 @@ script "js_rds_idle_incident", type: "javascript" do
         licenseModel: instance['licenseModel'],
         processorFeatures: instance['processorFeatures'],
         vcpus: instance['vcpus'],
+        connectionCount: instance['connectionCount'],
         savings: parseFloat(savings.toFixed(3)),
         savingsCurrency: ds_currency['symbol'],
         lookbackPeriod: param_stats_lookback,
@@ -1879,6 +1882,9 @@ policy "pol_rightsize_rds" do
       end
       field "newResourceType" do
         label "Recommended Resource Type"
+      end
+      field "connectionCount" do
+        label "Connections (#)"
       end
       field "databaseEngine" do
         label "Database Engine"

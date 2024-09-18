@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.5.0
+
+- Added `Connections (#)` field to Unused RDS Instances incident table.
+
 ## v5.4.1
 
 - Modified internal template name for ARN incident field to match other policy templates. Functionality unchanged.
