@@ -88,6 +88,7 @@ default_child_policy_template_files = [
   "../../cost/azure/unused_app_service_plans/azure_unused_app_service_plans.pt",
   "../../cost/azure/unused_firewalls/azure_unused_firewalls.pt",
   "../../cost/azure/unused_ip_addresses/azure_unused_ip_addresses.pt",
+  "../../cost/azure/unused_load_balancers/azure_unused_load_balancers.pt",
   "../../cost/azure/unused_sql_databases/azure_unused_sql_databases.pt",
   "../../cost/azure/unused_vngs/azure_unused_vngs.pt",
   "../../cost/azure/unused_volumes/azure_unused_volumes.pt",
@@ -176,7 +177,7 @@ def compile_meta_parent_policy(file_path)
   publish = "true"
   publish = publish_scan[0][0] if !publish_scan.empty?
   # get the deprecated string if it exists, defaulting to false if not present
-  deprecated_scan = pt.scan(/publish: "(.*?)"/)
+  deprecated_scan = pt.scan(/deprecated: "(.*?)"/)
   deprecated = "false"
   deprecated = deprecated_scan[0][0] if !deprecated_scan.empty?
   # print("Name: #{name}\n")
