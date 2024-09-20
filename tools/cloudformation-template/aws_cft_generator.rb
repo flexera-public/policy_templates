@@ -2,9 +2,15 @@ require "json"
 require "time"
 
 # File paths
+activepolicy_json_filepath = "../../data/active_policy_list/active_policy_list.json"
 permission_json_filepath = "../../data/policy_permissions_list/master_policy_permissions_list.json"
 template_filepath = "./aws_cft_generator.template.txt"
 output_filepath = "./FlexeraAutomationPolicies.template"
+
+# Get list of deprecated policies
+activepolicy_json = JSON.parse(File.read(activepolicy_json_filepath))
+deprecated_policies = activepolicy_json["policies"].select { |policy| policy["deprecated"] == true }
+deprecated_names = deprecated_policies.map { |policy| policy["name"] }
 
 # Read AWS permissions data
 permission_json = JSON.parse(File.read(permission_json_filepath))
@@ -30,7 +36,8 @@ permission_json['values'].each do |item|
     end
   end
 
-  unless read.empty? && action.empty?
+  # Skip deprecated policies and policies with no permissions needed
+  unless (read.empty? && action.empty?) || deprecated_names.include?(item["name"])
     short_name = item["name"].gsub(/[^a-zA-Z0-9]/, '')
 
     permission_list << {
