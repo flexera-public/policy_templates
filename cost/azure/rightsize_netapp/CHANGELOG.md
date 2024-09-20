@@ -1,9 +1,12 @@
 # Changelog
 
-## v1.3.0
+## v2.0.0
 
-- Fixed issue where policy template would fail to complete if some subscriptions and resources are inaccessible due to credential permissions.
-- Fixed issue where tag filtering was not working as intended.
+- Renamed policy template to `Azure Rightsize NetApp Resources` to better reflect its functionality
+- Added `Recommendation` field to incident table for parity with other Azure policy templates
+- Incident subject now explicitly indicates that the resources found are oversized
+- Fixed issue where policy template would fail to complete if some subscriptions and resources are inaccessible due to credential permissions
+- Fixed issue where tag filtering was not working as intended
 
 ## v1.2
 
